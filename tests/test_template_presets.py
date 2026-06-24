@@ -71,6 +71,15 @@ def test_shipped_gpt_template_catalog_matches_builder_dispatch() -> None:
     }
 
 
+def test_native_gpt_template_catalog_header_matches_python_catalog() -> None:
+    header = (ROOT / "neuralfn" / "csrc" / "native_train" / "shipped_gpt_template_presets.h").read_text(
+        encoding="utf-8"
+    )
+    for preset in SHIPPED_GPT_TEMPLATE_PRESETS:
+        assert f'"{preset}"' in header
+    assert header.count('",') == len(SHIPPED_GPT_TEMPLATE_PRESETS)
+
+
 def _cpu_graph(graph):
     graph.torch_config = {
         **graph.torch_config,

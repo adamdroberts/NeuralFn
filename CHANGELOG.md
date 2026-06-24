@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Generated the native GPT shipped-template catalog from
+  `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` and made both compiled C++
+  frontends delegate to the shared header. This removes the manually duplicated
+  C++ preset arrays used by dense GPT and GPT-2-evo status JSON, so future
+  `--template-name` / `--preset` coverage changes can be synchronized with
+  `python tools/generate_native_gpt_template_catalog.py` and enforced with
+  `--check`.
+
+  Verification: ran the generator in check mode, ran the focused pytest
+  catalog parity test, rebuilt the dense GPT native CLI, and rebuilt the
+  missing-trainer bundle including GPT-2-evo.
+
 - Added explicit total aliases to dense GPT native arena request diagnostics.
   `float_arena_request_stats` and `uint16_arena_request_stats` now include
   `total_requested_elements`, `total_allocated_elements`,

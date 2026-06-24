@@ -1769,6 +1769,14 @@ Native compiled entrypoints, SDK bindings, the master `nfn train` native dispatc
 The unified native model registry exposes capability-specific status fields in addition to the legacy top-level status. `nfn-native-train --list-models --json` now includes `transformer_lm_status`, `token_lm_status`, and `geometry_status` for each model. `gpt2-evo` is reported as `implemented` with `transformer_lm_status: "native-dense-gpt-layer-evo-delegate"` because the family binary delegates dense GPT-2-compatible runs to the native CUDA Tile transformer-LM loop with `--layer-evo`. `nanogpt` is reported as `implemented`: full transformer training routes through the shared dense GPT Tile-CUDA loop with `--template-name nanogpt`, and the explicit `--train-token-lm` path remains available for token-LM diagnostics.
 
 Unsupported GPT templates and custom graph selections are rejected by the compiled native GPT CLI before token-shard resolution when they are not runnable by the current native loop. The error JSON reports `token_shards_resolved: false`, so missing datasets do not hide native graph/template coverage gaps or add avoidable startup work.
+The compiled dense GPT and GPT-2-evo frontends share a generated C++ template
+catalog at `neuralfn/csrc/native_train/shipped_gpt_template_presets.h`, produced
+from `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`. After adding, removing, or
+renaming a shipped GPT preset, run
+`python tools/generate_native_gpt_template_catalog.py` and verify with
+`python tools/generate_native_gpt_template_catalog.py --check` so native
+`--template-name` / `--preset` status JSON remains synchronized with the Python
+SDK catalog.
 
 For same-script native GPT benchmarks through `nfn train`, pass `--native-cuda-no-checkpoint` or `--no-checkpoint` to skip final checkpoint export, in addition to setting validation, sample, and checkpoint cadences to `0` when you want timing-only runs.
 
