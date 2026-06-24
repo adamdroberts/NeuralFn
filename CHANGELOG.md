@@ -28,6 +28,22 @@ Future updates should append new entries here rather than replacing older notes.
   steady-state CUDA-event timing, while the selected GPU stayed idle before and
   after every sample.
 
+- Refreshed the non-poisoning
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` capability check
+  after the CUDA reinstall. The one-step paired run again selected the
+  display-disabled RTX 5090 with no compute processes and reported grouped
+  layout support (`linear_cublaslt_grouped_layout_probe_status: 0`) but grouped
+  matmul execution failure (`linear_cublaslt_grouped_matmul_probe_status: 15`).
+
+  Migration note: no code path or default behavior changed. Grouped
+  block-backward work remains blocked until grouped execution, not just grouped
+  descriptor creation, returns success.
+
+  Verification: ran `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe`
+  with `NFN_SM120_NATIVE_STEPS=1`, `NFN_SM120_NATIVE_SAMPLES=1`,
+  `NFN_SM120_NATIVE_WARMUP=0`, and `NFN_SM120_NATIVE_STAGE_TIMING=1` through
+  `tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added a default-off dense GPT startup/memory diagnostic sub-route behind
   `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`,
   `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`, or

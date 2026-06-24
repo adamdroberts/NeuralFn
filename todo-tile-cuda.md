@@ -810,6 +810,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-22 retested the packed-QKV forward TK route against the BF16 fallback on the current CUDA 13.3 build. `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N` changed the route counter (`linear_tk_gemm_count` fell from `1488` to `1200` over three measured steps), but failed the dedicated RTX 5090 gate at `1.009016x` train-loop wall time and regressed `stage.block_forward.attention.total_ms` to `1.091020x`. The reproducible profile is `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536`; keep the current TK packed-QKV forward route as default.
   - 2026-06-23 refreshed the one-step CUDA 13.3 stage/shape profile and rechecked the hot forward fallback direction with stricter target-stage gates. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536` reduced TK forward calls but regressed the target `stage.block_forward.attention.qkv.total_ms` to `1.143374x`; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_forward_bf16_fallback_65536` expands to `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N`, changed no tracked route counters, and regressed train-loop wall to `1.016916x`, block backward to `1.034425x`, and `stage.block_forward.mlp_fc_gelu.total_ms` to `1.000722x`. Keep the TK forward defaults; the remaining parity direction is still a fused/cooperative LM-head or block-backward kernel route, not fallbacking these forward GEMMs.
   - 2026-06-22 rechecked grouped execution after the CUDA 13.3 WSL reinstall. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` still requests only the non-poisoning cuBLASLt grouped-layout and grouped-matmul probes. The dedicated RTX 5090 paired run reports cuBLASLt layout status `0` but cuBLASLt grouped matmul status `15`. A follow-up attempt to include the classic cuBLAS grouped BF16 probe in the same profile failed the candidate with `cudaMalloc transformer_lm_float_arena failed with CUDA error 700`, confirming the probe still poisons the selected CUDA context when unsupported. Keep grouped-GEMM parity work blocked until execution, not just descriptor creation, passes.
+  - 2026-06-24 reran the same non-poisoning `cublaslt_grouped_probe` after the
+    latest CUDA reinstall on the dedicated RTX 5090:
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe
+    NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+    NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1`. The selected
+    GPU was display-disabled and idle before/after the sample, grouped layout
+    still returned `0`, and grouped matmul execution still returned `15`.
+    Keep grouped block-backward work blocked; descriptor creation is not enough
+    to start replacing the existing per-shape GEMMs.
   - 2026-06-24 added the reproducible rejected wrapper profile
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`.
     It compares the default aligned padded-vocab LM-head dHidden/dWeight GEMMs
