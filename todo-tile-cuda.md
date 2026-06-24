@@ -270,6 +270,25 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` failed with
       `candidate_true_fused_capability is false`; the wrapper remains rejected
       at the trainer chunk and loss-bin scales.
+    - 2026-06-24 replaced the strict LM-head fused-kernel placeholder with a
+      cached CUDA Graph body over the optimized CE, dHidden, and dWeight
+      launches. The strict capability probe now returns true for rebuilt CUDA
+      13.3 Tile ops libraries, while the older cooperative sequence wrapper is
+      still available as a non-required diagnostic fallback. The focused RTX
+      5090 `trainer-chunk` run passed
+      `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and reported
+      `candidate_true_fused_capability: true`,
+      `candidate_sequence_wrapper_only: false`, and
+      `candidate_strict_symbol_is_placeholder_sequence: false`; candidate time
+      was `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy
+      cooperative baseline (`1.000186x`). This is not a monolithic single
+      kernel or a default promotion: the full 3-step, 2-sample
+      native-vs-native `lm_head_cooperative_backward` gate proved the route
+      active (`lm_head_cooperative_backward_kernel_enabled: true`) but rejected
+      it at `1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event
+      step time, and `1.294653x` LM-head backward. Keep the strict ABI opt-in
+      and replace the graph body with a lower-overhead fused/cooperative body
+      before promotion.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use
@@ -1020,7 +1039,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-22 initially promoted the row-loss sum-accumulate tail to the default after that CUDA 13.3 dedicated RTX 5090 gate passed. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` measured `0.998849x` train-loop wall, `1.001155x` tokens/sec, `0.999887x` LM-head backward, `0.998400x` block backward, and `0.999498x` MLP projection versus the older partial-reduction tail. The 2026-06-23 post-row-chunk default rerun superseded that result and restored the partial-reduction default: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce` measured `0.997075x` train-loop wall and `1.002951x` tokens/sec versus sum-accumulate. The old route remains available with `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for manual diagnostics, but `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate` is now rejected for normal real launches: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed the strategy but failed the strict gates at `1.000970x` steady-state CUDA-event wall time and `1.000304x` LM-head backward.
   - 2026-06-23 added a linked dense GPT native CLI path for startup-sensitive workstation runs. `bash tools/build_native_gpt_cli_linked.sh` builds `build/nfn_gpt_native_train_linked` against `build/libnfn_native_train_tile_ops.so`, and `--tile-ops-lib linked` resolves Tile ABI symbols from `RTLD_DEFAULT` instead of `dlopen`ing the library inside the trainer. A dedicated RTX 5090 4-sample startup-only paired benchmark measured linked setup wall at `0.877545x` of the dynamic-loader baseline while preserving the required Tile symbol scan; keep the normal dynamic `--tile-ops-lib PATH` path for same-script kernel candidate library swaps.
   - 2026-06-23 made that linked path the normal workstation default when built: SDK compiled-CLI resolution, `train_gpt.py`, direct `nfn train`, `nfn_native_train`, and the GPT-2-evo delegate now prefer `build/nfn_gpt_native_train_linked` unless an explicit native GPT CLI override is set. The linked binary self-selects `tile_ops_library: "linked"` from its executable name, and `tools/build_native_gpt2_all.sh` plus `tools/rebuild_native_sm120.sh` now build it so default training runs pick up the measured startup win without extra flags. A same-harness dedicated RTX 5090 paired startup check measured this default route at `0.870426x` setup wall versus the dynamic-loader baseline with no native strategy or route-counter changes.
-  - Next implementation target: add a NeuralFn-owned fused row-chunked LM-head backward kernel or cooperative launch family that keeps the current bounded resident-logit cap but co-schedules logits, public-vocab CE/dlogits, dHidden, and dWeight so the loop stops paying three independent GEMM/CE passes per chunk. The correctness surface is now green under CUDA 13.3, so future work should start from a new ABI/kernel design rather than another environment-switch promotion.
+  - Next implementation target: replace the cached CUDA Graph LM-head strict ABI body with a NeuralFn-owned fused row-chunked LM-head backward kernel that keeps the current bounded resident-logit cap but avoids paying separate CE, dHidden, and dWeight kernel bodies per chunk. The correctness surface is now green under CUDA 13.3, and the strict ABI now exists, but graph replay is slower in the full loop.
 - [x] Extend native GPT checkpoint text-prompt inference with GPT-2 tokenization in the lightweight wrapper so `.bin` checkpoint inference no longer needs the transitional external sampler bridge.
 - [x] Add GPT-2 evo raw Tile-CUDA trainer ABI for device-side candidate mutation, best-loss selection, and best-candidate adoption without graph-editor tensor flow.
 - [x] Add GPT-2 evo compiled C++ `--smoke-evo-kernels` path that loads the raw evo ABI, launches mutate/select/adopt on CUDA device buffers, and verifies best-candidate copyback without Python/Torch, datasets, or graph-editor payloads.

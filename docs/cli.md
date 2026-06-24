@@ -932,13 +932,14 @@ Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
 cooperative LM-head backward ABI wrapper, or
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
 parity/preflight run must require the strict cooperative LM-head backward ABI.
-The flag is default-off for normal training. Rebuilt Tile ops libraries can
-export the strict
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` placeholder
-callable, but current builds return `0` from
+The flag is default-off for normal training. Rebuilt Tile ops libraries export
+the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
+callable, and current CUDA 13.3 builds return `1` from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Until that capability probe returns nonzero, `--require-cooperative-lm-head-backward`
-is a strict preflight that fails instead of benchmarking the older CE plus
+That strict callable captures the optimized CE, dHidden, and dWeight launches
+into a cached CUDA Graph per row-chunk pointer/shape/beta/flag tuple. It is not
+a monolithic single CUDA kernel, but `--require-cooperative-lm-head-backward`
+now verifies that graph-fused ABI instead of benchmarking the older CE plus
 dHidden plus dWeight sequence as if it were fused.
 The non-required candidate path can still enable the event-ordered sequence
 wrapper and reports `lm_head_cooperative_backward_sequence_wrapper_enabled:
@@ -966,16 +967,21 @@ Tile ops library that exports that wrapper symbol.
 The current wrapper symbol is
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; it
 only satisfies `lm_head_cooperative_backward_sequence_wrapper_available`. The
-future hard fused route is probed through
+strict graph-fused route is probed through
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
 nonzero result from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current builds return `0` from that capability probe. Runtime JSON reports
-`lm_head_cooperative_backward_fused_kernel_symbol_available` separately from
+Current CUDA 13.3 builds return `1` from that capability probe. Runtime JSON
+reports `lm_head_cooperative_backward_fused_kernel_symbol_available`
+separately from
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability satisfies `lm_head_cooperative_backward_fused_kernel_available`.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
+The route remains opt-in: the focused strict-symbol microbench passes, but the
+full CUDA 13.3 RTX 5090 native-vs-native `lm_head_cooperative_backward` gate
+rejected it at `1.080550x` train-loop wall, `1.067318x` steady-state
+CUDA-event step time, and `1.294653x` LM-head backward.
 The sequence-wrapper callable is used only for non-required diagnostic runs, so
 adding or rebuilding the wrapper symbol cannot accidentally satisfy
 `--require-cooperative-lm-head-backward`.

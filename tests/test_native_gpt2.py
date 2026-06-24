@@ -1477,16 +1477,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
-    assert "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel" in source
-    assert "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel" in source
-    assert "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight" in source
+    assert "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel" in source
+    assert "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel" in source
+    assert "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
-    assert "return 0;" in tile_ops_source
+    assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
+    assert "cudaStreamCreateWithFlags" in tile_ops_source
+    assert "return 1;" in tile_ops_source
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source

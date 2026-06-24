@@ -471,15 +471,18 @@ surfaces. `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u1
 is the existing event-ordered sequence wrapper and only satisfies
 `lm_head_cooperative_backward_sequence_wrapper_available`.
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
-optional future strict fused classifier/dHidden/dWeight callable and must be loaded
+strict graph-fused classifier/dHidden/dWeight callable and must be loaded
 with a nonzero
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 capability before `lm_head_cooperative_backward_fused_kernel_available` or
-`lm_head_cooperative_backward_kernel_enabled` can become true. The llm.kittens
-SM120 reference keeps logits, CE/dlogits, dHidden, and dWeight as separate
-stages, so this fused callable is an optimization candidate gate rather than a
-required parity condition. SDK and CLI strict runs therefore still fail on
-wrapper-only or placeholder-symbol builds
+`lm_head_cooperative_backward_kernel_enabled` can become true. Current CUDA
+13.3 builds implement this strict callable as a cached CUDA Graph over the
+optimized CE, dHidden, and dWeight launches for each row-chunk
+pointer/shape/beta/flag tuple. It is not a monolithic single CUDA kernel. The
+llm.kittens SM120 reference keeps logits, CE/dlogits, dHidden, and dWeight as
+separate stages, so this fused callable is an optimization candidate gate
+rather than a required parity condition. SDK and CLI strict runs therefore
+still fail on wrapper-only or missing-capability builds
 instead of silently benchmarking the older CE plus dHidden plus dWeight
 sequence.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
@@ -2209,15 +2212,14 @@ LM-head backward to `1.103379x`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward
-Tile ABI. Rebuilt Tile ops libraries can export the strict
+Tile ABI. Rebuilt Tile ops libraries export the strict
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
-but current builds return `0` from
+and current CUDA 13.3 builds return `1` from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-That means the required guard remains a strict ABI preflight and fails until a
-real single-kernel or genuinely fused cooperative classifier/dHidden/dWeight
-body lands. The SM120 candidate wrapper labels
+That means the required guard is now a strict ABI preflight for the cached CUDA
+Graph body. The SM120 candidate wrapper labels
 `lm_head_cooperative_backward_required` as a strict probe rather than a
-metric-gated speed candidate. Wrapper-only and placeholder-symbol builds still
+metric-gated speed candidate. Wrapper-only and missing-capability builds still
 fail the strict guard. Real `--train-transformer-lm
 --require-cooperative-lm-head-backward` launches now run this strict
 symbol/capability preflight before cached token-shard discovery or CUDA runtime
@@ -2273,17 +2275,20 @@ probe uses the separate
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
 a nonzero result from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current builds return `0` from that capability probe. Runtime JSON reports the
-placeholder symbol as
-`lm_head_cooperative_backward_fused_kernel_symbol_available` and the semantic
-capability as
+Current CUDA 13.3 builds return `1` from that capability probe and replay the
+cached graph when `lm_head_cooperative_backward_kernel_enabled` is true. Runtime
+JSON reports
+`lm_head_cooperative_backward_fused_kernel_symbol_available` separately from the
+semantic capability,
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability path makes `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` true. The route is not
-promoted by default. The CUDA 13.3 dedicated RTX 5090 one-step, two-sample
-same-script gate proved route execution with 16 cooperative sequence launches,
-but rejected promotion at `1.022567x` train-loop wall and `0.977929x`
-tokens/sec versus the normal native baseline.
+promoted by default. The focused strict-symbol microbench measured
+`35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
+symbol (`1.000186x`) on the dedicated CUDA 13.3 RTX 5090, but the full
+same-script `lm_head_cooperative_backward` gate rejected the graph route at
+`1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event step time, and
+`1.294653x` LM-head backward.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

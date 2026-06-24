@@ -4234,8 +4234,8 @@ bool print_tile_plan(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
                 ? (cooperative_lm_head_loss_bins_requested
-                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel"
-                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel")
+                    ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
+                    : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel")
                 : (cooperative_lm_head_backward_sequence_wrapper_enabled
                     ? (cooperative_lm_head_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
@@ -20774,8 +20774,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight"
-                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight")
+                    ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight"
+                    : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight")
         : (lm_head_cooperative_backward_sequence_wrapper_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cooperative-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight"
@@ -20818,8 +20818,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel"
-                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel")
+                    ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
+                    : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel")
                 : (lm_head_cooperative_backward_sequence_wrapper_enabled
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"

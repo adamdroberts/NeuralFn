@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a strict LM-head cooperative backward callable for native dense GPT
+  Tile-CUDA training. The exported
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol
+  now captures the optimized BF16/u16 classifier CE+dlogits, dHidden, and
+  dWeight launches into a cached CUDA Graph keyed by row-chunk pointers, shape,
+  loss flags, loss scale, and dWeight beta. The capability probe
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  now returns `1`, so strict `--require-cooperative-lm-head-backward` preflights
+  can pass on rebuilt CUDA 13.3 Tile ops libraries. This is not a monolithic
+  single CUDA kernel; runtime strategy strings now report the strict route as
+  `strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel` or
+  the loss-bin variant, while the older sequence wrapper remains available as
+  the non-required diagnostic fallback.
+
+  Verification: rebuilt all SM120 native artifacts with
+  `bash tools/rebuild_native_sm120.sh`. The focused same-script LM-head
+  benchmark passed
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` on the dedicated CUDA 13.3 RTX
+  5090 and reported `candidate_true_fused_capability: true`,
+  `candidate_sequence_wrapper_only: false`, and
+  `candidate_strict_symbol_is_placeholder_sequence: false`; the strict graph
+  candidate measured `35.783084 ms/iter` versus `35.776438 ms/iter` for the
+  legacy cooperative baseline (`1.000186x`). A full same-script native-vs-native
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` gate proved
+  the route active but rejected default promotion at `1.080550x` train-loop
+  wall, `1.067318x` steady-state CUDA-event step time, and `1.294653x`
+  LM-head backward.
+
 - Refreshed the current CUDA 13.3.33 RTX 5090 parity evidence after the linked
   native rebuilds and recent candidate rejections. A 5-step, 3-sample,
   1-warmup same-script run measured NeuralFn at `2525.500 ms/step` versus

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <vector>
 
 #include <cuda_runtime_api.h>
 
@@ -1815,6 +1816,51 @@ std::atomic<std::int64_t> g_lm_head_cooperative_sequence_concurrent_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_legacy_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_loss_bin_count{0};
 
+struct LmHeadBackwardGraphKey {
+    std::uint16_t* logits_bf16 = nullptr;
+    const std::uint16_t* targets_u16 = nullptr;
+    float* row_losses = nullptr;
+    const std::uint16_t* hidden_bf16 = nullptr;
+    const std::uint16_t* token_weight_bf16 = nullptr;
+    float* grad_hidden = nullptr;
+    float* grad_weight = nullptr;
+    std::int64_t rows = 0;
+    std::int64_t hidden_dim = 0;
+    std::int64_t vocab = 0;
+    std::int64_t row_stride = 0;
+    std::int64_t loss_bin_count = 0;
+    float loss_scale = 0.0f;
+    float dweight_beta = 0.0f;
+    int flags = 0;
+};
+
+bool operator==(const LmHeadBackwardGraphKey& lhs, const LmHeadBackwardGraphKey& rhs) {
+    return lhs.logits_bf16 == rhs.logits_bf16 &&
+        lhs.targets_u16 == rhs.targets_u16 &&
+        lhs.row_losses == rhs.row_losses &&
+        lhs.hidden_bf16 == rhs.hidden_bf16 &&
+        lhs.token_weight_bf16 == rhs.token_weight_bf16 &&
+        lhs.grad_hidden == rhs.grad_hidden &&
+        lhs.grad_weight == rhs.grad_weight &&
+        lhs.rows == rhs.rows &&
+        lhs.hidden_dim == rhs.hidden_dim &&
+        lhs.vocab == rhs.vocab &&
+        lhs.row_stride == rhs.row_stride &&
+        lhs.loss_bin_count == rhs.loss_bin_count &&
+        lhs.loss_scale == rhs.loss_scale &&
+        lhs.dweight_beta == rhs.dweight_beta &&
+        lhs.flags == rhs.flags;
+}
+
+struct LmHeadBackwardGraphEntry {
+    LmHeadBackwardGraphKey key;
+    cudaGraphExec_t exec = nullptr;
+};
+
+std::mutex g_lm_head_backward_graph_mutex;
+std::vector<LmHeadBackwardGraphEntry> g_lm_head_backward_graph_cache;
+cudaStream_t g_lm_head_backward_graph_capture_stream = nullptr;
+
 void reset_lm_head_cooperative_sequence_stats() {
     g_lm_head_cooperative_sequence_launch_count.store(0, std::memory_order_relaxed);
     g_lm_head_cooperative_sequence_ce_launch_count.store(0, std::memory_order_relaxed);
@@ -1830,6 +1876,173 @@ std::int64_t lm_head_cooperative_loss_bin_count_from_flags(int flags, std::int64
         static_cast<std::int64_t>(static_cast<unsigned int>(flags) >> kLmHeadCooperativeLossBinCountShift);
     const std::int64_t requested = encoded > 0 ? encoded : 1024;
     return std::max<std::int64_t>(1, std::min<std::int64_t>(rows, requested));
+}
+
+void launch_lm_head_classifier_backward_graph_body_bf16_u16(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const std::uint16_t* token_weight_bf16,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
+    cudaStream_t stream) {
+    const bool no_loss = (flags & kLmHeadCooperativeFlagNoLoss) != 0;
+    if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+            loss_scale,
+            stream);
+    } else if (no_loss) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+            logits_bf16,
+            targets_u16,
+            nullptr,
+            nullptr,
+            rows,
+            vocab,
+            row_stride,
+            loss_scale,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            loss_scale,
+            stream);
+    }
+    if (row_stride > vocab) {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            stream);
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            dweight_beta,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            row_stride,
+            stream);
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            row_stride,
+            dweight_beta,
+            stream);
+    }
+}
+
+int capture_lm_head_classifier_backward_graph_bf16_u16(
+    const LmHeadBackwardGraphKey& key,
+    cudaGraphExec_t* exec_out) {
+    if (g_lm_head_backward_graph_capture_stream == nullptr) {
+        const cudaError_t create_status = cudaStreamCreateWithFlags(
+            &g_lm_head_backward_graph_capture_stream,
+            cudaStreamNonBlocking);
+        if (create_status != cudaSuccess) {
+            return static_cast<int>(create_status);
+        }
+    }
+    cudaStream_t stream = g_lm_head_backward_graph_capture_stream;
+    cudaGraph_t graph = nullptr;
+    cudaError_t status = cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+    if (status != cudaSuccess) {
+        cudaGetLastError();
+        return static_cast<int>(status);
+    }
+    launch_lm_head_classifier_backward_graph_body_bf16_u16(
+        key.logits_bf16,
+        key.targets_u16,
+        key.row_losses,
+        key.hidden_bf16,
+        key.token_weight_bf16,
+        key.grad_hidden,
+        key.grad_weight,
+        key.rows,
+        key.hidden_dim,
+        key.vocab,
+        key.row_stride,
+        key.loss_scale,
+        key.dweight_beta,
+        key.flags,
+        stream);
+    status = cudaStreamEndCapture(stream, &graph);
+    if (status != cudaSuccess) {
+        cudaGetLastError();
+        return static_cast<int>(status);
+    }
+    cudaGraphExec_t exec = nullptr;
+    status = cudaGraphInstantiate(&exec, graph, nullptr, nullptr, 0);
+    const cudaError_t destroy_status = cudaGraphDestroy(graph);
+    if (status != cudaSuccess) {
+        return static_cast<int>(status);
+    }
+    if (destroy_status != cudaSuccess) {
+        cudaGraphExecDestroy(exec);
+        return static_cast<int>(destroy_status);
+    }
+    *exec_out = exec;
+    return 0;
+}
+
+int run_lm_head_classifier_backward_graph_bf16_u16(
+    const LmHeadBackwardGraphKey& key,
+    cudaStream_t stream) {
+    cudaGraphExec_t exec = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_lm_head_backward_graph_mutex);
+        for (const auto& entry : g_lm_head_backward_graph_cache) {
+            if (entry.key == key) {
+                exec = entry.exec;
+                break;
+            }
+        }
+        if (exec == nullptr) {
+            const int status = capture_lm_head_classifier_backward_graph_bf16_u16(key, &exec);
+            if (status != 0) {
+                return status;
+            }
+            g_lm_head_backward_graph_cache.push_back({key, exec});
+        }
+    }
+    return static_cast<int>(cudaGraphLaunch(exec, stream));
 }
 
 cudaStream_t as_stream(void* cuda_stream) {
@@ -5388,6 +5601,50 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
     float dweight_beta,
     int flags,
     void* cuda_stream) {
+    const bool no_loss = (flags & kLmHeadCooperativeFlagNoLoss) != 0;
+    if (logits_bf16 == nullptr ||
+        targets_u16 == nullptr ||
+        (!no_loss && row_losses == nullptr) ||
+        hidden_bf16 == nullptr ||
+        token_weight_bf16 == nullptr ||
+        grad_hidden == nullptr ||
+        grad_weight == nullptr ||
+        rows <= 0 ||
+        hidden_dim <= 0 ||
+        vocab <= 0 ||
+        row_stride < vocab) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    g_lm_head_cooperative_sequence_launch_count.fetch_add(1, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_concurrent_count.fetch_add(1, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_ce_launch_count.fetch_add(1, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
+    if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        g_lm_head_cooperative_sequence_loss_bin_count.fetch_add(1, std::memory_order_relaxed);
+    }
+    const LmHeadBackwardGraphKey key{
+        logits_bf16,
+        targets_u16,
+        row_losses,
+        hidden_bf16,
+        token_weight_bf16,
+        grad_hidden,
+        grad_weight,
+        rows,
+        hidden_dim,
+        vocab,
+        row_stride,
+        lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+        loss_scale,
+        dweight_beta,
+        flags,
+    };
+    const int graph_status =
+        run_lm_head_classifier_backward_graph_bf16_u16(key, as_stream(cuda_stream));
+    if (graph_status == 0) {
+        return 0;
+    }
     return run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         logits_bf16,
         targets_u16,
@@ -5410,7 +5667,7 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
 }
 
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {
-    return 0;
+    return 1;
 }
 
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
