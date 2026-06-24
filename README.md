@@ -1560,8 +1560,11 @@ SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.s
 it runs the llm.kittens `train_gpt2cu` reference and
 the NeuralFn linked native GPT trainer through the same paired harness with
 selected-GPU idle guards. The NeuralFn candidate side passes
-`--train-batch-tokens 524288` explicitly so it stays locked to the reference
-`train-sm120.sh` `-d 524288` contract even if native trainer defaults change.
+`--train-batch-tokens "$TRAIN_BATCH_TOKENS"` and the llm.kittens baseline passes
+`-d "$TRAIN_BATCH_TOKENS"`, so the default stays locked to the reference
+`train-sm120.sh` `-d 524288` contract while
+`NFN_SM120_PARITY_TRAIN_BATCH_TOKENS` / `NFN_SM120_TRAIN_BATCH_TOKENS` change
+both sides together for shape bisection.
 The parity wrapper uses the same default selected-GPU idle polling policy as
 the native candidate wrapper: three utilization samples spaced 0.25 seconds
 apart before each measured command, configurable through

@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed `tools/bench_native_gpt_sm120_parity.sh` so
+  `NFN_SM120_PARITY_TRAIN_BATCH_TOKENS` / `NFN_SM120_TRAIN_BATCH_TOKENS`
+  drive both the llm.kittens baseline `-d` value and the NeuralFn candidate
+  `--train-batch-tokens` value. The default remains the SM120 reference
+  `524288` token batch, but shape bisection now preserves same-script parity
+  instead of silently leaving both commands pinned to hardcoded values.
+
+  Verification: reran the same-script dedicated RTX 5090 parity smoke after
+  the CUDA reinstall with `NFN_SM120_PARITY_STEPS=2`,
+  `NFN_SM120_PARITY_SAMPLES=1`, `NFN_SM120_PARITY_WARMUP=0`, and stage timing
+  enabled. The selected GPU was the display-disabled RTX 5090 with zero
+  compute processes before and after the sample; NeuralFn measured `1.031215x`
+  train-loop wall time and `1.014173x` steady-state CUDA-event step time versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, keeping the
+  remaining gap in LM-head and block backward rather than benchmark shape
+  mismatch. Also ran `bash -n tools/bench_native_gpt_sm120_parity.sh`,
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  "sm120_parity_wrapper"` under the NeuralFn conda interpreter, and a dry-run
+  with `NFN_SM120_TRAIN_BATCH_TOKENS=65536` that printed matching baseline
+  `-d 65536` and candidate `--train-batch-tokens 65536` commands.
+
 - Clarified the dense GPT native CLI `--graph-file` help text so it no longer
   claims every custom graph reports missing native trainer support. Existing
   custom graph files with compatible dense GPT `template_spec` metadata can

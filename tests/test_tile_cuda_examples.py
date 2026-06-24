@@ -378,7 +378,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "TinyStories_val.bin" in text
     assert "-b 64" in text
     assert "-t 1024" in text
-    assert "-d 524288" in text
+    assert '-d "$TRAIN_BATCH_TOKENS"' in text
     assert "-l 0.0006" in text
     assert "-q 0.0" in text
     assert "-u 60" in text
@@ -413,7 +413,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "-af \"$ACTIVATION\"" in text
     assert "--backend tile-cuda" in text
     assert "--max-steps \"$STEPS\"" in text
-    assert "--train-batch-tokens 524288" in text
+    assert "--train-batch-tokens \"$TRAIN_BATCH_TOKENS\"" in text
     assert "--eval-every-steps 0" in text
     assert "--native-cuda-sample-every \"$SAMPLE_EVERY\"" in text
     assert "--native-cuda-generate-tokens \"$GENERATE_TOKENS\"" in text
