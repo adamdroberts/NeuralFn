@@ -905,6 +905,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_requested" in speed_tool
     assert "linear_bf16_workspace_prewarm_success_count" in speed_tool
     assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
+    assert "stored_packed_attention_lse_enabled" in speed_tool
+    assert "stored_packed_attention_lse_elements" in speed_tool
+    assert "stored_packed_attention_lse_bytes" in speed_tool
     assert "lm_head_classifier_chunk_launch_count" in speed_tool
     assert "lm_head_classifier_last_row_stride" in speed_tool
     assert "lm_head_classifier_ce_no_loss_requested" in speed_tool
@@ -1843,6 +1846,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
         "bf16_attention_dprep_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1",
         "attention_dprep_float_hd64_specialized": "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1",
+        "packed_attention_saved_lse_off": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0",
         "mlp_proj_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "mlp_fc_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1",
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",

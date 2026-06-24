@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_saved_lse_off` wrapper
+  profile. It forces baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1`
+  and candidate `=0` with attention-section timing enabled, so the current
+  saved-LSE packed-attention backward route can be compared against the older
+  no-LSE route inside the same paired benchmark. The paired speed tool now also
+  extracts `stored_packed_attention_lse_enabled`,
+  `stored_packed_attention_lse_elements`, and
+  `stored_packed_attention_lse_bytes`, so this bisection is treated as a real
+  strategy/counter change instead of timing-only noise. The CUDA 13.3 dedicated
+  RTX 5090 3-step, 2-sample gate rejected default promotion because disabling
+  saved LSE regressed steady-state CUDA-event timing to `1.002521x`,
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms` to `1.002141x`,
+  `attention_backward_tk_timing_us` to `1.001853x`, and
+  `attention_backward_dprep_timing_us` to `1.001978x`.
+
+  Verification: ran the paired RTX 5090 benchmark for baseline saved-LSE on
+  versus candidate saved-LSE off, plus `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`, the focused candidate-wrapper
+  pytest, and the paired setup/stage timing extractor pytest.
+
 - Fixed the canonical GPT inference script wrapper so
   `python cli/scripts/infer_gpt.py --help` reports `usage: infer_gpt.py`
   instead of leaking the compatibility `infer_gpt2.py` script name. Native

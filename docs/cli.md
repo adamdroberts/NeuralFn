@@ -1323,6 +1323,14 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
+The attention-store bisection profile `packed_attention_saved_lse_off` compares
+the default stored packed-attention LSE route against
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` with attention-section timing
+enabled. It is rejected by default because the CUDA 13.3 dedicated RTX 5090 gate
+regressed steady-state CUDA-event timing to `1.002521x`,
+`stage.block_backward.attn_sdpa.to_qkv.total_ms` to `1.002141x`,
+`attention_backward_tk_timing_us` to `1.001853x`, and
+`attention_backward_dprep_timing_us` to `1.001978x`.
 The CUDA 13.3.33 linked-trainer startup sweep left all existing startup
 profiles diagnostic-only: `token_weight_vector4_strided` improved token init
 but failed total setup, `token_weight_threaded` only won total setup through

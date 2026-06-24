@@ -5174,6 +5174,9 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
 
     metrics = module.native_metrics_from_payload(
         {
+            "stored_packed_attention_lse_enabled": True,
+            "stored_packed_attention_lse_elements": 393216,
+            "stored_packed_attention_lse_bytes": 1572864,
             "timing": {
                 "setup_timing": [
                     {
@@ -5215,6 +5218,9 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
     assert metrics["setup.float_arena_materialize.total_ms"] == 234.25
     assert metrics["setup.token_weight_init.avg_ms"] == 149.5
     assert metrics["setup.cuda_event.token_weight_init.total_ms"] == 148.0
+    assert metrics["stored_packed_attention_lse_enabled"] is True
+    assert metrics["stored_packed_attention_lse_elements"] == 393216
+    assert metrics["stored_packed_attention_lse_bytes"] == 1572864
     assert metrics["stage.train.model_forward.total_ms"] == 12.5
     assert metrics["stage.block_forward.attention.total_ms"] == 3.0
     assert metrics["stage.block_recompute.mlp_proj.count"] == 5

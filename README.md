@@ -228,6 +228,14 @@ candidate profile is slower than its baseline.
 `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` passes the per-profile
 route-change guard through to every comparison so accidental no-op candidate
 symbols fail before ratio gates.
+For attention-store bisection,
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_saved_lse_off` compares
+the default stored packed-attention LSE route against
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` in the same paired wrapper and
+enables attention-section timing. The CUDA 13.3 dedicated RTX 5090 gate keeps
+the saved-LSE default enabled: disabling it regressed steady-state CUDA-event
+timing to `1.002521x` and `stage.block_backward.attn_sdpa.to_qkv.total_ms` to
+`1.002141x`.
 `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` also applies to matrix runs because the
 matrix delegates each profile to the same lower-level wrapper. A
 post-reinstall wrapper
