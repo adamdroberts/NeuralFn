@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added and rejected the
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fused_ln2_bf16_out_off` rollback profile
+  for the dense GPT fused LN2 BF16 output handoff. The profile forces baseline
+  `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=1` and candidate
+  `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0`, while `tools/paired_kernel_speed.py`
+  now tracks `fused_ln2_bf16_out_enabled`,
+  `fused_ln2_bf16_norm_float_store_elision_enabled`,
+  `stored_mlp_ln2_bf16_prepack_strategy`, `stored_mlp_forward_strategy`, and
+  `attention_residual_ln2_strategy` as native route/strategy evidence. The
+  dedicated RTX 5090 gate proved the strategy change but rejected the rollback
+  at `1.020138x` train-loop wall, `1.013718x` steady-state CUDA-event wall,
+  `0.980375x` tokens/sec, and `1.119485x`
+  `stage.block_forward.mlp_fc_gelu.total_ms`; the fused route remains the
+  default.
+
+  Verification: ran the dry-run expansion, then the 2-step, 2-sample
+  stage-timed native-vs-native candidate benchmark on the idle display-disabled
+  RTX 5090 with zero compute processes before every sample.
+
 - Added and rejected the current-shape
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_49152` profile for
   dense GPT LM-head TK dWeight bisection. The older

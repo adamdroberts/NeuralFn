@@ -1545,6 +1545,16 @@ is mirrored into both commands: llm.kittens receives `-af` and the NeuralFn
 candidate receives `--native-cuda-activation`, so non-default activation
 bisections compare the same workload.
 
+The SM120 native-vs-native candidate wrapper includes
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=fused_ln2_bf16_out_off` to regression-test
+the default fused attention-residual-LN2 BF16 output handoff against the older
+separate float32-to-BF16 MLP prepack store. Real launches reject this rollback
+profile by default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample
+stage-timed gate proved the route change but measured `1.020138x`
+train-loop wall time, `1.013718x` steady-state CUDA-event time, and
+`1.119485x` `stage.block_forward.mlp_fc_gelu.total_ms`. Leave
+`NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=1` unset or enabled for normal training.
+
 Scalar CUDA Tile function kernels, simple elementwise modules, stochastic dropout, norm modules, verified projection-family modules, RoPE, verified attention modules, verified loss/reduction modules, and selected optimizer/runtime helpers support contiguous CUDA `float32` and `float16` tensors. The projection coverage includes `linear`, LM/router/value/reward/denoise heads, KV PCA projections, JEPA heads, deterministic LoRA/TTT/adapter projections, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, MLP projections, and ACT halt projection. The attention coverage includes SDPA, sparse attention variants, differential attention, causal/fused causal attention, MLA, and routed attention experts with fp32 route-weight accumulation. Loss/reduction coverage includes token CE, masked CE, sequence logp, latent MSE, semantic alignment, DPO, PPO, GAE, preference BCE, load/route balance, route selection/distillation, and softmax distillation. Optimizer/runtime fp16 coverage includes `ema_update`, `gradient_accumulate`, `gradient_clip_norm`, `adamw_step`, `muon_step`, and `split_optimizer_step` with fp16 parameter/gradient buffers plus float32 optimizer state; standalone `muon_newton_schulz` remains float32-only as the matrix orthogonalization primitive. The `float16` path computes through the Tile `float32` kernels and casts activation outputs back to preserve stable math while keeping module parameters, optimizer moments, weights, masks, reductions, attention score/softmax accumulation, routing probabilities, and scale gradients in float32. Training-mode dropout uses deterministic counter-based masks for fp32/fp16 activations instead of the PyTorch RNG fallback. Broader fp16 module coverage plus fp8 and NVFP4 variants are tracked in `todo-tile-cuda.md`.
 
 Projection-family modules now also accept CUDA `float8_e4m3fn` and `float8_e5m2` activation inputs where the output contract is safe: `linear`, LM/router/value/reward/denoise heads, tied LM head, KV PCA encode/decode, JEPA heads, deterministic LoRA/TTT/adapter projections, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, MLP projections, and ACT halt projection. These fp8 activations are dequantized to float32, accumulated in float32, and return float32 outputs with float32 weight/bias gradients; branching composite projections dequantize once so internal gradient accumulation stays in float32.
