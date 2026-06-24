@@ -682,6 +682,16 @@ def _write_native_checkpoint_stub(root: Path) -> Path:
     return checkpoint
 
 
+def _write_latest_native_checkpoint_stub(root: Path) -> Path:
+    checkpoint = root / "model_00000010.bin"
+    if not checkpoint.exists():
+        checkpoint = _write_native_checkpoint_stub(root)
+    latest = root / "model_00000020.bin"
+    latest.write_bytes(checkpoint.read_bytes())
+    (root / "DONE_00000020").write_text("", encoding="utf-8")
+    return latest
+
+
 def _write_native_graph_stub(root: Path) -> Path:
     graph = root / "native-custom-gpt-graph.json"
     graph.write_text(
@@ -732,6 +742,7 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         _write_import_blocker(temp_root)
         native_cli = _write_native_cli_stub(temp_root)
         native_checkpoint = _write_native_checkpoint_stub(temp_root)
+        _write_latest_native_checkpoint_stub(temp_root)
         native_graph = _write_native_graph_stub(temp_root)
         env = os.environ.copy()
         env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
@@ -924,6 +935,17 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                     "infer",
                     "--native-checkpoint",
                     str(native_checkpoint),
+                    "--native-info",
+                ),
+            ),
+            (
+                "nfn_infer_native_directory_info",
+                (
+                    sys.executable,
+                    "cli/nfn.py",
+                    "infer",
+                    "--checkpoint",
+                    str(temp_root),
                     "--native-info",
                 ),
             ),

@@ -227,6 +227,8 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
     assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["nfn_infer_native_info"]["passed"] is True
+    assert entrypoints["nfn_infer_native_directory_info"]["passed"] is True
+    assert "model_00000020.bin" in entrypoints["nfn_infer_native_directory_info"]["stdout"]
     assert entrypoints["nfn_infer_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["nfn_console_infer_native_info"]["passed"] is True
     assert entrypoints["nfn_console_infer_native_info"]["startup_within_budget"] is True
@@ -326,6 +328,34 @@ def test_read_native_gpt_checkpoint_info_uses_generic_sdk_class(tmp_path: Path) 
     assert type(info) is neuralfn.NativeGptCheckpointInfo
     assert info.path == str(checkpoint)
     assert info.done_marker_exists is True
+
+
+def test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    _write_native_checkpoint(tmp_path / "model_00000010.bin", step=10)
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000020.bin", step=20)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "infer",
+            "--checkpoint",
+            str(tmp_path),
+            "--native-info",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Native GPT checkpoint detected" in proc.stdout
+    assert f"path: {checkpoint}" in proc.stdout
+    assert "checkpoint_step: 20" in proc.stdout
+    assert "Traceback" not in proc.stderr
 
 
 def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(

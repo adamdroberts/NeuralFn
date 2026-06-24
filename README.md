@@ -2489,6 +2489,17 @@ are present:
 python tools/check_native_no_torch_deps.py
 ```
 
+For native dense GPT inference, point `nfn infer --checkpoint` at either the
+exact native `model_########.bin` file or the output directory that contains the
+native `DONE_########` marker. Directory input resolves to the latest completed
+native checkpoint on the lightweight no-Torch path before the compiled sampler
+runs:
+
+```bash
+nfn infer --checkpoint artifacts/gpt2 --native-info
+nfn infer --checkpoint artifacts/gpt2 --prompt-tokens 50256 --max-new-tokens 64
+```
+
 ### Install the SDK as a package
 
 From the repository root:

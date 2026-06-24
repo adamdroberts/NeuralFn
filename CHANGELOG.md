@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated native GPT checkpoint inference so `nfn infer --checkpoint DIR` stays
+  on the lightweight no-Torch path when `DIR` is a native training output
+  directory. The CLI now resolves the latest completed `model_########.bin`
+  using the existing `DONE_########` markers before printing `--native-info` or
+  running the compiled `--sample-checkpoint` sampler. This avoids falling
+  through to the graph-backed Torch chat interface when users point inference
+  at a native output directory.
+
+  Verification: added and ran
+  `python -m pytest tests/test_native_gpt2.py::test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint -q`.
+
 - Rejected the `lm_head_row_loss_partial_reduce` native GPT candidate after a
   fresh CUDA 13.3 dedicated RTX 5090 same-script rerun. The candidate changed
   only `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` from `1` to `0`; it

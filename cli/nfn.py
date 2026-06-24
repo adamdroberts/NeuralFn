@@ -156,6 +156,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
 
         examples:
           nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
+          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2 --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt "Once upon a time"
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
@@ -312,26 +313,36 @@ def _native_infer_checkpoint_arg(argv: list[str]) -> str | None:
     return _arg_value(argv, "--native-checkpoint", "--checkpoint", "--weights")
 
 
-def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
-    checkpoint = _native_infer_checkpoint_arg(argv)
-    if not checkpoint:
-        return False
+def _resolve_native_infer_checkpoint(argv: list[str]) -> Path | None:
+    raw_checkpoint = _native_infer_checkpoint_arg(argv)
+    if not raw_checkpoint:
+        return None
+    checkpoint_path = Path(raw_checkpoint).expanduser()
     try:
-        from neuralfn.native_gpt import is_native_gpt_checkpoint
+        from neuralfn.native_gpt import is_native_gpt_checkpoint, latest_native_gpt_checkpoint
 
-        return is_native_gpt_checkpoint(Path(checkpoint).expanduser())
+        if checkpoint_path.is_dir():
+            return latest_native_gpt_checkpoint(checkpoint_path)
+        if is_native_gpt_checkpoint(checkpoint_path):
+            return checkpoint_path
     except Exception:
-        return False
+        return None
+    return None
+
+
+def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
+    return _resolve_native_infer_checkpoint(argv) is not None
 
 
 def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
-    checkpoint = _native_infer_checkpoint_arg(tokens)
+    checkpoint_path = _resolve_native_infer_checkpoint(tokens)
+    checkpoint = str(checkpoint_path) if checkpoint_path is not None else None
     if not checkpoint:
         return 2
     from neuralfn.native_gpt import read_native_gpt_checkpoint_info
 
-    info = read_native_gpt_checkpoint_info(Path(checkpoint).expanduser())
+    info = read_native_gpt_checkpoint_info(Path(checkpoint))
     print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")

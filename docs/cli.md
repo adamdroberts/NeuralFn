@@ -886,6 +886,9 @@ Native checkpoint inference uses the same direct boundary for token-id prompts:
 `nfn infer --checkpoint PATH --prompt-tokens IDS` exec the compiled
 `nfn_gpt_native_train --sample-checkpoint` path before importing `infer_gpt`,
 Torch, graph-backed inference helpers, NumPy, tiktoken, or dataset managers.
+`PATH` may be either a native `model_########.bin` file or a native training
+output directory containing `DONE_########` markers; directory input resolves to
+the latest completed native checkpoint before the sampler runs.
 Use `--prompt-tokens` for the no-tokenizer path; text `--prompt` inference may
 still import tiktoken locally to encode GPT-2 prompt text before calling the
 same native sampler.
