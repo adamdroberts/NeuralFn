@@ -677,18 +677,51 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
     assert "  candidate:" in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["baseline_env"] == {
-        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_NATIVE_GPT_SETUP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
     }
     assert payload["candidate_env"] == {
-        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_NATIVE_GPT_SETUP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
         "NFN_CANDIDATE_ONLY": "1",
     }
+
+
+def test_native_gpt_sm120_candidate_wrapper_keeps_cuda_version_preflight_opt_in(
+    tmp_path: Path,
+) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-cuda-preflight.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_STEPS": "2",
+            "NFN_SM120_NATIVE_SAMPLES": "1",
+            "NFN_SM120_NATIVE_WARMUP": "0",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT": "1",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
+    assert payload["candidate_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
 
 
 def test_native_gpt_sm120_candidate_wrapper_splits_comma_separated_env_assignments(
@@ -727,13 +760,11 @@ def test_native_gpt_sm120_candidate_wrapper_splits_comma_separated_env_assignmen
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["baseline_env"] == {
-        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED": "1",
         "NFN_SHARED_2": "2",
     }
     assert payload["candidate_env"] == {
-        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED": "1",
         "NFN_SHARED_2": "2",
@@ -3061,8 +3092,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
         assert token_dry_run.returncode == 0, token_dry_run.stderr
         token_payload = json.loads(token_output_path.read_text(encoding="utf-8"))
-        assert token_payload["baseline_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
-        assert token_payload["candidate_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
+        assert "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT" not in token_payload["baseline_env"]
+        assert "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT" not in token_payload["candidate_env"]
         for env_name, env_value in expected_env["baseline"].items():
             assert token_payload["baseline_env"][env_name] == env_value
         for env_name, env_value in expected_env["candidate"].items():

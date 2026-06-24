@@ -436,11 +436,11 @@ The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT` as the lowest-priority fallback, so a copied parity or
 candidate command does not silently return to default step/sample counts.
-Native candidate wrapper runs enable `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1`
-on both baseline and candidate commands by default. Leave this on for WSL/CUDA
-13.x sweeps so driver/runtime mismatches fail before warmup; set
-`NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when intentionally measuring
-the raw allocation failure path.
+Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
+unset by default, matching normal workstation training startup. Set
+`NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail
+before warmup on WSL/CUDA driver/runtime mismatches; keep it off for startup
+timing because `cudaRuntimeGetVersion` can add about 110 ms before allocation.
 The native candidate wrapper also enables
 `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on both compared commands by
 default. For measured training comparisons with more than one step, automatic
@@ -1285,9 +1285,10 @@ CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 argument. Set
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
 CUDA device policy, and alternating sample order without launching the GPU jobs.
-The wrapper injects `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` into both
-commands by default; set `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when
-you intentionally want to measure the raw allocation failure path instead.
+The wrapper leaves `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT` off by default,
+matching normal compiled trainer startup. Set
+`NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` only when the benchmark should
+diagnose CUDA runtime/driver mismatches before allocation.
 LM-head row-order bisections can use
 `NFN_SM120_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0` to compare
 the previous forward chunk traversal against the current reverse-row-chunk

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `tools/bench_native_gpt_sm120_candidate.sh` so CUDA runtime/driver
+  version preflight is opt-in instead of injected into every native-vs-native
+  candidate run. The compiled dense GPT trainer already leaves
+  `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT` off for normal workstation startup;
+  the wrapper now matches that behavior and only adds the preflight to both
+  commands when `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` is set. A
+  startup-only setup probe on the dedicated RTX 5090 measured
+  `cuda_runtime_version_preflight_wall_ms` at about `110-119 ms`, so the old
+  wrapper default was adding diagnostic startup cost to raw startup bisections.
+
+  Verification: added dry-run coverage for both the default no-preflight wrapper
+  expansion and the explicit opt-in path.
+
 - Fixed dense GPT native train-loss copy counters in runtime JSON when
   train-loss sampling is disabled. The trainer already avoided train-loss D2H
   copies on the default `--train-loss-every-steps 0` path; it now reports

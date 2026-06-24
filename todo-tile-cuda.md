@@ -452,6 +452,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `stage.block_backward.mlp_proj.total_ms=979.072`,
     `stage.block_backward.attn_sdpa.total_ms=804.018`, and
     `stage.block_backward.mlp_fc.total_ms=787.053`.
+  - 2026-06-24 removed the candidate wrapper's default CUDA runtime/driver
+    version preflight injection. The compiled trainer already leaves
+    `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT` off for normal startup; the wrapper
+    now matches that and requires `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1`
+    for explicit diagnostic preflight. A startup-only setup probe measured
+    `cuda_runtime_version_preflight_wall_ms` at `119.471 ms` on the first side
+    and `110.187 ms` on the second side, so this avoids adding preflight cost to
+    raw startup bisections.
   - 2026-06-23 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`
     after the row-chunk 49152 promotion and CUDA 13.3 setup. The 5-step,
     3-sample stage-timed same-script run measured `0.997858x` train-loop wall
