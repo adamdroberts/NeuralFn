@@ -503,7 +503,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "bf16_workspace_prewarm"|"bf16-workspace-prewarm"|"linear_bf16_workspace_prewarm"|"linear-bf16-workspace-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 5-step, 3-sample confirmation changed the BF16 workspace prewarm route and improved train_loop_wall_ms_per_step to 0.986815x and first-step CUDA event time to 0.939037x, but rejected default promotion because steady-state CUDA event time regressed to 1.000610x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 5-step, 3-sample rerun changed only setup/prewarm counters and rejected default promotion because train_loop_wall_ms_per_step regressed to 1.000826x, steady-state CUDA-event time to 1.000283x, LM-head backward to 1.000252x, block backward to 1.001255x, and MLP projection backward to 1.000923x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1"
     ;;

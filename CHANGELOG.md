@@ -31,6 +31,22 @@ Future updates should append new entries here rather than replacing older notes.
   backward to `1.000280x`, block backward to `1.022887x`, and MLP projection
   backward to `1.021800x`.
 
+- Refreshed the rejected BF16 workspace prewarm evidence on the current native
+  dense GPT build. The named `bf16_workspace_prewarm` profile now records the
+  latest CUDA 13.3 dedicated RTX 5090 result instead of the older borderline
+  first-step-gain run.
+
+  Migration note: no default behavior changes. BF16 workspace prewarm remains
+  diagnostic-only behind `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`.
+
+  Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_workspace_prewarm` with 5 steps, 3
+  samples, 1 warmup, and native stage timing. The route changed only
+  setup/prewarm counters and failed the hot-route gate; strict timing gates
+  rejected it at train-loop wall `1.000826x`, steady-state CUDA-event time
+  `1.000283x`, LM-head backward `1.000252x`, block backward `1.001255x`, and
+  MLP projection backward `1.000923x`.
+
 - Breaking changes: corrected the strict LM-head cooperative fused-kernel
   capability contract. The exported Tile ops symbol
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still
