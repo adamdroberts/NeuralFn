@@ -92,7 +92,7 @@ select_auto_cuda_device() {
 case "${CUDA_VISIBLE_DEVICES_VALUE,,}" in
   ""|"none"|"off")
     ;;
-  "auto")
+  "auto"|"dedicated"|"dedicated-auto")
     SELECTED_CUDA_VISIBLE_DEVICE="$(select_auto_cuda_device)"
     export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"
     ;;

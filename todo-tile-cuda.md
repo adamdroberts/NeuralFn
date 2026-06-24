@@ -1194,6 +1194,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     operation-wide and profile-specific candidate symbols, and emits aggregate
     `native_gpt_linear_hot_matrix` JSON so block-backward/LM-head candidates can
     be rejected before noisy full-loop parity runs.
+  - 2026-06-24 fixed the standalone linear and LM-head backward microbench
+    wrappers so their default `dedicated` CUDA selector resolves to the
+    display-disabled GPU index from `nvidia-smi` instead of exporting the
+    literal string `CUDA_VISIBLE_DEVICES=dedicated`, which hid all CUDA devices
+    from `cudaSetDevice`.
   - 2026-06-23 hardened the focused LM-head and linear-backward benchmark
     wrappers so `CUDA_VISIBLE_DEVICES=auto` falls back to device `0` when
     `nvidia-smi` cannot query GPUs. This preserves a useful C++ CUDA error in

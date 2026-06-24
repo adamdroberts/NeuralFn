@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the standalone native linear and LM-head backward benchmark wrappers so
+  their default `dedicated` CUDA selector resolves to the idle display-disabled
+  GPU index from `nvidia-smi` before launch. Previously those wrappers exported
+  the literal string `CUDA_VISIBLE_DEVICES=dedicated`, which made the CUDA
+  runtime report `cudaSetDevice: no CUDA-capable device is detected` even when
+  NVML saw the RTX 5090. `auto` keeps the same lowest-utilization fallback
+  behavior, and explicit numeric values still pin the benchmark manually.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench or
+  linear_backward_microbench"`; ran `NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`; ran `NFN_LINEAR_BACKWARD_DRY_RUN=1
+  bash tools/bench_linear_backward_candidate.sh`; ran `bash
+  tools/bench_lm_head_backward_candidate.sh`, which completed on CUDA with
+  `candidate_to_baseline_ms_per_iter_ratio: 0.996823`; ran `bash
+  tools/bench_linear_backward_candidate.sh`, which completed on CUDA with
+  `candidate_to_baseline_ms_per_iter_ratio: 0.595457` for the smoke dInput
+  profile; ran `git diff --check`.
+
 - Aligned the public CLI parser/help and high-level docs with the enforced
   native training backend. `nfn train`, `nfn infer`, and `nfn eval` now accept
   and advertise `--kernel-backend tile-cuda` instead of
