@@ -1044,6 +1044,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
     assert "lm_head_tk_dweight_49152" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T" in text
+    assert "lm_head_bf16_hidden_from_final_norm" in text
     assert "bf16_attention_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
     assert "0.995826x train_loop_wall_ms_per_step" in text
