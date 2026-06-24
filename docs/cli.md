@@ -533,7 +533,12 @@ route-change gate and printed summaries. The diagnostic
 `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12` and candidate `=6`; it is rejected by
 default because the CUDA 13.3 dedicated RTX 5090 startup-only win came from
 dropping stored MLP activations and the full training gate regressed
-steady-state throughput and MLP projection time.
+steady-state throughput and MLP projection time. The diagnostic
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_blocks6` forces
+baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12` and candidate `=6`;
+it is also rejected by default because the 2-step paired training gate regressed
+train-loop wall time, steady-state CUDA-event time, block backward, and
+attention dprep timing despite reducing setup wall time.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling

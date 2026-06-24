@@ -95,7 +95,11 @@ the route-change gate. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks6`
 is available only as a rejected diagnostic: cutting stored MLP blocks from 12
 to 6 improved startup-only timing, but the paired training gate regressed
 steady-state throughput and MLP projection time, so full stored activation
-coverage remains the default. The
+coverage remains the default. The matching
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_blocks6` diagnostic
+is also rejected: cutting packed-attention stored blocks from 12 to 6 saved
+some setup time but regressed train-loop wall time, steady-state CUDA-event
+time, block backward, and attention dprep timing. The
 current CUDA 13.3.33 rebuilt 5-step, 3-sample parity refresh on the dedicated
 RTX 5090 measured NeuralFn at `2525.500 ms/step` versus llm.kittens at
 `2465.055 ms/step` (`1.024520x` train-loop wall time, `0.975643x`

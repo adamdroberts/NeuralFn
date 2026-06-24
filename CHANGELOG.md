@@ -23,6 +23,21 @@ Future updates should append new entries here rather than replacing older notes.
   reran the focused native GPT benchmark tests and the rejected-profile dry-run
   gate.
 
+- Added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_blocks6` wrapper
+  profile. It forces baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12`
+  and candidate `=6`, with attention-section timing enabled, so packed-attention
+  reservation experiments are measured in the same script as the default. The
+  CUDA 13.3 dedicated RTX 5090 2-step, 2-sample training gate cut setup wall
+  time to `0.958626x` but rejected default promotion because train-loop wall
+  time regressed to `1.061075x`, steady-state CUDA-event step time to
+  `1.039648x`, block backward to `1.032640x`, MLP projection to `1.001225x`,
+  and attention dprep timing to `1.000231x`.
+
+  Verification: ran the paired RTX 5090 training benchmark for baseline
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12` versus candidate `=6`, then
+  reran the focused native GPT benchmark tests and shell syntax checks.
+
 - Refreshed the SM120 rejection evidence for
   `mlp_proj_dinput_before_dweight`. The profile still requires
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; the latest dedicated
