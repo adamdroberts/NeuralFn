@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit route-change gate to the focused linear-backward CUDA
+  benchmark used for block-backward and LM-head linear candidates.
+  `linear_backward_bench` now reports `candidate_symbol_changed`, and
+  `tools/bench_linear_backward_candidate.sh` supports
+  `NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE=1` so no-op candidate comparisons
+  fail before timing ratio gates.
+
+  Verification: ran the focused source-contract pytest for the linear-backward
+  benchmark/wrapper, rebuilt `build/linear_backward_bench`, ran the native
+  no-Torch verifier, and confirmed the route-change gate rejects an intentional
+  baseline-equals-candidate smoke.
+
 - Tightened the focused LM-head backward microbenchmark contract for future
   fused classifier-backward kernels. The JSON now reports
   `candidate_sequence_wrapper_only` and

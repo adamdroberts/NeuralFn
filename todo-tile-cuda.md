@@ -872,6 +872,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `run_order`, so close kernel candidates can be checked in both
     baseline-first and candidate-first order before deciding whether a full
     trainer-loop parity run is meaningful.
+  - 2026-06-24 added `candidate_symbol_changed` to the linear-backward C++
+    benchmark JSON plus `NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE=1` in the
+    wrapper. New block-backward/LM-head linear candidates can now fail before
+    ratio gates when they accidentally compare a symbol against itself.
   - 2026-06-23 first isolated profile sweep with the new harness ranked the
     current padded-vocab LM-head linear calls as the largest standalone targets:
     `lm-head-dinput` was about `32.17 ms` per 49152-row chunk and

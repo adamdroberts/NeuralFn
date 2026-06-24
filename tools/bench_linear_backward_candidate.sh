@@ -154,6 +154,7 @@ ITERATIONS="${NFN_LINEAR_BACKWARD_ITERATIONS:-${DEFAULT_ITERATIONS}}"
 WARMUP="${NFN_LINEAR_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 BETA="${NFN_LINEAR_BACKWARD_BETA:-0.0}"
 MAX_RATIO="${NFN_LINEAR_BACKWARD_MAX_RATIO:-}"
+REQUIRE_ROUTE_CHANGE="${NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE:-0}"
 CANDIDATE_FIRST="${NFN_LINEAR_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LINEAR_BACKWARD_DRY_RUN:-0}"
 
@@ -265,6 +266,16 @@ fi
 
 "${BENCH_BIN}" \
   "${BENCH_ARGS[@]}"
+
+case "${REQUIRE_ROUTE_CHANGE,,}" in
+  1|true|yes|on)
+    python -c 'import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+if not data.get("candidate_symbol_changed", False):
+    raise SystemExit("candidate_symbol_changed is false; candidate and baseline symbols are identical")
+' "${JSON_OUT}"
+    ;;
+esac
 
 if [[ -n "${MAX_RATIO}" ]]; then
   python -c 'import json, pathlib, sys

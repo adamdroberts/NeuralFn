@@ -165,12 +165,15 @@ strided BF16 route against explicit forced-cuBLASLt C ABI symbols; the CUDA 13.3
 RTX 5090 isolated run rejected them for default promotion at `1.017720x` dInput
 and `1.000576x` dWeight versus the current symbols. Override
 `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new kernel candidate and set
-`NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the candidate must be no slower than
-the current symbol. Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher
-for candidate comparisons so first-call cuBLAS/TK setup is not counted as kernel
-time. Set `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` to rerun a close result with
-the candidate timed before the baseline; JSON reports `run_order` so
-baseline-first and candidate-first checks can be compared directly. To sweep the
+`NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE=1` when the candidate must prove it
+called a different C ABI symbol before timing gates are trusted; JSON reports
+`candidate_symbol_changed`. Add `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the
+candidate must also be no slower than the current symbol. Keep the default
+`NFN_LINEAR_BACKWARD_WARMUP=1` or higher for candidate comparisons so first-call
+cuBLAS/TK setup is not counted as kernel time. Set
+`NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` to rerun a close result with the
+candidate timed before the baseline; JSON reports `run_order` so baseline-first
+and candidate-first checks can be compared directly. To sweep the
 full native GPT hot linear set in one reproducible gate, run
 `bash tools/bench_native_gpt_linear_hot_matrix.sh`. The matrix wrapper runs the
 MLP projection, MLP FC, QKV, attention projection, and LM-head dInput/dWeight

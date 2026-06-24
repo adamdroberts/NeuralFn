@@ -1630,6 +1630,8 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     )
     assert "linear_backward_tile_ops" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
+    assert "candidate_symbol_changed" in bench_source
+    assert "baseline.symbol != candidate.symbol" in bench_source
     assert "cudaEventElapsedTime" in bench_source
     assert "timed_reset_between_iterations" in bench_source
     assert "candidate_first" in bench_source
@@ -1661,6 +1663,8 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "DEFAULT_ROWS=65536" in wrapper
     assert "DEFAULT_ROWS=49152" in wrapper
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper
+    assert "NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE" in wrapper
+    assert "candidate_symbol_changed is false; candidate and baseline symbols are identical" in wrapper
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "--grad-out-row-stride" in wrapper
     matrix_wrapper = (root / "tools" / "bench_native_gpt_linear_hot_matrix.sh").read_text(

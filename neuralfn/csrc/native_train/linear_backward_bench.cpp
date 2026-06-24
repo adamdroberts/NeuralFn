@@ -342,6 +342,7 @@ std::string render_json(
     const VariantResult& candidate) {
     const double ratio =
         baseline.ms_per_iter > 0.0 ? candidate.ms_per_iter / baseline.ms_per_iter : 0.0;
+    const bool candidate_symbol_changed = baseline.symbol != candidate.symbol;
     auto variant_json = [](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
@@ -366,6 +367,7 @@ std::string render_json(
         << "  \"beta\": " << std::fixed << std::setprecision(6) << options.beta << ",\n"
         << "  \"run_order\": \"" << (options.candidate_first ? "candidate-first" : "baseline-first") << "\",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
+        << "  \"candidate_symbol_changed\": " << (candidate_symbol_changed ? "true" : "false") << ",\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
         << "  \"candidate_to_baseline_ms_per_iter_ratio\": " << std::fixed << std::setprecision(6) << ratio << "\n"
