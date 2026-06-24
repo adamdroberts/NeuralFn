@@ -881,9 +881,10 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
     parser.add_argument("--amp-dtype", choices=("float32", "bfloat16", "float16"), default=None, help="Autocast dtype. Defaults to float32.")
     parser.add_argument(
         "--kernel-backend",
-        choices=("auto", "torch", "tile-cuda"),
+        choices=("tile-cuda",),
         default=None,
-        help="Kernel backend selector. auto keeps PyTorch fallback; tile-cuda requests CUDA Tile fast paths.",
+        metavar="tile-cuda",
+        help="Native CUDA Tile backend selector. CLI training/inference/eval accepts tile-cuda only.",
     )
     parser.add_argument(
         "--tile-cuda-strict",
@@ -4332,7 +4333,7 @@ def build_graph_for_training(args: argparse.Namespace, recipe: ComposedRecipe, d
 
 def build_trainer_config(args: argparse.Namespace, *, resolved_epochs: int, derived: dict[str, Any]) -> TorchTrainConfig:
     evo_defaults = OPTIMIZER_PRESET_VALUES["evolutionary_balanced"]
-    kernel_backend = str(getattr(args, "kernel_backend", None) or "auto")
+    kernel_backend = str(getattr(args, "kernel_backend", None) or "tile-cuda")
     tile_cuda_strict_arg = getattr(args, "tile_cuda_strict", None)
     tile_cuda_strict = (
         bool(tile_cuda_strict_arg)

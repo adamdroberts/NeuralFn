@@ -93,6 +93,13 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("--optimizer-preset", help_text)
         self.assertIn("--pretraining-file", help_text)
 
+    def test_help_advertises_native_tile_backend_only(self) -> None:
+        for command in ("train", "infer", "eval"):
+            with self.subTest(command=command):
+                help_text = nfn.render_help(command)
+                self.assertIn("--kernel-backend tile-cuda", help_text)
+                self.assertNotIn("--kernel-backend {auto,torch,tile-cuda}", help_text)
+
     def test_kernels_list_json_reports_complete_registry(self) -> None:
         out = io.StringIO()
         with redirect_stdout(out):

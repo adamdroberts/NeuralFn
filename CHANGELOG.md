@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the public CLI parser/help and high-level docs with the enforced
+  native training backend. `nfn train`, `nfn infer`, and `nfn eval` now accept
+  and advertise `--kernel-backend tile-cuda` instead of
+  `{auto,torch,tile-cuda}`, and omitted CLI kernel-backend settings now hydrate
+  to `tile-cuda`. The README/CLI docs now describe Torch execution as a
+  separately managed legacy compatibility path rather than an advertised default
+  training backend. The native training dispatch already rejected non-Tile
+  backends; this removes the stale public contract.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  cli/tests/test_nfn_cli.py -q`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  cli/nfn.py cli/nfn_impl.py`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `git diff --check`.
+
 - Tightened `cli/scripts/train_gpt.py --native-cuda-list-templates` so the
   metadata-only catalog action strips dataset, token-shard, and eval cadence
   defaults before launching the compiled command. The top-level `nfn train

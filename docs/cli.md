@@ -97,7 +97,23 @@ nfn kernels examples
 
 `nfn train --help`, `nfn infer --help`, `nfn eval --help`, and `nfn kernels ... --help` use lightweight static help from `cli/nfn.py` so basic CLI orientation does not import `nfn_impl`, Torch, or graph-backed runtime modules. `nfn kernels list` prints CUDA Tile registry coverage from builtin and optimizer metadata on the same lightweight path. Pass `--status tile|torch_fallback|host_only|delegated|planned` and/or `--kind function|module|optimizer|runtime` to filter the emitted specs while keeping the global coverage totals intact; JSON output includes `filters`, `filtered_spec_count`, and `unfiltered_spec_count`. JSON output includes `by_dtype` aggregate counts plus each spec's legacy `dtypes` tuple and `dtype_support` matrix for `float32`, `float16`, `float8_e4m3fn`, `float8_e5m2`, and `nvfp4`, with either `"supported"` or the reason that dtype is not yet advertised. Unsupported lower-precision entries use category-specific reasons for losses/reductions, optimizers, stochastic masks, integer/hash/routing outputs, source nodes, and delegated graph calls. The fp8-supported entries include scalar/simple elementwise kernels, direct and composite projections, and attention Q/K/V modules that dequantize activations to float32 and return float32 outputs where required. The NVFP4-supported entries currently cover packed projection-family activations for `linear`, LM/router/value/reward/denoise heads, tied LM head, KV PCA encode/decode, JEPA heads, deterministic LoRA/TTT/adapter projections, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, MLP projections, and ACT halt projection, plus attention Q/K/V and shared attention inputs for SDPA, sparse attention variants, differential attention, causal/fused causal attention, MLA, and routed attention experts. `nfn kernels doctor` also reports the local `nvcc`, CUDA Tile header, `torch.cuda`, and compute-capability status. `nfn kernels bench` compares the old graph-walk helper, the static compiled PyTorch plan, and the Tile-requested compiled plan on a small scalar graph. `nfn kernels examples` lists checked-in examples and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates the per-registry SDK snippets. These commands accept `--json` for automation.
 
-`nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict` / `--no-tile-cuda-strict`, and `--tile-cuda-report PATH`. `tile-cuda` requests the implemented CUDA Tile fast path, build-loads the optional extension when needed, and defaults to strict kernel enforcement so unsupported graph nodes or tensor contracts fail instead of silently dropping to slower fallback paths. Pass `--no-tile-cuda-strict` only when intentionally debugging fallback behavior. The registry currently accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls. `NFN_TILE_CUDA_BUILD=1` enables extension builds for `auto` backend probes, and `NFN_TILE_CUDA_ARCH` can override the architecture flag passed to `nvcc`. Install `pip install -e ".[tile-cuda]"` if the active environment does not already provide `ninja` for native CUDA Tile builds. NeuralFn no longer exposes a `.[torch]` extra; graph-backed PyTorch execution requires a separately managed PyTorch install.
+`nfn train`, `nfn infer`, and `nfn eval` accept and advertise
+`--kernel-backend tile-cuda` only. Default CLI training commands dispatch to
+compiled CUDA Tile C++ trainers or fail before graph-backed runtime imports;
+`auto` and `torch` are not supported CLI training backends. `tile-cuda` requests
+the implemented CUDA Tile fast path, build-loads the optional extension when
+needed, and defaults to strict kernel enforcement so unsupported graph nodes or
+tensor contracts fail instead of silently dropping to slower fallback paths.
+Pass `--no-tile-cuda-strict` only when intentionally debugging compatibility
+behavior. The registry currently accounts for all 138
+training-relevant entries with 129 Tile-covered kernels/compositions, 7
+host-only entries, and 2 delegated graph calls. `NFN_TILE_CUDA_BUILD=1` enables
+extension builds for explicit Tile extension probes, and `NFN_TILE_CUDA_ARCH`
+can override the architecture flag passed to `nvcc`. Install
+`pip install -e ".[tile-cuda]"` if the active environment does not already
+provide `ninja` for native CUDA Tile builds. NeuralFn no longer exposes a
+`.[torch]` extra; graph-backed PyTorch execution requires a separately managed
+PyTorch install outside the default CLI training workflow.
 
 The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.

@@ -151,7 +151,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --temperature FLOAT
           --top-k N
           --top-p FLOAT
-          --kernel-backend {auto,torch,tile-cuda}
+          --kernel-backend tile-cuda
           --tile-cuda-strict, --no-tile-cuda-strict
 
         examples:
@@ -177,7 +177,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --eval-batch-size N
           --prompt-suite {auto,general,shakespeare}
           --report-path PATH
-          --kernel-backend {auto,torch,tile-cuda}
+          --kernel-backend tile-cuda
           --tile-cuda-strict, --no-tile-cuda-strict
 
         examples:

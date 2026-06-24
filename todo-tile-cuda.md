@@ -631,6 +631,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Default dense GPT-2 Python and SDK compiled-CLI handoff to `kernel_backend="tile-cuda"` plus `--train-transformer-lm`; the explicit `llm-kittens` training backend has since been removed from CLI/SDK/C++ trainer dispatch.
 - [x] Keep GPT-2 wrapper `--native-cuda-dry-run --native-cuda-print-command` metadata-only on the default compiled CLI runner, with no dataset-manager/NumPy/tiktoken/Torch imports and no raw-text shard materialization.
 - [x] Remove the CLI training `NFN_ALLOW_TORCH_TRAINING=1` bypass: `nfn train` and direct `cli/scripts/train_*.py` execution now dispatch to compiled native CUDA/C++ entrypoints or fail before importing Torch, while legacy graph-backed experiments must call Python SDK trainer APIs directly.
+- [x] Keep the public CLI parser/help aligned with the enforced native backend:
+  `nfn train`, `nfn infer`, and `nfn eval` now accept and advertise
+  `--kernel-backend tile-cuda` instead of `{auto,torch,tile-cuda}`. This keeps
+  the default workstation training surface from suggesting Torch fallback paths
+  that the native dispatcher already rejects.
 - [x] Preserve explicit zero cadences from SDK/native GPT compiled-CLI configs (`eval_every_steps=0`, `sample_every_steps=0`, and `checkpoint_every_steps=0`) so same-script kernel benchmarks can disable validation, sampling, and checkpoint cadence without the Python handoff clamping them back on.
 - [x] Pin the SM120 parity wrapper's NeuralFn candidate to `--train-batch-tokens 524288`, matching the `llm.kittens/train-sm120.sh` `-d 524288` contract in the same paired script instead of relying on native defaults.
 - [x] Add `tools/bench_native_gpt_sm120_candidate.sh` as the native-vs-native SM120 bisection wrapper: it keeps the dense GPT command shape fixed on both sides, compares the current Tile ops library/default env against `NFN_SM120_NATIVE_CANDIDATE_ENV` or `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB`, preserves the `524288` token-batch contract, and reuses the selected-GPU idle/utilization guards from `tools/paired_kernel_speed.py`.
