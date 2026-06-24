@@ -194,6 +194,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     ;;
   "lm_head_prepack_bf16_hidden_on"|"lm-head-prepack-bf16-hidden-on"|"lm_head_full_prepack_bf16_hidden"|"lm-head-full-prepack-bf16-hidden")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 5-step, 3-sample gate compared the older full-final-norm BF16 prepack route against the current per-chunk LM-head route and rejected it because stage.lm_head_backward.dhidden.total_ms regressed to 1.000690x despite train-loop mean 0.997953x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1"
     ;;
@@ -354,6 +356,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1"
     ;;
   "lm_head_row_loss_partial_reduce"|"lm-head-row-loss-partial-reduce"|"lm_head_row_loss_sum_accumulate_off"|"lm-head-row-loss-sum-accumulate-off")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 rerun changed row-loss accumulation from sum-accumulate to partial-reduce and improved steady-state CUDA-event timing to 0.999166x, but rejected it because train_loop_wall_ms_per_step regressed to 1.002484x and train_tokens_per_second fell to 0.997528x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0"
     ;;

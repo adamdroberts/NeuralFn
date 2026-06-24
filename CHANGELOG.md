@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the SM120 native GPT benchmark wrapper with existing rejected-profile
+  verdicts for `lm_head_prepack_bf16_hidden_on` and
+  `lm_head_row_loss_partial_reduce`. Both profiles now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real reruns, while
+  dry-run mode remains available for command expansion.
+
+  Verification: checked that both profiles fail fast with the recorded
+  rejection reason when launched without the rejected-profile override.
+
 - Rejected the `linear_bias_row_chunk_256` native GPT benchmark profile after a
   CUDA 13.3 dedicated RTX 5090 same-script run. The candidate changed the
   native bias-gradient reducer chunk from 512 to 256 rows and improved
