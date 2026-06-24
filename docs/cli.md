@@ -83,7 +83,7 @@ nfn train --plan
 nfn train --base-model gpt --dataset tinystories --eval-every-steps 1000
 nfn train --base-model gpt3 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
-nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2_evo --prompt-tokens 50256 --max-new-tokens 64
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --base-model gpt2 --dataset shakespeare
 nfn kernels list --json

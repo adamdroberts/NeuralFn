@@ -17,6 +17,12 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: added and ran
   `python -m pytest tests/test_native_gpt2.py::test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint -q`.
 
+- Updated CLI, SDK, framework, and agent-skill documentation to make native
+  checkpoint-directory inference the primary GPT-2-evo/native dense GPT
+  workflow. Legacy graph-backed `.pt/.json` inference remains documented as a
+  compatibility path, but native training outputs should be inspected or sampled
+  with `nfn infer --checkpoint DIR`.
+
 - Rejected the `lm_head_row_loss_partial_reduce` native GPT candidate after a
   fresh CUDA 13.3 dedicated RTX 5090 same-script rerun. The candidate changed
   only `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` from `1` to `0`; it

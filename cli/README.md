@@ -153,11 +153,13 @@ CUDA device arena and token buffers from combined int64/device-uint16/pinned-uin
 arenas, reporting `float_allocation_strategy: "single-arena"` and
 `token_buffer_allocation_strategy: "combined-arenas"`.
 `NFN_DATASETS_DIR` overrides the native alias cache root for Python and
-compiled native CLI paths. The GPT-2 inference script also supports `--evo` for
-`gpt2_evo.pt/json` eager artifacts. Its parser, `--help`, and
+compiled native CLI paths. Native dense GPT inference should point `nfn infer
+--checkpoint` at the compiled trainer output directory or a native
+`model_########.bin` file. The GPT-2 inference script still supports `--evo`
+for legacy `gpt2_evo.pt/json` eager artifacts; its parser, `--help`, and
 `--evo`/`--megakernel` artifact default resolution stay off the Torch,
-dataset-manager, and NumPy import path; actual token generation still loads the
-graph-backed runtime after argument parsing until native GPT-2 inference exists:
+dataset-manager, and NumPy import path, but legacy `.pt/.json` token generation
+loads the graph-backed runtime after argument parsing:
 
 ```bash
 python scripts/train_gpt.py --device cuda --tinystories --eval-every-steps 1000
@@ -403,7 +405,7 @@ The same flows are available from the master CLI:
 
 ```bash
 nfn train --model gpt2 --runtime megakernel
-nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2_evo --prompt-tokens 50256 --max-new-tokens 64
 nfn infer --model nanogpt --runtime megakernel --prompt "Once upon a time"
 ```
 
