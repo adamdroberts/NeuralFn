@@ -82,6 +82,14 @@ Real training tensors must not pass through graph editor node objects.
     `1.000482x`. Keep the 512-row bias reducer default; the profile is now a
     rejected rerun guarded by
     `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+  - 2026-06-24 rechecked `cublaslt_grouped_probe` after the current CUDA 13.3
+    rebuilds. The dedicated RTX 5090 same-script capability run still reports
+    `linear_cublaslt_grouped_layout_probe_status: 0`, but grouped matmul
+    execution remains unsupported at
+    `linear_cublaslt_grouped_matmul_probe_status: 15`. Keep grouped block
+    dWeight/BGRADB work blocked until execution status is `0`; the active
+    parity direction remains a true fused/cooperative LM-head kernel or another
+    measured block-backward Tile kernel route.
 
 ## Native C++ trainer ABI
 

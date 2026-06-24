@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the non-poisoning `cublaslt_grouped_probe` native GPT capability
+  profile after the current CUDA 13.3 rebuilds. The dedicated RTX 5090 run
+  still reports grouped layout support
+  (`linear_cublaslt_grouped_layout_probe_status: 0`), but grouped matmul
+  execution remains unsupported
+  (`linear_cublaslt_grouped_matmul_probe_status: 15`). No block-backward
+  grouped-GEMM route was enabled; grouped execution remains blocked until the
+  execution probe returns success.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0 bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Aligned the SM120 native GPT benchmark wrapper with existing rejected-profile
   verdicts for `lm_head_prepack_bf16_hidden_on`,
   `lm_head_row_loss_partial_reduce`, and `lm_head_fused_loss_backward_off`.
