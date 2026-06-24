@@ -28,15 +28,17 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: checked that these profiles fail fast with the recorded
   rejection reason when launched without the rejected-profile override.
 
-- Rejected the `linear_bias_row_chunk_256` native GPT benchmark profile after a
-  CUDA 13.3 dedicated RTX 5090 same-script run. The candidate changed the
-  native bias-gradient reducer chunk from 512 to 256 rows and improved
-  train-loop wall time to `0.997526x` plus steady-state CUDA-event timing to
-  `0.997142x`, but it failed the strict hot-stage gate because
-  `stage.block_backward.total_ms` regressed to `1.009570x` and
-  `stage.block_backward.mlp_fc.dweight_bias.total_ms` regressed to `1.000482x`.
-  The 512-row reducer remains the default, and rerunning this profile now
-  requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+- Corrected the latest `linear_bias_row_chunk_256` evidence note so it no
+  longer contradicts the promoted default. The current source and runtime
+  default remain 256 rows for the native bias-gradient reducer; the short
+  2-step, 2-sample rerun compared the old 512-row route against the 256-row
+  default and improved train-loop wall time to `0.997526x` plus steady-state
+  CUDA-event timing to `0.997142x`, but was too noisy for a fresh strict
+  hot-stage re-confirmation because `stage.block_backward.total_ms` measured
+  `1.009570x` and `stage.block_backward.mlp_fc.dweight_bias.total_ms` measured
+  `1.000482x`. This does not roll back the stronger prior promotion evidence;
+  `linear_bias_row_chunk_256` remains a normal default-confirmation profile,
+  not a rejected profile.
 
   Verification: ran
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_row_chunk_256 NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=2 NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash tools/bench_native_gpt_sm120_candidate.sh`.

@@ -76,12 +76,14 @@ Real training tensors must not pass through graph editor node objects.
     GPT CLIs. The paired 2-step, 2-sample stage-timed run changed
     `block_state_layout.linear_backward_bias_row_chunk_size` from `512` to
     `256` and improved train-loop wall to `0.997526x` plus steady-state
-    CUDA-event timing to `0.997142x`, but failed strict promotion because
+    CUDA-event timing to `0.997142x`, but was too noisy as a fresh strict
+    confirmation sample because
     `stage.block_backward.total_ms` regressed to `1.009570x` and
     `stage.block_backward.mlp_fc.dweight_bias.total_ms` regressed to
-    `1.000482x`. Keep the 512-row bias reducer default; the profile is now a
-    rejected rerun guarded by
-    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+    `1.000482x`. Keep the promoted 256-row bias reducer default from the
+    stronger prior 5-step, 3-sample gate; this profile remains a normal
+    default-confirmation comparison against the old 512-row route, not a
+    rejected rollback.
   - 2026-06-24 rechecked `cublaslt_grouped_probe` after the current CUDA 13.3
     rebuilds. The dedicated RTX 5090 same-script capability run still reports
     `linear_cublaslt_grouped_layout_probe_status: 0`, but grouped matmul
