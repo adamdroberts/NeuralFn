@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected native SM120 candidate profile
+  `cublaslt_plan_prewarm_off` for cuBLASLt plan-cache startup bisection. The
+  profile pins the baseline to full cuBLASLt plan prewarm and the candidate to
+  `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`, making the setup-vs-hot-loop
+  tradeoff reproducible through the normal native candidate gate. It is rejected
+  by default because the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate
+  improved setup wall to `0.834325x`, but regressed train-loop wall to
+  `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to
+  `0.984974x`, LM-head backward to `1.031614x`, and block backward to
+  `1.023253x`.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`; ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_plan_prewarm_off
+  NFN_SM120_NATIVE_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cublaslt_grouped_layout_probe or
+  native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles"`; ran
+  the GPU-visible rejected-candidate benchmark with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`,
+  `NFN_SM120_NATIVE_STEPS=3`, `NFN_SM120_NATIVE_SAMPLES=2`,
+  `NFN_SM120_NATIVE_WARMUP=0`, and `NFN_SM120_NATIVE_STAGE_TIMING=1`; ran
+  `git diff --check`.
+
 - Hardened the llm.kittens SM120 parity wrapper against no-op candidate
   profiles. `tools/bench_native_gpt_sm120_parity.sh` now fails before launching
   GPU work when `NFN_SM120_PARITY_CANDIDATE_PROFILE` or

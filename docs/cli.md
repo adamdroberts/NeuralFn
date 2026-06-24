@@ -1419,6 +1419,13 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
+The cuBLASLt plan-cache bisection profile `cublaslt_plan_prewarm_off` compares
+the current full plan prewarm baseline against
+`NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It stays rejected by default: the
+CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
+`0.834325x`, but regressed train-loop wall to `1.015300x`, first-step CUDA-event
+time to `1.044809x`, tokens/sec to `0.984974x`, LM-head backward to `1.031614x`,
+and block backward to `1.023253x`.
 The attention-store bisection profile `packed_attention_saved_lse_off` compares
 the default stored packed-attention LSE route against
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` with attention-section timing

@@ -655,6 +655,15 @@ steady-state CUDA-event timing, but setup regressed to `1.005087x` and strict
 stage gates still missed at `stage.lm_head_backward.total_ms=1.000361x` and
 `stage.block_backward.mlp_proj.total_ms=1.001043x`. Do not promote this route
 as a startup fix or a parity fix; use it only for deliberate prewarm bisection.
+For cuBLASLt plan-cache startup bisection, use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_plan_prewarm_off`. The profile
+compares the current full plan prewarm baseline against
+`NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It is rejected by default: the CUDA
+13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
+`0.834325x`, but regressed train-loop wall to `1.015300x`, first-step
+CUDA-event time to `1.044809x`, tokens/sec to `0.984974x`, LM-head backward to
+`1.031614x`, and block backward to `1.023253x`. This keeps lazy cuBLASLt plan
+creation out of the hot training loop.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same

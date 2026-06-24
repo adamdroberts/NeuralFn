@@ -81,6 +81,13 @@ Real training tensors must not pass through graph editor node objects.
   `NFN_SM120_TRAIN_BATCH_TOKENS` into both llm.kittens `-d` and NeuralFn
   `--train-batch-tokens`, so future shape bisection preserves same-script
   parity instead of silently using hardcoded `524288` on both sides.
+- [x] Reject disabling cuBLASLt plan prewarm as a startup-only optimization on
+  the current CUDA 13.3 dedicated RTX 5090 stack. The
+  `cublaslt_plan_prewarm_off` candidate improved setup wall to `0.834325x`,
+  but moved lazy plan work into the hot path: train-loop wall regressed to
+  `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to
+  `0.984974x`, LM-head backward to `1.031614x`, and block backward to
+  `1.023253x`. Keep full plan prewarm enabled for real training.
 - [x] Reject packed-attention dprep warp-count retuning on the current CUDA
   13.3 RTX 5090 stack. `attention_dprep_warps_2` changed
   `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS` from the default 3 to 2 but

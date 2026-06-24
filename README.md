@@ -991,6 +991,15 @@ Native JSON reports
 `setup.cublaslt_plan_prewarm`. The dedicated RTX 5090 CUDA 13.3 retest measured
 the prewarmed route at `0.989405x` train-loop wall time and `0.964634x`
 LM-head backward time, while startup-only remains unprewarmed by default.
+The native candidate wrapper also exposes rejected diagnostic profile
+`cublaslt_plan_prewarm_off`, which pins the baseline to full cuBLASLt plan
+prewarm and the candidate to `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`.
+The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
+`0.834325x`, but moved lazy plan work into training: train-loop wall regressed
+to `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to
+`0.984974x`, LM-head backward to `1.031614x`, and block backward to
+`1.023253x`. Keep full plan prewarm enabled for real training unless a future
+same-script gate improves both setup and hot training metrics.
 The raw Tile ABI also exposes a default-off cuBLAS handle prewarm hook for the
 remaining GEMMEx routes that are not covered by cuBLASLt plan-cache prewarm.
 Set `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`,
