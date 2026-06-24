@@ -87,6 +87,8 @@ class KernelCoverageReport:
     accounted: int
     missing: tuple[str, ...]
     by_status: dict[str, int]
+    by_kind: dict[str, int]
+    by_kind_status: dict[str, dict[str, int]]
     by_dtype: dict[str, dict[str, int]]
     specs: tuple[TileKernelSpec, ...]
 
@@ -100,6 +102,11 @@ class KernelCoverageReport:
             "accounted": self.accounted,
             "missing": list(self.missing),
             "by_status": dict(self.by_status),
+            "by_kind": dict(self.by_kind),
+            "by_kind_status": {
+                kind: dict(status_counts)
+                for kind, status_counts in self.by_kind_status.items()
+            },
             "by_dtype": {dtype: dict(counts) for dtype, counts in self.by_dtype.items()},
             "complete": self.complete,
             "specs": [spec.to_dict() for spec in self.specs],
@@ -140,8 +147,13 @@ class TileKernelRegistry:
         missing = tuple(name for name in inventory_names if name not in self.specs)
         canonical = self.canonical_specs()
         by_status: dict[str, int] = {}
+        by_kind: dict[str, int] = {}
+        by_kind_status: dict[str, dict[str, int]] = {}
         for spec in canonical:
             by_status[spec.status] = by_status.get(spec.status, 0) + 1
+            by_kind[spec.kind] = by_kind.get(spec.kind, 0) + 1
+            status_counts = by_kind_status.setdefault(spec.kind, {})
+            status_counts[spec.status] = status_counts.get(spec.status, 0) + 1
         by_dtype: dict[str, dict[str, int]] = {}
         for dtype in TRACKED_DTYPES:
             supported = sum(1 for spec in canonical if spec.dtype_support.get(dtype) == "supported")
@@ -154,6 +166,8 @@ class TileKernelRegistry:
             accounted=len(inventory_names) - len(missing),
             missing=missing,
             by_status=by_status,
+            by_kind=by_kind,
+            by_kind_status=by_kind_status,
             by_dtype=by_dtype,
             specs=canonical,
         )

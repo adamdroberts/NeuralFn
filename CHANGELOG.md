@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added kind-level aggregation to the CUDA Tile kernel coverage report.
+  `KernelCoverageReport` and `coverage_report().to_dict()` now expose
+  `by_kind` and `by_kind_status` alongside `by_status` and `by_dtype`, allowing
+  tooling to report coverage separately for NeuralFn scalar functions, modules,
+  optimizer helpers, runtime helpers, host-only interfaces, and delegated
+  compiled graph calls without scanning every `TileKernelSpec`.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_template_presets.py -x -q`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints
+  tests/test_native_dependencies.py -q`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`; ran linked native CUDA startup-only
+  smoke with `build/nfn_gpt_native_train_linked --tile-ops-lib linked
+  --tinystories --train-transformer-lm --startup-only --max-steps 0
+  --eval-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-checkpoint-every 0 --no-checkpoint`; ran same-script
+  dedicated-RTX-5090 startup candidate checks for `cuda_malloc_async`
+  (rejected at `1.124896x` total wall) and `combined_device_arena`
+  (rejected at `1.018170x` total wall) so neither allocator path was promoted
+  after the CUDA 13.3 WSL reinstall.
+
 - Split NeuralFn's default requirements from the optional full Python platform
   stack. `requirements.txt` is now a lean native/core guidance file with no
   installable packages, while the previous server/dataset/graph dependency set

@@ -52,11 +52,21 @@ def test_default_tile_cuda_registry_accounts_for_every_inventory_entry() -> None
     assert report.by_status.get("torch_fallback", 0) == 0
     assert report.by_status["host_only"] > 0
     assert report.by_status["delegated"] > 0
+    assert report.by_kind["function"] == len(builtin_function_inventory())
+    assert report.by_kind["module"] == len(builtin_module_inventory())
+    assert report.by_kind["optimizer"] == len(optimizer_runtime_inventory())
+    assert report.by_kind_status["function"]["tile"] > 0
+    assert report.by_kind_status["function"]["host_only"] > 0
+    assert report.by_kind_status["module"]["tile"] > 0
+    assert report.by_kind_status["module"]["delegated"] > 0
     assert set(report.by_dtype) == {"float32", "float16", "float8_e4m3fn", "float8_e5m2", "nvfp4"}
     assert report.by_dtype["float32"]["supported"] > report.by_dtype["float16"]["supported"]
     assert report.by_dtype["float16"]["supported"] > report.by_dtype["float8_e4m3fn"]["supported"]
     assert report.by_dtype["float8_e4m3fn"]["supported"] > report.by_dtype["nvfp4"]["supported"]
-    assert report.to_dict()["by_dtype"]["nvfp4"]["supported"] > 0
+    payload = report.to_dict()
+    assert payload["by_dtype"]["nvfp4"]["supported"] > 0
+    assert payload["by_kind"] == report.by_kind
+    assert payload["by_kind_status"] == report.by_kind_status
 
 
 def test_default_tile_cuda_registry_entries_do_not_claim_fake_tile_kernels() -> None:

@@ -2951,7 +2951,7 @@ The coverage report is generated from the live NeuralFn builtin and torch-backen
 - `build_function_module()`
 - optimizer/runtime targets used by `TorchTrainer`
 
-Each `TileKernelSpec` keeps the legacy `dtypes` tuple and also exposes `dtype_support`, a matrix for `float32`, `float16`, `float8_e4m3fn`, `float8_e5m2`, and `nvfp4`. Supported entries are marked `"supported"`; unsupported entries explain the missing scale, representation, accumulation, stochastic-mask, matrix-state, or parity contract. `KernelCoverageReport.by_dtype` aggregates supported and unsupported counts for the same tracked dtype set.
+Each `TileKernelSpec` keeps the legacy `dtypes` tuple and also exposes `dtype_support`, a matrix for `float32`, `float16`, `float8_e4m3fn`, `float8_e5m2`, and `nvfp4`. Supported entries are marked `"supported"`; unsupported entries explain the missing scale, representation, accumulation, stochastic-mask, matrix-state, or parity contract. `KernelCoverageReport.by_dtype` aggregates supported and unsupported counts for the same tracked dtype set. `KernelCoverageReport.by_kind` groups canonical coverage entries by `function`, `module`, `optimizer`, or `runtime`; `by_kind_status` gives the same split with per-status counts so tooling can answer questions such as "how many NeuralFn functions are Tile kernels?" without scanning every spec entry.
 
 Every entry must be accounted for as one of:
 
