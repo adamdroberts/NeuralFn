@@ -185,6 +185,9 @@ profile-specific variable such as
 `NFN_LINEAR_HOT_MLP_PROJ_DINPUT_CANDIDATE_SYMBOL` when only one shape should use
 a new symbol. `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` fails the matrix if any
 candidate profile is slower than its baseline.
+`NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` passes the per-profile
+route-change guard through to every comparison so accidental no-op candidate
+symbols fail before ratio gates.
 `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` also applies to matrix runs because the
 matrix delegates each profile to the same lower-level wrapper. A
 post-reinstall wrapper

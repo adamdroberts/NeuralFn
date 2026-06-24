@@ -6,6 +6,7 @@ LINEAR_WRAPPER="${ROOT_DIR}/tools/bench_linear_backward_candidate.sh"
 JSON_OUT="${NFN_LINEAR_HOT_MATRIX_JSON_OUT:-/tmp/nfn_linear_hot_matrix.json}"
 PROFILE_DIR="${NFN_LINEAR_HOT_MATRIX_PROFILE_DIR:-/tmp/nfn_linear_hot_matrix_profiles}"
 MAX_RATIO="${NFN_LINEAR_HOT_MATRIX_MAX_RATIO:-${NFN_LINEAR_BACKWARD_MAX_RATIO:-}}"
+REQUIRE_ROUTE_CHANGE="${NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE:-${NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE:-0}}"
 DRY_RUN="${NFN_LINEAR_HOT_MATRIX_DRY_RUN:-0}"
 
 # Candidate overrides:
@@ -84,6 +85,11 @@ for PROFILE in "${PROFILES[@]}"; do
   if [[ -n "${MAX_RATIO}" ]]; then
     ENV_ARGS+=("NFN_LINEAR_BACKWARD_MAX_RATIO=${MAX_RATIO}")
   fi
+  case "${REQUIRE_ROUTE_CHANGE,,}" in
+    1|true|yes|on)
+      ENV_ARGS+=("NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE=1")
+      ;;
+  esac
 
   if [[ "${DRY_RUN}" == "1" || "${DRY_RUN,,}" == "true" ]]; then
     printf 'profile=%s operation=%s' "${PROFILE}" "${OP_KIND}"

@@ -1690,6 +1690,8 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "NFN_LINEAR_HOT_${PROFILE_ENV}_CANDIDATE_SYMBOL" in matrix_wrapper
     assert "NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL=${CANDIDATE_SYMBOL}" in matrix_wrapper
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO=${MAX_RATIO}" in matrix_wrapper
+    assert "NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE" in matrix_wrapper
+    assert "NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE=1" in matrix_wrapper
     assert "native_gpt_linear_hot_matrix" in matrix_wrapper
     assert "max_candidate_to_baseline_ms_per_iter_ratio" in matrix_wrapper
     assert "mean_candidate_to_baseline_ms_per_iter_ratio" in matrix_wrapper
