@@ -6799,6 +6799,8 @@ def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> Non
     assert payload["cuda_runtime_loaded"] is True
     assert payload["startup_only"] is True
     assert payload["steps_completed"] == 0
+    assert payload["graph_editor_tensor_flow"] is False
+    assert payload["torch_required"] is False
     assert payload["lm_head_classifier_strategy_contract"]["graph_editor_tensor_flow"] is False
     assert payload["lm_head_classifier_strategy_contract"]["torch_required"] is False
     assert payload["layer_evo"]["graph_editor_tensor_flow"] is False

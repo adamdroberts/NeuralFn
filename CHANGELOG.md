@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated native GPT startup-only runtime JSON to include the same top-level
+  no-editor/no-Torch contract fields as normal native training reports:
+  `graph_editor_tensor_flow: false` and `torch_required: false`. This keeps
+  startup profiling automation from having to inspect nested LM-head or
+  layer-evo strategy objects to prove that real training tensors do not pass
+  through graph editor nodes and that the native route does not require Torch.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`, then ran
+  `NFN_NATIVE_TILE_CUDA_TEST=1 python -m pytest tests/test_native_gpt2.py::test_native_gpt_cuda_tile_startup_smoke_without_torch -q`.
+
 - Updated native GPT checkpoint inference so `nfn infer --checkpoint DIR` stays
   on the lightweight no-Torch path when `DIR` is a native training output
   directory. The CLI now resolves the latest completed `model_########.bin`

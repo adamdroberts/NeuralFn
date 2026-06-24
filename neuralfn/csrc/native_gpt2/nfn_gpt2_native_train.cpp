@@ -20405,6 +20405,8 @@ int run_transformer_lm_training_json(
         << (passed ? (cfg.startup_only ? "native-transformer-lm-startup-ready" : "native-transformer-lm-trained")
                    : "native-transformer-lm-failed")
         << "\",\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"torch_required\": false,\n"
         << "  \"timing\": {\n"
         << "    \"clock\": \"steady_clock_host_wall_ms\",\n"
         << "    \"setup_wall_ms\": " << setup_wall_ms << ",\n"
