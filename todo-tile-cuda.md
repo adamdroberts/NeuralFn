@@ -107,6 +107,12 @@ Real training tensors must not pass through graph editor node objects.
     steady-state CUDA-event timing to `0.998529x`, but regressed train-loop
     wall to `1.000261x`, total block backward to `1.000938x`, MLP projection to
     `1.004308x`, and QKV backward to `1.007310x`, so it remains rejected.
+  - 2026-06-24 corrected the same-script benchmark contract for the promoted
+    `qkv_dinput_ln128` route. It is now an allowed promoted comparison profile,
+    not a rejected profile requiring an override, and compares the current
+    default QKV dInput-before-dWeight plus 128-row LayerNorm affine path against
+    the old 256-row/QKV-dWeight-first route while emitting `candidate_note`
+    metadata in paired results.
   - 2026-06-24 rechecked `lm_head_row_loss_partial_reduce` after the CUDA
     reinstall and dedicated RTX 5090 setup. The paired 3-step, 2-sample run
     changed only the row-loss accumulation strategy

@@ -1156,7 +1156,11 @@ projection backward at `1.002076x`.
 for packed-QKV backward. The default runs QKV dInput before QKV dWeight+bias as
 part of the promoted 128-row LayerNorm affine route, and reports
 `block_backward_qkv_dinput_before_dweight_enabled` plus
-`block_backward_qkv_dinput_before_dweight_count`.
+`block_backward_qkv_dinput_before_dweight_count`. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128` to compare that promoted
+default against the old 256-row/QKV-dWeight-first baseline in one paired
+script; the profile is allowed by default and emits `candidate_note` metadata.
+The QKV-only and 64-row variants remain rejected profiles.
 The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
 packs the incoming projection gradient to BF16 once, reuses that scratch for MLP

@@ -130,6 +130,7 @@ CANDIDATE_EXTRA_ARGS_RAW="$(env_or_alias NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS N
 TIMEOUT_PRONE_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_REASON=""
+CANDIDATE_NOTE=""
 STRICT_PROBE_CANDIDATE_PROFILE=""
 STRICT_GROUPED_CUBLASLT_PROBE=0
 AUTO_ATTENTION_SECTION_TIMING=0
@@ -513,8 +514,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "qkv_dinput_ln128"|"qkv-dinput-ln128"|"qkv_dinput_before_dweight_ln128"|"qkv-dinput-before-dweight-ln128"|"qkv_order_ln128"|"qkv-order-ln128")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x. It remains marked rejected only as a candidate profile because it reproduces the old 256-row/QKV-dWeight-first baseline and still misses strict adjacent gates at stage.lm_head_backward.total_ms=1.000256x and stage.block_backward.qkv.total_ms=1.000779x."
+    CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x versus the old 256-row/QKV-dWeight-first route."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
     ;;
@@ -1073,6 +1073,9 @@ if [[ -n "$CANDIDATE_PROFILE" ]]; then
 fi
 if [[ -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ]]; then
   paired_args+=(--metadata "candidate_tile_ops_build_flags=$CANDIDATE_TILE_OPS_BUILD_FLAGS")
+fi
+if [[ -n "$CANDIDATE_NOTE" ]]; then
+  paired_args+=(--metadata "candidate_note=$CANDIDATE_NOTE")
 fi
 if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then
   paired_args+=(--metadata "candidate_route_change_gate=disabled")

@@ -1239,6 +1239,14 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "qkv_dinput_ln128" in text
     assert "train_loop_wall_ms_per_step to 0.989784x" in text
     assert "stage.block_backward.total_ms to 0.986375x" in text
+    assert "candidate_note=$CANDIDATE_NOTE" in text
+    assert "versus the old 256-row/QKV-dWeight-first route" in text
+    rejected_promoted_qkv_marker = (
+        'REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"\n'
+        '    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 '
+        "3-step, 2-sample stage-timed gate promoted this combined route"
+    )
+    assert rejected_promoted_qkv_marker not in text
     assert "qkv_dinput_ln64" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64" in text
     assert "steady-state CUDA-event timing to 0.998529x" in text
