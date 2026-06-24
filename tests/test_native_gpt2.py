@@ -1888,6 +1888,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
+        "full_activation_tape": "NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
     }
     for profile, env_assignment in expected_profiles.items():
@@ -1953,6 +1954,17 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "setup_wall_ms to 0.884111x" in bench_source
     assert "MLP projection to 1.546830x" in bench_source
     assert "setup_wall_ms to 0.958626x" in bench_source
+    assert "backward_recompute_blocks 11->0" in bench_source
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=0"'
+        in bench_source
+    )
+    assert "full_activation_tape" in bench_source
+    assert "no_recompute" in bench_source
+    assert "activation_tape_count" in speed_source
+    assert "full_activation_tape_enabled" in speed_source
+    assert "backward_recompute_blocks" in speed_source
+    assert "activation_tape_strategy" in speed_source
     assert "attention dprep timing to 1.000231x" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
     assert "cuBLASLt status 14" in bench_source

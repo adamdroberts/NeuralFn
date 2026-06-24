@@ -108,7 +108,15 @@ time, block backward, and attention dprep timing. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` diagnostic is rejected
 even earlier because disabling residual1 activation storage failed the paired
 native run with cuBLASLt status 14; keep stored residual1 activations enabled
-on the default path. The
+on the default path. The no-recompute diagnostic is
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=full_activation_tape`; it forces baseline
+`NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=0` and candidate `=1`, and the paired
+tool now reports `activation_tape_count`, `full_activation_tape_enabled`,
+`backward_recompute_blocks`, and `activation_tape_strategy` so the larger
+full-forward tape can be compared against the default scratch-recompute path in
+the same run. It is rejected by default because the RTX 5090 diagnostic removed
+backward recompute but ran slower than the default stored-activation
+scratch-recompute route. The
 current CUDA 13.3.33 rebuilt 5-step, 3-sample parity refresh on the dedicated
 RTX 5090 measured NeuralFn at `2525.500 ms/step` versus llm.kittens at
 `2465.055 ms/step` (`1.024520x` train-loop wall time, `0.975643x`

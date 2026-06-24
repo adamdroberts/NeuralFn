@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=full_activation_tape` paired benchmark
+  profile for no-recompute diagnostics. The profile forces baseline
+  `NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=0` and candidate `=1`, while
+  `tools/paired_kernel_speed.py` now extracts `activation_tape_count`,
+  `full_activation_tape_enabled`, `backward_recompute_blocks`,
+  `final_block_backward_recompute_elided`, and `activation_tape_strategy`.
+  This makes the full-forward-tape path auditable in the same-script SM120
+  candidate wrapper without promoting it over the faster default
+  stored-activation scratch-recompute route.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  `python -m py_compile tools/paired_kernel_speed.py`, the focused
+  `candidate_wrapper_covers_attention_and_ordering_profiles` pytest,
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=full_activation_tape
+  NFN_SM120_NATIVE_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`, the rejected-profile guard
+  without dry-run, and `git diff --check`.
+
 - Corrected the compiled NanoGPT diagnostic trainer help text so
   `--eval-batches` and `--eval-batch-size` report the actual defaults, 20 and
   64, instead of stale smaller smoke values.

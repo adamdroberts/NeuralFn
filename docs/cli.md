@@ -543,6 +543,14 @@ attention dprep timing despite reducing setup wall time. The diagnostic
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` and candidate `=0`; it is
 rejected before normal CUDA launch because the CUDA 13.3 dedicated RTX 5090
 paired gate failed inside the native trainer with cuBLASLt status 14.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=full_activation_tape` is the no-recompute
+diagnostic. It forces baseline `NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=0` and
+candidate `=1`, then relies on paired output metrics
+`activation_tape_count`, `full_activation_tape_enabled`,
+`backward_recompute_blocks`, and `activation_tape_strategy` to prove the route
+changed from scratch recompute to the larger full-forward tape. It is rejected
+by default because the RTX 5090 diagnostic removed backward recompute but ran
+slower than the default stored-activation scratch-recompute route.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling
