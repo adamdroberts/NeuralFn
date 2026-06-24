@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Breaking changes: native `.bin` checkpoint inference no longer imports
+  Python tokenizers for raw text `--prompt` by default. The no-dependency native
+  inference path is now token-id only unless
+  `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` is set. Before this change,
+  `nfn infer --checkpoint model_########.bin --prompt "..."` imported
+  `tiktoken` in the Python wrapper and encoded the prompt before launching the
+  compiled sampler. Now callers should pass `--prompt-tokens IDS` for the
+  default Torch/NumPy/tiktoken-free path, or set the opt-in environment variable
+  when Python-side GPT-2 tokenization is intentionally acceptable.
+
+  Migration note: update native `.bin` inference scripts to provide token IDs,
+  for example `nfn infer --checkpoint model_00020000.bin --prompt-tokens
+  50256`. Keep raw text prompts only in environments that explicitly set
+  `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1`.
+
+  Verification: ran focused native GPT SDK/CLI tests and the native no-Torch
+  dependency verifier, which now asserts raw text prompt tokenization is
+  rejected under the import blocker.
+
 - Extended the LM-head backward microbench strict diagnostics with
   `candidate_cuda_graph_wrapper_only`. The JSON now distinguishes three
   non-production strict-symbol states: a sequence wrapper, a CUDA Graph wrapper

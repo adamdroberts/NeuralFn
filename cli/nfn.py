@@ -158,7 +158,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2 --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
-          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt "Once upon a time"
+          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
         """,
     "eval": """\

@@ -2944,7 +2944,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
-    def test_nfn_infer_native_checkpoint_text_prompt_dispatches_compiled_sampler(self) -> None:
+    def test_nfn_infer_native_checkpoint_text_prompt_requires_explicit_tokenizer_opt_in(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -3019,10 +3019,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(2, proc.returncode, proc.stderr)
         self.assertIn("Native GPT checkpoint detected", proc.stdout)
-        self.assertIn("NATIVE_CLI_ARGV --sample-checkpoint", proc.stdout)
-        self.assertIn("--prompt-tokens", proc.stdout)
-        self.assertIn("--max-new-tokens 7", proc.stdout)
-        self.assertIn("NATIVE_CLI_CUDA_VISIBLE_DEVICES 0", proc.stdout)
+        self.assertNotIn("NATIVE_CLI_ARGV --sample-checkpoint", proc.stdout)
+        self.assertIn("Native GPT .bin checkpoint prompt inference is token-id only by default", proc.stderr)
+        self.assertIn("Pass --prompt-tokens", proc.stderr)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
@@ -3139,6 +3138,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 )
                 checkpoint.write_bytes(struct.pack("<" + "i" * 256, *header) + b"\\0" * (nparams * 2))
                 os.environ["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+                os.environ["NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER"] = "1"
                 sys.argv = [
                     str(root / "cli" / "nfn.py"),
                     "infer",

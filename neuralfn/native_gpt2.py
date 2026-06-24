@@ -53,6 +53,13 @@ RAW_TEXT_ENCODING_VOCAB_SIZES = {
 }
 
 
+def _env_flag_enabled(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class NativeGpt2RunnerStatus:
     requested: str
@@ -555,12 +562,14 @@ def native_gpt2_prompt_tokens(
     prompt: str = "",
     prompt_tokens: str = "",
     encoding_name: str = "gpt2",
+    allow_python_tokenizer: bool | None = None,
 ) -> str:
     """Resolve prompt text or token IDs for native GPT checkpoint sampling.
 
-    Passing ``prompt_tokens`` keeps the path tokenizer-free. Text prompts use
-    GPT-2 tokenization because current native checkpoint tensors use the GPT-2
-    public vocabulary.
+    Passing ``prompt_tokens`` keeps the path tokenizer-free. Text prompts are
+    rejected by default on the native path; set
+    ``allow_python_tokenizer=True`` or ``NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1``
+    only when Python-side GPT-2 tokenization is intentionally acceptable.
     """
 
     resolved_prompt_tokens = str(prompt_tokens or "").strip()
@@ -575,6 +584,17 @@ def native_gpt2_prompt_tokens(
     prompt_text = str(prompt or "")
     if not prompt_text:
         return "50256"
+    tokenizer_allowed = (
+        _env_flag_enabled("NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER", False)
+        if allow_python_tokenizer is None
+        else bool(allow_python_tokenizer)
+    )
+    if not tokenizer_allowed:
+        raise RuntimeError(
+            "Native GPT .bin checkpoint prompt inference is token-id only by default. "
+            "Pass --prompt-tokens to stay on the no-tokenizer native path, or set "
+            "NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1 to opt into Python GPT-2 tokenization."
+        )
     try:
         import tiktoken
     except Exception as exc:  # pragma: no cover - package/environment dependent

@@ -2025,8 +2025,11 @@ Top-level `nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
 `nfn infer --checkpoint PATH --prompt-tokens IDS` now dispatch directly to the
 compiled `nfn_gpt_native_train --sample-checkpoint` path before importing
 `infer_gpt`, graph-backed inference helpers, Torch, NumPy, tiktoken, or dataset
-managers. Use prompt tokens for the no-tokenizer path; text prompts may still
-use tiktoken locally before the same native sampler is launched.
+managers. Use prompt tokens for the no-tokenizer path. Raw text prompts for
+native `.bin` checkpoints are rejected by default; set
+`NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` only when Python-side GPT-2
+tokenization is intentionally acceptable before launching the same native
+sampler.
 Measured runs default to a strict
 `train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
 exits nonzero when NeuralFn is slower than the llm.kittens reference on the

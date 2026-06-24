@@ -393,6 +393,8 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
 
     assert native_gpt2_prompt_tokens(prompt_tokens="1,2,3") == "1,2,3"
     assert native_gpt2_prompt_tokens(prompt="") == "50256"
+    with pytest.raises(RuntimeError, match="token-id only by default"):
+        native_gpt2_prompt_tokens(prompt="Hello")
 
     argv = native_gpt2_checkpoint_sampler_argv(
         checkpoint,
