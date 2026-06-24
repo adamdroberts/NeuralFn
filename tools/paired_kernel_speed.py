@@ -601,6 +601,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_classifier_fusion_scope",
     "lm_head_schedule_parity_status",
     "lm_head_ce_kernel_strategy",
+    "lm_head_bf16_hidden_from_final_norm_requested",
+    "lm_head_bf16_hidden_from_final_norm_enabled",
     "lm_head_cooperative_backward_strategy",
     "lm_head_cooperative_backward_required",
     "lm_head_cooperative_backward_abi_wrapper_available",

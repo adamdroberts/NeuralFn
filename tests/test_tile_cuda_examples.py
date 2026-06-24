@@ -2237,6 +2237,46 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert prepack_on_payload["baseline_env"]["NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN"] == "0"
     assert prepack_on_payload["candidate_env"]["NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN"] == "1"
 
+    final_norm_hidden_dry_run_path = tmp_path / "candidate-final-norm-hidden-dry-run.json"
+    final_norm_hidden_env = os.environ.copy()
+    final_norm_hidden_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_bf16_hidden_from_final_norm",
+            "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE": "1",
+            "NFN_SM120_NATIVE_JSON_OUT": str(final_norm_hidden_dry_run_path),
+        }
+    )
+
+    final_norm_hidden_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=final_norm_hidden_env,
+    )
+
+    assert final_norm_hidden_dry_run.returncode == 0, final_norm_hidden_dry_run.stderr
+    final_norm_hidden_payload = json.loads(
+        final_norm_hidden_dry_run_path.read_text(encoding="utf-8")
+    )
+    assert (
+        final_norm_hidden_payload["baseline_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM"
+        ]
+        == "0"
+    )
+    assert (
+        final_norm_hidden_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM"
+        ]
+        == "1"
+    )
+    assert final_norm_hidden_payload["candidate_env"]["NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN"] == "1"
+
     cublas_handle_rejected_env = os.environ.copy()
     cublas_handle_rejected_env.update(
         {

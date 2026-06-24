@@ -212,6 +212,12 @@ trainer to write that JSON directly to a file, or use the aliases
 `--profile-json PATH` / `--stage-profile-json PATH` when collecting profiler
 runs such as `NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ...
 --profile-json /tmp/nfn_profile.json`.
+The SM120 candidate wrapper also includes
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_bf16_hidden_from_final_norm`, which
+forces baseline separate LM-head BF16 hidden prepack and candidate final
+LayerNorm BF16 hidden output. It is rejected for real runs unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; the CUDA 13.3
+RTX 5090 gate proved the strategy changed but regressed whole-loop wall time.
 Profile JSON includes ranked arena request details in
 `float_arena_request_stats.top_requests` and
 `uint16_arena_request_stats.top_requests`. Each entry reports the suballocation

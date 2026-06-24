@@ -12228,12 +12228,23 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",
                               "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),
             true);
+    const bool lm_head_bf16_hidden_from_final_norm_requested =
+        lm_head_prepack_bf16_hidden_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM",
+                              "NFN_NATIVE_GPT2_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM"}),
+            false);
     const bool lm_head_reuse_forward_logits_enabled =
         lm_head_bf16_logits_enabled &&
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS",
                               "NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS"}),
             false);
+    const bool lm_head_bf16_hidden_from_final_norm_enabled =
+        lm_head_bf16_hidden_from_final_norm_requested &&
+        !lm_head_reuse_forward_logits_enabled &&
+        layer_norm_stats_enabled &&
+        layer_norm_with_stats_bf16_out != nullptr;
     const bool lm_head_full_batch_reuse_schedule_enabled =
         lm_head_reuse_forward_logits_enabled &&
         env_flag_enabled_or_default(
@@ -16017,7 +16028,9 @@ int run_transformer_lm_training_json(
 
     auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
-        if (lm_head_prepack_bf16_hidden_enabled && !lm_head_reuse_forward_logits_enabled) {
+        if (lm_head_prepack_bf16_hidden_enabled &&
+            !lm_head_reuse_forward_logits_enabled &&
+            !lm_head_bf16_hidden_from_final_norm_enabled) {
             run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
                 run(float32_to_bf16_bits(
                         lnf_out,
@@ -18779,7 +18792,19 @@ int run_transformer_lm_training_json(
             }
         }
         lnf_input = final_block_output;
-        run_layer_norm(lnf_input, lnf_weight, lnf_bias, lnf_out, lnf_mean, lnf_rstd, label + ".ln_f.forward");
+        if (lm_head_bf16_hidden_from_final_norm_enabled) {
+            run_layer_norm_bf16_out(
+                lnf_input,
+                lnf_weight,
+                lnf_bias,
+                lnf_out,
+                lnf_mean,
+                lnf_rstd,
+                lm_head_bf16_hidden,
+                label + ".ln_f.forward");
+        } else {
+            run_layer_norm(lnf_input, lnf_weight, lnf_bias, lnf_out, lnf_mean, lnf_rstd, label + ".ln_f.forward");
+        }
         stage_end(stage_event, label + ".model_forward");
         return (error.empty() && compute_loss) ? lm_head_forward_loss(label, copy_loss_to_host) : 0.0;
     };
@@ -20659,6 +20684,10 @@ int run_transformer_lm_training_json(
         << (lm_head_bf16_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_prepack_bf16_hidden_enabled\": "
         << (lm_head_prepack_bf16_hidden_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_bf16_hidden_from_final_norm_requested\": "
+        << (lm_head_bf16_hidden_from_final_norm_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_bf16_hidden_from_final_norm_enabled\": "
+        << (lm_head_bf16_hidden_from_final_norm_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_bf16_hidden_elements\": " << lm_head_bf16_hidden_elements << ",\n"
         << "  \"lm_head_bf16_hidden_bytes\": " << lm_head_bf16_hidden_bytes << ",\n"
         << "  \"lm_head_dweight_input_dtype\": \""
@@ -20671,9 +20700,13 @@ int run_transformer_lm_training_json(
                 : (linear_tk_dweight_gemm_count > 0 && lm_head_tk_dweight_requested
                 ? "tk-sm120-bf16-scratch-to-float32-dweight-diagnostic"
                 : (lm_head_prepack_bf16_hidden_enabled
-                ? (dweight_first_microbatch_beta_zero_enabled
-                       ? "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate"
-                       : "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate")
+                ? (lm_head_bf16_hidden_from_final_norm_enabled
+                       ? (dweight_first_microbatch_beta_zero_enabled
+                              ? "final-norm-direct-bf16-hidden-bf16-dlogit-dweight-first-write-then-accumulate"
+                              : "final-norm-direct-bf16-hidden-bf16-dlogit-dweight-accumulate")
+                       : (dweight_first_microbatch_beta_zero_enabled
+                              ? "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate"
+                              : "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate"))
                 : (lm_head_bf16_dweight_enabled
                 ? (dweight_first_microbatch_beta_zero_enabled
                        ? "chunked-final-norm-bf16-pack-bf16-dlogit-dweight-first-write-then-accumulate"

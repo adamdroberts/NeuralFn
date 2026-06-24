@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off LM-head BF16 hidden staging diagnostic:
+  `NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM=1` asks the final
+  LayerNorm forward kernel to write the full BF16 LM-head hidden buffer while
+  still producing FP32 output, then skips the separate
+  `lm_head_backward.hidden_prepack` conversion before LM-head backward. Runtime
+  JSON reports requested/enabled fields and switches `lm_head_dweight_strategy`
+  to a `final-norm-direct-bf16-hidden...` value when the route is active.
+  `tools/paired_kernel_speed.py` treats those strategy fields as route-change
+  evidence, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_bf16_hidden_from_final_norm`
+  compares the new route against the older separate prepack in the same native
+  benchmark wrapper. The candidate remains rejected by default: the CUDA 13.3
+  dedicated RTX 5090 3-step, 2-sample gate proved the strategy change but
+  regressed train-loop wall to `1.009000x`, steady-state CUDA event timing to
+  `1.000147x`, and LM-head dWeight to `1.000293x`.
+
+  Verification: rebuilt SM120 native CUDA artifacts with
+  `bash tools/rebuild_native_sm120.sh`, ran focused native/source and paired
+  wrapper pytest coverage, and ran the same-script RTX 5090 candidate gate
+  above.
+
 - Added a default-off first-step-only attention projection side-stream
   diagnostic for the native dense GPT block backward path:
   `NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT=1`

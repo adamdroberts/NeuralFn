@@ -7197,6 +7197,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_dweight_strategy" in gpt2_source_text
     assert "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate" in gpt2_source_text
     assert "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM" in gpt2_source_text
+    assert "lm_head_bf16_hidden_from_final_norm_requested" in gpt2_source_text
+    assert "lm_head_bf16_hidden_from_final_norm_enabled" in gpt2_source_text
+    assert "final-norm-direct-bf16-hidden-bf16-dlogit-dweight-accumulate" in gpt2_source_text
     assert "dweight_first_microbatch_beta_zero_enabled" in gpt2_source_text
     assert "first_lm_head_dweight_chunk" in gpt2_source_text
     assert "chunk_index == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate" in gpt2_source_text

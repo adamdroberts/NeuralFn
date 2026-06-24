@@ -199,6 +199,12 @@ case "${CANDIDATE_PROFILE,,}" in
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1"
     ;;
+  "lm_head_bf16_hidden_from_final_norm"|"lm-head-bf16-hidden-from-final-norm"|"lm_head_final_norm_bf16_hidden"|"lm-head-final-norm-bf16-hidden")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate changed LM-head BF16 hidden staging from separate prepack to final LayerNorm output, but regressed train_loop_wall_ms_per_step to 1.009000x, steady CUDA-event step time to 1.000147x, and stage.lm_head_backward.dweight.total_ms to 1.000293x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1 NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1 NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM=1"
+    ;;
   "mlp_proj_tk_dweight_65536"|"mlp-proj-tk-dweight-65536"|"block_mlp_proj_tk_dweight_65536"|"block-mlp-proj-tk-dweight-65536")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK but regressed train_loop_wall_ms_per_step to 1.019797x and train_tokens_per_second to 0.980596x, so cuBLASLt BGRADB remains the default for this block bucket."

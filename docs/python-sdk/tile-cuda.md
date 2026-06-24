@@ -813,6 +813,16 @@ path with the default full hidden prepack. The default
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` packs final-norm hidden once per
 microbatch; set it to `0` only to benchmark the older per-chunk LM-head hidden
 packing route. Set
+`NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM=1` only for paired staging
+diagnostics. That route asks final LayerNorm to write the full BF16 LM-head
+hidden buffer directly and then skips `lm_head_backward.hidden_prepack`;
+runtime JSON reports `lm_head_bf16_hidden_from_final_norm_requested`,
+`lm_head_bf16_hidden_from_final_norm_enabled`, and the corresponding
+`lm_head_dweight_strategy`. It remains rejected as a default after the CUDA
+13.3 dedicated RTX 5090 3-step, 2-sample wrapper gate regressed train-loop wall
+to `1.009000x`, steady-state CUDA-event timing to `1.000147x`, and LM-head
+dWeight to `1.000293x`.
+Set
 `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or
 `NFN_TILE_CUDA_CE_BF16_EXP2=1` only for paired profiling of the BF16 CE+dlogits
 kernel's `exp2f(x * log2(e))` path; the default remains `expf`, and runtime

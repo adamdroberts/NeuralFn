@@ -102,6 +102,17 @@ Real training tensors must not pass through graph editor node objects.
     default loop already used the same cuBLASLt dInput plans: route counters,
     strategy values, shape route names, and plan cache entries did not change.
     Keep the profile rejected/diagnostic-only.
+  - 2026-06-24 added
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_bf16_hidden_from_final_norm`.
+    The candidate routes final LayerNorm through the BF16-output LayerNorm ABI
+    so it writes the full LM-head BF16 hidden buffer directly and elides
+    `lm_head_backward.hidden_prepack`. The same-script 3-step, 2-sample
+    dedicated RTX 5090 gate proved the strategy change
+    (`lm_head_bf16_hidden_from_final_norm_enabled: false -> true`) but rejected
+    promotion at `1.009000x` train-loop wall, `1.000147x` steady-state
+    CUDA-event timing, and `1.000293x` LM-head dWeight. Keep it
+    diagnostic-only; the remaining LM-head parity work is still a real
+    fused/cooperative classifier-backward kernel, not moving the prepack cost.
 
 ## Native C++ trainer ABI
 

@@ -2240,6 +2240,11 @@ LM-head dHidden to `1.132973x`,
 3-sample gate moved 48 LM-head dHidden calls from BF16 GEMMEx to cuBLASLt but
 regressed train-loop wall to `1.000384x`, LM-head dHidden to `1.000199x`, and
 block backward to `1.001504x`,
+`lm_head_bf16_hidden_from_final_norm`, whose CUDA 13.3 dedicated RTX 5090
+3-step, 2-sample gate changed LM-head BF16 hidden staging from a separate
+prepack to final LayerNorm output but regressed train-loop wall to `1.009000x`,
+steady-state CUDA-event timing to `1.000147x`, and LM-head dWeight to
+`1.000293x`,
 `cuda_device_max_connections_1`, which is a no-op because the paired wrapper
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
 `tk_dgelu_dinput` / `tk_dgelu_approx_tanh`, which are now no-ops because the
