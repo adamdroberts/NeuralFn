@@ -1962,8 +1962,14 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "full_activation_tape" in bench_source
     assert "no_recompute" in bench_source
     assert "activation_tape_count" in speed_source
+    assert '("activation_tape_count", ("block_state_layout", "activation_tape_count"))' in speed_source
     assert "full_activation_tape_enabled" in speed_source
+    assert '("block_state_layout", "full_activation_tape_enabled")' in speed_source
     assert "backward_recompute_blocks" in speed_source
+    assert (
+        '("backward_recompute_blocks", ("block_state_layout", "backward_recompute_blocks"))'
+        in speed_source
+    )
     assert "activation_tape_strategy" in speed_source
     assert "attention dprep timing to 1.000231x" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source

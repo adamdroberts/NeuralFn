@@ -550,7 +550,9 @@ candidate `=1`, then relies on paired output metrics
 `backward_recompute_blocks`, and `activation_tape_strategy` to prove the route
 changed from scratch recompute to the larger full-forward tape. It is rejected
 by default because the RTX 5090 diagnostic removed backward recompute but ran
-slower than the default stored-activation scratch-recompute route.
+slower than the default stored-activation scratch-recompute route; the CUDA
+13.3.33 one-microbatch rerun measured `27.374754x` train-loop wall time and
+`0.036530x` tokens/sec for the full-forward tape versus scratch recompute.
 When a paired benchmark is interrupted with Ctrl-C, the tool now terminates the
 active child process group and exits with a concise interruption message, so a
 long native CUDA candidate does not continue running after the wrapper exits.

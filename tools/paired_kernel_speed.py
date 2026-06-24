@@ -482,14 +482,17 @@ NATIVE_METRIC_PATHS = (
     ),
     ("lm_head_bf16_logit_bytes", ("lm_head_bf16_logit_bytes",)),
     ("lm_head_full_logit_elements", ("lm_head_full_logit_elements",)),
-    ("activation_tape_count", ("activation_tape_count",)),
-    ("full_activation_tape_enabled", ("full_activation_tape_enabled",)),
-    ("backward_recompute_blocks", ("backward_recompute_blocks",)),
+    ("activation_tape_count", ("block_state_layout", "activation_tape_count")),
+    (
+        "full_activation_tape_enabled",
+        ("block_state_layout", "full_activation_tape_enabled"),
+    ),
+    ("backward_recompute_blocks", ("block_state_layout", "backward_recompute_blocks")),
     (
         "final_block_backward_recompute_elided",
-        ("final_block_backward_recompute_elided",),
+        ("block_state_layout", "final_block_backward_recompute_elided"),
     ),
-    ("activation_tape_strategy", ("activation_tape_strategy",)),
+    ("activation_tape_strategy", ("block_state_layout", "activation_tape_strategy")),
     (
         "block_state_layout.activation_tape_strategy",
         ("block_state_layout", "activation_tape_strategy"),

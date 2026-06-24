@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the paired speed extractor paths for the full activation tape
+  diagnostic so `activation_tape_count`, `full_activation_tape_enabled`,
+  `backward_recompute_blocks`, `final_block_backward_recompute_elided`, and
+  `activation_tape_strategy` are read from `block_state_layout`. The reduced
+  CUDA 13.3.33 RTX 5090 check now proves the strategy change from
+  `scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward` to
+  `full-forward-tape-bf16-stored-packed-attention-and-mlp-direct-backward`;
+  on the one-microbatch check, the candidate measured `27.374754x`
+  train-loop wall time and `0.036530x` tokens/sec versus scratch recompute, so
+  the full tape remains diagnostic-only.
+
+  Verification: ran the reduced one-microbatch GPU-visible paired check to
+  `/tmp/nfn_full_activation_tape_microbatch_pair.json`, inspected the extracted
+  JSON fields, ran the focused
+  `candidate_wrapper_covers_attention_and_ordering_profiles` pytest,
+  `python -m py_compile tools/paired_kernel_speed.py`, and
+  `git diff --check`.
+
 - Hardened `tools/paired_kernel_speed.py` interrupt handling. Ctrl-C while a
   measured baseline or candidate command is active now terminates that command's
   process group and exits with a concise interruption message instead of
