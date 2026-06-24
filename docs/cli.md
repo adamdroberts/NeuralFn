@@ -2121,6 +2121,10 @@ either module, running `python cli/scripts/infer_gpt.py --help`, or resolving
 `server.dataset_manager`, or NumPy. Graph-backed `.pt` / `.json` generation
 imports the runtime only after parsing; native `.bin` checkpoint prompts
 dispatch to the compiled `nfn_gpt_native_train --sample-checkpoint` path.
+The canonical wrapper preserves its own argparse program name, so
+`python cli/scripts/infer_gpt.py --help` prints `usage: infer_gpt.py`; the
+compatibility `infer_gpt2.py` name is reserved for direct compatibility-script
+execution.
 
 ## Datasets and tokenizers
 

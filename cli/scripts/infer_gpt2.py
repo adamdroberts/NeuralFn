@@ -234,9 +234,9 @@ def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
     if not native_checkpoint:
         print("--native-info requires --native-checkpoint.", file=sys.stderr)
         return 2
-    from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
+    from neuralfn.native_gpt import read_native_gpt_checkpoint_info
 
-    info = read_native_gpt2_checkpoint_info(Path(native_checkpoint).expanduser())
+    info = read_native_gpt_checkpoint_info(Path(native_checkpoint).expanduser())
     print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")

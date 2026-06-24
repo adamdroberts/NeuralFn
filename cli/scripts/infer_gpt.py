@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import runpy
 import sys
 from pathlib import Path
 
@@ -14,6 +13,8 @@ if SCRIPT_DIR_STR not in sys.path:
 
 if __name__ == "__main__":
     sys.argv[0] = str(Path(__file__).resolve())
-    runpy.run_path(str(COMPAT_SCRIPT), run_name="__main__")
+    from infer_gpt2 import main
+
+    raise SystemExit(main())
 else:
     from infer_gpt2 import *  # noqa: F401,F403

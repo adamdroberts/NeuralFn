@@ -9509,6 +9509,27 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
     assert "TorchTrainer path" not in proc.stderr
 
 
+def test_canonical_infer_gpt_wrapper_reports_generic_program_name() -> None:
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "infer_gpt.py"),
+            "--help",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "usage: infer_gpt.py" in proc.stdout
+    assert "usage: infer_gpt2.py" not in proc.stdout
+    assert "Print native GPT checkpoint metadata" in proc.stdout
+
+
 def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     family_cli = tmp_path / "nfn_gpt2_evo_native_train"

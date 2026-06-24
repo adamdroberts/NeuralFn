@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the canonical GPT inference script wrapper so
+  `python cli/scripts/infer_gpt.py --help` reports `usage: infer_gpt.py`
+  instead of leaking the compatibility `infer_gpt2.py` script name. Native
+  checkpoint metadata resolution in the inference script now uses the generic
+  `neuralfn.native_gpt.read_native_gpt_checkpoint_info()` helper while the
+  `infer_gpt2.py` compatibility entrypoint remains available.
+
+  Verification: ran the canonical help command and a focused pytest regression
+  that asserts the generic program name appears and the compatibility name does
+  not.
+
 - Refreshed the promoted SM120 native `lm_head_loss_bins` train-loss logging
   profile after the latest CUDA 13.3 RTX 5090 rebuilds. The profile now records
   a `candidate_note` metadata field explaining that it is the default

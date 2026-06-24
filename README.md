@@ -1738,6 +1738,10 @@ is absent. This path runs before `infer_gpt`, graph-backed inference, Torch,
 NumPy, tiktoken, or dataset-manager imports; text prompts can still use GPT-2
 tokenization when tiktoken is available, but `--prompt-tokens` is the
 no-tokenizer native path.
+The canonical `python cli/scripts/infer_gpt.py --help` wrapper now preserves
+its own program name in argparse output (`usage: infer_gpt.py`) instead of
+leaking the compatibility `infer_gpt2.py` script name; native checkpoint
+metadata also resolves through the generic `neuralfn.native_gpt` SDK helper.
 
 When `libnfn_native_train_tile_ops.so` is built without the trainer cuBLAS linear fast path, large-row linear dWeight fallbacks now use a shared-memory 2D tiled CUDA kernel for float32-output dWeight accumulation across float32/BF16 activation and gradient combinations. The normal workstation build still tries cuBLAS/cuBLASLt first; the tiled fallback only replaces the older row-chunked atomic dWeight reduction after those GEMM routes are unavailable. Bias-only fallback reductions keep the shared row-chunk path.
 
