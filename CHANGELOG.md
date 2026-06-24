@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected SM120 native
+  `attn_proj_dinput_before_dweight` candidate evidence after the CUDA 13.3
+  rebuilds. The route remains default-off even though it materially improves the
+  attention projection backward bucket, because the stronger same-script gate
+  still regresses adjacent steady-state/LM-head/MLP-projection metrics.
+
+  Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_dinput_before_dweight` on the
+  dedicated RTX 5090 for 5 steps, 3 samples, 1 warmup, stage timing on. The
+  route counter moved `0 -> 480`, train-loop wall improved to `0.995221x`, and
+  `stage.block_backward.attn_proj.total_ms` improved to `0.905005x`, but the
+  gate failed at `1.000391x` steady-state CUDA-event timing, `1.000189x`
+  LM-head backward, and `1.002076x` MLP projection backward.
+
 - Promoted the SM120 native `lm_head_loss_bins` benchmark profile out of the
   rejected-candidate guard for train-loss logging comparisons. The wrapper still
   compares the current loss-bin path against the older row-loss tail by forcing

@@ -1146,9 +1146,12 @@ versus the current dWeight+bias-first order.
 ordering switch for attention projection backward. It runs dInput before
 dWeight+bias and reports
 `block_backward_attn_proj_dinput_before_dweight_enabled`, but remains disabled
-by default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
-measured `1.001009x` train-loop wall time and `0.999002x` tokens/sec versus the
-current dWeight+bias-first order.
+by default. The 2026-06-24 CUDA 13.3 dedicated RTX 5090 5-step, 3-sample rerun
+proved `block_backward_attn_proj_dinput_before_dweight_count` moved `0 -> 480`
+and improved train-loop wall to `0.995221x` plus attention projection backward
+to `0.905005x`, but rejected default promotion because steady-state CUDA-event
+timing missed at `1.000391x`, LM-head backward at `1.000189x`, and MLP
+projection backward at `1.002076x`.
 `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` is the diagnostic rollback switch
 for packed-QKV backward. The default runs QKV dInput before QKV dWeight+bias as
 part of the promoted 128-row LayerNorm affine route, and reports
