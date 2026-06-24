@@ -1587,10 +1587,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "lm_head_cooperative_backward_cuda_graph_requested" in source
+    assert "lm_head_cooperative_backward_graph_prewarm_requested" in source
+    assert "lm_head_cooperative_backward_graph_prewarm_enabled" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in source
     assert "lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
     assert "lm_head_classifier_backward_true_fused_capability" in source
@@ -1639,9 +1644,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     )
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
     assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
+    assert "prewarm_lm_head_classifier_backward_graph_bf16_u16" in tile_ops_source
     assert "cudaStreamCreateWithFlags" in tile_ops_source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
@@ -1670,6 +1678,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in tile_ops_header
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
+    assert "lm_head_fused_graph_prewarm_success_count" in source
+    assert "lm_head_fused_graph_prewarm_failure_count" in source
+    assert "lm_head_fused_graph_prewarm_last_error_code" in source
+    assert "lm_head_fused_graph_prewarm_cache_entry_count" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source
     graph_body = tile_ops_source.split(
         "void launch_lm_head_classifier_backward_graph_body_bf16_u16",
@@ -1715,6 +1727,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         encoding="utf-8"
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
+    assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
+    assert "NFN_NATIVE_GPT_CUBLASLT_PLAN_PREWARM_MODE=lm_head_only" in bench_source
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
@@ -1724,8 +1739,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
+    assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
     assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool
     assert "lm_head_dweight_strided_vocab_gemm_count" in speed_tool
 

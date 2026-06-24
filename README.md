@@ -1311,6 +1311,24 @@ capture/replay/fallback evidence. This does not promote the graph body as a
 default training route. Successful strict graph replay does not increment the
 legacy `lm_head_cooperative_sequence_*` counters; those counters identify the
 diagnostic sequence wrapper or graph fallback path.
+The Tile ops ABI also exposes
+`nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
+for capture-only diagnostics. It creates cache entries without launching the
+captured CE/dHidden/dWeight graph. Dense GPT JSON reports
+`lm_head_cooperative_backward_graph_prewarm_requested`,
+`lm_head_cooperative_backward_graph_prewarm_enabled`,
+`lm_head_fused_graph_prewarm_attempt_count`,
+`lm_head_fused_graph_prewarm_success_count`,
+`lm_head_fused_graph_prewarm_failure_count`,
+`lm_head_fused_graph_prewarm_last_error_code`,
+`lm_head_fused_graph_prewarm_cache_hit_count`, and
+`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is
+diagnostic-only by default because setup capture needs cuBLAS/cuBLASLt
+prewarm first and the current CUDA 13.3 RTX 5090 same-script gate rejected
+promotion: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
+improved first-step event time to `0.969636x` and train-loop wall time to
+`0.994664x`, but missed strict gates with steady-state event time at
+`1.001249x` and total LM-head backward at `1.000123x`.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

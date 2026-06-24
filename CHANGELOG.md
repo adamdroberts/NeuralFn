@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a capture-only LM-head CUDA Graph prewarm ABI,
+  `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`,
+  and dense GPT JSON attribution for graph-prewarm requested/enabled state,
+  prewarm attempts, successes, failures, last error code, cache hits, and cache
+  entries. The SM120 native candidate wrapper now has a
+  `lm_head_graph_prewarm` profile that enables graph prewarm together with the
+  required cuBLAS handle, BF16 workspace, and LM-head-only cuBLASLt plan
+  prewarm prerequisites.
+
+  Migration note: no training default changed. LM-head graph prewarm is
+  diagnostic-only and blocked as a rejected candidate unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set. A setup
+  capture attempted without the cuBLAS/cuBLASLt prewarm prerequisites can miss
+  with CUDA error `901`; the trainer records that miss and continues through
+  the normal runtime graph-capture path instead of failing the run.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt_native_train_linked`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative or
+  native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates"`; ran
+  a one-step default linked dense GPT CUDA smoke and confirmed graph prewarm was
+  not requested while runtime graph replay still completed; ran a one-step
+  prewarm-prerequisite smoke and confirmed `3/3` prewarm captures, zero runtime
+  capture attempts, and `16` graph replay successes; ran a CUDA 13.3 dedicated
+  RTX 5090 5-step, 2-sample same-script
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` gate. The profile
+  proved route changes and improved first-step event time to `0.969636x`,
+  train-loop wall time to `0.994664x`, and tokens/sec to `1.005364x`, but
+  failed strict gates because steady-state event time regressed to `1.001249x`
+  and `stage.lm_head_backward.total_ms` to `1.000123x`.
+
 - `tools/bench_lm_head_backward_candidate.sh` now has named
   `trainer-chunk-cublaslt` and `trainer-row-loss-cublaslt` profiles. These
   profiles compare the current cooperative LM-head sequence baseline against

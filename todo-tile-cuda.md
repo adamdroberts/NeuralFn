@@ -1816,6 +1816,18 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     kernel work honest: candidate dInput/dWeight symbols for block backward and
     LM-head can now be timed against the current C ABI without dataset loading,
     graph-editor tensors, Python/Torch, or full trainer-loop noise.
+  - 2026-06-24 added and rejected the LM-head CUDA Graph setup-prewarm route.
+    The new Tile ABI symbol
+    `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
+    captures graph cache entries without launching CE/dHidden/dWeight, and
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` enables the
+    required cuBLAS handle, BF16 workspace, and LM-head-only cuBLASLt plan
+    prewarm prerequisites. The dedicated RTX 5090 5-step, 2-sample gate proved
+    runtime captures moved from `3` to `0` and first-step event time improved
+    to `0.969636x`, but rejected default promotion because steady-state event
+    time regressed to `1.001249x` and total LM-head backward to `1.000123x`.
+    Keep it diagnostic-only; the remaining useful work is still a true fused
+    or co-scheduled LM-head classifier-backward kernel body.
   - 2026-06-22 kept the no-loss LM-head classifier CE route default-off after
     retesting it against the current packed-QKV dense GPT default. The route
     sends normal no-loss optimizer steps through the classifier row-loss kernel

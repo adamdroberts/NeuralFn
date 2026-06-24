@@ -49,6 +49,8 @@ constexpr const char* kLmHeadCooperativeBackwardTrueFusedKernelSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused";
+constexpr const char* kLmHeadCooperativeBackwardGraphPrewarmSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16";
 
 void append_cuda_error_message(
     std::ostringstream& out,
@@ -10159,6 +10161,12 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_fused_graph_replay_count = 0;
     std::int64_t lm_head_fused_graph_replay_success_count = 0;
     std::int64_t lm_head_fused_graph_fallback_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_attempt_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_success_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_failure_count = 0;
+    int lm_head_fused_graph_prewarm_last_error_code = 0;
+    std::int64_t lm_head_fused_graph_prewarm_cache_hit_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_cache_entry_count = 0;
     std::int64_t lm_head_pipeline_slot_event_wait_count = 0;
     std::int64_t lm_head_pipeline_done_event_record_count = 0;
     const bool linear_cublaslt_descriptor_cache_enabled =
@@ -11147,6 +11155,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_cooperative_fused_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardCooperativeBf16U16Fn
+        lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_true_fused_capability = nullptr;
     bool lm_head_classifier_backward_true_fused_kernel_available = false;
     FillManyFn fill_many = nullptr;
@@ -11842,6 +11852,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardTrueFusedKernelSymbol);
+                lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardGraphPrewarmSymbol);
                 lm_head_classifier_backward_true_fused_capability =
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
@@ -12636,6 +12650,17 @@ int run_transformer_lm_training_json(
         token_weight_bf16_shadow_enabled &&
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled;
+    const bool lm_head_cooperative_backward_graph_prewarm_requested =
+        lm_head_cooperative_backward_cuda_graph_enabled &&
+        !cfg.startup_only &&
+        cfg.max_steps > 0 &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),
+            false);
+    const bool lm_head_cooperative_backward_graph_prewarm_enabled =
+        lm_head_cooperative_backward_graph_prewarm_requested &&
+        lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_sequence_wrapper_enabled =
         lm_head_cooperative_backward_requested &&
         !cfg.require_cooperative_lm_head_backward &&
@@ -19689,6 +19714,94 @@ int run_transformer_lm_training_json(
         set_active_batch_size(batch_size);
     };
 
+    auto prewarm_lm_head_backward_graphs = [&]() {
+        if (!lm_head_cooperative_backward_graph_prewarm_enabled || !error.empty()) {
+            return;
+        }
+        run_setup_timed("lm_head_fused_graph.prewarm", [&]() {
+            constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
+            const float scaled_loss =
+                (1.0f / static_cast<float>(grad_accum_steps)) /
+                static_cast<float>(active_rows);
+            const std::int64_t backward_chunk_count =
+                lm_head_full_batch_reuse_schedule_enabled ? 1 : lm_head_chunk_count;
+            for (std::int64_t chunk_index = 0;
+                 chunk_index < backward_chunk_count && error.empty();
+                 ++chunk_index) {
+                const std::int64_t logical_chunk_index =
+                    lm_head_full_batch_reuse_schedule_enabled
+                        ? 0
+                        : (lm_head_reverse_chunk_order_enabled
+                            ? (lm_head_chunk_count - 1 - chunk_index)
+                            : chunk_index);
+                const std::int64_t row_start =
+                    lm_head_full_batch_reuse_schedule_enabled ? 0 : logical_chunk_index * lm_head_chunk_rows;
+                if (row_start >= active_rows) {
+                    continue;
+                }
+                const std::int64_t row_count =
+                    lm_head_full_batch_reuse_schedule_enabled
+                        ? active_rows
+                        : ((row_start + lm_head_chunk_rows < active_rows)
+                            ? lm_head_chunk_rows
+                            : (active_rows - row_start));
+                std::uint16_t* bf16_logit_chunk =
+                    lm_head_reuse_forward_logits_enabled
+                        ? (lm_head_bf16_logits + row_start * kPaddedVocab)
+                        : lm_head_bf16_logits;
+                const std::uint16_t* hidden_bf16_chunk =
+                    lm_head_prepack_bf16_hidden_enabled
+                        ? (lm_head_bf16_hidden + row_start * kDim)
+                        : lm_head_bf16_hidden;
+                const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
+                float* grad_hidden_chunk = grad_lnf + row_start * kDim;
+                const float beta_values[] = {chunk_index == 0 ? 0.0f : 1.0f, 1.0f};
+                const int beta_count = chunk_index == 0 ? 2 : 1;
+                for (int beta_index = 0; beta_index < beta_count && error.empty(); ++beta_index) {
+                    lm_head_fused_graph_prewarm_attempt_count += 1;
+                    const int status = lm_head_classifier_backward_fused_graph_prewarm_bf16_u16(
+                        bf16_logit_chunk,
+                        target_chunk_u16,
+                        row_max,
+                        hidden_bf16_chunk,
+                        lnf_out + row_start * kDim,
+                        token_weight_bf16,
+                        token_weight,
+                        grad_hidden_chunk,
+                        accum_grad_token_weight,
+                        row_count,
+                        kDim,
+                        kVocab,
+                        kPaddedVocab,
+                        scaled_loss,
+                        beta_values[beta_index],
+                        kLmHeadCooperativeFlagNoLoss,
+                        nullptr);
+                    if (status != 0) {
+                        lm_head_fused_graph_prewarm_failure_count += 1;
+                        lm_head_fused_graph_prewarm_last_error_code = status;
+                        break;
+                    } else {
+                        lm_head_fused_graph_prewarm_success_count += 1;
+                    }
+                }
+            }
+            if (error.empty() && lm_head_fused_graph_cache_hit_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_cache_hit_count =
+                    lm_head_fused_graph_cache_hit_count_fn();
+            }
+            if (error.empty() && lm_head_fused_graph_cache_entry_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_cache_entry_count =
+                    lm_head_fused_graph_cache_entry_count_fn();
+            }
+            if (error.empty() && lm_head_classifier_stats_reset != nullptr) {
+                lm_head_classifier_stats_reset();
+            }
+        });
+    };
+
+    prewarm_lm_head_backward_graphs();
+
     const auto train_loop_start_time = Clock::now();
     setup_wall_ms = elapsed_ms(total_start_time, train_loop_start_time);
     for (const SetupTimingRecord& record : setup_timing_records) {
@@ -21330,6 +21443,10 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_cuda_graph_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_cuda_graph_enabled\": "
         << (lm_head_cooperative_backward_cuda_graph_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_graph_prewarm_requested\": "
+        << (lm_head_cooperative_backward_graph_prewarm_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_graph_prewarm_enabled\": "
+        << (lm_head_cooperative_backward_graph_prewarm_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
         << (lm_head_cooperative_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
@@ -21377,6 +21494,18 @@ int run_transformer_lm_training_json(
         << lm_head_fused_graph_replay_success_count << ",\n"
         << "  \"lm_head_fused_graph_fallback_count\": "
         << lm_head_fused_graph_fallback_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_attempt_count\": "
+        << lm_head_fused_graph_prewarm_attempt_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_success_count\": "
+        << lm_head_fused_graph_prewarm_success_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_failure_count\": "
+        << lm_head_fused_graph_prewarm_failure_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_last_error_code\": "
+        << lm_head_fused_graph_prewarm_last_error_code << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_cache_hit_count\": "
+        << lm_head_fused_graph_prewarm_cache_hit_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_cache_entry_count\": "
+        << lm_head_fused_graph_prewarm_cache_entry_count << ",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_reverse_chunk_order_strategy\": \""

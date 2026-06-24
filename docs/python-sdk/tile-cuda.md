@@ -163,6 +163,23 @@ route-change counters so LM-head cooperative candidates can prove graph replay
 or fallback directly. Successful strict graph replay leaves the legacy
 `lm_head_cooperative_sequence_*` counters at zero; those counters are for the
 diagnostic sequence wrapper or graph fallback path.
+The capture-only
+`nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
+ABI is also available for diagnostics. Dense GPT JSON reports
+`lm_head_cooperative_backward_graph_prewarm_requested`,
+`lm_head_cooperative_backward_graph_prewarm_enabled`,
+`lm_head_fused_graph_prewarm_attempt_count`,
+`lm_head_fused_graph_prewarm_success_count`,
+`lm_head_fused_graph_prewarm_failure_count`,
+`lm_head_fused_graph_prewarm_last_error_code`,
+`lm_head_fused_graph_prewarm_cache_hit_count`, and
+`lm_head_fused_graph_prewarm_cache_entry_count`. The named
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` profile enables
+the required cuBLAS handle, BF16 workspace, and LM-head-only cuBLASLt plan
+prewarm before capture. It is rejected by default: the CUDA 13.3 RTX 5090
+same-script gate improved first-step event time to `0.969636x` and train-loop
+wall time to `0.994664x`, but missed strict gates with steady-state event time
+at `1.001249x` and total LM-head backward at `1.000123x`.
 
 Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
 cover the current native GPT hot linear path instead of one shape. The matrix
