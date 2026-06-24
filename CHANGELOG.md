@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off first-step-only attention projection side-stream
+  diagnostic for the native dense GPT block backward path:
+  `NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT=1`
+  and the GPT-2-prefixed fallback run attention projection dInput and
+  dWeight+bias concurrently only during optimizer step 1. Runtime JSON now
+  reports requested/enabled/count fields for this route, and
+  `tools/paired_kernel_speed.py` treats
+  `block_backward_attn_proj_first_step_concurrent_dinput_dweight_count` as
+  hot-route evidence. The matching candidate profile is
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_first_step_concurrent_dinput_dweight`.
+  It remains rejected as a default: the CUDA 13.3 dedicated RTX 5090 5-step,
+  3-sample stage-timed gate moved the counter from `0` to `96`, but regressed
+  train-loop wall to `1.002629x`, steady-state CUDA event timing to
+  `1.001028x`, LM-head backward to `1.000503x`, block backward to
+  `1.006184x`, and attention projection to `1.075065x`.
+
+  Verification: rebuilt SM120 native CUDA artifacts with
+  `bash tools/rebuild_native_sm120.sh`, ran focused native/source and paired
+  wrapper pytest coverage, ran
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  ran the same-script RTX 5090 candidate gate above.
+
 - Revalidated the promoted
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` default after the
   CUDA 13.3 reinstall on the dedicated RTX 5090. The same-script native wrapper

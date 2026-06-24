@@ -2069,6 +2069,8 @@ Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_concurrent_dinput_dweight` to rer
 
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_concurrent_dinput_dweight` to rerun this route through the native SM120 wrapper. Stage-timed runs gate `stage.block_backward.attn_proj.total_ms` alongside the default train-loop, total LM-head, block-backward, and MLP-projection totals. Keep the route default-off: the same-script RTX 5090 gate proved the route enabled but rejected it at `1.000183x` train-loop wall time, `1.004192x` block-backward time, and `1.089203x` attention-projection backward time.
 
+`NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed fallback env name enable the same attention-projection side-stream schedule only for optimizer step 1. Runtime JSON reports `block_backward_attn_proj_first_step_concurrent_dinput_dweight_requested`, `block_backward_attn_proj_first_step_concurrent_dinput_dweight_enabled`, and `block_backward_attn_proj_first_step_concurrent_dinput_dweight_count`; paired benchmarks treat that count as hot-route evidence. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_first_step_concurrent_dinput_dweight` to reproduce the rejected probe. Keep it default-off: the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample gate moved the counter from `0` to `96`, but regressed train-loop wall to `1.002629x`, steady-state CUDA event timing to `1.001028x`, block backward to `1.006184x`, and attention projection to `1.075065x`.
+
 For trainer linear-kernel bisection, `NFN_NATIVE_LINEAR_TK_DINPUT=1` still
 routes every supported BF16/BF16 dInput shape through the SM120 TK bridge.
 Prefer the shape-selective

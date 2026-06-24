@@ -1255,6 +1255,7 @@ attention section gates, and `qkv_forward_bf16_fallback_65536`, whose rerun
 regressed train-loop wall time to `1.011419x`. It also covers the block
 scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_fc_concurrent_dinput_dweight`, `attn_proj_concurrent_dinput_dweight`,
+`attn_proj_first_step_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
 `attn_proj_dinput_before_dweight`, and `qkv_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route

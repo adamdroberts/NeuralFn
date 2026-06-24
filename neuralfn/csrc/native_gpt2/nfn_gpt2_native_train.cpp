@@ -10006,6 +10006,7 @@ int run_transformer_lm_training_json(
     std::int64_t block_backward_mlp_fc_dinput_before_dweight_count = 0;
     std::int64_t block_backward_attn_proj_dinput_before_dweight_count = 0;
     std::int64_t block_backward_qkv_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_attn_proj_first_step_concurrent_dinput_dweight_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -11856,6 +11857,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT",
                               "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT"}),
             false);
+    const bool block_attn_proj_first_step_concurrent_dinput_dweight_requested =
+        !block_attn_proj_concurrent_dinput_dweight_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT",
+                              "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT"}),
+            false);
     const bool attn_proj_dinput_before_dweight_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT",
@@ -12401,6 +12408,9 @@ int run_transformer_lm_training_json(
     const bool block_attn_proj_concurrent_dinput_dweight_enabled =
         block_attn_proj_concurrent_dinput_dweight_requested &&
         block_backward_pair_streams_available;
+    const bool block_attn_proj_first_step_concurrent_dinput_dweight_enabled =
+        block_attn_proj_first_step_concurrent_dinput_dweight_requested &&
+        block_backward_pair_streams_available;
     const bool lm_head_side_streams_enabled =
         lm_head_concurrent_dhidden_dweight_enabled ||
         lm_head_pipeline_chunks_enabled ||
@@ -12458,7 +12468,8 @@ int run_transformer_lm_training_json(
     if (error.empty() &&
         (block_mlp_fc_concurrent_dinput_dweight_enabled ||
          block_qkv_concurrent_dinput_dweight_enabled ||
-         block_attn_proj_concurrent_dinput_dweight_enabled)) {
+         block_attn_proj_concurrent_dinput_dweight_enabled ||
+         block_attn_proj_first_step_concurrent_dinput_dweight_enabled)) {
         int status = cuda_stream_create_with_flags(&block_backward_dinput_stream, kCudaStreamNonBlocking);
         if (status != 0) {
             error = cuda_error(status, "cudaStreamCreateWithFlags block_backward_dinput");
@@ -17623,6 +17634,7 @@ int run_transformer_lm_training_json(
                               float* incoming_grad,
                               float* output_grad,
                               bool dweight_accumulate,
+                              std::int64_t optimizer_step,
                               const std::string& label) {
         const std::int64_t stage_event = stage_begin("block_backward");
         const float dweight_beta =
@@ -18158,7 +18170,14 @@ int run_transformer_lm_training_json(
                     run_attn_proj_dinput_body(nullptr);
                 });
             };
-            if (block_attn_proj_concurrent_dinput_dweight_enabled) {
+            const bool run_attn_proj_concurrent =
+                block_attn_proj_concurrent_dinput_dweight_enabled ||
+                (block_attn_proj_first_step_concurrent_dinput_dweight_enabled &&
+                 optimizer_step == 1);
+            if (run_attn_proj_concurrent) {
+                if (!block_attn_proj_concurrent_dinput_dweight_enabled) {
+                    block_backward_attn_proj_first_step_concurrent_dinput_dweight_count += 1;
+                }
                 run_timed_stage("block_backward.attn_proj.dinput_dweight_concurrent", [&]() {
                     int status = cuda_event_record(block_backward_pair_ready_event, nullptr);
                     if (status != 0) {
@@ -18868,7 +18887,10 @@ int run_transformer_lm_training_json(
         return false;
     };
 
-    auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) {
+    auto run_backward_microbatch = [&](std::int64_t optimizer_step,
+                                       bool record_train_loss,
+                                       float accumulation_scale,
+                                       bool dweight_accumulate) {
         zero_gradients();
         forward_loss("train", false, true, true);
         lm_head_forward_logits_for_backward("train");
@@ -18947,6 +18969,7 @@ int run_transformer_lm_training_json(
                 incoming_grad,
                 output_grad,
                 dweight_accumulate,
+                optimizer_step,
                 "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
         }
@@ -18988,7 +19011,7 @@ int run_transformer_lm_training_json(
                 break;
             }
             const bool dweight_accumulate = accum_index != 0 || !dweight_first_microbatch_beta_zero_enabled;
-            run_backward_microbatch(record_train_loss, accumulation_scale, dweight_accumulate);
+            run_backward_microbatch(step, record_train_loss, accumulation_scale, dweight_accumulate);
             if (error.empty()) {
                 accumulate_gradients(accumulation_scale);
                 train_microbatches_completed += 1;
@@ -21014,6 +21037,12 @@ int run_transformer_lm_training_json(
         << (block_attn_proj_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_concurrent_dinput_dweight_enabled\": "
         << (block_attn_proj_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_attn_proj_first_step_concurrent_dinput_dweight_requested\": "
+        << (block_attn_proj_first_step_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
+        << "  \"block_backward_attn_proj_first_step_concurrent_dinput_dweight_enabled\": "
+        << (block_attn_proj_first_step_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_attn_proj_first_step_concurrent_dinput_dweight_count\": "
+        << block_backward_attn_proj_first_step_concurrent_dinput_dweight_count << ",\n"
         << "  \"block_backward_attn_proj_dinput_before_dweight_enabled\": "
         << (attn_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_dinput_before_dweight_count\": "

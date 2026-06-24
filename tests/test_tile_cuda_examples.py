@@ -129,6 +129,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"block_backward_mlp_proj_dinput_before_dweight_count\\\": 0, "
                 "\\\"block_backward_mlp_fc_dinput_before_dweight_count\\\": 0, "
                 "\\\"block_backward_attn_proj_dinput_before_dweight_count\\\": 0, "
+                "\\\"block_backward_attn_proj_first_step_concurrent_dinput_dweight_count\\\": 0, "
                 "\\\"lm_head_classifier_chunk_kernel_available\\\": true, "
                 "\\\"lm_head_classifier_chunk_kernel_enabled\\\": true, "
                 "\\\"lm_head_classifier_chunk_launch_count\\\": 64, "
@@ -2663,6 +2664,45 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert attn_proj_payload["metric_ratio_gates"]["enabled"] is False
 
+    attn_proj_first_step_output_path = tmp_path / "candidate-attn-proj-first-step-concurrent-dry-run.json"
+    attn_proj_first_step_env = os.environ.copy()
+    attn_proj_first_step_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "attn_proj_first_step_concurrent_dinput_dweight",
+            "NFN_SM120_NATIVE_JSON_OUT": str(attn_proj_first_step_output_path),
+        }
+    )
+
+    attn_proj_first_step_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=attn_proj_first_step_env,
+    )
+
+    assert attn_proj_first_step_dry_run.returncode == 0, attn_proj_first_step_dry_run.stderr
+    attn_proj_first_step_payload = json.loads(
+        attn_proj_first_step_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        attn_proj_first_step_payload["baseline_env"][
+            "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT"
+        ]
+        == "0"
+    )
+    assert (
+        attn_proj_first_step_payload["candidate_env"][
+            "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT"
+        ]
+        == "1"
+    )
+    assert attn_proj_first_step_payload["metric_ratio_gates"]["enabled"] is False
+
     lm_head_concurrent_output_path = tmp_path / "candidate-lm-head-concurrent-dry-run.json"
     lm_head_concurrent_env = os.environ.copy()
     lm_head_concurrent_env.update(
@@ -3219,6 +3259,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "\\\"block_backward_mlp_proj_dinput_before_dweight_count\\\": 0, "
         "\\\"block_backward_mlp_fc_dinput_before_dweight_count\\\": 0, "
         "\\\"block_backward_attn_proj_dinput_before_dweight_count\\\": 0, "
+        "\\\"block_backward_attn_proj_first_step_concurrent_dinput_dweight_count\\\": 0, "
         "\\\"linear_bf16_gemm_count\\\": 1824"
         "}"
     )
@@ -3255,7 +3296,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     route_changes = payload["native_route_counter_changes"]
     assert route_changes["has_route_counter_change"] is False
     assert route_changes["changed_count"] == 0
-    assert route_changes["tracked_count"] == 12
+    assert route_changes["tracked_count"] == 13
     assert route_changes["unchanged"] == [
         "linear_tk_gemm_count",
         "linear_cublaslt_gemm_count",
@@ -3269,6 +3310,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "block_backward_mlp_proj_dinput_before_dweight_count",
         "block_backward_mlp_fc_dinput_before_dweight_count",
         "block_backward_attn_proj_dinput_before_dweight_count",
+        "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",
     ]
     assert payload["native_route_change_gate"] == {
         "enabled": False,
@@ -4342,6 +4384,7 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "block_backward_mlp_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_mlp_fc_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_attn_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_qkv_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
     }
     candidate = {
@@ -4357,6 +4400,7 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "block_backward_mlp_proj_dinput_before_dweight_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
         "block_backward_mlp_fc_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_attn_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_qkv_dinput_before_dweight_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
     }
 
@@ -4368,7 +4412,7 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
     assert changes["changed_count"] == 8
     assert changes["hot_changed_count"] == 8
     assert changes["setup_only_changed_count"] == 0
-    assert changes["tracked_count"] == 13
+    assert changes["tracked_count"] == 14
     assert changes["setup_only_changed"] == {}
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
@@ -4424,6 +4468,7 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "block_backward_dinput_cublaslt_gemm_count",
         "block_backward_mlp_fc_dinput_before_dweight_count",
         "block_backward_attn_proj_dinput_before_dweight_count",
+        "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",
     ]
     assert "linear_bf16_gemm_count" in changes["missing"]
 

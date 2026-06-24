@@ -4844,6 +4844,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_mlp_proj_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["block_backward_mlp_fc_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["block_backward_attn_proj_dinput_before_dweight_count"] == 0
+    assert "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count" in train_transformer_payload
     assert train_transformer_payload["block_backward_qkv_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
@@ -8122,6 +8123,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_QKV_DINPUT_BEFORE_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_pair_streams_available" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_enabled" in gpt2_source_text
@@ -8134,6 +8137,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias" in gpt2_source_text
     assert "block_backward_attn_proj_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_attn_proj_concurrent_dinput_dweight_enabled" in gpt2_source_text
+    assert "block_backward_attn_proj_first_step_concurrent_dinput_dweight_requested" in gpt2_source_text
+    assert "block_backward_attn_proj_first_step_concurrent_dinput_dweight_enabled" in gpt2_source_text
+    assert "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count" in gpt2_source_text
     assert "block_backward.attn_proj.dinput_dweight_concurrent" in gpt2_source_text
     assert "cudaStreamCreateWithFlags block_backward_dinput" in gpt2_source_text
     assert "cudaStreamCreateWithFlags block_backward_dweight" in gpt2_source_text

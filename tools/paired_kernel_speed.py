@@ -206,6 +206,10 @@ NATIVE_METRIC_PATHS = (
         ("block_backward_attn_proj_dinput_before_dweight_count",),
     ),
     (
+        "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",
+        ("block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",),
+    ),
+    (
         "block_backward_qkv_dinput_before_dweight_count",
         ("block_backward_qkv_dinput_before_dweight_count",),
     ),
@@ -510,6 +514,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "block_backward_mlp_proj_dinput_before_dweight_count",
     "block_backward_mlp_fc_dinput_before_dweight_count",
     "block_backward_attn_proj_dinput_before_dweight_count",
+    "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",
     "block_backward_qkv_dinput_before_dweight_count",
     "lm_head_cooperative_sequence_launch_count",
     "lm_head_cooperative_sequence_ce_launch_count",
@@ -727,6 +732,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "block_backward_mlp_proj_dinput_before_dweight_count",
     "block_backward_mlp_fc_dinput_before_dweight_count",
     "block_backward_attn_proj_dinput_before_dweight_count",
+    "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",
     "block_backward_qkv_dinput_before_dweight_count",
     "lm_head_fused_loss_backward_enabled",
     "lm_head_ce_loss_backward_fused_available",
