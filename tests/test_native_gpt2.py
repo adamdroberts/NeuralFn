@@ -3862,6 +3862,20 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count" in tile_payload[
         "available_native_kernels"
     ]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_k_tile" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_super_m" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled"
+        in tile_payload["available_native_kernels"]
+    )
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in tile_payload["available_native_kernels"]
     assert (
@@ -5188,6 +5202,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["optimizer_tile_strategy"] == "tile-size-1024-sumsq-scale-adamw"
     assert train_transformer_payload["attention_backward_tk_block_size"] in {0, 16, 32, 64}
     assert isinstance(train_transformer_payload["attention_backward_tk_block_size_symbol_loaded"], bool)
+    assert isinstance(train_transformer_payload["linear_tk_sm120_config_symbol_loaded"], bool)
+    assert isinstance(train_transformer_payload["linear_tk_sm120_fast_dgelu_enabled"], bool)
+    assert isinstance(train_transformer_payload["linear_tk_sm120_approx_dgelu_tanh_enabled"], bool)
+    assert train_transformer_payload["linear_tk_sm120_k_tile"] in {0, 16, 32, 64}
+    assert train_transformer_payload["linear_tk_sm120_grad_k_tile"] in {0, 32, 64}
+    assert train_transformer_payload["linear_tk_sm120_super_m"] in {0, 4, 7, 8, 13}
+    assert train_transformer_payload["linear_tk_sm120_dinput_super_m"] in {0, 4, 7, 8, 13}
+    assert train_transformer_payload["linear_tk_sm120_dweight_super_m"] in {0, 1, 2}
+    assert train_transformer_payload["linear_tk_sm120_huge_n_k_tile"] in {0, 32, 64, 128}
     assert train_transformer_payload["adamw_descriptor_count"] == 0
     assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
     assert train_transformer_payload["adamw_bf16_param_descriptor_count"] == 0
@@ -7288,6 +7311,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_k_tile" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_super_m" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in header_text
@@ -7612,6 +7643,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
     assert "linear_tk_dweight_gemm_count" in gpt2_source_text
     assert "linear_tk_dgelu_dinput_gemm_count" in gpt2_source_text
+    assert "linear_tk_sm120_config_symbol_loaded" in gpt2_source_text
+    assert "linear_tk_sm120_dweight_super_m" in gpt2_source_text
+    assert "linear_tk_sm120_approx_dgelu_tanh_enabled" in gpt2_source_text
     assert "linear_shape_stats" in gpt2_source_text
     assert '\\"total_us\\"' in gpt2_source_text
     assert '\\"avg_us\\"' in gpt2_source_text

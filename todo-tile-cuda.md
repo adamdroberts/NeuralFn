@@ -633,6 +633,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     SM120 native candidate wrapper records `candidate_profile`,
     `candidate_tile_ops_build_flags`, and `candidate_route_change_gate` so
     saved benchmark artifacts identify the exact temporary Tile ops build.
+  - 2026-06-24 added read-only SM120 TK GEMM compile-config telemetry to native
+    GPT JSON and the paired benchmark strategy-change gate. Runtime artifacts
+    now report `linear_tk_sm120_*` tile/swizzle/dGELU settings, which lets
+    compile-time Tile ops candidates prove generated-kernel changes even when
+    their route counters remain constant.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and

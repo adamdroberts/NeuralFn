@@ -19402,6 +19402,86 @@ std::int64_t trainer_linear_tk_dgelu_dinput_gemm_count() {
 #endif
 }
 
+int trainer_linear_tk_sm120_k_tile() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_K_TILE)
+  return LLMK_SM120_K_TILE;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 32;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_grad_k_tile() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_GRAD_K_TILE)
+  return LLMK_SM120_GRAD_K_TILE;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 64;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_super_m() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_SUPER_M)
+  return LLMK_SM120_SUPER_M;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 8;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_dinput_super_m() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_DINP_SUPER_M)
+  return LLMK_SM120_DINP_SUPER_M;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return trainer_linear_tk_sm120_super_m();
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_dweight_super_m() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_DWEIGHT_SUPER_M)
+  return LLMK_SM120_DWEIGHT_SUPER_M;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 2;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_huge_n_k_tile() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_HUGE_N_K_TILE)
+  return LLMK_SM120_HUGE_N_K_TILE;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 64;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_fast_dgelu_enabled() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_FAST_DGELU)
+  return LLMK_SM120_FAST_DGELU != 0 ? 1 : 0;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 1;
+#else
+  return 0;
+#endif
+}
+
+int trainer_linear_tk_sm120_approx_dgelu_tanh_enabled() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_APPROX_DGELU_TANH)
+  return LLMK_SM120_APPROX_DGELU_TANH != 0 ? 1 : 0;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 1;
+#else
+  return 0;
+#endif
+}
+
 std::int64_t trainer_linear_sgemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_sgemm_count.load(std::memory_order_relaxed);

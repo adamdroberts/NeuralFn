@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native GPT JSON telemetry for SM120 TK GEMM compile-time settings:
+  `linear_tk_sm120_k_tile`, `linear_tk_sm120_grad_k_tile`,
+  `linear_tk_sm120_super_m`, `linear_tk_sm120_dinput_super_m`,
+  `linear_tk_sm120_dweight_super_m`, `linear_tk_sm120_huge_n_k_tile`,
+  `linear_tk_sm120_fast_dgelu_enabled`, and
+  `linear_tk_sm120_approx_dgelu_tanh_enabled`. The Tile ops C ABI exports
+  matching read-only getter symbols, and `tools/paired_kernel_speed.py` treats
+  those fields as native strategy values so compile-time Tile ops candidates can
+  prove generated-kernel changes without relying on launch-counter deltas.
+
+  Verification: added native kernel inventory/header/source/payload coverage,
+  rebuilt the SM120 native artifacts, reran the no-Torch audit, and ran a
+  linked startup-only native JSON probe confirming the default values
+  (`k_tile=32`, `grad_k_tile=64`, `super_m=8`, `dinput_super_m=8`,
+  `dweight_super_m=2`, `huge_n_k_tile=64`, fast dGELU on, approximate tanh
+  dGELU on).
+
 - Added generic `--metadata KEY=VALUE` support to `tools/paired_kernel_speed.py`
   and wired the SM120 native candidate wrapper to record
   `candidate_profile`, `candidate_tile_ops_build_flags`, and

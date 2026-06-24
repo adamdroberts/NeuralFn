@@ -3331,6 +3331,14 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_sm120_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled",
+        "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
@@ -4449,6 +4457,15 @@ bool print_tile_plan(
         << "  \"linear_bf16_gemm_count\": 0,\n"
         << "  \"linear_tk_gemm_count\": 0,\n"
         << "  \"linear_tk_dgelu_dinput_gemm_count\": 0,\n"
+        << "  \"linear_tk_sm120_config_symbol_loaded\": false,\n"
+        << "  \"linear_tk_sm120_k_tile\": 0,\n"
+        << "  \"linear_tk_sm120_grad_k_tile\": 0,\n"
+        << "  \"linear_tk_sm120_super_m\": 0,\n"
+        << "  \"linear_tk_sm120_dinput_super_m\": 0,\n"
+        << "  \"linear_tk_sm120_dweight_super_m\": 0,\n"
+        << "  \"linear_tk_sm120_huge_n_k_tile\": 0,\n"
+        << "  \"linear_tk_sm120_fast_dgelu_enabled\": false,\n"
+        << "  \"linear_tk_sm120_approx_dgelu_tanh_enabled\": false,\n"
         << "  \"linear_cublaslt_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_direct_write_count\": 0,\n"
@@ -10298,6 +10315,14 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_sm120_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m",
+        "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile",
+        "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled",
+        "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
@@ -10911,6 +10936,14 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_tk_float_out_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_dweight_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_dgelu_dinput_gemm_count_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_k_tile_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_grad_k_tile_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_super_m_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_dinput_super_m_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_dweight_super_m_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_huge_n_k_tile_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_fast_dgelu_enabled_fn = nullptr;
+    TileOptimizerTileSizeFn trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_direct_write_count_fn = nullptr;
@@ -11421,6 +11454,22 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_dweight_gemm_count");
                 trainer_linear_tk_dgelu_dinput_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count");
+                trainer_linear_tk_sm120_k_tile_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_k_tile");
+                trainer_linear_tk_sm120_grad_k_tile_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile");
+                trainer_linear_tk_sm120_super_m_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_super_m");
+                trainer_linear_tk_sm120_dinput_super_m_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m");
+                trainer_linear_tk_sm120_dweight_super_m_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m");
+                trainer_linear_tk_sm120_huge_n_k_tile_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile");
+                trainer_linear_tk_sm120_fast_dgelu_enabled_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled");
+                trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
                 trainer_linear_cublaslt_bgrad_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -20479,6 +20528,33 @@ int run_transformer_lm_training_json(
         attention_backward_tk_block_size_fn != nullptr;
     const int attention_backward_tk_block_size =
         attention_backward_tk_block_size_symbol_loaded ? attention_backward_tk_block_size_fn() : 0;
+    const bool linear_tk_sm120_config_symbol_loaded =
+        trainer_linear_tk_sm120_k_tile_fn != nullptr &&
+        trainer_linear_tk_sm120_grad_k_tile_fn != nullptr &&
+        trainer_linear_tk_sm120_super_m_fn != nullptr &&
+        trainer_linear_tk_sm120_dinput_super_m_fn != nullptr &&
+        trainer_linear_tk_sm120_dweight_super_m_fn != nullptr &&
+        trainer_linear_tk_sm120_huge_n_k_tile_fn != nullptr &&
+        trainer_linear_tk_sm120_fast_dgelu_enabled_fn != nullptr &&
+        trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn != nullptr;
+    const int linear_tk_sm120_k_tile =
+        trainer_linear_tk_sm120_k_tile_fn != nullptr ? trainer_linear_tk_sm120_k_tile_fn() : 0;
+    const int linear_tk_sm120_grad_k_tile =
+        trainer_linear_tk_sm120_grad_k_tile_fn != nullptr ? trainer_linear_tk_sm120_grad_k_tile_fn() : 0;
+    const int linear_tk_sm120_super_m =
+        trainer_linear_tk_sm120_super_m_fn != nullptr ? trainer_linear_tk_sm120_super_m_fn() : 0;
+    const int linear_tk_sm120_dinput_super_m =
+        trainer_linear_tk_sm120_dinput_super_m_fn != nullptr ? trainer_linear_tk_sm120_dinput_super_m_fn() : 0;
+    const int linear_tk_sm120_dweight_super_m =
+        trainer_linear_tk_sm120_dweight_super_m_fn != nullptr ? trainer_linear_tk_sm120_dweight_super_m_fn() : 0;
+    const int linear_tk_sm120_huge_n_k_tile =
+        trainer_linear_tk_sm120_huge_n_k_tile_fn != nullptr ? trainer_linear_tk_sm120_huge_n_k_tile_fn() : 0;
+    const bool linear_tk_sm120_fast_dgelu_enabled =
+        trainer_linear_tk_sm120_fast_dgelu_enabled_fn != nullptr &&
+        trainer_linear_tk_sm120_fast_dgelu_enabled_fn() != 0;
+    const bool linear_tk_sm120_approx_dgelu_tanh_enabled =
+        trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn != nullptr &&
+        trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn() != 0;
 
     std::cout
         << "{\n"
@@ -21244,6 +21320,18 @@ int run_transformer_lm_training_json(
         << "  \"linear_tk_dweight_gemm_count\": " << linear_tk_dweight_gemm_count << ",\n"
         << "  \"linear_tk_dgelu_dinput_gemm_count\": "
         << linear_tk_dgelu_dinput_gemm_count << ",\n"
+        << "  \"linear_tk_sm120_config_symbol_loaded\": "
+        << (linear_tk_sm120_config_symbol_loaded ? "true" : "false") << ",\n"
+        << "  \"linear_tk_sm120_k_tile\": " << linear_tk_sm120_k_tile << ",\n"
+        << "  \"linear_tk_sm120_grad_k_tile\": " << linear_tk_sm120_grad_k_tile << ",\n"
+        << "  \"linear_tk_sm120_super_m\": " << linear_tk_sm120_super_m << ",\n"
+        << "  \"linear_tk_sm120_dinput_super_m\": " << linear_tk_sm120_dinput_super_m << ",\n"
+        << "  \"linear_tk_sm120_dweight_super_m\": " << linear_tk_sm120_dweight_super_m << ",\n"
+        << "  \"linear_tk_sm120_huge_n_k_tile\": " << linear_tk_sm120_huge_n_k_tile << ",\n"
+        << "  \"linear_tk_sm120_fast_dgelu_enabled\": "
+        << (linear_tk_sm120_fast_dgelu_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_tk_sm120_approx_dgelu_tanh_enabled\": "
+        << (linear_tk_sm120_approx_dgelu_tanh_enabled ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_cublaslt_bgrad_gemm_count\": "
         << linear_cublaslt_bgrad_gemm_count << ",\n"

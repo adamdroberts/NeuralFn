@@ -54,6 +54,14 @@ std::int64_t trainer_linear_tk_gemm_count();
 std::int64_t trainer_linear_tk_float_out_gemm_count();
 std::int64_t trainer_linear_tk_dweight_gemm_count();
 std::int64_t trainer_linear_tk_dgelu_dinput_gemm_count();
+int trainer_linear_tk_sm120_k_tile();
+int trainer_linear_tk_sm120_grad_k_tile();
+int trainer_linear_tk_sm120_super_m();
+int trainer_linear_tk_sm120_dinput_super_m();
+int trainer_linear_tk_sm120_dweight_super_m();
+int trainer_linear_tk_sm120_huge_n_k_tile();
+int trainer_linear_tk_sm120_fast_dgelu_enabled();
+int trainer_linear_tk_sm120_approx_dgelu_tanh_enabled();
 std::int64_t trainer_linear_cublaslt_gemm_count();
 std::int64_t trainer_linear_cublaslt_bgrad_gemm_count();
 std::int64_t trainer_linear_cublaslt_bgrad_direct_write_count();
@@ -2362,6 +2370,38 @@ std::int64_t nfn_native_tile_trainer_linear_tk_dweight_gemm_count() {
 
 std::int64_t nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count() {
     return neuralfn::tile_cuda::trainer_linear_tk_dgelu_dinput_gemm_count();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_k_tile() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_k_tile();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_grad_k_tile();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_super_m() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_super_m();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_dinput_super_m();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_dweight_super_m();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_huge_n_k_tile();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_fast_dgelu_enabled();
+}
+
+int nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled() {
+    return neuralfn::tile_cuda::trainer_linear_tk_sm120_approx_dgelu_tanh_enabled();
 }
 
 std::int64_t nfn_native_tile_trainer_linear_cublaslt_gemm_count() {
