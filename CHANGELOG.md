@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit total aliases to dense GPT native arena request diagnostics.
+  `float_arena_request_stats` and `uint16_arena_request_stats` now include
+  `total_requested_elements`, `total_allocated_elements`,
+  `total_requested_bytes`, and `total_allocated_bytes` beside the existing
+  short `requested_*` / `allocated_*` fields. This is a JSON observability
+  change only; allocation behavior and default training routes are unchanged.
+
+  Verification: the change was driven by a fresh same-script dedicated RTX
+  5090 parity run with zero external compute processes. NeuralFn measured
+  `0.987605x` train-loop wall time per step, `1.019222x` steady-state
+  CUDA-event step time, and `1.004440x` tokens/sec versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the remaining hot
+  buckets were still LM-head backward and block backward. The arena profile
+  showed `block.*.persistent_output` as the largest float family and
+  `stored_mlp_activation_bf16_arena` as the largest uint16 family; existing
+  BF16 persistent-output and token-weight alternate routes were already
+  documented as rejected for default promotion, so this entry only improves the
+  profiling contract. Focused source-contract verification was added for the
+  new JSON field names.
+
 - Added a separate default-off CUDA Graph route for opt-in cooperative LM-head
   backward. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` can now select
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` when the

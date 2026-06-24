@@ -799,7 +799,11 @@ aliases for profiling runs such as
 Those profile files also include `float_arena_request_stats` and
 `uint16_arena_request_stats`, ranked by suballocation name, elements, bytes,
 and arena offset, so startup optimization can target the buffers that dominate
-the large native `cudaMalloc` arenas.
+the large native `cudaMalloc` arenas. Each arena stats object includes both the
+short `requested_elements` / `allocated_elements` / `requested_bytes` /
+`allocated_bytes` names and the explicit `total_requested_elements` /
+`total_allocated_elements` / `total_requested_bytes` / `total_allocated_bytes`
+aliases for benchmark tooling that reads nested arena totals directly.
 The paired helper also detects those native JSON-output flags in child commands
 and reads the sidecar file when stdout is empty, so stage-timed native runs can
 keep stdout small without losing metric summaries or paired ratios.
