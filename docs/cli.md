@@ -684,7 +684,9 @@ no-data JSON catalog of every shipped GPT template selector plus the public
 resolution, reports `token_shards_resolved: false`, and exposes
 `selected_graph_support_status` plus `selected_graph_native_runnable` for each
 selector so native migration gaps can be checked without sending real batches
-through graph-editor nodes.
+through graph-editor nodes. The `train_gpt.py` wrapper also strips its default
+dataset alias and eval cadence arguments for this catalog action before
+launching the compiled command.
 
 The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,

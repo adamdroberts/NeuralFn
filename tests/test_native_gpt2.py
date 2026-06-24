@@ -2511,6 +2511,10 @@ def test_native_gpt_template_catalog_action_reaches_wrappers(
     gpt_args = args_file.read_text(encoding="utf-8").splitlines()
     assert "--list-templates" in gpt_args
     assert "--train-transformer-lm" not in gpt_args
+    assert "--dataset-alias" not in gpt_args
+    assert "--dataset-path" not in gpt_args
+    assert "--tinystories" not in gpt_args
+    assert "--eval-batches" not in gpt_args
 
 
 def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(

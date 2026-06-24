@@ -126,7 +126,9 @@ Use `nfn train --base-model gpt --list-templates`, raw
 opening datasets or resolving token shards. The JSON action lists every shipped
 template selector plus `gpt` and `gpt3`, reports `token_shards_resolved: false`,
 and includes `selected_graph_support_status` plus
-`selected_graph_native_runnable` for each selector.
+`selected_graph_native_runnable` for each selector. The `train_gpt.py` wrapper
+does not forward its default dataset alias or eval cadence flags for this
+catalog action.
 
 #### Modernized presets (`<preset>_modern`)
 

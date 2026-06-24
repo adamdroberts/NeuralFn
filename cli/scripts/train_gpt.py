@@ -124,6 +124,22 @@ def _set_split_value(out: list[str], flag: str, value: str) -> None:
     _append_value(out, flag, value)
 
 
+def _remove_split_or_bool_flags(out: list[str], *flags: str) -> None:
+    remove = set(flags)
+    idx = 0
+    while idx < len(out):
+        arg = out[idx]
+        if arg in remove:
+            del out[idx]
+            if arg != "--tinystories" and idx < len(out):
+                del out[idx]
+            continue
+        if any(arg.startswith(flag + "=") for flag in remove):
+            del out[idx]
+            continue
+        idx += 1
+
+
 def _native_backend_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--backend") or "tile-cuda").strip().lower().replace("_", "-")
 
@@ -331,6 +347,20 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
     model_selector = _native_model_family(out)
     model_family = _canonical_dense_gpt_model_family(model_selector)
     _set_split_value(out, "--model-family", model_family)
+    list_templates_only = "--list-templates" in out
+    if list_templates_only:
+        _remove_split_or_bool_flags(
+            out,
+            "--tinystories",
+            "--dataset-alias",
+            "--dataset-path",
+            "--eval-every-steps",
+            "--eval-batches",
+            "--eval-batch-size",
+            "--train-loss-every-steps",
+            "--train-log-every",
+            "--train-log-every-steps",
+        )
     if (
         model_selector == "gpt3"
         and not _explicit_arg(out, "--train-seq-len")
@@ -344,13 +374,18 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         and not _explicit_arg(out, "--graph-file", "--graph")
     ):
         _append_value(out, "--template-name", "nanogpt")
-    if "--dataset-alias" not in out and "--dataset-path" not in out and "--tinystories" not in out:
+    if (
+        not list_templates_only
+        and "--dataset-alias" not in out
+        and "--dataset-path" not in out
+        and "--tinystories" not in out
+    ):
         _append_value(out, "--dataset-alias", os.environ.get("DATASET_ALIAS", _TINYSTORIES_ALIAS))
     if _native_backend_name(out) != "tile-cuda":
         raise ValueError("native GPT kernel backend must be tile-cuda")
     if "--backend" not in out:
         _append_value(out, "--backend", "tile-cuda")
-    if not _explicit_arg(out, "--eval-batches"):
+    if not list_templates_only and not _explicit_arg(out, "--eval-batches"):
         _append_value(out, "--eval-batches", os.environ.get("EVAL_BATCHES", _DEFAULT_EVAL_BATCHES))
     final_lr = _final_lr_fraction(argv)
     if final_lr is not None and "--final-lr-fraction" not in out:

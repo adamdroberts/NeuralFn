@@ -113,6 +113,8 @@ Real training tensors must not pass through graph editor node objects.
     top-level `nfn train --base-model gpt --list-templates` path under the
     import blocker so that catalog lookups cannot regress into Python graph or
     dataset startup.
+    The `train_gpt.py --native-cuda-list-templates` wrapper also strips its
+    default dataset alias and eval cadence flags before launching native C++.
   - 2026-06-24 rechecked `qkv_dinput_before_dweight` after the CUDA reinstall:
     it improved train-loop wall to `0.994580x` but still missed strict
     steady-state, LM-head, MLP-projection, and QKV gates, so it remains

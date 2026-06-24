@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened `cli/scripts/train_gpt.py --native-cuda-list-templates` so the
+  metadata-only catalog action strips dataset, token-shard, and eval cadence
+  defaults before launching the compiled command. The top-level `nfn train
+  --base-model gpt --list-templates` path was already no-dataset; the direct
+  GPT wrapper now matches it, keeping template support lookup separate from
+  any real-data training path.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "template_catalog_action"`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  cli/scripts/train_gpt.py`; ran `git diff --check`.
+
 - Extended `tools/check_native_no_torch_deps.py` to cover the new GPT template
   catalog metadata action. The import-blocked verifier now runs both
   `cli/scripts/train_gpt.py --native-cuda-list-templates` and
