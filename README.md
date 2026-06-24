@@ -266,6 +266,14 @@ The full SM120 parity and native-candidate wrappers also refresh the default
 runs when the native GPT source, token shard resolver, or linked Tile ABI inputs
 are newer; explicitly pinned `NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer
 paths are left untouched. The
+low-level GPT CLI build scripts now skip recompilation when their output is
+newer than `nfn_gpt2_native_train.cpp`, `token_shards.cpp`,
+`token_shards.h`, their own build script, and, for the linked trainer,
+`libnfn_native_train_tile_ops.so`. Set `NFN_NATIVE_GPT_FORCE_REBUILD=1` or
+`NFN_NATIVE_FORCE_REBUILD=1` when a forced local rebuild is required.
+`tools/rebuild_native_sm120.sh` sets `NFN_NATIVE_FORCE_REBUILD=1` by default,
+so CUDA toolkit refreshes still rebuild all native artifacts unless that
+environment variable is explicitly overridden. The
 wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring
 an idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it to
 `auto` to allow fallback to the lowest-utilization NVIDIA GPU, or set it or

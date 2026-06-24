@@ -2578,6 +2578,12 @@ For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
 explicit `NFN_NATIVE_GPT_CLI` or `NFN_NATIVE_TRAIN_CLI` override is set. This
 keeps SDK-native runs on the same linked Tile-ops startup path as `nfn train`
 and avoids the avoidable dynamic `dlopen` branch on workstation builds.
+The low-level dense GPT CLI build scripts skip current outputs when their C++
+sources, token-shard resolver, build script, and linked Tile ops library are not
+newer than the target; set `NFN_NATIVE_GPT_FORCE_REBUILD=1` or
+`NFN_NATIVE_FORCE_REBUILD=1` to force a rebuild. The SM120 rebuild helper sets
+that force flag by default so CUDA toolkit changes still refresh native
+artifacts intentionally.
 `exec_native_train(config)` is the generic SDK process-replacement handoff: it
 resolves the same compiled native command as `run_native_train(...,
 runner="compiled-cli")`, sets the CUDA environment defaults, then calls

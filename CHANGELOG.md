@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made the dense GPT native CLI build scripts freshness-aware. Direct
+  `tools/build_native_gpt_cli.sh` and
+  `tools/build_native_gpt_cli_linked.sh` now skip the expensive host C++
+  compile when the output is newer than the native GPT source, token-shard
+  resolver, build script, and linked Tile ops library. Set
+  `NFN_NATIVE_GPT_FORCE_REBUILD=1` or `NFN_NATIVE_FORCE_REBUILD=1` to force
+  recompilation; the SM120 rebuild helper sets the force flag by default so
+  CUDA toolkit refreshes remain true rebuilds.
+
+  Verification: ran source-level build-script assertions and `git diff
+  --check`.
+
 - Made the dense native GPT optimizer route a hard optimized-kernel contract.
   Full transformer training now requires the many-tensor AdamW kernels, BF16
   primary/shadow AdamW kernels, BF16-gradient AdamW kernel, many-buffer sumsq

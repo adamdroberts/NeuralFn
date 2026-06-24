@@ -641,6 +641,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     linked_build = (root / "tools" / "build_native_gpt_cli_linked.sh").read_text(
         encoding="utf-8"
     )
+    build_script = (root / "tools" / "build_native_gpt_cli.sh").read_text(
+        encoding="utf-8"
+    )
     train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(
         encoding="utf-8"
     )
@@ -710,6 +713,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
         "build_native_gpt_cli_linked.sh"
     )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
+    assert 'export NFN_NATIVE_FORCE_REBUILD="${NFN_NATIVE_FORCE_REBUILD:-1}"' in rebuild_sm120
+    assert "NFN_NATIVE_GPT_FORCE_REBUILD" in build_script
+    assert "NFN_NATIVE_FORCE_REBUILD" in build_script
+    assert "source_newer_than_out" in build_script
+    assert "TOKEN_SHARDS_HEADER" in build_script
+    assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
+    assert "source_newer_than_out" in linked_build
+    assert '! source_newer_than_out "${TILE_OPS_LIB}"' in linked_build
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in parity_bench
     assert "ensure_default_native_gpt_trainer_current" in parity_bench
