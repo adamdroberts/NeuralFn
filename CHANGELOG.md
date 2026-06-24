@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the `lm_head_row_loss_partial_reduce` native GPT candidate after a
+  fresh CUDA 13.3 dedicated RTX 5090 same-script rerun. The candidate changed
+  only `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` from `1` to `0`; it
+  slightly improved steady-state CUDA-event timing to `0.999166x`, but failed
+  the train-loop gate at `1.002484x` wall time and reduced tokens/sec to
+  `0.997528x`. Row-loss sum accumulation remains the default, and the remaining
+  LM-head parity work still needs a real fused/cooperative logits/CE/dHidden/
+  dWeight kernel rather than this partial reducer.
+
+  Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce` through
+  `tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090 with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, 3 steps, 2 samples,
+  and no warmup.
+
 - Extended the native no-Torch verifier to cover universal dense GPT
   architecture selection. It now runs `nfn train` through the import-blocked
   fast path with an explicit `--template-name gpt2_moa` and with a custom
