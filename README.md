@@ -1046,6 +1046,19 @@ diagnostic wrapper. Runtime JSON reports
 whether a candidate is still sequencing the old CE/dHidden/dWeight launches.
 The paired kernel speed tool prints these counters and treats them as route
 counters.
+Fresh Tile ops builds also report CUDA Graph evidence for the strict
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` ABI:
+`lm_head_fused_graph_capture_attempt_count`,
+`lm_head_fused_graph_capture_success_count`,
+`lm_head_fused_graph_cache_hit_count`,
+`lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
+`lm_head_fused_graph_replay_success_count`, and
+`lm_head_fused_graph_fallback_count`. These counters are included in native
+training JSON and in `tools/paired_kernel_speed.py` route-change detection, so
+`lm_head_cooperative_backward` candidate runs can prove graph replay happened
+instead of only proving the cooperative route was requested. Missing older
+Tile ops symbols report zero; this does not promote the graph body as a
+default training route.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

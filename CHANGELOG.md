@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added strict LM-head CUDA Graph observability to native dense GPT Tile-CUDA
+  training. Rebuilt Tile ops libraries now export graph capture/cache/replay
+  counters for
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`, and the
+  native trainer reports them as
+  `lm_head_fused_graph_capture_attempt_count`,
+  `lm_head_fused_graph_capture_success_count`,
+  `lm_head_fused_graph_cache_hit_count`,
+  `lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
+  `lm_head_fused_graph_replay_success_count`, and
+  `lm_head_fused_graph_fallback_count`. `tools/paired_kernel_speed.py` now
+  treats those fields as native route counters, so
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` can prove
+  actual graph replay or fallback directly instead of inferring it from the
+  strategy string. Older Tile ops libraries that lack these symbols continue to
+  report zero in the trainer JSON.
+
+  Verification: `python -m pytest tests/test_native_gpt2.py -x -q`,
+  `bash tools/rebuild_native_sm120.sh`,
+  `python tools/check_native_no_torch_deps.py --max-entrypoint-seconds 2`,
+  and `nm -D build/libnfn_native_train_tile_ops.so` confirmed the exported
+  graph-counter symbols. A one-step
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` probe with
+  metric-ratio gates disabled recorded baseline graph counters at zero and
+  candidate counters at 3 capture attempts, 3 capture successes, 13 cache hits,
+  3 cache entries, 16 graph replays, 16 replay successes, and 0 fallbacks; the
+  native route-change gate passed.
+
 - Added a strict LM-head cooperative backward callable for native dense GPT
   Tile-CUDA training. The exported
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol

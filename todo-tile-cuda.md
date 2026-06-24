@@ -289,6 +289,19 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       step time, and `1.294653x` LM-head backward. Keep the strict ABI opt-in
       and replace the graph body with a lower-overhead fused/cooperative body
       before promotion.
+    - 2026-06-24 added explicit strict LM-head CUDA Graph observability to the
+      Tile C ABI and trainer JSON. Rebuilt Tile ops libraries now export graph
+      capture/cache/replay/fallback counters, and native training JSON plus
+      `tools/paired_kernel_speed.py` report them as
+      `lm_head_fused_graph_capture_attempt_count`,
+      `lm_head_fused_graph_capture_success_count`,
+      `lm_head_fused_graph_cache_hit_count`,
+      `lm_head_fused_graph_cache_entry_count`,
+      `lm_head_fused_graph_replay_count`,
+      `lm_head_fused_graph_replay_success_count`, and
+      `lm_head_fused_graph_fallback_count`. This closes the evidence gap for
+      graph-vs-fallback candidate runs; it does not close the parity gap or
+      promote the CUDA Graph body as the default.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use

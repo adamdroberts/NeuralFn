@@ -148,6 +148,20 @@ cuBLAS/TK setup is not counted as kernel time. Set
 candidate is close to the noise floor; the JSON includes `run_order` so the
 baseline-first and candidate-first measurements can be compared.
 
+Native dense GPT training JSON also exposes strict LM-head CUDA Graph evidence
+for the optional
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` ABI:
+`lm_head_fused_graph_capture_attempt_count`,
+`lm_head_fused_graph_capture_success_count`,
+`lm_head_fused_graph_cache_hit_count`,
+`lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
+`lm_head_fused_graph_replay_success_count`, and
+`lm_head_fused_graph_fallback_count`. These counters are optional C ABI
+symbols; older Tile ops libraries that do not export them leave the reported
+values at zero. `tools/paired_kernel_speed.py` treats them as native
+route-change counters so LM-head cooperative candidates can prove graph replay
+or fallback directly.
+
 Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
 cover the current native GPT hot linear path instead of one shape. The matrix
 wrapper runs `mlp-proj-dinput`, `mlp-proj-dweight`, `mlp-fc-dinput`,

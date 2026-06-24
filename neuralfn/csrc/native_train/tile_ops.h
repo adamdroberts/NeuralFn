@@ -247,6 +247,13 @@ std::int64_t nfn_native_tile_lm_head_cooperative_sequence_dweight_launch_count()
 std::int64_t nfn_native_tile_lm_head_cooperative_sequence_concurrent_count();
 std::int64_t nfn_native_tile_lm_head_cooperative_sequence_legacy_count();
 std::int64_t nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_capture_attempt_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_capture_success_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_cache_hit_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_cache_entry_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_replay_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_replay_success_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_fallback_count();
 
 int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
     std::uint16_t* logits_bf16,
