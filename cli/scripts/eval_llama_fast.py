@@ -6,22 +6,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
-import torch
-
-from infer_jepa_semantic import (
-    autocast_enabled_for,
+from infer_gpt2 import (
     add_dataset_download_arguments,
-    configure_console_logging,
-    dataset_download_kwargs_from_args,
-    load_compiled_inference_graph,
-    log_tokenizer_status,
     repetition_penalty_arg,
-    resolve_inference_dataset_alias,
-    resolve_inference_tokenizer_context,
-    resolve_autocast_dtype,
-    resolve_prompt_tokens,
-    resolve_raw_text_encoding_name,
-    validate_inference_vocab_contract,
+    add_dataset_selector_arguments,
 )
 from infer_llama_fast import (
     DEFAULT_DATASET_ALIAS,
@@ -30,8 +18,6 @@ from infer_llama_fast import (
     generate_sequence,
     log_stage,
 )
-from train_jepa_semantic import load_val_token_dataset, resolve_or_download_dataset
-from train_jepa_semantic import add_dataset_selector_arguments, resolve_dataset_selector_args
 
 GENERAL_PROMPT_SUITE = [
     "hello",
@@ -95,15 +81,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def evaluate_validation_loss(
-    compiled: CompiledTorchGraph,
+    compiled,
     dataset_path: Path,
     *,
-    device: torch.device,
-    amp_dtype: torch.dtype,
+    device,
+    amp_dtype,
     seq_len: int,
     batch_size: int,
     eval_batches: int,
 ) -> float | None:
+    import torch
+
+    from infer_jepa_semantic import autocast_enabled_for
+    from train_jepa_semantic import load_val_token_dataset
+
     if eval_batches <= 0:
         return None
 
@@ -150,8 +141,24 @@ def resolve_prompt_suite(
 
 
 def main() -> int:
-    configure_console_logging()
     args = build_parser().parse_args()
+
+    import torch
+
+    from infer_jepa_semantic import (
+        configure_console_logging,
+        dataset_download_kwargs_from_args,
+        load_compiled_inference_graph,
+        log_tokenizer_status,
+        resolve_inference_dataset_alias,
+        resolve_inference_tokenizer_context,
+        resolve_autocast_dtype,
+        resolve_prompt_tokens,
+        resolve_raw_text_encoding_name,
+    )
+    from train_jepa_semantic import resolve_dataset_selector_args
+
+    configure_console_logging()
     resolve_dataset_selector_args(args)
 
     log_stage("Starting llama_fast evaluation")
@@ -266,7 +273,7 @@ def main() -> int:
         report = {
             "dataset_alias": dataset_name,
             "graph_path": str(graph_path),
-            "weights_path": str(weights_path),
+            "weights_path": str(resolved_weights_path),
             "report_path": str(report_path),
             "context_window": context_window,
             "validation_loss": validation_loss,

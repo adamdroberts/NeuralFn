@@ -1145,6 +1145,14 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "eval_llama_fast_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/eval_llama_fast.py",
+                    "--help",
+                ),
+            ),
+            (
                 "nfn_infer_native_info",
                 (
                     sys.executable,

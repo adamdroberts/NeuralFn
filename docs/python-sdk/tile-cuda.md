@@ -2565,6 +2565,13 @@ The same verifier now covers dense GPT `nfn train` dispatch with an explicit
 `--template-name` and with a custom `--graph-file`, so universal GPT trainer
 selection cannot regress into the graph-backed Python runtime while only the
 architecture selector changes.
+It also covers legacy graph-backed family inference/eval help paths, including
+`infer_llama_fast.py`, `infer_llama_megakernel.py`, `infer_mixllama_fast.py`,
+`infer_nanogpt.py`, `infer_semantic_router_moe.py`, and
+`eval_llama_fast.py`. Those commands must build parser help without importing
+Torch, NumPy, tokenizers, dataset manager modules, or graph-backed runtime
+helpers; actual graph-backed execution imports those dependencies only after
+argument parsing.
 The generic compiled binding must expose both a runner symbol and a command
 resolver symbol; `resolve_native_train_binding_command(config)` returns the
 argv that `neuralfn._native_train` will spawn so SDK callers can assert the

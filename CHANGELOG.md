@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Kept the LLaMA-fast eval helper help path out of the Torch runtime.
+  `eval_llama_fast.py` now parses `--help` from lightweight CLI helpers and
+  defers Torch, CUDA graph loading, tokenizer/dataset helpers, and validation
+  dataset loading until after argument parsing. Its JSON report now records the
+  resolved checkpoint path instead of referencing the stale local
+  `weights_path` name. The native no-Torch verifier covers the eval helper help
+  path under the same import blocker as the family inference helpers.
+
+  Migration note: graph-backed evaluation behavior is unchanged when an eval is
+  actually requested; only parser/help startup dependencies and the report
+  metadata field were corrected.
+
+  Verification: ran `python -m py_compile cli/scripts/eval_llama_fast.py`, ran
+  `python cli/scripts/eval_llama_fast.py --help`, and ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`, which passed.
+
 - Kept legacy graph-backed family inference help paths out of the Torch runtime.
   `infer_llama_fast.py`, `infer_llama_megakernel.py`,
   `infer_mixllama_fast.py`, `infer_nanogpt.py`, and
