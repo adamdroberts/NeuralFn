@@ -318,26 +318,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       at the trainer chunk and loss-bin scales.
     - 2026-06-24 replaced the strict LM-head fused-kernel placeholder with a
       cached CUDA Graph body over the optimized CE, dHidden, and dWeight
-      launches. The strict capability probe now returns true for rebuilt CUDA
-      13.3 Tile ops libraries, while the older cooperative sequence wrapper is
-      still available as a non-required diagnostic fallback. The focused RTX
-      5090 `trainer-chunk` run passed
-      `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and reported
-      `candidate_true_fused_capability: true`,
-      `candidate_sequence_wrapper_only: false`, and
-      `candidate_strict_symbol_is_placeholder_sequence: false`; candidate time
-      was `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy
-      cooperative baseline (`1.000186x`). This is not a monolithic single
-      kernel or a default promotion: the full 3-step, 2-sample
-      native-vs-native `lm_head_cooperative_backward` gate proved the route
-      active (`lm_head_cooperative_backward_kernel_enabled: true`) but rejected
-      it at `1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event
-      step time, and `1.294653x` LM-head backward. That result was later traced
-      to the graph body accidentally using the rejected public-vocab strided
-      dHidden/dWeight route for padded LM-head rows; see the 2026-06-24
-      padded-route fix below for the current gate result. Keep the strict ABI
-      opt-in and replace the graph body with a lower-overhead fused/cooperative
-      body before promotion.
+      launches, then corrected the status contract so the graph wrapper no
+      longer claims true fused parity. Current CUDA 13.3 builds expose the graph
+      symbol and can run it through the non-required
+      `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` diagnostic route, but
+      `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+      returns `0`, `lm_head_cooperative_backward_kernel_available` remains
+      false, and `--require-cooperative-lm-head-backward` still fails the strict
+      preflight. The latest short RTX 5090 route-proof run reported
+      `lm_head_cooperative_backward_cuda_graph_enabled: true`, graph replay
+      success `32`, graph fallback `0`, and route-change gate passed; keep the
+      graph body diagnostic-only and replace it with a lower-overhead
+      fused/cooperative body before promotion.
     - 2026-06-24 added explicit strict LM-head CUDA Graph observability to the
       Tile C ABI and trainer JSON. Rebuilt Tile ops libraries now export graph
       capture/cache/replay/fallback counters, and native training JSON plus
