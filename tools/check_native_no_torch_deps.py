@@ -142,6 +142,14 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_gpt_template_catalog_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt.py",
+            "--native-cuda-list-templates",
+        ),
+    ),
+    (
         "train_gpt2_compat_custom_graph_command",
         (
             sys.executable,
@@ -164,6 +172,17 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             "--native-cuda-dry-run",
             "--native-cuda-print-command",
             "--no-checkpoint",
+        ),
+    ),
+    (
+        "nfn_train_gpt_template_catalog_command",
+        (
+            sys.executable,
+            "cli/nfn.py",
+            "train",
+            "--base-model",
+            "gpt",
+            "--list-templates",
         ),
     ),
     (

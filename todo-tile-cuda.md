@@ -109,6 +109,10 @@ Real training tensors must not pass through graph editor node objects.
     shipped template/native support status without resolving token shards,
     opening datasets, importing Torch, or routing real training data through
     graph-editor nodes.
+    The no-Torch verifier now runs the `train_gpt.py` wrapper alias and the
+    top-level `nfn train --base-model gpt --list-templates` path under the
+    import blocker so that catalog lookups cannot regress into Python graph or
+    dataset startup.
   - 2026-06-24 rechecked `qkv_dinput_before_dweight` after the CUDA reinstall:
     it improved train-loop wall to `0.994580x` but still missed strict
     steady-state, LM-head, MLP-projection, and QKV gates, so it remains

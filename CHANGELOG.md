@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/check_native_no_torch_deps.py` to cover the new GPT template
+  catalog metadata action. The import-blocked verifier now runs both
+  `cli/scripts/train_gpt.py --native-cuda-list-templates` and
+  `cli/nfn.py train --base-model gpt --list-templates`, ensuring catalog
+  lookups keep crossing directly to the compiled native command without
+  importing Torch, NumPy, tiktoken, dataset-manager, `train_gpt_native`, or
+  `nfn_impl`.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/check_native_no_torch_deps.py`; ran `git diff --check`.
+
 - Added a metadata-only compiled GPT template support catalog action.
   `nfn_gpt_native_train --list-templates`, `nfn train --base-model gpt
   --list-templates`, and wrapper alias `--native-cuda-list-templates` now print
