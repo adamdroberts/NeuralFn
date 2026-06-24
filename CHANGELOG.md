@@ -16,7 +16,11 @@ Future updates should append new entries here rather than replacing older notes.
   wrapper, matching the evidence already available in full native trainer JSON.
 
   Verification: added static microbench coverage for the new graph counter
-  fields and Tile ABI symbols.
+  fields and Tile ABI symbols, rebuilt `build/lm_head_backward_bench`, reran
+  the no-Torch audit, and ran the trainer-chunk LM-head microbench on the
+  dedicated RTX 5090. The strict graph candidate reported one capture, one
+  cache entry, three replay attempts/successes, zero fallbacks, and remained
+  flat at `1.000358x` candidate/baseline time, so it stays candidate-only.
 
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_sm120_super_m7` as a reproducible
   rejected compile-time Tile ops profile. The profile rebuilds the candidate

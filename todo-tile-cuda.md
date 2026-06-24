@@ -664,6 +664,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `graph_replay_success_count`, and `graph_fallback_count`. Future strict
     LM-head ABI probes now prove graph replay directly in the standalone
     candidate-vs-old microbench before entering a full native training gate.
+    A trainer-chunk run on the dedicated RTX 5090 reported the strict candidate
+    captured once, replayed three times, fell back zero times, and stayed flat
+    at `1.000358x`, so CUDA Graph replay is measurable but still not a default
+    LM-head speed win at the real chunk shape.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and
