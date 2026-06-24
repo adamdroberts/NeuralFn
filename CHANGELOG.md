@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned activation forwarding in
+  `tools/bench_native_gpt_sm120_candidate.sh`. The native-vs-native SM120
+  candidate wrapper now passes `NFN_SM120_NATIVE_ACTIVATION` and its
+  candidate/parity/generic aliases to both NeuralFn commands as
+  `--native-cuda-activation`, matching the optional llm.kittens reference
+  command's `-af` value so activation bisections compare the same workload.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh` and the
+  focused pytest
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k
+  "candidate_wrapper_can_include_llmk_reference or
+  candidate_wrapper_forwards_bisection_controls or
+  candidate_wrapper_accepts_generic_aliases"`.
+
 - Wired same-window llm.kittens reference checks into
   `tools/bench_native_gpt_sm120_candidate.sh`. Set
   `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` (or its candidate/parity/generic

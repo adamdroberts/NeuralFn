@@ -1116,6 +1116,7 @@ common_args=(
   --native-cuda-sample-every "$SAMPLE_EVERY"
   --native-cuda-generate-tokens "$GENERATE_TOKENS"
   --native-cuda-checkpoint-every "$CHECKPOINT_EVERY"
+  --native-cuda-activation "$ACTIVATION"
   --no-checkpoint
 )
 case "${STARTUP_ONLY,,}" in

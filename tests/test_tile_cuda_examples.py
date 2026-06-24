@@ -506,6 +506,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--graph-file \"$GRAPH_FILE\"" in text
     assert "--train-batch-tokens \"$TRAIN_BATCH_TOKENS\"" in text
     assert "--eval-every-steps 0" in text
+    assert "--native-cuda-activation \"$ACTIVATION\"" in text
     assert "--no-checkpoint" in text
     assert "--dry-run-plan" in text
     assert '"${profile_args[@]}"' in text
@@ -561,6 +562,8 @@ def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
     assert str(tmp_path / "llm.kittens" / "dev" / "data" / "tinystories" / "TinyStories_val.bin") in reference_command
     assert "-af" in reference_command
     assert "gelu" in reference_command
+    assert payload["baseline_command"][payload["baseline_command"].index("--native-cuda-activation") + 1] == "gelu"
+    assert payload["candidate_command"][payload["candidate_command"].index("--native-cuda-activation") + 1] == "gelu"
     assert "-x" in reference_command
     assert "2" in reference_command
     assert "  reference:" in proc.stdout

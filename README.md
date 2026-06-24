@@ -1798,6 +1798,11 @@ Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` to inspect the llm.kittens baseline, Neura
 is mirrored into both commands: llm.kittens receives `-af` and the NeuralFn
 candidate receives `--native-cuda-activation`, so non-default activation
 bisections compare the same workload.
+The SM120 native-vs-native candidate wrapper uses the same activation selector:
+`NFN_SM120_NATIVE_ACTIVATION`, `NFN_SM120_NATIVE_CANDIDATE_ACTIVATION`,
+`NFN_SM120_CANDIDATE_ACTIVATION`, `NFN_SM120_PARITY_ACTIVATION`, or
+`NFN_SM120_ACTIVATION` is forwarded to both NeuralFn commands as
+`--native-cuda-activation`, and to the optional llm.kittens reference as `-af`.
 
 The SM120 native-vs-native candidate wrapper includes
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fused_ln2_bf16_out_off` to regression-test
