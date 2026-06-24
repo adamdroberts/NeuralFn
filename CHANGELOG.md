@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reverted the native GPT LayerNorm affine row-chunk default back to 256 rows,
+  matching the Tile-CUDA kernel default, after CUDA 13.3 dedicated RTX 5090
+  rechecks rejected the narrower 128-row route under strict whole-loop gates.
+  The `layernorm_affine_row_chunk_128` SM120 candidate profile is now rejected
+  by default and requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+  for intentional reruns. The second 5-step, 3-sample confirmation changed the
+  route from 256 to 128 and improved train-loop wall to `0.993514x` plus block
+  backward to `0.989279x`, but failed strict gates at `1.000479x` LM-head
+  backward and `1.002281x` MLP projection.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128
+  NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
+  5090 with zero compute processes before and after paired samples.
+
 - Updated top-level native GPT checkpoint inference so `nfn infer --checkpoint
   model_########.bin --prompt-tokens ...` calls
   `run_native_gpt_checkpoint_sampler()` instead of rebuilding its own
@@ -1508,7 +1524,8 @@ Future updates should append new entries here rather than replacing older notes.
   `2499.550 ms/step` versus llm.kittens at `2451.837 ms/step`, or
   `1.019517x` train-loop wall time and `0.980526x` tokens/sec. The 96-row
   profile expands to `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=96` and
-  changed the route from the 128-row default, but remains rejected: the
+  changed the route from the then-current 128-row default, but remains
+  rejected: the
   stage-timed native-vs-native gate improved `train_loop_wall_ms_per_step` to
   `0.999112x` while missing hot-stage gates at
   `stage.block_backward.mlp_proj.total_ms=1.000296x` and
@@ -1524,11 +1541,12 @@ Future updates should append new entries here rather than replacing older notes.
   rejected diagnostic profile for the dense GPT LayerNorm affine/residual
   fused backward route. The profile expands to
   `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` and proves a real route
-  change from the current 128-row default, but remains rejected: the CUDA 13.3
+  change from the then-current 128-row default, but remains rejected: the CUDA 13.3
   dedicated RTX 5090 5-step, 3-sample stage-timed gate improved
   `train_loop_wall_ms_per_step` to `0.998045x` while failing hot-stage gates at
   `stage.block_backward.mlp_proj.total_ms=1.004276x` and
-  `stage.lm_head_backward.total_ms=1.000446x`. The default remains 128 rows.
+  `stage.lm_head_backward.total_ms=1.000446x`. The current default is back to
+  256 rows after the stronger 128-row recheck failed strict gates.
 
   Verification note: wrote the paired benchmark result to
   `/tmp/nfn_layernorm_row64_candidate.json`; updated the wrapper dry-run and

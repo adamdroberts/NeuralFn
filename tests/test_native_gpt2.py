@@ -6840,6 +6840,7 @@ def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks(
     ).read_text()
 
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
+    assert "constexpr std::int64_t kDefaultRowChunkSize = 256;" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in gpt2_source_text
     assert '\\"layer_norm_backward_affine_row_chunk_size\\"' in gpt2_source_text
     assert '\\"linear_backward_bias_row_chunk_size\\"' in gpt2_source_text
@@ -7669,6 +7670,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "write_float_grad" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
+    assert "constexpr std::int64_t kDefaultRowChunkSize = 256;" in gpt2_source_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 256" in kernels_text
     for function_name in (
