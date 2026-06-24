@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln64` as a rejected
+  same-script benchmark profile for the current closest block-backward
+  near-miss: QKV dInput-before-dWeight plus a 64-row LayerNorm affine reducer.
+  The profile expands to
+  `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` and
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64`, and remains guarded by
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real reruns. The
+  standalone QKV order profile was also refreshed with the latest CUDA 13.3
+  RTX 5090 rejection evidence.
+
+  Verification: reran the standalone QKV order candidate and the combined
+  QKV+LN64 profile through `tools/bench_native_gpt_sm120_candidate.sh` on the
+  dedicated RTX 5090. The combined route improved train-loop wall to
+  `0.986068x`, steady-state CUDA-event timing to `0.997478x`, total block
+  backward to `0.980591x`, and QKV backward to `0.989746x`, but missed strict
+  LM-head and MLP-projection gates, so defaults did not change.
+
 - Refreshed the SM120 native dense GPT parity baseline after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The current CUDA 13.3.33 same-script
   run measures NeuralFn at `1.015299x` train-loop wall time and `1.011877x`
