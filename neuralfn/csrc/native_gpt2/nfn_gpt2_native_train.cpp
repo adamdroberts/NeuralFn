@@ -10177,6 +10177,9 @@ int run_transformer_lm_training_json(
     std::int64_t layer_evo_candidate_loss_host_roundtrips_elided = 0;
     std::int64_t layer_evo_parameter_elements = 0;
     std::int64_t layer_evo_candidate_elements = 0;
+    std::int64_t layer_evo_float_workspace_request_count = 0;
+    std::int64_t layer_evo_float_workspace_cuda_mallocs_elided = 0;
+    std::int64_t layer_evo_int64_workspace_cuda_malloc_count = 0;
     std::int64_t layer_evo_seed = 1337;
     float* layer_evo_candidates = nullptr;
     float* layer_evo_candidate_losses = nullptr;
@@ -14091,7 +14094,7 @@ int run_transformer_lm_training_json(
             block.accum_grad_fc_weight_bf16 = base;
         }
     };
-    auto allocate_layer_evo_workspace = [&]() {
+    auto request_layer_evo_workspace = [&]() {
         if (!error.empty() || !cfg.layer_evo_enabled) {
             return;
         }
@@ -14115,43 +14118,37 @@ int run_transformer_lm_training_json(
             error = "layer-evo candidate workspace byte size overflow";
             return;
         }
+        allocate(&layer_evo_candidates, layer_evo_candidate_elements, "layer_evo.candidates");
+        allocate(&layer_evo_candidate_losses, cfg.evo_layer_population, "layer_evo.candidate_losses");
+        allocate(&layer_evo_best_loss, 1, "layer_evo.best_loss");
+        layer_evo_float_workspace_request_count = 3;
+        layer_evo_float_workspace_cuda_mallocs_elided = 3;
+    };
+    auto allocate_layer_evo_workspace = [&]() {
+        if (!error.empty() || !cfg.layer_evo_enabled) {
+            return;
+        }
+        if (!layer_evo_runtime_enabled) {
+            request_layer_evo_workspace();
+        }
+        if (!error.empty()) {
+            return;
+        }
+        if (layer_evo_candidates == nullptr ||
+            layer_evo_candidate_losses == nullptr ||
+            layer_evo_best_loss == nullptr) {
+            error = "layer-evo float workspace arena was not materialized";
+            return;
+        }
         void* raw = nullptr;
-        std::size_t bytes = sizeof(float) * static_cast<std::size_t>(layer_evo_candidate_elements);
-        int status = device_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc layer_evo_candidates");
-            return;
-        }
-        layer_evo_candidates = static_cast<float*>(raw);
-        float_ptrs.push_back(layer_evo_candidates);
-
-        raw = nullptr;
-        bytes = sizeof(float) * static_cast<std::size_t>(cfg.evo_layer_population);
-        status = device_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc layer_evo_candidate_losses");
-            return;
-        }
-        layer_evo_candidate_losses = static_cast<float*>(raw);
-        float_ptrs.push_back(layer_evo_candidate_losses);
-
-        raw = nullptr;
-        status = device_malloc(&raw, sizeof(float));
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc layer_evo_best_loss");
-            return;
-        }
-        layer_evo_best_loss = static_cast<float*>(raw);
-        float_ptrs.push_back(layer_evo_best_loss);
-
-        raw = nullptr;
-        status = device_malloc(&raw, sizeof(std::int64_t));
+        const int status = device_malloc(&raw, sizeof(std::int64_t));
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc layer_evo_best_index");
             return;
         }
         layer_evo_best_index = static_cast<std::int64_t*>(raw);
         int_ptrs.push_back(layer_evo_best_index);
+        layer_evo_int64_workspace_cuda_malloc_count = 1;
     };
 
     auto visit_block_parameter_ptrs = [&](auto&& visit) {
@@ -14347,9 +14344,10 @@ int run_transformer_lm_training_json(
               "stored_packed_attention_lse_arena"},
              {&grad_sumsq_partials, gradient_partial_count, "grad_sumsq_partials"},
              {&grad_clip_scale, 1, "grad_clip_scale"},
-         }) {
+    }) {
         allocate(item.ptr, item.elements, item.name);
     }
+    request_layer_evo_workspace();
     auto request_uint16_arenas = [&]() {
         if (!combined_uint16_arena_enabled || !error.empty()) {
             return;
@@ -22817,6 +22815,12 @@ int run_transformer_lm_training_json(
         << "    \"mutation_scale\": " << cfg.evo_layer_mutation_scale << ",\n"
         << "    \"parameter_elements\": " << layer_evo_parameter_elements << ",\n"
         << "    \"candidate_elements\": " << layer_evo_candidate_elements << ",\n"
+        << "    \"workspace_allocation_strategy\": \"float-arena-plus-int64-device\",\n"
+        << "    \"float_workspace_request_count\": " << layer_evo_float_workspace_request_count << ",\n"
+        << "    \"float_workspace_cuda_mallocs_elided\": "
+        << layer_evo_float_workspace_cuda_mallocs_elided << ",\n"
+        << "    \"int64_workspace_cuda_malloc_count\": "
+        << layer_evo_int64_workspace_cuda_malloc_count << ",\n"
         << "    \"runs\": " << layer_evo_runs << ",\n"
         << "    \"mutate_kernel_launches\": " << layer_evo_mutate_kernel_launches << ",\n"
         << "    \"select_kernel_launches\": " << layer_evo_select_kernel_launches << ",\n"

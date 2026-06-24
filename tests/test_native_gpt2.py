@@ -7027,6 +7027,9 @@ def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> Non
             "2",
             "--max-steps",
             "0",
+            "--layer-evo",
+            "--evo-layer-interval",
+            "1",
             "--eval-every-steps",
             "0",
             "--eval-batches",
@@ -7053,6 +7056,11 @@ def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> Non
     assert payload["lm_head_classifier_strategy_contract"]["graph_editor_tensor_flow"] is False
     assert payload["lm_head_classifier_strategy_contract"]["torch_required"] is False
     assert payload["layer_evo"]["graph_editor_tensor_flow"] is False
+    assert payload["layer_evo"]["runtime_enabled"] is True
+    assert payload["layer_evo"]["workspace_allocation_strategy"] == "float-arena-plus-int64-device"
+    assert payload["layer_evo"]["float_workspace_request_count"] == 3
+    assert payload["layer_evo"]["float_workspace_cuda_mallocs_elided"] == 3
+    assert payload["layer_evo"]["int64_workspace_cuda_malloc_count"] == 1
     assert payload["native_geometry_contract"]["selector_native_runnable"] is True
     assert payload["tile_ops_library"] == str(tile_ops)
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in payload["kernels"]
@@ -7357,6 +7365,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "candidate_loss.copy_host_to_device" not in gpt2_source_text
     assert "layer_evo_candidate_loss_host_roundtrips_elided" in gpt2_source_text
     assert "layer_evo_forward_candidate_evals" in gpt2_source_text
+    assert "request_layer_evo_workspace();" in gpt2_source_text
+    assert "layer_evo.float_workspace_cuda_mallocs_elided" not in gpt2_source_text
+    assert '\\"float_workspace_cuda_mallocs_elided\\"' in gpt2_source_text
+    assert '\\"workspace_allocation_strategy\\": \\"float-arena-plus-int64-device\\"' in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "nfn_native_tile_optimizer_tile_size" in header_text

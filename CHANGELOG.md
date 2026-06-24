@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Moved dense GPT layer-evo float workspaces into the transformer float arena.
+  `nfn_gpt_native_train --train-transformer-lm --layer-evo` now requests the
+  candidate, candidate-loss, and best-loss float buffers before arena
+  materialization instead of issuing three standalone CUDA allocations after
+  setup. Runtime JSON reports
+  `layer_evo.workspace_allocation_strategy:
+  "float-arena-plus-int64-device"`,
+  `layer_evo.float_workspace_request_count`,
+  `layer_evo.float_workspace_cuda_mallocs_elided`, and
+  `layer_evo.int64_workspace_cuda_malloc_count` so startup probes can assert
+  the allocation route. The tiny best-index scalar remains a separate int64
+  device allocation to avoid changing the evo Tile ABI.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "large_row_reduction_fallbacks or gpt2_evo
+  or missing_family"`; ran the GPU-gated smoke
+  `NFN_NATIVE_TILE_CUDA_TEST=1 /home/adam/miniconda3/envs/NeuralFn/bin/python
+  -m pytest tests/test_native_gpt2.py -q -k
+  native_gpt_cuda_tile_startup_smoke_without_torch` unsandboxed on the
+  dedicated NVIDIA GPU.
+
 - Aligned activation forwarding in
   `tools/bench_native_gpt_sm120_candidate.sh`. The native-vs-native SM120
   candidate wrapper now passes `NFN_SM120_NATIVE_ACTIVATION` and its

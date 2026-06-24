@@ -278,7 +278,12 @@ the raw `nfn_native_tile_evo_mutate_candidates_float32`,
 `nfn_native_tile_evo_select_best_loss_float32`, and
 `nfn_native_tile_evo_adopt_candidate_float32` ABI kernels during the optimizer
 loop, and reports `graph_editor_tensor_flow: false` in `layer_evo` plan/runtime
-JSON. Candidate losses are scored by running native CUDA forward loss over the
+JSON. The layer-evo float candidate, candidate-loss, and best-loss workspaces
+are requested before float arena materialization and report
+`workspace_allocation_strategy: "float-arena-plus-int64-device"`,
+`float_workspace_request_count`, `float_workspace_cuda_mallocs_elided`, and the
+single `int64_workspace_cuda_malloc_count` used for the best-index scalar.
+Candidate losses are scored by running native CUDA forward loss over the
 current batch for each mutated candidate; runtime JSON reports
 `forward_candidate_evals` and
 `candidate_loss_source: "native-forward-loss-device-resident-current-batch"`,

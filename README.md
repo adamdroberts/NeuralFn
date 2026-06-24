@@ -1884,9 +1884,13 @@ Dense GPT native training now accepts `--layer-evo` /
 `--evo-layer-interval`, `--evo-layer-population`, and
 `--evo-layer-mutation-scale` on the compiled C++ trainer. The current native
 cadence allocates device candidate workspace for the selected block's
-`block_N.ln1.weight`, runs raw Tile-CUDA mutate/select/adopt ABI kernels during
+`block_N.ln1.weight` inside the main float arena, runs raw Tile-CUDA
+mutate/select/adopt ABI kernels during
 the optimizer loop, scores each candidate with the native CUDA forward loss on
 the current batch, and reports `layer_evo.graph_editor_tensor_flow: false`,
+`layer_evo.workspace_allocation_strategy:
+"float-arena-plus-int64-device"`,
+`layer_evo.float_workspace_cuda_mallocs_elided`,
 `layer_evo.forward_candidate_evals`,
 `layer_evo.candidate_loss_source:
 "native-forward-loss-device-resident-current-batch"`,
