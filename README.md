@@ -540,6 +540,14 @@ the tool rotates baseline, candidate, and reference order per sample and emits
 candidate-over-baseline fields. Use this when a candidate should be accepted
 only if it improves the old native route and remains competitive with the
 external llm.kittens timing under the same selected-GPU lock.
+The SM120 native candidate wrapper exposes the same path with
+`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` (or the candidate/parity/generic
+aliases). It builds the reference command from `LLM_KITTENS_ROOT`,
+`LLM_KITTENS_TRAIN_BIN`, `LLM_KITTENS_TINYSTORIES_DIR`,
+`NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR`, and the existing step/sample/checkpoint
+controls, then forwards it to `tools/paired_kernel_speed.py --reference`. Dry
+runs include the resolved `reference_command` in the JSON plan without requiring
+the llm.kittens binary to exist.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail

@@ -769,6 +769,14 @@ adds `reference_seconds`, `reference_over_baseline`,
 `candidate_over_reference_native_metrics` to the JSON/text output. Shape and
 cuBLASLt plan attribution remain baseline-vs-candidate because those sections
 are for proving the native route change being promoted.
+For SM120 native candidate wrapper runs, set
+`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` to have the wrapper construct the
+llm.kittens GPT-2 reference command and forward it as `--reference`. The wrapper
+uses `LLM_KITTENS_ROOT`, `LLM_KITTENS_TRAIN_BIN`,
+`LLM_KITTENS_TINYSTORIES_DIR`, `NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR`, and the
+same step, batch-token, sample, checkpoint, generation, and activation controls
+as the native commands. In dry-run mode the reference command is still emitted
+in the JSON plan, but the llm.kittens binary is not required to be executable.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent
@@ -1295,7 +1303,12 @@ the pair and are recorded in the JSON/text output. Add `--reference
 KEY=VALUE` when the same run must compare current native baseline, native
 candidate, and an external reference without a separate GPU-load window; the
 JSON includes both candidate-over-baseline and candidate-over-reference native
-metric ratios. Use repeatable
+metric ratios. `tools/bench_native_gpt_sm120_candidate.sh` exposes that path
+with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the lower-priority aliases
+`NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
+`NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
+`NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE`, and
+`NFN_SM120_INCLUDE_LLMK_REFERENCE` are also accepted. Use repeatable
 `--max-candidate-ratio [STAT:]METRIC=RATIO` gates for hot metrics that must not
 regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
 must stay at or above baseline, such as `train_tokens_per_second` or required

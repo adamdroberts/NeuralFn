@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Wired same-window llm.kittens reference checks into
+  `tools/bench_native_gpt_sm120_candidate.sh`. Set
+  `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` (or its candidate/parity/generic
+  aliases) to have the wrapper construct the llm.kittens GPT-2 reference command
+  from the existing SM120 step/sample/checkpoint/generation controls and pass it
+  through to `tools/paired_kernel_speed.py --reference`. Dry-run plans include
+  the resolved `reference_command` without requiring the llm.kittens binary to
+  exist.
+
+  Verification: ran the focused dry-run wrapper pytest
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k
+  "candidate_wrapper_can_include_llmk_reference or
+  candidate_wrapper_forwards_bisection_controls"`.
+
 - Refreshed the rejected `lm_head_cooperative_backward` SM120 candidate
   evidence with the new same-window triad benchmark. The CUDA 13.3.33 RTX 5090
   run compared current native, cooperative LM-head CUDA Graph replay, and
