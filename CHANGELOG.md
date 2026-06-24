@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/check_native_no_torch_deps.py` now checks native artifact freshness by
+  default. In addition to `ldd` and import-blocker checks, the gate fails when
+  present native GPT trainers, linked Tile ops trainers, Tile ops shared
+  libraries, standalone CUDA microbench binaries, or built SDK extensions are
+  older than their mapped C++/CUDA/build-script inputs.
+
+  Migration note: rebuild stale local artifacts with the matching
+  `tools/build_native_*.sh` helper, or pass `--skip-stale-artifacts` only when
+  running a dependency/import audit that intentionally ignores mtimes.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "no_torch_dependency_verifier"`; rebuilt the
+  stale local `build/nfn_gpt2_native_train`, `build/linear_backward_bench`, and
+  `build/libnfn_native_train_tile_ops_tk.so` artifacts flagged by the new gate;
+  ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q`; ran `git diff --check`.
+
 - The SM120 llm.kittens parity and native-vs-native candidate benchmark
   wrappers now refresh the default NeuralFn native GPT trainer before non-dry
   runs. If `nfn_gpt_native_train` or `nfn_gpt_native_train_linked` is selected

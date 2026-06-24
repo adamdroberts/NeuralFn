@@ -310,6 +310,62 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
+def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    artifact = tmp_path / "build" / "nfn_gpt_native_train"
+    source = tmp_path / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    artifact.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True)
+    artifact.write_text("old binary", encoding="utf-8")
+    source.write_text("new source", encoding="utf-8")
+    os.utime(artifact, (100.0, 100.0))
+    os.utime(source, (200.0, 200.0))
+
+    dependencies = module.artifact_source_dependencies(artifact, tmp_path)
+    stale_sources = module.stale_artifact_sources(artifact, tmp_path)
+
+    assert Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp") in dependencies
+    assert stale_sources
+    assert stale_sources[0]["source"] == "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"
+    assert stale_sources[0]["exists"] is True
+
+
+def test_native_no_torch_dependency_verifier_maps_sdk_bindings() -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    generic = module.artifact_source_dependencies(
+        root / "neuralfn" / "_native_gpt.cpython-313-x86_64-linux-gnu.so",
+        root,
+    )
+    compat = module.artifact_source_dependencies(
+        root / "neuralfn" / "_native_gpt2.cpython-313-x86_64-linux-gnu.so",
+        root,
+    )
+    unified = module.artifact_source_dependencies(
+        root / "neuralfn" / "_native_train.cpython-313-x86_64-linux-gnu.so",
+        root,
+    )
+
+    assert Path("tools/build_native_gpt_binding.sh") in generic
+    assert Path("tools/build_native_gpt2_binding.sh") in compat
+    assert Path("tools/build_native_train_binding.sh") in unified
+    assert Path("neuralfn/csrc/native_gpt2/binding.cpp") in generic
+    assert Path("neuralfn/csrc/native_train/binding.cpp") in unified
+
+
 def test_resolve_native_gpt2_token_shards_materializes_uint16_cache(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

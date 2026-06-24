@@ -38,6 +38,61 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
 OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
     "neuralfn/_native*.so",
 )
+ARTIFACT_SOURCE_DEPENDENCIES = {
+    Path("build/nfn_gpt_native_train"): (
+        Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.h"),
+        Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+    ),
+    Path("build/nfn_gpt_native_train_linked"): (
+        Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.h"),
+        Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+        Path("neuralfn/csrc/native_train/tile_ops.cu"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+        Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+    ),
+    Path("build/nfn_gpt2_native_train"): (
+        Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.cpp"),
+        Path("neuralfn/csrc/native_train/token_shards.h"),
+        Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+    ),
+    Path("build/libnfn_native_train_tile_ops.so"): (
+        Path("neuralfn/csrc/native_train/tile_ops.cu"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+        Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+    ),
+    Path("build/libnfn_native_train_tile_ops_tk.so"): (
+        Path("neuralfn/csrc/native_train/tile_ops.cu"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+        Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+    ),
+    Path("build/linear_backward_bench"): (
+        Path("neuralfn/csrc/native_train/linear_backward_bench.cpp"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+    ),
+    Path("build/lm_head_backward_bench"): (
+        Path("neuralfn/csrc/native_train/lm_head_backward_bench.cpp"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+    ),
+}
+NATIVE_BINDING_SOURCE_DEPENDENCIES = {
+    "_native_gpt": (
+        Path("neuralfn/csrc/native_gpt2/binding.cpp"),
+        Path("tools/build_native_gpt_binding.sh"),
+    ),
+    "_native_gpt2": (
+        Path("neuralfn/csrc/native_gpt2/binding.cpp"),
+        Path("tools/build_native_gpt2_binding.sh"),
+    ),
+    "_native_train": (
+        Path("neuralfn/csrc/native_train/binding.cpp"),
+        Path("tools/build_native_train_binding.sh"),
+    ),
+}
 FORBIDDEN_LIBRARY_MARKERS = (
     "libtorch",
     "libtorch_cpu",
@@ -671,6 +726,11 @@ def parse_args() -> argparse.Namespace:
         help="Skip ldd inspection of compiled artifacts.",
     )
     parser.add_argument(
+        "--skip-stale-artifacts",
+        action="store_true",
+        help="Skip source-mtime freshness checks for native compiled artifacts.",
+    )
+    parser.add_argument(
         "--skip-python-entrypoints",
         action="store_true",
         help="Skip import-blocked checks for native Python entrypoints.",
@@ -694,6 +754,54 @@ def default_artifacts() -> list[Path]:
     for pattern in OPTIONAL_DEFAULT_ARTIFACT_GLOBS:
         artifacts.extend(sorted(Path().glob(pattern)))
     return artifacts
+
+
+def artifact_source_dependencies(path: Path, repo_root: Path) -> list[Path]:
+    try:
+        rel_path = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        rel_path = path
+    dependencies = list(ARTIFACT_SOURCE_DEPENDENCIES.get(rel_path, ()))
+    name = path.name
+    for marker, marker_dependencies in sorted(
+        NATIVE_BINDING_SOURCE_DEPENDENCIES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if name.startswith(marker):
+            dependencies.extend(marker_dependencies)
+            break
+    return dependencies
+
+
+def stale_artifact_sources(path: Path, repo_root: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    artifact_mtime = path.stat().st_mtime
+    stale_sources: list[dict[str, object]] = []
+    for source in artifact_source_dependencies(path, repo_root):
+        source_path = repo_root / source
+        if not source_path.exists():
+            stale_sources.append(
+                {
+                    "source": str(source),
+                    "exists": False,
+                    "source_mtime": None,
+                    "artifact_mtime": artifact_mtime,
+                }
+            )
+            continue
+        source_mtime = source_path.stat().st_mtime
+        if source_mtime > artifact_mtime:
+            stale_sources.append(
+                {
+                    "source": str(source),
+                    "exists": True,
+                    "source_mtime": source_mtime,
+                    "artifact_mtime": artifact_mtime,
+                }
+            )
+    return stale_sources
 
 
 def ldd_output(path: Path) -> str:
@@ -1249,13 +1357,25 @@ def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
 
 def main() -> int:
     args = parse_args()
+    repo_root = Path(__file__).resolve().parents[1]
     artifact_report: list[dict[str, object]] = []
     failed = False
     if not args.skip_artifacts:
         artifacts = list(args.artifacts) if args.artifacts else default_artifacts()
         for artifact in artifacts:
             path = artifact.expanduser()
-            entry: dict[str, object] = {"artifact": str(path), "exists": path.exists(), "forbidden": []}
+            stale_sources = (
+                [] if args.skip_stale_artifacts else stale_artifact_sources(path, repo_root)
+            )
+            entry: dict[str, object] = {
+                "artifact": str(path),
+                "exists": path.exists(),
+                "forbidden": [],
+                "source_dependencies": [
+                    str(source) for source in artifact_source_dependencies(path, repo_root)
+                ],
+                "stale_sources": stale_sources,
+            }
             if not path.exists():
                 entry["error"] = "missing"
                 failed = True
@@ -1270,6 +1390,8 @@ def main() -> int:
             entry["forbidden"] = forbidden
             if forbidden:
                 failed = True
+            if stale_sources:
+                failed = True
             artifact_report.append(entry)
 
     python_report: list[dict[str, object]] = []
@@ -1277,7 +1399,6 @@ def main() -> int:
     dependency_report: dict[str, object] | None = None
     requirements_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
-        repo_root = Path(__file__).resolve().parents[1]
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
         requirements_report = requirements_dependency_report(repo_root)
@@ -1318,6 +1439,10 @@ def main() -> int:
                 print(f"{entry['artifact']}: forbidden native dependency detected", file=sys.stderr)
                 for line in forbidden:
                     print(f"  {line}", file=sys.stderr)
+            elif entry.get("stale_sources"):
+                print(f"{entry['artifact']}: stale native artifact", file=sys.stderr)
+                for source in entry["stale_sources"]:
+                    print(f"  source newer than artifact: {source['source']}", file=sys.stderr)
             else:
                 print(f"{entry['artifact']}: ok")
         if dependency_report is not None:

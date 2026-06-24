@@ -1972,7 +1972,14 @@ binding modules are imported under the same blocker. The checker also has a
 `tools/bench_native_gpt_linear_hot_matrix.sh` in dry-run mode, so benchmark
 planning stays free of Torch, graph-editor, dataset, build, or CUDA startup
 work. The check uses a stub
-compiled CLI and synthetic native checkpoint so it does not need CUDA.
+compiled CLI and synthetic native checkpoint so it does not need CUDA. Artifact
+inspection also fails when a mapped source input is newer than a present native
+artifact. The freshness map covers the dense GPT CLI, linked CLI, Tile ops
+shared libraries, standalone linear/LM-head microbenches, and
+`neuralfn._native_gpt*` / `neuralfn._native_train` SDK extensions, so CUDA Tile
+ABI edits do not accidentally run through stale local binaries. Use
+`--skip-stale-artifacts` only when you intentionally want the dependency/import
+audit without source-mtime enforcement.
 
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with
