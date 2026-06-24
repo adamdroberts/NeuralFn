@@ -1689,6 +1689,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
         "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
         "lm_head_loss_bins": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1",
+        "lm_head_loss_bins_bf16_workspace_prewarm": (
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 "
+            "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1"
+        ),
         "lm_head_ce_loss_bins_default_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1",
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
@@ -1704,6 +1708,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         assert env_assignment in bench_source
     assert (
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"'
+        in bench_source
+    )
+    assert (
+        "normal no-train-loss throughput does not execute the loss-bin tail"
         in bench_source
     )
     assert (

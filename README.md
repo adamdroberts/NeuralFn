@@ -840,6 +840,15 @@ against the default in the same paired benchmark. The profile is currently
 rejected for default promotion: on the dedicated RTX 5090 it improved first-step
 CUDA event time and total train-loop wall time, but the 5-step, 3-sample
 confirmation narrowly regressed steady-state CUDA event time.
+Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins_bf16_workspace_prewarm`
+only when intentionally retesting the logged train-loss path. That profile
+combines `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`,
+`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`, and
+`--train-loss-every-steps 1` against a baseline with both routes disabled. It is
+rejected for default promotion because normal no-train-loss throughput does not
+execute the loss-bin tail, while forcing train-loss logging introduces host loss
+copies.
 Normal native JSON also reports `linear_cublaslt_plan_cache_available`,
 `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache` entries
 with shape, transpose, selected heuristic, returned heuristic count, workspace,

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a combined logged-loss diagnostic candidate profile,
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins_bf16_workspace_prewarm`,
+  to compare LM-head loss-bin reduction plus BF16 workspace prewarm in the same
+  native-vs-native wrapper run. The profile pins the baseline to
+  `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` and
+  `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0`, pins the candidate to `=1` for
+  both routes, and forces `--train-loss-every-steps 1` so the loss-bin tail is
+  actually exercised. It is rejected by default for normal promotion because
+  no-train-loss throughput does not execute the loss-bin tail and forcing
+  train-loss logging introduces host loss copies. The dedicated RTX 5090 CUDA
+  13.3 diagnostic gate passed for the logged-loss route with
+  `0.960297x` train-loop wall time, `0.976567x` steady-state CUDA-event time,
+  `1.041409x` tokens/sec, and `0.909381x` LM-head backward time, with loss-bin
+  launches changing `0 -> 48`.
+
+  Verification: added static wrapper coverage for the new profile expansion,
+  checked shell syntax, and reran the focused native GPT-2 wrapper test slice.
+
 - Added an opt-in BF16 GEMMEx workspace prewarm route for the no-Torch native
   dense GPT trainer. The raw Tile ABI now exports
   `nfn_native_tile_trainer_linear_bf16_workspace_prewarm`, and
