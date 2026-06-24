@@ -69,6 +69,10 @@ int nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status();
 int nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status();
 int nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status();
 int nfn_native_tile_trainer_linear_cublas_prewarm(void* stream);
+int nfn_native_tile_trainer_linear_bf16_workspace_prewarm(
+    std::int64_t a_elements,
+    std::int64_t b_elements,
+    std::int64_t c_elements);
 int nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan(
     int m,
     int n,

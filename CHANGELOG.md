@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in BF16 GEMMEx workspace prewarm route for the no-Torch native
+  dense GPT trainer. The raw Tile ABI now exports
+  `nfn_native_tile_trainer_linear_bf16_workspace_prewarm`, and
+  `nfn_gpt_native_train --train-transformer-lm` can reserve the workstation
+  BF16 linear scratch buffers during setup with
+  `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`,
+  `NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE=1`, or
+  `NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM=1`. The default remains off
+  until the paired RTX 5090 gate proves a win. Runtime JSON now reports
+  `linear_bf16_workspace_prewarm_available`,
+  `linear_bf16_workspace_prewarm_enabled`,
+  `linear_bf16_workspace_prewarm_requested`,
+  `linear_bf16_workspace_prewarm_success_count`, and
+  `linear_bf16_workspace_prewarm_failure_count`; setup timing includes
+  `setup.linear_bf16_workspace_prewarm`. The SM120 candidate wrapper adds
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_workspace_prewarm` and marks it
+  rejected for default promotion: the 3-step, 2-sample gate passed at
+  `0.985956x` train-loop wall time and `0.962368x` first-step CUDA event time,
+  but the 5-step, 3-sample confirmation failed the strict steady-state gate at
+  `1.000610x` while still improving train-loop wall to `0.986815x` and
+  first-step CUDA event time to `0.939037x`.
+
+  Breaking changes: existing `libnfn_native_train_tile_ops.so` builds must be
+  rebuilt before running strict native dense GPT startup checks, because the
+  trainer now requires the new prewarm ABI symbol.
+
+  Verification: focused static native GPT tests cover the new ABI, env toggles,
+  JSON fields, and paired-speed route metrics; rebuilt the Tile ops library and
+  native trainer suite; the GPU no-Torch startup smoke passed; the RTX 5090
+  paired candidate gate passed at 3 steps/2 samples and rejected promotion at
+  5 steps/3 samples on the strict steady-state metric.
+
 - Added an opt-in no-Torch native CUDA Tile startup smoke test for the compiled
   dense GPT trainer. `NFN_NATIVE_TILE_CUDA_TEST=1 python -m pytest
   tests/test_native_gpt2.py -q -k

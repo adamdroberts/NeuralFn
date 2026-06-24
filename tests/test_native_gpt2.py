@@ -606,6 +606,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "cuda_device_max_connections_1" in candidate_bench
     assert "This profile is a no-op in the SM120 paired wrapper" in candidate_bench
     assert "CUDA_DEVICE_MAX_CONNECTIONS already defaults to 1" in candidate_bench
+    assert "bf16_workspace_prewarm" in candidate_bench
+    assert "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1" in candidate_bench
     assert "combined_device_arena" in candidate_bench
     assert "train_loop_wall_ms_per_step to 1.004991x" in candidate_bench
     assert "setup_wall_ms to 1.063067x" in candidate_bench
@@ -750,6 +752,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "nfn_native_tile_trainer_linear_cublas_prewarm" in tile_header
     assert "nfn_native_tile_trainer_linear_cublas_prewarm" in tile_source
     assert "trainer_linear_cublas_prewarm" in kernels_source
+    assert "nfn_native_tile_trainer_linear_bf16_workspace_prewarm" in tile_header
+    assert "nfn_native_tile_trainer_linear_bf16_workspace_prewarm" in tile_source
+    assert "trainer_linear_bf16_workspace_prewarm" in kernels_source
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_header
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_source
     assert "trainer_linear_cublaslt_prewarm_bf16_plan" in kernels_source
@@ -784,6 +789,13 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_handle_prewarm_enabled" in gpt_source
     assert "linear_cublas_handle_prewarm_success_count" in gpt_source
     assert "setup.cublas_handle_prewarm" in gpt_source
+    assert "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE" in gpt_source
+    assert "NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE" in gpt_source
+    assert "NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM" in gpt_source
+    assert "linear_bf16_workspace_prewarm_available" in gpt_source
+    assert "linear_bf16_workspace_prewarm_enabled" in gpt_source
+    assert "linear_bf16_workspace_prewarm_success_count" in gpt_source
+    assert "setup.linear_bf16_workspace_prewarm" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source
@@ -803,6 +815,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_handle_prewarm_requested" in speed_tool
     assert "linear_cublas_handle_prewarm_success_count" in speed_tool
     assert "linear_cublas_handle_prewarm_failure_count" in speed_tool
+    assert "linear_bf16_workspace_prewarm_enabled" in speed_tool
+    assert "linear_bf16_workspace_prewarm_requested" in speed_tool
+    assert "linear_bf16_workspace_prewarm_success_count" in speed_tool
+    assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
     assert "lm_head_classifier_chunk_launch_count" in speed_tool
     assert "lm_head_classifier_last_row_stride" in speed_tool
     assert "lm_head_classifier_ce_no_loss_requested" in speed_tool

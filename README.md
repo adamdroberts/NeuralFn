@@ -824,6 +824,22 @@ handle during setup; native JSON reports
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` route is currently
 rejected for real runs because the dedicated RTX 5090 gate measured a small
 strict-stage regression.
+The trainer also exposes a separate default-off BF16 GEMMEx workspace prewarm
+for bisection of first-step allocation cost. Set
+`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`,
+`NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE=1`, or
+`NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM=1` to reserve the dense GPT
+workstation BF16 linear scratch buffers during setup. Native JSON reports
+`linear_bf16_workspace_prewarm_available`,
+`linear_bf16_workspace_prewarm_enabled`,
+`linear_bf16_workspace_prewarm_success_count`, and
+`linear_bf16_workspace_prewarm_failure_count`, and setup timing includes
+`setup.linear_bf16_workspace_prewarm`. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_workspace_prewarm` to compare it
+against the default in the same paired benchmark. The profile is currently
+rejected for default promotion: on the dedicated RTX 5090 it improved first-step
+CUDA event time and total train-loop wall time, but the 5-step, 3-sample
+confirmation narrowly regressed steady-state CUDA event time.
 Normal native JSON also reports `linear_cublaslt_plan_cache_available`,
 `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache` entries
 with shape, transpose, selected heuristic, returned heuristic count, workspace,

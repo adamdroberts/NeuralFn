@@ -4144,6 +4144,13 @@ TrainerLinearBf16Workspace* ensure_trainer_linear_bf16_workspace(
   return &g_trainer_linear_bf16_workspace;
 }
 
+bool prewarm_trainer_linear_bf16_workspace(
+    std::int64_t a_elements,
+    std::int64_t b_elements,
+    std::int64_t c_elements) {
+  return ensure_trainer_linear_bf16_workspace(a_elements, b_elements, c_elements) != nullptr;
+}
+
 TrainerLinearBf16Workspace::CacheEntry* trainer_linear_bf16_cache_entry_for(
     TrainerLinearBf16Workspace* workspace,
     const float* source,
@@ -19333,6 +19340,20 @@ bool trainer_linear_cublas_prewarm(cudaStream_t stream) {
   return trainer_linear_cublas_prewarm_internal(stream);
 #else
   (void)stream;
+  return false;
+#endif
+}
+
+bool trainer_linear_bf16_workspace_prewarm(
+    std::int64_t a_elements,
+    std::int64_t b_elements,
+    std::int64_t c_elements) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return prewarm_trainer_linear_bf16_workspace(a_elements, b_elements, c_elements);
+#else
+  (void)a_elements;
+  (void)b_elements;
+  (void)c_elements;
   return false;
 #endif
 }

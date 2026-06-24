@@ -3332,6 +3332,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status",
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
         "nfn_native_tile_trainer_linear_cublas_prewarm",
+        "nfn_native_tile_trainer_linear_bf16_workspace_prewarm",
         "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
@@ -10025,6 +10026,9 @@ int run_transformer_lm_training_json(
     std::int64_t linear_cublas_handle_prewarm_requested = 0;
     std::int64_t linear_cublas_handle_prewarm_success_count = 0;
     std::int64_t linear_cublas_handle_prewarm_failure_count = 0;
+    std::int64_t linear_bf16_workspace_prewarm_requested = 0;
+    std::int64_t linear_bf16_workspace_prewarm_success_count = 0;
+    std::int64_t linear_bf16_workspace_prewarm_failure_count = 0;
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
@@ -10067,6 +10071,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE",
                               "NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE",
                               "NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM"}),
+            false);
+    const bool linear_bf16_workspace_prewarm_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE",
+                              "NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE",
+                              "NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM"}),
             false);
     struct LinearShapeStat {
         int path = 0;
@@ -10276,6 +10286,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
         "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status",
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
+        "nfn_native_tile_trainer_linear_bf16_workspace_prewarm",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
         "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count",
@@ -10546,6 +10557,8 @@ int run_transformer_lm_training_json(
     using TrainerLinearStatsCountFn = std::int64_t (*)();
     using TrainerLinearCublasLtProbeFn = int (*)();
     using TrainerLinearCublasPrewarmFn = int (*)(void*);
+    using TrainerLinearBf16WorkspacePrewarmFn =
+        int (*)(std::int64_t, std::int64_t, std::int64_t);
     using TrainerLinearCublasLtPrewarmBf16PlanFn =
         int (*)(int, int, int, int, int, int, int, int, int);
     using TrainerLinearShapeStatsEntryFn = bool (*)(
@@ -10887,6 +10900,7 @@ int run_transformer_lm_training_json(
     TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_matmul_probe_status_fn = nullptr;
     TrainerLinearCublasLtProbeFn trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn = nullptr;
     TrainerLinearCublasPrewarmFn trainer_linear_cublas_prewarm_fn = nullptr;
+    TrainerLinearBf16WorkspacePrewarmFn trainer_linear_bf16_workspace_prewarm_fn = nullptr;
     TrainerLinearCublasLtPrewarmBf16PlanFn trainer_linear_cublaslt_prewarm_bf16_plan_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
     TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
@@ -11415,6 +11429,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearCublasPrewarmFn>(
                         tile_handle,
                         "nfn_native_tile_trainer_linear_cublas_prewarm");
+                trainer_linear_bf16_workspace_prewarm_fn =
+                    load_symbol<TrainerLinearBf16WorkspacePrewarmFn>(
+                        tile_handle,
+                        "nfn_native_tile_trainer_linear_bf16_workspace_prewarm");
                 trainer_linear_cublaslt_prewarm_bf16_plan_fn =
                     load_symbol<TrainerLinearCublasLtPrewarmBf16PlanFn>(
                         tile_handle,
@@ -15197,6 +15215,26 @@ int run_transformer_lm_training_json(
             linear_cublas_handle_prewarm_success_count += 1;
         } else {
             linear_cublas_handle_prewarm_failure_count += 1;
+        }
+    });
+    run_setup_timed("setup.linear_bf16_workspace_prewarm", [&]() {
+        if (error.empty()) {
+            linear_bf16_workspace_prewarm_requested = linear_bf16_workspace_prewarm_enabled ? 1 : 0;
+        }
+        if (!linear_bf16_workspace_prewarm_enabled ||
+            trainer_linear_bf16_workspace_prewarm_fn == nullptr ||
+            !error.empty()) {
+            return;
+        }
+        const std::int64_t prewarm_a_elements = std::max(kHidden, kQkvDim);
+        const std::int64_t prewarm_b_elements = activation_elements;
+        if (trainer_linear_bf16_workspace_prewarm_fn(
+                prewarm_a_elements,
+                prewarm_b_elements,
+                0) != 0) {
+            linear_bf16_workspace_prewarm_success_count += 1;
+        } else {
+            linear_bf16_workspace_prewarm_failure_count += 1;
         }
     });
     run_setup_timed("setup.cublaslt_plan_prewarm", [&]() {
@@ -21099,6 +21137,16 @@ int run_transformer_lm_training_json(
         << linear_cublas_handle_prewarm_success_count << ",\n"
         << "  \"linear_cublas_handle_prewarm_failure_count\": "
         << linear_cublas_handle_prewarm_failure_count << ",\n"
+        << "  \"linear_bf16_workspace_prewarm_available\": "
+        << (trainer_linear_bf16_workspace_prewarm_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_bf16_workspace_prewarm_enabled\": "
+        << (linear_bf16_workspace_prewarm_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_bf16_workspace_prewarm_requested\": "
+        << linear_bf16_workspace_prewarm_requested << ",\n"
+        << "  \"linear_bf16_workspace_prewarm_success_count\": "
+        << linear_bf16_workspace_prewarm_success_count << ",\n"
+        << "  \"linear_bf16_workspace_prewarm_failure_count\": "
+        << linear_bf16_workspace_prewarm_failure_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_available\": "
         << (trainer_linear_cublaslt_prewarm_bf16_plan_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_enabled\": "
