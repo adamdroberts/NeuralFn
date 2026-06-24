@@ -1041,11 +1041,12 @@ schedule from optional cooperative/fused candidate probes. The strict
 cooperative ABI remains default-off and non-promoted. The focused LM-head
 microbench proves the strict symbol is no longer a placeholder, but the full
 CUDA 13.3 dedicated RTX 5090 native-vs-native gate rejected
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` at
-`1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event step time, and
-`1.294653x` LM-head backward. Treat the current CUDA Graph body as ABI
-groundwork until a later single-kernel or lower-overhead fused optimization
-body passes the same-script gates.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` after the
+aligned padded-vocab route fix at `0.990440x` train-loop wall because
+steady-state CUDA-event timing still regressed to `1.002035x` and LM-head
+backward to `1.001066x`. Treat the current CUDA Graph body as ABI groundwork
+until a later single-kernel or lower-overhead fused optimization body passes
+the same-script gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

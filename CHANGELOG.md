@@ -228,7 +228,9 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` gate proved
   the route active but rejected default promotion at `1.080550x` train-loop
   wall, `1.067318x` steady-state CUDA-event step time, and `1.294653x`
-  LM-head backward.
+  LM-head backward. This historical gate was later superseded after the
+  cooperative graph body was fixed to use aligned padded-vocab dHidden/dWeight
+  GEMMs instead of the rejected public-vocab strided route.
 
 - Refreshed the current CUDA 13.3.33 RTX 5090 parity evidence after the linked
   native rebuilds and recent candidate rejections. A 5-step, 3-sample,

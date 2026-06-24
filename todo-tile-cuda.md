@@ -302,9 +302,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       native-vs-native `lm_head_cooperative_backward` gate proved the route
       active (`lm_head_cooperative_backward_kernel_enabled: true`) but rejected
       it at `1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event
-      step time, and `1.294653x` LM-head backward. Keep the strict ABI opt-in
-      and replace the graph body with a lower-overhead fused/cooperative body
-      before promotion.
+      step time, and `1.294653x` LM-head backward. That result was later traced
+      to the graph body accidentally using the rejected public-vocab strided
+      dHidden/dWeight route for padded LM-head rows; see the 2026-06-24
+      padded-route fix below for the current gate result. Keep the strict ABI
+      opt-in and replace the graph body with a lower-overhead fused/cooperative
+      body before promotion.
     - 2026-06-24 added explicit strict LM-head CUDA Graph observability to the
       Tile C ABI and trainer JSON. Rebuilt Tile ops libraries now export graph
       capture/cache/replay/fallback counters, and native training JSON plus
