@@ -1923,10 +1923,18 @@ For paired BF16 cuBLASLt shape bisection, set
 shape bucket, such as `768,65536,3072,N,N`, back through BF16 `cublasGemmEx`
 while every other supported BF16 shape stays on the default cuBLASLt path. Set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` or
-`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` to force one
-otherwise-gated BF16 shape through cuBLASLt for paired diagnostics. The
-dedicated RTX 5090 check for LM-head dHidden shape `768,8192,50304,N,N`
-measured this allow-list route slower than GEMMEx, so it remains diagnostic-only.
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` to force
+otherwise-gated BF16 shapes through cuBLASLt for paired diagnostics. The value
+accepts either one shape or a colon/semicolon/whitespace-separated shape list.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_block_dinput` uses the list form for
+the dense GPT MLP projection, MLP FC, QKV, and attention projection dInput
+shapes, but is rejected by default: the isolated linear benchmark improved those
+raw symbol comparisons, while the full native trainer gate proved the default
+loop was already using the same cuBLASLt dInput plans and rejected the profile
+because route counters, strategy values, shape route names, and plan cache
+entries did not change. The dedicated RTX 5090 check for LM-head dHidden shape
+`768,8192,50304,N,N` measured this allow-list route slower than GEMMEx, so it
+remains diagnostic-only.
 
 The compiled trainer, SDK, Python wrappers, and root CLI all share that 8192-row LM-head chunk default. Use the explicit LM-head row-chunk flags only when reproducing an older smaller-workspace profile or profiling a new candidate.
 

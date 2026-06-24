@@ -3506,18 +3506,14 @@ bool trainer_linear_bf16_cublaslt_shape_enabled(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b) {
-  static const LinearShapeStat enabled_shape = []() {
+  static const LinearShapeList enabled_shapes = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE");
     }
-    LinearShapeStat shape{};
-    if (!parse_linear_shape_token(value, &shape)) {
-      return LinearShapeStat{};
-    }
-    return shape;
+    return parse_linear_shape_list(value);
   }();
-  return linear_shape_matches(enabled_shape, m, n, k, op_a, op_b);
+  return linear_shape_list_matches(enabled_shapes, m, n, k, op_a, op_b);
 }
 
 bool trainer_linear_bf16_cublaslt_shape_supported(

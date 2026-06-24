@@ -1747,6 +1747,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
@@ -7614,6 +7615,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_cublaslt_plan_cache_available" in gpt2_source_text
     assert "linear_cublaslt_plan_cache_count" in gpt2_source_text
     assert "linear_cublaslt_plan_cache" in gpt2_source_text
+    cublaslt_enable_body = kernels_text.split(
+        "bool trainer_linear_bf16_cublaslt_shape_enabled(", 1
+    )[1].split("\nbool trainer_linear_bf16_cublaslt_shape_supported", 1)[0]
+    assert "LinearShapeList enabled_shapes" in cublaslt_enable_body
+    assert "parse_linear_shape_list(value)" in cublaslt_enable_body
+    assert "linear_shape_list_matches(enabled_shapes" in cublaslt_enable_body
     assert "trainer_linear_cublaslt_descriptor_cache_enabled" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text

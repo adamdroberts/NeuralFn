@@ -92,6 +92,16 @@ Real training tensors must not pass through graph editor node objects.
     dWeight/BGRADB work blocked until execution status is `0`; the active
     parity direction remains a true fused/cooperative LM-head kernel or another
     measured block-backward Tile kernel route.
+  - 2026-06-24 added list parsing for
+    `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` /
+    `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` and the paired
+    `cublaslt_block_dinput` profile for the dense GPT MLP projection, MLP FC,
+    QKV, and attention projection dInput shapes. The isolated linear benchmark
+    improved all four raw-symbol comparisons (`0.985876x` to `0.998370x`), but
+    the same-script native trainer gate rejected the profile because the
+    default loop already used the same cuBLASLt dInput plans: route counters,
+    strategy values, shape route names, and plan cache entries did not change.
+    Keep the profile rejected/diagnostic-only.
 
 ## Native C++ trainer ABI
 

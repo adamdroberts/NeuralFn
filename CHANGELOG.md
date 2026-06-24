@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` /
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` from a single-shape diagnostic
+  to a colon/semicolon/whitespace-separated shape-list diagnostic while
+  preserving the old single-shape format. Added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_block_dinput`, which uses that
+  list form for dense GPT MLP projection, MLP FC, QKV, and attention projection
+  dInput shapes. The isolated linear-backward matrix compared the current raw
+  dInput symbol with the cuBLASLt dInput symbol and improved all four block
+  shapes (`0.985876x` to `0.998370x`), but the full native trainer gate rejected
+  the profile because the default loop already used the same cuBLASLt dInput
+  plans: route counters, strategy values, shape route names, and plan cache
+  entries did not change.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`, ran focused
+  source-contract coverage for the SM120 candidate wrapper, ran the isolated
+  hot-matrix GPU benchmark for the four block dInput shapes, and ran the
+  paired native GPT `cublaslt_block_dinput` profile on the dedicated RTX 5090
+  with stage timing and linear shape stats.
+
 - Added an explicit route-change gate to the focused linear-backward CUDA
   benchmark used for block-backward and LM-head linear candidates.
   `linear_backward_bench` now reports `candidate_symbol_changed`, and

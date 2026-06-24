@@ -995,9 +995,10 @@ cuBLASLt shape bucket back through the older BF16 `cublasGemmEx` fallback while
 leaving other shapes on the default cuBLASLt path.
 Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` for the opposite
-single-shape bisection: one otherwise-gated BF16 shape is forced through
-cuBLASLt while every other gated shape keeps the default fallback. This is
-diagnostic-only. On CUDA 13.3, forcing the dense GPT LM-head dHidden bucket
+bisection: otherwise-gated BF16 shapes are forced through cuBLASLt while every
+other gated shape keeps the default fallback. The value accepts either one shape
+or a colon/semicolon/whitespace-separated shape list. This is diagnostic-only.
+On CUDA 13.3, forcing the dense GPT LM-head dHidden bucket
 `768,8192,50304,N,N` through cuBLASLt moved that bucket in shape stats but
 measured slower than the default BF16 `cublasGemmEx` route in the paired RTX
 5090 benchmark.

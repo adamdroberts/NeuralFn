@@ -1364,6 +1364,14 @@ current 32768-row LM-head dHidden bucket. It is rejected by default: the CUDA
 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed gate moved 48 calls from
 BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
 `1.000199x` LM-head dHidden, and `1.001504x` block backward.
+The underlying `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` and
+`NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` knobs accept either one
+`m,n,k,opA,opB` shape or a colon/semicolon/whitespace-separated shape list.
+`cublaslt_block_dinput` uses that list form for dense GPT MLP projection, MLP
+FC, QKV, and attention projection dInput shapes, but is rejected by default:
+the full trainer gate showed the default loop already used the same cuBLASLt
+dInput plans, so route counters, strategy values, shape route names, and plan
+cache entries did not change.
 `lm_head_prepack_bf16_hidden_off` pins
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
 candidate, making the older per-chunk LM-head hidden packing route measurable
