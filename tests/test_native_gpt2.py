@@ -1880,6 +1880,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "lm_head_cooperative_no_loss_backward": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1 NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1",
+        "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
     }
     for profile, env_assignment in expected_profiles.items():
@@ -1939,6 +1940,12 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert '"tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")' in bench_source
     assert "stage.lm_head_backward.total_ms=1.001484x" in bench_source
     assert "stage.block_backward.mlp_proj.total_ms=1.001994x" in bench_source
+    assert "setup_wall_ms to 0.884111x" in bench_source
+    assert "MLP projection to 1.546830x" in bench_source
+    assert "stored_mlp_activation_blocks" in speed_source
+    assert "stored_packed_attention_activation_blocks" in speed_source
+    assert "stored_packed_attention_ln1_bf16_blocks" in speed_source
+    assert "stored_residual1_activation_blocks" in speed_source
     assert '"llmk_sm120_reference_flags"|"llmk-sm120-reference-flags"' in bench_source
     assert "-DLLMK_SM120_DWEIGHT_SUPER_M=2" in bench_source
     assert "-DLLMK_SM120_FAST_DGELU=1" in bench_source

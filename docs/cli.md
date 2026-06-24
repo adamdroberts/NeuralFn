@@ -522,6 +522,18 @@ BF16 `cudaMalloc` path during paired benchmarks. JSON reports
 largest named BF16/uint16 suballocations and grouped allocation families. The
 arena wall-time fields split startup arena materialization into CUDA allocation
 time and host pointer-assignment time.
+Stored activation reservation counters are also first-class paired benchmark
+metrics: `stored_mlp_activation_blocks`, `stored_mlp_activation_elements`,
+`stored_packed_attention_activation_blocks`,
+`stored_packed_attention_bf16_elements`,
+`stored_packed_attention_ln1_bf16_blocks`,
+`stored_residual1_activation_blocks`, and their byte counts are included in the
+route-change gate and printed summaries. The diagnostic
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks6` forces baseline
+`NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12` and candidate `=6`; it is rejected by
+default because the CUDA 13.3 dedicated RTX 5090 startup-only win came from
+dropping stored MLP activations and the full training gate regressed
+steady-state throughput and MLP projection time.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling
@@ -722,6 +734,9 @@ gate. The JSON splits counter evidence into `has_hot_route_counter_change`,
 workspace prewarm, or device-arena setup toggles cannot validate a throughput
 candidate unless a hot route counter, strategy value, linear-shape row, or
 cuBLASLt plan-cache entry also changes.
+Stored activation reservation changes are treated as route evidence rather
+than generic timing noise because reducing those buffers can force recompute
+and change hot kernel counts even when startup-only samples look faster.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent

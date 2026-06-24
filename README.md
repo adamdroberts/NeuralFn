@@ -90,6 +90,12 @@ expansion remains available without that opt-in. The native runner now rejects
 LM-head chunks above 49152 rows before launching CUDA unless
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit paired
 diagnostics. The
+SM120 candidate wrapper also tracks stored activation reservation counters in
+the route-change gate. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks6`
+is available only as a rejected diagnostic: cutting stored MLP blocks from 12
+to 6 improved startup-only timing, but the paired training gate regressed
+steady-state throughput and MLP projection time, so full stored activation
+coverage remains the default. The
 current CUDA 13.3.33 rebuilt 5-step, 3-sample parity refresh on the dedicated
 RTX 5090 measured NeuralFn at `2525.500 ms/step` versus llm.kittens at
 `2465.055 ms/step` (`1.024520x` train-loop wall time, `0.975643x`

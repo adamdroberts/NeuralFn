@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added stored activation reservation telemetry to the paired native GPT
+  benchmark route-change gate. `tools/paired_kernel_speed.py` now extracts and
+  reports stored MLP, packed-attention, and residual1 activation block,
+  element, and byte counters, so activation-reservation experiments are not
+  treated as timing-only noise. Added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks6` wrapper profile to
+  document the failed startup optimization: reducing stored MLP blocks from 12
+  to 6 improved startup-only `setup_wall_ms` to `0.884111x`, but the paired
+  training gate regressed train-loop wall time to `1.179180x`, steady-state
+  CUDA-event step time to `1.181891x`, block backward to `1.153015x`, and MLP
+  projection to `1.546830x`.
+
+  Verification: ran the startup-only and 2-step paired RTX 5090 benchmarks for
+  baseline `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12` versus candidate `=6`, then
+  reran the focused native GPT benchmark tests and the rejected-profile dry-run
+  gate.
+
 - Refreshed the SM120 rejection evidence for
   `mlp_proj_dinput_before_dweight`. The profile still requires
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; the latest dedicated
