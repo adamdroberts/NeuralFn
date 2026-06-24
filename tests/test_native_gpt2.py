@@ -596,6 +596,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "lm_head_tk_dweight_32768" in candidate_bench
     assert "train_loop_wall_ms_per_step to 1.052253x" in candidate_bench
     assert "stage.lm_head_backward.dweight.total_ms to 1.337552x" in candidate_bench
+    assert "lm_head_tk_dweight_49152" in candidate_bench
+    assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T" in candidate_bench
     assert "lm_head_concurrent_dhidden_dweight" in candidate_bench
     assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench
@@ -1662,6 +1664,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_fused_loss_backward_off": "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0",
         "lm_head_classifier_ce_no_loss": "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1",
         "lm_head_prepack_bf16_hidden_off": "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0",
+        "lm_head_tk_dweight_49152": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
         "block_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T",
         "mlp_proj_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T",

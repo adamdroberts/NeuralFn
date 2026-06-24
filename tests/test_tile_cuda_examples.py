@@ -1010,6 +1010,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N" in text
     assert "lm_head_tk_dweight_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
+    assert "lm_head_tk_dweight_49152" in text
+    assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T" in text
     assert "bf16_attention_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
     assert "0.995826x train_loop_wall_ms_per_step" in text
@@ -1272,7 +1274,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
             "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
             "NFN_SM120_NATIVE_PROFILE_DIR": "none",
             "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
-            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_tk_dweight_32768",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_tk_dweight_49152",
             "NFN_SM120_NATIVE_JSON_OUT": str(tk_dweight_output_path),
         }
     )
@@ -1292,7 +1294,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         tk_dweight_payload["candidate_env"][
             "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE"
         ]
-        == "768,50304,32768,N,T"
+        == "768,50304,49152,N,T"
     )
     assert tk_dweight_payload["metric_ratio_gates"]["enabled"] is False
 

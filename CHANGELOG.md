@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added and rejected the current-shape
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_49152` profile for
+  dense GPT LM-head TK dWeight bisection. The older
+  `lm_head_tk_dweight_32768` profile still reproduces the historical
+  32768-row chunk, while the new profile targets the active 49152-row chunk
+  with `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T`.
+  The dedicated RTX 5090 gate proved the route change
+  (`linear_tk_dweight_gemm_count: 0 -> 16`) but rejected the candidate at
+  `1.303473x` train-loop wall, `1.201790x` LM-head dWeight time, and
+  `1.557413x` block-backward time, so TK dWeight remains diagnostic-only and
+  real wrapper runs require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification: ran the 2-step, 2-sample stage-timed native-vs-native
+  candidate benchmark on the idle display-disabled RTX 5090, then ran the
+  focused wrapper source-contract tests.
+
 - Refreshed the promoted
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` dense GPT default
   on the dedicated RTX 5090. The same-script wrapper compared the current
