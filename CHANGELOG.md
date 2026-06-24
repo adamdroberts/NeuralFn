@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes: SM120 benchmark wrappers require a dedicated GPU by
+  default** -- `tools/paired_kernel_speed.py`,
+  `tools/bench_native_gpt_sm120_parity.sh`,
+  `tools/bench_native_gpt_sm120_candidate.sh`, and
+  `tools/bench_lm_head_backward_candidate.sh`, and
+  `tools/bench_linear_backward_candidate.sh` now default CUDA device selection
+  to `dedicated`. That mode requires an idle display-disabled NVIDIA GPU from
+  `nvidia-smi` and fails before launching commands if none is visible, so
+  benchmark results do not silently include primary-display GPU load. Migration:
+  set the wrapper CUDA device variable or `--cuda-visible-devices auto` only
+  when fallback to the lowest-utilization NVIDIA GPU is intentional, or pass an
+  explicit device id such as `0` for manual pinning.
+
+  Verification: added focused paired-kernel selection tests for `dedicated`
+  success and failure modes, updated SM120 wrapper contract assertions, and
+  reran the dedicated RTX 5090 stage-timed parity smoke that selected GPU 0
+  with display disabled and zero compute processes before/after.
+
 - Corrected the SM120 native GPT benchmark wrapper contract for the promoted
   `qkv_dinput_ln128` route. It now runs without
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, compares the current

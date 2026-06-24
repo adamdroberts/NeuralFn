@@ -1019,11 +1019,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
     parser.add_argument(
         "--cuda-visible-devices",
-        default="auto",
+        default="dedicated",
         help=(
-            "Set CUDA_VISIBLE_DEVICES for both commands. The default 'auto' selects an idle "
-            "display-disabled NVIDIA GPU when nvidia-smi can identify one. Pass an explicit "
-            "device id such as 0, or pass an empty string to leave the environment unchanged."
+            "Set CUDA_VISIBLE_DEVICES for both commands. The default 'dedicated' requires "
+            "an idle display-disabled NVIDIA GPU from nvidia-smi. Pass 'auto' to allow "
+            "fallback to the lowest-utilization NVIDIA GPU, an explicit device id such as 0, "
+            "or an empty string to leave the environment unchanged."
         ),
     )
     parser.add_argument(
@@ -2720,6 +2721,14 @@ def resolve_cuda_visible_devices(
         if _display_is_inactive(gpu.get("display_active")) and uuid not in busy_uuids:
             candidates.append(row)
 
+    if requested == "dedicated" and not candidates:
+        return {
+            "requested": requested,
+            "resolved": "",
+            "mode": "dedicated-unresolved",
+            "reason": "no idle display-disabled GPU found for dedicated benchmark mode",
+        }
+
     selected_pool = candidates if candidates else fallback
     if not selected_pool:
         return {
@@ -2775,6 +2784,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     gpu_before = gpu_snapshot()
     cuda_device_selection = resolve_cuda_visible_devices(str(args.cuda_visible_devices or ""), gpu_before)
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
+    if str(cuda_device_selection.get("mode", "")) == "dedicated-unresolved":
+        raise SystemExit(str(cuda_device_selection.get("reason", "dedicated GPU selection failed")))
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     max_selected_gpu_utilization_pct = float(args.max_selected_gpu_utilization_pct)
     selected_gpu_utilization_retries = max(1, int(args.selected_gpu_utilization_retries))

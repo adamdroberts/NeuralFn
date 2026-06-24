@@ -177,10 +177,12 @@ profile-specific override such as
 `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` to fail fast when any profile regresses.
 Set `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` on a matrix run to reverse every
 per-profile comparison order through the delegated lower-level wrapper.
-The focused linear and LM-head benchmark wrappers default to auto GPU selection;
-when `nvidia-smi` cannot be executed, they now fall back to CUDA device `0` so
-the C++ harness can emit the actual CUDA runtime/driver error instead of the
-shell exiting before the benchmark starts.
+The focused linear and LM-head benchmark wrappers default to dedicated GPU
+selection, requiring an idle display-disabled NVIDIA GPU from `nvidia-smi` so
+display load does not silently contaminate CUDA Tile measurements. Set the
+wrapper CUDA device variable to `auto` only when fallback to the
+lowest-utilization NVIDIA GPU is acceptable, or set an explicit device id for
+manual pinning.
 
 `NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` and
 `lm-head-dweight-cublaslt` expose explicit forced-cuBLASLt symbols for the
@@ -1901,10 +1903,11 @@ JSON also includes
 backward, and summed logits+backward timings for the current raw Tile ABI, which
 is the fastest way to see which part of a new LM-head classifier-backward
 candidate actually moved. The wrapper defaults
-`NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting a display-disabled
-NVIDIA GPU through `nvidia-smi` when possible, and still allows explicit
-pinning through `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES` or
-`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE`.
+`NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring a
+display-disabled NVIDIA GPU through `nvidia-smi`; set it to `auto` only when
+fallback to the lowest-utilization NVIDIA GPU is acceptable. Explicit pinning
+through `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES` or
+`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` remains supported.
 
 When a native smoke or trainer run reports CUDA error 35, the dense GPT C++
 frontend now annotates the error with a runtime/driver versus blocked-device

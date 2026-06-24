@@ -1041,9 +1041,11 @@ The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT`; parity-specific names win when both are set.
-`NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `auto`, which selects an
-idle display-disabled NVIDIA GPU for mixed display/compute workstations; set it
-to `0` or another explicit CUDA device value when you want manual pinning.
+`NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `dedicated`, which requires
+an idle display-disabled NVIDIA GPU for mixed display/compute workstations; set
+it to `auto` only when fallback to the lowest-utilization NVIDIA GPU is
+acceptable, or set it to `0` or another explicit CUDA device value when you want
+manual pinning.
 The wrapper writes NeuralFn native profile sidecars by default. Set
 `NFN_SM120_PARITY_PROFILE_DIR=none` for a run without sidecars, or set it to a
 directory to keep them. Sidecars do not enable CUDA-event stage timing by
@@ -1096,9 +1098,10 @@ chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
 `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` for a fail-fast gate before running the
 full parity wrapper. Like the full SM120 wrapper, this focused benchmark
-defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, which selects a
-display-disabled NVIDIA GPU through `nvidia-smi` when one is available; set it
-or `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly for manual pinning.
+defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, which requires a
+display-disabled NVIDIA GPU through `nvidia-smi`; set it to `auto` only when
+fallback to the lowest-utilization NVIDIA GPU is acceptable, or set it or
+`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly for manual pinning.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.
@@ -1219,8 +1222,9 @@ elided according to `grad_accum_steps - 1`.
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
 "NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper defaults
-`--cuda-visible-devices` to `auto`, selecting an idle display-disabled NVIDIA
-GPU from `nvidia-smi` when one is available; pass an explicit device id such as
+`--cuda-visible-devices` to `dedicated`, requiring an idle display-disabled
+NVIDIA GPU from `nvidia-smi`; pass `--cuda-visible-devices auto` to allow
+fallback to the lowest-utilization NVIDIA GPU, an explicit device id such as
 `--cuda-visible-devices 0` to pin manually, or `--cuda-visible-devices ""` to
 leave the environment unchanged. It alternates baseline/candidate order inside
 one script so unrelated external GPU load affects both measurements in the same

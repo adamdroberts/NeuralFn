@@ -170,11 +170,12 @@ and candidate-first order under the same external GPU load. Set
 `NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to print the resolved C++ benchmark command
 without building artifacts, loading CUDA, or touching Torch; the native no-Torch
 verifier uses that dry-run path. The
-wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting an
-idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it or
+wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring
+an idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it to
+`auto` to allow fallback to the lowest-utilization NVIDIA GPU, or set it or
 `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. If
-`nvidia-smi` is unavailable or blocked, the wrapper falls back to CUDA device
-`0` so the C++ benchmark reports the real CUDA runtime error. A matching
+`nvidia-smi` is unavailable or blocked in dedicated mode, the wrapper fails
+before launching so benchmark results do not silently include display-GPU load. A matching
 lower-level linear-backward harness is available as
 `bash tools/bench_linear_backward_candidate.sh`. It builds
 `build/linear_backward_bench`, loads `libnfn_native_train_tile_ops.so`, and
@@ -369,8 +370,9 @@ against the older reservation.
 Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
 --candidate "NEW_COMMAND" --samples N --json-out /tmp/result.json` for
 candidate-vs-current CUDA timing. The helper defaults
-`--cuda-visible-devices` to `auto`, selecting an idle display-disabled NVIDIA
-GPU from `nvidia-smi` when one is available; pass an explicit device id such as
+`--cuda-visible-devices` to `dedicated`, requiring an idle display-disabled
+NVIDIA GPU from `nvidia-smi`; pass `--cuda-visible-devices auto` to allow
+fallback to the lowest-utilization NVIDIA GPU, an explicit device id such as
 `--cuda-visible-devices 0` to pin manually, or `--cuda-visible-devices ""` to
 leave the environment unchanged. It still alternates pairs in the same sampling
 window and runs one warmup pair by default so first-use CUDA/kernel load does
@@ -1723,7 +1725,7 @@ no-tokenizer native path.
 
 When `libnfn_native_train_tile_ops.so` is built without the trainer cuBLAS linear fast path, large-row linear dWeight fallbacks now use a shared-memory 2D tiled CUDA kernel for float32-output dWeight accumulation across float32/BF16 activation and gradient combinations. The normal workstation build still tries cuBLAS/cuBLASLt first; the tiled fallback only replaces the older row-chunked atomic dWeight reduction after those GEMM routes are unavailable. Bias-only fallback reductions keep the shared row-chunk path.
 
-`tools/bench_native_gpt_sm120_parity.sh` now defaults `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=auto`, so the parity run selects an idle display-disabled NVIDIA GPU on mixed display/compute workstations. It also defaults selected-GPU utilization polling to three samples with a 0.25 second interval before each measured command, matching the native-vs-native candidate wrapper. Set `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0` or another explicit value to pin the benchmark manually, and tune `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` / `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS` only when the local NVML idle signal needs a different policy.
+`tools/bench_native_gpt_sm120_parity.sh` now defaults `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=dedicated`, so the parity run requires an idle display-disabled NVIDIA GPU on mixed display/compute workstations. It also defaults selected-GPU utilization polling to three samples with a 0.25 second interval before each measured command, matching the native-vs-native candidate wrapper. Set `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=auto` only when fallback to the lowest-utilization NVIDIA GPU is acceptable, set it to `0` or another explicit value to pin the benchmark manually, and tune `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` / `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS` only when the local NVML idle signal needs a different policy.
 Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` to inspect the llm.kittens baseline, NeuralFn candidate, CUDA selection, and sample order before starting a long parity run.
 `NFN_SM120_PARITY_ACTIVATION` (or the generic `NFN_SM120_ACTIVATION` fallback)
 is mirrored into both commands: llm.kittens receives `-af` and the NeuralFn

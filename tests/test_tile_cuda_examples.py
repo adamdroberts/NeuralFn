@@ -373,7 +373,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--selected-gpu-utilization-retry-interval-seconds" in text
     assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES:-3' in text
     assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS:-0.25' in text
-    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-auto}}"' in text
+    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-dedicated}}"' in text
     assert "TinyStories_train.bin" in text
     assert "TinyStories_val.bin" in text
     assert "-b 64" in text
@@ -5245,9 +5245,52 @@ def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> No
     assert selection["resolved"] == "0"
     assert selection["mode"] == "auto-dedicated"
 
+    dedicated = module.resolve_cuda_visible_devices("dedicated", snapshot)
+    assert dedicated["resolved"] == "0"
+    assert dedicated["mode"] == "auto-dedicated"
+
+    busy_snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "name": "NVIDIA Display Adapter",
+                "uuid": "GPU-display",
+                "pci.bus_id": "00000000:02:00.0",
+                "display_active": "Enabled",
+                "utilization.gpu_pct": "1",
+                "memory.used_mib": "1024",
+                "memory.total_mib": "16384",
+            },
+        ],
+        "compute_processes": [],
+    }
+    dedicated_missing = module.resolve_cuda_visible_devices("dedicated", busy_snapshot)
+    assert dedicated_missing["resolved"] == ""
+    assert dedicated_missing["mode"] == "dedicated-unresolved"
+    assert "no idle display-disabled GPU" in dedicated_missing["reason"]
+
+    fallback = module.resolve_cuda_visible_devices("auto", busy_snapshot)
+    assert fallback["resolved"] == "0"
+    assert fallback["mode"] == "auto-fallback"
+
     explicit = module.resolve_cuda_visible_devices("", snapshot)
     assert explicit["resolved"] == ""
     assert explicit["mode"] == "unchanged"
+
+
+def test_focused_kernel_benchmark_wrappers_default_to_dedicated_gpu() -> None:
+    root = Path(__file__).resolve().parents[1]
+    expected_defaults = {
+        "tools/bench_linear_backward_candidate.sh": (
+            'CUDA_VISIBLE_DEVICES_VALUE="${NFN_LINEAR_BACKWARD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-dedicated}}"'
+        ),
+        "tools/bench_lm_head_backward_candidate.sh": (
+            'CUDA_VISIBLE_DEVICES_VALUE="${NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-dedicated}}"'
+        ),
+    }
+    for relative_path, expected in expected_defaults.items():
+        source = (root / relative_path).read_text(encoding="utf-8")
+        assert expected in source
 
 
 def test_paired_kernel_speed_tool_gpu_lock_rejects_overlap() -> None:
