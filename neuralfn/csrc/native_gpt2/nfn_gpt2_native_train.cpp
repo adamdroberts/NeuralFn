@@ -10090,6 +10090,7 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
     std::int64_t lm_head_classifier_no_loss_chunk_count = 0;
     std::int64_t lm_head_prob_only_corrections_chunk_count = 0;
+    std::int64_t lm_head_prob_only_combined_correction_launch_count = 0;
     std::int64_t lm_head_prob_only_dhidden_correction_launch_count = 0;
     std::int64_t lm_head_prob_only_dweight_correction_launch_count = 0;
     std::int64_t lm_head_last_dweight_overlap_queue_count = 0;
@@ -10418,6 +10419,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_lm_head_classifier_backward_prob_only_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
         "nfn_native_tile_lm_head_prob_only_dhidden_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_prob_only_dweight_target_correction_bf16_bits",
+        "nfn_native_tile_lm_head_prob_only_combined_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_classifier_stats_reset",
         "nfn_native_tile_lm_head_classifier_chunk_launch_count",
         "nfn_native_tile_lm_head_classifier_last_rows",
@@ -10767,6 +10769,9 @@ int run_transformer_lm_training_json(
     using LmHeadProbOnlyDweightCorrectionBf16Fn = int (*)(
         const std::uint16_t*, const std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using LmHeadProbOnlyCombinedCorrectionBf16Fn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const std::uint16_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, float, void*);
     using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)(
         std::uint16_t* logits_bf16,
         const std::uint16_t* targets_u16,
@@ -11084,6 +11089,8 @@ int run_transformer_lm_training_json(
         lm_head_prob_only_dhidden_correction_bf16 = nullptr;
     LmHeadProbOnlyDweightCorrectionBf16Fn
         lm_head_prob_only_dweight_correction_bf16 = nullptr;
+    LmHeadProbOnlyCombinedCorrectionBf16Fn
+        lm_head_prob_only_combined_correction_bf16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_cooperative_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
@@ -11769,6 +11776,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadProbOnlyDweightCorrectionBf16Fn>(
                         tile_handle,
                         "nfn_native_tile_lm_head_prob_only_dweight_target_correction_bf16_bits");
+                lm_head_prob_only_combined_correction_bf16 =
+                    load_symbol<LmHeadProbOnlyCombinedCorrectionBf16Fn>(
+                        tile_handle,
+                        "nfn_native_tile_lm_head_prob_only_combined_target_correction_bf16_bits");
                 lm_head_classifier_backward_cooperative_bf16_u16 =
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
@@ -12340,6 +12351,12 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_CORRECTIONS",
                               "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_CORRECTIONS"}),
             false);
+    const bool lm_head_prob_only_combined_corrections_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS",
+                              "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS"}),
+            false);
     const bool lm_head_ce_llmk_style_specialized_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED",
@@ -12392,6 +12409,15 @@ int run_transformer_lm_training_json(
     const bool lm_head_prob_only_corrections_enabled =
         lm_head_prob_only_corrections_requested &&
         lm_head_prob_only_corrections_available;
+    const bool lm_head_prob_only_combined_corrections_available =
+        lm_head_bf16_logits_enabled &&
+        lm_head_prepack_bf16_hidden_enabled &&
+        token_weight_bf16_shadow_enabled &&
+        lm_head_classifier_backward_prob_only_bf16_u16 != nullptr &&
+        lm_head_prob_only_combined_correction_bf16 != nullptr;
+    const bool lm_head_prob_only_combined_corrections_enabled =
+        lm_head_prob_only_combined_corrections_requested &&
+        lm_head_prob_only_combined_corrections_available;
     const bool lm_head_reuse_forward_logits_enabled =
         lm_head_bf16_logits_enabled &&
         env_flag_enabled_or_default(
@@ -16549,7 +16575,9 @@ int run_transformer_lm_training_json(
                                                 "ce.backward_loss.inplace.public_vocab_strided_bf16_bits_u16_targets");
                                         }
                                     } else {
-                                        if (!record_loss && lm_head_prob_only_corrections_enabled) {
+                                        if (!record_loss &&
+                                            (lm_head_prob_only_corrections_enabled ||
+                                             lm_head_prob_only_combined_corrections_enabled)) {
                                             run(lm_head_classifier_backward_prob_only_bf16_u16(
                                                     bf16_logit_chunk,
                                                     target_chunk_u16,
@@ -16698,6 +16726,7 @@ int run_transformer_lm_training_json(
                     if (error.empty() &&
                         !record_loss &&
                         lm_head_prob_only_corrections_enabled &&
+                        !lm_head_prob_only_combined_corrections_enabled &&
                         token_weight_bf16 != nullptr) {
                         run(lm_head_prob_only_dhidden_correction_bf16(
                                 target_chunk_u16,
@@ -16842,6 +16871,7 @@ int run_transformer_lm_training_json(
                     if (error.empty() &&
                         !record_loss &&
                         lm_head_prob_only_corrections_enabled &&
+                        !lm_head_prob_only_combined_corrections_enabled &&
                         hidden_bf16_chunk != nullptr) {
                         run(lm_head_prob_only_dweight_correction_bf16(
                                 target_chunk_u16,
@@ -16855,6 +16885,28 @@ int run_transformer_lm_training_json(
                             "lm_head.backward_prob_only.dweight_target_correction");
                         if (error.empty()) {
                             lm_head_prob_only_dweight_correction_launch_count += 1;
+                        }
+                    }
+                    if (error.empty() &&
+                        !record_loss &&
+                        lm_head_prob_only_combined_corrections_enabled &&
+                        token_weight_bf16 != nullptr &&
+                        hidden_bf16_chunk != nullptr) {
+                        run(lm_head_prob_only_combined_correction_bf16(
+                                target_chunk_u16,
+                                token_weight_bf16,
+                                hidden_bf16_chunk,
+                                grad_hidden_chunk,
+                                accum_grad_token_weight,
+                                row_count,
+                                kDim,
+                                kDim,
+                                kDim,
+                                accumulation_scale / static_cast<float>(active_rows),
+                                stream),
+                            "lm_head.backward_prob_only.combined_target_correction");
+                        if (error.empty()) {
+                            lm_head_prob_only_combined_correction_launch_count += 1;
                         }
                     }
                 }
@@ -20908,6 +20960,12 @@ int run_transformer_lm_training_json(
         << (lm_head_prob_only_corrections_available ? "true" : "false") << ",\n"
         << "  \"lm_head_prob_only_corrections_enabled\": "
         << (lm_head_prob_only_corrections_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_prob_only_combined_corrections_requested\": "
+        << (lm_head_prob_only_combined_corrections_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_prob_only_combined_corrections_available\": "
+        << (lm_head_prob_only_combined_corrections_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_prob_only_combined_corrections_enabled\": "
+        << (lm_head_prob_only_combined_corrections_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_llmk_style_specialized_requested\": "
         << (lm_head_ce_llmk_style_specialized_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_llmk_style_specialized_enabled\": "
@@ -20917,7 +20975,9 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_ce_loss_bins_default_specialized_enabled\": "
         << (lm_head_ce_loss_bins_default_specialized_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_kernel_strategy\": \""
-        << (lm_head_prob_only_corrections_chunk_count > 0
+        << (lm_head_prob_only_corrections_chunk_count > 0 && lm_head_prob_only_combined_correction_launch_count > 0
+                ? "no-loss-prob-only-dlogits-plus-combined-target-correction"
+                : (lm_head_prob_only_corrections_chunk_count > 0
                 ? "no-loss-prob-only-dlogits-plus-target-corrections"
                 : (lm_head_ce_no_loss_runtime_enabled
                 ? (lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled
@@ -20933,7 +20993,7 @@ int run_transformer_lm_training_json(
                        ? "default-specialized-loss-bins-vec8-loads-scalar-stores"
                        : (lm_head_ce_default_specialized_enabled
                               ? "default-specialized-row-loss-vec8-loads-scalar-stores"
-                              : "generic-runtime-configured"))))) << "\",\n"
+                              : "generic-runtime-configured")))))) << "\",\n"
         << "  \"lm_head_ce_bf16_vector_io_strategy\": \""
         << (lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled
                 ? "vec8-loads-streaming-vec8-stores"
@@ -20955,6 +21015,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_bf16_logit_bytes\": " << lm_head_bf16_logit_bytes << ",\n"
         << "  \"lm_head_prob_only_corrections_chunk_count\": "
         << lm_head_prob_only_corrections_chunk_count << ",\n"
+        << "  \"lm_head_prob_only_combined_correction_launch_count\": "
+        << lm_head_prob_only_combined_correction_launch_count << ",\n"
         << "  \"lm_head_prob_only_dhidden_correction_launch_count\": "
         << lm_head_prob_only_dhidden_correction_launch_count << ",\n"
         << "  \"lm_head_prob_only_dweight_correction_launch_count\": "

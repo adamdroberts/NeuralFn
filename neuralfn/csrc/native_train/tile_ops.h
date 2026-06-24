@@ -266,6 +266,19 @@ int nfn_native_tile_lm_head_prob_only_dweight_target_correction_bf16_bits(
     float loss_scale,
     void* cuda_stream);
 
+int nfn_native_tile_lm_head_prob_only_combined_target_correction_bf16_bits(
+    const std::uint16_t* targets,
+    const std::uint16_t* token_weight_bf16,
+    const std::uint16_t* hidden_bf16,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t token_weight_row_stride,
+    std::int64_t grad_weight_row_stride,
+    float loss_scale,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
     const std::uint16_t* x_bf16_bits,
     const std::uint16_t* grad_out_bf16_bits,

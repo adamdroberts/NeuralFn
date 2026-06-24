@@ -112,6 +112,14 @@ dlogits for the no-loss BF16 classifier path, and applies the target subtraction
 through separate Tile CUDA dHidden/dWeight correction kernels. It is not a
 default: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate rejected it at
 `1.005050x` LM-head backward and `1.000994x` steady-state CUDA-event step time.
+The related
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
+diagnostic sets `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1` and
+replaces those two post-GEMM correction launches with one combined Tile CUDA
+target-correction launch. It is also rejected by default: the CUDA 13.3
+dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the strategy to
+`no-loss-prob-only-dlogits-plus-combined-target-correction`, but regressed
+train-loop wall time to `1.006574x` and LM-head backward to `1.003646x`.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate

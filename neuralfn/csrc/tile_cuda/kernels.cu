@@ -12356,6 +12356,32 @@ __global__ void lm_head_prob_only_dweight_target_correction_bf16_bits_kernel(
   atomicAdd(grad_weight + static_cast<std::int64_t>(target) * grad_weight_row_stride + dim, -loss_scale * hidden);
 }
 
+__global__ void lm_head_prob_only_combined_target_correction_bf16_bits_kernel(
+    const std::uint16_t* __restrict__ targets,
+    const std::uint16_t* __restrict__ token_weight_bf16,
+    const std::uint16_t* __restrict__ hidden_bf16,
+    float* __restrict__ grad_hidden,
+    float* __restrict__ grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t token_weight_row_stride,
+    std::int64_t grad_weight_row_stride,
+    float loss_scale) {
+  const std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = rows * hidden_dim;
+  if (index >= total) {
+    return;
+  }
+  const std::int64_t row = index / hidden_dim;
+  const std::int64_t dim = index - row * hidden_dim;
+  const std::uint16_t target = targets[row];
+  const float weight = bf16_bits_to_f32_device(
+      token_weight_bf16[static_cast<std::int64_t>(target) * token_weight_row_stride + dim]);
+  const float hidden = bf16_bits_to_f32_device(hidden_bf16[index]);
+  grad_hidden[index] -= loss_scale * weight;
+  atomicAdd(grad_weight + static_cast<std::int64_t>(target) * grad_weight_row_stride + dim, -loss_scale * hidden);
+}
+
 __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel(
     std::uint16_t* __restrict__ logits,
     const std::uint16_t* __restrict__ targets,
@@ -18945,6 +18971,37 @@ void launch_lm_head_prob_only_dweight_target_correction_bf16_bits(
   const int blocks = static_cast<int>((total + threads - 1) / threads);
   lm_head_prob_only_dweight_target_correction_bf16_bits_kernel<<<blocks, threads, 0, stream>>>(
       targets, hidden_bf16, grad_weight, rows, hidden_dim, grad_weight_row_stride, loss_scale);
+}
+
+void launch_lm_head_prob_only_combined_target_correction_bf16_bits(
+    const std::uint16_t* targets,
+    const std::uint16_t* token_weight_bf16,
+    const std::uint16_t* hidden_bf16,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t token_weight_row_stride,
+    std::int64_t grad_weight_row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  constexpr int threads = 256;
+  const std::int64_t total = rows * hidden_dim;
+  if (total <= 0) {
+    return;
+  }
+  const int blocks = static_cast<int>((total + threads - 1) / threads);
+  lm_head_prob_only_combined_target_correction_bf16_bits_kernel<<<blocks, threads, 0, stream>>>(
+      targets,
+      token_weight_bf16,
+      hidden_bf16,
+      grad_hidden,
+      grad_weight,
+      rows,
+      hidden_dim,
+      token_weight_row_stride,
+      grad_weight_row_stride,
+      loss_scale);
 }
 
 void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(

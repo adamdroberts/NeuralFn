@@ -7,6 +7,34 @@ Future updates should append new entries here rather than replacing older notes.
 ## Unreleased
 
 - Added a default-off native dense GPT LM-head diagnostic route behind
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS`,
+  `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS`, or
+  `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS`. The route reuses the
+  probability-only no-loss BF16 classifier dlogit write and replaces the
+  rejected two-launch dHidden/dWeight target-correction tail with one combined
+  Tile CUDA post-GEMM correction kernel. Native JSON now reports
+  `lm_head_prob_only_combined_corrections_requested`,
+  `lm_head_prob_only_combined_corrections_available`,
+  `lm_head_prob_only_combined_corrections_enabled`, and
+  `lm_head_prob_only_combined_correction_launch_count`.
+
+  Migration note: no default behavior changes. The same-script profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
+  is rejected by default for real reruns unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`; ran `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`, the focused candidate-wrapper
+  pytest, `tools/check_native_no_torch_deps.py --max-entrypoint-seconds 2`,
+  and a dry-run plan for the new profile. The CUDA 13.3 dedicated RTX 5090
+  same-script 3-step, 2-sample, 1-warmup stage-timed benchmark proved the
+  route change (`lm_head_ce_kernel_strategy:
+  no-loss-prob-only-dlogits-plus-combined-target-correction`) and selected GPU
+  0 with no compute processes, but rejected it at `1.006574x` train-loop wall
+  time and `1.003646x` LM-head backward.
+
+- Added a default-off native dense GPT LM-head diagnostic route behind
   `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS`,
   `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_CORRECTIONS`, or
   `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_CORRECTIONS`. The route replaces the
