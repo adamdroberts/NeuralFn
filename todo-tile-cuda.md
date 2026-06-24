@@ -59,6 +59,17 @@ Real training tensors must not pass through graph editor node objects.
   setup averaged `634.259 ms`, mainly float arena materialization
   (`265.065 ms`), token weight initialization (`158.416 ms`), uint16 arena
   materialization (`124.713 ms`), and cuBLASLt plan prewarm (`74.021 ms`).
+- [x] Refresh parity after restoring the rejected attention-projection ordering
+  route to default-off and rebuilding `nfn_gpt_native_train_linked`. The
+  2026-06-24 CUDA 13.3.33 3-step, 2-sample, 1-warmup stage-timed same-script
+  run measured NeuralFn at `2555.538 ms/step` versus llm.kittens at
+  `2460.547 ms/step` (`1.038651x` train-loop wall, `0.962343x` tokens/sec),
+  with the steady-state CUDA-event slice at `1.012345x` and first-step
+  CUDA-event slice at `1.089442x`. The selected RTX 5090 was idle before and
+  after every sample, with no compute processes. Current hot NeuralFn buckets
+  are still `stage.block_backward.total_ms` (`3856.435 ms`),
+  `stage.block_forward.total_ms` (`1965.470 ms`), and
+  `stage.lm_head_backward.total_ms` (`1753.965 ms`).
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
