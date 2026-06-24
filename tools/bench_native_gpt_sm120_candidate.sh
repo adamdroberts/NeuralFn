@@ -507,6 +507,18 @@ case "${CANDIDATE_PROFILE,,}" in
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1"
     ;;
+  "cublaslt_plan_prewarm_block_only"|"cublaslt-plan-prewarm-block-only"|"linear_cublaslt_plan_prewarm_block_only"|"linear-cublaslt-plan-prewarm-block-only")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate skipped the single LM-head cuBLASLt prewarm plan, but rejected default promotion because steady-state CUDA-event step time regressed to 1.002003x, LM-head backward to 1.000030x, MLP projection backward to 1.003987x, and setup_wall_ms to 1.185925x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=all"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only"
+    ;;
+  "cublaslt_plan_prewarm_lm_head_only"|"cublaslt-plan-prewarm-lm-head-only"|"linear_cublaslt_plan_prewarm_lm_head_only"|"linear-cublaslt-plan-prewarm-lm-head-only")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate prewarmed only the LM-head cuBLASLt plan and saved setup_wall_ms to 0.947250x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.011688x, steady-state CUDA-event time to 1.001999x, LM-head backward to 1.000280x, block backward to 1.022887x, and MLP projection backward to 1.021800x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=all"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only"
+    ;;
   "tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 recheck built the -DLLMK_SM120_FORWARD_N96=0 Tile ops candidate but did not change tracked route counters, strategy strings, linear shape stats, or cuBLASLt plan cache entries; the route-change gate failed and hot-stage gates regressed at stage.lm_head_backward.total_ms=1.001484x and stage.block_backward.mlp_proj.total_ms=1.001994x."

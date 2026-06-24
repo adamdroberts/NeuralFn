@@ -861,10 +861,19 @@ startup diagnostics do not pay the extra setup cost. Set
 `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=0`, or
 `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=0` to disable it for paired bisection, or
 set the same variables to `1` to force it during startup-only diagnostics.
+The optional mode selector
+`NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLAN_MODE`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM_MODE` accepts `all` (default),
+`block_only`, or `lm_head_only`. These reduced modes are diagnostic-only:
+the dedicated RTX 5090 CUDA 13.3 same-script gates rejected both selective
+prewarm routes, so normal training should leave the mode at `all`.
 Native JSON reports
 `linear_cublaslt_plan_prewarm_available`,
 `linear_cublaslt_plan_prewarm_enabled`,
+`linear_cublaslt_plan_prewarm_mode`,
 `linear_cublaslt_plan_prewarm_attempted_count`,
+`linear_cublaslt_plan_prewarm_skipped_count`,
 `linear_cublaslt_plan_prewarm_success_count`, and
 `linear_cublaslt_plan_prewarm_failure_count`, and setup timing includes
 `setup.cublaslt_plan_prewarm`. The dedicated RTX 5090 CUDA 13.3 retest measured

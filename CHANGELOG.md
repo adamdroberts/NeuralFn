@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added diagnostic cuBLASLt plan-prewarm mode selection for native dense GPT
+  training. The native trainer now accepts
+  `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE`,
+  `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLAN_MODE`, or
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM_MODE` with `all`, `block_only`, or
+  `lm_head_only`, and native JSON reports
+  `linear_cublaslt_plan_prewarm_mode` plus
+  `linear_cublaslt_plan_prewarm_skipped_count`. The default remains `all`.
+
+  Migration note: no default behavior changes. The reduced modes are
+  diagnostic-only; both named same-script profiles are marked rejected in
+  `tools/bench_native_gpt_sm120_candidate.sh`.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`; startup-only probes confirmed `all`
+  attempts 9 plans, `block_only` attempts 8 and skips 1, and `lm_head_only`
+  attempts 1 and skips 8. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
+  same-script gate rejected `block_only` because steady-state CUDA-event time
+  regressed to `1.002003x`, LM-head backward to `1.000030x`, MLP projection
+  backward to `1.003987x`, and setup to `1.185925x`. The inverse
+  `lm_head_only` route saved setup (`0.947250x`) but regressed train-loop wall
+  to `1.011688x`, steady-state CUDA-event time to `1.001999x`, LM-head
+  backward to `1.000280x`, block backward to `1.022887x`, and MLP projection
+  backward to `1.021800x`.
+
 - Breaking changes: corrected the strict LM-head cooperative fused-kernel
   capability contract. The exported Tile ops symbol
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still

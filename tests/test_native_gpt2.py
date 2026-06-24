@@ -822,6 +822,12 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM" in gpt_source
+    assert "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE" in gpt_source
+    assert "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLAN_MODE" in gpt_source
+    assert "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM_MODE" in gpt_source
+    assert 'linear_cublaslt_plan_prewarm_mode = "all"' in gpt_source
+    assert 'linear_cublaslt_plan_prewarm_mode == "block_only"' in gpt_source
+    assert 'linear_cublaslt_plan_prewarm_mode == "lm_head_only"' in gpt_source
     assert "!cfg.startup_only" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_requested" in gpt_source
@@ -852,7 +858,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_success_count" in gpt_source
     assert "setup.linear_bf16_workspace_prewarm" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
+    assert "linear_cublaslt_plan_prewarm_mode" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
+    assert "linear_cublaslt_plan_prewarm_skipped_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source
     assert "linear_cublaslt_plan_cache_available" in gpt_source
     assert "linear_cublaslt_plan_cache_count" in gpt_source
@@ -1830,6 +1838,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
+        "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",

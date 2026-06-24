@@ -586,6 +586,14 @@ std::string normalize_model_family(const std::string& value) {
     throw std::runtime_error("model family must be one of: gpt, gpt2, gpt3, nanogpt");
 }
 
+std::string normalize_env_mode(std::string value) {
+    for (char& ch : value) {
+        const char lowered = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        ch = lowered == '-' ? '_' : lowered;
+    }
+    return value;
+}
+
 std::string canonical_dense_gpt_model_family(const std::string& model_selector) {
     const std::string normalized = normalize_model_family(model_selector);
     if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3" || normalized == "nanogpt") {
@@ -10062,6 +10070,7 @@ int run_transformer_lm_training_json(
     std::int64_t linear_cublaslt_plan_prewarm_attempted_count = 0;
     std::int64_t linear_cublaslt_plan_prewarm_success_count = 0;
     std::int64_t linear_cublaslt_plan_prewarm_failure_count = 0;
+    std::int64_t linear_cublaslt_plan_prewarm_skipped_count = 0;
     std::int64_t linear_cublas_handle_prewarm_requested = 0;
     std::int64_t linear_cublas_handle_prewarm_success_count = 0;
     std::int64_t linear_cublas_handle_prewarm_failure_count = 0;
@@ -10112,6 +10121,30 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS",
                               "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM"}),
             !cfg.startup_only);
+    std::string linear_cublaslt_plan_prewarm_mode =
+        normalize_env_mode(env_or_empty_any(
+            {"NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE",
+             "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLAN_MODE",
+             "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM_MODE"}));
+    if (linear_cublaslt_plan_prewarm_mode.empty() ||
+        linear_cublaslt_plan_prewarm_mode == "default" ||
+        linear_cublaslt_plan_prewarm_mode == "full") {
+        linear_cublaslt_plan_prewarm_mode = "all";
+    } else if (linear_cublaslt_plan_prewarm_mode == "block" ||
+               linear_cublaslt_plan_prewarm_mode == "blocks" ||
+               linear_cublaslt_plan_prewarm_mode == "no_lm_head") {
+        linear_cublaslt_plan_prewarm_mode = "block_only";
+    } else if (linear_cublaslt_plan_prewarm_mode == "lm_head") {
+        linear_cublaslt_plan_prewarm_mode = "lm_head_only";
+    } else if (linear_cublaslt_plan_prewarm_mode != "all" &&
+               linear_cublaslt_plan_prewarm_mode != "block_only" &&
+               linear_cublaslt_plan_prewarm_mode != "lm_head_only") {
+        std::ostringstream out;
+        out << "unsupported cuBLASLt plan prewarm mode: "
+            << json_escape(linear_cublaslt_plan_prewarm_mode)
+            << " (expected all, block_only, or lm_head_only)";
+        error = out.str();
+    }
     const bool linear_cublas_handle_prewarm_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE",
@@ -15376,6 +15409,7 @@ int run_transformer_lm_training_json(
             int ldb;
             int ldc;
             int bgrad_epilogue;
+            bool lm_head;
         };
         constexpr int kOpN = 0;
         constexpr int kOpT = 1;
@@ -15383,25 +15417,32 @@ int run_transformer_lm_training_json(
         const int lm_head_rows = static_cast<int>(lm_head_chunk_rows);
         const PrewarmShape shapes[] = {
             {static_cast<int>(kHidden), full_rows, static_cast<int>(kDim),
-             kOpN, kOpN, static_cast<int>(kHidden), static_cast<int>(kDim), static_cast<int>(kHidden), 0},
+             kOpN, kOpN, static_cast<int>(kHidden), static_cast<int>(kDim), static_cast<int>(kHidden), 0, false},
             {static_cast<int>(kDim), full_rows, static_cast<int>(kHidden),
-             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kHidden), static_cast<int>(kDim), 0},
+             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kHidden), static_cast<int>(kDim), 0, false},
             {static_cast<int>(kDim), full_rows, static_cast<int>(kQkvDim),
-             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kQkvDim), static_cast<int>(kDim), 0},
+             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kQkvDim), static_cast<int>(kDim), 0, false},
             {static_cast<int>(kDim), full_rows, static_cast<int>(kDim),
-             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kDim), static_cast<int>(kDim), 0},
+             kOpN, kOpN, static_cast<int>(kDim), static_cast<int>(kDim), static_cast<int>(kDim), 0, false},
             {static_cast<int>(kHidden), static_cast<int>(kDim), full_rows,
-             kOpN, kOpT, static_cast<int>(kHidden), static_cast<int>(kDim), static_cast<int>(kHidden), 1},
+             kOpN, kOpT, static_cast<int>(kHidden), static_cast<int>(kDim), static_cast<int>(kHidden), 1, false},
             {static_cast<int>(kDim), static_cast<int>(kHidden), full_rows,
-             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kHidden), static_cast<int>(kDim), 1},
+             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kHidden), static_cast<int>(kDim), 1, false},
             {static_cast<int>(kDim), static_cast<int>(kQkvDim), full_rows,
-             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kQkvDim), static_cast<int>(kDim), 1},
+             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kQkvDim), static_cast<int>(kDim), 1, false},
             {static_cast<int>(kDim), static_cast<int>(kDim), full_rows,
-             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kDim), static_cast<int>(kDim), 1},
+             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kDim), static_cast<int>(kDim), 1, false},
             {static_cast<int>(kDim), static_cast<int>(kPaddedVocab), lm_head_rows,
-             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kPaddedVocab), static_cast<int>(kDim), 0},
+             kOpN, kOpT, static_cast<int>(kDim), static_cast<int>(kPaddedVocab), static_cast<int>(kDim), 0, true},
         };
         for (const PrewarmShape& shape : shapes) {
+            const bool skip_shape =
+                (linear_cublaslt_plan_prewarm_mode == "block_only" && shape.lm_head) ||
+                (linear_cublaslt_plan_prewarm_mode == "lm_head_only" && !shape.lm_head);
+            if (skip_shape) {
+                linear_cublaslt_plan_prewarm_skipped_count += 1;
+                continue;
+            }
             linear_cublaslt_plan_prewarm_attempted_count += 1;
             const int ok = trainer_linear_cublaslt_prewarm_bf16_plan_fn(
                 shape.m,
@@ -21389,10 +21430,14 @@ int run_transformer_lm_training_json(
         << (trainer_linear_cublaslt_prewarm_bf16_plan_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_enabled\": "
         << (linear_cublaslt_plan_prewarm_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_plan_prewarm_mode\": \""
+        << json_escape(linear_cublaslt_plan_prewarm_mode) << "\",\n"
         << "  \"linear_cublaslt_plan_prewarm_requested\": "
         << linear_cublaslt_plan_prewarm_requested << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_attempted_count\": "
         << linear_cublaslt_plan_prewarm_attempted_count << ",\n"
+        << "  \"linear_cublaslt_plan_prewarm_skipped_count\": "
+        << linear_cublaslt_plan_prewarm_skipped_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_success_count\": "
         << linear_cublaslt_plan_prewarm_success_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_failure_count\": "
