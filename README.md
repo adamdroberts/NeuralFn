@@ -519,8 +519,10 @@ The 2026-06-24 CUDA 13.3 dedicated RTX 5090 refresh now keeps
 train-loss logging comparison. The same-script 3-step, 2-sample gate forces
 `--train-loss-every-steps 1`, moves
 `lm_head_classifier_loss_bin_launch_count` from `0` to `48`, and measured
-`0.964602x` train-loop wall, `0.977001x` steady-state CUDA-event timing, and
-`0.909318x` LM-head backward versus the older row-loss tail.
+`0.981781x` train-loop wall, `0.977802x` steady-state CUDA-event timing,
+`1.018709x` train tokens/sec, `0.909450x` LM-head backward, and `0.541560x`
+LM-head CE versus the older row-loss tail. The wrapper records that evidence in
+`candidate_note` metadata for the promoted profile.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.
@@ -2363,8 +2365,12 @@ atomically accumulate row losses into 1024 bins, then reduce those bins with
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`. That profile now forces
 the baseline side to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` so the
 same-script benchmark continues to compare the new default against the older
-row-loss path. Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` only for
-regression checks against the older row-loss tail.
+row-loss path. The latest CUDA 13.3 dedicated RTX 5090 gate measured the
+default loss-bin route at `0.981781x` train-loop wall, `0.977802x`
+steady-state CUDA-event timing, `1.018709x` train tokens/sec, `0.909450x`
+LM-head backward, and `0.541560x` LM-head CE. Set
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` only for regression checks
+against the older row-loss tail.
 
 For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`, `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` before running `nfn_gpt_native_train`. The Tile ops ABI records successful linear dispatch buckets and the GPT runtime JSON reports `linear_shape_stats` entries with `path_name`, `m`, `n`, `k`, transpose flags, call counts, `total_us`, and `avg_us` for TK BF16, TK float-output conversion, fused TK GELU/dGELU, cuBLASLt, cuBLAS GEMMEx BF16, and SGEMM paths. When the rebuilt v2 stats ABI is available, cuBLASLt rows also include `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and `cublaslt_workspace_bytes`, which prevents no-op heuristic overrides from being mistaken for real route changes. Timing uses CUDA events and synchronizes measured GEMMs, with a host-synchronized fallback for fused TK GELU rows whose helper dispatch is not captured by the stream event path, so leave this disabled for normal training; it is intended for paired kernel-candidate profiling on the dedicated compute GPU. For normal runs, use `linear_cublaslt_plan_cache` instead: it reports cached cuBLASLt shape, heuristic, workspace, and epilogue metadata without enabling synchronized GEMM timing. The dense GPT runtime also reports LM-head-specific logits and dHidden route counters: `lm_head_logits_tk_gemm_count`, `lm_head_logits_cublaslt_gemm_count`, `lm_head_logits_bf16_gemm_count`, `lm_head_dhidden_tk_gemm_count`, `lm_head_dhidden_cublaslt_gemm_count`, and `lm_head_dhidden_bf16_gemm_count`; `lm_head_dhidden_linear_strategy` uses those counters even when `linear_shape_stats` is off. `tools/paired_kernel_speed.py` also prints and ratios native backend counters such as `linear_tk_gemm_count`, `linear_cublaslt_gemm_count`, `linear_cublaslt_bgrad_gemm_count`, `linear_cublaslt_bgrad_direct_write_count`, `linear_cublaslt_bgrad_accumulate_count`, `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`, the LM-head logits/dHidden counters, and attention TK launch counts, so an active backend, BGRADB epilogue, or compute-type candidate is visible even when the higher-level strategy label is unchanged. The paired helper also reports `has_hot_route_counter_change`, `hot_changed`, and `setup_only_changed`; the required route-change gate accepts only hot route counters, strategy changes, linear-shape rows, or plan-cache changes, preventing setup/prewarm toggles from validating an unchanged training loop.
 

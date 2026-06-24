@@ -1486,8 +1486,11 @@ older row-loss path. The candidate side expands to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, the baseline side is forced to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0`, and the wrapper applies
 `--train-loss-every-steps 1` to both sides so the route counter is meaningful.
-The 2026-06-24 CUDA 13.3 RTX 5090 rerun measured `0.964602x` train-loop wall
-and `0.909318x` LM-head backward with loss-bin launches moving `0 -> 48`. Set
+The 2026-06-24 CUDA 13.3 RTX 5090 rerun measured `0.981781x` train-loop wall,
+`0.977802x` steady-state CUDA-event timing, `1.018709x` train tokens/sec,
+`0.909450x` LM-head backward, and `0.541560x` LM-head CE with loss-bin
+launches moving `0 -> 48`; the wrapper records this in `candidate_note`
+metadata for the promoted profile. Set
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
 When `--native-stage-timing` is used through the paired speed tool or the SM120

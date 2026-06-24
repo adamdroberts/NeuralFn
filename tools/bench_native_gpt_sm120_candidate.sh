@@ -375,6 +375,7 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
     ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
+    CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate keeps the loss-bin train-loss logging route as the default because it moved lm_head_classifier_loss_bin_launch_count from 0 to 48, improved train_loop_wall_ms_per_step to 0.981781x, steady-state CUDA-event step time to 0.977802x, train_tokens_per_second to 1.018709x, stage.lm_head_backward.total_ms to 0.909450x, and stage.lm_head_backward.ce.total_ms to 0.541560x versus the older row-loss tail."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"

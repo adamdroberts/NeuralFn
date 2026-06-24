@@ -1900,6 +1900,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"'
         in bench_source
     )
+    assert "CANDIDATE_NOTE=" in bench_source
+    assert "keeps the loss-bin train-loss logging route as the default" in bench_source
+    assert "stage.lm_head_backward.ce.total_ms to 0.541560x" in bench_source
     assert (
         'COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"'
         in bench_source
