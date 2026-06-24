@@ -668,7 +668,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup_wall_ms to 1.063067x" in candidate_bench
     assert "lm_head_cooperative_backward" in candidate_bench
     assert "activated the cooperative LM-head sequence wrapper" in candidate_bench
-    assert "stage.lm_head_backward.total_ms to 1.103379x" in candidate_bench
+    assert "stage.lm_head_backward.total_ms to 1.001066x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.122857x" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
@@ -5344,6 +5344,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "bf16_persistent_block_outputs_enabled": False,
         "bf16_persistent_block_output_store_count": 0,
         "bf16_persistent_block_output_restore_count": 0,
+        "bf16_persistent_block_input_ln1_backward_requested": False,
+        "bf16_persistent_block_input_ln1_backward_enabled": False,
+        "bf16_persistent_block_input_ln1_backward_count": 0,
         "fp32_persistent_block_output_elements_elided": 0,
         "final_block_output_copy_elided": True,
         "validation_persistent_block_outputs": 0,
