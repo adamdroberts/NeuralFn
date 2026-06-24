@@ -199,6 +199,8 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           -h, --help
           --help-style {short,long,verbose}
           --json
+          --kind {function,module,optimizer,runtime}
+          --status {tile,torch_fallback,host_only,delegated,planned}
           --iterations N
           --warmup N
           --samples N
@@ -262,8 +264,11 @@ def _is_lightweight_kernels_list(argv: list[str]) -> bool:
             action_seen = True
             idx += 1
             continue
-        if arg == "--json":
+        if arg in {"--json"}:
             idx += 1
+            continue
+        if arg in {"--kind", "--status"} and idx + 1 < len(argv):
+            idx += 2
             continue
         return False
     return True
@@ -272,17 +277,58 @@ def _is_lightweight_kernels_list(argv: list[str]) -> bool:
 def _lightweight_kernels_list_main(argv: list[str] | None = None) -> int:
     import json
 
+    from neuralfn.tile_cuda.registry import TRACKED_DTYPES
     from neuralfn.tile_cuda.registry import coverage_report
 
     tokens = list(sys.argv[1:] if argv is None else argv)
     json_output = "--json" in tokens
+    allowed_kinds = {"function", "module", "optimizer", "runtime"}
+    allowed_statuses = {"tile", "torch_fallback", "host_only", "delegated", "planned"}
+
+    def option_value(flag: str) -> str | None:
+        try:
+            index = tokens.index(flag)
+        except ValueError:
+            return None
+        return tokens[index + 1] if index + 1 < len(tokens) else None
+
+    kind_filter = option_value("--kind")
+    status_filter = option_value("--status")
+    if kind_filter is not None and kind_filter not in allowed_kinds:
+        raise SystemExit(f"invalid --kind: {kind_filter}")
+    if status_filter is not None and status_filter not in allowed_statuses:
+        raise SystemExit(f"invalid --status: {status_filter}")
+
     report = coverage_report()
+    specs = [
+        spec
+        for spec in report.specs
+        if (kind_filter is None or spec.kind == kind_filter)
+        and (status_filter is None or spec.status == status_filter)
+    ]
     if json_output:
-        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        payload = report.to_dict()
+        payload["filters"] = {
+            "kind": kind_filter,
+            "status": status_filter,
+        }
+        payload["tracked_dtypes"] = list(TRACKED_DTYPES)
+        payload["unfiltered_spec_count"] = len(report.specs)
+        payload["filtered_spec_count"] = len(specs)
+        payload["specs"] = [spec.to_dict() for spec in specs]
+        print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(f"NeuralFn CUDA Tile kernel coverage: {report.accounted}/{report.total_inventory} accounted")
         for status, count in sorted(report.by_status.items()):
             print(f"  {status}: {count}")
+        if kind_filter is not None or status_filter is not None:
+            print(
+                "Filtered specs: "
+                f"{len(specs)}/{len(report.specs)} "
+                f"(kind={kind_filter or '*'}, status={status_filter or '*'})"
+            )
+            for spec in specs:
+                print(f"  {spec.inventory_key}")
         if report.missing:
             print("Missing:")
             for name in report.missing:

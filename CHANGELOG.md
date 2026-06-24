@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added metadata-only filters to `nfn kernels list`. The lightweight
+  Torch-free `cli/nfn.py` path and the full `nfn_impl.py` path now accept
+  `--kind function|module|optimizer|runtime` and
+  `--status tile|torch_fallback|host_only|delegated|planned`. JSON output keeps
+  the global coverage totals while filtering `specs`, and reports `filters`,
+  `filtered_spec_count`, `unfiltered_spec_count`, and `tracked_dtypes`. This
+  makes the remaining host-only source/orchestration entries scriptable and
+  keeps the “real data does not pass through graph-editor nodes during native
+  training” contract visible in `nfn kernels list --status host_only --kind
+  module --json`.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  cli/nfn.py kernels list --status planned --json`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python cli/nfn.py kernels list
+  --status host_only --kind module --json`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  cli/tests/test_nfn_cli.py -q -k "kernels_list_json"`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `git diff --check`.
+
 - Added explicit graph-vs-sequence control for the dense GPT cooperative
   LM-head diagnostic route. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`
   now forces the existing cooperative sequence wrapper while keeping

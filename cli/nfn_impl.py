@@ -743,6 +743,7 @@ def command_epilog(command: str, style: str) -> str:
             "Examples:\n"
             "  nfn kernels list\n"
             "  nfn kernels list --json\n"
+            "  nfn kernels list --status planned --json\n"
             "  nfn kernels doctor --json"
         )
     return (
@@ -853,6 +854,18 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         parser.add_argument("--help-style", choices=HELP_STYLES, default=None, help=help_text("help_style", style))
         parser.add_argument("kernel_action", choices=("list", "doctor", "bench", "examples"), nargs="?", default="list")
         parser.add_argument("--json", action="store_true", dest="json_output", help="Print machine-readable JSON.")
+        parser.add_argument(
+            "--kind",
+            choices=("function", "module", "optimizer", "runtime"),
+            default=None,
+            help="Filter 'kernels list' specs by registry kind.",
+        )
+        parser.add_argument(
+            "--status",
+            choices=("tile", "torch_fallback", "host_only", "delegated", "planned"),
+            default=None,
+            help="Filter 'kernels list' specs by implementation status.",
+        )
         parser.add_argument("--iterations", type=int, default=200, help="Benchmark iterations for 'kernels bench'.")
         parser.add_argument("--warmup", type=int, default=20, help="Warmup iterations for 'kernels bench'.")
         parser.add_argument("--samples", type=int, default=5, help="Paired benchmark samples for 'kernels bench'.")
@@ -4913,6 +4926,7 @@ def run_eval(state: dict[str, Any]) -> int:
 
 def run_kernels(state: dict[str, Any]) -> int:
     from neuralfn.tile_cuda import coverage_report, tile_cuda_diagnostics
+    from neuralfn.tile_cuda.registry import TRACKED_DTYPES
 
     action = str(state.get("kernel_action") or "list")
     json_output = bool(state.get("json_output", False))
@@ -4975,13 +4989,37 @@ def run_kernels(state: dict[str, Any]) -> int:
                 print(f"  {status}: {count}")
         return 0
 
+    kind_filter = state.get("kind")
+    status_filter = state.get("status")
+    specs = [
+        spec
+        for spec in report.specs
+        if (kind_filter is None or spec.kind == kind_filter)
+        and (status_filter is None or spec.status == status_filter)
+    ]
     payload = report.to_dict()
+    payload["filters"] = {
+        "kind": kind_filter,
+        "status": status_filter,
+    }
+    payload["tracked_dtypes"] = list(TRACKED_DTYPES)
+    payload["unfiltered_spec_count"] = len(report.specs)
+    payload["filtered_spec_count"] = len(specs)
+    payload["specs"] = [spec.to_dict() for spec in specs]
     if json_output:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(f"NeuralFn CUDA Tile kernel coverage: {report.accounted}/{report.total_inventory} accounted")
         for status, count in sorted(report.by_status.items()):
             print(f"  {status}: {count}")
+        if kind_filter is not None or status_filter is not None:
+            print(
+                "Filtered specs: "
+                f"{len(specs)}/{len(report.specs)} "
+                f"(kind={kind_filter or '*'}, status={status_filter or '*'})"
+            )
+            for spec in specs:
+                print(f"  {spec.inventory_key}")
         if report.missing:
             print("Missing:")
             for name in report.missing:

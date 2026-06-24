@@ -97,6 +97,12 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
+  - 2026-06-24 added metadata-only `nfn kernels list --kind ... --status ...`
+    filters on both the lightweight Torch-free CLI path and the full CLI path.
+    `nfn kernels list --status host_only --kind module --json` now emits only
+    the source/orchestration module specs while preserving global coverage
+    totals, making the non-kernel data boundaries explicit during the native
+    migration.
   - 2026-06-24 rechecked `qkv_dinput_before_dweight` after the CUDA reinstall:
     it improved train-loop wall to `0.994580x` but still missed strict
     steady-state, LM-head, MLP-projection, and QKV gates, so it remains

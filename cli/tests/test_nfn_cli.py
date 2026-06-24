@@ -107,6 +107,38 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("function:gelu", keys)
         self.assertIn("module:gelu", keys)
 
+    def test_kernels_list_json_filters_specs_by_status_and_kind(self) -> None:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = nfn_impl.main(
+                ["kernels", "list", "--status", "host_only", "--kind", "module", "--json"],
+                stdin_isatty=False,
+                stdout_isatty=False,
+            )
+
+        self.assertEqual(0, rc)
+        payload = json.loads(out.getvalue())
+        self.assertTrue(payload["complete"])
+        self.assertEqual({"kind": "module", "status": "host_only"}, payload["filters"])
+        self.assertLess(payload["filtered_spec_count"], payload["unfiltered_spec_count"])
+        self.assertEqual(payload["filtered_spec_count"], len(payload["specs"]))
+        self.assertGreater(payload["filtered_spec_count"], 0)
+        for spec in payload["specs"]:
+            self.assertEqual("module", spec["kind"])
+            self.assertEqual("host_only", spec["status"])
+
+    def test_lightweight_kernels_list_json_filters_specs_without_full_cli(self) -> None:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = nfn.main(["kernels", "list", "--status", "planned", "--json"])
+
+        self.assertEqual(0, rc)
+        payload = json.loads(out.getvalue())
+        self.assertEqual({"kind": None, "status": "planned"}, payload["filters"])
+        self.assertEqual(payload["filtered_spec_count"], len(payload["specs"]))
+        for spec in payload["specs"]:
+            self.assertEqual("planned", spec["status"])
+
     def test_kernels_doctor_json_reports_diagnostics_and_coverage_summary(self) -> None:
         out = io.StringIO()
         with redirect_stdout(out):
