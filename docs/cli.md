@@ -1433,11 +1433,11 @@ actually ran.
 `qkv_dinput_ln64` combines the QKV dInput-before-dWeight route with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` for a reproducible
 same-script check of the closest current block-backward near-miss. It remains
-rejected by default: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
-stage-timed gate improved train-loop wall to `0.986068x`, steady-state
-CUDA-event timing to `0.997478x`, total block backward to `0.980591x`, and QKV
-backward to `0.989746x`, but missed strict LM-head (`1.000400x`) and
-MLP-projection (`1.001690x`) gates.
+rejected by default: the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+stage-timed confirmation improved steady-state CUDA-event timing to
+`0.998529x`, but regressed train-loop wall to `1.000261x`, total block backward
+to `1.000938x`, MLP projection to `1.004308x`, and QKV backward to
+`1.007310x`.
 Compile-time dGELU candidates also have a dedicated route counter:
 `linear_tk_dgelu_dinput_gemm_count`. The paired benchmark prints and ratios it,
 and includes it in `native_route_counter_changes`, so `tk_dgelu_dinput` and

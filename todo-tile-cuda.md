@@ -60,10 +60,10 @@ Real training tensors must not pass through graph editor node objects.
     rejected.
   - 2026-06-24 added the named `qkv_dinput_ln64` paired profile for the best
     current near-miss: QKV dInput-before-dWeight plus 64-row LayerNorm affine.
-    The same-script gate improved train-loop wall to `0.986068x`, steady-state
-    CUDA-event timing to `0.997478x`, total block backward to `0.980591x`, and
-    QKV backward to `0.989746x`, but still missed LM-head and MLP-projection
-    gates.
+    The stronger 5-step, 3-sample same-script confirmation improved
+    steady-state CUDA-event timing to `0.998529x`, but regressed train-loop
+    wall to `1.000261x`, total block backward to `1.000938x`, MLP projection to
+    `1.004308x`, and QKV backward to `1.007310x`, so it remains rejected.
 
 ## Native C++ trainer ABI
 

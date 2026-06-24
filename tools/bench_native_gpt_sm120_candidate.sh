@@ -447,7 +447,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "qkv_dinput_ln64"|"qkv-dinput-ln64"|"qkv_dinput_before_dweight_ln64"|"qkv-dinput-before-dweight-ln64"|"qkv_order_ln64"|"qkv-order-ln64")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate combined QKV dInput-before-dWeight with the 64-row LayerNorm affine reducer and improved train_loop_wall_ms_per_step to 0.986068x, steady-state CUDA-event timing to 0.997478x, stage.block_backward.total_ms to 0.980591x, and stage.block_backward.qkv.total_ms to 0.989746x, but rejected default promotion because stage.lm_head_backward.total_ms regressed to 1.000400x and stage.block_backward.mlp_proj.total_ms to 1.001690x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 5-step, 3-sample stage-timed confirmation combined QKV dInput-before-dWeight with the 64-row LayerNorm affine reducer and improved steady-state CUDA-event timing to 0.998529x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.000261x, stage.lm_head_backward.total_ms to 1.000067x, stage.block_backward.total_ms to 1.000938x, stage.block_backward.mlp_proj.total_ms to 1.004308x, and stage.block_backward.qkv.total_ms to 1.007310x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64"
     ;;
   "lm_head_fused_loss_backward_off"|"lm-head-fused-loss-backward-off"|"lm_head_separate_loss_backward"|"lm-head-separate-loss-backward")

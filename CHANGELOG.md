@@ -18,10 +18,11 @@ Future updates should append new entries here rather than replacing older notes.
 
   Verification: reran the standalone QKV order candidate and the combined
   QKV+LN64 profile through `tools/bench_native_gpt_sm120_candidate.sh` on the
-  dedicated RTX 5090. The combined route improved train-loop wall to
-  `0.986068x`, steady-state CUDA-event timing to `0.997478x`, total block
-  backward to `0.980591x`, and QKV backward to `0.989746x`, but missed strict
-  LM-head and MLP-projection gates, so defaults did not change.
+  dedicated RTX 5090. A stronger 5-step, 3-sample confirmation of the combined
+  route improved steady-state CUDA-event timing to `0.998529x`, but regressed
+  train-loop wall to `1.000261x`, total block backward to `1.000938x`, MLP
+  projection to `1.004308x`, and QKV backward to `1.007310x`, so defaults did
+  not change.
 
 - Refreshed the SM120 native dense GPT parity baseline after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The current CUDA 13.3.33 same-script

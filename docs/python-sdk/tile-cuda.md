@@ -2145,10 +2145,10 @@ current CUDA 13.3 dedicated RTX 5090 rerun improved train-loop wall time to
 CUDA-event timing, LM-head backward, MLP projection, and QKV gates missed.
 `qkv_dinput_ln64` combines that QKV order switch with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64`; it is also rejected by
-default after a same-script run improved train-loop wall to `0.986068x`,
-steady-state CUDA-event timing to `0.997478x`, total block backward to
-`0.980591x`, and QKV backward to `0.989746x`, but missed strict LM-head
-(`1.000400x`) and MLP-projection (`1.001690x`) gates.
+default after a 5-step, 3-sample same-script confirmation improved
+steady-state CUDA-event timing to `0.998529x`, but regressed train-loop wall to
+`1.000261x`, total block backward to `1.000938x`, MLP projection to
+`1.004308x`, and QKV backward to `1.007310x`.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
 LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when
