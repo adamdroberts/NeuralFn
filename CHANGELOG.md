@@ -38,6 +38,19 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12` versus candidate `=6`, then
   reran the focused native GPT benchmark tests and shell syntax checks.
 
+- Added the rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off`
+  wrapper profile. It forces baseline
+  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` and candidate `=0`, but fails
+  by default unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is
+  set because the CUDA 13.3 dedicated RTX 5090 paired gate failed in the native
+  trainer with cuBLASLt status 14 before writing candidate metrics. The default
+  remains stored residual1 activations enabled.
+
+  Verification: ran the paired RTX 5090 training gate for residual1 storage
+  enabled versus disabled, confirmed the candidate failure and zero-byte
+  candidate JSON artifact, then reran the focused native GPT benchmark tests and
+  the rejected-profile guard.
+
 - Refreshed the SM120 rejection evidence for
   `mlp_proj_dinput_before_dweight`. The profile still requires
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; the latest dedicated
