@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed dense GPT native train-loss copy counters in runtime JSON when
+  train-loss sampling is disabled. The trainer already avoided train-loss D2H
+  copies on the default `--train-loss-every-steps 0` path; it now reports
+  `train_loss_host_d2h_copies_per_logged_step: 0` and
+  `train_loss_microbatch_host_d2h_copies_elided_per_logged_step: 0` when no
+  logged train-loss step exists, instead of describing the enabled-logging path.
+  This keeps the no-host-copy training profile unambiguous while preserving the
+  one-copy-per-logged-step counters when train-loss logging is enabled.
+
+  Verification: reran the no-Torch native CLI/SDK guard and the focused native
+  GPT tests that inspect the runtime JSON profile.
+
 - Added and rejected the
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fused_ln2_bf16_out_off` rollback profile
   for the dense GPT fused LN2 BF16 output handoff. The profile forces baseline
