@@ -1667,6 +1667,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_tk_dweight_49152": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
         "fused_ln2_bf16_out_off": "NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0",
+        "mlp_residual_next_ln1_off": "NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=0",
         "block_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T",
         "mlp_proj_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T",
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
@@ -1699,6 +1700,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     )
     assert (
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=1"'
+        in bench_source
+    )
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=1"'
         in bench_source
     )
     assert (
@@ -1747,6 +1752,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "fused_ln2_bf16_out_enabled" in speed_source
     assert "stored_mlp_forward_strategy" in speed_source
     assert "stored_mlp_ln2_bf16_prepack_strategy" in speed_source
+    assert "block_state_layout.mlp_residual_next_ln1_fusion_count" in speed_source
     assert "attention_backward_float_hd64_dprep_launch_count" in speed_source
 
 

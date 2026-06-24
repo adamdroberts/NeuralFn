@@ -25,6 +25,24 @@ Future updates should append new entries here rather than replacing older notes.
   stage-timed native-vs-native candidate benchmark on the idle display-disabled
   RTX 5090 with zero compute processes before every sample.
 
+- Added and rejected the
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_residual_next_ln1_off` rollback
+  profile for the dense GPT MLP projection residual -> next-block LN1 fusion.
+  The profile forces baseline `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=1`
+  and candidate `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=0`, while
+  `tools/paired_kernel_speed.py` now extracts
+  `block_state_layout.mlp_residual_next_ln1_fusion_*` fields as route-counter
+  evidence. The dedicated RTX 5090 gate proved the route change
+  (`block_state_layout.mlp_residual_next_ln1_fusion_count: 176 -> 0`) but
+  rejected the rollback at `1.000520x` train-loop wall, `1.004202x`
+  steady-state CUDA-event wall, and `0.999479x` tokens/sec; the fused route
+  remains the default.
+
+  Verification: ran the dry-run expansion, corrected the route-metric path
+  from `memory_strategy` to `block_state_layout`, then reran the 2-step,
+  2-sample stage-timed native-vs-native candidate benchmark on the idle
+  display-disabled RTX 5090 with zero compute processes before every sample.
+
 - Added and rejected the current-shape
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_49152` profile for
   dense GPT LM-head TK dWeight bisection. The older

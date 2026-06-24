@@ -443,6 +443,18 @@ NATIVE_METRIC_PATHS = (
         "transformer_device_arena_pointer_assign_wall_ms",
         ("transformer_device_arena_pointer_assign_wall_ms",),
     ),
+    (
+        "block_state_layout.mlp_residual_next_ln1_fusion_enabled",
+        ("block_state_layout", "mlp_residual_next_ln1_fusion_enabled"),
+    ),
+    (
+        "block_state_layout.mlp_residual_next_ln1_fusion_count",
+        ("block_state_layout", "mlp_residual_next_ln1_fusion_count"),
+    ),
+    (
+        "block_state_layout.mlp_residual_next_ln1_strategy",
+        ("block_state_layout", "mlp_residual_next_ln1_strategy"),
+    ),
 )
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",
@@ -510,6 +522,8 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "attention_backward_tk_launch_count",
     "attention_backward_tk_block_size",
     "attention_backward_float_hd64_dprep_launch_count",
+    "block_state_layout.mlp_residual_next_ln1_fusion_enabled",
+    "block_state_layout.mlp_residual_next_ln1_fusion_count",
     "transformer_device_arena_requested",
     "transformer_device_arena_enabled",
     "transformer_device_arena_cuda_malloc_count",
