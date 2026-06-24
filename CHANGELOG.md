@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked and kept the native dense GPT attention projection backward
+  dInput-before-dWeight route rejected as a default. The named
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_dinput_before_dweight` profile
+  now explicitly compares baseline
+  `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=0` against candidate `=1`,
+  and still requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for
+  non-dry-run reruns.
+
+  Verification: rebuilt `build/nfn_gpt_native_train_linked`, verified startup
+  runtime JSON reports
+  `block_backward_attn_proj_dinput_before_dweight_enabled: false` by default,
+  then reran the profile on the CUDA 13.3 dedicated RTX 5090 for 5 steps, 3
+  samples, 1 warmup, and stage timing. The route counter moved `0 -> 480`, but
+  strict gates failed at train-loop wall `1.001501x`, LM-head backward
+  `1.000290x`, block backward `1.003886x`, MLP projection backward `1.002417x`,
+  and attention projection backward `1.081569x`.
+
 - Changed the strict/cooperative LM-head backward Tile ABI to use the same
   aligned padded-vocab dHidden and dWeight GEMM routes as the normal native
   trainer path. The previous cooperative graph/sequence body switched to the

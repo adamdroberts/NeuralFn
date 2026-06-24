@@ -463,7 +463,8 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "attn_proj_dinput_before_dweight"|"attn-proj-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 5-step, 3-sample stage-timed confirmation proved block_backward_attn_proj_dinput_before_dweight_count moved 0->480 and improved train_loop_wall_ms_per_step to 0.995221x plus stage.block_backward.attn_proj.total_ms to 0.905005x, but rejected default promotion because steady-state CUDA-event timing missed at 1.000391x, LM-head backward missed at 1.000189x, and MLP projection backward regressed to 1.002076x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 rebuilt-binary 5-step, 3-sample stage-timed confirmation proved block_backward_attn_proj_dinput_before_dweight_count moved 0->480, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.001501x, stage.lm_head_backward.total_ms to 1.000290x, stage.block_backward.total_ms to 1.003886x, stage.block_backward.mlp_proj.total_ms to 1.002417x, and stage.block_backward.attn_proj.total_ms to 1.081569x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "qkv_dinput_before_dweight"|"qkv-dinput-before-dweight")

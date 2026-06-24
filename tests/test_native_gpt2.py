@@ -1853,6 +1853,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         in bench_source
     )
     assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=0"'
+        in bench_source
+    )
+    assert (
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512"'
         in bench_source
     )
@@ -8269,6 +8273,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT",\n'
+        '                              "NFN_NATIVE_GPT2_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT"}),\n'
+        "            false);"
+    ) in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_pair_streams_available" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_enabled" in gpt2_source_text
