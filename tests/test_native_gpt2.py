@@ -6274,7 +6274,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert "std::string tile_cuda_activation_dtype = \"nvfp4\";" in dense_gpt_source
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in dense_gpt_source
-    assert '\\"tile_cuda\\": {\\"activation_dtype\\": \\"' in dense_gpt_source.replace("\n", "")
+    assert "native_tile_cuda_activation_json" in dense_gpt_source
+    assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in dense_gpt_source
     assert "json_escape(cfg.tile_cuda_activation_dtype)" in dense_gpt_source
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
@@ -6336,6 +6337,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["schedule"]["grad_accum_steps"] == 8
     assert evo_plan["optimizer"]["profile"] == "adamw"
     assert evo_plan["tile_cuda"]["activation_dtype"] == "nvfp4"
+    assert evo_plan["tile_cuda"]["requested_activation_dtype"] == "nvfp4"
+    assert evo_plan["tile_cuda"]["effective_activation_dtype"] == "bf16-float32-mixed"
+    assert evo_plan["tile_cuda"]["native_activation_packing_active"] is False
+    assert evo_plan["tile_cuda"]["nvfp4_activation_packing_active"] is False
+    assert (
+        evo_plan["tile_cuda"]["activation_dtype_status"]
+        == "requested-nvfp4-not-yet-packed-native-dense-gpt"
+    )
     assert evo_plan["layer_evo"]["enabled"] is True
     assert evo_plan["layer_evo"]["layer_index"] == 6
     assert evo_plan["layer_evo"]["interval"] == 10
@@ -7158,9 +7167,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     header = root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h"
     source = root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu"
     kernels = root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu"
+    gpt2_evo_source = root / "neuralfn" / "csrc" / "native_train" / "gpt2_evo_native_train.cpp"
     build_script = root / "tools" / "build_native_train_tile_ops.sh"
     candidate_bench = root / "tools" / "bench_native_gpt_sm120_candidate.sh"
     gpt2_source_text = gpt2_source.read_text()
+    gpt2_evo_source_text = gpt2_evo_source.read_text()
     token_shards_header_text = token_shards_header.read_text()
     token_shards_source_text = token_shards_source.read_text()
     header_text = header.read_text()
@@ -7369,6 +7380,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "layer_evo.float_workspace_cuda_mallocs_elided" not in gpt2_source_text
     assert '\\"float_workspace_cuda_mallocs_elided\\"' in gpt2_source_text
     assert '\\"workspace_allocation_strategy\\": \\"float-arena-plus-int64-device\\"' in gpt2_source_text
+    assert "native_tile_cuda_activation_json" in gpt2_source_text
+    assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in gpt2_source_text
+    assert '\\"effective_activation_dtype\\"' in gpt2_evo_source_text
+    assert '\\"native_activation_packing_active\\"' in gpt2_evo_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "nfn_native_tile_optimizer_tile_size" in header_text

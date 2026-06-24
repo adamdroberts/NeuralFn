@@ -1341,6 +1341,37 @@ std::string normalize_tile_cuda_activation_dtype(std::string value) {
     return value;
 }
 
+std::string effective_native_activation_storage_dtype(const Config&) {
+    return "bf16-float32-mixed";
+}
+
+bool native_nvfp4_activation_packing_active(const Config&) {
+    return false;
+}
+
+std::string native_tile_cuda_activation_json(const Config& cfg) {
+    std::ostringstream out;
+    const bool nvfp4_requested = cfg.tile_cuda_activation_dtype == "nvfp4";
+    const bool nvfp4_active = native_nvfp4_activation_packing_active(cfg);
+    out
+        << "{\"requested_activation_dtype\":\""
+        << json_escape(cfg.tile_cuda_activation_dtype)
+        << "\",\"activation_dtype\":\""
+        << json_escape(cfg.tile_cuda_activation_dtype)
+        << "\",\"effective_activation_dtype\":\""
+        << json_escape(effective_native_activation_storage_dtype(cfg))
+        << "\",\"native_activation_packing_active\":"
+        << (nvfp4_active ? "true" : "false")
+        << ",\"nvfp4_activation_packing_active\":"
+        << (nvfp4_active ? "true" : "false")
+        << ",\"activation_dtype_status\":\""
+        << (nvfp4_requested && !nvfp4_active
+                ? "requested-nvfp4-not-yet-packed-native-dense-gpt"
+                : "native-dense-gpt-bf16-float32-activation-storage")
+        << "\"}";
+    return out.str();
+}
+
 std::vector<std::int64_t> parse_csv_i64(const std::string& raw, const std::string& flag) {
     std::vector<std::int64_t> values;
     std::stringstream stream(raw);
@@ -4140,8 +4171,7 @@ bool print_tile_plan(
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
-        << "  \"tile_cuda\": {\"activation_dtype\": \""
-        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
+        << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (native_runnable ? "true" : "false") << ",\n"
@@ -4542,8 +4572,7 @@ int print_selected_graph_unsupported_json(
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
-        << "  \"tile_cuda\": {\"activation_dtype\": \""
-        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
+        << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": false,\n"
@@ -20837,8 +20866,7 @@ int run_transformer_lm_training_json(
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
-        << "  \"tile_cuda\": {\"activation_dtype\": \""
-        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
+        << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
         << "  \"status\": \""

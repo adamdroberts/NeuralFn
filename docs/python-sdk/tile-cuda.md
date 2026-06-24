@@ -292,6 +292,15 @@ current batch for each mutated candidate; runtime JSON reports
 directly from the native forward-loss device buffer into the candidate-loss
 device array.
 
+The compiled dense GPT trainer reports requested activation dtype separately
+from the implemented native activation storage. `--tile-cuda-activation-dtype
+nvfp4` sets `tile_cuda.requested_activation_dtype` and keeps the request visible
+through GPT2-evo delegation, but `tile_cuda.effective_activation_dtype`,
+`tile_cuda.native_activation_packing_active`, and
+`tile_cuda.activation_dtype_status` are the runtime truth. Until FP4 packing is
+wired into the dense C++ projection and attention inputs, NVFP4 requests report
+effective `bf16-float32-mixed` storage with native activation packing inactive.
+
 Dense GPT plan/runtime JSON reports
 `native_geometry_contract.selected_template_geometry` and
 `geometry_matches_compiled_loop`. The compiled transformer-LM loop now uses the

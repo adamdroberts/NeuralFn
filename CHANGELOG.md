@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made dense native GPT activation dtype reporting explicit. Plan, unsupported
+  selection, runtime, and GPT2-evo preflight JSON now distinguish
+  `tile_cuda.requested_activation_dtype` from
+  `tile_cuda.effective_activation_dtype`, and report
+  `tile_cuda.native_activation_packing_active`,
+  `tile_cuda.nvfp4_activation_packing_active`, and
+  `tile_cuda.activation_dtype_status`. This keeps `--tile-cuda-activation-dtype
+  nvfp4` visible as requested intent while making the current dense C++ trainer
+  status honest: native projection/attention FP4 activation packing is not wired
+  yet, so the effective activation storage is `bf16-float32-mixed` and packing
+  is inactive.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`; rebuilt
+  per-family native binaries with `bash tools/build_native_missing_trainers.sh
+  build`; ran `build/nfn_gpt2_evo_native_train --print-plan --tinystories
+  --eval-every-steps 1000 --tile-cuda-activation-dtype nvfp4`; ran
+  `build/nfn_gpt_native_train --print-plan --tinystories
+  --train-transformer-lm --tile-cuda-activation-dtype nvfp4
+  --eval-every-steps 0`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "gpt2_evo or missing_family or
+  native_train_tile_ops_builds_torch_free_c_abi"`.
+
 - Moved dense GPT layer-evo float workspaces into the transformer float arena.
   `nfn_gpt_native_train --train-transformer-lm --layer-evo` now requests the
   candidate, candidate-loss, and best-loss float buffers before arena
