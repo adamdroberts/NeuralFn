@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the strict/cooperative LM-head backward Tile ABI to use the same
+  aligned padded-vocab dHidden and dWeight GEMM routes as the normal native
+  trainer path. The previous cooperative graph/sequence body switched to the
+  public-vocab strided dHidden/dWeight launchers whenever `row_stride > vocab`,
+  which accidentally folded the already-rejected
+  `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1` route into
+  `lm_head_cooperative_backward` measurements.
+
+  Migration note: no public API or default training behavior changes. This only
+  affects opt-in cooperative/strict LM-head benchmark paths and makes them
+  comparable to the normal padded-vocab baseline before a true fused kernel is
+  promoted.
+
+  Verification: added static coverage to prevent the cooperative graph,
+  event-ordered sequence, and legacy sequence bodies from calling the strided
+  public-vocab linear launchers, rebuilt `libnfn_native_train_tile_ops.so`, and
+  reran the focused trainer-chunk LM-head microbench plus a short full-loop
+  `lm_head_cooperative_backward` profile on the dedicated RTX 5090. The focused
+  strict graph candidate reported `1.000788x` versus the legacy cooperative
+  baseline with graph capture/replay success and zero fallbacks. The short
+  full-loop profile proved the old strided route was gone
+  (`lm_head_dhidden_strided_vocab_gemm_count=0`,
+  `lm_head_dweight_strided_vocab_gemm_count=0`) and improved train-loop wall to
+  `0.976058x`, but still failed promotion gates at `1.000188x` steady-state
+  CUDA-event timing and `1.002085x` LM-head backward.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`
   as the reproducible same-script wrapper for the default-off public-vocab
   strided LM-head dHidden/dWeight GEMM diagnostic. The profile pins the

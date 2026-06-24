@@ -336,6 +336,11 @@ and dWeight GEMM routes for padded BF16 dlogit chunks. They remain disabled by
 default (`NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=0`) because the
 CUDA 13.3 RTX 5090 same-binary paired run measured them slower than the current
 aligned padded-vocab GEMMs for GPT-2's `50257 -> 50304` padded vocabulary.
+The strict/cooperative LM-head backward ABI now also uses the aligned padded
+GEMM route for its dHidden and dWeight work so
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` measures the
+cooperative wrapper itself rather than implicitly enabling the rejected strided
+public-vocab route.
 Dense GPT native training also now defaults to eliding the unused FP32
 attention-projection and MLP-projection scratch-tape buffers when BF16
 projection-residual is active. Set

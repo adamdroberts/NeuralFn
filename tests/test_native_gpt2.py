@@ -1512,6 +1512,35 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source
+    graph_body = tile_ops_source.split(
+        "void launch_lm_head_classifier_backward_graph_body_bf16_u16",
+        1,
+    )[1].split(
+        "int capture_lm_head_classifier_backward_graph_bf16_u16",
+        1,
+    )[0]
+    sequence_body = tile_ops_source.split(
+        "static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(",
+        1,
+    )[1].split(
+        "static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_order",
+        1,
+    )[0]
+    legacy_sequence_body = tile_ops_source.split(
+        "static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_order",
+        1,
+    )[1].split(
+        "int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16",
+        1,
+    )[0]
+    for cooperative_body in (graph_body, sequence_body, legacy_sequence_body):
+        assert "launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32" not in cooperative_body
+        assert (
+            "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta"
+            not in cooperative_body
+        )
+        assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in cooperative_body
+        assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in cooperative_body
     strict_fused_body = tile_ops_source.split(
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16",
         1,

@@ -321,6 +321,22 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       longer increments legacy `lm_head_cooperative_sequence_*` counters on
       successful replay, so those counters continue to identify only the
       diagnostic sequence wrapper or graph fallback.
+    - 2026-06-24 fixed the cooperative/strict LM-head backward ABI to use the
+      normal aligned padded-vocab GEMM launchers for dHidden and dWeight. The
+      previous graph and sequence bodies used the public-vocab strided
+      dHidden/dWeight launchers whenever `row_stride > vocab`, which meant
+      `lm_head_cooperative_backward` was also benchmarking the rejected
+      `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1` route. Rebuild Tile
+      ops and rerun the focused trainer-chunk microbench plus full
+      `lm_head_cooperative_backward` profile before deciding whether the graph
+      body still needs replacement with a monolithic kernel.
+      The first rebuilt RTX 5090 focused trainer-chunk run reported strict
+      graph replay at `1.000788x` versus the legacy cooperative baseline with
+      zero fallbacks. A short 2-step, 1-sample full-loop profile then proved
+      graph replay was active (`lm_head_fused_graph_replay_success_count=32`)
+      and strided public-vocab counters stayed at zero; train-loop wall
+      improved to `0.976058x`, but promotion still failed at `1.000188x`
+      steady-state CUDA-event timing and `1.002085x` LM-head backward.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use
