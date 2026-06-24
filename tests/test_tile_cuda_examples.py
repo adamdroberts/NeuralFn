@@ -1054,6 +1054,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "1.009736x train_loop_wall_ms_per_step" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
+    assert "older 32768-row logits fallback no longer matches the active 49152-row LM-head logits shape" in text
     assert "lm_head_logits_bf16_fallback_49152" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N" in text
     assert "1.005968x train_loop_wall_ms_per_step" in text
@@ -1634,6 +1635,32 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "50304,32768,768,T,N"
     )
     assert logits_fallback_payload["metric_ratio_gates"]["enabled"] is False
+
+    logits_fallback_rejected_env = os.environ.copy()
+    logits_fallback_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-logits-fallback-32768-rejected.json"),
+        }
+    )
+
+    logits_fallback_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=logits_fallback_rejected_env,
+    )
+    assert logits_fallback_rejected.returncode == 2
+    assert "lm_head_logits_bf16_fallback_32768 is a rejected SM120 candidate" in (
+        logits_fallback_rejected.stderr
+    )
+    assert "no longer matches the active 49152-row LM-head logits shape" in (
+        logits_fallback_rejected.stderr
+    )
 
     logits_fallback_49152_output_path = (
         tmp_path / "candidate-logits-fallback-49152-dry-run.json"

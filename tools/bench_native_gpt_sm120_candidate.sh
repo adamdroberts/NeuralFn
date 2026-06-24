@@ -236,6 +236,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
     ;;
   "lm_head_logits_bf16_fallback_32768"|"lm-head-logits-bf16-fallback-32768")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 recheck showed this older 32768-row logits fallback no longer matches the active 49152-row LM-head logits shape: tracked route counters, strategy strings, linear shape stats, and cuBLASLt plan cache entries did not change, so the native route-change gate failed."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N"
     ;;
   "lm_head_logits_bf16_fallback_49152"|"lm-head-logits-bf16-fallback-49152")

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768`
+  as a rejected historical diagnostic under the current 49152-row LM-head
+  default. The CUDA 13.3 dedicated RTX 5090 recheck applied
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`, but no
+  active route counters, strategy strings, linear shape stats, or cuBLASLt plan
+  cache entries changed, so the native route-change gate failed. Use
+  `lm_head_logits_bf16_fallback_49152` when intentionally checking the current
+  LM-head logits fallback route.
+
+  Verification: ran a short 3-step, 1-sample native-vs-native paired benchmark
+  on the idle dedicated RTX 5090 with route-change and stage-timing gates
+  enabled.
+
 - Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96` as a
   rejected/no-op historical diagnostic. The CUDA 13.3 dedicated RTX 5090
   recheck built the `-DLLMK_SM120_FORWARD_N96=0` Tile ops candidate, but the

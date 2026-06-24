@@ -596,15 +596,19 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. Use
-`lm_head_logits_bf16_fallback_32768` to disable the TK forward route for the
-old 32768-row LM-head logits shape with
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`, or use
+`lm_head_logits_bf16_fallback_32768` only for historical diagnostics of the old
+32768-row LM-head logits shape with
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. That profile
+is rejected by default under the current 49152-row shape because the CUDA 13.3
+dedicated RTX 5090 recheck changed no route counters, strategy strings, linear
+shape stats, or cuBLASLt plan cache entries. Use
 `lm_head_logits_bf16_fallback_49152` for the current default 49152-row LM-head
 chunk with `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`.
-That current-shape fallback is rejected by default: the CUDA 13.3 dedicated RTX
-5090 2-step, 2-sample stage-timed gate moved `lm_head_logits_tk_gemm_count`
-from 32 to 16 but regressed train-loop wall time to `1.005968x`, block backward
-to `1.009906x`, and MLP projection to `1.000576x`.
+The current-shape fallback is also rejected by default: the CUDA 13.3 dedicated
+RTX 5090 2-step, 2-sample stage-timed gate moved
+`lm_head_logits_tk_gemm_count` from 32 to 16 but regressed train-loop wall time
+to `1.005968x`, block backward to `1.009906x`, and MLP projection to
+`1.000576x`.
 Use
 `qkv_forward_bf16_fallback_65536` to disable the TK forward route for the
 current packed-QKV forward shape with
