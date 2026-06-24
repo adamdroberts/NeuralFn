@@ -5175,6 +5175,28 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
     metrics = module.native_metrics_from_payload(
         {
             "timing": {
+                "setup_timing": [
+                    {
+                        "name": "setup.float_arena_materialize",
+                        "total_ms": 234.25,
+                        "avg_ms": 234.25,
+                        "count": 1,
+                    },
+                    {
+                        "name": "token_weight_init",
+                        "total_ms": 149.5,
+                        "avg_ms": 149.5,
+                        "count": 1,
+                    },
+                ],
+                "setup_cuda_event_timing": [
+                    {
+                        "name": "setup.token_weight_init",
+                        "total_ms": 148.0,
+                        "avg_ms": 148.0,
+                        "count": 1,
+                    },
+                ],
                 "stage_timing": [
                     {"name": "train.model_forward", "total_ms": 12.5, "avg_ms": 2.5, "count": 5},
                     {"name": "block_forward.attention", "total_ms": 3.0, "avg_ms": 0.6, "count": 5},
@@ -5190,6 +5212,9 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
         }
     )
 
+    assert metrics["setup.float_arena_materialize.total_ms"] == 234.25
+    assert metrics["setup.token_weight_init.avg_ms"] == 149.5
+    assert metrics["setup.cuda_event.token_weight_init.total_ms"] == 148.0
     assert metrics["stage.train.model_forward.total_ms"] == 12.5
     assert metrics["stage.block_forward.attention.total_ms"] == 3.0
     assert metrics["stage.block_recompute.mlp_proj.count"] == 5
