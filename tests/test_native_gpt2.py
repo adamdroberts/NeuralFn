@@ -1488,7 +1488,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
     assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
     assert "cudaStreamCreateWithFlags" in tile_ops_source
-    assert "return 1;" in tile_ops_source
+    assert (
+        "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
+        "    return 0;\n"
+        "}"
+    ) in tile_ops_source
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source

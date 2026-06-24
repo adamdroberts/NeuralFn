@@ -227,6 +227,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; until
     that exists, `--require-cooperative-lm-head-backward` must fail instead of
     accepting wrapper-only CE/dHidden/dWeight sequencing.
+  - 2026-06-24 corrected the strict future symbol capability bit as well:
+    `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is
+    currently a cached CUDA Graph over the existing CE/dHidden/dWeight kernels,
+    so `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+    returns `0` until a real single-kernel/cooperative body replaces it.
   - 2026-06-22 made the non-required
     `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` path

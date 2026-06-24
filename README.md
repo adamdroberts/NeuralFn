@@ -984,14 +984,14 @@ profile to request the cooperative LM-head backward path. The non-strict
 fallback remains the event-ordered sequence wrapper: it still launches the
 existing CE, dHidden, and dWeight kernels and is rejected by default as a speed
 candidate. The separate strict callable symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` now reports
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() == 1`
-when the Tile ops build contains the cached CUDA Graph body. Runtime JSON can
-therefore report `lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` true, while
-`lm_head_cooperative_backward_strategy` identifies the route as
-`strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel` or the
-loss-bin variant.
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
+for the future fused body, but the current cached CUDA Graph body is not a true
+single-kernel/cooperative implementation. Its capability probe
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+therefore returns `0`, and runtime JSON keeps
+`lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` false until a real fused
+classifier/dHidden/dWeight kernel replaces the graph wrapper.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

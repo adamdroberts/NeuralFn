@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Breaking changes: corrected the strict LM-head cooperative fused-kernel
+  capability contract. The exported Tile ops symbol
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still
+  exists, but its companion
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` now
+  returns `0` because the current body is a cached CUDA Graph/sequence over
+  existing CE, dHidden, and dWeight kernels, not a true fused
+  classifier/dHidden/dWeight implementation. Callers that require a real fused
+  kernel should continue using `--require-cooperative-lm-head-backward`; it now
+  fails until the actual fused body lands instead of accepting the graph wrapper.
+
+  Verification: updated static native tests to assert the capability function
+  returns `0`; rebuilt the linked native GPT binary and the Tile ops library;
+  verified startup JSON reports the cooperative fused-kernel fields false.
+
 - Rechecked and kept the native dense GPT attention projection backward
   dInput-before-dWeight route rejected as a default. The named
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_dinput_before_dweight` profile
