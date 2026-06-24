@@ -376,6 +376,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       longer increments legacy `lm_head_cooperative_sequence_*` counters on
       successful replay, so those counters continue to identify only the
       diagnostic sequence wrapper or graph fallback.
+    - 2026-06-24 added explicit graph-vs-sequence control for the diagnostic
+      cooperative LM-head path. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`
+      now forces the sequence wrapper while keeping the cooperative route
+      requested, runtime/plan JSON reports
+      `lm_head_cooperative_backward_cuda_graph_requested`, and
+      `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
+      compares default graph replay against sequence-wrapper execution in the
+      same native-vs-native script. This is measurement infrastructure for the
+      open true fused classifier/dHidden/dWeight kernel, not a default route
+      promotion. The short 3-step, 2-sample stage-timed probe passed route and
+      timing gates, but the stronger 5-step, 3-sample confirmation rejected the
+      sequence wrapper as a default at `1.003739x` train-loop wall,
+      `1.001489x` steady-state CUDA-event timing, and `1.000401x` LM-head
+      backward, so real reruns now require
+      `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
     - 2026-06-24 fixed the cooperative/strict LM-head backward ABI to use the
       normal aligned padded-vocab GEMM launchers for dHidden and dWeight. The
       previous graph and sequence bodies used the public-vocab strided

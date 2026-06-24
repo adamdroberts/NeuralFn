@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit graph-vs-sequence control for the dense GPT cooperative
+  LM-head diagnostic route. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`
+  now forces the existing cooperative sequence wrapper while keeping
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` requested; runtime and
+  print-plan JSON report `lm_head_cooperative_backward_cuda_graph_requested`.
+  The SM120 native candidate wrapper now has
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`,
+  which compares the default cached CUDA Graph wrapper against that sequence
+  wrapper in one baseline-vs-candidate script.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` and
+  `build/nfn_gpt_native_train_linked`; ran a startup-only CUDA smoke with
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` and confirmed JSON reports
+  `lm_head_cooperative_backward_cuda_graph_requested: false`,
+  `lm_head_cooperative_backward_cuda_graph_enabled: false`, and
+  `lm_head_cooperative_backward_sequence_wrapper_enabled: true`; ran the
+  3-step, 2-sample stage-timed profile, which passed route/timing gates; then
+  ran the stronger 5-step, 3-sample stage-timed confirmation and kept the
+  sequence-wrapper route rejected because train-loop wall regressed to
+  `1.003739x`, steady-state CUDA-event timing to `1.001489x`, and LM-head
+  backward to `1.000401x`. Also ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative or candidate_profile or
+  transformer_payload"` and `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+
 - Added kind-level aggregation to the CUDA Tile kernel coverage report.
   `KernelCoverageReport` and `coverage_report().to_dict()` now expose
   `by_kind` and `by_kind_status` alongside `by_status` and `by_dtype`, allowing

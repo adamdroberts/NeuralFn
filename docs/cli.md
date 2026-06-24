@@ -1003,6 +1003,9 @@ that it is not a true fused/cooperative kernel. Set
 separate-stage LM-head schedule, or pass
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
 parity/preflight run must require the strict cooperative LM-head backward ABI.
+Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired
+diagnostics that need to force the sequence wrapper instead of the cached graph
+wrapper while keeping the cooperative LM-head route requested.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from
@@ -1018,6 +1021,7 @@ The non-required default path reports
 the strict guard.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_backward_cuda_graph_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
@@ -1719,6 +1723,14 @@ noisy total train-loop improvement but failed the strict CE stage gate at
 available without the opt-in.
 `lm_head_cooperative_backward` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to the candidate command.
+`lm_head_cooperative_sequence_wrapper` compares the cached CUDA Graph
+diagnostic route against the sequence-wrapper diagnostic route by setting
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` on the baseline command and
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` on the candidate command.
+It is rejected for real launches unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; the 5-step
+confirmation kept the cached graph route as the default despite a shorter
+sequence-wrapper probe passing.
 `lm_head_cooperative_backward_required` adds the same environment flag plus
 `--require-cooperative-lm-head-backward`. Use the non-required profile for
 same-script wrapper-symbol timing, and the required profile for preflight

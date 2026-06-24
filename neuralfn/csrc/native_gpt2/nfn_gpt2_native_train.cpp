@@ -4083,6 +4083,12 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_LOSS_BINS"}),
             false);
+    const bool cooperative_lm_head_backward_cuda_graph_requested =
+        cooperative_lm_head_backward_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),
+            true);
 
     bool loaded = false;
     bool all_symbols = false;
@@ -4135,6 +4141,7 @@ bool print_tile_plan(
         cooperative_lm_head_backward_true_fused_kernel_found;
     const bool cooperative_lm_head_backward_cuda_graph_enabled =
         cooperative_lm_head_backward_requested &&
+        cooperative_lm_head_backward_cuda_graph_requested &&
         !cfg.require_cooperative_lm_head_backward &&
         !cooperative_lm_head_backward_enabled &&
         cooperative_lm_head_backward_cuda_graph_available;
@@ -4207,6 +4214,8 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_loss_bins_requested\": "
         << (cooperative_lm_head_loss_bins_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_cuda_graph_requested\": "
+        << (cooperative_lm_head_backward_cuda_graph_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
         << (cooperative_lm_head_backward_abi_wrapper_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_available\": "
@@ -12485,6 +12494,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_LOSS_BINS"}),
             false);
+    const bool lm_head_cooperative_backward_cuda_graph_requested =
+        lm_head_cooperative_backward_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),
+            true);
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -12566,6 +12581,7 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_cuda_graph_enabled =
         lm_head_cooperative_backward_requested &&
+        lm_head_cooperative_backward_cuda_graph_requested &&
         !cfg.require_cooperative_lm_head_backward &&
         !lm_head_cooperative_backward_kernel_enabled &&
         lm_head_cooperative_backward_cuda_graph_available &&
@@ -21248,6 +21264,8 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_loss_bins_requested\": "
         << (lm_head_cooperative_loss_bins_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_cuda_graph_requested\": "
+        << (lm_head_cooperative_backward_cuda_graph_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
         << (lm_head_cooperative_backward_abi_wrapper_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_available\": "

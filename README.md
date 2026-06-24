@@ -1102,7 +1102,16 @@ dHidden, and dWeight kernels. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
-the route in the paired benchmark wrapper. The separate strict callable symbol
+the route in the paired benchmark wrapper. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired diagnostics
+that need to force the sequence wrapper instead of the cached CUDA Graph
+wrapper while keeping the cooperative route requested; the reproducible
+same-script profile is
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`;
+real reruns require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+because the stronger 5-step confirmation kept the sequence route rejected as a
+default. The
+separate strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
 for the future fused body, but the current cached CUDA Graph body is not a true
 single-kernel/cooperative implementation. Its capability probe
@@ -1145,6 +1154,7 @@ Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_loss_bins_requested`,
+`lm_head_cooperative_backward_cuda_graph_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_cuda_graph_available`,
