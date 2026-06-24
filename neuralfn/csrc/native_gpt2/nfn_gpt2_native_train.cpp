@@ -425,7 +425,7 @@ void print_usage(const char* program) {
         << "  --model-family gpt|gpt2|gpt3|nanogpt\n"
         << "                                     Dense GPT selector; all canonicalize to model_family=gpt, gpt3 can default to 2048 context, and nanogpt selects the NanoGPT template\n"
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
-        << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
+        << "  --graph-file PATH                 Custom NeuralFn graph JSON; compatible dense GPT template_spec metadata can drive native geometry\n\n"
         << "Launch options:\n"
         << "  --backend tile-cuda               NeuralFn-owned CUDA Tile backend (default and only training backend)\n"
         << "  --target PATH                     Ignored compatibility option; external training bridges are not supported\n"

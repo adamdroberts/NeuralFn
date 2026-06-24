@@ -3300,6 +3300,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--model-family gpt|gpt2|gpt3|nanogpt" in help_proc.stdout
     assert "--template-name NAME" in help_proc.stdout
     assert "--graph-file PATH" in help_proc.stdout
+    assert "compatible dense GPT template_spec metadata can drive native geometry" in help_proc.stdout
     assert "Tile-CUDA smokes/training" in help_proc.stdout
     assert "dense GPT registered parameter layout" in help_proc.stdout
 

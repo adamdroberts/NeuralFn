@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Clarified the dense GPT native CLI `--graph-file` help text so it no longer
+  claims every custom graph reports missing native trainer support. Existing
+  custom graph files with compatible dense GPT `template_spec` metadata can
+  drive native geometry; incompatible graphs still fail fast in C++ with
+  missing-trainer JSON before token-shard resolution.
+
+  Verification: added a focused native GPT help assertion and reran the help
+  slice.
+
 - Generated the native GPT shipped-template catalog from
   `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` and made both compiled C++
   frontends delegate to the shared header. This removes the manually duplicated
