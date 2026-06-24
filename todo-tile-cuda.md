@@ -103,6 +103,12 @@ Real training tensors must not pass through graph editor node objects.
     the source/orchestration module specs while preserving global coverage
     totals, making the non-kernel data boundaries explicit during the native
     migration.
+  - 2026-06-24 added the metadata-only compiled GPT template catalog action:
+    `nfn_gpt_native_train --list-templates`, `nfn train --base-model gpt
+    --list-templates`, and wrapper alias `--native-cuda-list-templates` print
+    shipped template/native support status without resolving token shards,
+    opening datasets, importing Torch, or routing real training data through
+    graph-editor nodes.
   - 2026-06-24 rechecked `qkv_dinput_before_dweight` after the CUDA reinstall:
     it improved train-loop wall to `0.994580x` but still missed strict
     steady-state, LM-head, MLP-projection, and QKV gates, so it remains

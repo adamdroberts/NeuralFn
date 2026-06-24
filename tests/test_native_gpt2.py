@@ -2342,6 +2342,49 @@ def test_native_gpt2_kernel_backend_rejects_unknown_value(tmp_path: Path) -> Non
         )
 
 
+def test_native_gpt_compiled_cli_exposes_template_catalog_action() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--list-templates" in source
+    assert "print_template_catalog_json" in source
+    assert '\\"action\\": \\"list_templates\\"' in source
+    assert '\\"token_shards_resolved\\": false' in source
+    assert "selected_graph_support_status" in source
+    assert "selected_graph_native_runnable" in source
+
+
+def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
+    root = Path(__file__).resolve().parents[1]
+    cli = root / "build" / "nfn_gpt_native_train"
+    if not cli.exists():
+        pytest.skip("build/nfn_gpt_native_train is not built")
+
+    proc = subprocess.run(
+        [str(cli), "--list-templates"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["action"] == "list_templates"
+    assert payload["token_shards_resolved"] is False
+    assert payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
+    assert payload["selector_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS) + 2
+    statuses = {item["name"]: item["selected_graph_support_status"] for item in payload["templates"]}
+    assert statuses["gpt"] == "native-transformer-lm"
+    assert statuses["gpt2"] == "native-transformer-lm"
+    assert statuses["gpt3"] == "native-transformer-lm"
+    assert statuses["nanogpt"] == "native-transformer-lm"
+    assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
+
+
 def test_native_gpt2_runner_status_auto_requires_neuralfn_native_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2407,6 +2450,67 @@ def test_native_gpt_generic_env_names_take_precedence(
     assert isinstance(generic_status, NativeGptRunnerStatus)
     assert type(generic_status).__name__ == "NativeGptRunnerStatus"
     assert generic_status.resolved == "compiled-cli"
+
+
+def test_native_gpt_template_catalog_action_reaches_wrappers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    args_file = tmp_path / "native-args.txt"
+    native_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_ARGS\"\n"
+        "exit 17\n",
+        encoding="utf-8",
+    )
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    monkeypatch.setenv("NFN_TEST_NATIVE_ARGS", str(args_file))
+    env = os.environ.copy()
+
+    nfn_proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--base-model",
+            "gpt",
+            "--list-templates",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert nfn_proc.returncode == 17
+    nfn_args = args_file.read_text(encoding="utf-8").splitlines()
+    assert "--model-family" in nfn_args
+    assert "--list-templates" in nfn_args
+    assert "--train-transformer-lm" not in nfn_args
+
+    gpt_proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "train_gpt.py"),
+            "--native-cuda-list-templates",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert gpt_proc.returncode == 17
+    gpt_args = args_file.read_text(encoding="utf-8").splitlines()
+    assert "--list-templates" in gpt_args
+    assert "--train-transformer-lm" not in gpt_args
 
 
 def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(

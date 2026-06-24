@@ -677,6 +677,15 @@ graph JSON reports `custom-graph-native-trainer-missing`, and missing custom
 graph paths report `custom-graph-file-missing`. Unknown template names return
 `unknown-template`, which keeps typos separate from known migration work.
 
+Use `nfn_gpt_native_train --list-templates`, `nfn train --base-model gpt
+--list-templates`, or wrapper alias `--native-cuda-list-templates` to print a
+no-data JSON catalog of every shipped GPT template selector plus the public
+`gpt` and `gpt3` aliases. This action exits before dataset or token-shard
+resolution, reports `token_shards_resolved: false`, and exposes
+`selected_graph_support_status` plus `selected_graph_native_runnable` for each
+selector so native migration gaps can be checked without sending real batches
+through graph-editor nodes.
+
 The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,
 `selected_graph_support_status`, `selected_graph_native_runnable`, and the

@@ -120,6 +120,13 @@ automatically. Structurally different presets and custom
 graphs are selected and reported by the compiled frontend, then fail with
 `selected-graph-native-trainer-missing` until their graph-specific C++ Tile
 trainer plans are implemented; they do not fall back to Torch by default.
+Use `nfn train --base-model gpt --list-templates`, raw
+`nfn_gpt_native_train --list-templates`, or wrapper alias
+`--native-cuda-list-templates` to inspect the compiled support catalog without
+opening datasets or resolving token shards. The JSON action lists every shipped
+template selector plus `gpt` and `gpt3`, reports `token_shards_resolved: false`,
+and includes `selected_graph_support_status` plus
+`selected_graph_native_runnable` for each selector.
 
 #### Modernized presets (`<preset>_modern`)
 

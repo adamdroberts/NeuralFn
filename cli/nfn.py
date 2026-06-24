@@ -573,8 +573,11 @@ def _native_gpt_cli_uses_linked_tile_ops(path: str) -> bool:
 _NATIVE_TRAIN_ACTION_FLAGS = {
     "--check-tile-ops",
     "--json",
+    "--list-templates",
+    "--list-template-support",
     "--print-plan",
     "--native-cuda-check-tile-ops",
+    "--native-cuda-list-templates",
     "--native-cuda-print-plan",
     "--sample-token-batch",
     "--smoke-attention-step",
@@ -686,6 +689,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--native-cuda-dry-run": "--dry-run",
         "--native-cuda-print-command": "--print-command",
         "--native-cuda-print-plan": "--print-plan",
+        "--native-cuda-list-templates": "--list-templates",
         "--native-cuda-startup-only": "--startup-only",
         "--native-cuda-check-tile-ops": "--check-tile-ops",
         "--native-cuda-smoke-tile-ops": "--smoke-tile-ops",
@@ -835,6 +839,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
     env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     native_execution_flags = {
         "--print-plan",
+        "--list-templates",
         "--check-tile-ops",
         "--startup-only",
         "--smoke-tile-ops",

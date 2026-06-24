@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a metadata-only compiled GPT template support catalog action.
+  `nfn_gpt_native_train --list-templates`, `nfn train --base-model gpt
+  --list-templates`, and wrapper alias `--native-cuda-list-templates` now print
+  no-data JSON for the public `gpt`/`gpt3` aliases plus every shipped GPT
+  template selector. The action exits before dataset/token-shard resolution,
+  reports `token_shards_resolved: false`, and exposes
+  `selected_graph_support_status` plus `selected_graph_native_runnable` for
+  each selector, so native migration coverage can be inspected without
+  importing Torch or sending real batches through graph-editor nodes. Python
+  wrappers forward the action without appending `--train-transformer-lm`.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`; ran
+  `build/nfn_gpt_native_train --list-templates` and confirmed 63 selectors
+  with 61 shipped template catalog entries; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "template_catalog_action or
+  lists_template_catalog"`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `git diff --check`.
+
 - Added metadata-only filters to `nfn kernels list`. The lightweight
   Torch-free `cli/nfn.py` path and the full `nfn_impl.py` path now accept
   `--kind function|module|optimizer|runtime` and

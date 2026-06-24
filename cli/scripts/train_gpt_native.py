@@ -390,6 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--native-cuda-print-command", action="store_true")
     parser.add_argument("--native-cuda-dry-run", action="store_true")
     parser.add_argument("--native-cuda-print-plan", action="store_true")
+    parser.add_argument("--native-cuda-list-templates", "--list-templates", action="store_true")
     parser.add_argument("--native-cuda-check-tile-ops", action="store_true")
     parser.add_argument(
         "--native-cuda-no-checkpoint",
@@ -613,6 +614,8 @@ def main(argv: list[str] | None = None) -> int:
         compiled_cli_args = native_cfg.compiled_cli_argv()
         if bool(args.native_cuda_print_plan):
             compiled_cli_args.append("--print-plan")
+        if bool(args.native_cuda_list_templates):
+            compiled_cli_args.append("--list-templates")
         if bool(args.native_cuda_check_tile_ops):
             compiled_cli_args.append("--check-tile-ops")
     if bool(args.native_cuda_print_command) or bool(args.native_cuda_dry_run):
@@ -628,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if (
         bool(args.native_cuda_print_plan)
+        or bool(args.native_cuda_list_templates)
         or bool(args.native_cuda_check_tile_ops)
         or bool(args.native_cuda_smoke_tile_ops)
         or bool(args.native_cuda_smoke_optimizer_step)
@@ -643,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
     ):
         if runner_status.resolved != "compiled-cli":
             print(
-                "--native-cuda-print-plan, --native-cuda-check-tile-ops, --native-cuda-smoke-tile-ops, "
+                "--native-cuda-print-plan, --native-cuda-list-templates, --native-cuda-check-tile-ops, --native-cuda-smoke-tile-ops, "
                 "--native-cuda-smoke-optimizer-step, --native-cuda-smoke-lm-step, and "
                 "--native-cuda-smoke-attention-step, --native-cuda-smoke-mlp-step, and "
                 "--native-cuda-smoke-norm-residual-step, and "

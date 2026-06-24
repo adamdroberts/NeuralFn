@@ -21,6 +21,21 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 _DEFAULT_EVAL_BATCHES = "20"
+_NATIVE_METADATA_ACTION_FLAGS = {
+    "--print-plan",
+    "--list-templates",
+    "--check-tile-ops",
+    "--startup-only",
+    "--smoke-tile-ops",
+    "--smoke-optimizer-step",
+    "--smoke-lm-step",
+    "--smoke-attention-step",
+    "--smoke-mlp-step",
+    "--smoke-norm-residual-step",
+    "--smoke-transformer-block-step",
+    "--smoke-transformer-lm-step",
+    "--smoke-embedding-lm-step",
+}
 
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:
@@ -188,6 +203,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-dry-run": "--dry-run",
         "--native-cuda-print-command": "--print-command",
         "--native-cuda-print-plan": "--print-plan",
+        "--native-cuda-list-templates": "--list-templates",
         "--native-cuda-startup-only": "--startup-only",
         "--native-cuda-check-tile-ops": "--check-tile-ops",
         "--native-cuda-smoke-tile-ops": "--smoke-tile-ops",
@@ -343,7 +359,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         _append_value(out, "--native-cuda-activation", "moa")
     if _native_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
         _append_value(out, "--tile-ops-lib", "linked")
-    if "--train-transformer-lm" not in out and "--no-train-transformer-lm" not in out:
+    if (
+        "--train-transformer-lm" not in out
+        and "--no-train-transformer-lm" not in out
+        and not any(flag in out for flag in _NATIVE_METADATA_ACTION_FLAGS)
+    ):
         out.append("--train-transformer-lm")
     return out
 
@@ -360,24 +380,16 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     env.setdefault("CUDA_MODULE_LOADING", "LAZY")
-    native_execution_flags = {
-        "--print-plan",
-        "--check-tile-ops",
-        "--startup-only",
-        "--smoke-tile-ops",
-        "--smoke-optimizer-step",
-        "--smoke-lm-step",
-        "--smoke-attention-step",
-        "--smoke-mlp-step",
-        "--smoke-norm-residual-step",
-        "--smoke-transformer-block-step",
-        "--smoke-transformer-lm-step",
-        "--smoke-embedding-lm-step",
-    }
-    if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in native_execution_flags):
+    if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in _NATIVE_METADATA_ACTION_FLAGS):
         print(shlex.join(command))
         return 0
-    if "--dry-run" in command or "--print-command" in command or "--print-plan" in command or "--check-tile-ops" in command:
+    if (
+        "--dry-run" in command
+        or "--print-command" in command
+        or "--print-plan" in command
+        or "--list-templates" in command
+        or "--check-tile-ops" in command
+    ):
         return int(subprocess.run(command, env=env, check=False).returncode)
     os.execvpe(command[0], command, env)
     return 127

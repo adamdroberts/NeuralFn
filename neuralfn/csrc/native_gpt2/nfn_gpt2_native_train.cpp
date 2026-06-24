@@ -102,6 +102,7 @@ struct Config {
     bool dry_run = false;
     bool print_command = false;
     bool print_plan = false;
+    bool list_templates = false;
     bool check_tile_ops = false;
     bool smoke_tile_ops = false;
     bool smoke_optimizer_step = false;
@@ -426,6 +427,7 @@ void print_usage(const char* program) {
         << "                                     Dense GPT selector; all canonicalize to model_family=gpt, gpt3 can default to 2048 context, and nanogpt selects the NanoGPT template\n"
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON; compatible dense GPT template_spec metadata can drive native geometry\n\n"
+        << "  --list-templates                  Print shipped GPT template native support as no-data JSON and exit\n\n"
         << "Launch options:\n"
         << "  --backend tile-cuda               NeuralFn-owned CUDA Tile backend (default and only training backend)\n"
         << "  --target PATH                     Ignored compatibility option; external training bridges are not supported\n"
@@ -1047,6 +1049,47 @@ std::string lm_head_classifier_strategy_contract_json(
         << "\"required_kernel_next_step\":\"replace-lm-head-classifier-abi-with-cooperative-dhidden-dweight-kernel\""
         << "}";
     return out.str();
+}
+
+void print_template_catalog_json(const Config& base_cfg) {
+    std::vector<std::string> selectors;
+    selectors.push_back("gpt");
+    selectors.push_back("gpt3");
+    const std::vector<std::string>& shipped = shipped_gpt_template_presets();
+    selectors.insert(selectors.end(), shipped.begin(), shipped.end());
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(canonical_dense_gpt_model_family(base_cfg.model_family)) << "\",\n"
+        << "  \"backend\": \"" << json_escape(base_cfg.backend) << "\",\n"
+        << "  \"action\": \"list_templates\",\n"
+        << "  \"shipped_template_catalog_count\": " << shipped.size() << ",\n"
+        << "  \"selector_count\": " << selectors.size() << ",\n"
+        << "  \"graph_file\": \"" << json_escape(base_cfg.graph_file) << "\",\n"
+        << "  \"token_shards_resolved\": false,\n"
+        << "  \"templates\": [\n";
+    for (std::size_t index = 0; index < selectors.size(); ++index) {
+        Config cfg = base_cfg;
+        cfg.template_name = normalize_template_name(selectors[index]);
+        cfg.template_explicit = true;
+        cfg.graph_file.clear();
+        const bool shipped_template = selected_template_is_shipped(cfg);
+        const std::string support_status = selected_graph_support_status(cfg);
+        std::cout
+            << "    {\n"
+            << "      \"name\": \"" << json_escape(selectors[index]) << "\",\n"
+            << "      \"resolved_native_template_name\": \""
+            << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
+            << "      \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
+            << "      \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
+            << "      \"selected_graph_native_runnable\": "
+            << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
+            << "      \"selected_template_geometry\": " << selected_template_geometry_json(cfg) << "\n"
+            << "    }" << (index + 1 == selectors.size() ? "\n" : ",\n");
+    }
+    std::cout
+        << "  ]\n"
+        << "}\n";
 }
 
 std::int64_t native_gpt2_parameter_count(
@@ -23418,6 +23461,8 @@ int main(int argc, char** argv) {
             cfg.graph_file = value_after_equals("--graph-file=");
         } else if (arg.rfind("--graph=", 0) == 0) {
             cfg.graph_file = value_after_equals("--graph=");
+        } else if (arg == "--list-templates" || arg == "--list-template-support") {
+            cfg.list_templates = true;
         } else if (arg == "--check-tile-ops") {
             cfg.backend = "tile-cuda";
             cfg.check_tile_ops = true;
@@ -23738,6 +23783,10 @@ int main(int argc, char** argv) {
     if (!valid_backend(cfg.backend)) {
         std::cerr << "Invalid backend: " << cfg.backend << "\n";
         return 2;
+    }
+    if (cfg.list_templates) {
+        print_template_catalog_json(cfg);
+        return 0;
     }
     if (cfg.native_info) {
         if (cfg.native_checkpoint.empty()) {

@@ -179,6 +179,11 @@ every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and
 `--graph-file` / `--graph` selects a custom graph JSON; wrappers canonicalize
 the aliases to `--template-name` and `--graph-file` at handoff. Unsupported
 template shapes fail with native missing-trainer JSON instead of falling back to Torch.
+Use `nfn train --base-model gpt --list-templates` or wrapper alias
+`--native-cuda-list-templates` to print the compiled no-data support catalog
+for shipped GPT templates plus the public `gpt`/`gpt3` aliases. The action
+exits before dataset or token-shard resolution and reports each selector's
+native support status.
 `--base-model gpt` is the canonical dense GPT surface. `gpt2` and `gpt3` route
 to the same C++ trainer and forward canonical `--model-family gpt`; `gpt3`
 defaults to a 2048-token context only when no template, graph, or
