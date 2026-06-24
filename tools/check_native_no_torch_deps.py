@@ -1137,6 +1137,14 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "infer_semantic_router_moe_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_semantic_router_moe.py",
+                    "--help",
+                ),
+            ),
+            (
                 "nfn_infer_native_info",
                 (
                     sys.executable,
