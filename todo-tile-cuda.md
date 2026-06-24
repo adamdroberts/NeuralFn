@@ -81,6 +81,17 @@ Real training tensors must not pass through graph editor node objects.
   `NFN_SM120_TRAIN_BATCH_TOKENS` into both llm.kittens `-d` and NeuralFn
   `--train-batch-tokens`, so future shape bisection preserves same-script
   parity instead of silently using hardcoded `524288` on both sides.
+- [x] Reject packed-attention dprep warp-count retuning on the current CUDA
+  13.3 RTX 5090 stack. `attention_dprep_warps_2` changed
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS` from the default 3 to 2 but
+  regressed train-loop wall to `1.004595x`, steady-state CUDA-event timing to
+  `1.008058x`, block backward to `1.017877x`, and
+  `attention_backward_tk_timing_us` to `1.002175x`. `attention_dprep_warps_4`
+  changed the same knob to 4 but regressed train-loop wall to `1.005938x`,
+  block backward to `1.020308x`, attention SDPA to `1.001733x`, and
+  `attention_backward_tk_timing_us` to `1.001117x`. Keep both as rejected
+  named profiles unless CUDA or the TK attention backward implementation
+  materially changes.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or

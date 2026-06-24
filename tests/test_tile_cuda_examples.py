@@ -1224,6 +1224,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"' in text
     assert "*PACKED_ATTENTION*|*packed_attention*|*BF16_ATTENTION*|*bf16_attention*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" attention_backward_dprep_timing_us=1.000"' in text
+    assert "attention_dprep_warps_2" in text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=2" in text
+    assert "attention_backward_tk_timing_us to 1.002175x" in text
+    assert "attention_dprep_warps_4" in text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4" in text
+    assert "stage.block_backward.attn_sdpa.total_ms to 1.001733x" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' not in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' not in text

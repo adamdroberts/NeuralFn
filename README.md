@@ -1537,7 +1537,11 @@ metrics such as
 `stage.block_backward.attn_proj.dinput.total_ms` directly. When native profile
 JSON includes packed-attention backward section counters, the same summary also
 prints dprep/TK timing fields such as `attention_backward_tk_timing_us` and
-their candidate-over-baseline ratios. Set
+their candidate-over-baseline ratios. The named dprep warp-count profiles
+`attention_dprep_warps_2` and `attention_dprep_warps_4` are measured rejected
+profiles on CUDA 13.3; rerun them only with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` after a CUDA or kernel
+change. Set
 `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1`,
 `NFN_SM120_CANDIDATE_LINEAR_SHAPE_STATS=1`, or
 `NFN_SM120_PARITY_LINEAR_SHAPE_STATS=1` for route-attribution runs that should

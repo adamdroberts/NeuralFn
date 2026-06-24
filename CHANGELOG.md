@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added named rejected SM120 candidate profiles for packed-attention dprep
+  warp-count retesting: `attention_dprep_warps_2` expands to
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=2`, and
+  `attention_dprep_warps_4` expands to
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4`. Both profiles enable
+  attention-backward section timing and fail fast unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
+  Verification: ran each profile manually through
+  `tools/bench_native_gpt_sm120_candidate.sh` on the display-disabled RTX 5090
+  with stage and attention-section timing. The 2-warp profile regressed
+  train-loop wall time to `1.004595x`, steady-state CUDA-event timing to
+  `1.008058x`, block backward to `1.017877x`, and TK attention-backward timing
+  to `1.002175x`. The 4-warp profile regressed train-loop wall time to
+  `1.005938x`, block backward to `1.020308x`, attention SDPA to `1.001733x`,
+  and TK attention-backward timing to `1.001117x`.
+
 - Fixed `tools/bench_native_gpt_sm120_parity.sh` so
   `NFN_SM120_PARITY_TRAIN_BATCH_TOKENS` / `NFN_SM120_TRAIN_BATCH_TOKENS`
   drive both the llm.kittens baseline `-d` value and the NeuralFn candidate
