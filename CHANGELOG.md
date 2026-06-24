@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the `linear_bias_row_chunk_256` native GPT benchmark profile after a
+  CUDA 13.3 dedicated RTX 5090 same-script run. The candidate changed the
+  native bias-gradient reducer chunk from 512 to 256 rows and improved
+  train-loop wall time to `0.997526x` plus steady-state CUDA-event timing to
+  `0.997142x`, but it failed the strict hot-stage gate because
+  `stage.block_backward.total_ms` regressed to `1.009570x` and
+  `stage.block_backward.mlp_fc.dweight_bias.total_ms` regressed to `1.000482x`.
+  The 512-row reducer remains the default, and rerunning this profile now
+  requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_row_chunk_256 NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=2 NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Updated native GPT startup-only runtime JSON to include the same top-level
   no-editor/no-Torch contract fields as normal native training reports:
   `graph_editor_tensor_flow: false` and `torch_required: false`. This keeps

@@ -72,6 +72,16 @@ Real training tensors must not pass through graph editor node objects.
     because train-loop wall time regressed to `1.002484x` and tokens/sec fell
     to `0.997528x`. Keep row-loss sum accumulation enabled by default; this is
     not a parity-closing LM-head kernel.
+  - 2026-06-24 tested `linear_bias_row_chunk_256` after rebuilding both native
+    GPT CLIs. The paired 2-step, 2-sample stage-timed run changed
+    `block_state_layout.linear_backward_bias_row_chunk_size` from `512` to
+    `256` and improved train-loop wall to `0.997526x` plus steady-state
+    CUDA-event timing to `0.997142x`, but failed strict promotion because
+    `stage.block_backward.total_ms` regressed to `1.009570x` and
+    `stage.block_backward.mlp_fc.dweight_bias.total_ms` regressed to
+    `1.000482x`. Keep the 512-row bias reducer default; the profile is now a
+    rejected rerun guarded by
+    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
 
 ## Native C++ trainer ABI
 
