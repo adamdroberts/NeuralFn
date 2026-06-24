@@ -1233,7 +1233,11 @@ fallback to the lowest-utilization NVIDIA GPU is acceptable, or set it or
 LM-head and linear backward wrappers rebuild `libnfn_native_train_tile_ops.so`
 when `tile_ops.cu`, `tile_ops.h`, or `tile_cuda/kernels.cu` is newer than the
 shared library, which keeps header-only Tile ABI changes from being benchmarked
-against stale binaries.
+against stale binaries. The full SM120 parity and native-candidate wrappers
+also refresh their default `nfn_gpt_native_train` or
+`nfn_gpt_native_train_linked` binary before non-dry runs when the native GPT
+source, token shard resolver, or linked Tile ABI inputs are newer. User-pinned
+`NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer paths are not rebuilt.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.

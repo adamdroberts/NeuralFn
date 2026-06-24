@@ -655,6 +655,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
     assert "nfn_gpt_native_train_linked" in parity_bench
+    assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in parity_bench
+    assert "ensure_default_native_gpt_trainer_current" in parity_bench
+    assert "native_gpt_source_newer_than" in parity_bench
+    assert "tile_ops_source_newer_than" in parity_bench
+    assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
+    assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
     assert 'TRAIN_LOOP_EVENT_TIMING="${NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING:-${NFN_SM120_TRAIN_LOOP_EVENT_TIMING:-1}}"' in parity_bench
@@ -665,6 +671,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in candidate_bench
     assert "NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO" in candidate_bench
     assert "NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO" in candidate_bench
+    assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in candidate_bench
+    assert "NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN_EXPLICIT" in candidate_bench
+    assert "ensure_native_gpt_trainer_current" in candidate_bench
+    assert 'ensure_native_gpt_trainer_current "$NFN_NATIVE_GPT_TRAIN_BIN" "$NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT"' in candidate_bench
+    assert 'ensure_native_gpt_trainer_current "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN_EXPLICIT"' in candidate_bench
+    assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$train_bin"' in candidate_bench
+    assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$train_bin"' in candidate_bench
     assert "--max-candidate-reference-ratio" in candidate_bench
     assert "--min-candidate-reference-ratio" in candidate_bench
     assert "--max-candidate-reference-ratio" in paired_speed

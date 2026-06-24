@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLM_KITTENS_ROOT="${LLM_KITTENS_ROOT:-/mnt/disk2/dev/open-source/llm.kittens}"
 LLM_KITTENS_TRAIN_BIN="${LLM_KITTENS_TRAIN_BIN:-$LLM_KITTENS_ROOT/train_gpt2cu}"
 LLM_KITTENS_TINYSTORIES_DIR="${LLM_KITTENS_TINYSTORIES_DIR:-$LLM_KITTENS_ROOT/dev/data/tinystories}"
+NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT="${NFN_NATIVE_GPT_TRAIN_BIN+x}"
 if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "$ROOT_DIR/build/nfn_gpt_native_train_linked" ]]; then
   NFN_NATIVE_GPT_TRAIN_BIN="$ROOT_DIR/build/nfn_gpt_native_train_linked"
 else
@@ -116,6 +117,59 @@ esac
 for item in $CANDIDATE_ENV_RAW; do
   paired_args+=(--candidate-env "$item")
 done
+
+native_gpt_source_newer_than() {
+  local target="$1"
+  [[ "$ROOT_DIR/neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ]]
+}
+
+tile_ops_source_newer_than() {
+  local target="$1"
+  [[ "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.cu" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.h" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/tile_cuda/kernels.cu" -nt "$target" ]]
+}
+
+ensure_default_native_gpt_trainer_current() {
+  if [[ -n "$NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" ]]; then
+    return 0
+  fi
+  case "$(basename "$NFN_NATIVE_GPT_TRAIN_BIN")" in
+    nfn_gpt_native_train_linked)
+      local rebuild_linked=0
+      if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
+        rebuild_linked=1
+      elif native_gpt_source_newer_than "$NFN_NATIVE_GPT_TRAIN_BIN"; then
+        rebuild_linked=1
+      elif tile_ops_source_newer_than "$NFN_NATIVE_GPT_TRAIN_BIN"; then
+        rebuild_linked=1
+      fi
+      if [[ "$rebuild_linked" == "1" ]]; then
+        bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$NFN_NATIVE_GPT_TRAIN_BIN" >&2
+      fi
+      ;;
+    nfn_gpt_native_train)
+      local rebuild_dynamic=0
+      if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
+        rebuild_dynamic=1
+      elif native_gpt_source_newer_than "$NFN_NATIVE_GPT_TRAIN_BIN"; then
+        rebuild_dynamic=1
+      fi
+      if [[ "$rebuild_dynamic" == "1" ]]; then
+        bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$NFN_NATIVE_GPT_TRAIN_BIN" >&2
+      fi
+      ;;
+  esac
+}
+
+case "${DRY_RUN_PLAN,,}" in
+  "1"|"true"|"yes"|"on")
+    ;;
+  *)
+    ensure_default_native_gpt_trainer_current
+    ;;
+esac
 
 if [[ ! -x "$LLM_KITTENS_TRAIN_BIN" ]]; then
   echo "llm.kittens train_gpt2cu is not executable: $LLM_KITTENS_TRAIN_BIN" >&2

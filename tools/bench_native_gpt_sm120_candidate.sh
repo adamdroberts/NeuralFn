@@ -5,11 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLM_KITTENS_ROOT="${LLM_KITTENS_ROOT:-/mnt/disk2/dev/open-source/llm.kittens}"
 LLM_KITTENS_TRAIN_BIN="${LLM_KITTENS_TRAIN_BIN:-$LLM_KITTENS_ROOT/train_gpt2cu}"
 LLM_KITTENS_TINYSTORIES_DIR="${LLM_KITTENS_TINYSTORIES_DIR:-$LLM_KITTENS_ROOT/dev/data/tinystories}"
+NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT="${NFN_NATIVE_GPT_TRAIN_BIN+x}"
 if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "$ROOT_DIR/build/nfn_gpt_native_train_linked" ]]; then
   NFN_NATIVE_GPT_TRAIN_BIN="$ROOT_DIR/build/nfn_gpt_native_train_linked"
 else
   NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
 fi
+NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN_EXPLICIT="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN+x}${NFN_SM120_CANDIDATE_TRAIN_BIN+x}"
 NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN:-${NFN_SM120_CANDIDATE_TRAIN_BIN:-$NFN_NATIVE_GPT_TRAIN_BIN}}"
 NFN_NATIVE_TILE_OPS_LIB_EXPLICIT="${NFN_NATIVE_TILE_OPS_LIB+x}"
 NFN_NATIVE_TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB:-$ROOT_DIR/build/libnfn_native_train_tile_ops.so}"
@@ -1046,6 +1048,58 @@ if [[ "$PROMOTED_QKV_LN128_PROFILE" == "1" &&
       "$STARTUP_ONLY" != "yes" &&
       "$STARTUP_ONLY" != "on" ]]; then
   MIN_CANDIDATE_RATIO_RAW="train_tokens_per_second=1.000"
+fi
+
+native_gpt_source_newer_than() {
+  local target="$1"
+  [[ "$ROOT_DIR/neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ]]
+}
+
+tile_ops_source_newer_than() {
+  local target="$1"
+  [[ "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.cu" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.h" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/tile_cuda/kernels.cu" -nt "$target" ]]
+}
+
+ensure_native_gpt_trainer_current() {
+  local train_bin="$1"
+  local explicit="$2"
+  if [[ -n "$explicit" ]]; then
+    return 0
+  fi
+  case "$(basename "$train_bin")" in
+    nfn_gpt_native_train_linked)
+      local rebuild_linked=0
+      if [[ ! -x "$train_bin" ]]; then
+        rebuild_linked=1
+      elif native_gpt_source_newer_than "$train_bin"; then
+        rebuild_linked=1
+      elif tile_ops_source_newer_than "$train_bin"; then
+        rebuild_linked=1
+      fi
+      if [[ "$rebuild_linked" == "1" ]]; then
+        bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$train_bin" >&2
+      fi
+      ;;
+    nfn_gpt_native_train)
+      local rebuild_dynamic=0
+      if [[ ! -x "$train_bin" ]]; then
+        rebuild_dynamic=1
+      elif native_gpt_source_newer_than "$train_bin"; then
+        rebuild_dynamic=1
+      fi
+      if [[ "$rebuild_dynamic" == "1" ]]; then
+        bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$train_bin" >&2
+      fi
+      ;;
+  esac
+}
+
+if [[ "$IS_DRY_RUN_PLAN" != "1" ]]; then
+  ensure_native_gpt_trainer_current "$NFN_NATIVE_GPT_TRAIN_BIN" "$NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT"
+  ensure_native_gpt_trainer_current "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN_EXPLICIT"
 fi
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then

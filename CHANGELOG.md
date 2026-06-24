@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The SM120 llm.kittens parity and native-vs-native candidate benchmark
+  wrappers now refresh the default NeuralFn native GPT trainer before non-dry
+  runs. If `nfn_gpt_native_train` or `nfn_gpt_native_train_linked` is selected
+  by the wrapper and the native GPT source, token shard resolver, or linked Tile
+  ABI inputs are newer, the wrapper rebuilds the matching trainer before
+  measuring. User-pinned `NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer paths
+  are still treated as explicit and are not rebuilt by the wrapper.
+
+  Migration note: no training default changed. Benchmark runs may spend time
+  rebuilding the default native trainer after source or Tile ABI edits instead
+  of measuring a stale binary.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_parity.sh`; ran
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "linked_tile_ops_loader"`; ran
+  `NFN_SM120_PARITY_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_parity.sh`; ran
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - The standalone LM-head and linear backward CUDA benchmark wrappers now treat
   `neuralfn/csrc/native_train/tile_ops.h` as a Tile ops shared-library rebuild
   dependency, alongside `tile_ops.cu` and `tile_cuda/kernels.cu`. This prevents

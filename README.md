@@ -235,7 +235,12 @@ without building artifacts, loading CUDA, or touching Torch; the native no-Torch
 verifier uses that dry-run path. The standalone LM-head and linear backward
 benchmark wrappers rebuild `libnfn_native_train_tile_ops.so` when
 `tile_ops.cu`, `tile_ops.h`, or `tile_cuda/kernels.cu` is newer than the shared
-library, so header-only Tile ABI edits are not measured against stale kernels. The
+library, so header-only Tile ABI edits are not measured against stale kernels.
+The full SM120 parity and native-candidate wrappers also refresh the default
+`nfn_gpt_native_train` or `nfn_gpt_native_train_linked` binary before non-dry
+runs when the native GPT source, token shard resolver, or linked Tile ABI inputs
+are newer; explicitly pinned `NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer
+paths are left untouched. The
 wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring
 an idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it to
 `auto` to allow fallback to the lowest-utilization NVIDIA GPU, or set it or
