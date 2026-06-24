@@ -2526,8 +2526,11 @@ backward consumes those bits before writing BF16 `dQKV`. Runtime JSON reports
 `attention_backward_bf16_grad_out_scratch_elements`,
 `attention_backward_bf16_grad_out_scratch_bytes`, and the updated
 `attention_backward_qkv_bridge_strategy`. The path remains default-off because
-paired dedicated-RTX-5090 timing measured it slower than the current float
-grad-out default. A Tile ops library built with
+the CUDA 13.3 dedicated RTX 5090 five-sample rerun improved attention backward
+to `0.978526x`, attention to-QKV to `0.978487x`, and attention dprep to
+`0.806016x`, but regressed `train_loop_wall_ms_per_step` to `1.004546x`,
+tokens/sec to `0.995499x`, and block backward to `1.010026x`. A Tile ops
+library built with
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ` now compiles through a
 dedicated packed-QKV candidate wrapper that uses float dQ scratch and re-packs
 the Q gradient into the BF16 packed `dQKV` buffer, but it remains

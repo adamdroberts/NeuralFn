@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Kept `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` as a rejected/default-off
+  dense GPT native candidate after a longer CUDA 13.3 dedicated RTX 5090 rerun.
+  The route still proves the intended kernel change by moving attention
+  backward from the direct BF16 grad-scratch handoff to the BF16 grad-out
+  handoff and shifting 288 block dInput GEMMs from cuBLASLt to the BF16 path,
+  but it is not a safe default yet.
+
+  Verification: a CUDA 13.3 dedicated RTX 5090 3-step, 5-sample, 1-warmup
+  stage-timed native-vs-native gate compared
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` against the default `=0` float
+  grad-out path after the QKV-order/LN128 default change. The candidate
+  improved steady-state CUDA-event step time to `0.998897x`,
+  `stage.block_backward.attn_sdpa.total_ms` to `0.978526x`,
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms` to `0.978487x`, and
+  `attention_backward_dprep_timing_us` to `0.806016x`, but regressed
+  `train_loop_wall_ms_per_step` to `1.004546x`, `train_tokens_per_second` to
+  `0.995499x`, and `stage.block_backward.total_ms` to `1.010026x`.
+
 - **Breaking changes:** dense GPT native Tile-CUDA training now defaults
   `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT` to enabled and changes the
   LayerNorm affine-gradient row chunk default from `256` to `128`. This makes

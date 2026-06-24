@@ -433,7 +433,8 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "bf16_attention_grad_out"|"bf16-attention-grad-out"|"attention_bf16_grad_out"|"attention-bf16-grad-out")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script sweep measured this attention BF16 grad-out handoff at 0.995826x train_loop_wall_ms_per_step, but rejected it because strict stage gates regressed."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script 5-sample rerun after the LN128/QKV-order default rejected BF16 attention grad-out: it improved steady-state CUDA-event step time to 0.998897x, attention backward to 0.978526x, attention to-QKV to 0.978487x, and attention dprep timing to 0.806016x, but regressed train_loop_wall_ms_per_step to 1.004546x, tokens/sec to 0.995499x, and block backward to 1.010026x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1"
     ;;
   "bf16_attention_dprep_grad_out"|"bf16-attention-dprep-grad-out"|"attention_bf16_dprep_grad_out"|"attention-bf16-dprep-grad-out")

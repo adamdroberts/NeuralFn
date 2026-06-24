@@ -1873,8 +1873,10 @@ backward. Runtime JSON reports
 `attention_backward_bf16_grad_out_handoff_enabled`,
 `attention_backward_grad_out_dtype`, BF16 grad-out scratch sizes, and the
 updated `attention_backward_qkv_bridge_strategy`. Keep it off for normal
-training; paired dedicated-RTX-5090 timing measured the candidate slower than
-the current float grad-out default.
+training: the CUDA 13.3 dedicated RTX 5090 five-sample rerun improved attention
+backward to `0.978526x`, attention to-QKV to `0.978487x`, and attention dprep
+to `0.806016x`, but regressed `train_loop_wall_ms_per_step` to `1.004546x`,
+tokens/sec to `0.995499x`, and block backward to `1.010026x`.
 Set `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0` to force the older split bridge for
 profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 `packed_qkv_attention_bf16_bytes`,
