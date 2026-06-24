@@ -355,6 +355,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       The JSON includes `candidate_true_fused_capability`, so a future symbol
       export alone is not enough to pass the strict fused-kernel evidence gate.
       The wrapper also has `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`,
+      `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict`,
       `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss`, and
       `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` profiles plus
       `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` /

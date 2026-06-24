@@ -191,7 +191,9 @@ strict callable from wrapper-only builds. The CUDA 13.3 dedicated RTX 5090
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
 symbol (`1.000186x`). Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
-49152-row optimizer no-loss trainer chunk scale,
+32768-row optimizer no-loss trainer chunk scale,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` to run that same shape with
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` enabled by default,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss
 chunk comparison, or
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` to exercise the matching

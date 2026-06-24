@@ -28,6 +28,15 @@ case "${PROFILE}" in
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=0
+    ;;
+  trainer-chunk-strict|trainer_chunk_strict|strict-trainer-chunk|strict_trainer_chunk)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
     ;;
   trainer-row-loss|trainer_row_loss)
     DEFAULT_ROWS=32768
@@ -35,6 +44,7 @@ case "${PROFILE}" in
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=0
+    DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   trainer-loss-bins|trainer_loss_bins)
     DEFAULT_ROWS=32768
@@ -42,9 +52,10 @@ case "${PROFILE}" in
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=1024
     DEFAULT_NO_LOSS=0
+    DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-row-loss, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-row-loss, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
@@ -55,7 +66,7 @@ WARMUP="${NFN_LM_HEAD_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 LOSS_BINS="${NFN_LM_HEAD_BACKWARD_LOSS_BINS:-${DEFAULT_LOSS_BINS}}"
 NO_LOSS="${NFN_LM_HEAD_BACKWARD_NO_LOSS:-${DEFAULT_NO_LOSS}}"
 MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-}"
-REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-0}"
+REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
 

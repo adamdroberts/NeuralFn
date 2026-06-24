@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` to
+  `tools/bench_lm_head_backward_candidate.sh`. It uses the same 32768-row
+  no-loss trainer-chunk LM-head backward shape as `trainer-chunk`, but defaults
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` so strict fused-kernel evidence
+  fails automatically while the candidate symbol is still a CUDA Graph or
+  sequence wrapper over CE/dHidden/dWeight launches rather than a true fused
+  kernel. The README, CLI docs, SDK Tile-CUDA docs, and CUDA TODO now describe
+  the strict profile and correct the trainer-chunk row count to 32768.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench"`; ran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_strict_profile_check.json bash
+  tools/bench_lm_head_backward_candidate.sh`, which exited nonzero as expected
+  with `candidate_true_fused_capability: false`; ran
+  `git diff --check`.
+
 - Added the rejected native SM120 candidate profile
   `cublaslt_plan_prewarm_off` for cuBLASLt plan-cache startup bisection. The
   profile pins the baseline to full cuBLASLt plan prewarm and the candidate to
