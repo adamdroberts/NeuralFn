@@ -636,6 +636,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     change at `1.000992x` steady-state CUDA-event timing,
     `1.000168x stage.lm_head_backward.total_ms`, and
     `1.001198x stage.block_backward.mlp_proj.total_ms`.
+  - 2026-06-24 added and rejected
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_sm120_super_m13` for the opposite
+    TK GEMM swizzle direction. The profile rebuilds candidate Tile ops with
+    `LLMK_SM120_SUPER_M=13` and `LLMK_SM120_DINP_SUPER_M=13`. Runtime strategy
+    telemetry proved both values changed from the default `8` to `13`, but the
+    CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate rejected the
+    change at `1.009116x` train-loop wall, `1.002623x` steady-state CUDA-event
+    timing, `1.011813x stage.block_backward.total_ms`, and
+    `1.010002x stage.block_backward.mlp_proj.total_ms`.
   - 2026-06-24 added paired benchmark metadata for compile-time candidate
     provenance. `tools/paired_kernel_speed.py --metadata KEY=VALUE` now writes
     wrapper-level details into dry-run and measured JSON/text output, and the

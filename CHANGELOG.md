@@ -20,6 +20,17 @@ Future updates should append new entries here rather than replacing older notes.
   CUDA-event timing regressed to `1.000992x`, LM-head backward to `1.000168x`,
   and MLP projection total to `1.001198x`.
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_sm120_super_m13` as the matching
+  rejected high-swizzle TK GEMM compile-time profile. It rebuilds the candidate
+  Tile library with `LLMK_SM120_SUPER_M=13` and
+  `LLMK_SM120_DINP_SUPER_M=13`.
+
+  Verification: reran the profile on the CUDA 13.3 dedicated RTX 5090 for 3
+  steps, 2 samples, 1 warmup, and stage timing. Strategy telemetry proved both
+  values changed from `8` to `13`, but the profile missed the strict gates at
+  `1.009116x` train-loop wall, `1.002623x` steady-state CUDA-event timing,
+  `1.011813x` block backward, and `1.010002x` MLP projection total.
+
 - Added native GPT JSON telemetry for SM120 TK GEMM compile-time settings:
   `linear_tk_sm120_k_tile`, `linear_tk_sm120_grad_k_tile`,
   `linear_tk_sm120_super_m`, `linear_tk_sm120_dinput_super_m`,

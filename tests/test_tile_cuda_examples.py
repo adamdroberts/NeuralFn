@@ -1159,6 +1159,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_sm120_super_m7" in text
     assert "-DLLMK_SM120_SUPER_M=7 -DLLMK_SM120_DINP_SUPER_M=7" in text
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 7" in text
+    assert "tk_sm120_super_m13" in text
+    assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in text
+    assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in text
     assert "cuda_device_max_connections_1" in text
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "combined_device_arena" in text
