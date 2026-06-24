@@ -669,8 +669,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "train_loop_wall_ms_per_step to 1.004991x" in candidate_bench
     assert "setup_wall_ms to 1.063067x" in candidate_bench
     assert "lm_head_cooperative_backward" in candidate_bench
-    assert "activated the cooperative LM-head sequence wrapper" in candidate_bench
-    assert "stage.lm_head_backward.total_ms to 1.001066x" in candidate_bench
+    assert "activated the cooperative LM-head CUDA Graph path" in candidate_bench
+    assert "steady-state CUDA-event timing to 1.005839x" in candidate_bench
+    assert "candidate-over-llm.kittens wall to 1.018312x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.122857x" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
