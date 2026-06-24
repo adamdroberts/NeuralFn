@@ -1289,6 +1289,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-candidate-reference-ratio",
+        action="append",
+        default=[],
+        metavar="[STAT:]METRIC=RATIO",
+        help=(
+            "Fail after measurement if the candidate-over-reference ratio statistic for METRIC exceeds RATIO. "
+            "This requires --reference and lets a candidate prove it beats both the old native route and "
+            "the external reference in the same selected-GPU run."
+        ),
+    )
+    parser.add_argument(
+        "--min-candidate-reference-ratio",
+        action="append",
+        default=[],
+        metavar="[STAT:]METRIC=RATIO",
+        help=(
+            "Fail after measurement if the candidate-over-reference ratio statistic for METRIC is below RATIO. "
+            "This requires --reference and is useful for throughput metrics such as train_tokens_per_second."
+        ),
+    )
+    parser.add_argument(
         "--require-native-route-change",
         action="store_true",
         help=(
@@ -2347,9 +2368,11 @@ def summarize_linear_shape_stats(rows: Sequence[dict[str, object]]) -> dict[str,
 def evaluate_metric_ratio_limits(
     payload: dict[str, object],
     limits: Sequence[MetricRatioLimit],
+    *,
+    ratio_key: str = "candidate_over_baseline_native_metrics",
 ) -> dict[str, object]:
     results: list[dict[str, object]] = []
-    ratios = payload.get("candidate_over_baseline_native_metrics")
+    ratios = payload.get(ratio_key)
     ratio_metrics = ratios if isinstance(ratios, dict) else {}
     all_passed = True
     for limit in limits:
@@ -2900,9 +2923,25 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             bound="min",
         ),
     ]
+    candidate_reference_metric_ratio_limits = [
+        *parse_metric_ratio_limits(
+            args.max_candidate_reference_ratio,
+            option_name="--max-candidate-reference-ratio",
+            bound="max",
+        ),
+        *parse_metric_ratio_limits(
+            args.min_candidate_reference_ratio,
+            option_name="--min-candidate-reference-ratio",
+            bound="min",
+        ),
+    ]
     baseline = TimedCommand("baseline", shlex.split(args.baseline), baseline_env)
     candidate = TimedCommand("candidate", shlex.split(args.candidate), candidate_env)
     reference_command_text = str(args.reference or "").strip()
+    if candidate_reference_metric_ratio_limits and not reference_command_text:
+        raise SystemExit(
+            "--max-candidate-reference-ratio/--min-candidate-reference-ratio require --reference"
+        )
     reference = (
         TimedCommand("reference", shlex.split(reference_command_text), reference_env)
         if reference_command_text
@@ -3002,6 +3041,22 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     | ({"min_ratio": limit.min_ratio} if limit.min_ratio is not None else {})
                     | ({"max_ratio": limit.max_ratio} if limit.max_ratio is not None else {}))
                     for limit in metric_ratio_limits
+                ],
+            },
+            "candidate_reference_metric_ratio_gates": {
+                "enabled": bool(candidate_reference_metric_ratio_limits),
+                "passed": True,
+                "results": [
+                    ({
+                        "metric": limit.metric,
+                        "stat": limit.stat,
+                        "actual_mean_ratio": None,
+                        "missing": True,
+                        "passed": True,
+                    }
+                    | ({"min_ratio": limit.min_ratio} if limit.min_ratio is not None else {})
+                    | ({"max_ratio": limit.max_ratio} if limit.max_ratio is not None else {}))
+                    for limit in candidate_reference_metric_ratio_limits
                 ],
             },
             "sample_order_plan": order_plan,
@@ -3248,6 +3303,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             denominator_name="reference",
         )
     payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
+    payload["candidate_reference_metric_ratio_gates"] = evaluate_metric_ratio_limits(
+        payload,
+        candidate_reference_metric_ratio_limits,
+        ratio_key="candidate_over_reference_native_metrics",
+    )
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
         route_changes=native_route_counter_changes,
@@ -3654,9 +3714,11 @@ def print_text(payload: dict[str, object]) -> None:
                     f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
                     f"min={stats['min']:.6f} max={stats['max']:.6f}"
                 )
-    gates = payload.get("metric_ratio_gates")
-    if isinstance(gates, dict) and gates.get("enabled") is True:
-        print(f"  metric_ratio_gates: passed={str(gates.get('passed', False)).lower()}")
+    for gate_key in ("metric_ratio_gates", "candidate_reference_metric_ratio_gates"):
+        gates = payload.get(gate_key)
+        if not isinstance(gates, dict) or gates.get("enabled") is not True:
+            continue
+        print(f"  {gate_key}: passed={str(gates.get('passed', False)).lower()}")
         results = gates.get("results")
         if isinstance(results, list):
             for result in results:
@@ -3694,15 +3756,24 @@ def main() -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print_text(payload)
-    gates = payload.get("metric_ratio_gates")
-    if isinstance(gates, dict) and gates.get("enabled") is True and gates.get("passed") is False:
+    for gate_key, label in (
+        ("metric_ratio_gates", "metric ratio gate"),
+        ("candidate_reference_metric_ratio_gates", "candidate reference metric ratio gate"),
+    ):
+        gates = payload.get(gate_key)
+        if not (
+            isinstance(gates, dict)
+            and gates.get("enabled") is True
+            and gates.get("passed") is False
+        ):
+            continue
         failed = [
             str(result.get("metric", ""))
             for result in gates.get("results", [])
             if isinstance(result, dict) and result.get("passed") is False
         ]
         print(
-            "metric ratio gate failed"
+            f"{label} failed"
             + (": " + ", ".join(metric for metric in failed if metric) if failed else ""),
             file=sys.stderr,
         )

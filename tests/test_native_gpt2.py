@@ -602,6 +602,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
     parity_bench = (root / "tools" / "bench_native_gpt_sm120_parity.sh").read_text(encoding="utf-8")
     candidate_bench = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(encoding="utf-8")
+    paired_speed = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     no_torch_verifier = (root / "tools" / "check_native_no_torch_deps.py").read_text(
         encoding="utf-8"
     )
@@ -662,6 +663,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench
     assert "Refusing to run because a parity profile would otherwise be ignored" in parity_bench
     assert "nfn_gpt_native_train_linked" in candidate_bench
+    assert "NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO" in candidate_bench
+    assert "NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO" in candidate_bench
+    assert "--max-candidate-reference-ratio" in candidate_bench
+    assert "--min-candidate-reference-ratio" in candidate_bench
+    assert "--max-candidate-reference-ratio" in paired_speed
+    assert "--min-candidate-reference-ratio" in paired_speed
+    assert "candidate_reference_metric_ratio_gates" in paired_speed
+    assert 'ratio_key="candidate_over_reference_native_metrics"' in paired_speed
     assert "tile_ops_arg_for" in candidate_bench
     assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench

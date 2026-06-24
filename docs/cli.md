@@ -1380,10 +1380,18 @@ with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the lower-priority aliases
 regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
 must stay at or above baseline, such as `train_tokens_per_second` or required
 route counters; `STAT` defaults to `mean` and can be `median`, `min`, or `max`.
+When `--reference` is present, add
+`--max-candidate-reference-ratio [STAT:]METRIC=RATIO` and
+`--min-candidate-reference-ratio [STAT:]METRIC=RATIO` to apply the same gate
+syntax to `candidate_over_reference_native_metrics`, letting a promotion fail
+when it beats old NeuralFn but loses to llm.kittens in the same locked GPU run.
 The SM120 native candidate wrapper forwards
 `NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` /
 `NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO` the same way it forwards the existing
-max-ratio aliases. `--command-timeout-seconds N`
+max-ratio aliases. It also forwards
+`NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
+`NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO` and the matching `MIN`
+aliases to the candidate-reference gates. `--command-timeout-seconds N`
 terminates the timed-out command's process group so a slow native candidate does
 not leave child GPU work running after the sample is recorded. Pass
 `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` only when intentionally disabling

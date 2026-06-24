@@ -567,7 +567,15 @@ the tool rotates baseline, candidate, and reference order per sample and emits
 `candidate_over_reference_native_metrics` beside the existing
 candidate-over-baseline fields. Use this when a candidate should be accepted
 only if it improves the old native route and remains competitive with the
-external llm.kittens timing under the same selected-GPU lock.
+external llm.kittens timing under the same selected-GPU lock. Add
+`--max-candidate-reference-ratio [STAT:]METRIC=RATIO` or
+`--min-candidate-reference-ratio [STAT:]METRIC=RATIO` to fail the run when the
+candidate loses to that reference on the same native metric. The SM120 native
+candidate wrapper forwards the same checks from
+`NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
+`NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO` and
+`NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` /
+`NFN_SM120_CANDIDATE_MIN_CANDIDATE_REFERENCE_RATIO`.
 The SM120 native candidate wrapper exposes the same path with
 `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` (or the candidate/parity/generic
 aliases). It builds the reference command from `LLM_KITTENS_ROOT`,
@@ -633,6 +641,12 @@ buckets even if total command timing looks flat. Use
 `NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` or
 `NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO` for lower-bound gates such as
 `train_tokens_per_second=1.000` when a candidate must meet or beat baseline
+throughput. When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` is set, use
+`NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
+`NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO` and the matching `MIN`
+variables to apply the same gate syntax against `candidate_over_reference`
+metrics, so a candidate that only beats old NeuralFn but loses to llm.kittens
+fails nonzero.
 throughput.
 When no explicit ratio list is supplied, measured candidate runs that actually
 change the candidate Tile ops library, candidate-only env, or candidate-only

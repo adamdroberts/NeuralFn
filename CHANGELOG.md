@@ -26,6 +26,26 @@ Future updates should append new entries here rather than replacing older notes.
   gates; ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py -q`, which passed `87 passed, 2 skipped`.
 
+- Added candidate-over-reference ratio gates to the paired kernel benchmark
+  harness. `tools/paired_kernel_speed.py` now accepts
+  `--max-candidate-reference-ratio` and `--min-candidate-reference-ratio` for
+  metrics under `candidate_over_reference_native_metrics`, and the SM120 native
+  candidate wrapper forwards
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO`,
+  `NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO`, and matching `MIN`
+  aliases. This lets a three-way candidate run fail when it beats old NeuralFn
+  but still loses to the llm.kittens reference in the same selected-GPU window.
+
+  Migration note: existing candidate-over-baseline gates are unchanged. The
+  new reference gates require `--reference` or
+  `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`.
+
+  Verification: added native GPT source-contract assertions for the new
+  wrapper and paired-helper flags; ran the paired-helper dry-run with and
+  without `--reference` to verify the new gate is accepted only for three-way
+  runs; ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q`, which passed `87 passed, 2 skipped`.
+
 - Added a profiling-only LM-head backward candidate symbol,
   `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`.
   It keeps the existing CE/dlogits stage but forces the strided cuBLASLt
