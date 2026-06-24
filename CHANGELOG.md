@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Direct `train_gpt_native.py` compiled-cli handoffs now defer dataset alias/path
+  validation to the compiled C++ resolver for all normal no-download runs, not
+  just dry runs. This removes Python `meta.json` reads and shard probing from
+  direct compiled GPT startup; the Python dataset manager is still used only
+  when callers explicitly pass `--download-if-missing`.
+
+  Migration note: native compiled-cli runs with missing or invalid cached token
+  shards now fail from the compiled resolver instead of from the Python wrapper,
+  unless an explicit Python download/materialization step is requested.
+
+  Verification: added a focused CLI test proving a missing dataset alias with
+  `--native-cuda-print-plan` reaches a native C++ CLI stub, retained the
+  `NFN_DATASETS_DIR` dry-run handoff check, and ran the focused test slice plus
+  `py_compile`.
+
 - Breaking changes: native `.bin` checkpoint inference no longer imports
   Python tokenizers for raw text `--prompt` by default. The no-dependency native
   inference path is now token-id only unless

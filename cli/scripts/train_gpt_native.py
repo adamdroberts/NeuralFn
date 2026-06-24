@@ -81,6 +81,8 @@ def _compiled_cli_env(config: NativeGptRunConfig) -> dict[str, str]:
 
 
 def _exec_compiled_cli(command: list[str], config: NativeGptRunConfig) -> int:
+    sys.stdout.flush()
+    sys.stderr.flush()
     os.execvpe(command[0], command, _compiled_cli_env(config))
     return 127
 
@@ -279,6 +281,18 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         seq_len_explicit=bool(getattr(args, "_seq_len_explicit", True)),
         num_layers_explicit=bool(getattr(args, "_num_layers_explicit", True)),
     )
+
+
+def _compiled_cli_dataset_arg(args: argparse.Namespace) -> tuple[str, Path, str | Path]:
+    dataset_name = str(args.dataset_alias)
+    alias_path = Path(dataset_name).expanduser()
+    if alias_path.is_absolute():
+        return str(alias_path), alias_path, alias_path
+    return dataset_name, DATASETS_DIR / dataset_name, dataset_name
+
+
+def _compiled_cli_defer_dataset_resolution(args: argparse.Namespace) -> bool:
+    return not bool(args.download_if_missing)
 
 
 def _uint16_sequence_count(train_shard: Path, *, seq_len: int) -> int | None:
@@ -495,19 +509,12 @@ def main(argv: list[str] | None = None) -> int:
     LOGGER.info("Resolving dataset alias %s", args.dataset_alias)
 
     runner_status = native_gpt_runner_status(str(args.native_cuda_runner))
-    dry_run_deferred_dataset = False
-    if runner_status.resolved == "compiled-cli" and bool(args.native_cuda_dry_run):
-        dataset_name = str(args.dataset_alias)
-        alias_path = Path(dataset_name).expanduser()
-        if alias_path.is_absolute():
-            dataset_path = alias_path
-            dataset_arg: str | Path = alias_path
-        else:
-            dataset_path = DATASETS_DIR / dataset_name
-            dataset_arg = dataset_name
+    compiled_cli_deferred_dataset = False
+    if runner_status.resolved == "compiled-cli" and _compiled_cli_defer_dataset_resolution(args):
+        dataset_name, dataset_path, dataset_arg = _compiled_cli_dataset_arg(args)
         native_cfg = _build_compiled_cli_config(args, dataset_arg)
         use_compiled_resolver = True
-        dry_run_deferred_dataset = True
+        compiled_cli_deferred_dataset = True
     elif runner_status.resolved == "compiled-cli":
         dataset_name, dataset_path = _download_dataset_path_if_needed(args, encoding_name)
         use_compiled_resolver = _has_native_token_shards(
@@ -518,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         use_compiled_resolver = False
 
     if use_compiled_resolver:
-        if not dry_run_deferred_dataset:
+        if not compiled_cli_deferred_dataset:
             native_cfg = _build_compiled_cli_config(args, dataset_path)
     else:
         if runner_status.resolved != "compiled-cli":
@@ -583,8 +590,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Native CUDA graph file: {native_cfg.graph_file}")
     if use_compiled_resolver:
         print(f"Native CUDA dataset path: {dataset_path}")
-        if dry_run_deferred_dataset:
-            print("Native CUDA shard resolution: compiled C++ frontend (deferred dry-run)")
+        if compiled_cli_deferred_dataset:
+            print("Native CUDA shard resolution: compiled C++ frontend (deferred)")
         else:
             print("Native CUDA shard resolution: compiled C++ frontend")
     else:

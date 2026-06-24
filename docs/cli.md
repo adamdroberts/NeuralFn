@@ -977,7 +977,11 @@ Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli runs now use
 the legacy harness only for argument resolution, dry runs, and command
 printing. Non-dry-run compiled-cli actions replace that Python process with the
 compiled C++ trainer and inherit the same default CUDA device, max-connection,
-and lazy-module-loading environment used by SDK launches.
+and lazy-module-loading environment used by SDK launches. With the normal
+`--no-download-if-missing` default, the wrapper does not verify shard files,
+read dataset `meta.json`, or import the dataset manager before that handoff; it
+passes the alias/path through and lets the compiled resolver validate cached
+token shards.
 
 The installed console entry point uses the same fast path as direct script
 execution: `nfn = "nfn:main"` dispatches default dense GPT training to the

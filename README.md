@@ -1876,7 +1876,11 @@ its exit code.
 Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions now
 replace the Python harness with the compiled C++ trainer after command
 resolution. Dry runs and command printing still return through Python, but
-actual native training does not keep a Python parent process alive.
+actual native training does not keep a Python parent process alive. Unless
+`--download-if-missing` is set, this handoff also passes the dataset alias or
+path directly to the compiled resolver without Python checking for shard files,
+reading `meta.json`, or importing the dataset manager first; explicit downloads
+remain the opt-in Python setup path.
 
 Native compiled entrypoints, SDK bindings, the master `nfn train` native dispatcher, the direct `cli/scripts/train_gpt.py` / `train_gpt2.py` compiled-CLI fast path, and legacy training-script native guards set `CUDA_MODULE_LOADING=LAZY` when unset before executing native trainers or loading Tile CUDA libraries, matching the dense GPT C++ trainer. Existing user-provided `CUDA_MODULE_LOADING` values still take precedence. Guarded legacy scripts such as `train_gpt2_evo.py` keep plain `--native-cuda-dry-run --native-cuda-print-command` metadata-only: they print the resolved native command without spawning the native binary unless a real native action such as `--print-plan`, `--startup-only`, `--check-tile-ops`, or a smoke flag is also present.
 

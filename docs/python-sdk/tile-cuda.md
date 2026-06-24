@@ -346,7 +346,10 @@ replace that process with the compiled C++ trainer for non-dry-run actions. The
 handoff applies the same default `CUDA_VISIBLE_DEVICES`,
 `CUDA_DEVICE_MAX_CONNECTIONS`, and `CUDA_MODULE_LOADING=LAZY` policy as
 `run_native_gpt()`, so legacy script launches do not keep a Python parent alive
-during CUDA Tile training.
+during CUDA Tile training. Unless `--download-if-missing` is set, the handoff
+also skips Python shard probing and dataset `meta.json` reads; the compiled
+resolver receives the dataset alias/path and performs native cached-shard
+validation.
 
 The dense GPT compiled trainer also defaults to the row-loss classifier
 backward route when the trainer-facing Tile ops library exports

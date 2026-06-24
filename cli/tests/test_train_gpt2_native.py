@@ -2622,10 +2622,53 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn(str(dataset / "fineweb_train_000000.bin"), proc.stdout)
         self.assertNotIn(str(Path.home() / ".cache" / "nfn" / "datasets"), proc.stdout)
         self.assertIn("Native CUDA runner: compiled-cli (requested=compiled-cli)", proc.stdout)
-        self.assertIn("Native CUDA shard resolution: compiled C++ frontend (deferred dry-run)", proc.stdout)
+        self.assertIn("Native CUDA shard resolution: compiled C++ frontend (deferred)", proc.stdout)
         self.assertIn("--dataset-alias alias", proc.stdout)
         self.assertNotIn("--target ", proc.stdout)
         self.assertNotIn("train_gpt2cu", proc.stdout)
+
+    def test_train_gpt_native_metadata_action_defers_missing_dataset_to_cpp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            native_cli = Path(tmpdir) / "nfn_gpt_native_train"
+            native_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'NATIVE_CLI_ARGV'\n"
+                "for arg in \"$@\"; do printf ' %q' \"$arg\"; done\n"
+                "printf '\\n'\n",
+                encoding="utf-8",
+            )
+            native_cli.chmod(0o755)
+            datasets_dir = Path(tmpdir) / "datasets"
+
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["NFN_DATASETS_DIR"] = str(datasets_dir)
+            env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+            env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
+            env["NFN_NATIVE_GPT2_BINDING"] = "0"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt_native.py"),
+                    "--dataset-alias",
+                    "missing_alias",
+                    "--no-download-if-missing",
+                    "--native-cuda-print-plan",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("Native CUDA shard resolution: compiled C++ frontend (deferred)", proc.stdout)
+        self.assertIn("NATIVE_CLI_ARGV", proc.stdout)
+        self.assertIn("--dataset-alias missing_alias", proc.stdout)
+        self.assertIn("--print-plan", proc.stdout)
+        self.assertNotIn("Dataset alias 'missing_alias' was not found", proc.stderr)
 
     def test_infer_gpt_parser_and_help_do_not_import_torch(self) -> None:
         cases = (
