@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened `tools/bench_native_gpt_linear_hot_matrix.sh` so aggregate JSON now
+  reports `candidate_symbol_changed_count`, `same_symbol_profile_count`,
+  `measurement_only_profile_count`, `route_change_required`,
+  `route_change_passed`, and `route_change_failure_reason`. Hot linear sweeps
+  that compare the current C ABI symbol against itself are now clearly marked
+  as measurement-only evidence, and route-change-enforced runs explain the
+  no-candidate failure at the matrix level instead of relying only on
+  per-profile failures.
+
+  Migration note: no trainer default or kernel route changed. Candidate sweeps
+  that previously relied on same-symbol timing noise should provide
+  `NFN_LINEAR_HOT_DINPUT_CANDIDATE_SYMBOL`,
+  `NFN_LINEAR_HOT_DWEIGHT_CANDIDATE_SYMBOL`, or a profile-specific
+  `NFN_LINEAR_HOT_<PROFILE>_CANDIDATE_SYMBOL` before using
+  `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1`.
+
+  Verification: ran focused unit coverage for the native GPT benchmark wrapper,
+  shell syntax checks, a dry-run matrix expansion with route-change enforcement,
+  and a CUDA 13.3 dedicated RTX 5090 one-profile measurement-only smoke.
+
 - Added a capture-only LM-head CUDA Graph prewarm ABI,
   `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`,
   and dense GPT JSON attribution for graph-prewarm requested/enabled state,

@@ -294,7 +294,11 @@ a new symbol. `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` fails the matrix if any
 candidate profile is slower than its baseline.
 `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` passes the per-profile
 route-change guard through to every comparison so accidental no-op candidate
-symbols fail before ratio gates.
+symbols fail before ratio gates. The aggregate matrix JSON also reports
+`candidate_symbol_changed_count`, `same_symbol_profile_count`,
+`measurement_only_profile_count`, and `route_change_failure_reason`, so a sweep
+that compared the current symbol against itself is recorded as measurement-only
+evidence instead of a promotable kernel candidate.
 For attention-store bisection,
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_saved_lse_off` compares
 the default stored packed-attention LSE route against

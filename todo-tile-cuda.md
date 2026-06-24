@@ -1251,6 +1251,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     matrix wrapper exposes the same guard as
     `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` and forwards it into each
     per-profile benchmark.
+  - 2026-06-24 tightened the hot matrix aggregate JSON to carry
+    `candidate_symbol_changed_count`, `same_symbol_profile_count`,
+    `measurement_only_profile_count`, and `route_change_failure_reason`. This
+    marks same-symbol sweeps as measurement-only evidence, preventing raw
+    baseline-repeat timing noise from being mistaken for a promotable kernel
+    candidate.
   - 2026-06-23 first isolated profile sweep with the new harness ranked the
     current padded-vocab LM-head linear calls as the largest standalone targets:
     `lm-head-dinput` was about `32.17 ms` per 49152-row chunk and

@@ -109,29 +109,62 @@ if [[ "${DRY_RUN}" == "1" || "${DRY_RUN,,}" == "true" ]]; then
   exit 0
 fi
 
-python - "${JSON_OUT}" "${RESULT_FILES[@]}" <<'PY'
+python - "${JSON_OUT}" "${REQUIRE_ROUTE_CHANGE}" "${RESULT_FILES[@]}" <<'PY'
 import json
 import pathlib
 import statistics
 import sys
 
 out_path = pathlib.Path(sys.argv[1])
+require_route_change_raw = sys.argv[2]
 entries = []
-for raw_path in sys.argv[2:]:
+failed_profiles = []
+for raw_path in sys.argv[3:]:
     path = pathlib.Path(raw_path)
     if path.exists():
         payload = json.loads(path.read_text())
         payload["profile"] = path.stem
         entries.append(payload)
+    else:
+        failed_profiles.append(path.stem)
 
 ratios = [
     float(entry["candidate_to_baseline_ms_per_iter_ratio"])
     for entry in entries
 ]
+candidate_symbol_changed_count = sum(
+    1 for entry in entries if bool(entry.get("candidate_symbol_changed"))
+)
+same_symbol_profile_count = sum(
+    1 for entry in entries if entry.get("candidate_symbol_changed") is False
+)
+route_change_required = require_route_change_raw.strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+route_change_passed = None
+route_change_failure_reason = None
+if route_change_required:
+    route_change_passed = candidate_symbol_changed_count == len(entries) and not failed_profiles
+    if not route_change_passed:
+        route_change_failure_reason = (
+            "candidate_symbol_changed is false for at least one profile; "
+            "hot-matrix comparisons must use a distinct candidate symbol when "
+            "route-change enforcement is enabled"
+        )
 summary = {
     "benchmark": "native_gpt_linear_hot_matrix",
     "profile_count": len(entries),
     "profiles": [entry["profile"] for entry in entries],
+    "failed_profiles": failed_profiles,
+    "candidate_symbol_changed_count": candidate_symbol_changed_count,
+    "same_symbol_profile_count": same_symbol_profile_count,
+    "measurement_only_profile_count": same_symbol_profile_count,
+    "route_change_required": route_change_required,
+    "route_change_passed": route_change_passed,
+    "route_change_failure_reason": route_change_failure_reason,
     "max_candidate_to_baseline_ms_per_iter_ratio": max(ratios) if ratios else None,
     "mean_candidate_to_baseline_ms_per_iter_ratio": statistics.fmean(ratios) if ratios else None,
     "results": entries,
