@@ -21,6 +21,11 @@ native training, and native fast-path inference without importing `nfn_impl`,
 `recipe_from_state`, and `render_help` are still available from `nfn`, but they
 load the graph-backed planner lazily when first accessed.
 
+Dense GPT native training defaults to periodic validation loss every 250
+optimizer steps over 20 validation batches. Pass `--eval-every-steps 1000` to
+change the cadence, or `--eval-batches N` / `--eval-batch-size N` to bound the
+validation work for smoke tests.
+
 Install extras only for the workflows you need:
 
 ```bash

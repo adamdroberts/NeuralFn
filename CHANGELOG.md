@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned dense GPT native validation defaults across the fast Python wrapper,
+  Python native harness, SDK handoff, and compiled C++ trainer. The default
+  validation cadence remains every 250 optimizer steps, but the validation loss
+  now averages 20 batches unless callers pass `--eval-batches` or set the SDK
+  field explicitly. The no-import `train_gpt.py --native-cuda-dry-run
+  --native-cuda-print-command` fast path now emits `--eval-batches 20`, so the
+  compact command no longer silently falls back to the compiled trainer's old
+  one-batch validation default.
+
+  Verification: ran `python cli/scripts/train_gpt.py --tinystories
+  --native-cuda-dry-run --native-cuda-print-command`, rebuilt the native GPT
+  CLI with `bash tools/build_native_gpt_cli.sh
+  /tmp/nfn_gpt_native_train_eval_batches_check`, confirmed the rebuilt
+  `--print-plan` schedule reports `eval_batches: 20`, ran the focused
+  no-Torch native GPT pytest, `py_compile`, and `git diff --check`.
+
 - Added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_saved_lse_off` wrapper
   profile. It forces baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1`

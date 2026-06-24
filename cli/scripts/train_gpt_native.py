@@ -50,6 +50,7 @@ NATIVE_GPT_DEFAULTS = {
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
     "eval_every_steps": 250,
+    "eval_batches": 20,
     "train_loss_every_steps": 0,
     "lm_head_row_chunk_size": 32_768,
     "num_layers": 12,
@@ -348,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=env_float("WEIGHT_DECAY", NATIVE_GPT_DEFAULTS["weight_decay"]))
     parser.add_argument("--warmup-steps", type=int, default=env_int("WARMUP_STEPS", NATIVE_GPT_DEFAULTS["warmup_steps"]))
     parser.add_argument("--eval-every-steps", type=int, default=env_int("EVAL_EVERY_STEPS", NATIVE_GPT_DEFAULTS["eval_every_steps"]))
-    parser.add_argument("--eval-batches", type=int, default=env_int("EVAL_BATCHES", 1))
+    parser.add_argument("--eval-batches", type=int, default=env_int("EVAL_BATCHES", NATIVE_GPT_DEFAULTS["eval_batches"]))
     parser.add_argument("--eval-batch-size", type=int, default=env_int("EVAL_BATCH_SIZE", 0))
     parser.add_argument(
         "--train-loss-every-steps",

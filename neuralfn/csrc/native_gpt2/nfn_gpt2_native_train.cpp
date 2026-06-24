@@ -88,7 +88,7 @@ struct Config {
     int warmup_steps = 60;
     int max_steps = 20000;
     int num_layers = 12;
-    int eval_batches = 1;
+    int eval_batches = 20;
     int eval_batch_size = 0;
     int lm_head_row_chunk_size = kDefaultLmHeadRowChunkSize;
     int evo_layer_index = 6;
@@ -4221,6 +4221,8 @@ bool print_tile_plan(
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
+        << ", \"eval_batches\": " << cfg.eval_batches
+        << ", \"eval_batch_size\": " << cfg.eval_batch_size
         << ", \"sample_every_steps\": " << cfg.sample_every_steps
         << ", \"generate_tokens\": " << cfg.generate_tokens
         << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
@@ -20939,6 +20941,9 @@ int run_transformer_lm_training_json(
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
         << "  \"train_loss_every_steps\": " << cfg.train_loss_every_steps << ",\n"
+        << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
+        << "  \"eval_batch_size\": " << eval_batch_size << ",\n"
         << "  \"train_loss_device_accumulation_strategy\": \"optimizer-step-device-scalar-accumulate\",\n"
         << "  \"train_loss_host_copy_scope\": \"once-per-logged-optimizer-step\",\n"
         << "  \"train_loss_host_d2h_count\": " << train_loss_host_d2h_count << ",\n"

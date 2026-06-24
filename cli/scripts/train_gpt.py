@@ -20,6 +20,7 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
 
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
+_DEFAULT_EVAL_BATCHES = "20"
 
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:
@@ -333,6 +334,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         raise ValueError("native GPT kernel backend must be tile-cuda")
     if "--backend" not in out:
         _append_value(out, "--backend", "tile-cuda")
+    if not _explicit_arg(out, "--eval-batches"):
+        _append_value(out, "--eval-batches", os.environ.get("EVAL_BATCHES", _DEFAULT_EVAL_BATCHES))
     final_lr = _final_lr_fraction(argv)
     if final_lr is not None and "--final-lr-fraction" not in out:
         _append_value(out, "--final-lr-fraction", final_lr)
