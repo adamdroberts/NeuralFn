@@ -4721,6 +4721,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     missing_payload = json.loads(missing_ops.stdout)
     assert missing_payload["tile_ops_check"]["loaded"] is False
     assert missing_payload["tile_ops_check"]["all_required_symbols_found"] is False
+    assert missing_payload["tile_ops_check"]["optimized_optimizer_contract_loaded"] is False
+    assert (
+        missing_payload["tile_ops_check"]["optimized_optimizer_contract_error"]
+        == "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols"
+    )
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in (
+        missing_payload["tile_ops_check"]["optimized_optimizer_missing_symbols"]
+    )
     assert missing_payload["token_shards_resolved"] is False
     assert missing_payload["train_shard"] == ""
     assert missing_payload["val_shard"] == ""
@@ -4749,6 +4757,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     missing_ops_profile_payload = json.loads(missing_ops_profile_json.read_text(encoding="utf-8"))
     assert missing_ops_profile_payload["tile_ops_check"]["loaded"] is False
     assert missing_ops_profile_payload["tile_ops_check"]["all_required_symbols_found"] is False
+    assert missing_ops_profile_payload["tile_ops_check"]["optimized_optimizer_contract_loaded"] is False
 
     missing_dataset_check = subprocess.run(
         [
@@ -7625,6 +7634,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
     assert "optimized_optimizer_contract_loaded" in gpt2_source_text
     assert "optimized_optimizer_contract_error" in gpt2_source_text
+    assert "optimized_optimizer_missing_symbols" in gpt2_source_text
+    assert "optimized_optimizer_contract_symbols()" in gpt2_source_text
     assert "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols" in gpt2_source_text
     assert "optimized_optimizer_contract_loaded =\n                    fill_many != nullptr" in gpt2_source_text
     assert "adamw_many_with_device_scale != nullptr" in gpt2_source_text

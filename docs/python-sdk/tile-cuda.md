@@ -943,6 +943,11 @@ reports `optimized_optimizer_contract_loaded` and
 `optimized_optimizer_contract_error`; if this contract is false, rebuild
 `build/libnfn_native_train_tile_ops.so` and the native GPT CLI so the SDK does
 not silently fall back to scalar or per-buffer optimizer kernels.
+The compiled `--check-tile-ops` preflight exposes the same status as
+`tile_ops_check.optimized_optimizer_contract_loaded`,
+`tile_ops_check.optimized_optimizer_contract_error`, and
+`tile_ops_check.optimized_optimizer_missing_symbols`, allowing SDK and wrapper
+checks to reject stale Tile libraries before dataset resolution or training.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI now uses the cuBLASLt bgrad
 epilogue route by default for supported QKV profiling shapes; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` or

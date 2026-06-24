@@ -12,9 +12,12 @@ Future updates should append new entries here rather than replacing older notes.
   kernels, and device clip-scale kernel to load from the trainer-facing
   Tile-CUDA ABI. Runtime JSON reports
   `optimized_optimizer_contract_loaded` and
-  `optimized_optimizer_contract_error`, so benchmark gates can assert that the
-  trainer is using fused device-scale optimizer kernels instead of falling back
-  to scalar or per-buffer update paths.
+  `optimized_optimizer_contract_error`, and `--check-tile-ops` reports
+  `tile_ops_check.optimized_optimizer_contract_loaded`,
+  `tile_ops_check.optimized_optimizer_contract_error`, and
+  `tile_ops_check.optimized_optimizer_missing_symbols`, so benchmark gates can
+  assert that the trainer is using fused device-scale optimizer kernels instead
+  of falling back to scalar or per-buffer update paths.
 
   Migration note: this is intentionally stricter for the local native CUDA
   trainer. Rebuild `build/libnfn_native_train_tile_ops.so` and the native GPT

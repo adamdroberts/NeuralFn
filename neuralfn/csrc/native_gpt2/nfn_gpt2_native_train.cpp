@@ -3444,6 +3444,30 @@ std::vector<std::string> required_tile_symbols() {
     };
 }
 
+std::vector<std::string> optimized_optimizer_contract_symbols() {
+    return {
+        "nfn_native_tile_fill_many_float32",
+        "nfn_native_tile_sumsq_partials_many_float32",
+        "nfn_native_tile_global_norm_clip_scale_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
+    };
+}
+
+bool symbol_found_by_name(
+    const std::vector<std::string>& symbols,
+    const std::vector<bool>& found,
+    const std::string& name) {
+    for (std::size_t i = 0; i < symbols.size() && i < found.size(); ++i) {
+        if (symbols[i] == name) {
+            return found[i];
+        }
+    }
+    return false;
+}
+
 std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
     std::vector<BufferPlan> layout;
     std::int64_t offset = 0;
@@ -4163,6 +4187,9 @@ bool print_tile_plan(
     bool cooperative_lm_head_backward_true_fused_kernel_capable = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
+    const std::vector<std::string> optimizer_contract_symbols =
+        optimized_optimizer_contract_symbols();
+    std::vector<std::string> optimizer_contract_missing_symbols;
     if (include_symbol_check || cooperative_lm_head_backward_requested) {
         void* handle = linked_tile_ops_requested ? RTLD_DEFAULT : dlopen(tile_ops.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!linked_tile_ops_requested && handle == nullptr) {
@@ -4196,6 +4223,19 @@ bool print_tile_plan(
             }
         }
     }
+    if (include_symbol_check) {
+        for (const std::string& symbol : optimizer_contract_symbols) {
+            if (!symbol_found_by_name(symbols, found, symbol)) {
+                optimizer_contract_missing_symbols.push_back(symbol);
+            }
+        }
+    }
+    const bool optimized_optimizer_contract_loaded =
+        include_symbol_check && loaded && optimizer_contract_missing_symbols.empty();
+    const std::string optimized_optimizer_contract_error =
+        optimized_optimizer_contract_loaded
+            ? std::string()
+            : "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols";
     const bool cooperative_lm_head_backward_route_integrated =
         cooperative_lm_head_backward_requested &&
         cooperative_lm_head_backward_true_fused_kernel_capable;
@@ -4595,6 +4635,20 @@ bool print_tile_plan(
                   << "  \"tile_ops_check\": {\n"
                   << "    \"loaded\": " << (loaded ? "true" : "false") << ",\n"
                   << "    \"all_required_symbols_found\": " << (all_symbols ? "true" : "false") << ",\n"
+                  << "    \"optimized_optimizer_contract_loaded\": "
+                  << (optimized_optimizer_contract_loaded ? "true" : "false") << ",\n"
+                  << "    \"optimized_optimizer_contract_error\": \""
+                  << json_escape(optimized_optimizer_contract_error) << "\",\n"
+                  << "    \"optimized_optimizer_missing_symbols\": [\n";
+        for (std::size_t i = 0; i < optimizer_contract_missing_symbols.size(); ++i) {
+            std::cout << "      \"" << json_escape(optimizer_contract_missing_symbols[i]) << "\"";
+            if (i + 1 != optimizer_contract_missing_symbols.size()) {
+                std::cout << ",";
+            }
+            std::cout << "\n";
+        }
+        std::cout
+                  << "    ],\n"
                   << "    \"symbols\": [\n";
         for (std::size_t i = 0; i < symbols.size(); ++i) {
             std::cout << "      {\"name\": \"" << json_escape(symbols[i]) << "\", \"found\": "
