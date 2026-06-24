@@ -1703,6 +1703,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "The tanh approximation variant is therefore historical/diagnostic-only" in bench_source
     assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in bench_source
     assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in bench_source
+    assert '"tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")' in bench_source
+    assert "stage.lm_head_backward.total_ms=1.001484x" in bench_source
+    assert "stage.block_backward.mlp_proj.total_ms=1.001994x" in bench_source
     assert "CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK" in bench_source
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source

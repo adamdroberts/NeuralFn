@@ -1444,6 +1444,14 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     candidate reports the same route counters, and the native route-change gate
     fails. Keep `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` rejected/no-op
     historical diagnostics unless a future compile flag proves a distinct route.
+  - 2026-06-24 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96`
+    after the CUDA reinstall. The wrapper built the `-DLLMK_SM120_FORWARD_N96=0`
+    Tile ops candidate and ran a short dedicated RTX 5090 paired gate, but no
+    route counters, strategy strings, linear shape stats, or cuBLASLt plan-cache
+    entries changed. The route-change gate failed, and hot-stage gates regressed
+    at `stage.lm_head_backward.total_ms=1.001484x` and
+    `stage.block_backward.mlp_proj.total_ms=1.001994x`. Keep it rejected by
+    default; rerun only as a historical compile-flag diagnostic.
   - 2026-06-23 added the clearer
     `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` alias, plus candidate,
     parity, and shared variants, for route-proof-only candidate smokes that

@@ -1101,6 +1101,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "attention_atomic_dq" in text
     assert "tk_forward_no_n96" in text
     assert "-DLLMK_SM120_FORWARD_N96=0" in text
+    assert "stage.lm_head_backward.total_ms=1.001484x" in text
+    assert "stage.block_backward.mlp_proj.total_ms=1.001994x" in text
     assert "cuda_device_max_connections_1" in text
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "combined_device_arena" in text
@@ -2339,7 +2341,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert loss_bins_rejected.returncode == 2
     assert "lm_head_loss_bins is a rejected SM120 candidate" in loss_bins_rejected.stderr
-    assert "stage.block_backward.total_ms regressed to 1.019348x" in (
+    assert "train_loop_wall_ms_per_step still missed the strict gate at 1.000274x" in (
         loss_bins_rejected.stderr
     )
 
@@ -2825,8 +2827,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
 
     assert timeout_prone_run.returncode == 2
-    assert "timeout-prone" in timeout_prone_run.stderr
-    assert "NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1" in timeout_prone_run.stderr
+    assert "lm_head_pipeline_chunks is a rejected SM120 candidate" in timeout_prone_run.stderr
+    assert "candidate command timed out after 300 seconds" in timeout_prone_run.stderr
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in timeout_prone_run.stderr
 
     cooperative_required_output_path = (
         tmp_path / "candidate-lm-head-cooperative-required-dry-run.json"

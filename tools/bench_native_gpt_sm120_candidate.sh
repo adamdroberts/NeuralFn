@@ -435,6 +435,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1"
     ;;
   "tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 recheck built the -DLLMK_SM120_FORWARD_N96=0 Tile ops candidate but did not change tracked route counters, strategy strings, linear shape stats, or cuBLASLt plan cache entries; the route-change gate failed and hot-stage gates regressed at stage.lm_head_backward.total_ms=1.001484x and stage.block_backward.mlp_proj.total_ms=1.001994x."
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_FORWARD_N96=0"
     ;;
   "cuda_device_max_connections_1"|"cuda-device-max-connections-1")

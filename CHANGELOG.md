@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96` as a
+  rejected/no-op historical diagnostic. The CUDA 13.3 dedicated RTX 5090
+  recheck built the `-DLLMK_SM120_FORWARD_N96=0` Tile ops candidate, but the
+  native route-change gate found no route-counter, strategy-string, linear
+  shape-stat, or cuBLASLt plan-cache changes. The short paired run also failed
+  hot-stage gates at `stage.lm_head_backward.total_ms=1.001484x` and
+  `stage.block_backward.mlp_proj.total_ms=1.001994x`. Real runs now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, while dry-run plan
+  expansion still works for inspection.
+
+  Verification: built the temporary candidate Tile ops library through
+  `tools/bench_native_gpt_sm120_candidate.sh` and ran a short 3-step,
+  1-sample native-vs-native paired benchmark on the idle dedicated RTX 5090
+  with route-change and stage-timing gates enabled.
+
 - Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput` and
   `tk_dgelu_approx_tanh` as rejected/no-op historical diagnostics. The current
   linked SM120 baseline already uses the fused TK MLP projection dInput+dGELU

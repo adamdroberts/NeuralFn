@@ -630,9 +630,15 @@ already uses the fused TK MLP projection dInput+dGELU route and reports
 with `-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` no longer proves a distinct route.
 Use those profile names only with
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` when intentionally
-reproducing older dGELU route evidence. `tk_forward_no_n96` builds a
-temporary candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute
-eligible llm.kittens forward GEMM shapes away from the N96 path. Stage-timed
+reproducing older dGELU route evidence. `tk_forward_no_n96` is also rejected
+by default. The CUDA 13.3 dedicated RTX 5090 recheck built the
+`-DLLMK_SM120_FORWARD_N96=0` Tile ops candidate, but tracked route counters,
+strategy strings, linear shape stats, and cuBLASLt plan cache entries were
+unchanged; the route-change gate failed and hot-stage gates regressed at
+`stage.lm_head_backward.total_ms=1.001484x` and
+`stage.block_backward.mlp_proj.total_ms=1.001994x`. Use it only with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` when intentionally
+reproducing the historical forward-N96 evidence. Stage-timed
 dGELU diagnostics still gate
 `stage.block_backward.mlp_proj.dinput.total_ms=1.000` when explicitly rerun.
 Runtime JSON reports
