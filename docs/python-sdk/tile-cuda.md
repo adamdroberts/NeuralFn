@@ -1119,14 +1119,11 @@ dWeight+bias and reports
 by default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
 measured `1.001009x` train-loop wall time and `0.999002x` tokens/sec versus the
 current dWeight+bias-first order.
-`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
-ordering switch for packed-QKV backward. It runs QKV dInput before QKV
-dWeight+bias and reports `block_backward_qkv_dinput_before_dweight_enabled` and
-`block_backward_qkv_dinput_before_dweight_count`. Leave it disabled for normal
-training because the dedicated RTX 5090 5-step, 3-sample stage-timed gate
-proved the route counter moved from `0` to `480` and improved mean train-loop
-wall to `0.995958x`, but rejected default promotion because the target
-`stage.block_backward.qkv.total_ms` regressed to `1.001003x`.
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` is the diagnostic rollback switch
+for packed-QKV backward. The default runs QKV dInput before QKV dWeight+bias as
+part of the promoted 128-row LayerNorm affine route, and reports
+`block_backward_qkv_dinput_before_dweight_enabled` plus
+`block_backward_qkv_dinput_before_dweight_count`.
 The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
 packs the incoming projection gradient to BF16 once, reuses that scratch for MLP
@@ -1788,7 +1785,7 @@ reports `token_buffer_allocation_strategy: "combined-arenas"`,
 LayerNorm affine-gradient backward has an accumulate raw Tile ABI and uses a
 chunked parallel atomic reduction for large row counts, avoiding the previous
 single-block loop over every row and the scratch-copy pass. The LayerNorm
-affine row chunk now defaults to 256 rows; set
+affine row chunk now defaults to 128 rows; set
 `NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
 `NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to compare chunk sizes in
@@ -2168,13 +2165,16 @@ substage is reported for inspection while the serial baseline continues to emit
 split dInput and dWeight substages. The current packed-QKV one-step gate proved
 the route active but rejected it at `1.009068x` train-loop wall time,
 `0.991012x` tokens/sec, and `1.040672x` QKV backward.
-The wrapper also exposes `qkv_dinput_before_dweight`, which expands to
-`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` for serial QKV ordering bisection.
-Stage-timed runs gate `stage.block_backward.qkv.total_ms`, and runtime JSON
-proves the route with `block_backward_qkv_dinput_before_dweight_count`. The
-current CUDA 13.3 dedicated RTX 5090 rerun improved train-loop wall time to
-`0.994580x`, but rejected the profile for default use because steady-state
-CUDA-event timing, LM-head backward, MLP projection, and QKV gates missed.
+The wrapper also exposes `qkv_dinput_before_dweight`, which compares the current
+serial QKV ordering against the historical dWeight-first route by setting
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` on the baseline side and `=1` on
+the candidate side. Stage-timed runs gate `stage.block_backward.qkv.total_ms`,
+and runtime JSON proves the route with
+`block_backward_qkv_dinput_before_dweight_count`. `qkv_dinput_ln128` reproduces
+the promoted default against the older 256-row/QKV-dWeight-first route; the
+CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved train-loop wall to
+`0.989784x`, steady-state CUDA-event timing to `0.995384x`, train throughput to
+`1.010326x`, and total block backward to `0.986375x`.
 `qkv_dinput_ln64` combines that QKV order switch with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64`; it is also rejected by
 default after a 5-step, 3-sample same-script confirmation improved
@@ -2440,7 +2440,7 @@ If the SM120 TK fused route is unavailable in a non-default build or shape, this
 BF16-only ABI now falls back to BF16-output GEMM plus in-place BF16-bits dGELU
 instead of leaving the handoff buffer unwritten.
 
-Dense GPT-2 `--train-transformer-lm` uses the LayerNorm stats ABI by default. Forward writes row mean/rstd for each scratch-tape LayerNorm, and earlier blocks that reuse stored BF16 MLP activations keep their LN2 stats in a small float sidecar so backward can call the stats-consuming kernels without recomputing row statistics from stale scratch-tape state. Block backward uses `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32` for float LN1/fallback LN2 and `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32` for stored-BF16 residual1 LN2. These fused kernels accumulate dWeight/dBias, compute dInput, apply residual scaling, and add the upstream residual gradient in one launch for GPT-width `dim <= 1024` shapes. Set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` for the previous affine-accumulate plus dInput/residual-add pair, set `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` for the older restore-to-FP32 residual1 path, or set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` for the older separate LayerNorm dInput plus residual-add route. `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` tunes the row-chunk size used by the chunked affine-gradient/residual fused kernels; the default is 256 rows after CUDA 13.3 dedicated RTX 5090 same-script gates rejected the narrower 128-row route. The paired profile `layernorm_affine_row_chunk_128` is a rejected diagnostic and real reruns require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The 128-row rerun changed `block_state_layout.layer_norm_backward_affine_row_chunk_size` from 256 to 128 and improved train-loop wall to `0.993514x` plus block backward to `0.989279x` in the second 5-step, 3-sample confirmation, but failed strict gates at `1.000479x` LM-head backward and `1.002281x` MLP projection. The 64-row and 96-row profiles remain rejected diagnostics: 64 rows improved train-loop wall to `0.998045x` but failed hot-stage gates at `1.004276x` MLP projection and `1.000446x` LM-head backward; 96 rows improved train-loop wall to `0.999112x` but failed the gates at `1.000296x` and `1.000002x`; the 512-row route had already regressed train-loop wall to `1.019837x`. The separate Tile linear-bias reducer used by split dWeight+bias diagnostics defaults to 256-row chunks and can be profiled with `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`; the paired wrapper profile `linear_bias_row_chunk_256` now requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` and is historical reproduction against the older 512-row baseline. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate changed `block_state_layout.linear_backward_bias_row_chunk_size` from 512 to 256 and improved train-loop wall to `0.993823x`, but failed strict gates at `1.002081x` steady-state CUDA-event step time and `1.000470x` MLP FC dWeight+bias; `linear_bias_row_chunk_1024` remains a rejected wider-chunk diagnostic too. Training JSON reports `layer_norm_stats_strategy`, `layer_norm_backward_reuses_forward_stats`, `layer_norm_stats_disabled_by_fused_residual_ln2`, `layer_norm_backward_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fused_kernel_launches`, `block_state_layout.layer_norm_backward_affine_row_chunk_size`, `block_state_layout.linear_backward_bias_row_chunk_size`, `layer_norm_backward_residual_strategy`, `residual1_backward_consumer_strategy`, `stored_mlp_layer_norm_stats_elements`, `stored_mlp_layer_norm_stats_bytes`, and `stored_mlp_layer_norm_stats_standalone_cuda_malloc_count`; the default combined-float-arena path should report a standalone malloc count of `0`.
+Dense GPT-2 `--train-transformer-lm` uses the LayerNorm stats ABI by default. Forward writes row mean/rstd for each scratch-tape LayerNorm, and earlier blocks that reuse stored BF16 MLP activations keep their LN2 stats in a small float sidecar so backward can call the stats-consuming kernels without recomputing row statistics from stale scratch-tape state. Block backward uses `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32` for float LN1/fallback LN2 and `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32` for stored-BF16 residual1 LN2. These fused kernels accumulate dWeight/dBias, compute dInput, apply residual scaling, and add the upstream residual gradient in one launch for GPT-width `dim <= 1024` shapes. Set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` for the previous affine-accumulate plus dInput/residual-add pair, set `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` for the older restore-to-FP32 residual1 path, or set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` for the older separate LayerNorm dInput plus residual-add route. `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` tunes the row-chunk size used by the chunked affine-gradient/residual fused kernels; the default is now 128 rows as part of the promoted `qkv_dinput_ln128` route. The 64-row and 96-row profiles remain rejected diagnostics: 64 rows improved train-loop wall to `0.998045x` but failed hot-stage gates at `1.004276x` MLP projection and `1.000446x` LM-head backward; 96 rows improved train-loop wall to `0.999112x` but failed the gates at `1.000296x` and `1.000002x`; the 512-row route had already regressed train-loop wall to `1.019837x`. The separate Tile linear-bias reducer used by split dWeight+bias diagnostics defaults to 256-row chunks and can be profiled with `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`; the paired wrapper profile `linear_bias_row_chunk_256` remains historical reproduction against the older 512-row baseline. Training JSON reports `layer_norm_stats_strategy`, `layer_norm_backward_reuses_forward_stats`, `layer_norm_stats_disabled_by_fused_residual_ln2`, `layer_norm_backward_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fused_kernel_launches`, `block_state_layout.layer_norm_backward_affine_row_chunk_size`, `block_state_layout.linear_backward_bias_row_chunk_size`, `layer_norm_backward_residual_strategy`, `residual1_backward_consumer_strategy`, `stored_mlp_layer_norm_stats_elements`, `stored_mlp_layer_norm_stats_bytes`, and `stored_mlp_layer_norm_stats_standalone_cuda_malloc_count`; the default combined-float-arena path should report a standalone malloc count of `0`.
 
 Trainer loops that own attention forward/backward ordering can use the raw TK
 attention backward-to-QKV forward-workspace reuse ABI; generic SDK callers should

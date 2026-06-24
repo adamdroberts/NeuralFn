@@ -245,7 +245,7 @@ std::int64_t resolved_layer_norm_affine_row_chunk_size() {
         env_or_empty_any({"NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE",
                           "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE",
                           "NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE"});
-    constexpr std::int64_t kDefaultRowChunkSize = 256;
+    constexpr std::int64_t kDefaultRowChunkSize = 128;
     if (raw.empty()) {
         return kDefaultRowChunkSize;
     }
@@ -11851,7 +11851,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT",
                               "NFN_NATIVE_GPT2_QKV_DINPUT_BEFORE_DWEIGHT"}),
-            false);
+            true);
     const bool block_attn_proj_concurrent_dinput_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT",

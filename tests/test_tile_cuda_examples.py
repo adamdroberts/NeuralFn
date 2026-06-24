@@ -1210,7 +1210,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' not in text
     assert "qkv_dinput_before_dweight" in text
     assert "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1" in text
-    assert "stage.block_backward.qkv.total_ms to 1.000860x" in text
+    assert "The route is default only as part of the later qkv_dinput_ln128 combined default" in text
+    assert "qkv_dinput_ln128" in text
+    assert "train_loop_wall_ms_per_step to 0.989784x" in text
+    assert "stage.block_backward.total_ms to 0.986375x" in text
     assert "qkv_dinput_ln64" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64" in text
     assert "steady-state CUDA-event timing to 0.998529x" in text

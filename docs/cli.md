@@ -867,9 +867,8 @@ fused AdamW call when CUDA memset is unavailable or
 and `gradient_zero_per_buffer_launches_elided`.
 LayerNorm affine-gradient backward has an accumulate ABI and uses a chunked
 parallel atomic reduction for large row counts instead of one CUDA block looping
-over all rows. The LayerNorm affine row chunk defaults to 256 rows after the
-CUDA 13.3 dedicated RTX 5090 paired gates rejected the narrower 128-row route
-despite top-line wall-time gains; set
+over all rows. The LayerNorm affine row chunk now defaults to 128 rows as part
+of the promoted packed-QKV backward schedule; set
 `NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
 `NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to run paired chunk-size
@@ -1455,6 +1454,13 @@ The ordering profiles `mlp_proj_dinput_before_dweight`,
 matching execution counters in the same route-counter summary, so rejected
 scheduling candidates can be reproduced with proof that the alternate order
 actually ran.
+`qkv_dinput_ln128` reproduces the promoted default against the older
+256-row/QKV-dWeight-first route. The CUDA 13.3 dedicated RTX 5090 3-step,
+2-sample stage-timed gate improved train-loop wall to `0.989784x`,
+steady-state CUDA-event timing to `0.995384x`, train throughput to
+`1.010326x`, and total block backward to `0.986375x`, while still missing tiny
+strict adjacent-stage gates at `stage.lm_head_backward.total_ms=1.000256x` and
+`stage.block_backward.qkv.total_ms=1.000779x`.
 `qkv_dinput_ln64` combines the QKV dInput-before-dWeight route with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` for a reproducible
 same-script check of the closest current block-backward near-miss. It remains

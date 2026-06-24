@@ -5321,7 +5321,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
         "layer_norm_backward_affine_strategy": "auto-chunked-atomic-accumulate",
-        "layer_norm_backward_affine_row_chunk_size": 256,
+        "layer_norm_backward_affine_row_chunk_size": 128,
         "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
         "layer_norm_backward_reuses_forward_stats": True,
         "layer_norm_stats_disabled_by_fused_residual_ln2": False,
@@ -6856,8 +6856,8 @@ def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks(
         root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
     ).read_text()
 
-    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
-    assert "constexpr std::int64_t kDefaultRowChunkSize = 256;" in gpt2_source_text
+    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 128" in kernels_text
+    assert "constexpr std::int64_t kDefaultRowChunkSize = 128;" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in gpt2_source_text
     assert '\\"layer_norm_backward_affine_row_chunk_size\\"' in gpt2_source_text
     assert '\\"linear_backward_bias_row_chunk_size\\"' in gpt2_source_text
@@ -7686,8 +7686,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_tk_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB)" in tk_dinput_body
     assert "write_float_grad" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text
-    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
-    assert "constexpr std::int64_t kDefaultRowChunkSize = 256;" in gpt2_source_text
+    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 128" in kernels_text
+    assert "constexpr std::int64_t kDefaultRowChunkSize = 128;" in gpt2_source_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 256" in kernels_text
     for function_name in (

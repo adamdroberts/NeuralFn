@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** dense GPT native Tile-CUDA training now defaults
+  `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT` to enabled and changes the
+  LayerNorm affine-gradient row chunk default from `256` to `128`. This makes
+  the compiled trainer use the combined `qkv_dinput_ln128` backward route by
+  default. Migration: remove manual `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1`
+  and `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128` overrides that only
+  reproduced this route; set `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` and
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256` only when reproducing
+  the historical default.
+
+  Verification: a CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed
+  native-vs-native gate compared `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1
+  NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128` against the previous
+  defaults with zero compute processes before and after samples. The candidate
+  improved `train_loop_wall_ms_per_step` to `0.989784x`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step` to `0.995384x`,
+  `train_tokens_per_second` to `1.010326x`, and
+  `stage.block_backward.total_ms` to `0.986375x`. It still missed strict
+  adjacent-stage gates at `stage.lm_head_backward.total_ms=1.000256x` and
+  `stage.block_backward.qkv.total_ms=1.000779x`, so the wrapper keeps
+  `qkv_dinput_ln128` as a rejected/reproduction candidate profile while the
+  actual trainer defaults to the faster whole-loop route.
+
 - **Breaking changes:** restored the default dense GPT native LM-head row chunk
   from `49152` rows to `32768` rows in the Python SDK config builders, the
   `train_gpt_native.py` compiled-CLI wrapper defaults, focused LM-head/linear

@@ -75,7 +75,7 @@ constexpr int kGpt2AttentionHeads = 12;
 constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
 constexpr std::int64_t kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64;
-constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 256;
+constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 128;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
