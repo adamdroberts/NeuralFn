@@ -1462,6 +1462,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_classifier_backward_true_fused_capability" in source
     assert "lm_head_cooperative_backward_fused_kernel_symbol_available" in source
     assert "lm_head_cooperative_backward_fused_kernel_capability_available" in source
+    assert "lm_head_cooperative_backward_cuda_graph_available" in source
+    assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
     assert "cooperative_lm_head_backward_requirement_error" in source
     assert (
         "required cooperative LM-head backward true fused Tile kernel is unavailable"
@@ -1471,11 +1473,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         source.index("cooperative_lm_head_backward_requirement_error(cfg, argv[0])")
         < source.index("resolve_token_shards(")
     )
+    assert "auto* cooperative_backward_fn =" in source
     assert (
-        "lm_head_cooperative_backward_kernel_enabled\n"
-        "                            ? lm_head_classifier_backward_true_fused_kernel_bf16_u16\n"
-        "                            : lm_head_classifier_backward_cooperative_fused_bf16_u16"
+        "lm_head_cooperative_backward_kernel_enabled ||\n"
+        "                         lm_head_cooperative_backward_cuda_graph_enabled"
     ) in source
+    assert "? lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
+    assert ": lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert (
         "cooperative LM-head backward route selected without a callable Tile function"
     ) in source
@@ -1485,6 +1489,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
+    assert "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel" in source
+    assert "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel" in source
     assert "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel" in source
     assert "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel" in source
     assert "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight" in source
@@ -1574,6 +1580,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
+    assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
     assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool

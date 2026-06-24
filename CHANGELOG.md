@@ -6,6 +6,55 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a separate default-off CUDA Graph route for opt-in cooperative LM-head
+  backward. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` can now select
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` when the
+  graph symbol is present even though
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  correctly remains false for the current graph wrapper. Runtime JSON now
+  reports `lm_head_cooperative_backward_cuda_graph_available` and
+  `lm_head_cooperative_backward_cuda_graph_enabled` so benchmarks distinguish
+  the CUDA Graph replay path from both the future true fused kernel and the
+  event-ordered sequence wrapper.
+
+  Migration note: default training behavior is unchanged. The
+  `--require-cooperative-lm-head-backward` guard still requires the true fused
+  capability and does not accept the CUDA Graph wrapper as the final parity
+  kernel.
+
+  Verification: rebuilt `build/nfn_gpt_native_train_linked`, ran
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1
+  build/nfn_gpt_native_train_linked --backend tile-cuda --train-transformer-lm
+  --tinystories --check-tile-ops` on the dedicated RTX 5090 and confirmed
+  `passed: true`, `lm_head_cooperative_backward_cuda_graph_enabled: true`, and
+  `lm_head_cooperative_backward_sequence_wrapper_enabled: false`. Also ran the
+  same preflight with `--require-cooperative-lm-head-backward` and confirmed it
+  fails with `passed: false` because the true fused capability is still false.
+  The focused source-contract pytest
+  `tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in`
+  passed.
+
+- Changed explicitly allowed rejected-profile reruns in
+  `tools/bench_native_gpt_sm120_candidate.sh` to behave as route-proof
+  diagnostics by default. `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+  still requires an intentional opt-in, still prints paired timing ratios, and
+  still keeps the native route-change gate, but it now disables automatic
+  strict promotion-ratio gates unless the caller sets
+  `NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1` or supplies
+  explicit min/max ratio gates.
+
+  Verification: reran the LM-head cooperative backward candidate with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, two steps, one sample,
+  and stage timing. The pre-change wrapper proved the route
+  (`lm_head_cooperative_backward_cuda_graph_enabled: true`, graph replay
+  success `32`, graph fallback `0`, route-change gate passed) but exited
+  nonzero because this known-rejected diagnostic missed strict promotion gates
+  at `1.000760x` steady-state CUDA-event step time and `1.003999x` LM-head
+  backward. After the wrapper change the same style of run exited zero while
+  still reporting graph replay success `32`, graph fallback `0`, route-change
+  gate passed, and the printed timing ratios (`1.000429x` steady-state
+  CUDA-event step time and `1.003240x` LM-head backward).
+
 - Tightened the cuBLASLt grouped matmul execution probe to use 32-bit grouped
   rows/columns/leading-dimension arrays, matching cuBLASLt's documented
   default grouped descriptor integer width. This keeps the smoke test closer

@@ -239,6 +239,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     currently a cached CUDA Graph over the existing CE/dHidden/dWeight kernels,
     so `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
     returns `0` until a real single-kernel/cooperative body replaces it.
+  - 2026-06-24 added separate CUDA Graph route reporting for the non-required
+    cooperative LM-head path. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`
+    can now select the graph symbol when it is present and report
+    `lm_head_cooperative_backward_cuda_graph_available` /
+    `lm_head_cooperative_backward_cuda_graph_enabled`, while
+    `--require-cooperative-lm-head-backward` still requires the true fused
+    capability and remains blocked by the current graph wrapper.
   - 2026-06-22 made the non-required
     `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` path
@@ -1866,3 +1873,9 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     should keep native route-change checks but skip automatic timing-ratio
     gates. The older `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1`
     spelling remains supported.
+  - 2026-06-24 made explicitly allowed rejected-profile reruns route-proof
+    smokes by default. `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+    still requires intentional opt-in, still prints the paired timing ratios,
+    and still keeps the native route-change gate, but it no longer fails solely
+    on automatic strict promotion-ratio gates unless
+    `NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1` is set.

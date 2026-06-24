@@ -369,6 +369,14 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_cooperative_backward_kernel_enabled",),
     ),
     (
+        "lm_head_cooperative_backward_cuda_graph_available",
+        ("lm_head_cooperative_backward_cuda_graph_available",),
+    ),
+    (
+        "lm_head_cooperative_backward_cuda_graph_enabled",
+        ("lm_head_cooperative_backward_cuda_graph_enabled",),
+    ),
+    (
         "lm_head_cooperative_backward_sequence_wrapper_enabled",
         ("lm_head_cooperative_backward_sequence_wrapper_enabled",),
     ),
@@ -679,6 +687,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_cooperative_backward_fused_kernel_available",
     "lm_head_cooperative_backward_route_integrated",
     "lm_head_cooperative_backward_kernel_enabled",
+    "lm_head_cooperative_backward_cuda_graph_available",
+    "lm_head_cooperative_backward_cuda_graph_enabled",
     "lm_head_cooperative_backward_sequence_wrapper_enabled",
     "lm_head_ce_row_loss_reduction_enabled",
     "lm_head_ce_row_loss_sum_accumulate_enabled",
@@ -846,6 +856,8 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_cooperative_backward_fused_kernel_available",
     "lm_head_cooperative_backward_route_integrated",
     "lm_head_cooperative_backward_kernel_enabled",
+    "lm_head_cooperative_backward_cuda_graph_available",
+    "lm_head_cooperative_backward_cuda_graph_enabled",
     "lm_head_cooperative_backward_sequence_wrapper_enabled",
     "lm_head_classifier_chunk_kernel_available",
     "lm_head_classifier_chunk_kernel_enabled",

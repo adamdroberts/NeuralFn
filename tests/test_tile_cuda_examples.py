@@ -1052,9 +1052,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "bf16_attention_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
-    assert "1.004546x" in text
-    assert "0.978526x" in text
-    assert "1.010026x" in text
+    assert "1.005344x" in text
+    assert "0.978512x" in text
+    assert "1.010632x" in text
     assert "attention_bwd_block_32" in text
     assert "-DLLMK_SM120_ATTN_BWD_BLOCK=32" in text
     assert "attention_backward_tk_block_size=16 to 32" in text
@@ -1197,6 +1197,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "STRICT_PROBE_CANDIDATE_PROFILE" in text
     assert "strict ABI preflight probe, not a speed candidate" in text
     assert "AUTO_DISABLE_METRIC_RATIO_GATES=1" in text
+    assert "NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES" in text
+    assert "ENFORCE_REJECTED_CANDIDATE_RATIO_GATES" in text
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in text
     assert "token_weight_vector4_strided" in text
