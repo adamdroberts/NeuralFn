@@ -197,6 +197,15 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt_fast_command"]["elapsed_seconds"] >= 0.0
     assert entrypoints["train_gpt_fast_command"]["startup_budget_seconds"] == 2.0
     assert entrypoints["train_gpt_fast_command"]["startup_within_budget"] is True
+    assert entrypoints["train_gpt2_compat_fast_command"]["passed"] is True
+    assert entrypoints["train_gpt2_compat_fast_command"]["startup_within_budget"] is True
+    assert "--train-transformer-lm" in entrypoints["train_gpt2_compat_fast_command"]["stdout"]
+    assert entrypoints["train_gpt2_compat_template_name_command"]["passed"] is True
+    assert "--template-name gpt2_moa" in entrypoints["train_gpt2_compat_template_name_command"]["stdout"]
+    assert "--native-cuda-activation moa" in entrypoints["train_gpt2_compat_template_name_command"]["stdout"]
+    assert entrypoints["train_gpt2_compat_custom_graph_command"]["passed"] is True
+    assert "--graph-file" in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
+    assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
     assert "nfn_gpt_native_train" in entrypoints["train_gpt_native_fast_command"]["stdout"]

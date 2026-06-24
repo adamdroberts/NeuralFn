@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the no-Torch native training verifier to cover direct
+  `cli/scripts/train_gpt2.py` compatibility execution, not just the canonical
+  `train_gpt.py` helper functions and `nfn train` dispatch. The verifier now
+  checks plain TinyStories dry-run command generation plus GPT template
+  selection and custom graph forwarding through the compatibility script, all
+  under the same import blocker for Torch, NumPy, tokenizers, dataset manager
+  imports, graph-editor inference/training helpers, and `train_gpt_native`.
+
+  Verification: `python tools/check_native_no_torch_deps.py --skip-artifacts
+  --json` and focused native verifier pytest coverage.
+
 - Reverted the native GPT LayerNorm affine row-chunk default back to 256 rows,
   matching the Tile-CUDA kernel default, after CUDA 13.3 dedicated RTX 5090
   rechecks rejected the narrower 128-row route under strict whole-loop gates.

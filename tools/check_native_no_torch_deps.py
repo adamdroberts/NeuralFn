@@ -111,11 +111,48 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_gpt2_compat_fast_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt2.py",
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
+        ),
+    ),
+    (
+        "train_gpt2_compat_template_name_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt2.py",
+            "--tinystories",
+            "--template-name",
+            "gpt2_moa",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
+        ),
+    ),
+    (
         "train_gpt_native_fast_command",
         (
             sys.executable,
             "cli/scripts/train_gpt_native.py",
             "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
+        ),
+    ),
+    (
+        "train_gpt2_compat_custom_graph_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt2.py",
+            "--tinystories",
+            "--graph-file",
+            "__NFN_NATIVE_GRAPH_STUB__",
             "--native-cuda-dry-run",
             "--native-cuda-print-command",
             "--native-cuda-no-checkpoint",
@@ -1010,6 +1047,7 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
             ),
         ]
         for name, command in entrypoints:
+            command = tuple(str(native_graph) if part == "__NFN_NATIVE_GRAPH_STUB__" else part for part in command)
             started = time.perf_counter()
             proc = subprocess.run(
                 list(command),

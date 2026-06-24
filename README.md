@@ -1201,15 +1201,18 @@ runtime JSON reports `optimized_attention_required: true` and fails the run if
 export. Use `--allow-scalar-attention-fallback` only for diagnostic bisections
 where a slow fallback is intentionally being measured.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` verifies
-that GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic,
-semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`, default
+that GPT, the GPT-2 compatibility script, GPT-2-evo, NanoGPT, LLaMA
+fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4,
+explicit `nfn train --tinystories`, default
 `nfn train`, installed `nfn:main` console-entry training, native inference,
 programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` native
 training, top-level `nfn train --base-model ...` family dispatch for GPT-2 evo,
 NanoGPT token-LM, LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4,
 explicit dense GPT template selection with `--template-name`, dense GPT custom
-graph selection with `--graph-file`, installed `nfn:main` console-entry native
-inference, and SDK native training handoff surfaces still run under an import blocker for
+graph selection with `--graph-file`, direct `train_gpt2.py` compatibility
+dispatch with those same template/custom-graph selectors, installed `nfn:main`
+console-entry native inference, and SDK native training handoff surfaces still
+run under an import blocker for
 Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
 `infer_gpt`, and `nfn_impl`. The verifier also covers the native benchmark shell
 wrappers in dry-run mode, including `tools/bench_linear_backward_candidate.sh`
