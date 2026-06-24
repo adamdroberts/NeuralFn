@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the paired native benchmark route-change gate so setup-only/prewarm
+  counters no longer validate a throughput candidate on their own. The paired
+  JSON still reports all counter deltas, but now splits them into
+  `has_hot_route_counter_change`, `hot_changed`, and `setup_only_changed`.
+  `--require-native-route-change` now requires hot training-route evidence,
+  strategy changes, linear-shape changes, or cuBLASLt plan-cache changes before
+  passing, preventing BF16 workspace prewarm or similar setup toggles from
+  making an unchanged training loop look like a kernel-route change.
+
+  Verification: ran focused paired-kernel-speed pytest coverage for unchanged
+  route counters, required route-change failure, setup-only route-change
+  rejection, and direct route-counter summarization.
+
 - Extended `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` /
   `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` from a single-shape diagnostic
   to a colon/semicolon/whitespace-separated shape-list diagnostic while

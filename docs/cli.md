@@ -710,6 +710,12 @@ strategy values, and linear-shape plan metadata all remain unchanged.
 `tools/bench_native_gpt_sm120_candidate.sh` enables it automatically for
 measured candidate changes so a timing-only fluctuation cannot pass as a kernel
 promotion.
+Setup-only/prewarm counters are still reported but are not enough to pass that
+gate. The JSON splits counter evidence into `has_hot_route_counter_change`,
+`hot_changed`, and `setup_only_changed`, so cuBLAS handle prewarm, BF16
+workspace prewarm, or device-arena setup toggles cannot validate a throughput
+candidate unless a hot route counter, strategy value, linear-shape row, or
+cuBLASLt plan-cache entry also changes.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent

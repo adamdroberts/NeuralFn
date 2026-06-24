@@ -446,6 +446,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     failing route detection.
   - 2026-06-18 added short `NFN_SM120_CANDIDATE_*` aliases for the native-vs-native wrapper controls so ad hoc candidate benchmarks do not silently fall back to default steps/samples/profile settings when the shorter names are used.
   - 2026-06-19 added `native_route_counter_changes` to the paired benchmark JSON/text report so candidate timings are checked against tracked TK/cuBLASLt/BF16/LM-head/attention route counters before being treated as kernel evidence.
+  - 2026-06-24 tightened the required route-change gate so setup-only/prewarm
+    counters cannot validate a throughput candidate by themselves. Paired JSON
+    now splits route evidence into `has_hot_route_counter_change`,
+    `hot_changed`, and `setup_only_changed`; cuBLAS handle prewarm, BF16
+    workspace prewarm, and device-arena setup deltas remain visible but require
+    a hot route counter, strategy value, linear-shape row, or cuBLASLt plan-cache
+    change before `--require-native-route-change` passes.
   - 2026-06-22 added `native_cublaslt_plan_cache` to the paired benchmark
     JSON/text report. Normal no-shape-stats runs now show cached cuBLASLt
     shape, selected heuristic, returned heuristic count, workspace, and epilogue

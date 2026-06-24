@@ -3274,6 +3274,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "enabled": False,
         "passed": True,
         "has_route_counter_change": False,
+        "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
         "has_linear_shape_change": False,
         "has_cublaslt_plan_cache_change": False,
@@ -3283,7 +3284,10 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert strategy_changes["has_strategy_value_change"] is False
     assert strategy_changes["changed_count"] == 0
     assert strategy_changes["tracked_count"] == 0
-    assert "native_route_counter_changes: has_route_counter_change=false changed_count=0" in proc.stdout
+    assert (
+        "native_route_counter_changes: has_route_counter_change=false "
+        "has_hot_route_counter_change=false changed_count=0"
+    ) in proc.stdout
     assert "native_strategy_value_changes:" not in proc.stdout
     assert "tracked route counters did not change" in proc.stdout
 
@@ -3338,6 +3342,7 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
         "enabled": True,
         "passed": False,
         "has_route_counter_change": False,
+        "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
         "has_linear_shape_change": False,
         "has_cublaslt_plan_cache_change": False,
@@ -3349,6 +3354,84 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
         "native route change gate failed: candidate-native-metrics-did-not-change-route-strategy-or-plan"
         in proc.stderr
     )
+
+
+def test_paired_kernel_speed_tool_rejects_setup_only_route_change_for_required_gate() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-setup-only-route-gate.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_workspace_prewarm_requested\\\": 0, "
+        "\\\"linear_bf16_workspace_prewarm_success_count\\\": 0"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.5}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_workspace_prewarm_requested\\\": 1, "
+        "\\\"linear_bf16_workspace_prewarm_success_count\\\": 1"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-route-change",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    route_changes = payload["native_route_counter_changes"]
+    assert route_changes["has_route_counter_change"] is True
+    assert route_changes["has_hot_route_counter_change"] is False
+    assert route_changes["has_setup_only_route_counter_change"] is True
+    assert sorted(route_changes["setup_only_changed"]) == [
+        "linear_bf16_workspace_prewarm_requested",
+        "linear_bf16_workspace_prewarm_success_count",
+    ]
+    assert route_changes["hot_changed"] == {}
+    assert payload["native_route_change_gate"] == {
+        "enabled": True,
+        "passed": False,
+        "has_route_counter_change": True,
+        "has_hot_route_counter_change": False,
+        "has_strategy_value_change": False,
+        "has_linear_shape_change": False,
+        "has_cublaslt_plan_cache_change": False,
+        "failure_reason": "candidate-native-metrics-did-not-change-route-strategy-or-plan",
+    }
+    assert "has_hot_route_counter_change=false" in proc.stdout
+    assert "only setup/prewarm route counters changed" in proc.stdout
+    assert "native_route_change_gate: passed=false" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_warning() -> None:
@@ -4280,8 +4363,13 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
     changes = module.summarize_native_route_counter_changes(baseline, candidate)
 
     assert changes["has_route_counter_change"] is True
+    assert changes["has_hot_route_counter_change"] is True
+    assert changes["has_setup_only_route_counter_change"] is False
     assert changes["changed_count"] == 8
+    assert changes["hot_changed_count"] == 8
+    assert changes["setup_only_changed_count"] == 0
     assert changes["tracked_count"] == 13
+    assert changes["setup_only_changed"] == {}
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
         "candidate_mean": 1344.0,

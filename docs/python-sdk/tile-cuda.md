@@ -1950,6 +1950,11 @@ Use `--require-native-route-change` to make that condition a hard failure. The
 SM120 candidate wrapper enables the gate automatically for measured candidate
 changes, and `NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE=0` disables it only for
 explicit diagnostics.
+Setup-only/prewarm route counters remain visible in `native_route_counter_changes`
+but do not satisfy the required gate by themselves. The JSON reports
+`has_hot_route_counter_change`, `hot_changed`, and `setup_only_changed`, and
+the gate requires hot route-counter, strategy, linear-shape, or cuBLASLt
+plan-cache evidence before accepting a training-throughput candidate.
 When native stage timing is present, the text report also prints the high-value
 LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
 `dhidden_dweight_concurrent`) and block-backward substages across MLP FC,

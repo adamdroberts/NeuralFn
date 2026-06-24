@@ -548,6 +548,21 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "transformer_device_arena_enabled",
     "transformer_device_arena_cuda_malloc_count",
 )
+SETUP_ONLY_ROUTE_COUNTER_KEYS = frozenset(
+    {
+        "linear_cublas_handle_prewarm_enabled",
+        "linear_cublas_handle_prewarm_requested",
+        "linear_cublas_handle_prewarm_success_count",
+        "linear_cublas_handle_prewarm_failure_count",
+        "linear_bf16_workspace_prewarm_enabled",
+        "linear_bf16_workspace_prewarm_requested",
+        "linear_bf16_workspace_prewarm_success_count",
+        "linear_bf16_workspace_prewarm_failure_count",
+        "transformer_device_arena_requested",
+        "transformer_device_arena_enabled",
+        "transformer_device_arena_cuda_malloc_count",
+    }
+)
 NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
     "error",
@@ -1687,6 +1702,8 @@ def summarize_native_route_counter_changes(
     candidate_summary: dict[str, dict[str, float]],
 ) -> dict[str, object]:
     changed: dict[str, dict[str, float | None]] = {}
+    hot_changed: dict[str, dict[str, float | None]] = {}
+    setup_only_changed: dict[str, dict[str, float | None]] = {}
     unchanged: list[str] = []
     missing: list[str] = []
     for key in NATIVE_ROUTE_COUNTER_KEYS:
@@ -1704,7 +1721,7 @@ def summarize_native_route_counter_changes(
         if abs(delta) <= 1e-9:
             unchanged.append(key)
             continue
-        changed[key] = {
+        change = {
             "baseline_mean": float(baseline_mean),
             "candidate_mean": float(candidate_mean),
             "delta": delta,
@@ -1712,11 +1729,22 @@ def summarize_native_route_counter_changes(
             if float(baseline_mean) != 0.0
             else None,
         }
+        changed[key] = change
+        if key in SETUP_ONLY_ROUTE_COUNTER_KEYS:
+            setup_only_changed[key] = change
+        else:
+            hot_changed[key] = change
     return {
         "has_route_counter_change": bool(changed),
+        "has_hot_route_counter_change": bool(hot_changed),
+        "has_setup_only_route_counter_change": bool(setup_only_changed),
         "changed_count": len(changed),
+        "hot_changed_count": len(hot_changed),
+        "setup_only_changed_count": len(setup_only_changed),
         "tracked_count": len(changed) + len(unchanged),
         "changed": changed,
+        "hot_changed": hot_changed,
+        "setup_only_changed": setup_only_changed,
         "unchanged": unchanged,
         "missing": missing,
     }
@@ -1761,12 +1789,13 @@ def evaluate_native_route_change_gate(
     cublaslt_plan_cache: dict[str, object],
 ) -> dict[str, object]:
     has_route_counter_change = route_changes.get("has_route_counter_change") is True
+    has_hot_route_counter_change = route_changes.get("has_hot_route_counter_change") is True
     has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
     has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
     has_plan_cache_change = bool(cublaslt_plan_cache.get("plan_cache_changed"))
     passed = (
         not required
-        or has_route_counter_change
+        or has_hot_route_counter_change
         or has_strategy_value_change
         or has_linear_shape_change
         or has_plan_cache_change
@@ -1775,6 +1804,7 @@ def evaluate_native_route_change_gate(
         "enabled": bool(required),
         "passed": bool(passed),
         "has_route_counter_change": bool(has_route_counter_change),
+        "has_hot_route_counter_change": bool(has_hot_route_counter_change),
         "has_strategy_value_change": bool(has_strategy_value_change),
         "has_linear_shape_change": bool(has_linear_shape_change),
         "has_cublaslt_plan_cache_change": bool(has_plan_cache_change),
@@ -3111,6 +3141,7 @@ def print_text(payload: dict[str, object]) -> None:
         print(
             "  native_route_counter_changes: "
             f"has_route_counter_change={str(route_changes.get('has_route_counter_change', False)).lower()} "
+            f"has_hot_route_counter_change={str(route_changes.get('has_hot_route_counter_change', False)).lower()} "
             f"changed_count={changed_count}"
         )
         if isinstance(changed, dict):
@@ -3138,12 +3169,27 @@ def print_text(payload: dict[str, object]) -> None:
                 "candidate improvements as noise until a route, strategy, or separate "
                 "kernel-level attribution confirms the candidate."
             )
+        if (
+            route_changes.get("has_route_counter_change") is True
+            and route_changes.get("has_hot_route_counter_change") is False
+            and isinstance(candidate_env, dict)
+            and bool(candidate_env)
+            and not has_strategy_change
+            and not has_shape_plan_change
+            and not has_plan_cache_change
+        ):
+            print(
+                "    note: only setup/prewarm route counters changed; treat "
+                "throughput improvements as setup noise until a hot training "
+                "route, strategy, shape, or plan-cache change confirms the candidate."
+            )
     route_gate = payload.get("native_route_change_gate")
     if isinstance(route_gate, dict) and route_gate.get("enabled") is True:
         print(f"  native_route_change_gate: passed={str(route_gate.get('passed', False)).lower()}")
         print(
             "    changes: "
             f"route_counter={str(route_gate.get('has_route_counter_change', False)).lower()} "
+            f"hot_route_counter={str(route_gate.get('has_hot_route_counter_change', False)).lower()} "
             f"strategy={str(route_gate.get('has_strategy_value_change', False)).lower()} "
             f"linear_shape={str(route_gate.get('has_linear_shape_change', False)).lower()} "
             f"cublaslt_plan_cache={str(route_gate.get('has_cublaslt_plan_cache_change', False)).lower()}"
