@@ -388,15 +388,15 @@ keeps train-loss logging disabled, and reports
 "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"` when active.
 Set `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` only to compare
 against the older generic no-loss CE+dlogits kernel.
-Because this route is a default optimizer-only CE path rather than a narrow
-experimental probe, the paired SM120 wrapper also gates
-`stage.block_backward.total_ms` for stage-timed reruns of
-`lm_head_ce_no_loss_default_specialized`.
+The paired SM120 wrapper treats this route as an LM-head candidate for strict
+stage-timed gates. It still records whole-loop and block-stage ratios, but does
+not reject the default-specialized CE route for unrelated block-backward timing
+variance.
 The 2026-06-24 CUDA 13.3 dedicated RTX 5090 same-script confirmation kept this
-as the default: the profile passed at `0.974381x` train-loop wall,
-`0.979044x` steady-state CUDA-event wall, `1.026347x` tokens/sec,
-`0.912845x` LM-head backward, and `0.551704x` LM-head CE versus the older
-generic no-loss CE+dlogits path.
+as the default on the rebuilt 32768-row default: the profile measured
+`0.982840x` train-loop wall, `0.978568x` steady-state CUDA-event wall,
+`1.017518x` tokens/sec, `0.912973x` LM-head backward, and `0.551519x` LM-head CE
+versus the older generic no-loss CE+dlogits path.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
@@ -608,17 +608,17 @@ environment. The tuple matches the `linear_shape_stats` convention and only
 gates forward/fused-GELU TK calls with fallback paths. CUDA 13.3 builds now try
 the TK BF16 forward bridge by default for no-bias BF16-input/BF16-weight/
 BF16-output GEMMs, including the padded LM-head logits shape
-`50304,49152,768,T,N` for the current default LM-head row chunk, before falling
-back to cuBLAS GEMMEx. To reproduce the older GEMMEx route for paired
+`50304,32768,768,T,N` for the current default LM-head row chunk, before falling
+back to cuBLAS GEMMEx. To reproduce the rejected GEMMEx route for paired
 comparisons, set
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N` or
-`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`; the older
-32768-row bisection tuple remains
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. The
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N` or
+`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`; the
+49152-row tuple is only for the rejected historical row-chunk route. The
 current-shape fallback profile is rejected by default: the CUDA 13.3 dedicated
-RTX 5090 2-step, 2-sample stage-timed gate moved `lm_head_logits_tk_gemm_count`
-from 32 to 16 but regressed train-loop wall time to `1.005968x`, block backward
-to `1.009906x`, and MLP projection to `1.000576x`.
+RTX 5090 rebuilt 3-step, 2-sample stage-timed gate moved
+`lm_head_logits_tk_gemm_count` from 48 to 0 but regressed train-loop wall time
+to `1.003097x`, steady-state CUDA-event step time to `1.000836x`, block
+backward to `1.010331x`, and MLP projection to `1.004728x`.
 Native GPT runtime JSON also reports `lm_head_logits_tk_gemm_count`,
 `lm_head_logits_cublaslt_gemm_count`, and
 `lm_head_logits_bf16_gemm_count`, so `lm_head_logits_linear_strategy` identifies

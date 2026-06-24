@@ -609,16 +609,15 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. Use
-`lm_head_logits_bf16_fallback_32768` for the current default 32768-row LM-head
-logits shape with `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`.
-Use `lm_head_logits_bf16_fallback_49152` only for the rejected historical
-49152-row LM-head chunk with
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`.
-That larger-shape fallback is rejected by default: the CUDA 13.3 dedicated
-RTX 5090 2-step, 2-sample stage-timed gate moved
-`lm_head_logits_tk_gemm_count` from 32 to 16 but regressed train-loop wall time
-to `1.005968x`, block backward to `1.009906x`, and MLP projection to
-`1.000576x`.
+`lm_head_logits_bf16_fallback_32768` only to reproduce the rejected BF16 GEMMEx
+fallback for the current default 32768-row LM-head logits shape; it expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`.
+The CUDA 13.3 dedicated RTX 5090 rebuilt 3-step, 2-sample stage-timed gate moved
+`lm_head_logits_tk_gemm_count` from 48 to 0 but rejected the fallback at
+`1.003097x` train-loop wall, `1.000836x` steady-state CUDA-event step time,
+`1.010331x` block backward, and `1.004728x` MLP projection. Use
+`lm_head_logits_bf16_fallback_49152` only for the rejected historical 49152-row
+LM-head chunk with `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`.
 Use
 `qkv_forward_bf16_fallback_65536` to disable the TK forward route for the
 current packed-QKV forward shape with
@@ -2298,10 +2297,11 @@ changes. This prevents no-loss training benchmarks from being misread as fused
 row-loss/loss-bin runs.
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` is the default for
 that no-loss path after the RTX 5090 gates passed. A 2026-06-24 CUDA 13.3
-same-script confirmation on the dedicated compute GPU measured the specialized
-Tile kernel at `0.974381x` train-loop wall, `0.979044x` steady-state CUDA-event
-wall, `1.026347x` tokens/sec, `0.912845x` LM-head backward, and `0.551704x`
-LM-head CE versus the older generic no-loss kernel. The named wrapper profile
+same-script confirmation on the rebuilt 32768-row default measured the
+specialized Tile kernel at `0.982840x` train-loop wall, `0.978568x`
+steady-state CUDA-event wall, `1.017518x` tokens/sec, `0.912973x` LM-head
+backward, and `0.551519x` LM-head CE versus the older generic no-loss kernel.
+The named wrapper profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
 forces the baseline to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`,
 keeps `--train-loss-every-steps 0`, and reports
@@ -2310,9 +2310,9 @@ keeps `--train-loss-every-steps 0`, and reports
 "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"`. Set
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` only to compare
 against the older generic no-loss CE+dlogits kernel.
-The wrapper treats that default-route profile as a whole-loop promotion check:
-stage-timed runs also gate `stage.block_backward.total_ms`, so a narrow LM-head
-CE win cannot hide an unrelated block-backward regression.
+The wrapper treats that default-route profile as an LM-head candidate for strict
+stage-timed gates; it still records whole-loop and block-stage ratios, but does
+not reject the default-specialized CE route for unrelated block-stage variance.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,

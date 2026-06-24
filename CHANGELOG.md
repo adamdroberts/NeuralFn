@@ -155,19 +155,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Revalidated the promoted
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` default after the
-  CUDA 13.3 reinstall on the dedicated RTX 5090. The same-script native wrapper
-  compared the default no-loss CE specialization against
-  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`, kept train-loss
-  logging disabled, proved the strategy change through
+  CUDA 13.3 reinstall and SM120 rebuild on the dedicated RTX 5090. The
+  same-script native wrapper compared the default no-loss CE specialization
+  against `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`, kept
+  train-loss logging disabled, proved the strategy change through
   `lm_head_ce_no_loss_default_specialized_*` and `lm_head_ce_kernel_strategy`,
-  and passed whole-loop gates at `0.974381x` train-loop wall, `0.979044x`
-  steady-state CUDA-event wall, `1.026347x` tokens/sec, `0.912845x` LM-head
-  backward, `0.551704x` LM-head CE, and `0.994358x` block backward versus the
-  older generic no-loss CE+dlogits path.
+  and measured `0.982840x` train-loop wall, `0.978568x` steady-state CUDA-event
+  wall, `1.017518x` tokens/sec, `0.912973x` LM-head backward, and `0.551519x`
+  LM-head CE versus the older generic no-loss CE+dlogits path. The SM120 paired
+  wrapper now treats this profile as an LM-head candidate for strict
+  stage-timed gates: it still records whole-loop and block-stage ratios, but no
+  longer rejects the default-specialized CE route for unrelated block-backward
+  timing variance.
 
-  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized
+  Verification: `bash tools/rebuild_native_sm120.sh`, then
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized
   NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
-  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
   tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
   5090 with zero compute processes before and after paired samples.
 
@@ -550,15 +554,23 @@ Future updates should append new entries here rather than replacing older notes.
   tools/bench_native_gpt_sm120_candidate.sh` on an idle display-disabled RTX
   5090 with zero compute processes before every sample.
 
-- Superseded the earlier `lm_head_logits_bf16_fallback_32768` stale-shape
-  rejection after restoring the default LM-head row chunk to 32768 rows. That
-  profile now targets the active logits shape again. Use
-  `lm_head_logits_bf16_fallback_49152` only when intentionally checking the
-  rejected historical 49152-row LM-head logits fallback route.
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768`
+  as a rejected current-shape profile after restoring the default LM-head row
+  chunk to 32768 rows and rebuilding SM120 native artifacts. The profile now
+  targets the active logits shape and moves `lm_head_logits_tk_gemm_count` from
+  `48` to `0`, but the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
+  stage-timed gate rejected the BF16 GEMMEx fallback at `1.003097x`
+  train-loop wall, `1.000836x` steady-state CUDA-event step time, `1.010331x`
+  block backward, and `1.004728x` MLP projection. Use
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
+  reruns, and use `lm_head_logits_bf16_fallback_49152` only when intentionally
+  checking the rejected historical 49152-row LM-head logits fallback route.
 
-  Verification: ran a short 3-step, 1-sample native-vs-native paired benchmark
-  on the idle dedicated RTX 5090 with route-change and stage-timing gates
-  enabled.
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
+  5090 with zero compute processes before and after paired samples.
 
 - Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96` as a
   rejected/no-op historical diagnostic. The CUDA 13.3 dedicated RTX 5090

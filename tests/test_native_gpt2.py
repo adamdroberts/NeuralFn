@@ -1842,7 +1842,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "stage.lm_head_backward.ce.total_ms=1.000",
     ]:
         assert gated_metric in bench_source
-    assert "*LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED*|*lm_head_ce_no_loss_default_specialized*" in bench_source
+    assert "*LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED*|*lm_head_ce_no_loss_default_specialized*" not in bench_source
+    assert "lm_head_logits_bf16_fallback_32768" in bench_source
+    assert "moved lm_head_logits_tk_gemm_count from 48 to 0" in bench_source
+    assert "1.003097x train_loop_wall_ms_per_step" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
     assert '--baseline-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source
     assert '--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source

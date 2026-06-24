@@ -1356,14 +1356,14 @@ CUDA or driver changes. Keep that profile diagnostic-only: the dedicated RTX
 5090 same-script run changed `linear_tk_gemm_count` as expected but rejected it
 at `1.009016x` train-loop wall time and `1.091020x`
 `stage.block_forward.attention.qkv.total_ms`. For the current default LM-head
-logits row chunk, `lm_head_logits_bf16_fallback_49152` expands to
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`; the older
-`lm_head_logits_bf16_fallback_32768` profile remains available for reproducing
-pre-49152 row-chunk measurements. The current-shape fallback is rejected by
-default because the CUDA 13.3 dedicated RTX 5090 stage-timed gate moved
-`lm_head_logits_tk_gemm_count` from 32 to 16 but regressed train-loop wall time
-to `1.005968x`, block backward to `1.009906x`, and MLP projection to
-`1.000576x`.
+logits row chunk, `lm_head_logits_bf16_fallback_32768` expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. It is rejected
+by default because the CUDA 13.3 dedicated RTX 5090 rebuilt 3-step, 2-sample
+stage-timed gate moved `lm_head_logits_tk_gemm_count` from 48 to 0 but regressed
+train-loop wall time to `1.003097x`, steady-state CUDA-event step time to
+`1.000836x`, block backward to `1.010331x`, and MLP projection to `1.004728x`.
+Use `lm_head_logits_bf16_fallback_49152` only for the rejected historical
+49152-row fallback route.
 `lm_head_tk_dweight_32768` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T` for the current
 32768-row LM-head dWeight bucket. Runtime JSON reports
@@ -1615,9 +1615,12 @@ That default no-loss CE path is
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized` to
 compare it against the older generic no-loss CE+dlogits kernel. The 2026-06-24
-CUDA 13.3 dedicated RTX 5090 same-script confirmation passed at `0.974381x`
-train-loop wall, `0.979044x` steady-state CUDA-event wall, `1.026347x`
-tokens/sec, `0.912845x` LM-head backward, and `0.551704x` LM-head CE.
+CUDA 13.3 dedicated RTX 5090 same-script confirmation on the rebuilt 32768-row
+default measured `0.982840x` train-loop wall, `0.978568x` steady-state
+CUDA-event wall, `1.017518x` tokens/sec, `0.912973x` LM-head backward, and
+`0.551519x` LM-head CE. The wrapper still records whole-loop and block-stage
+ratios for this profile, but strict stage gates are LM-head-focused so unrelated
+block-backward timing variance does not reject the default-specialized CE route.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

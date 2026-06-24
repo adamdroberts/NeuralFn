@@ -255,6 +255,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
     ;;
   "lm_head_logits_bf16_fallback_32768"|"lm-head-logits-bf16-fallback-32768")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 rebuilt 3-step, 2-sample stage-timed gate disabled TK for the restored 32768-row LM-head logits shape and moved lm_head_logits_tk_gemm_count from 48 to 0, but rejected the BF16 GEMMEx fallback at 1.003097x train_loop_wall_ms_per_step, 1.000836x steady-state CUDA-event step time, 1.010331x block backward, and 1.004728x MLP projection."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N"
     ;;
   "lm_head_logits_bf16_fallback_49152"|"lm-head-logits-bf16-fallback-49152")
@@ -736,11 +738,6 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             esac
             case "$candidate_gate_text" in
               *BLOCK_*|*block_*|*MLP_*|*mlp_*|*QKV*|*qkv*|*ATTN*|*attn*|*LINEAR_BACKWARD*|*linear_backward*)
-                lm_head_only_candidate_gate=0
-                ;;
-            esac
-            case "$candidate_gate_text" in
-              *LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED*|*lm_head_ce_no_loss_default_specialized*)
                 lm_head_only_candidate_gate=0
                 ;;
             esac

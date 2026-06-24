@@ -1740,6 +1740,38 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert logits_fallback_payload["metric_ratio_gates"]["enabled"] is False
 
+    rejected_logits_fallback_32768_env = os.environ.copy()
+    rejected_logits_fallback_32768_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-logits-fallback-32768.json"
+            ),
+        }
+    )
+
+    rejected_logits_fallback_32768_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_logits_fallback_32768_env,
+    )
+
+    assert rejected_logits_fallback_32768_run.returncode == 2
+    assert "lm_head_logits_bf16_fallback_32768 is a rejected SM120 candidate" in (
+        rejected_logits_fallback_32768_run.stderr
+    )
+    assert "1.003097x train_loop_wall_ms_per_step" in (
+        rejected_logits_fallback_32768_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_logits_fallback_32768_run.stderr
+    )
+
     logits_fallback_32768_output_path = (
         tmp_path / "candidate-logits-fallback-32768-dry-run.json"
     )
