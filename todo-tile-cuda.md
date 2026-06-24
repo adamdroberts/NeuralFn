@@ -135,6 +135,22 @@ Real training tensors must not pass through graph editor node objects.
     `stage.block_backward.mlp_proj.total_ms=1.001043x`. Keep it
     diagnostic-only; it is neither a startup fix nor a parity-closing hot
     kernel route.
+  - 2026-06-24 refreshed the current stage-timed parity sample after the
+    LM-head microbench graph-counter wiring:
+    `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=1
+    NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_STAGE_TIMING=1
+    NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0
+    NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_after_graph_microbench_20260624.json
+    bash tools/bench_native_gpt_sm120_parity.sh`. The dedicated RTX 5090 had
+    display disabled, zero compute processes, and 0% utilization before/after
+    the sample. llm.kittens measured `2467.650000 ms/step`; NeuralFn measured
+    `2529.723333 ms/step`, or `1.025155x` train-loop wall, `1.014369x`
+    steady-state CUDA-event wall, and `0.975088x` tokens/sec. Current hot
+    NeuralFn buckets over three steps remain
+    `stage.block_backward.total_ms=3771.620`,
+    `stage.train.model_forward.total_ms=1982.190`, and
+    `stage.lm_head_backward.total_ms=1755.510`, with LM-head split across
+    logits `522.590`, CE `207.662`, dHidden `532.341`, and dWeight `488.064`.
 
 ## Native C++ trainer ABI
 
