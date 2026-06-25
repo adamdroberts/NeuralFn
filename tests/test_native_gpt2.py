@@ -2141,6 +2141,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_prob_only_combined_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1",
         "lm_head_prob_only_combined_corrections_threads_512": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
+        "lm_head_ce_no_loss_vec8_normal_store_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
@@ -2171,6 +2172,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0" in bench_source
     assert "STRICT_GROUPED_CUBLASLT_PROBE=1" in bench_source
     assert "required cuBLASLt grouped probe failed" in bench_source
     assert "grouped layout and grouped matmul probe statuses are both 0" in bench_source
@@ -8231,6 +8233,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
+    assert "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in kernels_text
+    assert "lm_head_ce_no_loss_vec8_normal_store_specialized_enabled" in kernels_text
     assert "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in kernels_text
     assert "lm_head_prob_only_target_correction_threads()" in kernels_text
     assert "return 512;" in kernels_text
@@ -8240,6 +8246,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_default_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_no_loss_default_specialized_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED" in gpt2_source_text
+    assert "lm_head_ce_no_loss_vec8_normal_store_specialized_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in gpt2_source_text
     assert "lm_head_ce_no_loss_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bins_default_specialized_enabled" in gpt2_source_text
@@ -8262,10 +8270,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "non-reference-cooperative-lm-head-schedule-enabled" in gpt2_source_text
     assert "default-specialized-row-loss-vec8-loads-scalar-stores" in gpt2_source_text
     assert "default-specialized-loss-bins-vec8-loads-scalar-stores" in gpt2_source_text
+    assert "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores" in gpt2_source_text
     assert "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores" in gpt2_source_text
     assert "llmk-style-row-loss-vec8-loads-streaming-vec8-stores" in gpt2_source_text
     assert "llmk-style-loss-bins-vec8-loads-streaming-vec8-stores" in gpt2_source_text
     assert "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_vec8_normal_store_kernel" in kernels_text
     assert "lm_head_classifier_backward_loss_bins_default_bf16_bits_u16_targets_kernel" in kernels_text
     assert "lm_head_classifier_backward_row_losses_llmk_style_bf16_bits_u16_targets_kernel" in kernels_text
     assert "lm_head_classifier_backward_loss_bins_llmk_style_bf16_bits_u16_targets_kernel" in kernels_text

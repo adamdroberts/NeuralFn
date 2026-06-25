@@ -137,6 +137,16 @@ Real training tensors must not pass through graph editor node objects.
     real fused classifier-backward CUDA Tile kernel and flipping
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
     only when the strict microbenchmark passes.
+  - 2026-06-25 added and rejected the opt-in
+    `lm_head_ce_no_loss_vec8_normal_store_specialized` CUDA Tile kernel
+    candidate. It selected the new no-loss CE+dlogits path and changed
+    `lm_head_ce_kernel_strategy` from
+    `no-loss-default-specialized-dlogits-vec8-loads-scalar-stores` to
+    `no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores`, but the
+    3-step, 2-sample stage-timed same-script gate missed strict promotion at
+    `1.001139x` steady-state CUDA-event timing. Keep it rejected unless the
+    CUDA Graph LM-head wrapper is replaced or exposes a separate CE body timing
+    gate.
   - 2026-06-24 hardened `tools/bench_native_gpt_sm120_parity.sh` against
     no-op profile evidence: it now exits before GPU work when
     `NFN_SM120_PARITY_CANDIDATE_PROFILE` or `NFN_SM120_PARITY_PROFILE` is set.

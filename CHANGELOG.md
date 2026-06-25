@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in CUDA Tile no-loss LM-head CE+dlogits kernel candidate for
+  vec8 normal stores. Set
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` or run
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`
+  to select the specialized kernel and report
+  `lm_head_ce_kernel_strategy:
+  "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`. It remains
+  rejected by default because the CUDA 13.3 dedicated RTX 5090 gate selected
+  the new kernel but regressed steady-state CUDA-event timing.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "candidate_wrapper_covers_attention_and_ordering_profiles or sm120 or ce"`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`;
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which rejected promotion at
+  `1.001139x` steady-state CUDA-event timing while changing the CE strategy
+  value from scalar stores to normal vec8 stores.
+
 - Added a targeted failure diagnostic to the SM120 llm.kittens parity wrapper.
   `tools/bench_native_gpt_sm120_parity.sh` still exits nonzero when the metric
   gates fail, but if the emitted JSON proves NeuralFn is already using native
