@@ -1736,9 +1736,10 @@ paired wrapper exposes `bgrad_first_write_direct_qkv_65536`,
 `bgrad_first_write_direct_attn_proj_65536`,
 `bgrad_first_write_direct_mlp_fc_65536`, and
 `bgrad_first_write_direct_mlp_proj_65536` for the dense GPT block shapes. The
-QKV and MLP projection shape profiles are already rejected on the dedicated RTX
-5090 because they moved 36 first-write calls but regressed train-loop or block
-backward timing. The
+QKV, attention projection, MLP FC, and MLP projection shape profiles are
+already rejected on the dedicated RTX 5090 because each moved 36 first-write
+calls but regressed train-loop, LM-head, block-backward, or block-substage
+timing. The
 paired wrapper profile
 `bgrad_first_write_direct` is marked rejected by default: on the dedicated RTX
 5090/CUDA 13.3 gate it changed cuBLASLt bgrad counters, and the 2026-06-25

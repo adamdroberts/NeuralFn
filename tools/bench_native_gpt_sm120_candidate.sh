@@ -742,9 +742,13 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,2304,65536,N,T"
     ;;
   "bgrad_first_write_direct_attn_proj_65536"|"bgrad-first-write-direct-attn-proj-65536"|"attn_proj_bgrad_first_write_direct"|"attn-proj-bgrad-first-write-direct")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate moved 36 attention-projection first-write BGRADB calls to direct bias writes, but regressed train_loop_wall_ms_per_step to 1.017045x, LM-head backward to 1.000402x, and block backward to 1.033149x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,768,65536,N,T"
     ;;
   "bgrad_first_write_direct_mlp_fc_65536"|"bgrad-first-write-direct-mlp-fc-65536"|"mlp_fc_bgrad_first_write_direct"|"mlp-fc-bgrad-first-write-direct")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate moved 36 MLP-FC first-write BGRADB calls to direct bias writes, but regressed train_loop_wall_ms_per_step to 1.012986x, LM-head backward to 1.000314x, block backward to 1.025149x, and MLP projection total to 1.059115x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,3072,65536,N,T"
     ;;
   "bgrad_first_write_direct_mlp_proj_65536"|"bgrad-first-write-direct-mlp-proj-65536"|"mlp_proj_bgrad_first_write_direct"|"mlp-proj-bgrad-first-write-direct")
