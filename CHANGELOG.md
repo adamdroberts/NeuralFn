@@ -16,8 +16,14 @@ Future updates should append new entries here rather than replacing older notes.
   current parity work is steady-state block/LM-head kernel throughput and the
   no-argument sweep should launch only runnable profiles.
 
-  Verification: `bash -n tools/sweep_native_gpt_sm120_candidates.sh` and the
-  focused pytest coverage for the sweep defaults were run.
+  Verification: `bash -n tools/sweep_native_gpt_sm120_candidates.sh`, focused
+  pytest coverage for the sweep defaults, and a one-step CUDA smoke with
+  `NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0
+  NFN_SM120_NATIVE_SWEEP_OUT_DIR=/tmp/nfn_sm120_sweep_smoke
+  bash tools/sweep_native_gpt_sm120_candidates.sh` were run. The smoke passed
+  `qkv_dinput_ln128`, `lm_head_loss_bins`, and `cublaslt_grouped_probe`.
 
 - Fixed the dense GPT lower-memory residual1-cache-off diagnostic route. When
   `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` is used with saved packed
