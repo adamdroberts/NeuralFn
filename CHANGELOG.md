@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Printed native hot-stage ratio rankings in same-script paired benchmark
+  output. `tools/paired_kernel_speed.py` now prints the already-recorded
+  `native_hot_stage_ratios` section after `native_hot_summary`, including the
+  hottest candidate stages, largest regressions, and largest improvements by
+  candidate-over-baseline ratio. The JSON contract is unchanged; this makes the
+  RTX 5090 SM120 candidate-vs-baseline decision readable from the terminal log
+  without opening the sidecar artifact.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_prints_native_hot_summary
+  -q`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k "paired_kernel_speed_tool"`;
+  `python -m py_compile tools/paired_kernel_speed.py`.
+
 - Added structured hot-stage summaries to same-script paired benchmark JSON.
   `tools/paired_kernel_speed.py` now emits `native_hot_stage_ratios`, derived
   from the existing interleaved `stage.*.total_ms` native metrics, with

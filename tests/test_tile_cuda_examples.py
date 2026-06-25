@@ -4699,6 +4699,10 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "setup.float_arena_materialize.total_ms" in proc.stdout
     assert "setup.cublaslt_plan_prewarm.total_ms" in proc.stdout
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms" in proc.stdout
+    assert "native_hot_stage_ratios:" in proc.stdout
+    assert "top_candidate_total_ms:" in proc.stdout
+    assert "top_regressions:" in proc.stdout
+    assert "candidate_over_baseline_mean=1.030928x" in proc.stdout
     assert (
         "ratio train_loop_cuda_event_steady_state_wall_ms_per_step: "
         "mean=1.016304"

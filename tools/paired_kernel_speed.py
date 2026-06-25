@@ -3234,6 +3234,46 @@ def summarize_native_hot_stage_ratios(
     }
 
 
+def _print_native_hot_stage_ratio_row(row: object) -> None:
+    if not isinstance(row, dict):
+        return
+    metric = row.get("metric")
+    baseline = row.get("baseline_mean_ms")
+    candidate = row.get("candidate_mean_ms")
+    delta = row.get("delta_mean_ms")
+    ratio = row.get("candidate_over_baseline_mean")
+    if not isinstance(metric, str):
+        return
+    fragments: list[str] = []
+    if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+        fragments.append(f"candidate_mean_ms={candidate:.6f}")
+    if isinstance(baseline, (int, float)) and not isinstance(baseline, bool):
+        fragments.append(f"baseline_mean_ms={baseline:.6f}")
+    if isinstance(delta, (int, float)) and not isinstance(delta, bool):
+        fragments.append(f"delta_mean_ms={delta:.6f}")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool):
+        fragments.append(f"candidate_over_baseline_mean={ratio:.6f}x")
+    reference_ratio = row.get("candidate_over_reference_mean")
+    if isinstance(reference_ratio, (int, float)) and not isinstance(reference_ratio, bool):
+        fragments.append(f"candidate_over_reference_mean={reference_ratio:.6f}x")
+    if fragments:
+        print(f"      {metric}: " + " ".join(fragments))
+
+
+def print_native_hot_stage_ratios(payload: dict[str, object]) -> None:
+    ratios = payload.get("native_hot_stage_ratios")
+    if not isinstance(ratios, dict) or not ratios.get("enabled"):
+        return
+    print("  native_hot_stage_ratios:")
+    for label in ("top_candidate_total_ms", "top_regressions", "top_improvements"):
+        rows = ratios.get(label)
+        if not isinstance(rows, list) or not rows:
+            continue
+        print(f"    {label}:")
+        for row in rows:
+            _print_native_hot_stage_ratio_row(row)
+
+
 def _first_metric_value(
     values: dict[str, object],
     key: str,
@@ -4130,6 +4170,7 @@ def print_text(payload: dict[str, object]) -> None:
             f"min={stats['min']:.6f} max={stats['max']:.6f}"
         )
     print_native_hot_summary(payload)
+    print_native_hot_stage_ratios(payload)
     print_lm_head_true_fused_target(payload)
     print_lm_head_true_fused_gate(payload)
     for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):

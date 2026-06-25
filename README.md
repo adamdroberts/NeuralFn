@@ -741,12 +741,13 @@ attribute the current RTX 5090 gap without opening sidecar JSON by hand. The
 same text summary also surfaces optimizer-step support stages:
 `stage.final_norm_backward.total_ms`, `stage.embedding_backward.total_ms`,
 `stage.gradient_zero.total_ms`, `stage.gradient_clip.total_ms`, and
-`stage.adamw_update.total_ms`. The paired JSON additionally includes
-`native_hot_stage_ratios`, a structured summary derived from the same
+`stage.adamw_update.total_ms`. The paired text output and JSON additionally
+include `native_hot_stage_ratios`, a structured summary derived from the same
 interleaved stage metrics. It ranks `top_candidate_total_ms`,
 `top_regressions`, and `top_improvements` so reviewers can see the hottest
-candidate stages and the largest candidate-over-baseline deltas without
-post-processing the appended profile JSON files.
+candidate stages and the largest candidate-over-baseline deltas directly in
+the same-script benchmark output, without post-processing the appended profile
+JSON files.
 Dense GPT native JSON also reports block dInput route counters:
 `block_backward_dinput_tk_gemm_count`,
 `block_backward_dinput_cublaslt_gemm_count`, and
