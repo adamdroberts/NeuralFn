@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the native trainer's existing arena allocation sub-timers to the paired
+  benchmark hot summary. `tools/paired_kernel_speed.py` now prints
+  `float_arena_cuda_malloc_wall_ms`,
+  `float_arena_pointer_assign_wall_ms`,
+  `uint16_arena_cuda_malloc_wall_ms`,
+  `uint16_arena_pointer_assign_wall_ms`, and the combined-arena assignment
+  equivalents alongside `setup.float_arena_materialize.total_ms` and
+  `setup.uint16_arena_materialize.total_ms`. This preserves trainer setup
+  accounting while making startup-only runs show whether arena materialization
+  time is CUDA allocation or host pointer binding.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup
+  NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_linked_startup_arena_breakdown.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which passed the startup
+  gate and showed the arena allocation/binding sub-timers in
+  `native_hot_summary`; the run attributed almost all float and uint16 arena
+  materialization time to CUDA allocation (`195.586 ms` candidate float arena,
+  `130.185 ms` candidate uint16 arena) rather than host pointer binding
+  (`0.002985 ms` and `0.000430 ms` respectively).
+
 - Extended the SM120 parity wrapper sidecar diagnostic to include stage-timing
   rankings when `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled. Failed
   llm.kittens parity runs now print the largest candidate native stages from

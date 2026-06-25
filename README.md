@@ -215,6 +215,12 @@ visible in the same script output as the kernel parity failure. When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and
 LM-head buckets can be ranked without opening the sidecar JSON manually. On the
+paired native-vs-native and native-vs-llm.kittens summaries, startup hot
+metrics now include the native trainer's existing arena sub-timers
+`float_arena_cuda_malloc_wall_ms`, `float_arena_pointer_assign_wall_ms`,
+`uint16_arena_cuda_malloc_wall_ms`, `uint16_arena_pointer_assign_wall_ms`, and
+the combined-arena equivalents, so startup work can distinguish CUDA allocation
+cost from pointer binding cost. On the
 CUDA 13.3 dedicated RTX 5090 recheck, disabling NeuralFn train-loop event
 timing, prewarming the LM-head graph, and forcing the cooperative sequence
 wrapper all still failed the same-script llm.kittens parity gate. Disabling the

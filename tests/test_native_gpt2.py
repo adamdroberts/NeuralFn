@@ -2134,6 +2134,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         encoding="utf-8"
     )
     speed_source = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
+    assert "NATIVE_HOT_SUMMARY_METRIC_KEYS" in speed_source
+    assert "float_arena_cuda_malloc_wall_ms" in speed_source
+    assert "float_arena_pointer_assign_wall_ms" in speed_source
+    assert "uint16_arena_cuda_malloc_wall_ms" in speed_source
+    assert "uint16_arena_pointer_assign_wall_ms" in speed_source
+    assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
+    assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
 
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
