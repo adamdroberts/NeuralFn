@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the standalone LM-head backward microbenchmark JSON so the strict
+  fused candidate symbol reports the exact remaining replacement target instead
+  of only saying that the current route is a wrapper. The JSON now includes
+  `true_fused_replacement_required`, `next_required_symbol`,
+  `next_required_capability_symbol`, `next_required_path_class`,
+  `next_required_kernel_body:
+  row-chunked-ce-dhidden-dweight-single-tile-kernel`, and a
+  `candidate_component_gap` block comparing the candidate iteration time with
+  the measured CE, dHidden, and dWeight reference components. This keeps the
+  CUDA Graph replay route diagnostic-only until it is replaced by a bounded
+  Tile-CUDA kernel body that co-schedules CE/dlogits, dHidden, and dWeight for
+  the resident LM-head row chunk.
+
+  Verification: `bash -n tools/bench_lm_head_backward_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
+  -q`; `CUDA_VISIBLE_DEVICES=0
+  NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_true_fused_target_current.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which reported
+  `candidate_path_class: diagnostic-cuda-graph-wrapper`,
+  `true_fused_replacement_required: true`, and
+  `candidate_component_gap` ratios for CE, dHidden, and dWeight.
+
 - Fixed generated metric gates in the SM120 native candidate wrapper so short
   smoke runs only gate metrics they can produce. Automatically generated or
   profile-provided gates now drop

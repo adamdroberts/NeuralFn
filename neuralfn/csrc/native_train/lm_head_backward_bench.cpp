@@ -653,6 +653,8 @@ std::string render_json(
         candidate.ce_launch_count == 0 &&
         candidate.dhidden_launch_count == 0 &&
         candidate.dweight_launch_count == 0;
+    const bool strict_candidate_symbol =
+        candidate.symbol == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
     const std::string candidate_path_class =
         true_fused_capability
             ? "strict-true-fused-tile-kernel"
@@ -661,6 +663,21 @@ std::string render_json(
                    : (candidate_sequence_wrapper_only
                           ? "diagnostic-sequence-wrapper"
                           : "unknown"));
+    const bool true_fused_replacement_required =
+        strict_candidate_symbol &&
+        (!true_fused_capability || candidate_path_class != "strict-true-fused-tile-kernel");
+    const double candidate_ce_component_ratio =
+        reference_components.ce_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_components.ce_ms_per_iter
+            : 0.0;
+    const double candidate_dhidden_component_ratio =
+        reference_components.dhidden_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_components.dhidden_ms_per_iter
+            : 0.0;
+    const double candidate_dweight_component_ratio =
+        reference_components.dweight_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_components.dweight_ms_per_iter
+            : 0.0;
     auto variant_json = [](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
@@ -709,6 +726,21 @@ std::string render_json(
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
         << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_path_class\": \"" << json_escape(candidate_path_class) << "\",\n"
+        << "  \"true_fused_replacement_required\": "
+        << (true_fused_replacement_required ? "true" : "false") << ",\n"
+        << "  \"next_required_symbol\": \"nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16\",\n"
+        << "  \"next_required_capability_symbol\": \"nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused\",\n"
+        << "  \"next_required_path_class\": \"strict-true-fused-tile-kernel\",\n"
+        << "  \"next_required_kernel_body\": \"row-chunked-ce-dhidden-dweight-single-tile-kernel\",\n"
+        << "  \"next_required_kernel_body_reason\": \"replace the diagnostic CUDA Graph replay or sequence wrapper with a bounded Tile-CUDA kernel body that co-schedules CE/dlogits, dHidden, and dWeight for the resident LM-head row chunk\",\n"
+        << "  \"candidate_component_gap\": {"
+        << "\"candidate_to_reference_ce_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_ce_component_ratio << ","
+        << "\"candidate_to_reference_dhidden_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_dhidden_component_ratio << ","
+        << "\"candidate_to_reference_dweight_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_dweight_component_ratio
+        << "},\n"
         << "  \"reference_components\": {"
         << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.logits_ms_per_iter << ","
         << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.ce_ms_per_iter << ","

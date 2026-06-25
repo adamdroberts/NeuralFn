@@ -334,7 +334,12 @@ CUDA/cuBLAS/TK setup. The same JSON also reports
 `candidate_sequence_wrapper_only` and
 `candidate_strict_symbol_is_placeholder_sequence`, plus
 `candidate_cuda_graph_wrapper_only` for the current strict symbol that replays
-captured CE, dHidden, and dWeight work through a CUDA Graph. This makes
+captured CE, dHidden, and dWeight work through a CUDA Graph. When the strict
+symbol is still not a real fused Tile kernel, the JSON sets
+`true_fused_replacement_required=true`, reports `candidate_component_gap`
+ratios against CE, dHidden, and dWeight component timings, and names the next
+required body as `row-chunked-ce-dhidden-dweight-single-tile-kernel` with the
+required symbol and capability flag. This makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
 CUDA Graph wrappers, and a future real fused kernel. The bench resets
 Tile-CUDA LM-head counters after warmup and before timed iterations, so warmup
