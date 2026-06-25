@@ -207,11 +207,15 @@ detailed capability JSON instead of entering training. The
 `tools/bench_native_gpt_sm120_parity.sh` wrapper preserves its failing exit code
 when NeuralFn misses the llm.kittens gate, but now adds a targeted diagnostic
 when the paired JSON proves the run is native Tile-backed and the remaining
-blocker is this wrapper-only LM-head route. On the CUDA 13.3 dedicated RTX 5090
-recheck, disabling NeuralFn train-loop event timing, prewarming the LM-head
-graph, and forcing the cooperative sequence wrapper all still failed the
-same-script llm.kittens parity gate. Disabling the cooperative LM-head wrapper
-entirely is also catalogued as
+blocker is this wrapper-only LM-head route. The same failure diagnostic now
+also reads the newest candidate native profile sidecar from
+`--append-native-profile-json-dir` and prints the top setup timings plus float
+and uint16 arena allocation families, so startup materialization bottlenecks are
+visible in the same script output as the kernel parity failure. On the CUDA
+13.3 dedicated RTX 5090 recheck, disabling NeuralFn train-loop event timing,
+prewarming the LM-head graph, and forcing the cooperative sequence wrapper all
+still failed the same-script llm.kittens parity gate. Disabling the cooperative
+LM-head wrapper entirely is also catalogued as
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off`; the
 CUDA 13.3 dedicated RTX 5090 10-step parity gate ran the direct
 CE+dHidden+dWeight schedule but regressed NeuralFn versus llm.kittens to

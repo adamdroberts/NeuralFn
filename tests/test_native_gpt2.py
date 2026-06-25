@@ -753,6 +753,16 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'CANDIDATE_PROFILE_RAW="${NFN_SM120_PARITY_CANDIDATE_PROFILE:-${NFN_SM120_PARITY_PROFILE:-}}"' in parity_bench
     assert "NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench
     assert "Refusing to run because a parity profile would otherwise be ignored" in parity_bench
+    assert "def bool_value(value)" in parity_bench
+    assert 'lowered in {"1", "true", "yes", "on"}' in parity_bench
+    assert "def candidate_profile_path()" in parity_bench
+    assert 'glob.glob(os.path.join(profile_dir, "candidate_*.json"))' in parity_bench
+    assert "Candidate native profile sidecar:" in parity_bench
+    assert "Top candidate setup timings:" in parity_bench
+    assert "float_arena_request_stats" in parity_bench
+    assert "uint16_arena_request_stats" in parity_bench
+    assert "top_families" in parity_bench
+    assert "total_allocated_bytes" in parity_bench
     assert "nfn_gpt_native_train_linked" in candidate_bench
     assert "NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO" in candidate_bench
     assert "NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO" in candidate_bench

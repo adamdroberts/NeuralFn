@@ -268,7 +268,9 @@ set -e
 
 if [[ "$paired_status" != "0" && -f "$JSON_OUT" ]]; then
   python - "$JSON_OUT" >&2 <<'PY'
+import glob
 import json
+import os
 import sys
 
 path = sys.argv[1]
@@ -302,14 +304,100 @@ def ratio_mean(name):
         return value.get("mean")
     return None
 
+def bool_value(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+def format_ms(value):
+    try:
+        return f"{float(value):.3f} ms"
+    except (TypeError, ValueError):
+        return "n/a"
+
+def format_gib(value):
+    try:
+        return f"{float(value) / (1024.0 ** 3):.3f} GiB"
+    except (TypeError, ValueError):
+        return "n/a"
+
+def candidate_profile_path():
+    profile_dir = data.get("append_native_profile_json_dir")
+    if not isinstance(profile_dir, str) or not profile_dir:
+        return None
+    matches = glob.glob(os.path.join(profile_dir, "candidate_*.json"))
+    if not matches:
+        return None
+    return max(matches, key=os.path.getmtime)
+
+def print_profile_summary():
+    sidecar = candidate_profile_path()
+    if sidecar is None:
+        return
+    try:
+        with open(sidecar, "r", encoding="utf-8") as handle:
+            profile = json.load(handle)
+    except Exception as exc:  # pragma: no cover - best-effort diagnostic.
+        print(f"  Candidate native profile summary unavailable: {exc}")
+        return
+    print("  Candidate native profile sidecar:")
+    print(f"    {sidecar}")
+    timing = profile.get("timing") if isinstance(profile, dict) else {}
+    setup = timing.get("setup_timing") if isinstance(timing, dict) else None
+    if isinstance(setup, list) and setup:
+        top_setup = sorted(
+            (item for item in setup if isinstance(item, dict)),
+            key=lambda item: float(item.get("total_ms") or 0.0),
+            reverse=True,
+        )[:5]
+        if top_setup:
+            print("  Top candidate setup timings:")
+            for item in top_setup:
+                print(
+                    "    "
+                    f"{item.get('name', 'unknown')}: "
+                    f"{format_ms(item.get('total_ms'))} "
+                    f"(count={item.get('count', 'n/a')})"
+                )
+    for label, key in (
+        ("float arena", "float_arena_request_stats"),
+        ("uint16 arena", "uint16_arena_request_stats"),
+    ):
+        stats = profile.get(key) if isinstance(profile, dict) else None
+        if not isinstance(stats, dict):
+            continue
+        print(
+            f"  Candidate {label}: "
+            f"allocated={format_gib(stats.get('total_allocated_bytes'))}, "
+            f"requested={format_gib(stats.get('total_requested_bytes'))}, "
+            f"requests={stats.get('request_count', 'n/a')}"
+        )
+        families = stats.get("top_families")
+        if isinstance(families, list):
+            for family in families[:3]:
+                if not isinstance(family, dict):
+                    continue
+                print(
+                    "    "
+                    f"{family.get('family', 'unknown')}: "
+                    f"{format_gib(family.get('bytes'))} "
+                    f"(requests={family.get('request_count', 'n/a')})"
+                )
+
 if gates.get("passed") is False:
     strategy = scalar_value("lm_head_cooperative_backward_strategy")
     fused_available = scalar_value("lm_head_cooperative_backward_fused_kernel_available")
     graph_enabled = scalar_value("lm_head_cooperative_backward_cuda_graph_enabled")
     if (
         strategy == "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel"
-        and fused_available is False
-        and graph_enabled is True
+        and bool_value(fused_available) is False
+        and bool_value(graph_enabled) is True
     ):
         wall_ratio = ratio_mean("train_loop_wall_ms_per_step")
         steady_ratio = ratio_mean("train_loop_cuda_event_steady_state_wall_ms_per_step")
@@ -331,6 +419,7 @@ if gates.get("passed") is False:
         print("  Next implementation target: replace nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16")
         print("  with a real CUDA Tile fused classifier-backward kernel and make")
         print("  nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() return 1 only then.")
+        print_profile_summary()
 PY
 fi
 

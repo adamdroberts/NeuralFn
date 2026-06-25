@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded the SM120 llm.kittens parity wrapper failure diagnostic. When
+  `tools/bench_native_gpt_sm120_parity.sh` fails a metric gate and the paired
+  JSON proves NeuralFn is on the native Tile CUDA Graph LM-head wrapper route,
+  the wrapper still exits nonzero but now also loads the newest
+  `candidate_*.json` sidecar from `--append-native-profile-json-dir`, prints
+  the highest setup timing buckets, and reports the largest float/uint16 arena
+  allocation families. This keeps same-script parity failures actionable:
+  train-loop kernel regressions, first-step/setup materialization, and arena
+  pressure are visible from one failed run instead of separate manual JSON
+  inspection.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k transformer_lm_supports_linked_tile_ops_loader`;
+  `NFN_SM120_PARITY_STEPS=10 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_profile_diag.json
+  bash tools/bench_native_gpt_sm120_parity.sh`, which preserved the metric-gate
+  failure at `1.022036x` train-loop wall and `1.009141x` steady-state
+  CUDA-event timing while printing the new sidecar setup/arena summary.
+
 - Refreshed the default-off `bf16_attention_grad_out` rejection with current
   CUDA 13.3.33 dedicated RTX 5090 evidence. A 2026-06-25 3-step, 2-sample,
   stage-timed native-vs-native recheck still proves the route switch from
