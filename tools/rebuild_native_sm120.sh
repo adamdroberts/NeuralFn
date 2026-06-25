@@ -33,6 +33,8 @@ esac
 
 NFN_NATIVE_TRAIN_TILE_OPS_OUT="${OUT_DIR}/libnfn_native_train_tile_ops.so" \
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
+# The default SM120 library already carries the TK fused dGELU dInput flags.
+# Keep this sidecar for stale-artifact checks and intentional candidate replay.
 NFN_NATIVE_TRAIN_TILE_OPS_OUT="${OUT_DIR}/libnfn_native_train_tile_ops_tk.so" \
 NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS:--DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1}" \
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"

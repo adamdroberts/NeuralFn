@@ -61,9 +61,13 @@ not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. Set
 binaries without touching the importable SDK extensions. The full native build script rebuilds
 `libnfn_native_train_tile_ops.so` before `nfn_gpt_native_train_linked`, so the
 linked binary preferred by SDK and CLI startup paths is not left pointing at a
-stale Tile ops library. The script defaults to
-`NFN_TILE_CUDA_ARCH=sm_120a` and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
-`NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the TK candidate library flags,
+stale Tile ops library. The default SM120 Tile ops library also defines
+`LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and
+`LLMK_SM120_APPROX_DGELU_TANH=1`, so the linked native trainer gets the
+llm.kittens fused MLP projection dInput+dGELU path without loading the
+diagnostic `_tk` sidecar. The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
+and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
+`NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the diagnostic TK sidecar flags,
 or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed
 artifacts somewhere other than `build/`. After rebuilding, run
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
@@ -2041,7 +2045,17 @@ defines `LLMK_SM120_USE_CUBLASLT_GEMM` by default and normalizes inherited
 for the older float32 row-scan diagnostic build, or override
 `NFN_TILE_CUDA_ARCH` explicitly.
 
-For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and `NFN_TILE_CUDA_EXTRA_LDLIBS`, for example `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`; leave those variables unset for the default supported library. The shared object links with `-Bsymbolic` so candidate C ABI wrappers bind to the candidate library's own C++ kernel implementations even when the benchmark uses a linked native trainer that already contains default Tile symbols.
+For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh`
+accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
+`NFN_TILE_CUDA_EXTRA_LDLIBS`, for example
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_DWEIGHT_SUPER_M=2" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`;
+leave those variables unset for the default supported library. The fused TK
+dGELU dInput macros are part of the default SM120 library now; use the
+`tk_dgelu_dinput` candidate profile only to reproduce the historical
+route-counter comparison against `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0`. The
+shared object links with `-Bsymbolic` so candidate C ABI wrappers bind to the
+candidate library's own C++ kernel implementations even when the benchmark uses
+a linked native trainer that already contains default Tile symbols.
 
 The SM120 bridge initializes the llm.kittens cuBLASLt handles before dispatching
 through the default compile-mode path. Raw TK GEMM bisections that intentionally

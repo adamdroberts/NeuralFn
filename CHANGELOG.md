@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the default SM120 Tile ops build with the documented dense-GPT linked
+  trainer baseline. `tools/build_native_train_tile_ops.sh` now defines
+  `LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and
+  `LLMK_SM120_APPROX_DGELU_TANH=1` for the normal
+  `build/libnfn_native_train_tile_ops.so`, so SDK and CLI runs using
+  `nfn_gpt_native_train_linked` get the llm.kittens fused MLP projection
+  dInput+dGELU path without loading the diagnostic `_tk` sidecar. The sidecar
+  remains in `tools/rebuild_native_sm120.sh` for stale-artifact checks and
+  intentional historical candidate replay.
+
+  Verification: focused linked Tile ops static test, shell syntax checks for
+  the native build scripts, and `git diff --check`.
+
 - Exposed the strict cooperative LM-head backward guard through the public
   Python native-training SDK. `NativeTrainRunConfig` and
   `build_native_train_run_config()` now accept

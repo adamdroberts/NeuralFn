@@ -1248,7 +1248,12 @@ Native dense-GPT JSON also reports `linear_tk_dgelu_dinput_gemm_count`, which
 tracks successful TK fused dInput+dGELU launches separately from the generic
 `linear_tk_gemm_count`. The SM120 candidate wrapper treats this as a route
 counter for compile-time Tile profiles such as `tk_dgelu_dinput` and
-`tk_dgelu_approx_tanh`. Those profiles force the baseline to
+`tk_dgelu_approx_tanh`. The default SM120 Tile ops library now defines
+`LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and
+`LLMK_SM120_APPROX_DGELU_TANH=1`, so SDK runs that use the linked native trainer
+load the fused route from `build/libnfn_native_train_tile_ops.so` without
+requiring `build/libnfn_native_train_tile_ops_tk.so`. Those profiles force the
+baseline to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so paired SDK/CLI runs compare the
 older separate dInput plus GELU-backward path against the fused TK route instead

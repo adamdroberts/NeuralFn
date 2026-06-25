@@ -665,6 +665,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ).read_text(encoding="utf-8")
     build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
+    tile_ops_build = (root / "tools" / "build_native_train_tile_ops.sh").read_text(
+        encoding="utf-8"
+    )
     parity_bench = (root / "tools" / "bench_native_gpt_sm120_parity.sh").read_text(encoding="utf-8")
     candidate_bench = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(encoding="utf-8")
     paired_speed = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
@@ -725,6 +728,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "build_native_train_binding.sh" in rebuild_sm120
     assert "libnfn_native_train_tile_ops_tk.so" in rebuild_sm120
     assert "NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS" in rebuild_sm120
+    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in tile_ops_build
+    assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in tile_ops_build
+    assert tile_ops_build.index("-DLLMK_SM120_USE_CUBLASLT_GEMM") < tile_ops_build.index(
+        "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP"
+    )
     assert "build_linear_backward_bench.sh" in rebuild_sm120
     assert "build_lm_head_backward_bench.sh" in rebuild_sm120
     assert rebuild_sm120.index("build_native_train_tile_ops.sh") < rebuild_sm120.index(
