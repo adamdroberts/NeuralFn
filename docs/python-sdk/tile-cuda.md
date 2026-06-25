@@ -2515,8 +2515,8 @@ fused/cooperative LM-head kernel is integrated.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
-`token_weight_bf16_pattern`, `token_weight_fast_int32`, and
-`token_weight_two_pass_bf16` expand to the
+`token_weight_bf16_pattern`, `token_weight_padded_init`,
+`token_weight_fast_int32`, and `token_weight_two_pass_bf16` expand to the
 matching native GPT token-initializer env flags and are intended for paired
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. The profiles now force explicit
 baseline/candidate envs for default-on switches; for example,
@@ -2550,6 +2550,14 @@ It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 2026-06-25
 `1.001840x` median, and `1.048989x` max. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
 post-kernel-change revalidation.
+`token_weight_padded_init` compares the current conversion-based vector4
+BF16-shadow initializer against
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. The padded kernel now writes
+public-vocab BF16 shadow rows through the precomputed deterministic pattern path
+and zeros padded rows in the same launch, but it remains rejected by default:
+the CUDA 13.3.33 dedicated RTX 5090 2026-06-25 5-sample startup-only gate
+regressed `setup_wall_ms` to `1.010956x` and
+`setup.token_weight_init.total_ms` to `1.009406x`.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
 object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or

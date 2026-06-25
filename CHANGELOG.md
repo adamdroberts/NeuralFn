@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Switched the default-off padded token-weight initializer to the precomputed
+  BF16 pattern writer for public vocab rows. The
+  `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`
+  kernel still initializes public FP32 rows and zeroes the padded-vocab FP32 and
+  BF16 tail in one launch, but it no longer recomputes BF16 conversions for
+  public shadow rows. The SM120 wrapper now has a named rejected
+  `token_weight_padded_init` profile for the route. It remains default-off: the
+  CUDA 13.3.33 dedicated RTX 5090 2026-06-25 5-sample startup-only gate selected
+  the route but still regressed `setup_wall_ms` to `1.010956x` and
+  `setup.token_weight_init.total_ms` to `1.009406x` versus the current
+  conversion-based vector4 BF16-shadow initializer.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init
+  NFN_SM120_NATIVE_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "candidate_wrapper_covers_attention_and_ordering_profiles
+  or packed_qkv_uint16_arena or token_weight"`;
+  default-off benchmark evidence from
+  `NFN_NATIVE_FORCE_REBUILD=1
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1'
+  NFN_SM120_NATIVE_STARTUP_ONLY=1 NFN_SM120_NATIVE_STEPS=0
+  NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_WARMUP=1
+  NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_token_weight_padded_pattern_probe.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the promotion
+  gate as expected with the ratios above.
+
 - Added the same compact route vocabulary to the focused LM-head backward
   microbenchmark. `tools/bench_lm_head_backward_candidate.sh` now emits
   `candidate_path_class` alongside `candidate_sequence_wrapper_only` and

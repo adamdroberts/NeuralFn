@@ -824,6 +824,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms to 1.009464x mean" in candidate_bench
     assert "1.001840x median" in candidate_bench
     assert "1.048989x max" in candidate_bench
+    assert "token_weight_padded_init" in candidate_bench
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
+    assert "setup_wall_ms to 1.010956x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.009406x" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
     assert "setup_wall_ms to 1.009714x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.035894x" in candidate_bench
@@ -7876,6 +7880,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in header_text
     assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in source_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel" in kernels_text
+    padded_token_init_kernel = kernels_text[
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel") :
+        kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
+    ]
+    assert "gpt2_token_weight_init_bf16_pattern4(bucket)" in padded_token_init_kernel
+    assert "gpt2_token_weight_init_bf16_pattern1(bucket)" in padded_token_init_kernel
+    assert "bf16_bits_from_float(value0)" not in padded_token_init_kernel
     assert "adamw_float_update_bf16_shadow_offsets" in gpt2_source_text
     assert "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow" in gpt2_source_text
     assert "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale" in gpt2_source_text

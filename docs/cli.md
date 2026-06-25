@@ -141,7 +141,13 @@ The compiled runtime reports token-weight startup routes with
 `token_weight_padding_zero_launches_elided`. The padded-vocab fused BF16-shadow
 initializer is diagnostic-only and default-off; set
 `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only for paired startup
-bisection after rebuilding the trainer-facing Tile ops library. The
+bisection after rebuilding the trainer-facing Tile ops library. The padded
+kernel writes public-vocab BF16 shadow rows from the precomputed deterministic
+BF16 pattern path and still zeros padded rows in the same launch, but the CUDA
+13.3.33 dedicated RTX 5090 5-sample startup-only gate kept it rejected after
+`setup_wall_ms` measured `1.010956x` and
+`setup.token_weight_init.total_ms` measured `1.009406x` versus the current
+conversion-based vector4 BF16-shadow writer. The
 `token_weight_vector4_strided` paired profile forces baseline
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, so
 the benchmark JSON has a visible strategy-value route change for the hidden
