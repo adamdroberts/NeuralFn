@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the `attention_dprep_grid3d` SM120 native candidate profile to
+  `tools/bench_native_gpt_sm120_candidate.sh`. The profile expands to
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1`, enables attention section
+  timing, and stays rejected/default-off with the existing dedicated RTX 5090
+  evidence: the 3D batch/head/time dprep launch regressed train-loop wall time
+  to `1.008389x` and tokens/sec to `0.991895x` versus the row-linear dprep
+  default.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates
+  -q`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k "native_gpt_sm120_candidate_wrapper"`;
+  `env NFN_SM120_NATIVE_DRY_RUN_PLAN=1 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES=7
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_dprep_grid3d
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_attention_dprep_grid3d_dry_run.json
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Refreshed the rejected `mlp_fc_concurrent_dinput_dweight` native SM120
   profile with current CUDA 13.3.33 dedicated RTX 5090 evidence. The paired
   stage-timed recheck proved the route changed by enabling
