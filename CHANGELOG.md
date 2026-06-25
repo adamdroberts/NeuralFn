@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a top-level `checkpoint_export_enabled` field to dense GPT native
+  runtime JSON, matching the existing plan JSON field. Runtime JSON still
+  reports `final_checkpoint_export_enabled` for older benchmark parsers, so this
+  is an additive contract fix rather than a breaking change.
+
+  Verification: focused source-contract test and linked native startup probe on
+  the dedicated RTX 5090.
+
 - Documented the linked dense GPT native startup path as the default SDK/CLI
   dispatch target when `build/nfn_gpt_native_train_linked` exists. The linked
   binary resolves Tile ops through `RTLD_DEFAULT` instead of dynamic `dlopen`;

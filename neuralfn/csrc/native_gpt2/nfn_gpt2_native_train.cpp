@@ -21791,6 +21791,8 @@ int run_transformer_lm_training_json(
         << "  \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps << ",\n"
         << "  \"train_time_sampling_enabled\": false,\n"
         << "  \"periodic_checkpoint_enabled\": false,\n"
+        << "  \"checkpoint_export_enabled\": "
+        << (final_checkpoint_export_enabled ? "true" : "false") << ",\n"
         << "  \"final_checkpoint_export_enabled\": "
         << (final_checkpoint_export_enabled ? "true" : "false") << ",\n"
         << "  \"checkpoint_export_startup_only_elided\": "

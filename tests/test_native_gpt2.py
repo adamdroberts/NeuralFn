@@ -9162,6 +9162,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--native-cuda-no-checkpoint" in gpt2_source_text
     assert "cfg.write_checkpoint = false" in gpt2_source_text
     assert "checkpoint_export_enabled" in gpt2_source_text
+    assert '"  \\"checkpoint_export_enabled\\": "\n        << (final_checkpoint_export_enabled ? "true" : "false")' in gpt2_source_text
     assert "checkpoint_export_startup_only_elided" in gpt2_source_text
     assert "const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only" in gpt2_source_text
     assert "if (passed && final_checkpoint_export_enabled)" in gpt2_source_text
