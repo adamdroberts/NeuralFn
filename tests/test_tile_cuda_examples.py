@@ -453,6 +453,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "env_or_alias3()" in text
     assert "env_or_alias4()" in text
     assert "env_or_alias5()" in text
+    assert "env_or_alias6()" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_STEPS" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_SAMPLES" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_WARMUP" in text
@@ -517,6 +518,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert '"${paired_args[@]}"' in text
     assert '"${reference_paired_args[@]}"' in text
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in text
+    assert "NFN_SM120_NATIVE_INCLUDE_REFERENCE" in text
     assert "NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE" in text
     assert "NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE" in text
     assert "--reference \"$reference_cmd\"" in text
@@ -540,7 +542,7 @@ def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
             "NFN_SM120_NATIVE_GENERATE_TOKENS": "144",
             "NFN_SM120_NATIVE_CHECKPOINT_EVERY": "0",
             "NFN_SM120_NATIVE_ACTIVATION": "gelu",
-            "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE": "1",
+            "NFN_SM120_NATIVE_INCLUDE_REFERENCE": "1",
             "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
             "LLM_KITTENS_ROOT": str(tmp_path / "llm.kittens"),
         }

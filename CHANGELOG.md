@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` as a short alias for
+  `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` in
+  `tools/bench_native_gpt_sm120_candidate.sh`. The SM120 paired benchmark now
+  accepts either spelling before constructing the llm.kittens `--reference`
+  command, preventing accidental native-vs-native-only runs when using the
+  shorter reference flag. The CUDA 13.3.33 dedicated RTX 5090 rerun confirmed
+  the current native route is still slightly behind llm.kittens on the strict
+  gate: candidate-over-reference train-loop wall per step `1.006913x`,
+  steady-state CUDA-event per step `1.001209x`, and tokens/sec `0.991168x`.
+
+  Verification:
+  `NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Changed top-level `nfn train --base-model ... --dry-run --print-command`
   handling for direct family-native binaries. When a compiled family frontend
   such as `nfn_gpt2_evo_native_train` is available, the wrapper now invokes that

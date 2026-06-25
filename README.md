@@ -657,8 +657,10 @@ candidate wrapper forwards the same checks from
 `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` /
 `NFN_SM120_CANDIDATE_MIN_CANDIDATE_REFERENCE_RATIO`.
 The SM120 native candidate wrapper exposes the same path with
-`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` (or the candidate/parity/generic
-aliases). It builds the reference command from `LLM_KITTENS_ROOT`,
+`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`. The shorter
+`NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` alias is also accepted, as are the
+candidate/parity/generic llm.kittens aliases. It builds the reference command
+from `LLM_KITTENS_ROOT`,
 `LLM_KITTENS_TRAIN_BIN`, `LLM_KITTENS_TINYSTORIES_DIR`,
 `NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR`, and the existing step/sample/checkpoint
 controls, then forwards it to `tools/paired_kernel_speed.py --reference`. Dry
@@ -729,7 +731,8 @@ buckets even if total command timing looks flat. Use
 `NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` or
 `NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO` for lower-bound gates such as
 `train_tokens_per_second=1.000` when a candidate must meet or beat baseline
-throughput. When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` is set, use
+throughput. When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` or
+`NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` is set, use
 `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
 `NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO` and the matching `MIN`
 variables to apply the same gate syntax against `candidate_over_reference`

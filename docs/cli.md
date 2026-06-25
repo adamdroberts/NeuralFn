@@ -798,7 +798,8 @@ adds `reference_seconds`, `reference_over_baseline`,
 cuBLASLt plan attribution remain baseline-vs-candidate because those sections
 are for proving the native route change being promoted.
 For SM120 native candidate wrapper runs, set
-`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` to have the wrapper construct the
+`NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` or
+`NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` to have the wrapper construct the
 llm.kittens GPT-2 reference command and forward it as `--reference`. The wrapper
 uses `LLM_KITTENS_ROOT`, `LLM_KITTENS_TRAIN_BIN`,
 `LLM_KITTENS_TINYSTORIES_DIR`, `NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR`, and the
@@ -1385,7 +1386,8 @@ KEY=VALUE` when the same run must compare current native baseline, native
 candidate, and an external reference without a separate GPU-load window; the
 JSON includes both candidate-over-baseline and candidate-over-reference native
 metric ratios. `tools/bench_native_gpt_sm120_candidate.sh` exposes that path
-with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the lower-priority aliases
+with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the shorter
+`NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` alias and the lower-priority aliases
 `NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
 `NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
 `NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE`, and

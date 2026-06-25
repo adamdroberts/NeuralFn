@@ -88,6 +88,31 @@ env_or_alias5() {
   fi
 }
 
+env_or_alias6() {
+  local primary="$1"
+  local native_alias="$2"
+  local native_candidate_alias="$3"
+  local short_candidate_alias="$4"
+  local parity_alias="$5"
+  local generic_alias="$6"
+  local default_value="$7"
+  if [[ -n "${!primary-}" ]]; then
+    printf '%s' "${!primary}"
+  elif [[ -n "${!native_alias-}" ]]; then
+    printf '%s' "${!native_alias}"
+  elif [[ -n "${!native_candidate_alias-}" ]]; then
+    printf '%s' "${!native_candidate_alias}"
+  elif [[ -n "${!short_candidate_alias-}" ]]; then
+    printf '%s' "${!short_candidate_alias}"
+  elif [[ -n "${!parity_alias-}" ]]; then
+    printf '%s' "${!parity_alias}"
+  elif [[ -n "${!generic_alias-}" ]]; then
+    printf '%s' "${!generic_alias}"
+  else
+    printf '%s' "$default_value"
+  fi
+}
+
 tile_ops_arg_for() {
   local train_bin="$1"
   local tile_ops_lib="$2"
@@ -116,7 +141,7 @@ GENERATE_TOKENS="$(env_or_alias5 NFN_SM120_NATIVE_GENERATE_TOKENS NFN_SM120_NATI
 ACTIVATION="$(env_or_alias5 NFN_SM120_NATIVE_ACTIVATION NFN_SM120_NATIVE_CANDIDATE_ACTIVATION NFN_SM120_CANDIDATE_ACTIVATION NFN_SM120_PARITY_ACTIVATION NFN_SM120_ACTIVATION gelu)"
 JSON_OUT="$(env_or_alias5 NFN_SM120_NATIVE_JSON_OUT NFN_SM120_NATIVE_CANDIDATE_JSON_OUT NFN_SM120_CANDIDATE_JSON_OUT NFN_SM120_PARITY_JSON_OUT NFN_SM120_JSON_OUT "/tmp/nfn_sm120_native_candidate_${STEPS}step.json")"
 PROFILE_DIR_RAW="$(env_or_alias5 NFN_SM120_NATIVE_PROFILE_DIR NFN_SM120_NATIVE_CANDIDATE_PROFILE_DIR NFN_SM120_CANDIDATE_PROFILE_DIR NFN_SM120_PARITY_PROFILE_DIR NFN_SM120_PROFILE_DIR "/tmp/nfn_sm120_native_candidate_profiles_${STEPS}step")"
-INCLUDE_LLMK_REFERENCE="$(env_or_alias5 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE NFN_SM120_INCLUDE_LLMK_REFERENCE 0)"
+INCLUDE_LLMK_REFERENCE="$(env_or_alias6 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE NFN_SM120_NATIVE_INCLUDE_REFERENCE NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE NFN_SM120_INCLUDE_LLMK_REFERENCE 0)"
 REFERENCE_OUTPUT_DIR="$(env_or_alias5 NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR NFN_SM120_NATIVE_CANDIDATE_REFERENCE_OUTPUT_DIR NFN_SM120_CANDIDATE_REFERENCE_OUTPUT_DIR NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR NFN_SM120_REFERENCE_OUTPUT_DIR /tmp/nfn_llmk_sm120_candidate)"
 STAGE_TIMING="$(env_or_alias5 NFN_SM120_NATIVE_STAGE_TIMING NFN_SM120_NATIVE_CANDIDATE_STAGE_TIMING NFN_SM120_CANDIDATE_STAGE_TIMING NFN_SM120_PARITY_STAGE_TIMING NFN_SM120_STAGE_TIMING 0)"
 SETUP_EVENT_TIMING="$(env_or_alias5 NFN_SM120_NATIVE_SETUP_EVENT_TIMING NFN_SM120_NATIVE_CANDIDATE_SETUP_EVENT_TIMING NFN_SM120_CANDIDATE_SETUP_EVENT_TIMING NFN_SM120_PARITY_SETUP_EVENT_TIMING NFN_SM120_SETUP_EVENT_TIMING 0)"
