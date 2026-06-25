@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the native SM120 candidate wrapper's unknown-profile help for cuBLASLt
+  plan-prewarm bisection. The wrapper already supported
+  `cublaslt_plan_prewarm_block_only`,
+  `cublaslt_plan_prewarm_lm_head_only`, and
+  `cublaslt_plan_prewarm_off`, but the help text only listed the `off`
+  profile. The help output now lists all three rejected diagnostic profiles so
+  RTX 5090/CUDA 13.3 startup and hot-path reruns are discoverable without
+  reading the shell case table.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=does_not_exist
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Aligned the shared Tile-CUDA linear-bias reducer helper and native trainer
   resolver on the current optimized launch-width default. Both
   `linear_backward_bias_threads_per_block_value()` and the native GPT JSON

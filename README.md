@@ -1200,9 +1200,11 @@ Native JSON reports
 the prewarmed route at `0.989405x` train-loop wall time and `0.964634x`
 LM-head backward time, but normal startup now leaves prewarm disabled until a
 same-script total-runtime gate justifies enabling it for a local profile.
-The native candidate wrapper also exposes rejected diagnostic profile
-`cublaslt_plan_prewarm_off`, which pins the baseline to full cuBLASLt plan
-prewarm and the candidate to `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`.
+The native candidate wrapper also exposes rejected diagnostic profiles
+`cublaslt_plan_prewarm_block_only`, `cublaslt_plan_prewarm_lm_head_only`, and
+`cublaslt_plan_prewarm_off`, and now includes all three in the unknown-profile
+help text. The `off` profile pins the baseline to full cuBLASLt plan prewarm
+and the candidate to `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`.
 The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
 `0.834325x`, but moved lazy plan work into training: train-loop wall regressed
 to `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to

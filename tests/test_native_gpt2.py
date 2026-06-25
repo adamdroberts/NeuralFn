@@ -2376,6 +2376,12 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "train-loop wall to 0.995837x" in bench_source
     assert "steady-state CUDA-event timing missed at 1.000937x" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
+    assert "Known profiles:" in bench_source
+    assert (
+        "cublaslt_plan_prewarm_block_only, "
+        "cublaslt_plan_prewarm_lm_head_only, "
+        "cublaslt_plan_prewarm_off"
+    ) in bench_source
     assert '"tk_sm120_super_m7"|"tk-sm120-super-m7"' in bench_source
     assert "-DLLMK_SM120_SUPER_M=7 -DLLMK_SM120_DINP_SUPER_M=7" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 7" in bench_source

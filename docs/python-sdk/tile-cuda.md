@@ -704,8 +704,10 @@ stage gates still missed at `stage.lm_head_backward.total_ms=1.000361x` and
 `stage.block_backward.mlp_proj.total_ms=1.001043x`. Do not promote this route
 as a startup fix or a parity fix; use it only for deliberate prewarm bisection.
 For cuBLASLt plan-cache startup bisection, use
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_plan_prewarm_off`. The profile
-compares the current full plan prewarm baseline against
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_plan_prewarm_block_only`,
+`cublaslt_plan_prewarm_lm_head_only`, or `cublaslt_plan_prewarm_off`; all three
+now appear in the native candidate wrapper's unknown-profile help. The `off`
+profile compares the current full plan prewarm baseline against
 `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It is rejected by default: the CUDA
 13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
 `0.834325x`, but regressed train-loop wall to `1.015300x`, first-step
