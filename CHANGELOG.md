@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now adds
+  `train_loop_cuda_event_first_step_wall_ms_per_step <= 1.000` to the automatic
+  candidate-over-llm.kittens reference gate for multi-step event-timed runs that
+  change the native route. This closes the loophole where a candidate could
+  pass wall, steady-state, and tokens/sec gates while still carrying a large
+  first-step gap against `train-sm120.sh`; the latest dedicated RTX 5090
+  comparison reported NeuralFn at `1.056781x` the llm.kittens first-step
+  CUDA-event time.
+
+  Verification: ran the focused SM120 candidate-wrapper pytest covering
+  auto-generated reference gates; ran `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`; ran `git diff --check`.
+
 - `tools/paired_kernel_speed.py` now adds `top_reference_gaps` to
   `native_hot_stage_ratios` whenever a reference command is present. The list is
   sorted by `candidate_over_reference_mean`, so SM120 native-vs-llm.kittens

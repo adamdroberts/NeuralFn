@@ -1516,6 +1516,7 @@ if [[ -n "${reference_paired_args[*]-}" &&
         case "${TRAIN_LOOP_EVENT_TIMING,,}" in
           "1"|"true"|"yes"|"on")
             if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
+              MAX_CANDIDATE_REFERENCE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"
               MAX_CANDIDATE_REFERENCE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
             fi
             ;;

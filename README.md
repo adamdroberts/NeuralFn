@@ -880,7 +880,8 @@ the llm.kittens binary to exist. When a candidate actually changes the native
 binary, Tile library, build flags, environment, or extra args, the wrapper now
 adds default candidate-over-reference gates unless explicit reference gates are
 set: `train_loop_wall_ms_per_step <= 1.000`, steady-state CUDA-event wall time
-`<= 1.000` for multi-step event-timed runs, and
+`<= 1.000` plus first-step CUDA-event wall time `<= 1.000` for multi-step
+event-timed runs, and
 `train_tokens_per_second >= 1.000`. Set
 `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
 `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` when a diagnostic run needs a
@@ -1474,8 +1475,9 @@ shorter alias `NFN_SM120_NATIVE_INCLUDE_REFERENCE=0` only for intentional
 two-way native bisection runs where the external reference cost is not needed.
 When a candidate changes the native route and no explicit reference gates are
 provided, the wrapper adds candidate-over-reference gates for train-loop wall
-time, steady-state CUDA-event step time, and tokens/sec so a noisy native-only
-win cannot be promoted while still losing to the llm.kittens baseline.
+time, first-step CUDA-event step time, steady-state CUDA-event step time, and
+tokens/sec so a noisy native-only win cannot be promoted while still losing to
+the llm.kittens baseline.
 The raw Tile ABI also exposes the LM-head classifier row-chunk route as a
 distinct symbol,
 `nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets`,

@@ -721,6 +721,14 @@ def test_native_gpt_sm120_candidate_wrapper_auto_gates_llmk_reference_candidate(
         "max_ratio": 1.0,
     } in limits
     assert {
+        "metric": "train_loop_cuda_event_first_step_wall_ms_per_step",
+        "stat": "mean",
+        "actual_mean_ratio": None,
+        "missing": True,
+        "passed": True,
+        "max_ratio": 1.0,
+    } in limits
+    assert {
         "metric": "train_tokens_per_second",
         "stat": "mean",
         "actual_mean_ratio": None,
