@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `lm_head_graph_prewarm` SM120 benchmark evidence after
+  the CUDA 13.3 WSL reinstall on the dedicated RTX 5090. The profile still
+  eliminates runtime LM-head CUDA Graph captures and improves native-vs-native
+  train-loop wall time, but it remains diagnostic-only because the same-script
+  llm.kittens reference gates failed: candidate-over-reference
+  `train_loop_wall_ms_per_step=1.004960`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=1.001805`, and
+  `train_tokens_per_second=0.993865`.
+
+  Verification:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1
+  NFN_SM120_NATIVE_COMMAND_TIMEOUT_SECONDS=300
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_cuda133_recheck.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_lm_head_graph_prewarm_cuda133_recheck_profiles
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed only the
+  intentional rejected-profile promotion gates above.
+
 - Extended the native no-Torch dependency gate to validate generated
   `neuralfn.egg-info` metadata when it exists. The gate now fails stale
   `PKG-INFO` or `requires.txt` files that re-advertise default dependencies, a
