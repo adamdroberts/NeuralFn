@@ -1607,10 +1607,15 @@ shared token-weight gradient. Runtime JSON reports
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` to run it
 through the paired wrapper only with
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. Keep it disabled for
-normal training: the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
-confirmation proved the route active but regressed train-loop wall time to
-`1.001676x` and train tokens/sec to `0.998350x`; the preceding stage-timed probe
-also missed the total LM-head backward gate at `1.000164x`.
+normal training. Because the default LM-head route now uses the cooperative
+CUDA Graph wrapper, the paired profile disables cooperative LM-head only on the
+candidate before setting `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1`; this
+keeps the benchmark route-enabled instead of measuring a no-op requested flag.
+The CUDA 13.3 dedicated RTX 5090 2026-06-25 route-enabled recheck proved
+`lm_head_overlap_last_dweight_enabled=true` with 24 queue/sync events, but
+regressed train-loop wall time to `1.020764x`, steady-state CUDA-event step time
+to `1.002042x`, train tokens/sec to `0.979861x`, and total LM-head backward to
+`1.050532x` versus the default graph wrapper.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.

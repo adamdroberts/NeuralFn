@@ -2336,3 +2336,17 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `stage.block_backward.attn_proj.total_ms=1.342615x`). Keep the default
     two-`32768`-row LM-head route; larger row chunks are not a viable parity
     path on the current dedicated RTX 5090/CUDA 13.3 setup.
+  - 2026-06-25 reran `lm_head_overlap_last_dweight` after cooperative graph
+    prewarm became the default. A plain profile run only changed the requested
+    flag (`lm_head_overlap_last_dweight_requested=true`) and left
+    `lm_head_overlap_last_dweight_enabled=false`, so the wrapper profile now
+    disables `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` on the candidate to
+    force the real side-stream route. The route-enabled same-script 3-step,
+    2-sample stage-timed run proved `lm_head_overlap_last_dweight_enabled=true`
+    with 24 queue/sync events, but rejected the route at
+    `train_loop_wall_ms_per_step=1.020764x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=1.002042x`,
+    `train_tokens_per_second=0.979861x`, and
+    `stage.lm_head_backward.total_ms=1.050532x` versus the default cooperative
+    CUDA Graph wrapper. Keep the next implementation target on a true fused
+    LM-head body or block-backward kernel, not side-stream scheduling.

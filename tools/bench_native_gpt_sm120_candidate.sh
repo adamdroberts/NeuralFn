@@ -774,8 +774,8 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_overlap_last_dweight"|"lm-head-overlap-last-dweight"|"lm_head_last_dweight_overlap"|"lm-head-last-dweight-overlap")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 5-step, 3-sample same-script confirmation activated the last-dWeight overlap schedule but regressed train_loop_wall_ms_per_step to 1.001676x and train tokens/sec to 0.998350x after a stage-timed probe also missed the LM-head backward gate at 1.000164x."
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 route-enabled recheck disabled cooperative LM-head only on the candidate so the last-dWeight overlap side stream actually enabled. It proved lm_head_overlap_last_dweight_enabled=true with 24 queue/sync events, but regressed train_loop_wall_ms_per_step to 1.020764x, steady-state CUDA-event step time to 1.002042x, train tokens/sec to 0.979861x, and stage.lm_head_backward.total_ms to 1.050532x versus the default cooperative CUDA Graph wrapper."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1"
     ;;
   "lm_head_row_chunk_65536"|"lm-head-row-chunk-65536"|"lm_head_full_row_chunk"|"lm-head-full-row-chunk")
     TIMEOUT_PRONE_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

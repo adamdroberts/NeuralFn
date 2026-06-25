@@ -1071,10 +1071,14 @@ schedule strategy
 `last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
 The paired wrapper now rejects it unless
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set. Keep it
-default-off: the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample confirmation
-proved the route active but regressed train-loop wall time to `1.001676x` and
-train tokens/sec to `0.998350x`; the preceding stage-timed probe also missed
-the total LM-head backward gate at `1.000164x`.
+default-off. Since cooperative LM-head graph replay is the default route, the
+paired profile disables `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` only on
+the candidate before enabling overlap so the side-stream schedule actually
+runs. The CUDA 13.3 dedicated RTX 5090 2026-06-25 route-enabled recheck proved
+`lm_head_overlap_last_dweight_enabled=true` with 24 queue/sync events, but
+regressed train-loop wall time to `1.020764x`, steady-state CUDA-event step time
+to `1.002042x`, train tokens/sec to `0.979861x`, and total LM-head backward to
+`1.050532x` versus the default graph wrapper.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
 gradient into Tile-owned scratch
 and accumulates it into `grad_bias`. Runtime JSON reports

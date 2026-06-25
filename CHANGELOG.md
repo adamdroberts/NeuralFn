@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the rejected `lm_head_overlap_last_dweight` SM120 candidate profile
+  so reruns exercise the actual side-stream route under the current cooperative
+  graph default. The profile now sets
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on the candidate before
+  enabling `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1`; without that, the
+  graph wrapper keeps `lm_head_overlap_last_dweight_enabled=false` and the
+  comparison only measures a requested flag. The route-enabled CUDA 13.3
+  dedicated RTX 5090 recheck proved
+  `lm_head_overlap_last_dweight_enabled=true` with 24 queue/sync events, but
+  kept the profile rejected because train-loop wall regressed to `1.020764x`,
+  steady-state CUDA-event timing to `1.002042x`, train tokens/sec to
+  `0.979861x`, and total LM-head backward to `1.050532x` versus the default
+  cooperative CUDA Graph wrapper.
+
 - Promoted LM-head CUDA Graph prewarm for the native dense GPT trainer after a
   CUDA 13.3.33 post-reinstall same-script rerun on the dedicated RTX 5090 passed
   the configured gates. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` /
