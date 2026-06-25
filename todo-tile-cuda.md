@@ -2215,14 +2215,31 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     real training starts on the lazy graph-capture path and avoids eager
     LM-head graph capture setup cost. Use `lm_head_graph_prewarm` only for
     same-script eager-capture comparisons; it is not a parity-closing kernel
-    implementation.
-    failed the LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample
-    combined rerun rejected treating graph prewarm as a parity-closing fix
-    because steady-state CUDA-event timing regressed to `1.000678x` even though
+    implementation. The earlier isolated graph-only candidate failed the
+    LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample combined
+    rerun rejected treating graph prewarm as a parity-closing fix because
+    steady-state CUDA-event timing regressed to `1.000678x` even though
     train-loop wall improved to `0.988694x` and LM-head backward improved to
-    `0.999611x`. LM-head graph prewarm is now a native default for startup
-    stability; the remaining parity work still needs steady-state LM-head or
-    block-backward kernel work, not first-step capture relocation.
+    `0.999611x`. LM-head graph prewarm is now opt-in diagnostic plumbing; the
+    remaining parity work still needs steady-state LM-head or block-backward
+    kernel work, not first-step capture relocation.
+  - 2026-06-25 refreshed parity after making LM-head graph prewarm opt-in by
+    default. The same-script 3-step, 1-sample stage-timed run selected the
+    dedicated RTX 5090 with zero compute processes before and after the
+    sample. NeuralFn beat llm.kittens on average train-loop wall
+    (`0.964922x`) and tokens/sec (`1.011635x`), but the strict steady-state
+    CUDA-event gate still failed at `1.013321x`. Runtime JSON confirmed
+    `lm_head_cooperative_backward_graph_prewarm_requested=false`,
+    `lm_head_fused_graph_capture_success_count=3`,
+    `lm_head_fused_graph_thread_cache_hit_count=45`, and 48 graph replays
+    through the three-node CE/dHidden/dWeight body. The hot buckets remained
+    `stage.block_backward.total_ms=4085.320 ms`,
+    `stage.train.model_forward.total_ms=1983.550 ms`, and
+    `stage.lm_head_backward.total_ms=1774.670 ms`, with MLP projection
+    backward dominated by dWeight+bias (`748.079 ms`) and dInput
+    (`509.308 ms`). Keep targeting a real fused/cooperative LM-head kernel or
+    block-backward Tile kernel; the graph cache is only a launch/capture
+    wrapper.
   - 2026-06-25 rechecked `bf16_attention_grad_out` after the 512-thread bias
     reducer became the default. The same-script 3-step, 2-sample stage-timed
     run proved the BF16 attention grad-out handoff route by moving 288 block
