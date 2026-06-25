@@ -313,7 +313,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
     ;;
   "linear_bias_threads_512"|"linear-bias-threads-512"|"bgrad_threads_512"|"bgrad-threads-512")
-    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and promoted 512 as the default after measuring train_loop_wall_ms_per_step=0.984417x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.999644x, train_tokens_per_second=1.015834x, stage.block_backward.total_ms=0.971708x, stage.block_backward.mlp_fc.dweight_bias.total_ms=0.859800x, and stage.block_backward.mlp_proj.dweight_bias.total_ms=0.930817x."
+    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 corrected-lib 3-step, 2-sample stage-timed rerun changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and kept 512 as the default after measuring train_loop_wall_ms_per_step=0.992990x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.998950x, train_tokens_per_second=1.007496x, stage.block_backward.total_ms=0.989262x, stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x, and stage.block_backward.mlp_proj.dweight_bias.total_ms=0.984430x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512"
     ;;

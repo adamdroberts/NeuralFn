@@ -2455,16 +2455,16 @@ The same reducer accepts a diagnostic thread-count override with
 `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=N`,
 `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS=N`, or
 `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS=N`; accepted values are `128`,
-`256`, `512`, and `1024`, and the default is now `512` on the native GPT Tile
-CUDA trainer. Native training JSON
+`256`, `512`, and `1024`, and the default is `512` on the native GPT Tile CUDA
+trainer. Native training JSON
 reports the resolved value as
 `block_state_layout.linear_backward_bias_threads_per_block`. The
-`linear_bias_threads_512` wrapper profile now keeps comparing the promoted
-512-thread route against the older 256-thread baseline: the CUDA 13.3.33
-dedicated RTX 5090 3-step, 2-sample rerun measured
-`0.984417x` train-loop wall time, `0.999644x` steady-state CUDA-event step time,
-`1.015834x` tokens/sec, `0.971708x` block backward, `0.859800x` MLP FC
-dWeight+bias, and `0.930817x` MLP projection dWeight+bias.
+`linear_bias_threads_512` wrapper profile keeps comparing the promoted
+512-thread route against the older 256-thread baseline: the corrected-lib CUDA
+13.3.33 dedicated RTX 5090 3-step, 2-sample rerun measured `0.992990x`
+train-loop wall time, `0.998950x` steady-state CUDA-event step time,
+`1.007496x` tokens/sec, `0.989262x` block backward, `0.972707x` MLP FC
+dWeight+bias, and `0.984430x` MLP projection dWeight+bias.
 `linear_bias_row_chunk_256` now needs
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional
 reproduction against the older 512-row baseline, and `linear_bias_row_chunk_1024`

@@ -2273,8 +2273,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
-    assert "promoted 512 as the default" in bench_source
-    assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.859800x" in bench_source
+    assert "kept 512 as the default" in bench_source
+    assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source
     assert "block_backward_mlp_proj_dinput_before_dweight_count moved 0->288" in bench_source
     assert "stage.block_backward.mlp_proj.dinput.total_ms regressed to 1.101843x" in bench_source
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
@@ -8359,7 +8359,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_no_loss_vec8_normal_store_specialized_enabled" in kernels_text
     assert "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in kernels_text
     assert "lm_head_prob_only_target_correction_threads()" in kernels_text
-    assert "return 512;" in kernels_text
+    prob_only_thread_body = kernels_text.split(
+        "int lm_head_prob_only_target_correction_threads_value()", 1
+    )[1].split("constexpr std::int64_t kLinearBackwardBiasRowChunkSize", 1)[0]
+    assert "return 512;" in prob_only_thread_body
+    linear_bias_thread_body = kernels_text.split(
+        "int linear_backward_bias_threads_per_block_value()", 1
+    )[1].split("std::int64_t layer_norm_affine_row_chunk_size()", 1)[0]
+    assert "return 512;" in linear_bias_thread_body
     prob_only_body = kernels_text.split(
         "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_prob_only_kernel",
         1,

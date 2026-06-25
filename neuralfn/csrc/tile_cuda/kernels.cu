@@ -850,17 +850,17 @@ int linear_backward_bias_threads_per_block_value() {
       raw = std::getenv("NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS");
     }
     if (raw == nullptr || raw[0] == '\0') {
-      return 256;
+      return 512;
     }
     char* end = nullptr;
     const long parsed = std::strtol(raw, &end, 10);
     if (end == raw || (end != nullptr && *end != '\0')) {
-      return 256;
+      return 512;
     }
     if (parsed == 128 || parsed == 256 || parsed == 512 || parsed == 1024) {
       return static_cast<int>(parsed);
     }
-    return 256;
+    return 512;
   }();
   return value;
 }
