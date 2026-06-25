@@ -172,6 +172,23 @@ Real training tensors must not pass through graph editor node objects.
   replay-total `lm_head_fused_graph_body_*` counts, so the next true fused Tile
   kernel can be compared against the actual wrapper structure instead of an
   opaque replay counter.
+- [x] Refresh post-rebuild SM120 parity and make the paired hot-stage report
+  show per-call context. After rebuilding the default Tile ops library and
+  linked native trainers with the current build-script dependency invalidation,
+  the 2026-06-25 2-step/1-sample same-script parity smoke measured NeuralFn at
+  `2516.720 ms/step` versus llm.kittens at `2437.755 ms/step`
+  (`1.032393x` train-loop wall, `0.968559x` tokens/sec), with steady-state
+  CUDA-event timing at `1.007771x`. A follow-up 2-step stage-timed run measured
+  `1.039801x` train-loop wall, `1.011402x` steady-state CUDA-event timing, and
+  hot native buckets of `stage.block_backward.total_ms=2512.060 ms`
+  (`count=192`, `avg_ms=13.0836`),
+  `stage.lm_head_backward.total_ms=1141.240 ms` (`count=16`,
+  `avg_ms=71.3272`), and
+  `stage.lm_head_backward.cooperative.total_ms=791.149 ms` (`count=32`,
+  `avg_ms=24.7234`). `tools/paired_kernel_speed.py` now prints `count_mean`
+  and `avg_ms_mean` beside hot-stage `*.total_ms` lines so future
+  candidate-vs-current gates do not require manual sidecar JSON parsing to see
+  whether a regression is per-layer, per-chunk, or one-time setup work.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or

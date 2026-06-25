@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Improved SM120 paired benchmark readability for native stage timing. The
+  hot-stage text summary now prints `count_mean` and `avg_ms_mean` beside
+  selected `*.total_ms` metrics when native profile JSON includes those sibling
+  fields, so candidate-vs-current gates show whether a regression comes from
+  repeated per-layer kernels, LM-head chunks, or one-time setup work without
+  opening the sidecar JSON.
+
+  Verification: exercised `tools.paired_kernel_speed.print_native_hot_summary`
+  against a fresh CUDA 13.3 RTX 5090 stage-timed parity payload, Python compile
+  for `tools/paired_kernel_speed.py`, and `git diff --check`.
+
 - Made Tile ops build-script changes invalidate default native artifacts. The
   linked GPT trainer auto-rebuild path, SM120 parity/candidate wrappers,
   LM-head and linear backward microbench wrappers, and

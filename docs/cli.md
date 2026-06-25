@@ -245,6 +245,12 @@ trainer to write that JSON directly to a file, or use the aliases
 `--profile-json PATH` / `--stage-profile-json PATH` when collecting profiler
 runs such as `NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ...
 --profile-json /tmp/nfn_profile.json`.
+When the paired SM120 parity/candidate wrappers run with native stage timing,
+their hot-stage text summary prints each selected `*.total_ms` metric with
+sibling `count_mean` and `avg_ms_mean` values when present in the profile JSON.
+This keeps candidate-vs-current gates readable in the terminal: per-layer block
+regressions, LM-head chunk regressions, and one-time setup work can be
+distinguished without opening the sidecar JSON.
 The SM120 candidate wrapper also includes
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_bf16_hidden_from_final_norm`, which
 forces baseline separate LM-head BF16 hidden prepack and candidate final

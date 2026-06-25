@@ -2988,17 +2988,46 @@ def summarize_gpu_sample_load(
     return summary
 
 
-def print_metric_summary_line(prefix: str, key: str, stats: object) -> None:
+def metric_summary_fragment(name: str, stats: object) -> str:
     if not isinstance(stats, dict):
-        return
+        return ""
     required = ("mean", "median", "min", "max")
     if not all(isinstance(stats.get(item), (int, float)) for item in required):
-        return
-    print(
-        f"      {prefix}{key}: mean={float(stats['mean']):.6f} "
+        return ""
+    return (
+        f"{name}=mean={float(stats['mean']):.6f} "
         f"median={float(stats['median']):.6f} min={float(stats['min']):.6f} "
         f"max={float(stats['max']):.6f}"
     )
+
+
+def metric_mean_fragment(name: str, stats: object) -> str:
+    if not isinstance(stats, dict):
+        return ""
+    value = stats.get("mean")
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return ""
+    return f"{name}={float(value):.6f}"
+
+
+def print_metric_summary_line(
+    prefix: str,
+    key: str,
+    stats: object,
+    metrics: dict[str, object] | None = None,
+) -> None:
+    main = metric_summary_fragment("", stats)
+    if not main:
+        return
+    line = f"      {prefix}{key}: {main.removeprefix('=')}"
+    if metrics is not None and key.endswith(".total_ms"):
+        stem = key[: -len(".total_ms")]
+        count = metric_mean_fragment("count_mean", metrics.get(stem + ".count"))
+        avg = metric_mean_fragment("avg_ms_mean", metrics.get(stem + ".avg_ms"))
+        fragments = [item for item in (count, avg) if item]
+        if fragments:
+            line += " (" + "; ".join(fragments) + ")"
+    print(line)
 
 
 def print_native_hot_summary(payload: dict[str, object]) -> None:
@@ -3023,7 +3052,7 @@ def print_native_hot_summary(payload: dict[str, object]) -> None:
     for label, metrics, metric_prefix in printable_sections:
         print(f"    {label}:")
         for key in NATIVE_HOT_SUMMARY_METRIC_KEYS:
-            print_metric_summary_line(metric_prefix, key, metrics.get(key))
+            print_metric_summary_line(metric_prefix, key, metrics.get(key), metrics)
 
 
 def resolve_cuda_visible_devices(
