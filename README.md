@@ -1512,14 +1512,13 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 for real training so startup does not pay graph capture before the first
 optimizer step. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` for eager-capture
-regression checks. The CUDA 13.3 RTX 5090 gated refresh proved eager prewarm
-eliminated runtime LM-head graph capture and improved
-train-loop wall to `0.976542x`, tokens/sec to `1.024025x`, LM-head backward
-to `0.967861x`, block backward to `0.974829x`, and MLP projection backward to
-`0.845548x` versus lazy capture while passing the `1.002` steady-state
-CUDA-event tolerance. The llm.kittens parity gate still misses strict
-steady-state CUDA-event timing, so the remaining implementation target is a
-true fused LM-head classifier-backward Tile kernel. When graph prewarm
+regression checks. The current CUDA 13.3 RTX 5090 refresh keeps eager prewarm
+diagnostic-only: it eliminated runtime LM-head graph capture and improved
+train-loop wall to `0.995921x`, tokens/sec to `1.004099x`, and LM-head
+backward to `0.966626x` versus lazy capture, but failed promotion because
+steady-state CUDA-event timing regressed to `1.002619x`, block backward to
+`1.009095x`, and MLP FC backward also regressed. The remaining implementation
+target is a true fused LM-head classifier-backward Tile kernel. When graph prewarm
 eliminates runtime LM-head graph capture,
 trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and

@@ -144,10 +144,13 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
-  - 2026-06-25 promoted LM-head graph prewarm for native-vs-native startup
-    stability, but rejected treating graph prewarm, the explicit cooperative
-    sequence wrapper, CUDA event timing changes, or the llm.kittens SM120 macro
-    rebuild as complete parity fixes. The macro rebuild improved current
+  - 2026-06-25 rejected LM-head graph prewarm as a default despite native-vs-native
+    startup and LM-head improvements, and also rejected the explicit cooperative
+    sequence wrapper, CUDA event timing changes, and the llm.kittens SM120 macro
+    rebuild as complete parity fixes. The latest graph-prewarm refresh improved
+    train-loop wall to `0.995921x`, tokens/sec to `1.004099x`, and LM-head
+    backward to `0.966626x`, but missed promotion at `1.002619x` steady-state
+    CUDA-event timing and `1.009095x` block backward. The macro rebuild improved current
     NeuralFn wall time to `0.996738x` native-vs-native but changed no route
     counters and still missed the steady-state gate, so it remains timing noise
     rather than a kernel implementation. The active implementation target is now

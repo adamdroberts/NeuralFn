@@ -1879,9 +1879,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
-    assert "2026-06-25 gated refresh promoted graph prewarm" in bench_source
-    assert "train_loop_wall_ms_per_step to 0.976542x" in bench_source
-    assert "train_tokens_per_second to 1.024025x" in bench_source
+    assert "2026-06-25 3-step, 2-sample same-script refresh" in bench_source
+    assert "train_loop_wall_ms_per_step to 0.995921x" in bench_source
+    assert "train_tokens_per_second to 1.004099x" in bench_source
+    assert "steady-state CUDA-event timing regressed to 1.002619x" in bench_source
+    assert "stage.block_backward.total_ms regressed to 1.009095x" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source

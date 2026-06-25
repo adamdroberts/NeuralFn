@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the stale `lm_head_graph_prewarm` promotion record after rerunning
+  the paired same-script profile on the CUDA 13.3.33 dedicated RTX 5090. Graph
+  prewarm still eliminates runtime LM-head graph capture and improved
+  train-loop wall (`0.995921x`), tokens/sec (`1.004099x`), and LM-head
+  backward (`0.966626x`) versus the lazy-capture default, but it failed
+  promotion because steady-state CUDA-event timing regressed to `1.002619x`,
+  block backward regressed to `1.009095x`, and MLP FC backward regressed. The
+  candidate wrapper now treats `lm_head_graph_prewarm` as a rejected diagnostic
+  profile requiring `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`,
+  and the docs keep the implementation target on a true fused LM-head
+  classifier-backward Tile kernel rather than graph-prewarm plumbing.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_lm_head_graph_prewarm_current_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_graph_prewarm_current.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in
+  -q`; `git diff --check`; `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm bash
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm bash
+  tools/bench_native_gpt_sm120_candidate.sh` exits with code 2 before launching
+  GPU work unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
 - Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` after the
   CUDA 13.3.33 rebuild on the dedicated RTX 5090. The linked dense GPT binary
   remains the preferred startup route when built: 3 measured startup-only
