@@ -1259,7 +1259,10 @@ load the fused route from `build/libnfn_native_train_tile_ops.so` without
 requiring `build/libnfn_native_train_tile_ops_tk.so`. Native plan and
 `--check-tile-ops` JSON query the loaded `linear_tk_sm120_*` config symbols
 directly, so SDK launchers can verify those compile settings before a full
-training run. Those profiles force the
+training run. The linked trainer build and native stale-artifact verifier treat
+`tools/build_native_train_tile_ops.sh` as a Tile ops input, so SDK compiled-CLI
+launches are not left on an old shared object after compile-flag changes. Those
+profiles force the
 baseline to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so paired SDK/CLI runs compare the

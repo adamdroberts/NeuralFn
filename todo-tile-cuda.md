@@ -1303,6 +1303,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     queries `linear_tk_sm120_*` config symbols from the loaded Tile ops library
     instead of hardcoding them to absent, so benchmark preflights can see
     compile-time SM120 route settings before running training.
+  - 2026-06-25 rebuild-dependency fix: linked GPT trainer builds, SM120
+    parity/candidate wrappers, linear/LM-head microbench wrappers, and
+    `tools/check_native_no_torch_deps.py` now include
+    `tools/build_native_train_tile_ops.sh` as a Tile ops dependency. Default
+    compile-flag changes now force `libnfn_native_train_tile_ops.so` rebuilds
+    before normal linked training or candidate timing.
 - [x] Add `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_128` as a rejected wrapper profile. A 2026-06-25 CUDA 13.3.33 dedicated RTX 5090 attention-section gate changed `attention_backward_tk_batch_cap` from `64` to `128`, but rejected it at `1.013207x` train-loop wall time, `1.000470x` steady-state CUDA-event timing, `1.029008x` block backward, `1.002850x` attention TK timing, and `1.000088x` attention dprep timing; keep the default cap at 64.
 - [x] Add `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_32` as a rejected wrapper profile. A 2026-06-25 CUDA 13.3.33 dedicated RTX 5090 attention-section gate changed `attention_backward_tk_batch_cap` from `64` to `32` and doubled `attention_backward_tk_launch_count` from `288` to `576`; dprep timing improved to `0.943271x`, but the smaller chunk rejected default promotion at `1.010819x` train-loop wall time, `1.009021x` steady-state CUDA-event timing, `1.077143x` attention `to_qkv`, and `1.066848x` attention TK timing. Keep the default cap at 64; the next attention work needs a faster TK backward kernel, not more chunk splitting.
 - [x] Add `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_attn_proj_dweight_h0_65536` as a rejected/no-op wrapper profile. The 2026-06-25 CUDA 13.3.33 dedicated RTX 5090 stage-timed gate for `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0` showed attractive-looking attention-projection dWeight timing, but changed no tracked route counters, strategy values, or cuBLASLt plan-cache entries and still failed strict steady-state CUDA-event, LM-head backward, and MLP-projection gates. Treat it as timing noise until a real route or plan change is visible.

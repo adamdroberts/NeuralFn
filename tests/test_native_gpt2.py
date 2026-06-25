@@ -704,6 +704,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}"' in linked_build
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}"' in linked_build
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}"' in linked_build
+    assert '"${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}"' in linked_build
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
@@ -750,12 +751,15 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
     assert "source_newer_than_out" in linked_build
     assert '! source_newer_than_out "${TILE_OPS_LIB}"' in linked_build
+    assert 'Path("tools/build_native_train_tile_ops.sh")' in no_torch_verifier
     assert '-pthread -ldl -o "${OUT}"' in linked_build
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in parity_bench
     assert "ensure_default_native_gpt_trainer_current" in parity_bench
     assert "native_gpt_source_newer_than" in parity_bench
     assert "tile_ops_source_newer_than" in parity_bench
+    assert '"$ROOT_DIR/tools/build_native_train_tile_ops.sh" -nt "$target"' in parity_bench
+    assert '"$ROOT_DIR/tools/build_native_train_tile_ops.sh" -nt "$target"' in candidate_bench
     assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
     assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
@@ -2073,6 +2077,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"' in wrapper
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
     assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"' in wrapper
+    assert '"${ROOT_DIR}/tools/build_native_train_tile_ops.sh"' in wrapper
     assert 'if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then' in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper
@@ -2170,6 +2175,7 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"' in wrapper
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
     assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"' in wrapper
+    assert '"${ROOT_DIR}/tools/build_native_train_tile_ops.sh"' in wrapper
     assert 'if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then' in wrapper
     assert "--grad-out-row-stride" in wrapper
     matrix_wrapper = (root / "tools" / "bench_native_gpt_linear_hot_matrix.sh").read_text(

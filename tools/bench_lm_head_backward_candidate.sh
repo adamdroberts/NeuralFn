@@ -249,6 +249,7 @@ TILE_OPS_DEPS=(
   "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"
   "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"
   "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"
+  "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
 )
 REBUILD_TILE_OPS=0
 if [[ ! -f "${TILE_OPS_LIB}" ]]; then

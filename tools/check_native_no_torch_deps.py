@@ -53,6 +53,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.cu"),
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+        Path("tools/build_native_train_tile_ops.sh"),
     ),
     Path("build/nfn_gpt2_native_train"): (
         Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
@@ -64,11 +65,13 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.cu"),
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+        Path("tools/build_native_train_tile_ops.sh"),
     ),
     Path("build/libnfn_native_train_tile_ops_tk.so"): (
         Path("neuralfn/csrc/native_train/tile_ops.cu"),
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+        Path("tools/build_native_train_tile_ops.sh"),
     ),
     Path("build/linear_backward_bench"): (
         Path("neuralfn/csrc/native_train/linear_backward_bench.cpp"),

@@ -1189,7 +1189,8 @@ tile_ops_source_newer_than() {
   local target="$1"
   [[ "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.cu" -nt "$target" ||
      "$ROOT_DIR/neuralfn/csrc/native_train/tile_ops.h" -nt "$target" ||
-     "$ROOT_DIR/neuralfn/csrc/tile_cuda/kernels.cu" -nt "$target" ]]
+     "$ROOT_DIR/neuralfn/csrc/tile_cuda/kernels.cu" -nt "$target" ||
+     "$ROOT_DIR/tools/build_native_train_tile_ops.sh" -nt "$target" ]]
 }
 
 ensure_native_gpt_trainer_current() {

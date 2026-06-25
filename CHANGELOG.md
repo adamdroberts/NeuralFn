@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made Tile ops build-script changes invalidate default native artifacts. The
+  linked GPT trainer auto-rebuild path, SM120 parity/candidate wrappers,
+  LM-head and linear backward microbench wrappers, and
+  `tools/check_native_no_torch_deps.py` now treat
+  `tools/build_native_train_tile_ops.sh` as an input to
+  `libnfn_native_train_tile_ops.so`. Changing default SM120 compile flags no
+  longer leaves the linked trainer or benchmark wrappers silently using a stale
+  Tile ops library.
+
+  Verification: focused linked Tile ops static test, shell syntax checks for
+  affected wrappers, and `git diff --check`.
+
 - Fixed dense-GPT `--check-tile-ops` / plan telemetry for SM120 TK linear
   compile settings. The preflight JSON now queries the loaded Tile ops library
   for `linear_tk_sm120_*` config symbols instead of hardcoding the config as

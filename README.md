@@ -65,7 +65,11 @@ stale Tile ops library. The default SM120 Tile ops library also defines
 `LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and
 `LLMK_SM120_APPROX_DGELU_TANH=1`, so the linked native trainer gets the
 llm.kittens fused MLP projection dInput+dGELU path without loading the
-diagnostic `_tk` sidecar. The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
+diagnostic `_tk` sidecar. The linked trainer build, SM120 benchmark wrappers,
+linear/LM-head microbench wrappers, and no-Torch stale-artifact verifier treat
+`tools/build_native_train_tile_ops.sh` as a Tile ops dependency, so compile-flag
+changes force a library rebuild instead of silently reusing an old shared
+object. The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
 and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
 `NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the diagnostic TK sidecar flags,
 or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed

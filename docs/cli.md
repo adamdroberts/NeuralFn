@@ -1801,7 +1801,10 @@ defines `LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and
 `LLMK_SM120_APPROX_DGELU_TANH=1`, so the linked native trainer does not need
 the diagnostic `_tk` sidecar to use the fused route. `--check-tile-ops` and
 plan JSON query the loaded `linear_tk_sm120_*` config symbols directly, so this
-compile setting is visible before a full training run. The named profiles still
+compile setting is visible before a full training run. The linked trainer build
+and SM120 benchmark wrappers treat `tools/build_native_train_tile_ops.sh` as a
+Tile ops input, so changing default compile flags forces the baseline library to
+rebuild before timing. The named profiles still
 force the baseline to `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so the same-script comparison is the
 older separate dInput plus GELU-backward path versus the fused TK route.
