@@ -538,7 +538,13 @@ other compute work was present for a specific command. Text and JSON output also
 compute-process counts before and after measured samples; use this summary when
 checking that candidate-vs-baseline timing was not skewed by other GPU load.
 Native stage-timed JSON already records every CUDA bucket, and the text summary
-prints the LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`,
+prints a compact `native_hot_summary` before the full metric dump. That section
+keeps the current SM120 parity decision fields together: host train-loop wall,
+CUDA-event total/first-step/steady-state timing, tokens/sec, setup wall, the
+hot setup buckets (`float_arena_materialize`, `uint16_arena_materialize`,
+`token_weight_init`, `cublaslt_plan_prewarm`), and the largest stage-timed
+forward/backward buckets. The full text summary still prints the LM-head
+backward substages (`logits`, `ce`, `dhidden`, `dweight`,
 optional `dhidden_dweight_concurrent`) plus block-backward substages such as
 `mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias` so parity runs can
 attribute the current RTX 5090 gap without opening sidecar JSON by hand. The

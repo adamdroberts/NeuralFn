@@ -4392,6 +4392,83 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     ) in proc.stdout
 
 
+def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    run_dir = Path(tempfile.mkdtemp())
+    output_path = run_dir / "paired-hot-summary.json"
+    baseline_profile = run_dir / "baseline-profile.json"
+    candidate_profile = run_dir / "candidate-profile.json"
+    baseline_payload = {
+        "steps_completed": 3,
+        "timing": {
+            "train_loop_wall_ms": 3000.0,
+            "train_loop_cuda_event_wall_ms_per_step": 980.0,
+            "train_loop_cuda_event_first_step_wall_ms_per_step": 1100.0,
+            "train_loop_cuda_event_steady_state_wall_ms_per_step": 920.0,
+            "train_tokens_per_second": 200000.0,
+            "setup_wall_ms": 600.0,
+            "setup_timing": [
+                {"name": "float_arena_materialize", "total_ms": 200.0, "avg_ms": 200.0, "count": 1},
+                {"name": "uint16_arena_materialize", "total_ms": 120.0, "avg_ms": 120.0, "count": 1},
+                {"name": "token_weight_init", "total_ms": 160.0, "avg_ms": 160.0, "count": 1},
+                {"name": "cublaslt_plan_prewarm", "total_ms": 80.0, "avg_ms": 80.0, "count": 1},
+            ],
+            "stage_timing": [
+                {"name": "lm_head_backward", "total_ms": 1700.0, "avg_ms": 566.6, "count": 3},
+                {"name": "block_backward", "total_ms": 3900.0, "avg_ms": 1300.0, "count": 3},
+                {"name": "block_backward.attn_sdpa.to_qkv", "total_ms": 800.0, "avg_ms": 266.6, "count": 3},
+                {"name": "block_backward.mlp_proj", "total_ms": 970.0, "avg_ms": 323.3, "count": 3},
+            ],
+        },
+    }
+    candidate_payload = json.loads(json.dumps(baseline_payload))
+    candidate_payload["timing"]["train_loop_wall_ms"] = 2970.0
+    candidate_payload["timing"][
+        "train_loop_cuda_event_steady_state_wall_ms_per_step"
+    ] = 935.0
+    baseline_profile.write_text(json.dumps(baseline_payload), encoding="utf-8")
+    candidate_profile.write_text(json.dumps(candidate_payload), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\" --profile-json {baseline_profile}",
+            "--candidate",
+            f"{sys.executable} -c \"print('candidate-ok')\" --profile-json {candidate_profile}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "native_hot_summary:" in proc.stdout
+    assert "baseline:" in proc.stdout
+    assert "candidate:" in proc.stdout
+    assert "candidate_over_baseline:" in proc.stdout
+    assert "train_loop_cuda_event_steady_state_wall_ms_per_step" in proc.stdout
+    assert "setup.float_arena_materialize.total_ms" in proc.stdout
+    assert "setup.cublaslt_plan_prewarm.total_ms" in proc.stdout
+    assert "stage.block_backward.attn_sdpa.to_qkv.total_ms" in proc.stdout
+    assert (
+        "ratio train_loop_cuda_event_steady_state_wall_ms_per_step: "
+        "mean=1.016304"
+    ) in proc.stdout
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-ratio-gate.json"

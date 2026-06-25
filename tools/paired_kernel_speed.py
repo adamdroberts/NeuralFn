@@ -1112,6 +1112,32 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.gradient_clip.total_ms",
     "stage.adamw_update.total_ms",
 )
+NATIVE_HOT_SUMMARY_METRIC_KEYS = (
+    "train_loop_wall_ms_per_step",
+    "train_loop_cuda_event_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_wall_ms_per_step",
+    "train_loop_cuda_event_steady_state_wall_ms_per_step",
+    "train_tokens_per_second",
+    "setup_wall_ms",
+    "setup.float_arena_materialize.total_ms",
+    "setup.uint16_arena_materialize.total_ms",
+    "setup.token_weight_init.total_ms",
+    "setup.cublaslt_plan_prewarm.total_ms",
+    "stage.train.model_forward.total_ms",
+    "stage.block_forward.total_ms",
+    "stage.lm_head_backward.total_ms",
+    "stage.lm_head_backward.logits.total_ms",
+    "stage.lm_head_backward.cooperative.total_ms",
+    "stage.block_backward.total_ms",
+    "stage.block_backward.attn_sdpa.to_qkv.total_ms",
+    "stage.block_backward.mlp_proj.total_ms",
+    "stage.block_backward.mlp_proj.dweight_bias.total_ms",
+    "stage.block_backward.mlp_proj.dinput.total_ms",
+    "stage.block_backward.mlp_fc.total_ms",
+    "stage.block_backward.attn_proj.total_ms",
+    "stage.block_backward.qkv.total_ms",
+    "stage.adamw_update.total_ms",
+)
 NATIVE_JSON_OUT_FLAGS = ("--json-out", "--profile-json", "--stage-profile-json")
 
 LLM_KITTENS_STEP_RE = re.compile(
@@ -2859,6 +2885,44 @@ def summarize_gpu_sample_load(
     return summary
 
 
+def print_metric_summary_line(prefix: str, key: str, stats: object) -> None:
+    if not isinstance(stats, dict):
+        return
+    required = ("mean", "median", "min", "max")
+    if not all(isinstance(stats.get(item), (int, float)) for item in required):
+        return
+    print(
+        f"      {prefix}{key}: mean={float(stats['mean']):.6f} "
+        f"median={float(stats['median']):.6f} min={float(stats['min']):.6f} "
+        f"max={float(stats['max']):.6f}"
+    )
+
+
+def print_native_hot_summary(payload: dict[str, object]) -> None:
+    sections = (
+        ("baseline", "baseline_native_metrics", ""),
+        ("candidate", "candidate_native_metrics", ""),
+        ("candidate_over_baseline", "candidate_over_baseline_native_metrics", "ratio "),
+        ("reference", "reference_native_metrics", ""),
+        ("reference_over_baseline", "reference_over_baseline_native_metrics", "ratio "),
+        ("candidate_over_reference", "candidate_over_reference_native_metrics", "ratio "),
+    )
+    printable_sections: list[tuple[str, dict[str, object], str]] = []
+    for label, payload_key, metric_prefix in sections:
+        metrics = payload.get(payload_key)
+        if not isinstance(metrics, dict):
+            continue
+        if any(isinstance(metrics.get(key), dict) for key in NATIVE_HOT_SUMMARY_METRIC_KEYS):
+            printable_sections.append((label, metrics, metric_prefix))
+    if not printable_sections:
+        return
+    print("  native_hot_summary:")
+    for label, metrics, metric_prefix in printable_sections:
+        print(f"    {label}:")
+        for key in NATIVE_HOT_SUMMARY_METRIC_KEYS:
+            print_metric_summary_line(metric_prefix, key, metrics.get(key))
+
+
 def resolve_cuda_visible_devices(
     requested: str,
     snapshot: dict[str, object],
@@ -3526,6 +3590,7 @@ def print_text(payload: dict[str, object]) -> None:
             f"  {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
             f"min={stats['min']:.6f} max={stats['max']:.6f}"
         )
+    print_native_hot_summary(payload)
     for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):
         metrics = payload.get(section)
         if not isinstance(metrics, dict) or not metrics:

@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a compact `native_hot_summary` section to
+  `tools/paired_kernel_speed.py` text output. Paired SM120 parity runs now show
+  the host loop timing, CUDA-event first/steady-state timing, tokens/sec, setup
+  wall, hot setup buckets, and the major native stage buckets before the full
+  native metric dump. This makes it clear when a candidate only improves
+  first-step/setup timing while regressing steady-state CUDA timing.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_prints_native_hot_summary
+  -q`.
+
 - Extended `tools/rebuild_native_sm120.sh` so the CUDA refresh path rebuilds the
   same native artifact set checked by `tools/check_native_no_torch_deps.py`.
   The script now refreshes `build/libnfn_native_train_tile_ops_tk.so`,
