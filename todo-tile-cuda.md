@@ -2240,6 +2240,24 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     (`509.308 ms`). Keep targeting a real fused/cooperative LM-head kernel or
     block-backward Tile kernel; the graph cache is only a launch/capture
     wrapper.
+  - 2026-06-25 reran parity after the corrected 512-thread bias reducer default
+    and lazy LM-head graph prewarm change. The same-script 3-step, 1-sample
+    stage-timed run again selected the display-disabled dedicated RTX 5090 and
+    confirmed zero compute processes before and after the sample. NeuralFn beat
+    llm.kittens on average train-loop wall (`0.986263x`), CUDA-event wall
+    (`0.986115x`), first-step CUDA-event wall (`0.942728x`), and tokens/sec
+    (`1.001695x`), but the strict steady-state CUDA-event gate still failed at
+    `1.013543x`. Runtime JSON still reported zero train-loss host D2H copies,
+    `lm_head_classifier_backward_path_class=diagnostic-cuda-graph-wrapper`,
+    `lm_head_cooperative_backward_graph_prewarm_requested=false`, three graph
+    captures, 45 thread-cache hits, and 48 graph replays through the CE,
+    dHidden, and dWeight graph body. The hottest buckets remained
+    `stage.block_backward.total_ms=3948.050 ms`,
+    `stage.train.model_forward.total_ms=1987.080 ms`,
+    `stage.lm_head_backward.total_ms=1775.780 ms`, and MLP projection dWeight
+    plus dInput work. Keep the next implementation slice on steady-state
+    LM-head/block-backward kernels; the no-Torch/no-graph-editor constraint is
+    already satisfied by this run.
   - 2026-06-25 rechecked `bf16_attention_grad_out` after the 512-thread bias
     reducer became the default. The same-script 3-step, 2-sample stage-timed
     run proved the BF16 attention grad-out handoff route by moving 288 block

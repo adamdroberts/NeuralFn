@@ -37,6 +37,27 @@ Future updates should append new entries here rather than replacing older notes.
   time, `1.007496x` tokens/sec, `0.989262x` block backward, `0.984430x` MLP
   projection dWeight+bias, and `0.972707x` MLP FC dWeight+bias.
 
+- Refreshed the llm.kittens parity state after the corrected 512-thread
+  Tile-CUDA bias reducer default and lazy LM-head graph prewarm change. A short
+  same-script stage-timed run on the display-disabled dedicated RTX 5090 showed
+  NeuralFn ahead on average train-loop wall time (`0.986263x`), CUDA-event wall
+  time (`0.986115x`), first-step CUDA-event wall time (`0.942728x`), and
+  tokens/sec (`1.001695x`), but it still missed strict steady-state parity at
+  `1.013543x` CUDA-event steady-state step time. Runtime JSON confirmed the
+  no-Torch native training path, zero train-loss host D2H copies, and the
+  current LM-head route class as `diagnostic-cuda-graph-wrapper` with CE,
+  dHidden, and dWeight graph-body nodes. This keeps the parity target on a real
+  steady-state LM-head or block-backward Tile-CUDA kernel rather than startup,
+  graph-editor, or Torch fallback work.
+
+  Verification:
+  `NFN_NATIVE_GPT_TRAIN_BIN=/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train
+  NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_parity_after_linear_bias_512_corrected
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_after_linear_bias_512_corrected.json
+  bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Made native GPT LM-head CUDA Graph prewarm opt-in again for real training.
   The dense GPT native trainer now defaults
   `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` /
