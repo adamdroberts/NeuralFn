@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the SM120 native candidate wrapper so promoted/default-on
+  default-vs-legacy profiles are judged by their paired NeuralFn native
+  baseline/candidate gates, while still recording the llm.kittens reference in
+  the same selected-GPU window. The affected profiles are
+  `linear_bias_threads_512`, `lm_head_loss_bins`,
+  `mlp_fc_dinput_before_dweight`, `qkv_dinput_ln128`, and
+  `lm_head_graph_prewarm`; their JSON metadata now includes
+  `candidate_gate_scope=default-vs-legacy`. This prevents accepted native
+  route-regression checks from failing only because the current whole-trainer
+  llm.kittens parity blocker is still the known non-true-fused LM-head wrapper.
+  Explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
+  `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` settings still enforce
+  candidate-over-reference gates.
+
+  Verification: `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_dinput_before_dweight
+  NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_default_vs_legacy_dry_run.json
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  bash tools/bench_native_gpt_sm120_candidate.sh` wrote metadata
+  `candidate_gate_scope=default-vs-legacy`, retained the reference command,
+  and omitted automatic candidate-reference ratio gates; rerunning the same
+  dry-run with
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO=train_loop_wall_ms_per_step=1.050`
+  populated `candidate_reference_metric_ratio_gates`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_uses_reference_shape
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls
+  -q`; `bash -n tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`.
+
 - Refreshed the llm.kittens parity baseline under the current CUDA 13.3
   dedicated RTX 5090 setup with strict true-fused enforcement disabled only for
   measurement. The same-script stage-timed run measured llm.kittens at

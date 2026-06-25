@@ -815,6 +815,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "--min-candidate-reference-ratio" in paired_speed
     assert "candidate_reference_metric_ratio_gates" in paired_speed
     assert 'ratio_key="candidate_over_reference_native_metrics"' in paired_speed
+    assert "DEFAULT_VS_LEGACY_PROFILE=0" in candidate_bench
+    assert "candidate_gate_scope=default-vs-legacy" in candidate_bench
     assert "tile_ops_arg_for" in candidate_bench
     assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench

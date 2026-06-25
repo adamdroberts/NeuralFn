@@ -824,6 +824,16 @@ steady-state event tolerance where the wall and hot-stage gates remain strict:
 `qkv_dinput_ln128` now matches `lm_head_graph_prewarm` with a `1.002x`
 steady-state CUDA-event cap, so sub-percent event noise does not fail a route
 that still improves train-loop wall and block-backward time.
+Promoted/default-on profiles such as `linear_bias_threads_512`,
+`lm_head_loss_bins`, `mlp_fc_dinput_before_dweight`, `qkv_dinput_ln128`, and
+`lm_head_graph_prewarm` are treated as default-vs-legacy gates. They still run
+the llm.kittens reference when `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`, but
+the wrapper no longer adds automatic candidate-over-reference failure gates for
+those profiles. The paired native baseline/candidate run remains the acceptance
+gate, and the JSON metadata includes `candidate_gate_scope=default-vs-legacy`.
+Set `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` or
+`NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` to explicitly require a
+promoted profile to beat llm.kittens in the same run.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail

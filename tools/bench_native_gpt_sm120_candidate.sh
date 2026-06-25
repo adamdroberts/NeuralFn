@@ -167,6 +167,7 @@ REJECTED_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_REASON=""
 CANDIDATE_NOTE=""
 PROMOTED_QKV_LN128_PROFILE=0
+DEFAULT_VS_LEGACY_PROFILE=0
 STRICT_PROBE_CANDIDATE_PROFILE=""
 STRICT_GROUPED_CUBLASLT_PROBE=0
 AUTO_ATTENTION_SECTION_TIMING=0
@@ -315,6 +316,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "linear_bias_threads_512"|"linear-bias-threads-512"|"bgrad_threads_512"|"bgrad-threads-512")
     CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 corrected-lib 3-step, 2-sample stage-timed rerun changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and kept 512 as the default after measuring train_loop_wall_ms_per_step=0.992990x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.998950x, train_tokens_per_second=1.007496x, stage.block_backward.total_ms=0.989262x, stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x, and stage.block_backward.mlp_proj.dweight_bias.total_ms=0.984430x."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512"
     ;;
@@ -451,6 +453,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
     CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun keeps the loss-bin train-loss logging route as the default because it moved lm_head_classifier_loss_bin_launch_count from 0 to 48, improved train_loop_wall_ms_per_step to 0.981541x, steady-state CUDA-event step time to 0.982697x, train_tokens_per_second to 1.018809x, stage.lm_head_backward.total_ms to 0.927229x, stage.block_backward.total_ms to 0.999905x, and stage.block_backward.mlp_proj.total_ms to 0.995141x versus the older row-loss tail."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
@@ -606,6 +609,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
     CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 current 3-step, 2-sample stage-timed rerun promoted MLP FC dInput-before-dWeight as the native default: the route counter moved block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288, train_loop_wall_ms_per_step improved to 0.979044x, steady-state CUDA-event timing improved to 0.997216x, train_tokens_per_second improved to 1.021478x, stage.block_backward.total_ms improved to 0.960721x, and stage.lm_head_backward.total_ms improved to 0.998613x. The named stage.block_backward.mlp_fc.total_ms regressed to 1.063824x, so keep the profile as an explicit whole-loop default-vs-legacy gate rather than a narrow MLP FC microstage promotion."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000 stage.block_backward.total_ms=1.000 stage.lm_head_backward.total_ms=1.000}"
@@ -624,6 +628,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "qkv_dinput_ln128"|"qkv-dinput-ln128"|"qkv_dinput_before_dweight_ln128"|"qkv-dinput-before-dweight-ln128"|"qkv_order_ln128"|"qkv-order-ln128")
     PROMOTED_QKV_LN128_PROFILE=1
+    DEFAULT_VS_LEGACY_PROFILE=1
     CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x versus the old 256-row/QKV-dWeight-first route."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
@@ -877,6 +882,7 @@ case "${CANDIDATE_PROFILE,,}" in
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-reinstall graph-only rerun eliminated runtime LM-head graph capture and passed same-script gates at 0.970282x train_loop_wall_ms_per_step, 1.001894x steady-state CUDA-event timing, 0.968319x stage.lm_head_backward.total_ms, 0.956792x stage.block_backward.total_ms, and 0.911989x stage.block_backward.mlp_proj.total_ms. The native trainer now defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
@@ -1430,7 +1436,8 @@ esac
 
 if [[ -n "${reference_paired_args[*]-}" &&
       -z "$USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW" &&
-      -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" ]]; then
+      -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" &&
+      "$DEFAULT_VS_LEGACY_PROFILE" != "1" ]]; then
   has_reference_candidate_change=0
   if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||
         "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
@@ -1482,6 +1489,9 @@ if [[ -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ]]; then
 fi
 if [[ -n "$CANDIDATE_NOTE" ]]; then
   paired_args+=(--metadata "candidate_note=$CANDIDATE_NOTE")
+fi
+if [[ "$DEFAULT_VS_LEGACY_PROFILE" == "1" ]]; then
+  paired_args+=(--metadata "candidate_gate_scope=default-vs-legacy")
 fi
 if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then
   paired_args+=(--metadata "candidate_route_change_gate=disabled")
