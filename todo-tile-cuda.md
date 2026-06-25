@@ -40,6 +40,14 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Add a benchmark that compares old graph-walk execution, static PyTorch execution, and CUDA Tile execution.
 - [x] Add an assertion helper for tests: no training forward/backward path may read editor position, viewport, React store, or mutable graph-editor metadata.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
+- [x] Guard the Python SDK native-training boundary against accidental Python or
+  shell launcher fallback. `NativeTrainRunConfig.strict_native_command` now
+  defaults true, and both the SDK config resolver and generic
+  `neuralfn._native_train` C++ binding reject `python`, `bash`, `*.py`, and
+  `*.sh` commands unless the caller explicitly sets
+  `strict_native_command=False` for diagnostics. The no-Torch dependency gate
+  exercises this default so native SDK handoff regressions cannot silently route
+  through Torch-era scripts.
 
 ## Current SM120 parity baseline
 

@@ -435,6 +435,7 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             "\n".join(
                 [
                     "import neuralfn",
+                    "import sys",
                     "from neuralfn import NativeGptRunConfig, NativeGpt2RunConfig, NativeTrainRunConfig",
                     "from neuralfn import build_native_gpt_compiled_cli_run_config",
                     "from neuralfn import exec_native_gpt, exec_native_gpt2, exec_native_train",
@@ -471,6 +472,15 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
                     "assert callable(resolve_native_gpt_binding_command)",
                     "assert callable(resolve_native_gpt2_binding_command)",
                     "assert callable(resolve_native_train_binding_command)",
+                    "strict_cfg = build_native_train_run_config('gpt', native_train_cli=sys.executable)",
+                    "try:",
+                    "    strict_cfg.argv()",
+                    "except ValueError as exc:",
+                    "    assert 'compiled C++ command' in str(exc)",
+                    "else:",
+                    "    raise AssertionError('native train SDK must reject Python launchers by default')",
+                    "diag_cfg = build_native_train_run_config('gpt', native_train_cli=sys.executable, strict_native_command=False)",
+                    "assert diag_cfg.argv()[0] == sys.executable",
                     "registry = native_train_model_registry()",
                     "assert isinstance(registry, dict) and registry",
                     "assert native_train_runner_status('compiled-cli').available in (True, False)",

@@ -241,6 +241,12 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+`NativeTrainRunConfig` now defaults `strict_native_command=True`: the SDK and
+generic C++ binding reject Python and shell launcher executables such as
+`python`, `bash`, `*.py`, and `*.sh` on the native training path. Pass
+`strict_native_command=False` to `build_native_train_run_config()` only for
+diagnostic command-resolution tests; real training should cross directly into a
+compiled C++ trainer or unified native frontend.
 That registry includes `transformer_lm_status`, `token_lm_status`, and
 `geometry_status`; `nanogpt` is `implemented` because the shared dense GPT
 transformer loop uses the selected NanoGPT 320-wide/5-head/5-layer geometry,

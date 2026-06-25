@@ -54,6 +54,7 @@ class NativeTrainRunConfig:
     cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
     require_cooperative_lm_head_backward: bool = False
+    strict_native_command: bool = True
 
     def argv(self) -> list[str]:
         normalized_family = normalize_native_model_family(self.model_family)
@@ -61,22 +62,22 @@ class NativeTrainRunConfig:
         family_cli = resolve_native_train_family_cli(normalized_family, self.native_train_cli)
         if family_cli is not None:
             if native_train_family_uses_model_family_arg(normalized_family):
-                return [
+                return validate_strict_native_train_command([
                     family_cli,
                     "--model-family",
                     normalized_family,
                     *args,
-                ]
-            return [
+                ], strict=self.strict_native_command)
+            return validate_strict_native_train_command([
                 family_cli,
                 *args,
-            ]
-        return [
+            ], strict=self.strict_native_command)
+        return validate_strict_native_train_command([
             resolve_native_train_cli(self.native_train_cli),
             "--base-model",
             normalized_family,
             *args,
-        ]
+        ], strict=self.strict_native_command)
 
     def command(self) -> str:
         return shlex.join(self.argv())
@@ -133,6 +134,35 @@ def resolve_native_train_cli(value: str | None = None) -> str:
     return str(repo_root / DEFAULT_NATIVE_TRAIN_CLI)
 
 
+def validate_strict_native_train_command(argv: Sequence[str], *, strict: bool = True) -> list[str]:
+    """Reject Python/shell launcher commands on the native training SDK path."""
+
+    command = [str(item) for item in argv]
+    if not strict or not command:
+        return command
+    executable = Path(command[0]).name.lower()
+    forbidden_names = {
+        "python",
+        "python3",
+        "python3.11",
+        "python3.12",
+        "python3.13",
+        "pypy",
+        "pypy3",
+        "bash",
+        "sh",
+        "zsh",
+        "fish",
+    }
+    forbidden_suffixes = (".py", ".sh", ".bash", ".zsh")
+    if executable in forbidden_names or executable.endswith(forbidden_suffixes):
+        raise ValueError(
+            "Native training requires a compiled C++ command; got launcher "
+            f"{command[0]!r}. Pass strict_native_command=False only for diagnostics."
+        )
+    return command
+
+
 def resolve_native_train_family_cli(model_family: str | None, native_train_cli: str | None = None) -> str | None:
     """Return a direct model-family trainer CLI when the SDK can skip the generic dispatcher."""
 
@@ -183,12 +213,14 @@ def build_native_train_run_config(
     *,
     native_train_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
+    strict_native_command: bool = True,
 ) -> NativeTrainRunConfig:
     return NativeTrainRunConfig(
         model_family=normalize_native_model_family(model_family),
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=native_train_cli,
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        strict_native_command=bool(strict_native_command),
     )
 
 

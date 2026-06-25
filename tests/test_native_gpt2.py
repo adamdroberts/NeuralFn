@@ -3453,6 +3453,10 @@ def test_native_train_cpp_binding_requires_command_resolver_symbol() -> None:
     assert "resolve_command" in source
     assert "resolve_native_train_command" in source
     assert "command_from_config(config, &command, &command_error)" in source
+    assert "strict_native_command" in source
+    assert "is_forbidden_native_launcher" in source
+    assert "requires a compiled C++ command" in source
+    assert "validate_strict_native_train_command" in python_source
     assert "command_resolver_available" in python_source
     assert "resolve_native_train_binding_command" in python_source
     assert "missing run_train(config_dict)/run_native_train(config_dict)" in python_source
@@ -3610,6 +3614,26 @@ def test_native_train_run_config_and_subprocess_runner(
     assert "--tile-ops-lib" in token_lm_args
     assert "--dataset-alias" in token_lm_args
     assert "--max-steps" in token_lm_args
+
+
+def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
+    cfg = build_native_train_run_config(
+        "gpt",
+        ["--dry-run"],
+        native_train_cli=sys.executable,
+    )
+
+    with pytest.raises(ValueError, match="compiled C\\+\\+ command"):
+        cfg.argv()
+
+    diagnostic_cfg = build_native_train_run_config(
+        "gpt",
+        ["--dry-run"],
+        native_train_cli=sys.executable,
+        strict_native_command=False,
+    )
+    assert diagnostic_cfg.argv()[:3] == [sys.executable, "--base-model", "gpt"]
+    assert diagnostic_cfg.to_dict()["strict_native_command"] is False
 
 
 def test_exec_native_train_replaces_process_with_compiled_cli(

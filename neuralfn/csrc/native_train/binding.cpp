@@ -1,8 +1,10 @@
 #include <Python.h>
 
 #include <cerrno>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -85,6 +87,67 @@ bool optional_string_from_config(PyObject* config, const char* key, std::string*
     return ok;
 }
 
+bool optional_bool_from_config(PyObject* config, const char* key, bool default_value, bool* out) {
+    PyObject* value = get_optional_item(config, key);
+    if (value == nullptr) {
+        if (PyErr_Occurred()) {
+            return false;
+        }
+        *out = default_value;
+        return true;
+    }
+    const int truthy = PyObject_IsTrue(value);
+    Py_DECREF(value);
+    if (truthy < 0) {
+        return false;
+    }
+    *out = truthy != 0;
+    return true;
+}
+
+bool is_forbidden_native_launcher(const std::string& command) {
+    const std::string executable = std::filesystem::path(command).filename().string();
+    std::string lower;
+    lower.reserve(executable.size());
+    for (char ch : executable) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    static const char* forbidden_names[] = {
+        "python", "python3", "python3.11", "python3.12", "python3.13",
+        "pypy", "pypy3", "bash", "sh", "zsh", "fish",
+    };
+    for (const char* name : forbidden_names) {
+        if (lower == name) {
+            return true;
+        }
+    }
+    static const char* forbidden_suffixes[] = {".py", ".sh", ".bash", ".zsh"};
+    for (const char* suffix : forbidden_suffixes) {
+        const std::size_t suffix_len = std::strlen(suffix);
+        if (lower.size() >= suffix_len &&
+            lower.compare(lower.size() - suffix_len, suffix_len, suffix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool validate_native_command_from_config(
+    PyObject* config,
+    std::vector<std::string>* command,
+    std::string* error) {
+    bool strict_native_command = true;
+    if (!optional_bool_from_config(config, "strict_native_command", true, &strict_native_command)) {
+        return false;
+    }
+    if (strict_native_command && !command->empty() && is_forbidden_native_launcher((*command)[0])) {
+        *error = "native train binding requires a compiled C++ command; got launcher " + (*command)[0] +
+            ". Set strict_native_command=False only for diagnostics.";
+        command->clear();
+    }
+    return true;
+}
+
 bool command_from_config(PyObject* config, std::vector<std::string>* command, std::string* error) {
     std::string train_data;
     std::string val_data;
@@ -106,19 +169,19 @@ bool command_from_config(PyObject* config, std::vector<std::string>* command, st
         return false;
     }
     if (!command->empty()) {
-        return true;
+        return validate_native_command_from_config(config, command, error);
     }
     if (!string_list_from_config(config, second_key, command)) {
         return false;
     }
     if (!command->empty()) {
-        return true;
+        return validate_native_command_from_config(config, command, error);
     }
     if (!string_list_from_config(config, "launcher_argv", command)) {
         return false;
     }
     if (!command->empty()) {
-        return true;
+        return validate_native_command_from_config(config, command, error);
     }
 
     *error = alias_only_gpt_config

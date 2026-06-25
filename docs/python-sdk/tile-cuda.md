@@ -2710,6 +2710,12 @@ inspection path through `resolve_native_gpt_binding_command(config)` and
 `resolve_native_gpt2_binding_command(config)`, backed by `resolve_command` /
 `resolve_native_gpt_command` / `resolve_native_gpt2_command` in the C++
 extension.
+`NativeTrainRunConfig.strict_native_command` defaults to `True`, and the Python
+SDK plus generic C++ binding reject Python/shell launchers (`python`, `bash`,
+`*.py`, `*.sh`) on the native training path. Set
+`strict_native_command=False` only for diagnostic command-resolution tests; real
+training should resolve to a compiled native trainer or the unified C++
+frontend.
 Rebuilt GPT bindings also expose `run_gpt_capture`, `run_gpt2_capture`, and
 `run_infer`, which run a compiled native command through the C++ binding while
 returning captured stdout for SDK-native checkpoint sampling.

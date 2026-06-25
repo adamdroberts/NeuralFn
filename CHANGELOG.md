@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the native training SDK and generic C++ binding boundary. The new
+  `NativeTrainRunConfig.strict_native_command` field defaults to `True`, and
+  both `build_native_train_run_config().argv()` and the `neuralfn._native_train`
+  binding reject Python/shell launcher executables such as `python`, `bash`,
+  `*.py`, and `*.sh` on the native training path. Pass
+  `strict_native_command=False` only for diagnostic command-resolution tests.
+
+  Breaking changes: callers that intentionally passed a Python or shell wrapper
+  as `native_train_cli` now need to switch to a compiled C++ native trainer
+  command, the unified native frontend, or explicitly opt out with
+  `strict_native_command=False` for diagnostics.
+
+  Verification: focused native SDK/binding tests, Python compile for
+  `neuralfn/native_train.py` and `tools/check_native_no_torch_deps.py`, C++
+  syntax/build coverage through the native train binding test, and
+  `git diff --check`.
+
 - Improved SM120 paired benchmark readability for native stage timing. The
   hot-stage text summary now prints `count_mean` and `avg_ms_mean` beside
   selected `*.total_ms` metrics when native profile JSON includes those sibling
