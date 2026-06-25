@@ -206,6 +206,17 @@ After the aligned-store kernel update, runtime JSON names the route as
 `no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction`
 and reports `lm_head_ce_bf16_vector_io_strategy:
 vec8-loads-normal-vec8-stores` when the prob-only path actually runs.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_ce_target_corrections`
+is the next diagnostic step toward the true row-chunked LM-head fused body: it
+sets `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS=1` and folds the
+dHidden and dWeight target correction into the same prob-only CE row kernel,
+so the separate combined correction launch is skipped. It is rejected by
+default: the CUDA 13.3.33 dedicated RTX 5090 one-step stage-timed gate changed
+the runtime strategy to
+`no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-ce-target-correction`
+and improved the non-cooperative native train-loop wall ratio to `0.968799x`,
+but regressed `stage.lm_head_backward.ce.total_ms` to `1.053810x` and still
+trailed llm.kittens at `1.101282x` train-loop wall time.
 Within that diagnostic route, the combined target-correction kernel now
 defaults to 512 threads instead of 256. Override
 `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,

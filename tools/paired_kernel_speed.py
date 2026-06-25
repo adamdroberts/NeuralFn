@@ -235,6 +235,10 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_prob_only_corrections_chunk_count",),
     ),
     (
+        "lm_head_prob_only_ce_target_correction_chunk_count",
+        ("lm_head_prob_only_ce_target_correction_chunk_count",),
+    ),
+    (
         "lm_head_prob_only_combined_correction_launch_count",
         ("lm_head_prob_only_combined_correction_launch_count",),
     ),
@@ -780,6 +784,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_dhidden_strided_vocab_gemm_count",
     "lm_head_dweight_strided_vocab_gemm_count",
     "lm_head_prob_only_corrections_chunk_count",
+    "lm_head_prob_only_ce_target_correction_chunk_count",
     "lm_head_prob_only_combined_correction_launch_count",
     "lm_head_prob_only_dhidden_correction_launch_count",
     "lm_head_prob_only_dweight_correction_launch_count",
@@ -1091,6 +1096,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_dhidden_strided_vocab_gemm_count",
     "lm_head_dweight_strided_vocab_gemm_count",
     "lm_head_prob_only_corrections_chunk_count",
+    "lm_head_prob_only_ce_target_correction_chunk_count",
     "lm_head_prob_only_combined_correction_launch_count",
     "lm_head_prob_only_dhidden_correction_launch_count",
     "lm_head_prob_only_dweight_correction_launch_count",

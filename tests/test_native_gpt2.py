@@ -2356,6 +2356,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_prob_only_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1",
         "lm_head_prob_only_combined_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1",
+        "lm_head_prob_only_ce_target_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS=1",
         "lm_head_prob_only_combined_corrections_threads_512": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_vec8_normal_store_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1",
@@ -8602,11 +8603,21 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_prob_only_kernel",
         1,
     )[1].split(
-        "__global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel",
+        "__global__ void lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits_kernel",
         1,
     )[0]
     assert "load_bf16_vec8(row_logits + col)" in prob_only_body
     assert "store_bf16_vec8_normal(" in prob_only_body
+    ce_target_body = kernels_text.split(
+        "__global__ void lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits_kernel",
+        1,
+    )[1].split(
+        "__global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel",
+        1,
+    )[0]
+    assert "store_bf16_vec8_normal(" in ce_target_body
+    assert "grad_hidden[row_dim] -= loss_scale * weight" in ce_target_body
+    assert "atomicAdd(" in ce_target_body
     assert "NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
@@ -9186,6 +9197,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_CLASSIFIER_CE_NO_LOSS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
@@ -9203,7 +9216,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction"
         in gpt2_source_text
     )
+    assert (
+        "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-ce-target-correction"
+        in gpt2_source_text
+    )
     assert "lm_head_prob_only_corrections_chunk_count > 0" in gpt2_source_text
+    assert "lm_head_prob_only_ce_target_correction_chunk_count" in gpt2_source_text
     assert "no-loss-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text

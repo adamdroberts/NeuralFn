@@ -12621,6 +12621,79 @@ __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bi
   }
 }
 
+__global__ void lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits_kernel(
+    std::uint16_t* __restrict__ logits,
+    const std::uint16_t* __restrict__ targets,
+    const std::uint16_t* __restrict__ token_weight_bf16,
+    const std::uint16_t* __restrict__ hidden_bf16,
+    float* __restrict__ grad_hidden,
+    float* __restrict__ grad_weight,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t hidden_dim,
+    std::int64_t token_weight_row_stride,
+    std::int64_t grad_weight_row_stride,
+    float loss_scale,
+    bool reverse_rows) {
+  const std::int64_t launch_row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t row = reverse_rows ? rows - launch_row - 1 : launch_row;
+  if (row >= rows) {
+    return;
+  }
+  __shared__ float reduce_max_shared[32];
+  __shared__ float reduce_sum_shared[32];
+
+  std::uint16_t* row_logits = logits + row * row_stride;
+  float thread_max = bf16_row_max_vec8_or_scalar(row_logits, vocab, true);
+  const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
+
+  float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, false);
+  const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
+  const std::uint16_t target = targets[row];
+
+  constexpr std::int64_t kVec = 8;
+  const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+  for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+       col < aligned_vocab;
+       col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+    const int4 packed = load_bf16_vec8(row_logits + col);
+    std::uint16_t grad[8];
+#pragma unroll
+    for (int offset = 0; offset < 8; ++offset) {
+      const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
+      const float prob = expf(value - row_max) / row_denom;
+      grad[offset] = f32_to_bf16_bits_device(prob * loss_scale);
+    }
+    store_bf16_vec8_normal(
+        row_logits + col,
+        grad[0],
+        grad[1],
+        grad[2],
+        grad[3],
+        grad[4],
+        grad[5],
+        grad[6],
+        grad[7]);
+  }
+  for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+    const float value = bf16_bits_to_f32_device(row_logits[col]);
+    const float prob = expf(value - row_max) / row_denom;
+    row_logits[col] = f32_to_bf16_bits_device(prob * loss_scale);
+  }
+
+  for (std::int64_t dim = threadIdx.x; dim < hidden_dim; dim += blockDim.x) {
+    const std::int64_t row_dim = row * hidden_dim + dim;
+    const float weight = bf16_bits_to_f32_device(
+        token_weight_bf16[static_cast<std::int64_t>(target) * token_weight_row_stride + dim]);
+    const float hidden = bf16_bits_to_f32_device(hidden_bf16[row_dim]);
+    grad_hidden[row_dim] -= loss_scale * weight;
+    atomicAdd(
+        grad_weight + static_cast<std::int64_t>(target) * grad_weight_row_stride + dim,
+        -loss_scale * hidden);
+  }
+}
+
 __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel(
     std::uint16_t* __restrict__ logits,
     const std::uint16_t* __restrict__ targets,
@@ -19404,6 +19477,46 @@ void launch_lm_head_classifier_backward_prob_only_inplace_strided_no_pad_zero_bf
   const int threads = cross_entropy_bf16_threads_per_row();
   token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_prob_only_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
       logits, targets, rows, vocab, row_stride, loss_scale, lm_head_ce_reverse_rows_enabled());
+}
+
+void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    const std::uint16_t* token_weight_bf16,
+    const std::uint16_t* hidden_bf16,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t hidden_dim,
+    std::int64_t token_weight_row_stride,
+    std::int64_t grad_weight_row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
+  if (rows <= 0 || hidden_dim <= 0) {
+    return;
+  }
+  const int threads = cross_entropy_bf16_threads_per_row();
+  lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits,
+      targets,
+      token_weight_bf16,
+      hidden_bf16,
+      grad_hidden,
+      grad_weight,
+      rows,
+      vocab,
+      row_stride,
+      hidden_dim,
+      token_weight_row_stride,
+      grad_weight_row_stride,
+      loss_scale,
+      lm_head_ce_reverse_rows_enabled());
 }
 
 void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(

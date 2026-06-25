@@ -6,6 +6,53 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in LM-head prob-only CE target-correction kernel candidate. The
+  new Tile-CUDA ABI
+  `nfn_native_tile_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits`
+  writes prob-only BF16 dlogits and applies the dHidden/dWeight target
+  correction for the resident row chunk in the same CE row kernel, eliminating
+  the separate combined target-correction launch for that diagnostic path.
+  `nfn_gpt_native_train` exposes it behind
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS` /
+  `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS` /
+  `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_CE_TARGET_CORRECTIONS`, reports requested /
+  available / enabled booleans plus
+  `lm_head_prob_only_ce_target_correction_chunk_count`, and labels the runtime
+  strategy as
+  `no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-ce-target-correction`.
+  The SM120 candidate wrapper adds
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_ce_target_corrections`
+  as a rejected-by-default diagnostic: the route moved and improved the
+  non-cooperative native one-step train-loop wall ratio, but it regressed the
+  CE substage and still missed the llm.kittens reference gate.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "prob_only or
+  native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles"`;
+  `bash tools/build_native_train_tile_ops.sh
+  /tmp/libnfn_native_train_tile_ops_ce_target.so`; `bash
+  tools/build_native_gpt2_cli.sh /tmp/nfn_gpt_native_ce_target`;
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_ce_target_corrections
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_ce_target_dry_run.json
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  bash tools/bench_native_gpt_sm120_candidate.sh`; expected-failing
+  stage/reference-gated GPU run `CUDA_VISIBLE_DEVICES=0
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_ce_target_corrections
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_ce_target_1step_v2.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_ce_target_1step_v2_profiles
+  NFN_SM120_NATIVE_COMMAND_TIMEOUT_SECONDS=300
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which showed the route
+  strategy change, passed the native route-change gate, improved native
+  train-loop wall to `0.968799x`, but failed at
+  `stage.lm_head_backward.ce.total_ms=1.053810x` and
+  candidate-over-llm.kittens train-loop wall `1.101282x`.
+
 - Updated direct strict `lm_head_backward_bench` failures to print the same
   true-fused replacement target as the JSON and shell wrapper: required strict
   symbol, capability symbol, path class, and
