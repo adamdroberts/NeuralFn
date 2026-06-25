@@ -219,6 +219,23 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--native-cuda-activation moa" in entrypoints["train_gpt2_compat_template_name_command"]["stdout"]
     assert entrypoints["train_gpt2_compat_custom_graph_command"]["passed"] is True
     assert "--graph-file" in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
+    shell_entrypoints = {entry["name"]: entry for entry in payload["shell_entrypoints"]}
+    assert shell_entrypoints["train_gpt_sm120_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--batch-size 64" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--train-seq-len 1024" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["passed"] is True
+    assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
+    assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
+    assert "--batch-size 32" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
+    assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["passed"] is True
+    assert "--template-name gpt2_moa" in shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["stdout"]
+    assert "--native-cuda-activation moa" in shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["stdout"]
+    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
+        "train_gpt_sm120_custom_graph_dry_run"
+    ]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True

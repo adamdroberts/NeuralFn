@@ -17,6 +17,18 @@ ACTIVATION="${NFN_SM120_ACTIVATION:-gelu}"
 MOA_INTERVAL="${NFN_SM120_MOA_INTERVAL:-50}"
 OUTPUT_DIR="${NFN_SM120_OUTPUT_DIR:-${ROOT_DIR}/artifacts/gpt_sm120}"
 DATASET_ALIAS="${NFN_SM120_DATASET_ALIAS:-}"
+MODEL_FAMILY="${NFN_SM120_MODEL_FAMILY:-gpt}"
+TEMPLATE_NAME="${NFN_SM120_TEMPLATE_NAME:-gpt}"
+GRAPH_FILE="${NFN_SM120_GRAPH_FILE:-}"
+TRAIN_SEQ_LEN="${NFN_SM120_TRAIN_SEQ_LEN:-1024}"
+BATCH_SIZE="${NFN_SM120_BATCH_SIZE:-64}"
+SEQ_LEN_EXPLICIT=0
+BATCH_SIZE_EXPLICIT=0
+TEMPLATE_NAME_EXPLICIT=0
+ACTIVATION_EXPLICIT=0
+if [[ -n "${NFN_SM120_ACTIVATION-}" ]]; then
+  ACTIVATION_EXPLICIT=1
+fi
 EXTRA_ARGS=()
 
 usage() {
@@ -32,12 +44,20 @@ directly with the same core defaults as llm.kittens/train-sm120.sh:
 Options:
   --activation NAME       gelu|relu|silu|relu2|prelu|sd-prelu|swiglu|geglu|ensemble|moa
   --moa-interval N       Mixture-of-activations interval when activation=moa
+  --base-model NAME      Dense GPT alias: gpt|gpt2|gpt3|nanogpt
+  --model-family NAME    Alias for --base-model
+  --template-name NAME   Shipped dense GPT template selector
+  --template NAME        Alias for --template-name
+  --preset NAME          Alias for --template-name
+  --graph-file PATH      Native-compatible dense GPT custom graph metadata
+  --graph PATH           Alias for --graph-file
   --dataset-alias PATH   Dataset alias/path for the compiled C++ resolver
   --output-dir PATH      Native output directory
   -h, --help             Show this help
 
 Any other option is forwarded to nfn_gpt_native_train after the defaults, so it
-can override defaults such as --max-steps, --eval-every-steps, or --no-checkpoint.
+can override defaults such as --batch-size, --train-seq-len, --max-steps,
+--eval-every-steps, or --no-checkpoint.
 USAGE
 }
 
@@ -45,10 +65,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --activation)
       ACTIVATION="$2"
+      ACTIVATION_EXPLICIT=1
       shift 2
       ;;
     --activation=*)
       ACTIVATION="${1#*=}"
+      ACTIVATION_EXPLICIT=1
       shift
       ;;
     --moa-interval)
@@ -57,6 +79,62 @@ while [[ $# -gt 0 ]]; do
       ;;
     --moa-interval=*)
       MOA_INTERVAL="${1#*=}"
+      shift
+      ;;
+    --base-model|--model-family)
+      MODEL_FAMILY="$2"
+      if [[ "${TEMPLATE_NAME_EXPLICIT}" == "0" ]]; then
+        TEMPLATE_NAME="$2"
+      fi
+      shift 2
+      ;;
+    --base-model=*|--model-family=*)
+      MODEL_FAMILY="${1#*=}"
+      if [[ "${TEMPLATE_NAME_EXPLICIT}" == "0" ]]; then
+        TEMPLATE_NAME="${1#*=}"
+      fi
+      shift
+      ;;
+    --template-name|--template|--preset)
+      TEMPLATE_NAME="$2"
+      TEMPLATE_NAME_EXPLICIT=1
+      shift 2
+      ;;
+    --template-name=*|--template=*|--preset=*)
+      TEMPLATE_NAME="${1#*=}"
+      TEMPLATE_NAME_EXPLICIT=1
+      shift
+      ;;
+    --graph-file|--graph)
+      GRAPH_FILE="$2"
+      shift 2
+      ;;
+    --graph-file=*|--graph=*)
+      GRAPH_FILE="${1#*=}"
+      shift
+      ;;
+    --train-seq-len|--seq-len)
+      TRAIN_SEQ_LEN="$2"
+      SEQ_LEN_EXPLICIT=1
+      EXTRA_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --train-seq-len=*|--seq-len=*)
+      TRAIN_SEQ_LEN="${1#*=}"
+      SEQ_LEN_EXPLICIT=1
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+    --batch-size)
+      BATCH_SIZE="$2"
+      BATCH_SIZE_EXPLICIT=1
+      EXTRA_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --batch-size=*)
+      BATCH_SIZE="${1#*=}"
+      BATCH_SIZE_EXPLICIT=1
+      EXTRA_ARGS+=("$1")
       shift
       ;;
     --dataset-alias|--dataset-path)
@@ -91,12 +169,40 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+MODEL_FAMILY="${MODEL_FAMILY,,}"
+TEMPLATE_NAME="${TEMPLATE_NAME,,}"
 ACTIVATION="${ACTIVATION,,}"
+case "${TEMPLATE_NAME}" in
+  *moa*)
+    if [[ "${ACTIVATION_EXPLICIT}" == "0" ]]; then
+      ACTIVATION="moa"
+    fi
+    ;;
+esac
 case "${ACTIVATION}" in
   gelu|relu|silu|relu2|prelu|sd-prelu|swiglu|geglu|ensemble|moa) ;;
   *)
     echo "Invalid --activation '${ACTIVATION}'" >&2
     exit 2
+    ;;
+esac
+
+case "${MODEL_FAMILY}" in
+  gpt|gpt2|gpt3|nanogpt) ;;
+  *)
+    echo "Invalid --base-model/--model-family '${MODEL_FAMILY}'" >&2
+    exit 2
+    ;;
+esac
+
+case "${TEMPLATE_NAME}" in
+  gpt3)
+    if [[ "${SEQ_LEN_EXPLICIT}" == "0" ]]; then
+      TRAIN_SEQ_LEN=2048
+    fi
+    if [[ "${BATCH_SIZE_EXPLICIT}" == "0" ]]; then
+      BATCH_SIZE=32
+    fi
     ;;
 esac
 
@@ -125,9 +231,15 @@ if [[ "${ACTIVATION}" == "moa" ]]; then
   MOA_ARGS=(--native-cuda-moa-interval "${MOA_INTERVAL}")
 fi
 
+GRAPH_ARGS=()
+if [[ -n "${GRAPH_FILE}" ]]; then
+  GRAPH_ARGS=(--graph-file "${GRAPH_FILE}")
+fi
+
 exec "${NATIVE_GPT_TRAIN_BIN}" \
-  --model-family gpt \
-  --template-name gpt \
+  --model-family "${MODEL_FAMILY}" \
+  --template-name "${TEMPLATE_NAME}" \
+  "${GRAPH_ARGS[@]}" \
   "${DATASET_ARGS[@]}" \
   --backend tile-cuda \
   "${TILE_OPS_ARGS[@]}" \
@@ -136,8 +248,8 @@ exec "${NATIVE_GPT_TRAIN_BIN}" \
   --eval-batches 20 \
   --native-cuda-sample-every 20000 \
   --native-cuda-generate-tokens 144 \
-  --batch-size 64 \
-  --train-seq-len 1024 \
+  --batch-size "${BATCH_SIZE}" \
+  --train-seq-len "${TRAIN_SEQ_LEN}" \
   --train-batch-tokens 524288 \
   --learning-rate 0.0006 \
   --final-lr-fraction 0.0 \

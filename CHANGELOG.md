@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the zero-Python SM120 dense GPT helper to expose universal GPT native
+  selectors directly. `tools/train_gpt_sm120.sh` now accepts `--base-model` /
+  `--model-family`, `--template-name` / `--template` / `--preset`, and
+  `--graph-file` / `--graph` before execing `nfn_gpt_native_train`, so the
+  workstation helper can run GPT, GPT-2, GPT-3, NanoGPT, shipped GPT variants,
+  and native-compatible custom graph metadata without going through Python or
+  graph-editor tensor flow. Selecting `gpt3` through the model or template
+  selector now defaults the helper to `--train-seq-len 2048 --batch-size 32`
+  unless those flags are explicitly supplied, preserving the 524288-token
+  optimizer batch. Selecting an MoA template now defaults the helper to
+  `--native-cuda-activation moa` unless the caller explicitly sets
+  `--activation` or `NFN_SM120_ACTIVATION`.
+
+  Verification: `bash -n tools/train_gpt_sm120.sh`;
+  `NFN_NATIVE_GPT_TRAIN_BIN=/tmp/nfn-gpt-native-train-stub bash
+  tools/train_gpt_sm120.sh --base-model gpt3 --print-command --dry-run
+  --no-checkpoint`; `NFN_NATIVE_GPT_TRAIN_BIN=/tmp/nfn-gpt-native-train-stub
+  bash tools/train_gpt_sm120.sh --template-name gpt2_moa --graph-file
+  /tmp/native-compatible-gpt-graph.json --print-command --dry-run
+  --no-checkpoint`; `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; `git diff
+  --check`.
+
 - Added a startup-only BF16/uint16 arena-first diagnostic for native dense GPT
   training. `NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1` (or compatibility
   `NFN_NATIVE_GPT2_UINT16_ARENA_FIRST=1`) materializes the separate

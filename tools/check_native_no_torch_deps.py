@@ -703,6 +703,34 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         ),
         {},
     ),
+    (
+        "train_gpt_sm120_gpt3_dry_run",
+        (
+            "bash",
+            "tools/train_gpt_sm120.sh",
+            "--base-model",
+            "gpt3",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_sm120_custom_graph_dry_run",
+        (
+            "bash",
+            "tools/train_gpt_sm120.sh",
+            "--template-name",
+            "gpt2_moa",
+            "--graph-file",
+            "/tmp/native-compatible-gpt-graph.json",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
