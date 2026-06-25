@@ -69,7 +69,12 @@ diagnostic `_tk` sidecar. The linked trainer build, SM120 benchmark wrappers,
 linear/LM-head microbench wrappers, and no-Torch stale-artifact verifier treat
 `tools/build_native_train_tile_ops.sh` as a Tile ops dependency, so compile-flag
 changes force a library rebuild instead of silently reusing an old shared
-object. The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
+object. Dense GPT LM-head CUDA Graph prewarm now uploads each instantiated graph
+executable by default before training; set
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0` only for bisection, or run
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_upload_off bash tools/bench_native_gpt_sm120_candidate.sh`
+to compare upload against the opt-out route in the same selected-GPU window.
+The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
 and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
 `NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the diagnostic TK sidecar flags,
 or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed

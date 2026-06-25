@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added default CUDA Graph executable upload for the dense GPT LM-head
+  diagnostic graph wrapper. The Tile ABI now calls `cudaGraphUpload` after
+  LM-head graph instantiate during prewarm unless
+  `NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0` (or the `NFN_TILE_CUDA_...` /
+  `NFN_NATIVE_GPT2_...` aliases) disables it. Runtime JSON and
+  `tools/paired_kernel_speed.py` now report
+  `lm_head_fused_graph_upload_success_count` and
+  `lm_head_fused_graph_upload_failure_count`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_upload_off` compares the
+  default upload route against the opt-out path. The CUDA 13.3.33 dedicated
+  RTX 5090 3-step, 2-sample stage-timed gate kept upload default-on:
+  `lm_head_fused_graph_upload_success_count` moved `3 -> 0` in the opt-out
+  candidate, but train-loop wall regressed to `1.001492x`, steady-state
+  CUDA-event timing to `1.000055x`, LM-head backward to `1.000583x`, and the
+  cooperative LM-head substage to `1.000593x`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, ran the focused source-contract test,
+  a one-step route-proof native GPT run, and the same-script
+  `lm_head_graph_upload_off` candidate benchmark.
+
 - Added the rejected diagnostic profile
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_serial_body` for the dense
   GPT LM-head CUDA Graph body. The profile compares the default side-stream

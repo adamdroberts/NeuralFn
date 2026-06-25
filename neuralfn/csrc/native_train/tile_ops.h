@@ -319,6 +319,8 @@ std::int64_t nfn_native_tile_lm_head_cooperative_sequence_legacy_count();
 std::int64_t nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_capture_attempt_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_capture_success_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_upload_success_count();
+std::int64_t nfn_native_tile_lm_head_fused_graph_upload_failure_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_cache_hit_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_cache_entry_count();

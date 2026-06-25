@@ -10405,6 +10405,8 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_cooperative_sequence_loss_bin_count = 0;
     std::int64_t lm_head_fused_graph_capture_attempt_count = 0;
     std::int64_t lm_head_fused_graph_capture_success_count = 0;
+    std::int64_t lm_head_fused_graph_upload_success_count = 0;
+    std::int64_t lm_head_fused_graph_upload_failure_count = 0;
     std::int64_t lm_head_fused_graph_cache_hit_count = 0;
     std::int64_t lm_head_fused_graph_thread_cache_hit_count = 0;
     std::int64_t lm_head_fused_graph_cache_entry_count = 0;
@@ -11374,6 +11376,8 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_loss_bin_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_capture_attempt_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_capture_success_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_fused_graph_upload_success_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_fused_graph_upload_failure_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_cache_hit_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_thread_cache_hit_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_cache_entry_count_fn = nullptr;
@@ -11995,6 +11999,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_fused_graph_capture_attempt_count");
                 lm_head_fused_graph_capture_success_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_fused_graph_capture_success_count");
+                lm_head_fused_graph_upload_success_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_fused_graph_upload_success_count");
+                lm_head_fused_graph_upload_failure_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_fused_graph_upload_failure_count");
                 lm_head_fused_graph_cache_hit_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_fused_graph_cache_hit_count");
                 lm_head_fused_graph_thread_cache_hit_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -21083,6 +21091,12 @@ int run_transformer_lm_training_json(
     if (lm_head_fused_graph_capture_success_count_fn != nullptr) {
         lm_head_fused_graph_capture_success_count = lm_head_fused_graph_capture_success_count_fn();
     }
+    if (lm_head_fused_graph_upload_success_count_fn != nullptr) {
+        lm_head_fused_graph_upload_success_count = lm_head_fused_graph_upload_success_count_fn();
+    }
+    if (lm_head_fused_graph_upload_failure_count_fn != nullptr) {
+        lm_head_fused_graph_upload_failure_count = lm_head_fused_graph_upload_failure_count_fn();
+    }
     if (lm_head_fused_graph_cache_hit_count_fn != nullptr) {
         lm_head_fused_graph_cache_hit_count = lm_head_fused_graph_cache_hit_count_fn();
     }
@@ -22153,6 +22167,10 @@ int run_transformer_lm_training_json(
         << lm_head_fused_graph_capture_attempt_count << ",\n"
         << "  \"lm_head_fused_graph_capture_success_count\": "
         << lm_head_fused_graph_capture_success_count << ",\n"
+        << "  \"lm_head_fused_graph_upload_success_count\": "
+        << lm_head_fused_graph_upload_success_count << ",\n"
+        << "  \"lm_head_fused_graph_upload_failure_count\": "
+        << lm_head_fused_graph_upload_failure_count << ",\n"
         << "  \"lm_head_fused_graph_cache_hit_count\": "
         << lm_head_fused_graph_cache_hit_count << ",\n"
         << "  \"lm_head_fused_graph_thread_cache_hit_count\": "

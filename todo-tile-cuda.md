@@ -649,6 +649,22 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       Keep the default side-stream graph body; the next useful LM-head work is
       still a real fused classifier/dHidden/dWeight kernel, not serializing the
       current graph body.
+    - 2026-06-25 added default `cudaGraphUpload` for each prewarmed LM-head
+      CUDA Graph executable plus upload telemetry. Runtime JSON and
+      `tools/paired_kernel_speed.py` now report
+      `lm_head_fused_graph_upload_success_count` and
+      `lm_head_fused_graph_upload_failure_count`; the inverse profile
+      `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_upload_off` sets
+      `NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0` so the default upload route can be
+      kept only if same-script hot-stage gates do not favor the opt-out path.
+      The CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed gate
+      proved the route change (`lm_head_fused_graph_upload_success_count:
+      3 -> 0`) and rejected the opt-out path: train-loop wall `1.001492x`,
+      steady-state CUDA-event timing `1.000055x`, LM-head backward
+      `1.000583x`, cooperative LM-head `1.000593x`, block backward
+      `1.002290x`, and MLP projection backward `1.008134x`. Keep graph upload
+      default-on; this is still launch/setup hygiene, not the true fused
+      LM-head classifier/dHidden/dWeight kernel.
     - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
       llm.kittens-parity became the default integrated LM-head route.
       `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus

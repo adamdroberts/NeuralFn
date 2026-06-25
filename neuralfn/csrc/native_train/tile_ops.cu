@@ -1886,6 +1886,19 @@ bool lm_head_graph_body_serial_enabled() {
            env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_SERIAL");
 }
 
+bool lm_head_graph_upload_enabled() {
+    const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_UPLOAD");
+    const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD");
+    const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_UPLOAD");
+    const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
+    if (value == nullptr) {
+        return true;
+    }
+    std::string_view text(value);
+    return !(text == "0" || text == "false" || text == "FALSE" ||
+             text == "no" || text == "NO" || text == "off" || text == "OFF");
+}
+
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_ce_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_dhidden_launch_count{0};
@@ -1895,6 +1908,8 @@ std::atomic<std::int64_t> g_lm_head_cooperative_sequence_legacy_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_loss_bin_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_capture_attempt_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_capture_success_count{0};
+std::atomic<std::int64_t> g_lm_head_fused_graph_upload_success_count{0};
+std::atomic<std::int64_t> g_lm_head_fused_graph_upload_failure_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_cache_hit_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_thread_cache_hit_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_replay_count{0};
@@ -2159,6 +2174,16 @@ int capture_lm_head_classifier_backward_graph_bf16_u16(
         cudaGraphExecDestroy(exec);
         return static_cast<int>(destroy_status);
     }
+    if (lm_head_graph_upload_enabled()) {
+        const cudaError_t upload_status = cudaGraphUpload(exec, stream);
+        if (upload_status == cudaSuccess) {
+            g_lm_head_fused_graph_upload_success_count.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            g_lm_head_fused_graph_upload_failure_count.fetch_add(1, std::memory_order_relaxed);
+            cudaGraphExecDestroy(exec);
+            return static_cast<int>(upload_status);
+        }
+    }
     *exec_out = exec;
     g_lm_head_fused_graph_capture_success_count.fetch_add(1, std::memory_order_relaxed);
     return 0;
@@ -2393,6 +2418,14 @@ std::int64_t nfn_native_tile_lm_head_fused_graph_capture_attempt_count() {
 
 std::int64_t nfn_native_tile_lm_head_fused_graph_capture_success_count() {
     return g_lm_head_fused_graph_capture_success_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_fused_graph_upload_success_count() {
+    return g_lm_head_fused_graph_upload_success_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_fused_graph_upload_failure_count() {
+    return g_lm_head_fused_graph_upload_failure_count.load(std::memory_order_relaxed);
 }
 
 std::int64_t nfn_native_tile_lm_head_fused_graph_cache_hit_count() {

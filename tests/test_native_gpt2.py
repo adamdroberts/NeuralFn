@@ -1788,6 +1788,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_header
     assert "lm_head_prob_only_target_correction_threads" in source
     assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
+    assert "cudaGraphUpload(exec, stream)" in tile_ops_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD" in tile_ops_source
     assert "prewarm_lm_head_classifier_backward_graph_bf16_u16" in tile_ops_source
     assert "cudaStreamCreateWithFlags" in tile_ops_source
     assert "cudaEventRecord(cooperative_streams.ce_done, stream)" in tile_ops_source
@@ -1839,6 +1841,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_capture_attempt_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_capture_success_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_fused_graph_upload_success_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_fused_graph_upload_failure_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_entry_count" in tile_ops_header
@@ -1847,6 +1851,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in tile_ops_header
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
+    assert "lm_head_fused_graph_upload_success_count" in source
+    assert "lm_head_fused_graph_upload_failure_count" in source
     assert "lm_head_fused_graph_thread_cache_hit_count" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_failure_count" in source
@@ -1906,7 +1912,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
+    assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert '"lm_head_graph_serial_body"|"lm-head-graph-serial-body"' in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
@@ -1940,6 +1949,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
+    assert "lm_head_fused_graph_upload_success_count" in speed_tool
+    assert "lm_head_fused_graph_upload_failure_count" in speed_tool
     assert "lm_head_fused_graph_thread_cache_hit_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
     assert "lm_head_fused_graph_body_node_count_per_replay" in speed_tool
