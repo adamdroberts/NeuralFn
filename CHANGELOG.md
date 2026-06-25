@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the SM120 native candidate rejection record for
+  `linear_bias_threads_512` after the CUDA Toolkit 13.3 WSL reinstall. The
+  benchmark wrapper still rejects the profile by default, but the reason now
+  records the current dedicated RTX 5090 post-reinstall gate instead of the
+  older mixed result. This is benchmark hygiene only; runtime defaults remain
+  unchanged.
+
+  Verification:
+  `NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512'
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_bias_threads_512_after_cuda133_retry.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the promotion
+  gates at `1.012417x` train-loop wall and `1.020275x` block-backward time.
+
 - Changed the default dense GPT cooperative LM-head CUDA Graph wrapper to
   capture the same post-CE fork/join schedule used by the cooperative sequence
   path. The graph body now records CE completion, launches dHidden and dWeight

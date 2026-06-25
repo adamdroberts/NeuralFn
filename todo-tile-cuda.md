@@ -2067,3 +2067,16 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     parity or prove a distinct hot route. Keep the next work focused on a real
     fused/cooperative LM-head or block-backward kernel, not compile-flag
     promotion or graph-editor/Torch/startup hypotheses.
+  - 2026-06-25 retried the `linear_bias_threads_512` block-backward candidate
+    after the CUDA Toolkit 13.3 reinstall on the display-disabled RTX 5090.
+    The same-script 3-step, 2-sample stage-timed gate proved the route changed
+    (`block_state_layout.linear_backward_bias_threads_per_block: 256 -> 512`)
+    but rejected it harder than the earlier mixed result:
+    `train_loop_wall_ms_per_step=1.012417x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000036x`,
+    `stage.block_backward.total_ms=1.020275x`,
+    `stage.block_backward.attn_proj.dweight_bias.total_ms=1.251681x`, and
+    `stage.block_backward.mlp_proj.dweight_bias.total_ms=1.000634x`. Keep the
+    256-thread Tile-CUDA bias reducer as default; the next viable
+    block-backward work needs a different dWeight+bias kernel or grouped/fused
+    schedule, not a larger scalar bias-reduction block.

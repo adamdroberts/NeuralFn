@@ -274,7 +274,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "linear_bias_threads_512"|"linear-bias-threads-512"|"bgrad_threads_512"|"bgrad-threads-512")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and improved train_loop_wall_ms_per_step to 0.989155x and block backward to 0.961836x, but failed strict gates at 1.000446x steady-state CUDA-event step time and 1.066923x stage.block_backward.mlp_fc.dweight_bias.total_ms. Keep the Tile-CUDA default at 256 threads."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 post-reinstall 3-step, 2-sample stage-timed retry changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512, but regressed train_loop_wall_ms_per_step to 1.012417x, stage.block_backward.total_ms to 1.020275x, stage.block_backward.attn_proj.dweight_bias.total_ms to 1.251681x, and stage.block_backward.mlp_proj.dweight_bias.total_ms to 1.000634x. Keep the Tile-CUDA default at 256 threads."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512"
     ;;
