@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a startup-only BF16/uint16 arena-first diagnostic for native dense GPT
+  training. `NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1` (or compatibility
+  `NFN_NATIVE_GPT2_UINT16_ARENA_FIRST=1`) materializes the separate
+  BF16/uint16 arena before the float arena when the default split-arena
+  `cudaMalloc` path is active. It does not affect the combined-arena or
+  concurrent materialization probes. Runtime JSON now reports
+  `uint16_arena_first_requested`, `uint16_arena_first_enabled`, and
+  `arena_materialize_order`; `tools/paired_kernel_speed.py` extracts those fields
+  in native candidate summaries. The SM120 wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=uint16_arena_first` compares the current
+  float-first order against the candidate in startup-only mode, but is now
+  rejected by default. The CUDA 13.3.33 dedicated RTX 5090 7-sample gate changed
+  `arena_materialize_order` from `float-then-uint16` to `uint16-then-float`, but
+  rejected default promotion because `setup_wall_ms` regressed to `1.013035x`
+  mean / `1.010524x` median, `setup.uint16_arena_materialize.total_ms` regressed
+  to `2.369884x`, and `setup.token_weight_init.total_ms` regressed to
+  `1.135714x`.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `bash tools/rebuild_native_sm120.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=uint16_arena_first
+  NFN_SM120_NATIVE_SAMPLES=7 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_STARTUP_ONLY=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_uint16_arena_first_startup_7sample.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`.
+
 - Changed the SM120 native candidate benchmark wrapper to run the llm.kittens
   `train_gpt2cu` reference by default. `tools/bench_native_gpt_sm120_candidate.sh`
   now defaults `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE` to `1`, so candidate

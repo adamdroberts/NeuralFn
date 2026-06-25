@@ -698,6 +698,9 @@ NATIVE_METRIC_PATHS = (
         "uint16_arena_pointer_assign_wall_ms",
         ("uint16_arena_pointer_assign_wall_ms",),
     ),
+    ("uint16_arena_first_requested", ("uint16_arena_first_requested",)),
+    ("uint16_arena_first_enabled", ("uint16_arena_first_enabled",)),
+    ("arena_materialize_order", ("arena_materialize_order",)),
     (
         "transformer_device_arena_cuda_malloc_wall_ms",
         ("transformer_device_arena_cuda_malloc_wall_ms",),
@@ -1299,6 +1302,8 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "setup.uint16_arena_materialize.total_ms",
     "uint16_arena_cuda_malloc_wall_ms",
     "uint16_arena_pointer_assign_wall_ms",
+    "uint16_arena_first_enabled",
+    "arena_materialize_order",
     "transformer_device_arena_cuda_malloc_wall_ms",
     "transformer_device_arena_pointer_assign_wall_ms",
     "setup.token_weight_init.total_ms",

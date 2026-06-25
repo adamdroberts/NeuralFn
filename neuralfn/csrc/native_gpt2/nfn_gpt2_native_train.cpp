@@ -13642,6 +13642,12 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_CONCURRENT_ARENA_MATERIALIZE"}),
             false);
     concurrent_arena_materialize_requested = concurrent_arena_materialize_requested_flag ? 1 : 0;
+    const bool uint16_arena_first_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_UINT16_ARENA_FIRST",
+                              "NFN_NATIVE_GPT2_UINT16_ARENA_FIRST"}),
+            false);
+    std::int64_t uint16_arena_first_enabled = 0;
     const bool skip_exit_device_free_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_SKIP_EXIT_CUDA_FREE",
@@ -15185,10 +15191,24 @@ int run_transformer_lm_training_json(
                 "block_dweight_bf16_staging_arena");
         }
     };
+    const bool uint16_arena_first_materialize_enabled =
+        uint16_arena_first_requested &&
+        !concurrent_arena_materialize_requested_flag &&
+        !combined_transformer_device_arena_enabled &&
+        combined_uint16_arena_enabled;
+    uint16_arena_first_enabled = uint16_arena_first_materialize_enabled ? 1 : 0;
     if (concurrent_arena_materialize_requested_flag) {
         run_setup_timed("setup.float_uint16_arena_materialize_concurrent", [&]() {
             request_uint16_arenas();
             materialize_float_and_uint16_arenas_concurrently();
+        });
+    } else if (uint16_arena_first_materialize_enabled) {
+        run_setup_timed("setup.uint16_arena_materialize", [&]() {
+            request_uint16_arenas();
+            materialize_uint16_arena();
+        });
+        run_setup_timed("setup.float_arena_materialize", [&]() {
+            materialize_float_arena();
         });
     } else {
         run_setup_timed("setup.float_arena_materialize", [&]() {
@@ -23523,6 +23543,15 @@ int run_transformer_lm_training_json(
         << "  \"uint16_arena_cuda_malloc_wall_ms\": " << uint16_arena_cuda_malloc_wall_ms << ",\n"
         << "  \"uint16_arena_pointer_assign_wall_ms\": " << uint16_arena_pointer_assign_wall_ms << ",\n"
         << "  \"uint16_arena_suballocation_count\": " << uint16_arena_requests.size() << ",\n"
+        << "  \"uint16_arena_first_requested\": "
+        << (uint16_arena_first_requested ? "true" : "false") << ",\n"
+        << "  \"uint16_arena_first_enabled\": "
+        << (uint16_arena_first_enabled ? "true" : "false") << ",\n"
+        << "  \"arena_materialize_order\": \""
+        << (concurrent_arena_materialize_enabled
+                ? "concurrent-float-uint16"
+                : (uint16_arena_first_enabled ? "uint16-then-float" : "float-then-uint16"))
+        << "\",\n"
         << "  \"transformer_device_arena_requested\": "
         << (combined_transformer_device_arena_requested ? "true" : "false") << ",\n"
         << "  \"transformer_device_arena_enabled\": "

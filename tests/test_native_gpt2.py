@@ -2273,6 +2273,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "float_arena_pointer_assign_wall_ms" in speed_source
     assert "uint16_arena_cuda_malloc_wall_ms" in speed_source
     assert "uint16_arena_pointer_assign_wall_ms" in speed_source
+    assert "uint16_arena_first_enabled" in speed_source
+    assert "arena_materialize_order" in speed_source
     assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
     assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
     assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
@@ -2334,6 +2336,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         ),
         "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
         "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",
+        "uint16_arena_first": "NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1",
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
