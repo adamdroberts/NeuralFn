@@ -109,9 +109,12 @@ that rejected historical route, or pass `--lm-head-row-chunk-size 8192`,
 lower-memory default. A full-batch 65536-row chunk is not a default candidate:
 the CUDA 13.3 RTX 5090 paired run timed out at the 300s sample limit after
 leaving the GPU utilization counter stuck until the WSL driver recovered, and
-the latest named-profile rerun also timed out at 360s. Use
+the latest CUDA 13.3.33 dedicated 5090 current/native/reference rerun proved
+the route but regressed to `7.368793x` train-loop wall time versus current
+native and `8.037520x` versus llm.kittens. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536` only to reproduce
-that rejected diagnostic; it expands to
+that rejected diagnostic, with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; it expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
 65536`. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` profile now pins
@@ -1100,8 +1103,14 @@ The named `lm_head_row_chunk_65536` profile expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
 `--lm-head-row-chunk-size 65536` for repeatable full-resident LM-head chunk
 rechecks. Keep it diagnostic-only: the current CUDA 13.3 dedicated RTX 5090
-same-script run timed the candidate out at 360s while the safe 32768-row
-baseline completed the 10-step run.
+same-script current/native/reference rerun changed `lm_head_classifier_last_rows`
+from 32768 to 65536, but regressed train-loop wall time to `7.368793x` versus
+current native and `8.037520x` versus llm.kittens, cut train tokens/sec to
+`0.135708x` versus current and `0.124417x` versus llm.kittens, and collapsed the
+downstream `stage.block_backward.attn_sdpa.to_qkv.total_ms` bucket to
+`63.207371x`. Real launches now require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion remains
+available for inspection.
 The named `lm_head_row_chunk_49152` profile now benchmarks the promoted 49152
 row-chunk route against the older 32768 route by pinning both sides explicitly;
 the latest CUDA 13.3 dedicated RTX 5090 5-step, 3-sample gate passed at

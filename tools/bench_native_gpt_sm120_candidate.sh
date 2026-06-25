@@ -821,7 +821,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1"
     ;;
   "lm_head_row_chunk_65536"|"lm-head-row-chunk-65536"|"lm_head_full_row_chunk"|"lm-head-full-row-chunk")
-    TIMEOUT_PRONE_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 one-step same-script current/native/reference gate allowed the unsafe 65536-row LM-head chunk and changed lm_head_classifier_last_rows from 32768 to 65536, but rejected it because train_loop_wall_ms_per_step regressed to 7.368793x versus current native and 8.037520x versus llm.kittens, train_tokens_per_second fell to 0.135708x versus current and 0.124417x versus reference, stage.lm_head_backward.total_ms regressed to 1.022847x, and downstream stage.block_backward.attn_sdpa.to_qkv.total_ms collapsed to 63.207371x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1"
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 65536"
     ;;

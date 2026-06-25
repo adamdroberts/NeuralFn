@@ -2336,6 +2336,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_vec8_normal_store_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "lm_head_row_chunk_65536": "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
         "cublaslt_plan_prewarm_off": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0",
@@ -2389,6 +2390,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     )
     assert "CANDIDATE_NOTE=" in bench_source
     assert "keeps the loss-bin train-loss logging route as the default" in bench_source
+    assert "--lm-head-row-chunk-size 65536" in bench_source
+    assert "changed lm_head_classifier_last_rows from 32768 to 65536" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 7.368793x" in bench_source
+    assert "8.037520x versus llm.kittens" in bench_source
+    assert "stage.block_backward.attn_sdpa.to_qkv.total_ms collapsed to 63.207371x" in bench_source
     assert "train_loop_wall_ms_per_step to 0.981541x" in bench_source
     assert "stage.block_backward.total_ms to 0.999905x" in bench_source
     assert (

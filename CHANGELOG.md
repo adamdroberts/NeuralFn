@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `lm_head_row_chunk_65536` SM120 native candidate profile rejected by
+  default instead of only timeout-prone. The CUDA 13.3.33 dedicated RTX 5090
+  same-script current/native/reference rerun proved the unsafe 65536-row route
+  changed `lm_head_classifier_last_rows` from 32768 to 65536, but rejected it at
+  `7.368793x` train-loop wall time versus current native, `8.037520x` versus
+  llm.kittens, `0.135708x` train tokens/sec versus current, `0.124417x` versus
+  llm.kittens, and `63.207371x`
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms`. Real wrapper launches now
+  require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run plan
+  expansion remains available.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 bash tools/bench_native_gpt_sm120_candidate.sh`;
+  `git diff --check`.
+
 - Updated the zero-Python SM120 dense GPT helper to expose universal GPT native
   selectors directly. `tools/train_gpt_sm120.sh` now accepts `--base-model` /
   `--model-family`, `--template-name` / `--template` / `--preset`, and
