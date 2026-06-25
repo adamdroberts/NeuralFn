@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the `lm_head_graph_prewarm` SM120 candidate profile to measure the
+  real graph-only default-vs-opt-out path. The trainer already defaults cuBLAS
+  handle and BF16 workspace prewarm on, so the profile no longer weakens the
+  baseline with `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` or
+  `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0`. The CUDA 13.3.33 dedicated RTX
+  5090 graph-only rerun still eliminated runtime LM-head graph capture and
+  improved train-loop wall to `0.974198x`, tokens/sec to `1.026535x`,
+  LM-head backward to `0.966917x`, and block backward to `0.967327x`, but
+  rejected default promotion because steady-state CUDA-event timing regressed
+  to `1.003004x` against the strict `1.002` gate. The profile remains rejected
+  and the active LM-head parity target remains a true fused Tile kernel.
+
+  Verification:
+  `NFN_SM120_NATIVE_BASELINE_ENV='NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0'
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE=1
+  NFN_SM120_NATIVE_ROUTE_COUNTER_FIELDS='lm_head_fused_graph_capture_attempt_count,lm_head_fused_graph_capture_success_count,lm_head_fused_graph_cache_hit_count,lm_head_classifier_chunk_launch_count'
+  NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO='train_loop_wall_ms_per_step=1.000
+  train_loop_cuda_event_steady_state_wall_ms_per_step=1.002
+  stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000'
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_lm_head_graph_only_after_mlp_fc_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_graph_only_after_mlp_fc.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Promoted dense GPT MLP FC dInput-before-dWeight ordering as the native
   default. The compiled trainer now defaults
   `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT` /

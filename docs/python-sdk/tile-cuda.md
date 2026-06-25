@@ -194,12 +194,14 @@ the first optimizer step. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only for eager-capture
 comparisons. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-compares the lazy default against the prewarmed route and gates
-train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
-LM-head backward, block backward, and MLP projection backward. The current
-CUDA 13.3 RTX 5090 refresh keeps this profile rejected by default: graph
-prewarm improved LM-head backward but failed promotion on steady-state
-CUDA-event timing and block-backward regressions, so reruns require
+compares the real lazy default against the prewarmed route without toggling the
+already-default cuBLAS handle or BF16 workspace prewarm. It gates train-loop
+wall, steady-state CUDA-event timing with a `1.002` tolerance, LM-head backward,
+block backward, and MLP projection backward. The current CUDA 13.3.33 RTX 5090
+graph-only refresh keeps this profile rejected by default: graph prewarm
+improved train-loop wall to `0.974198x`, LM-head backward to `0.966917x`, and
+block backward to `0.967327x`, but failed promotion on steady-state CUDA-event
+timing at `1.003004x`, so reruns require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. Prewarmed runs
 also preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
 `lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` when

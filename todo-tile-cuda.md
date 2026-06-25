@@ -159,6 +159,14 @@ Real training tensors must not pass through graph editor node objects.
     real fused classifier-backward CUDA Tile kernel and flipping
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
     only when the strict microbenchmark passes.
+  - 2026-06-25 corrected the `lm_head_graph_prewarm` native candidate profile
+    to compare only `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` vs
+    `=1`; cuBLAS handle and BF16 workspace prewarm are already default-on and
+    must not be disabled on the baseline side. The graph-only rerun improved
+    train-loop wall to `0.974198x`, tokens/sec to `1.026535x`, LM-head backward
+    to `0.966917x`, and block backward to `0.967327x`, but still rejected
+    default graph prewarm because steady-state CUDA-event timing regressed to
+    `1.003004x` against the `1.002` gate.
   - 2026-06-25 added and rejected the opt-in
     `lm_head_ce_no_loss_vec8_normal_store_specialized` CUDA Tile kernel
     candidate. It selected the new no-loss CE+dlogits path and changed
