@@ -189,7 +189,11 @@ ABI is also available for diagnostics. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
 `lm_head_fused_graph_prewarm_cache_entry_count`. Native GPT training enables
-LM-head graph prewarm by default after the CUDA 13.3.33 RTX 5090 post-reinstall
+LM-head graph prewarm by default. Prewarm captures both the no-loss graph key
+and the active train-loss graph key, including the loss-bin variant when that
+route is configured, so the first logged train-loss step does not lazily
+capture a separate LM-head backward graph. The default was promoted after the
+CUDA 13.3.33 RTX 5090 post-reinstall
 graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
 steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
 backward `0.956792x`, and MLP projection backward `0.911989x`. Set

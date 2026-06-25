@@ -1839,6 +1839,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_prewarm_failure_count" in source
     assert "lm_head_fused_graph_prewarm_last_error_code" in source
     assert "lm_head_fused_graph_prewarm_cache_entry_count" in source
+    assert "prewarm_row_loss_reduction_available" in source
+    assert "prewarm_loss_bin_reduction_available" in source
+    assert "const int prewarm_flags[] = {kLmHeadCooperativeFlagNoLoss, prewarm_loss_flags};" in source
+    assert "lm_head.fused_graph.prewarm_loss_bins.zero" in source
     assert "lm_head_fused_graph_prewarm_last_rows = row_count" in source
     assert "lm_head_classifier_last_rows = lm_head_fused_graph_prewarm_last_rows" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source

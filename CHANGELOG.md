@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded LM-head CUDA Graph prewarm to cover the loss-recording graph variant
+  used by normal dense-GPT training. The native GPT trainer still warms the
+  no-loss LM-head backward graph, and now also warms the active train-loss graph
+  key, including loss-bin flags when that route is configured. This keeps the
+  diagnostic CUDA Graph wrapper honest while avoiding a later lazy graph capture
+  on the first logged train-loss step; it does not mark the path as a true fused
+  LM-head classifier/dHidden/dWeight kernel.
+
+  Verification: focused cooperative LM-head ABI/static test, C++ syntax check
+  for the native GPT trainer, and `git diff --check`.
+
 - Aligned the default SM120 Tile ops build with the documented dense-GPT linked
   trainer baseline. `tools/build_native_train_tile_ops.sh` now defines
   `LLMK_SM120_USE_TK_FUSED_DGELU_DINP` and

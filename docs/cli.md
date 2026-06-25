@@ -1191,6 +1191,9 @@ sequence counters mean the diagnostic wrapper or graph fallback path ran.
 that reused the small per-thread graph exec cache without re-entering the
 mutex-protected graph cache scan.
 LM-head graph prewarm is enabled by default for real native GPT training.
+It warms both the no-loss graph key and the active train-loss graph key,
+including loss-bin flags when that route is configured, so the first logged
+train-loss step does not pay a separate lazy graph capture.
 Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are

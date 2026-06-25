@@ -1522,7 +1522,10 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
 `lm_head_fused_graph_prewarm_cache_entry_count`. Graph prewarm is enabled by
-default for real training after the CUDA 13.3.33 RTX 5090 post-reinstall
+default for real training and now captures both the no-loss graph key and the
+active train-loss graph key, including the loss-bin variant when configured, so
+the first logged train-loss step does not lazily capture a separate LM-head
+backward graph. The default was promoted after the CUDA 13.3.33 RTX 5090 post-reinstall
 graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
 steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
 backward `0.956792x`, and MLP projection backward `0.911989x` versus explicit

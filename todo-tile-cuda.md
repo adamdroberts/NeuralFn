@@ -2060,6 +2060,10 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     time regressed to `1.001249x` and total LM-head backward to `1.000123x`.
     Keep it diagnostic-only; the remaining useful work is still a true fused
     or co-scheduled LM-head classifier-backward kernel body.
+  - 2026-06-25 follow-up: graph prewarm now captures both the no-loss graph key
+    and the active train-loss graph key, including the loss-bin graph flags when
+    configured, so the first logged train-loss step does not pay a separate
+    lazy LM-head CUDA Graph capture.
   - 2026-06-25 refreshed the CUDA 13.3.33 post-reinstall LM-head trainer-chunk
     microbench after rebuilding `libnfn_native_train_tile_ops.so` and the
     linked native GPT trainer. The diagnostic non-strict run completed on the

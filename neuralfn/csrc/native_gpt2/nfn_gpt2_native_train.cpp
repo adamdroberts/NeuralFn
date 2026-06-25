@@ -20166,12 +20166,31 @@ int run_transformer_lm_training_json(
             return;
         }
         run_setup_timed("lm_head_fused_graph.prewarm", [&]() {
+            constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
             constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
+            constexpr int kLmHeadCooperativeLossBinCountShift = 8;
             const float scaled_loss =
                 (1.0f / static_cast<float>(grad_accum_steps)) /
                 static_cast<float>(active_rows);
             const std::int64_t backward_chunk_count =
                 lm_head_full_batch_reuse_schedule_enabled ? 1 : lm_head_chunk_count;
+            const bool prewarm_row_loss_reduction_available =
+                cfg.train_loss_every_steps > 0 &&
+                lm_head_fused_loss_backward_enabled &&
+                lm_head_bf16_logits_enabled &&
+                lm_head_public_vocab_ce_enabled &&
+                direct_u16_token_ids_enabled &&
+                lm_head_classifier_backward_loss_bf16_u16 != nullptr &&
+                lm_head_row_loss_reduction_requested &&
+                lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
+                ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                 (sum_partials != nullptr && gradient_accumulate != nullptr)) &&
+                row_max != nullptr;
+            const bool prewarm_loss_bin_reduction_available =
+                prewarm_row_loss_reduction_available &&
+                lm_head_loss_bin_reduction_requested &&
+                lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                sum_accumulate != nullptr;
             for (std::int64_t chunk_index = 0;
                  chunk_index < backward_chunk_count && error.empty();
                  ++chunk_index) {
@@ -20204,35 +20223,65 @@ int run_transformer_lm_training_json(
                 float* grad_hidden_chunk = grad_lnf + row_start * kDim;
                 const float beta_values[] = {chunk_index == 0 ? 0.0f : 1.0f, 1.0f};
                 const int beta_count = chunk_index == 0 ? 2 : 1;
-                for (int beta_index = 0; beta_index < beta_count && error.empty(); ++beta_index) {
-                    lm_head_fused_graph_prewarm_attempt_count += 1;
-                    const int status = lm_head_classifier_backward_fused_graph_prewarm_bf16_u16(
-                        bf16_logit_chunk,
-                        target_chunk_u16,
-                        row_max,
-                        hidden_bf16_chunk,
-                        lnf_out + row_start * kDim,
-                        token_weight_bf16,
-                        token_weight,
-                        grad_hidden_chunk,
-                        accum_grad_token_weight,
-                        row_count,
-                        kDim,
-                        kVocab,
-                        kPaddedVocab,
-                        scaled_loss,
-                        beta_values[beta_index],
-                        kLmHeadCooperativeFlagNoLoss,
-                        nullptr);
-                    if (status != 0) {
-                        lm_head_fused_graph_prewarm_failure_count += 1;
-                        lm_head_fused_graph_prewarm_last_error_code = status;
-                        break;
-                    } else {
-                        lm_head_fused_graph_prewarm_success_count += 1;
-                        lm_head_fused_graph_prewarm_last_rows = row_count;
-                        lm_head_fused_graph_prewarm_last_vocab = kVocab;
-                        lm_head_fused_graph_prewarm_last_row_stride = kPaddedVocab;
+                const std::int64_t prewarm_loss_bin_count =
+                    prewarm_loss_bin_reduction_available
+                        ? std::max<std::int64_t>(
+                              1,
+                              std::min<std::int64_t>(
+                                  row_count,
+                                  lm_head_loss_bin_count_requested > 0
+                                      ? lm_head_loss_bin_count_requested
+                                      : 1024))
+                        : 0;
+                const int prewarm_loss_flags =
+                    prewarm_loss_bin_reduction_available
+                        ? (kLmHeadCooperativeFlagLossBins |
+                           (static_cast<int>(prewarm_loss_bin_count) <<
+                            kLmHeadCooperativeLossBinCountShift))
+                        : 0;
+                const int prewarm_flags[] = {kLmHeadCooperativeFlagNoLoss, prewarm_loss_flags};
+                const int prewarm_flag_count = prewarm_row_loss_reduction_available ? 2 : 1;
+                for (int flag_index = 0;
+                     flag_index < prewarm_flag_count && error.empty();
+                     ++flag_index) {
+                    const int cooperative_flags = prewarm_flags[flag_index];
+                    for (int beta_index = 0; beta_index < beta_count && error.empty(); ++beta_index) {
+                        if ((cooperative_flags & kLmHeadCooperativeFlagLossBins) != 0) {
+                            run(fill(row_max, prewarm_loss_bin_count, 0.0f, nullptr),
+                                "lm_head.fused_graph.prewarm_loss_bins.zero");
+                            if (!error.empty()) {
+                                break;
+                            }
+                        }
+                        lm_head_fused_graph_prewarm_attempt_count += 1;
+                        const int status = lm_head_classifier_backward_fused_graph_prewarm_bf16_u16(
+                            bf16_logit_chunk,
+                            target_chunk_u16,
+                            row_max,
+                            hidden_bf16_chunk,
+                            lnf_out + row_start * kDim,
+                            token_weight_bf16,
+                            token_weight,
+                            grad_hidden_chunk,
+                            accum_grad_token_weight,
+                            row_count,
+                            kDim,
+                            kVocab,
+                            kPaddedVocab,
+                            scaled_loss,
+                            beta_values[beta_index],
+                            cooperative_flags,
+                            nullptr);
+                        if (status != 0) {
+                            lm_head_fused_graph_prewarm_failure_count += 1;
+                            lm_head_fused_graph_prewarm_last_error_code = status;
+                            break;
+                        } else {
+                            lm_head_fused_graph_prewarm_success_count += 1;
+                            lm_head_fused_graph_prewarm_last_rows = row_count;
+                            lm_head_fused_graph_prewarm_last_vocab = kVocab;
+                            lm_head_fused_graph_prewarm_last_row_stride = kPaddedVocab;
+                        }
                     }
                 }
             }
