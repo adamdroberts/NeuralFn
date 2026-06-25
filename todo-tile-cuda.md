@@ -2210,6 +2210,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `train_loop_wall_ms_per_step=0.980626x`,
     `train_loop_cuda_event_steady_state_wall_ms_per_step=0.998421x`, and
     `stage.lm_head_backward.total_ms=0.998617x`. The isolated graph-only flag
+    remains diagnostic-only after the 2026-06-25 startup-focused default change:
+    `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` now defaults to `0` so
+    real training starts on the lazy graph-capture path and avoids eager
+    LM-head graph capture setup cost. Use `lm_head_graph_prewarm` only for
+    same-script eager-capture comparisons; it is not a parity-closing kernel
+    implementation.
     failed the LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample
     combined rerun rejected treating graph prewarm as a parity-closing fix
     because steady-state CUDA-event timing regressed to `1.000678x` even though

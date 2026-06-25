@@ -1660,7 +1660,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
-        "            true)"
+        "            false)"
     ) in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT" in source

@@ -1186,15 +1186,15 @@ sequence counters mean the diagnostic wrapper or graph fallback path ran.
 `lm_head_fused_graph_thread_cache_hit_count` counts hot training-loop replays
 that reused the small per-thread graph exec cache without re-entering the
 mutex-protected graph cache scan.
-LM-head graph prewarm is now enabled by default for real native GPT training.
-Trainer JSON preserves the last successful prewarm shape in
+LM-head graph prewarm is opt-in for real native GPT training. Trainer JSON
+preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are
 eliminated and the Tile runtime stats have been reset before the timed train
-loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` only to reproduce the
-older lazy-capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-compares that old baseline against the default prewarmed route and gates
+loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` to reproduce the
+eager-capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
+compares the lazy default against the prewarmed route and gates
 train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
 LM-head backward, block backward, and MLP projection backward.
 

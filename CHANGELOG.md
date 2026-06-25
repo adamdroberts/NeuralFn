@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made native GPT LM-head CUDA Graph prewarm opt-in again for real training.
+  The dense GPT native trainer now defaults
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` /
+  `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` to off, so startup does
+  not spend roughly 90 ms capturing LM-head CE/dHidden/dWeight graph entries
+  before the first optimizer step on the current RTX 5090 route. The lazy
+  runtime graph capture and per-thread replay cache remain the default steady
+  training path. Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only
+  for eager-capture comparisons through the `lm_head_graph_prewarm` paired
+  profile.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in
+  -q`; `git diff --check`; `bash tools/build_native_gpt_cli.sh
+  build/nfn_gpt_native_train`; `bash tools/build_native_gpt_cli_linked.sh
+  build/nfn_gpt_native_train_linked`;
+  `NFN_NATIVE_GPT_TRAIN_BIN=/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train
+  NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train
+  NFN_SM120_NATIVE_BASELINE_ENV='NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1'
+  NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_lm_head_prewarm_lazy_default_train_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_prewarm_lazy_default_train.json
+  NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO='setup_wall_ms=1.000
+  train_loop_wall_ms_per_step=1.050
+  train_loop_cuda_event_steady_state_wall_ms_per_step=1.050'
+  bash tools/bench_native_gpt_sm120_candidate.sh`. The dedicated RTX 5090
+  paired run changed
+  `lm_head_cooperative_backward_graph_prewarm_requested/enabled` from `true` to
+  `false`, moved runtime LM-head graph captures from `0` to `3`, and passed the
+  setup gate with `0.787656x` setup wall time and `0.989751x` total wall time.
+  As expected, lazy capture moved capture work into the first optimizer step
+  (`1.070200x` first-step CUDA event), while steady-state CUDA-event step time
+  remained flat at `0.999645x`.
+
 - Added a hot per-thread replay cache for the diagnostic strict LM-head CUDA
   Graph wrapper used by native dense GPT Tile-CUDA training. After the first
   mutex-backed lookup or capture for a given LM-head backward graph key,
@@ -275,17 +311,15 @@ Future updates should append new entries here rather than replacing older notes.
   train_loop_cuda_event_steady_state_wall_ms_per_step=10'
   bash tools/bench_native_gpt_sm120_parity.sh`.
 
-- Promoted native GPT LM-head CUDA Graph prewarm for real training. The dense
-  GPT native path now defaults `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM`,
-  `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE`, and
-  `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE` to on, while preserving the `=0`
-  opt-outs for lazy-capture and lazy-initialization regression checks. The
-  `lm_head_graph_prewarm` SM120 profile now compares the old lazy baseline
-  against the default prewarmed route instead of treating prewarm as a rejected
-  diagnostic. This eliminates runtime LM-head graph capture on normal runs and
-  leaves the remaining llm.kittens parity gap focused on replacing the
-  diagnostic graph wrapper with a true fused LM-head classifier-backward Tile
-  kernel.
+- Evaluated native GPT LM-head CUDA Graph prewarm for real training. This route
+  was later superseded by the opt-in default above after startup profiling
+  showed the eager graph capture cost in setup. The dense GPT native path still
+  supports `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` together with
+  cuBLAS handle and BF16 workspace prewarm for eager-capture regression checks.
+  The `lm_head_graph_prewarm` SM120 profile compares the lazy default against
+  the prewarmed route. The benchmark below remains useful evidence that eager
+  capture eliminates runtime LM-head graph capture, but it is not the default
+  training route.
 
   Verification:
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm

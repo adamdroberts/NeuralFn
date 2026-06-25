@@ -1506,12 +1506,12 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is now the
-native GPT default for real training and can be disabled with
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` for lazy-capture
-regression checks. The CUDA 13.3 RTX 5090 gated refresh promoted it after the
-3-step same-script gate eliminated runtime LM-head graph capture and improved
+`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is opt-in
+for real training so startup does not pay graph capture before the first
+optimizer step. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` for eager-capture
+regression checks. The CUDA 13.3 RTX 5090 gated refresh proved eager prewarm
+eliminated runtime LM-head graph capture and improved
 train-loop wall to `0.976542x`, tokens/sec to `1.024025x`, LM-head backward
 to `0.967861x`, block backward to `0.974829x`, and MLP projection backward to
 `0.845548x` versus lazy capture while passing the `1.002` steady-state

@@ -188,14 +188,13 @@ ABI is also available for diagnostics. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. Native GPT training now
-enables LM-head graph prewarm, cuBLAS handle prewarm, and BF16 workspace
-prewarm by default for real training. Set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0`,
-`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0`, or
-`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0` only for historical lazy-path
+`lm_head_fused_graph_prewarm_cache_entry_count`. Native GPT training keeps
+LM-head graph prewarm opt-in so startup does not pay the capture cost before
+the first optimizer step. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only for eager-capture
 comparisons. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-compares that old baseline against the default prewarmed route and gates
+compares the lazy default against the prewarmed route and gates
 train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
 LM-head backward, block backward, and MLP projection backward. Prewarmed runs
 also preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
