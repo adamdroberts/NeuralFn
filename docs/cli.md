@@ -1190,23 +1190,22 @@ sequence counters mean the diagnostic wrapper or graph fallback path ran.
 `lm_head_fused_graph_thread_cache_hit_count` counts hot training-loop replays
 that reused the small per-thread graph exec cache without re-entering the
 mutex-protected graph cache scan.
-LM-head graph prewarm is opt-in for real native GPT training. Trainer JSON
-preserves the last successful prewarm shape in
+LM-head graph prewarm is enabled by default for real native GPT training.
+Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are
 eliminated and the Tile runtime stats have been reset before the timed train
-loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` to reproduce the
-eager-capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-compares the real lazy default against the prewarmed route without also
-disabling the already-default cuBLAS handle or BF16 workspace prewarm. It gates
+loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
+capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
+compares explicit prewarm opt-out against the default-on prewarmed route without
+also disabling the already-default cuBLAS handle or BF16 workspace prewarm. It gates
 train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
 LM-head backward, block backward, and MLP projection backward. The current CUDA
-13.3.33 RTX 5090 graph-only refresh keeps this profile rejected by default:
-graph prewarm improved train-loop wall to `0.974198x`, LM-head backward to
-`0.966917x`, and block backward to `0.967327x`, but failed promotion on
-steady-state CUDA-event timing at `1.003004x`, so reruns require
-`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+13.3.33 RTX 5090 post-reinstall graph-only refresh passed those gates:
+train-loop wall `0.970282x`, steady-state CUDA-event timing `1.001894x`,
+LM-head backward `0.968319x`, block backward `0.956792x`, and MLP projection
+backward `0.911989x`.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

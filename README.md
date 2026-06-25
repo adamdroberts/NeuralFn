@@ -1493,9 +1493,10 @@ ops symbols report zero in trainer-side summaries; current microbench builds
 require the graph counter ABI so baseline and candidate variants both carry
 capture/replay/fallback evidence. `lm_head_fused_graph_thread_cache_hit_count`
 counts hot replays that reused the small per-thread graph exec cache without
-taking the graph-cache mutex/vector-scan path. This does not promote the graph
-body as a
-default training route. Successful strict graph replay does not increment the
+taking the graph-cache mutex/vector-scan path. This graph body is now the
+default diagnostic LM-head route for native GPT training, but it still does not
+satisfy the strict true-fused LM-head kernel gate. Successful strict graph
+replay does not increment the
 legacy `lm_head_cooperative_sequence_*` counters; those counters identify the
 diagnostic sequence wrapper or graph fallback path.
 The Tile ops ABI also exposes
@@ -1509,17 +1510,15 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is opt-in
-for real training so startup does not pay graph capture before the first
-optimizer step. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` for eager-capture
-regression checks. The current CUDA 13.3.33 RTX 5090 graph-only refresh keeps
-eager prewarm diagnostic-only: it eliminated runtime LM-head graph capture and
-improved train-loop wall to `0.974198x`, tokens/sec to `1.026535x`, LM-head
-backward to `0.966917x`, and block backward to `0.967327x` versus lazy capture,
-but failed promotion because steady-state CUDA-event timing regressed to
-`1.003004x`. The remaining implementation target is a true fused LM-head
-classifier-backward Tile kernel. When graph prewarm
+`lm_head_fused_graph_prewarm_cache_entry_count`. Graph prewarm is enabled by
+default for real training after the CUDA 13.3.33 RTX 5090 post-reinstall
+graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
+steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
+backward `0.956792x`, and MLP projection backward `0.911989x` versus explicit
+prewarm opt-out. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
+capture path for bisection. The remaining implementation target is still a true
+fused LM-head classifier-backward Tile kernel. When graph prewarm
 eliminates runtime LM-head graph capture,
 trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and

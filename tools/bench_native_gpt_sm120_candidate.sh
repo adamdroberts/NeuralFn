@@ -824,11 +824,10 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     ;;
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-MLP-FC-default graph-only rerun eliminated runtime LM-head graph capture and improved train_loop_wall_ms_per_step to 0.974198x, train_tokens_per_second to 1.026535x, stage.lm_head_backward.total_ms to 0.966917x, and stage.block_backward.total_ms to 0.967327x, but rejected default graph prewarm because steady-state CUDA-event timing regressed to 1.003004x versus the real current default where cuBLAS handle and BF16 workspace prewarm are already enabled. Keep graph prewarm opt-in until a true fused LM-head classifier-backward Tile kernel or a stricter graph-only rerun passes."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-reinstall graph-only rerun eliminated runtime LM-head graph capture and passed same-script gates at 0.970282x train_loop_wall_ms_per_step, 1.001894x steady-state CUDA-event timing, 0.968319x stage.lm_head_backward.total_ms, 0.956792x stage.block_backward.total_ms, and 0.911989x stage.block_backward.mlp_proj.total_ms. The native trainer now defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
-    AUTO_DISABLE_METRIC_RATIO_GATES=1
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
     ;;
   "lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"|"lm_head_cooperative_cuda_graph_off"|"lm-head-cooperative-cuda-graph-off")

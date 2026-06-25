@@ -167,14 +167,15 @@ Real training tensors must not pass through graph editor node objects.
     real fused classifier-backward CUDA Tile kernel and flipping
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
     only when the strict microbenchmark passes.
-  - 2026-06-25 corrected the `lm_head_graph_prewarm` native candidate profile
-    to compare only `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` vs
-    `=1`; cuBLAS handle and BF16 workspace prewarm are already default-on and
-    must not be disabled on the baseline side. The graph-only rerun improved
-    train-loop wall to `0.974198x`, tokens/sec to `1.026535x`, LM-head backward
-    to `0.966917x`, and block backward to `0.967327x`, but still rejected
-    default graph prewarm because steady-state CUDA-event timing regressed to
-    `1.003004x` against the `1.002` gate.
+  - 2026-06-25 promoted `lm_head_graph_prewarm` after the CUDA 13.3.33
+    post-reinstall same-script rerun. The profile still compares only
+    `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` vs `=1`; cuBLAS handle
+    and BF16 workspace prewarm are already default-on and must not be disabled
+    on the baseline side. The graph-only rerun passed at `0.970282x` train-loop
+    wall, `1.001894x` steady-state CUDA-event timing, `0.968319x` LM-head
+    backward, `0.956792x` block backward, and `0.911989x` MLP projection
+    backward. The native trainer now defaults graph prewarm on, with
+    `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` as the bisection route.
   - 2026-06-25 added and rejected the opt-in
     `lm_head_ce_no_loss_vec8_normal_store_specialized` CUDA Tile kernel
     candidate. It selected the new no-loss CE+dlogits path and changed
@@ -1538,8 +1539,8 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-23 made that linked path the normal workstation default when built: SDK compiled-CLI resolution, `train_gpt.py`, direct `nfn train`, `nfn_native_train`, and the GPT-2-evo delegate now prefer `build/nfn_gpt_native_train_linked` unless an explicit native GPT CLI override is set. The linked binary self-selects `tile_ops_library: "linked"` from its executable name, and `tools/build_native_gpt2_all.sh` plus `tools/rebuild_native_sm120.sh` now build it so default training runs pick up the measured startup win without extra flags. A same-harness dedicated RTX 5090 paired startup check measured this default route at `0.870426x` setup wall versus the dynamic-loader baseline with no native strategy or route-counter changes.
   - 2026-06-24 continuation validation after the CUDA 13.3 refresh: the broad native GPT suite passed with `82 passed, 2 skipped`, the GPT template preset suite passed with `28 passed`, and `tools/check_native_no_torch_deps.py --skip-artifacts --json` passed with the wrapper print-command paths still around `0.04s` and no Torch/NumPy/tiktoken/dataset-manager imports. A short dedicated RTX 5090 llm.kittens parity smoke (`NFN_SM120_PARITY_STEPS=2 NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0`) selected GPU 0 with no compute processes and measured llm.kittens at `2636.340 ms/step` / `200236.5 tok/s` versus NeuralFn at `2573.840 ms/step` / `203699 tok/s` (`0.976293x` train-loop wall, `1.017292x` tokens/sec). Treat this as a green smoke only; the next production kernel target remains the fused row-chunked LM-head backward route below.
   - 2026-06-25 post-CUDA-13.3.33 rebuild validation: `nvidia-smi` reported the dedicated RTX 5090 display disabled, CUDA UMD `13.3`, and no compute processes. Rebuilt `build/libnfn_native_train_tile_ops.so`, `build/nfn_gpt_native_train`, and `build/nfn_gpt_native_train_linked`; focused pytest passed for the LM-head strict microbench and SM120 candidate wrapper; `tools/check_native_no_torch_deps.py --skip-artifacts --json` passed, including native `nfn infer` checkpoint detection and prompt-token sampling. A 3-step, 1-sample llm.kittens parity gate still failed at `1.018331x` train-loop wall, `1.011590x` steady-state CUDA-event step time, and `0.978569x` tokens/sec versus llm.kittens. NeuralFn hot stages remain `stage.block_backward.total_ms=3935.67 ms`, `stage.train.model_forward.total_ms=1980.25 ms`, `stage.lm_head_backward.total_ms=1714.22 ms` (`logits=520.46 ms`, `cooperative=1189.04 ms`), and `stage.block_backward.mlp_proj.total_ms=973.564 ms`. This keeps the next target on true fused LM-head backward or materially faster block-backward kernels, not CUDA installation or Torch leakage.
-  - 2026-06-25 post-reinstall graph-prewarm recheck: the full native GPT suite passed with `90 passed, 2 skipped`, confirming the CUDA 13.3 reinstall did not leave native trainer tests failing. The intentional `lm_head_graph_prewarm` rejected-profile rerun on the dedicated RTX 5090 still eliminated runtime LM-head graph captures and improved native-vs-native train-loop wall to `0.985820x`, but failed the same-script llm.kittens reference gates at `1.004960x` candidate-over-reference train-loop wall, `1.001805x` steady-state CUDA-event timing, and `0.993865x` tokens/sec. Keep the profile diagnostic-only; the next implementation target remains a real fused LM-head backward kernel body, not graph prewarm.
-  - Next implementation target: replace the cached CUDA Graph LM-head strict ABI body with a NeuralFn-owned fused row-chunked LM-head backward kernel that keeps the current bounded resident-logit cap but avoids paying separate CE, dHidden, and dWeight kernel bodies per chunk. The correctness surface is now green under CUDA 13.3, and the strict ABI now exists, but graph replay is slower in the full loop.
+  - 2026-06-25 post-reinstall graph-prewarm recheck: the full native GPT suite passed with `90 passed, 2 skipped`, confirming the CUDA 13.3 reinstall did not leave native trainer tests failing. A later dedicated RTX 5090 same-script native-vs-native rerun promoted graph prewarm by eliminating runtime LM-head graph captures and passing all configured gates: train-loop wall `0.970282x`, steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block backward `0.956792x`, and MLP projection backward `0.911989x`. This is now a default graph-wrapper improvement, not the final strict fused-kernel solution.
+  - Next implementation target: replace the cached CUDA Graph LM-head strict ABI body with a NeuralFn-owned fused row-chunked LM-head backward kernel that keeps the current bounded resident-logit cap but avoids paying separate CE, dHidden, and dWeight kernel bodies per chunk. The correctness surface is now green under CUDA 13.3, and graph prewarm now removes lazy capture from the timed path, but the strict ABI still reports `diagnostic-cuda-graph-wrapper` rather than `strict-true-fused-tile-kernel`.
 - [x] Extend native GPT checkpoint text-prompt inference with GPT-2 tokenization in the lightweight wrapper so `.bin` checkpoint inference no longer needs the transitional external sampler bridge.
 - [x] Add GPT-2 evo raw Tile-CUDA trainer ABI for device-side candidate mutation, best-loss selection, and best-candidate adoption without graph-editor tensor flow.
 - [x] Add GPT-2 evo compiled C++ `--smoke-evo-kernels` path that loads the raw evo ABI, launches mutate/select/adopt on CUDA device buffers, and verifies best-candidate copyback without Python/Torch, datasets, or graph-editor payloads.
@@ -2255,28 +2256,16 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     slice remains a true fused LM-head classifier-backward Tile kernel or a real
     block-backward kernel, not another startup or route-toggle rerun.
   - 2026-06-25 rechecked LM-head CUDA Graph prewarm after the CUDA Toolkit
-    13.3 reinstall. A short 3-step, 2-sample gate passed for the combined
-    bundle (`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1`,
-    `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`, and
-    `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`) at
-    `train_loop_wall_ms_per_step=0.980626x`,
-    `train_loop_cuda_event_steady_state_wall_ms_per_step=0.998421x`, and
-    `stage.lm_head_backward.total_ms=0.998617x`. The isolated graph-only flag
-    remains diagnostic-only after the 2026-06-25 startup-focused default change:
-    `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` now defaults to `0` so
-    real training starts on the lazy graph-capture path and avoids eager
-    LM-head graph capture setup cost. Use `lm_head_graph_prewarm` only for
-    same-script eager-capture comparisons; it is not a parity-closing kernel
-    implementation. The earlier isolated graph-only candidate failed the
-    LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample combined
-    rerun rejected treating graph prewarm as a parity-closing fix because
-    steady-state CUDA-event timing regressed to `1.000678x` even though
-    train-loop wall improved to `0.988694x` and LM-head backward improved to
-    `0.999611x`. LM-head graph prewarm is now opt-in diagnostic plumbing; the
-    remaining parity work still needs steady-state LM-head or block-backward
-    kernel work, not first-step capture relocation.
-  - 2026-06-25 refreshed parity after making LM-head graph prewarm opt-in by
-    default. The same-script 3-step, 1-sample stage-timed run selected the
+    13.3 reinstall. Earlier short gates were mixed, but the later graph-only
+    opt-out-versus-default-on rerun passed the configured same-script gates:
+    train-loop wall `0.970282x`, steady-state CUDA-event timing `1.001894x`,
+    LM-head backward `0.968319x`, block backward `0.956792x`, and MLP projection
+    backward `0.911989x`. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM`
+    now defaults to `1` for real training; set it to `0` only for lazy-capture
+    bisection. This is a default graph-wrapper improvement, not a
+    parity-closing fused kernel implementation.
+  - Historical 2026-06-25 parity note from the lazy-capture default window
+    before graph prewarm promotion. The same-script 3-step, 1-sample stage-timed run selected the
     dedicated RTX 5090 with zero compute processes before and after the
     sample. NeuralFn beat llm.kittens on average train-loop wall
     (`0.964922x`) and tokens/sec (`1.011635x`), but the strict steady-state

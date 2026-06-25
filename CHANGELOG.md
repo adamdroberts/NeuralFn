@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted LM-head CUDA Graph prewarm for the native dense GPT trainer after a
+  CUDA 13.3.33 post-reinstall same-script rerun on the dedicated RTX 5090 passed
+  the configured gates. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` /
+  `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` now default to enabled for
+  normal native GPT training when the CUDA Graph wrapper route is available,
+  `max_steps > 0`, and the run is not startup-only. Set either variable to `0`
+  to reproduce the lazy graph-capture path for bisection. The
+  `lm_head_graph_prewarm` paired benchmark profile now remains a normal gated
+  comparison of explicit prewarm opt-out versus default-on prewarm instead of a
+  rejected diagnostic profile. This does not claim strict fused-kernel parity:
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  still returns false, and the remaining parity target is a real fused
+  classifier/dHidden/dWeight Tile kernel under the strict ABI.
+
+  Verification:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_recheck.json
+  bash tools/bench_native_gpt_sm120_candidate.sh` passed with train-loop wall
+  `0.970282x`, steady-state CUDA-event timing `1.001894x`, LM-head backward
+  `0.968319x`, block backward `0.956792x`, and MLP projection backward
+  `0.911989x` versus explicit prewarm opt-out. Also reran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_current.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which still correctly fails
+  the strict true-fused gate because the current strict symbol is
+  `diagnostic-cuda-graph-wrapper`.
+
 - Added `tools/train_gpt_sm120.sh` as the zero-Python workstation equivalent of
   `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`. The helper execs the
   compiled `nfn_gpt_native_train` binary directly, prefers llm.kittens
@@ -103,16 +133,17 @@ Future updates should append new entries here rather than replacing older notes.
   tools/bench_native_gpt_sm120_candidate.sh` exits with code 2 before launching
   GPU work unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 
-- Rejected the stale `lm_head_graph_prewarm` promotion record after rerunning
+- Historical note, superseded by the later post-reinstall promotion above:
+  rejected the stale `lm_head_graph_prewarm` promotion record after rerunning
   the paired same-script profile on the CUDA 13.3.33 dedicated RTX 5090. Graph
   prewarm still eliminates runtime LM-head graph capture and improved
   train-loop wall (`0.995921x`), tokens/sec (`1.004099x`), and LM-head
   backward (`0.966626x`) versus the lazy-capture default, but it failed
   promotion because steady-state CUDA-event timing regressed to `1.002619x`,
-  block backward regressed to `1.009095x`, and MLP FC backward regressed. The
-  candidate wrapper now treats `lm_head_graph_prewarm` as a rejected diagnostic
-  profile requiring `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`,
-  and the docs keep the implementation target on a true fused LM-head
+  block backward regressed to `1.009095x`, and MLP FC backward regressed. That
+  older verdict is no longer the active wrapper policy; the active
+  `lm_head_graph_prewarm` profile is a normal gated opt-out-versus-default-on
+  comparison. The remaining implementation target is still a true fused LM-head
   classifier-backward Tile kernel rather than graph-prewarm plumbing.
 
   Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm

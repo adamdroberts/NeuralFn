@@ -12972,7 +12972,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),
-            false);
+            true);
     const bool lm_head_cooperative_backward_graph_prewarm_enabled =
         lm_head_cooperative_backward_graph_prewarm_requested &&
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;
