@@ -99,11 +99,44 @@ Real training tensors must not pass through graph editor node objects.
   `attention_backward_tk_timing_us` to `1.001117x`. Keep both as rejected
   named profiles unless CUDA or the TK attention backward implementation
   materially changes.
+- [x] Refresh the post-CUDA-reinstall llm.kittens parity gate on 2026-06-25
+  with the linked native trainer on the display-disabled RTX 5090. The
+  10-step/1-sample same-script run measured NeuralFn at `2521.900 ms/step`
+  versus llm.kittens at `2473.866 ms/step` (`1.019417x` train-loop wall,
+  `0.977908x` tokens/sec), with steady-state CUDA-event timing at
+  `1.007778x`. Disabling NeuralFn train-loop CUDA event timing did not close
+  the gap (`1.010888x` wall), so the failure is not a timing-instrumentation
+  artifact.
+- [x] Recheck the two plausible non-kernel LM-head escape hatches against
+  llm.kittens after the CUDA reinstall. The graph-prewarm route eliminated
+  runtime LM-head graph captures (`capture_success_mean=0`,
+  `prewarm_success_mean=3`) but still failed at `1.009454x` train-loop wall and
+  `1.006953x` steady-state CUDA-event timing. The explicit sequence-wrapper
+  route was worse (`1.025042x` wall, `1.011626x` steady-state). Keep both
+  diagnostic-only.
+- [x] Add failed-parity diagnostics to `tools/bench_native_gpt_sm120_parity.sh`.
+  When the paired JSON shows native Tile training is active but LM-head backward
+  is still the `diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel`
+  route and `lm_head_cooperative_backward_fused_kernel_available=false`, the
+  wrapper now prints the exact blocker and points at the strict true-fused
+  LM-head Tile kernel ABI. This preserves the failing exit code instead of
+  weakening the gate.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
+  - 2026-06-25 rejected promoting `lm_head_graph_prewarm`, the explicit
+    cooperative sequence wrapper, CUDA event timing changes, and the
+    llm.kittens SM120 macro rebuild as parity fixes. The macro rebuild improved
+    current NeuralFn wall time to `0.996738x` native-vs-native but changed no
+    route counters and still missed the steady-state gate, so it remains timing
+    noise rather than a kernel implementation. The active implementation target
+    is now narrowed to replacing
+    `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with a
+    real fused classifier-backward CUDA Tile kernel and flipping
+    `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+    only when the strict microbenchmark passes.
   - 2026-06-24 hardened `tools/bench_native_gpt_sm120_parity.sh` against
     no-op profile evidence: it now exits before GPU work when
     `NFN_SM120_PARITY_CANDIDATE_PROFILE` or `NFN_SM120_PARITY_PROFILE` is set.

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a targeted failure diagnostic to the SM120 llm.kittens parity wrapper.
+  `tools/bench_native_gpt_sm120_parity.sh` still exits nonzero when the metric
+  gates fail, but if the emitted JSON proves NeuralFn is already using native
+  Tile training while LM-head backward is still the diagnostic CUDA Graph
+  wrapper and the strict true-fused LM-head capability is false, the wrapper now
+  prints the exact implementation blocker and the ABI that must be replaced by
+  a real CUDA Tile fused classifier-backward kernel.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`; CUDA 13.3 dedicated RTX
+  5090 paired checks after the WSL reinstall:
+  `NFN_SM120_PARITY_STEPS=10 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_10step_no_event_live.json
+  bash tools/bench_native_gpt_sm120_parity.sh`, which still failed at
+  `1.010888x` train-loop wall; graph-prewarm and explicit sequence-wrapper
+  parity probes also failed at `1.009454x` and `1.025042x` wall respectively,
+  proving those routes should stay diagnostic-only.
+
 - Moved dense GPT cuBLASLt BF16 plan prewarm back to opt-in. Normal
   transformer-LM training no longer precomputes nine cuBLASLt plan shapes during
   startup; use `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1`,

@@ -247,6 +247,7 @@ candidate_cmd="$(
 )"
 
 cd "$ROOT_DIR"
+set +e
 python tools/paired_kernel_speed.py \
   --baseline "$baseline_cmd" \
   --candidate "$candidate_cmd" \
@@ -262,3 +263,75 @@ python tools/paired_kernel_speed.py \
   "${profile_args[@]}" \
   "${paired_args[@]}" \
   --json-out "$JSON_OUT"
+paired_status=$?
+set -e
+
+if [[ "$paired_status" != "0" && -f "$JSON_OUT" ]]; then
+  python - "$JSON_OUT" >&2 <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception as exc:  # pragma: no cover - best-effort diagnostic.
+    print(f"Unable to read NeuralFn parity JSON for diagnostics: {exc}")
+    raise SystemExit(0)
+
+values = data.get("candidate_native_metric_values") or {}
+metrics = data.get("candidate_native_metrics") or {}
+ratios = data.get("candidate_over_baseline_native_metrics") or {}
+gates = data.get("metric_ratio_gates") or {}
+
+def scalar_value(name):
+    value = values.get(name)
+    if isinstance(value, list) and value:
+        return value[0]
+    return value
+
+def metric_mean(name):
+    value = metrics.get(name)
+    if isinstance(value, dict):
+        return value.get("mean")
+    return None
+
+def ratio_mean(name):
+    value = ratios.get(name)
+    if isinstance(value, dict):
+        return value.get("mean")
+    return None
+
+if gates.get("passed") is False:
+    strategy = scalar_value("lm_head_cooperative_backward_strategy")
+    fused_available = scalar_value("lm_head_cooperative_backward_fused_kernel_available")
+    graph_enabled = scalar_value("lm_head_cooperative_backward_cuda_graph_enabled")
+    if (
+        strategy == "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel"
+        and fused_available is False
+        and graph_enabled is True
+    ):
+        wall_ratio = ratio_mean("train_loop_wall_ms_per_step")
+        steady_ratio = ratio_mean("train_loop_cuda_event_steady_state_wall_ms_per_step")
+        replays = metric_mean("lm_head_fused_graph_replay_count")
+        captures = metric_mean("lm_head_fused_graph_capture_success_count")
+        print("NeuralFn SM120 parity diagnostic:")
+        print("  Native Tile training is active, but LM-head backward is still the diagnostic CUDA Graph wrapper.")
+        print("  The strict true-fused LM-head Tile kernel capability is false, so wrapper replay cannot close final llm.kittens parity.")
+        if wall_ratio is not None:
+            print(f"  train_loop_wall_ms_per_step ratio: {wall_ratio:.6f}")
+        if steady_ratio is not None:
+            print(f"  train_loop_cuda_event_steady_state_wall_ms_per_step ratio: {steady_ratio:.6f}")
+        if replays is not None or captures is not None:
+            print(
+                "  LM-head graph counters: "
+                f"replay_mean={replays if replays is not None else 'n/a'}, "
+                f"capture_success_mean={captures if captures is not None else 'n/a'}"
+            )
+        print("  Next implementation target: replace nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16")
+        print("  with a real CUDA Tile fused classifier-backward kernel and make")
+        print("  nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() return 1 only then.")
+PY
+fi
+
+exit "$paired_status"

@@ -203,7 +203,15 @@ training tensors through the graph editor or Torch. Real training runs that
 pass `--require-cooperative-lm-head-backward` now fail before token-shard
 resolution or CUDA runtime setup until the true-fused capability is present;
 use `--check-tile-ops --require-cooperative-lm-head-backward` when you want the
-detailed capability JSON instead of entering training. Future
+detailed capability JSON instead of entering training. The
+`tools/bench_native_gpt_sm120_parity.sh` wrapper preserves its failing exit code
+when NeuralFn misses the llm.kittens gate, but now adds a targeted diagnostic
+when the paired JSON proves the run is native Tile-backed and the remaining
+blocker is this wrapper-only LM-head route. On the CUDA 13.3 dedicated RTX 5090
+recheck, disabling NeuralFn train-loop event timing, prewarming the LM-head
+graph, and forcing the cooperative sequence wrapper all still failed the
+same-script llm.kittens parity gate, so those routes remain diagnostic-only.
+Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
 `build/lm_head_backward_bench` and compares the current cooperative sequence
