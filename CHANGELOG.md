@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected SM120 native candidate profile
+  `cublaslt_attn_proj_dweight_h0_65536`. It expands to
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0`, but the
+  CUDA 13.3.33 dedicated RTX 5090 same-script gate changed no tracked route
+  counters, strategy values, or cuBLASLt plan-cache entries. The apparent
+  attention-projection dWeight timing improvement was therefore classified as
+  noise, and the profile remains blocked unless intentionally rerun with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the native
+  route-change gate and strict steady-state, LM-head backward, and MLP
+  projection gates.
+
 - Fixed `lm_head_backward_bench` counter attribution so warmup graph capture and
   fallback launches do not pollute timed-result classification. The benchmark
   now resets Tile-CUDA LM-head counters after warmup and before timed

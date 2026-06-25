@@ -2478,6 +2478,15 @@ dedicated RTX 5090 attention-section gate changed
 train-loop wall time to `1.013207x`, steady-state CUDA-event timing to
 `1.000470x`, block backward to `1.029008x`, and
 `attention_backward_tk_timing_us` to `1.002850x`.
+The wrapper also keeps
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_attn_proj_dweight_h0_65536`
+rejected. It expands to
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0`, but the
+CUDA 13.3.33 dedicated RTX 5090 gate changed no tracked route counters,
+strategy values, or cuBLASLt plan-cache entries and still failed strict
+steady-state, LM-head, and MLP-projection gates. Treat any apparent
+attention-projection dWeight timing win from that profile as noise until a
+real route or plan change is visible.
 Keep `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS` at the default `3`.
 Although `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4` passed a short
 3-step/3-sample gate, the longer CUDA 13.3 RTX 5090 10-step/3-sample gate

@@ -1263,6 +1263,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "cublaslt_qkv_dweight_h0_65536" in text
     assert "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0" in text
     assert "regressed stage.block_backward.qkv.dweight_bias.total_ms to 1.003363x" in text
+    assert "cublaslt_attn_proj_dweight_h0_65536" in text
+    assert "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0" in text
+    assert "changed no tracked route counters, strategy values, or cuBLASLt plan-cache entries" in text
     assert "cublaslt_grouped_probe" in text
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1" in text
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1" in text
@@ -1755,6 +1758,34 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
             rejected_attention_run.stderr
         )
+
+    attn_proj_h0_output_path = tmp_path / "candidate-attn-proj-h0-dry-run.json"
+    attn_proj_h0_env = os.environ.copy()
+    attn_proj_h0_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cublaslt_attn_proj_dweight_h0_65536",
+            "NFN_SM120_NATIVE_JSON_OUT": str(attn_proj_h0_output_path),
+        }
+    )
+
+    attn_proj_h0_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=attn_proj_h0_env,
+    )
+
+    assert attn_proj_h0_dry_run.returncode == 0, attn_proj_h0_dry_run.stderr
+    attn_proj_h0_payload = json.loads(attn_proj_h0_output_path.read_text(encoding="utf-8"))
+    assert (
+        attn_proj_h0_payload["candidate_env"]["NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE"]
+        == "768,768,65536,N,T,0"
+    )
 
     ln_chunk_64_output_path = tmp_path / "candidate-ln-row-chunk-64-dry-run.json"
     ln_chunk_64_env = os.environ.copy()
