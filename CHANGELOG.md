@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened `tools/bench_native_gpt_sm120_parity.sh` strict enforcement. When
+  `NFN_SM120_PARITY_ENFORCE_GATE=1` and CUDA-event train-loop timing is enabled,
+  the wrapper now gates both `train_loop_wall_ms_per_step=1.000` and
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`, preventing a
+  NeuralFn candidate from passing llm.kittens parity only through first-step or
+  setup movement.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_parity.sh` and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_uses_reference_shape
+  -q`.
+
 - Added a compact `native_hot_summary` section to
   `tools/paired_kernel_speed.py` text output. Paired SM120 parity runs now show
   the host loop timing, CUDA-event first/steady-state timing, tokens/sec, setup
