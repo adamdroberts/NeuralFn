@@ -58,6 +58,27 @@ Future updates should append new entries here rather than replacing older notes.
   NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_after_linear_bias_512_corrected.json
   bash tools/bench_native_gpt_sm120_parity.sh`.
 
+- Rechecked and kept the dense GPT MLP FC dInput-before-dWeight backward order
+  diagnostic rejected after the 512-thread Tile-CUDA bias reducer became the
+  default. The paired wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_dinput_before_dweight` now records
+  the current CUDA 13.3.33 dedicated RTX 5090 evidence: the route counter moved
+  `block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288` and average
+  train-loop wall improved to `0.979771x`, but strict steady-state CUDA-event
+  timing regressed to `1.002092x`, LM-head backward regressed to `1.000824x`,
+  and total MLP FC backward regressed to `1.040582x`. The default remains the
+  dWeight+bias-first order.
+
+  Verification:
+  `NFN_NATIVE_GPT_TRAIN_BIN=/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_dinput_before_dweight
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_mlp_fc_dinput_before_dweight_after_bias512_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_mlp_fc_dinput_before_dweight_after_bias512.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Made native GPT LM-head CUDA Graph prewarm opt-in again for real training.
   The dense GPT native trainer now defaults
   `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM` /

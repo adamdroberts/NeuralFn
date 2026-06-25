@@ -591,7 +591,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate measured this scheduling order at 1.000858x train_loop_wall_ms_per_step and 0.999153x tokens/sec; route counters now prove execution, but it remains rejected as a default."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-512-bias-default 3-step, 2-sample stage-timed rerun moved block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288 and improved train_loop_wall_ms_per_step to 0.979771x, but rejected default promotion because steady-state CUDA-event timing regressed to 1.002092x, stage.lm_head_backward.total_ms regressed to 1.000824x, and stage.block_backward.mlp_fc.total_ms regressed to 1.040582x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "attn_proj_dinput_before_dweight"|"attn-proj-dinput-before-dweight")

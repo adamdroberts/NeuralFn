@@ -1239,9 +1239,11 @@ of timing the current default against itself.
 `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
 ordering switch for MLP FC backward. It runs dInput before dWeight+bias and
 reports `block_backward_mlp_fc_dinput_before_dweight_enabled`, but remains
-disabled by default because the dedicated RTX 5090 5-step, 3-sample paired
-benchmark measured `1.000858x` train-loop wall time and `0.999153x` tokens/sec
-versus the current dWeight+bias-first order.
+disabled by default because the CUDA 13.3.33 dedicated RTX 5090
+post-512-bias-default rerun proved the route counter moved `0->288` and
+improved average train-loop wall to `0.979771x`, but still missed strict
+steady-state CUDA-event timing at `1.002092x` and regressed total MLP FC
+backward to `1.040582x`.
 `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
 ordering switch for attention projection backward. It runs dInput before
 dWeight+bias and reports

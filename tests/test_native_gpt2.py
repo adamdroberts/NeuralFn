@@ -838,6 +838,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "token_weight_two_pass_bf16" in candidate_bench
     assert "setup_wall_ms flat at 0.996873x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.017739x" in candidate_bench
+    assert "mlp_fc_dinput_before_dweight" in candidate_bench
+    assert "block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288" in candidate_bench
+    assert "stage.block_backward.mlp_fc.total_ms regressed to 1.040582x" in candidate_bench
     assert "ce_bf16_threads_512" in candidate_bench
     assert "lm_head_ce_bf16_threads_per_row from 1024 to 512" in candidate_bench
     assert "stage.lm_head_backward.ce.total_ms to 1.430612x" in candidate_bench
