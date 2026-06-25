@@ -936,7 +936,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "token_weight_bf16_pattern"|"token-weight-bf16-pattern")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 5-sample startup-only revalidation changed the strategy route and improved total setup wall only to 0.984342x, but regressed setup.token_weight_init.total_ms to 1.009464x mean, 1.001840x median, and 1.048989x max versus the conversion-based vector4 BF16-shadow writer. Rerun with NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1 after a real kernel change or stricter stable gate."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-sample startup-only rerun changed the strategy route, but setup_wall_ms stayed flat at 0.998033x mean / 1.015865x median, setup.token_weight_init.total_ms stayed flat only on mean at 0.998156x while regressing to 1.022682x median, and setup.uint16_arena_materialize.total_ms regressed to 1.075542x mean / 1.032256x median versus the conversion-based vector4 BF16-shadow writer. Rerun with NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1 after a real kernel change or stricter stable gate."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1"
     ;;

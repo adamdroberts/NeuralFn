@@ -854,9 +854,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.122857x" in candidate_bench
     assert "token_weight_bf16_pattern" in candidate_bench
-    assert "setup.token_weight_init.total_ms to 1.009464x mean" in candidate_bench
-    assert "1.001840x median" in candidate_bench
-    assert "1.048989x max" in candidate_bench
+    assert "setup_wall_ms stayed flat at 0.998033x mean / 1.015865x median" in candidate_bench
+    assert "setup.token_weight_init.total_ms stayed flat only on mean at 0.998156x" in candidate_bench
+    assert "regressing to 1.022682x median" in candidate_bench
+    assert "setup.uint16_arena_materialize.total_ms regressed to 1.075542x mean / 1.032256x median" in candidate_bench
     assert "token_weight_padded_init" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
     assert "setup_wall_ms to 1.010956x" in candidate_bench

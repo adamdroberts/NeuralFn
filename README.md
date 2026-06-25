@@ -2884,10 +2884,11 @@ BF16-shadow padded-zero opt-in variant, `token_weight_padded_init_fusion_request
 `token_weight_fast_int32_init_enabled`, and
 `token_weight_host_materialization: false`.
 The `token_weight_bf16_pattern` startup candidate remains rejected after the
-2026-06-25 dedicated RTX 5090 rerun: total setup wall improved only to
-`0.984342x`, while `setup.token_weight_init.total_ms` regressed to `1.009464x`
-mean, `1.001840x` median, and `1.048989x` max versus the conversion-based
-vector4 BF16-shadow writer. Keep
+2026-06-25 dedicated RTX 5090 rerun: total setup wall stayed flat at
+`0.998033x` mean / `1.015865x` median, `setup.token_weight_init.total_ms` was
+flat only on mean at `0.998156x` while regressing to `1.022682x` median, and
+`setup.uint16_arena_materialize.total_ms` regressed to `1.075542x` mean /
+`1.032256x` median versus the conversion-based vector4 BF16-shadow writer. Keep
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` as a deliberate paired
 diagnostic, not a training default.
 

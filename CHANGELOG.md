@@ -2164,13 +2164,15 @@ Future updates should append new entries here rather than replacing older notes.
   `git diff --check`.
 
 - Refreshed the rejected `token_weight_bf16_pattern` startup evidence after the
-  CUDA 13.3 WSL reinstall. The 2026-06-25 dedicated RTX 5090 5-sample
-  startup-only gate still changes the strategy route, but total setup wall only
-  improved to `0.984342x` and token-weight initialization regressed to
-  `1.009464x` mean, `1.001840x` median, and `1.048989x` max versus the
-  conversion-based vector4 BF16-shadow writer. The wrapper's rejected-profile
-  reason, README, SDK Tile-CUDA docs, and todo checklist now carry the fresher
-  evidence so this candidate is not mistaken for a promotion target.
+  CUDA 13.3 WSL reinstall. The 2026-06-25 dedicated RTX 5090 3-sample
+  startup-only rerun still changes the strategy route, but total setup wall
+  stayed flat at `0.998033x` mean / `1.015865x` median, token-weight
+  initialization stayed flat only on mean at `0.998156x` while regressing to
+  `1.022682x` median, and `setup.uint16_arena_materialize.total_ms` regressed
+  to `1.075542x` mean / `1.032256x` median versus the conversion-based vector4
+  BF16-shadow writer. The wrapper's rejected-profile reason, README, and todo
+  checklist now carry the fresher evidence so this candidate is not mistaken
+  for a promotion target.
 
   Migration note: no training default changed. Keep
   `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` and
@@ -2185,7 +2187,7 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
   NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_bf16_pattern
   NFN_SM120_NATIVE_STARTUP_ONLY=1 NFN_SM120_NATIVE_STEPS=0
-  NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0 bash
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_NATIVE_WARMUP=0 bash
   tools/bench_native_gpt_sm120_candidate.sh`.
 
 - Refreshed the rejected `mlp_proj_dinput_before_dweight` profile on the
