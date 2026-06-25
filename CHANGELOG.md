@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Clarified the strict native GPT LM-head failure message in both
+  `--check-tile-ops` metadata output and the real training-loop result. When
+  `--require-cooperative-lm-head-backward` is set and only the current
+  llm.kittens-style classifier/matmul parity route is available, the top-level
+  JSON error now states that this probe is diagnostic-only and does not satisfy
+  the strict true-fused requirement.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k cooperative`;
+  `bash tools/build_native_gpt_cli.sh /tmp/nfn_gpt_native_train_check`;
+  `/tmp/nfn_gpt_native_train_check --tinystories --check-tile-ops
+  --require-cooperative-lm-head-backward`, which exits `2` with the clearer
+  top-level JSON error; `git diff --check`.
+
 - Aligned the strict native GPT LM-head preflight with the compiled trainer
   runtime contract. `--require-cooperative-lm-head-backward` now requires the
   true-fused

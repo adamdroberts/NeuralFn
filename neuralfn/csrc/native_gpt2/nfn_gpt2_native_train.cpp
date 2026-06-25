@@ -4323,8 +4323,9 @@ bool print_tile_plan(
         !cooperative_lm_head_backward_enabled) {
         plan_error =
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
-            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
-            "with a cooperative classifier/dHidden/dWeight kernel";
+            "the llm.kittens-style classifier/matmul parity probe is diagnostic-only and does not "
+            "satisfy this strict true-fused requirement; required next step: replace row-chunked "
+            "classifier plus separate dHidden/dWeight GEMMs with a cooperative classifier/dHidden/dWeight kernel";
     }
     if (plan_error.empty()) {
         plan_error = native_nvfp4_activation_packing_requirement_error(cfg);
@@ -20807,8 +20808,9 @@ int run_transformer_lm_training_json(
         !lm_head_cooperative_backward_kernel_enabled) {
         error =
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
-            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
-            "with a cooperative classifier/dHidden/dWeight kernel";
+            "the llm.kittens-style classifier/matmul parity probe is diagnostic-only and does not "
+            "satisfy this strict true-fused requirement; required next step: replace row-chunked "
+            "classifier plus separate dHidden/dWeight GEMMs with a cooperative classifier/dHidden/dWeight kernel";
         passed = false;
     }
     if (passed && final_checkpoint_export_enabled) {

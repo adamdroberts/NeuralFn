@@ -1284,8 +1284,10 @@ kernel before training starts. The SM120 wrapper treats this named profile as a
 strict ABI preflight probe, not a metric-gated speed candidate. The current
 llm.kittens-style classifier/matmul parity route remains a diagnostic runtime
 route and does not satisfy this strict guard, so strict runs fail instead of
-falling back to wrapper replay, Torch, or graph-editor tensor flow. The generic
-`NativeGptRunConfig` / compatibility `NativeGpt2RunConfig` field
+falling back to wrapper replay, Torch, or graph-editor tensor flow; the
+metadata and training-loop failure messages explicitly name that parity probe as
+diagnostic-only. The generic `NativeGptRunConfig` / compatibility
+`NativeGpt2RunConfig` field
 `require_cooperative_lm_head_backward=True`, direct
 `cli/scripts/train_gpt.py`, direct `cli/scripts/train_gpt_native.py`, and
 `nfn-native-train` all forward the same compiled flag; the
