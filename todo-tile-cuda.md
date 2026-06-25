@@ -1838,6 +1838,14 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     time regressed to `1.001249x` and total LM-head backward to `1.000123x`.
     Keep it diagnostic-only; the remaining useful work is still a true fused
     or co-scheduled LM-head classifier-backward kernel body.
+  - 2026-06-25 refreshed the CUDA 13.3.33 post-reinstall LM-head trainer-chunk
+    microbench after rebuilding `libnfn_native_train_tile_ops.so` and the
+    linked native GPT trainer. The diagnostic non-strict run completed on the
+    dedicated RTX 5090 with `candidate_to_baseline_ms_per_iter_ratio:
+    1.000324`, `candidate_true_fused_capability: false`, and
+    `candidate_cuda_graph_wrapper_only: true`. This keeps the existing graph
+    wrapper rejected as parity evidence; the next implementation still needs a
+    real fused or co-scheduled LM-head classifier/backward kernel contract.
   - 2026-06-22 kept the no-loss LM-head classifier CE route default-off after
     retesting it against the current packed-QKV dense GPT default. The route
     sends normal no-loss optimizer steps through the classifier row-loss kernel
