@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reduced dense GPT native startup launch overhead by adding
+  `nfn_native_tile_fill_many_values_mixed_float32_bf16_bits`, a raw CUDA Tile
+  trainer ABI that initializes float32 and BF16 constant parameter descriptor
+  groups in one mixed launch. The dense GPT trainer now prefers this path for
+  nonzero parameter startup fills and falls back to the previous separate
+  float32/BF16 fill-many launches only when the mixed ABI is unavailable.
+  Runtime JSON reports `parameter_initialization_strategy:
+  "mixed-float32-bf16-fill-many-values"`,
+  `mixed_parameter_initialization_kernel_launches`, and the actual
+  `parameter_initialization_kernel_launches_per_startup`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; default TinyStories SM120 startup preflight
+  reported `mixed_parameter_initialization_kernel_launches: 1`,
+  `parameter_initialization_kernel_launches_per_startup: 1`,
+  `torch_required: false`, and `graph_editor_tensor_flow: false`.
+
 - Tightened the native training SDK and generic C++ binding boundary. The new
   `NativeTrainRunConfig.strict_native_command` field defaults to `True`, and
   both `build_native_train_run_config().argv()` and the `neuralfn._native_train`

@@ -2393,11 +2393,14 @@ LayerNorm dInput plus residual-add route. Runtime JSON reports
 and `block_state_layout.layer_norm_backward_residual_strategy`.
 
 The full GPT-2 transformer-LM trainer also uses
-`nfn_native_tile_fill_many_values_float32` for startup nonzero constant
-parameter initialization. Its JSON reports
-`parameter_initialization_strategy: "fused-multi-buffer-fill-values"` and
+`nfn_native_tile_fill_many_values_mixed_float32_bf16_bits` for startup nonzero
+constant parameter initialization when float32 and BF16 descriptor groups are
+both present. Its JSON reports `parameter_initialization_strategy:
+"mixed-float32-bf16-fill-many-values"`,
+`mixed_parameter_initialization_kernel_launches`,
+`parameter_initialization_kernel_launches_per_startup`, and
 `parameter_initialization_per_buffer_launches_elided`; the default 12-layer
-shape initializes those 75 tensors with one descriptor-driven Tile launch.
+shape initializes those 75 tensors with one mixed descriptor-driven Tile launch.
 The AdamW, gradient-clip, gradient-zero, and parameter-fill descriptor tables
 are suballocated from one device descriptor arena and uploaded from one
 host-packed descriptor arena instead of ten separate small startup allocations

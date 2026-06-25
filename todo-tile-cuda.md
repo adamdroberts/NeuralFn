@@ -51,6 +51,15 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Reduce dense GPT native startup parameter-fill launches. The raw Tile ABI
+  now exposes `nfn_native_tile_fill_many_values_mixed_float32_bf16_bits`, and
+  `nfn_gpt_native_train` uses it to initialize float32 and BF16 constant
+  parameter descriptor groups in one mixed launch. The 2026-06-25 default
+  TinyStories SM120 startup preflight reported
+  `parameter_initialization_strategy=mixed-float32-bf16-fill-many-values`,
+  `mixed_parameter_initialization_kernel_launches=1`, and
+  `parameter_initialization_kernel_launches_per_startup=1`, with
+  `torch_required=false` and `graph_editor_tensor_flow=false`.
 - [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
   reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
   access, but the same command with GPU access sees the dedicated RTX 5090

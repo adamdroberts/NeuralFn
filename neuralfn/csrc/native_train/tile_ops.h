@@ -172,6 +172,19 @@ int nfn_native_tile_fill_many_values_bf16_bits_float32(
     std::int64_t max_elements,
     void* cuda_stream);
 
+int nfn_native_tile_fill_many_values_mixed_float32_bf16_bits(
+    float* const* float_buffers,
+    const std::int64_t* float_elements,
+    const float* float_values,
+    std::int64_t float_buffer_count,
+    std::int64_t float_max_elements,
+    std::uint16_t* const* bf16_buffers,
+    const std::int64_t* bf16_elements,
+    const float* bf16_values,
+    std::int64_t bf16_buffer_count,
+    std::int64_t bf16_max_elements,
+    void* cuda_stream);
+
 int nfn_native_tile_init_gpt2_token_weight_float32(
     float* values,
     std::int64_t n,

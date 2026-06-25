@@ -214,7 +214,10 @@ under `block_state_layout`, suballocates float buffers from a single CUDA device
 arena with `float_allocation_strategy: "single-arena"`, suballocates BF16
 activation/scratch buffers from a single uint16 CUDA device arena with
 `uint16_allocation_strategy: "single-arena"`, uses combined token arenas with
-`token_buffer_allocation_strategy: "combined-arenas"`, and stays out of
+`token_buffer_allocation_strategy: "combined-arenas"`, initializes mixed
+float32/BF16 constant parameter descriptors through
+`nfn_native_tile_fill_many_values_mixed_float32_bf16_bits` when available
+(`mixed_parameter_initialization_kernel_launches` reports the route), and stays out of
 Python/Torch. The default dense GPT block path keeps LN1 QKV forward and QKV
 dWeight on BF16 Tile/CUDA ABI calls, reporting
 `qkv_forward_ln1_bf16_enabled: true` and

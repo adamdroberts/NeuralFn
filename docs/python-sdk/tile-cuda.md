@@ -1934,8 +1934,11 @@ older float32 fill plus BF16 pack startup path while keeping BF16-primary AdamW
 updates enabled. JSON reports
 `direct_bf16_block_weight_initialization_enabled`,
 `block_weight_bf16_initialization_strategy`,
-`parameter_initialization_strategy: "split-float32-and-bf16-fill-many-values"`
-or `"fused-multi-buffer-fill-values"`,
+`parameter_initialization_strategy:
+"mixed-float32-bf16-fill-many-values"`,
+`"split-float32-and-bf16-fill-many-values"`, or
+`"fused-multi-buffer-fill-values"`,
+`mixed_parameter_initialization_kernel_launches`,
 `parameter_initialization_kernel_launches_per_startup`,
 `bf16_parameter_initialization_descriptor_count`,
 `bf16_parameter_initialization_kernel_launches`,

@@ -5985,13 +5985,17 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
     assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 37
     assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 37
-    assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
+    assert train_transformer_payload["parameter_initialization_strategy"] in {
+        "fused-multi-buffer-fill-values",
+        "mixed-float32-bf16-fill-many-values",
+    }
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["bf16_parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["parameter_initialization_max_elements"] == 0
     assert train_transformer_payload["bf16_parameter_initialization_max_elements"] == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches"] == 0
     assert train_transformer_payload["bf16_parameter_initialization_kernel_launches"] == 0
+    assert train_transformer_payload.get("mixed_parameter_initialization_kernel_launches", 0) == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches_per_startup"] == 0
     assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 75
     assert train_transformer_payload["direct_bf16_block_weight_initialization_enabled"] is True
@@ -6118,9 +6122,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "parameter_allocation_loop": True,
         "parameter_initialization_loop": False,
         "parameter_initialization_loop_elided": True,
-        "parameter_initialization_strategy": "fused-multi-buffer-fill-values",
+        "parameter_initialization_strategy": train_transformer_payload[
+            "parameter_initialization_strategy"
+        ],
         "parameter_initialization_descriptor_count": 0,
         "bf16_parameter_initialization_descriptor_count": 0,
+        "mixed_parameter_initialization_kernel_launches": 0,
         "parameter_initialization_kernel_launches_per_startup": 0,
         "parameter_initialization_per_buffer_launches_elided": 75,
         "startup_zero_init_strategy": "adamw-state-contiguous-range-cuda-memset",
@@ -8115,6 +8122,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_sumsq_partials_many_bf16_bits_float32" in source_text
     assert "sumsq_partials_many_float32_kernel" in kernels_text
     assert "sumsq_partials_many_bf16_bits_float32_kernel" in kernels_text
+    assert "nfn_native_tile_fill_many_values_mixed_float32_bf16_bits" in header_text
+    assert "nfn_native_tile_fill_many_values_mixed_float32_bf16_bits" in source_text
+    assert "fill_many_values_mixed_float32_bf16_bits_kernel" in kernels_text
+    assert "FillManyValuesMixedFn" in gpt2_source_text
+    assert "mixed-float32-bf16-fill-many-values" in gpt2_source_text
+    assert "mixed_parameter_initialization_kernel_launches" in gpt2_source_text
     assert "SumsqPartialsManyBf16BitsFn" in gpt2_source_text
     assert "gradient_clip_bf16_sumsq_kernel_loaded" in gpt2_source_text
     assert "gradient_partial_offsets" in gpt2_source_text

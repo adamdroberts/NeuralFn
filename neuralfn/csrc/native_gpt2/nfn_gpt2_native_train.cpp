@@ -3299,6 +3299,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_fill_many_float32",
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
+        "nfn_native_tile_fill_many_values_mixed_float32_bf16_bits",
         "nfn_native_tile_init_gpt2_token_weight_float32",
         "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
@@ -10532,6 +10533,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_fill_many_float32",
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
+        "nfn_native_tile_fill_many_values_mixed_float32_bf16_bits",
         "nfn_native_tile_init_gpt2_token_weight_float32",
         "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
@@ -10751,6 +10753,18 @@ int run_transformer_lm_training_json(
     using FillManyValuesFn = int (*)(float* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
     using FillManyValuesBf16BitsFn =
         int (*)(std::uint16_t* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
+    using FillManyValuesMixedFn = int (*)(
+        float* const*,
+        const std::int64_t*,
+        const float*,
+        std::int64_t,
+        std::int64_t,
+        std::uint16_t* const*,
+        const std::int64_t*,
+        const float*,
+        std::int64_t,
+        std::int64_t,
+        void*);
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
     using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using Float32ToBf16BitsFn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
@@ -11156,6 +11170,7 @@ int run_transformer_lm_training_json(
     FillFn fill = nullptr;
     FillManyValuesFn fill_many_values = nullptr;
     FillManyValuesBf16BitsFn fill_many_values_bf16_bits = nullptr;
+    FillManyValuesMixedFn fill_many_values_mixed = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight_fast = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_with_bf16_shadow = nullptr;
@@ -11535,6 +11550,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_fill_many_values_float32");
                 fill_many_values_bf16_bits = load_symbol<FillManyValuesBf16BitsFn>(
                     tile_handle, "nfn_native_tile_fill_many_values_bf16_bits_float32");
+                fill_many_values_mixed = load_symbol<FillManyValuesMixedFn>(
+                    tile_handle, "nfn_native_tile_fill_many_values_mixed_float32_bf16_bits");
                 init_gpt2_token_weight =
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
                 init_gpt2_token_weight_fast =
@@ -13429,6 +13446,7 @@ int run_transformer_lm_training_json(
     std::int64_t bf16_parameter_fill_descriptor_count = 0;
     std::int64_t bf16_parameter_fill_max_elements = 0;
     std::int64_t bf16_parameter_fill_kernel_launches = 0;
+    std::int64_t mixed_parameter_fill_kernel_launches = 0;
     std::int64_t adamw_descriptor_count = 0;
     std::int64_t adamw_max_elements = 0;
     std::int64_t adamw_float_update_descriptor_count = 0;
@@ -15995,6 +16013,28 @@ int run_transformer_lm_training_json(
         refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
     });
     run_setup_cuda_timed("setup.nonzero_parameter_fill", [&]() {
+        if (error.empty() &&
+            parameter_fill_descriptor_count > 0 &&
+            bf16_parameter_fill_descriptor_count > 0 &&
+            fill_many_values_mixed != nullptr) {
+            run(fill_many_values_mixed(
+                    parameter_fill_ptrs,
+                    parameter_fill_elements,
+                    parameter_fill_values,
+                    parameter_fill_descriptor_count,
+                    parameter_fill_max_elements,
+                    bf16_parameter_fill_ptrs,
+                    bf16_parameter_fill_elements,
+                    bf16_parameter_fill_values,
+                    bf16_parameter_fill_descriptor_count,
+                    bf16_parameter_fill_max_elements,
+                    nullptr),
+                "nonzero_parameters.fill_many_values_mixed_float32_bf16_bits");
+            if (error.empty()) {
+                mixed_parameter_fill_kernel_launches += 1;
+            }
+            return;
+        }
         if (error.empty() && parameter_fill_descriptor_count > 0) {
             run(fill_many_values(
                     parameter_fill_ptrs,
@@ -23271,7 +23311,9 @@ int run_transformer_lm_training_json(
         << "  \"descriptor_arena_copy_calls_elided\": " << descriptor_arena_copy_calls_elided << ",\n"
         << "  \"descriptor_cuda_mallocs_elided\": " << descriptor_cuda_mallocs_elided << ",\n"
         << "  \"parameter_initialization_strategy\": \""
-        << (bf16_parameter_fill_descriptor_count > 0
+        << (mixed_parameter_fill_kernel_launches > 0
+                ? "mixed-float32-bf16-fill-many-values"
+            : bf16_parameter_fill_descriptor_count > 0
                 ? "split-float32-and-bf16-fill-many-values"
                 : "fused-multi-buffer-fill-values")
         << "\",\n"
@@ -23284,9 +23326,12 @@ int run_transformer_lm_training_json(
         << "  \"parameter_initialization_kernel_launches\": " << parameter_fill_kernel_launches << ",\n"
         << "  \"bf16_parameter_initialization_kernel_launches\": "
         << bf16_parameter_fill_kernel_launches << ",\n"
+        << "  \"mixed_parameter_initialization_kernel_launches\": "
+        << mixed_parameter_fill_kernel_launches << ",\n"
         << "  \"parameter_initialization_kernel_launches_per_startup\": "
-        << ((parameter_fill_descriptor_count > 0 ? 1 : 0) +
-            (bf16_parameter_fill_descriptor_count > 0 ? 1 : 0)) << ",\n"
+        << (parameter_fill_kernel_launches +
+            bf16_parameter_fill_kernel_launches +
+            mixed_parameter_fill_kernel_launches) << ",\n"
         << "  \"parameter_initialization_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(
                0,
@@ -23488,16 +23533,21 @@ int run_transformer_lm_training_json(
         << "    \"parameter_initialization_loop\": false,\n"
         << "    \"parameter_initialization_loop_elided\": true,\n"
         << "    \"parameter_initialization_strategy\": \""
-        << (bf16_parameter_fill_descriptor_count > 0
+        << (mixed_parameter_fill_kernel_launches > 0
+                ? "mixed-float32-bf16-fill-many-values"
+            : bf16_parameter_fill_descriptor_count > 0
                 ? "split-float32-and-bf16-fill-many-values"
                 : "fused-multi-buffer-fill-values")
         << "\",\n"
         << "    \"parameter_initialization_descriptor_count\": " << parameter_fill_descriptor_count << ",\n"
         << "    \"bf16_parameter_initialization_descriptor_count\": "
         << bf16_parameter_fill_descriptor_count << ",\n"
+        << "    \"mixed_parameter_initialization_kernel_launches\": "
+        << mixed_parameter_fill_kernel_launches << ",\n"
         << "    \"parameter_initialization_kernel_launches_per_startup\": "
-        << ((parameter_fill_descriptor_count > 0 ? 1 : 0) +
-            (bf16_parameter_fill_descriptor_count > 0 ? 1 : 0)) << ",\n"
+        << (parameter_fill_kernel_launches +
+            bf16_parameter_fill_kernel_launches +
+            mixed_parameter_fill_kernel_launches) << ",\n"
         << "    \"parameter_initialization_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(
                0,

@@ -7078,6 +7078,44 @@ __tile_global__ void fill_many_values_bf16_bits_float32_kernel(
   ct::store_masked(values + idx, tile, mask);
 }
 
+__tile_global__ void fill_many_values_mixed_float32_bf16_bits_kernel(
+    float* const* __restrict__ float_buffers,
+    const std::int64_t* __restrict__ float_elements,
+    const float* __restrict__ float_values,
+    std::int64_t float_buffer_count,
+    std::uint16_t* const* __restrict__ bf16_buffers,
+    const std::int64_t* __restrict__ bf16_elements,
+    const float* __restrict__ bf16_values,
+    std::int64_t bf16_buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  if (static_cast<std::int64_t>(tensor) < float_buffer_count) {
+    float* values = ct::assume_aligned(float_buffers[tensor], 16_ic);
+    const std::int64_t n = float_elements[tensor];
+    auto mask = idx < ct::full<IndexTile>(n);
+    auto tile = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(float_values[tensor]);
+    ct::store_masked(values + idx, tile, mask);
+    return;
+  }
+
+  const std::int64_t bf16_tensor = static_cast<std::int64_t>(tensor) - float_buffer_count;
+  if (bf16_tensor >= bf16_buffer_count) {
+    return;
+  }
+  auto* values = ct::assume_aligned(
+      reinterpret_cast<__nv_bfloat16*>(bf16_buffers[bf16_tensor]), 16_ic);
+  const std::int64_t n = bf16_elements[bf16_tensor];
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::element_cast<__nv_bfloat16>(
+      ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(bf16_values[bf16_tensor]));
+  ct::store_masked(values + idx, tile, mask);
+}
+
 __tile_global__ void init_gpt2_token_weight_float32_kernel(
     float* __restrict__ values,
     std::int64_t n) {
@@ -15327,6 +15365,36 @@ void launch_fill_many_values_bf16_bits_float32(
       elements,
       values,
       buffer_count);
+}
+
+void launch_fill_many_values_mixed_float32_bf16_bits(
+    float* const* float_buffers,
+    const std::int64_t* float_elements,
+    const float* float_values,
+    std::int64_t float_buffer_count,
+    std::int64_t float_max_elements,
+    std::uint16_t* const* bf16_buffers,
+    const std::int64_t* bf16_elements,
+    const float* bf16_values,
+    std::int64_t bf16_buffer_count,
+    std::int64_t bf16_max_elements,
+    cudaStream_t stream) {
+  const std::int64_t total_buffer_count = float_buffer_count + bf16_buffer_count;
+  const std::int64_t max_elements = std::max(float_max_elements, bf16_max_elements);
+  if (total_buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(total_buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  fill_many_values_mixed_float32_bf16_bits_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      float_buffers,
+      float_elements,
+      float_values,
+      float_buffer_count,
+      bf16_buffers,
+      bf16_elements,
+      bf16_values,
+      bf16_buffer_count);
 }
 
 bool token_weight_threaded_init_enabled() {
