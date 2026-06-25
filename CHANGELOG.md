@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded the SM120 native candidate sweep summary for current dense-GPT
+  parity work. The no-argument sweep now includes the promoted
+  `lm_head_graph_prewarm` regression gate alongside `qkv_dinput_ln128`,
+  `lm_head_loss_bins`, and `cublaslt_grouped_probe`; `summary.tsv` also reports
+  LM-head graph replay, cooperative sequence launch, and cuBLASLt BGRADB
+  direct/accumulate route deltas so hot-path candidate evidence can be read
+  without opening every sidecar JSON file. Verification: shell syntax and the
+  focused sweep static test.
+
 - Added shape-scoped cuBLASLt BGRADB first-write diagnostics for native dense
   GPT block dWeight+bias paths. The Tile-CUDA linear dispatcher now accepts
   `NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB`,

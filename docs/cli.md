@@ -1530,7 +1530,12 @@ failed candidates, and writes `summary.tsv` plus per-profile logs, JSON, and
 native sidecars under `NFN_SM120_NATIVE_SWEEP_OUT_DIR`. Pass profiles as
 arguments or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only when the outer command should
-return success after collecting rejected-candidate evidence.
+return success after collecting rejected-candidate evidence. The no-argument
+sweep includes `qkv_dinput_ln128`, `lm_head_graph_prewarm`,
+`lm_head_loss_bins`, and `cublaslt_grouped_probe`, and its `summary.tsv`
+reports the route deltas for QKV dInput-before-dWeight, LM-head loss bins,
+LM-head graph replay, cooperative LM-head sequence launches, cuBLASLt BGRADB
+direct/accumulate paths, and grouped cuBLASLt probes.
 Real runs of known rejected named profiles fail fast unless
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run plan
 expansion still works without that opt-in. The current guard covers

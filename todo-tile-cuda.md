@@ -53,6 +53,11 @@ Real training tensors must not pass through graph editor node objects.
   The 2026-06-25 QKV, attention projection, MLP FC, and MLP projection shape
   gates each moved 36 first-write calls to direct writes and failed timing
   gates, so all four shape profiles are rejected by default.
+- [x] Keep SM120 candidate sweep output aligned with current parity evidence.
+  The no-argument sweep now includes the promoted `lm_head_graph_prewarm` gate
+  and `summary.tsv` reports LM-head graph replay, cooperative sequence, and
+  cuBLASLt BGRADB direct/accumulate route deltas in addition to the older QKV,
+  loss-bin, and grouped-cuBLASLt proof columns.
 - [x] Refresh the native-vs-llm.kittens parity measurement after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The 2026-06-24 CUDA 13.3.33
   3-step/1-sample same-script run measured NeuralFn at `2512.313 ms/step`

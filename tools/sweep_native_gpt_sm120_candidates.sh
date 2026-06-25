@@ -17,6 +17,7 @@ elif [[ -n "${NFN_SM120_CANDIDATE_SWEEP_PROFILES-}" ]]; then
 else
   profiles=(
     qkv_dinput_ln128
+    lm_head_graph_prewarm
     lm_head_loss_bins
     cublaslt_grouped_probe
   )
@@ -81,6 +82,11 @@ header = [
     "total_wall_ratio_mean",
     "qkv_dinput_before_dweight",
     "lm_head_loss_bin_launches",
+    "lm_head_graph_replay_success",
+    "lm_head_graph_replay",
+    "lm_head_sequence_launches",
+    "linear_bgrad_direct_writes",
+    "linear_bgrad_accumulates",
     "cublaslt_grouped_layout_status",
     "cublaslt_grouped_matmul_status",
     "json",
@@ -137,6 +143,11 @@ for item in sys.argv[2:]:
             metric_mean(payload, "total_wall_ms"),
             route_delta(payload, "block_backward_qkv_dinput_before_dweight_count"),
             route_delta(payload, "lm_head_classifier_loss_bin_launch_count"),
+            route_delta(payload, "lm_head_fused_graph_replay_success_count"),
+            route_delta(payload, "lm_head_fused_graph_replay_count"),
+            route_delta(payload, "lm_head_cooperative_sequence_launch_count"),
+            route_delta(payload, "linear_cublaslt_bgrad_direct_write_count"),
+            route_delta(payload, "linear_cublaslt_bgrad_accumulate_count"),
             route_delta(payload, "linear_cublaslt_grouped_layout_probe_status"),
             route_delta(payload, "linear_cublaslt_grouped_matmul_probe_status"),
             json_path,
