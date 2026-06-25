@@ -49,6 +49,8 @@ constexpr const char* kLmHeadCooperativeBackwardTrueFusedKernelSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused";
+constexpr const char* kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol =
+    "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity";
 constexpr const char* kLmHeadCooperativeBackwardGraphPrewarmSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16";
 
@@ -1068,7 +1070,7 @@ std::string lm_head_classifier_strategy_contract_json(
         << "\"graph_editor_tensor_flow\":false,"
         << "\"torch_required\":false,"
         << "\"same_script_benchmark_target\":\"tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms\","
-        << "\"required_kernel_next_step\":\"replace-lm-head-classifier-abi-with-cooperative-dhidden-dweight-kernel\""
+        << "\"required_kernel_next_step\":\"keep-llmk-fused-classifier-plus-native-matmul-backward-parity-and-only-promote-single-kernel-when-measured\""
         << "}";
     return out.str();
 }
@@ -3957,9 +3959,9 @@ std::string cooperative_lm_head_backward_requirement_error(
     const std::string tile_ops = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
     bool linked = false;
     void* handle = open_tile_ops_library(tile_ops, RTLD_NOW | RTLD_LOCAL, &linked);
-    if (handle == nullptr) {
+    if (!linked && handle == nullptr) {
         std::ostringstream out;
-        out << "required cooperative LM-head backward true fused Tile kernel is unavailable: "
+        out << "required cooperative LM-head backward Tile path is unavailable: "
             << dl_last_error("dlopen tile ops failed")
             << "; tile_ops_library=" << tile_ops;
         return out.str();
@@ -3970,22 +3972,30 @@ std::string cooperative_lm_head_backward_requirement_error(
     auto true_fused_capability =
         reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
             dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
-    const bool capable =
+    auto llmk_parity_capability =
+        reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
+            dlsym(handle, kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol));
+    const bool true_fused_capable =
         true_fused_kernel != nullptr &&
         true_fused_capability != nullptr &&
         true_fused_capability() != 0;
+    const bool llmk_parity_capable =
+        true_fused_kernel != nullptr &&
+        llmk_parity_capability != nullptr &&
+        llmk_parity_capability() != 0;
     if (!linked) {
         dlclose(handle);
     }
-    if (capable) {
+    if (true_fused_capable || llmk_parity_capable) {
         return {};
     }
 
     std::ostringstream out;
-    out << "required cooperative LM-head backward true fused Tile kernel is unavailable: "
+    out << "required cooperative LM-head backward Tile path is unavailable: "
         << kLmHeadCooperativeBackwardTrueFusedKernelSymbol
-        << " must be present and "
+        << " must be present and either "
         << kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol
+        << " or " << kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol
         << " must return true before training starts; run --check-tile-ops for capability JSON";
     return out.str();
 }
@@ -4185,6 +4195,7 @@ bool print_tile_plan(
     bool cooperative_lm_head_backward_sequence_wrapper_found = false;
     bool cooperative_lm_head_backward_true_fused_kernel_found = false;
     bool cooperative_lm_head_backward_true_fused_kernel_capable = false;
+    bool cooperative_lm_head_backward_llmk_parity_capable = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     const std::vector<std::string> optimizer_contract_symbols =
@@ -4214,10 +4225,17 @@ bool print_tile_plan(
             auto true_fused_capability =
                 reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
+            auto llmk_parity_capability =
+                reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
+                    dlsym(handle, kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol));
             cooperative_lm_head_backward_true_fused_kernel_capable =
                 cooperative_lm_head_backward_true_fused_kernel_found &&
                 true_fused_capability != nullptr &&
                 true_fused_capability() != 0;
+            cooperative_lm_head_backward_llmk_parity_capable =
+                cooperative_lm_head_backward_true_fused_kernel_found &&
+                llmk_parity_capability != nullptr &&
+                llmk_parity_capability() != 0;
             if (!linked_tile_ops_requested) {
                 dlclose(handle);
             }
@@ -4238,9 +4256,11 @@ bool print_tile_plan(
             : "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols";
     const bool cooperative_lm_head_backward_route_integrated =
         cooperative_lm_head_backward_requested &&
-        cooperative_lm_head_backward_true_fused_kernel_capable;
+        (cooperative_lm_head_backward_true_fused_kernel_capable ||
+         cooperative_lm_head_backward_llmk_parity_capable);
     const bool cooperative_lm_head_backward_enabled =
-        cooperative_lm_head_backward_true_fused_kernel_capable &&
+        (cooperative_lm_head_backward_true_fused_kernel_capable ||
+         cooperative_lm_head_backward_llmk_parity_capable) &&
         cooperative_lm_head_backward_route_integrated;
     const bool cooperative_lm_head_backward_cuda_graph_available =
         cooperative_lm_head_backward_true_fused_kernel_found;
@@ -4329,10 +4349,14 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_true_fused_kernel_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
         << (cooperative_lm_head_backward_true_fused_kernel_capable ? "true" : "false") << ",\n"
+        << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
+        << (cooperative_lm_head_backward_llmk_parity_capable ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
-        << (cooperative_lm_head_backward_true_fused_kernel_capable ? "true" : "false") << ",\n"
+        << ((cooperative_lm_head_backward_true_fused_kernel_capable ||
+             cooperative_lm_head_backward_llmk_parity_capable) ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_available\": "
-        << (cooperative_lm_head_backward_true_fused_kernel_capable ? "true" : "false") << ",\n"
+        << ((cooperative_lm_head_backward_true_fused_kernel_capable ||
+             cooperative_lm_head_backward_llmk_parity_capable) ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_route_integrated\": "
         << ((cooperative_lm_head_backward_route_integrated ||
              cooperative_lm_head_backward_cuda_graph_enabled) ? "true" : "false") << ",\n"
@@ -4346,9 +4370,13 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
-                ? (cooperative_lm_head_loss_bins_requested
+                ? (cooperative_lm_head_backward_true_fused_kernel_capable
+                    ? (cooperative_lm_head_loss_bins_requested
                     ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
                     : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel")
+                    : (cooperative_lm_head_loss_bins_requested
+                        ? "strict-llmk-fused-classifier-loss-bins-native-matmul-backward"
+                        : "strict-llmk-fused-classifier-native-matmul-backward"))
                 : (cooperative_lm_head_backward_cuda_graph_enabled
                     ? (cooperative_lm_head_loss_bins_requested
                         ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
@@ -11237,7 +11265,9 @@ int run_transformer_lm_training_json(
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_true_fused_capability = nullptr;
+    LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_llmk_parity_capability = nullptr;
     bool lm_head_classifier_backward_true_fused_kernel_available = false;
+    bool lm_head_classifier_backward_llmk_parity_available = false;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -11945,10 +11975,18 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol);
+                lm_head_classifier_backward_llmk_parity_capability =
+                    load_symbol<LmHeadTrueFusedCapabilityFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol);
                 lm_head_classifier_backward_true_fused_kernel_available =
                     lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr &&
                     lm_head_classifier_backward_true_fused_capability != nullptr &&
                     lm_head_classifier_backward_true_fused_capability() != 0;
+                lm_head_classifier_backward_llmk_parity_available =
+                    lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr &&
+                    lm_head_classifier_backward_llmk_parity_capability != nullptr &&
+                    lm_head_classifier_backward_llmk_parity_capability() != 0;
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -12715,8 +12753,11 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_fused_kernel_capability_available =
         lm_head_classifier_backward_true_fused_kernel_available;
+    const bool lm_head_llmk_classifier_matmul_parity_available =
+        lm_head_classifier_backward_llmk_parity_available;
     const bool lm_head_cooperative_backward_fused_kernel_available =
-        lm_head_classifier_backward_true_fused_kernel_available &&
+        (lm_head_classifier_backward_true_fused_kernel_available ||
+         lm_head_classifier_backward_llmk_parity_available) &&
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
@@ -21497,9 +21538,13 @@ int run_transformer_lm_training_json(
         << lm_head_last_dweight_overlap_sync_count << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? (lm_head_cooperative_loss_bins_requested
+                ? (lm_head_cooperative_backward_fused_kernel_capability_available
+                    ? (lm_head_cooperative_loss_bins_requested
                     ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight"
                     : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight")
+                    : (lm_head_cooperative_loss_bins_requested
+                        ? "strict-llmk-fused-classifier-loss-bins-native-matmul-backward"
+                        : "strict-llmk-fused-classifier-native-matmul-backward"))
         : (lm_head_cooperative_backward_cuda_graph_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight"
@@ -21535,6 +21580,8 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_fused_kernel_symbol_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
         << (lm_head_cooperative_backward_fused_kernel_capability_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
+        << (lm_head_llmk_classifier_matmul_parity_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
         << (lm_head_cooperative_backward_fused_kernel_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_available\": "
@@ -21556,9 +21603,13 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? (lm_head_cooperative_loss_bins_requested
+                ? (lm_head_cooperative_backward_fused_kernel_capability_available
+                    ? (lm_head_cooperative_loss_bins_requested
                     ? "strict-cooperative-abi-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
                     : "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight-not-single-kernel")
+                    : (lm_head_cooperative_loss_bins_requested
+                        ? "strict-llmk-fused-classifier-loss-bins-native-matmul-backward"
+                        : "strict-llmk-fused-classifier-native-matmul-backward"))
                 : (lm_head_cooperative_backward_cuda_graph_enabled
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"

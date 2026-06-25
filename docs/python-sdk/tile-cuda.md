@@ -525,25 +525,23 @@ and reports `lm_head_reverse_chunk_order_enabled` plus
 train-loop wall time versus the previous forward order; set the variable to `0`
 only for bisection.
 
-The dense GPT cooperative LM-head backward ABI has two distinct callable
-surfaces. `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+The dense GPT cooperative LM-head backward ABI has three distinct capability
+levels. `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 is the existing event-ordered sequence wrapper and only satisfies
 `lm_head_cooperative_backward_sequence_wrapper_available`.
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
-strict graph-fused classifier/dHidden/dWeight callable and must be loaded
-with a nonzero
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability before `lm_head_cooperative_backward_fused_kernel_available` or
-`lm_head_cooperative_backward_kernel_enabled` can become true. Current CUDA
-13.3 builds implement this strict callable as a cached CUDA Graph over the
-optimized CE, dHidden, and dWeight launches for each row-chunk
-pointer/shape/beta/flag tuple. It is not a monolithic single CUDA kernel. The
-llm.kittens SM120 reference keeps logits, CE/dlogits, dHidden, and dWeight as
-separate stages, so this fused callable is an optimization candidate gate
-rather than a required parity condition. SDK and CLI strict runs therefore
-still fail on wrapper-only or missing-capability builds
-instead of silently benchmarking the older CE plus dHidden plus dWeight
-sequence.
+strict callable. It can satisfy `lm_head_cooperative_backward_kernel_enabled`
+when either the future monolithic capability
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
+the current llm.kittens-equivalent capability
+`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
+returns nonzero. Current CUDA 13.3 builds keep the true-fused bit at `0` and
+report `lm_head_llmk_classifier_matmul_parity_available=true`: strict mode
+uses fused classifier CE/dlogits plus native dHidden/dWeight matmul backward,
+which matches the llm.kittens SM120 dataflow and keeps real training tensors
+out of both Torch and the graph editor. SDK and CLI strict runs therefore fail
+on wrapper-only or missing-capability builds instead of silently benchmarking
+the older CE plus dHidden plus dWeight sequence.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

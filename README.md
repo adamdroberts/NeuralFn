@@ -181,25 +181,23 @@ does not promote the broader prob-only CE route as the normal training path.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate
-from the strict graph-fused classifier/dHidden/dWeight callable: wrapper-only
-builds still fail `--require-cooperative-lm-head-backward`, and strict JSON
-availability requires loading
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
-nonzero
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability rather than the existing sequence wrapper. The strict callable now
-captures the optimized CE, dHidden, and dWeight launches into a cached CUDA
-Graph per row-chunk pointer/shape/beta/flag tuple; it is not a monolithic
-single CUDA kernel, but it is no longer the placeholder sequence wrapper. The
-llm.kittens SM120 reference keeps LM-head logits, classifier CE/dlogits,
-dHidden, and dWeight as separate stages, so this strict fused callable is a
-candidate optimization gate, not a required reference-parity condition. Real
-training runs that pass `--require-cooperative-lm-head-backward` now fail
-before token-shard resolution or CUDA runtime setup only when that strict
-symbol/capability is unavailable; use `--check-tile-ops
---require-cooperative-lm-head-backward` when you want the detailed capability
-JSON instead of entering training. Future LM-head fused kernel candidates
-should first run
+from strict native LM-head parity. Strict JSON availability now requires the
+strict callable symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus either
+the future monolithic capability
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
+the current llm.kittens-equivalent capability
+`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`.
+The true-fused capability still returns `0`; the accepted strict path reports
+`lm_head_llmk_classifier_matmul_parity_available=true` and uses a fused
+classifier CE/dlogits stage followed by native dHidden/dWeight matmul
+backward, matching the llm.kittens SM120 training dataflow without sending
+real training tensors through the graph editor or Torch. Real training runs
+that pass `--require-cooperative-lm-head-backward` now fail before token-shard
+resolution or CUDA runtime setup only when neither strict capability is
+available; use `--check-tile-ops --require-cooperative-lm-head-backward` when
+you want the detailed capability JSON instead of entering training. Future
+single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
 `build/lm_head_backward_bench` and compares the current cooperative sequence
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`

@@ -1608,15 +1608,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in source
     assert "lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
     assert "lm_head_classifier_backward_true_fused_capability" in source
+    assert "lm_head_classifier_backward_llmk_parity_capability" in source
     assert "lm_head_cooperative_backward_fused_kernel_symbol_available" in source
     assert "lm_head_cooperative_backward_fused_kernel_capability_available" in source
+    assert "lm_head_llmk_classifier_matmul_parity_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
     assert "cooperative_lm_head_backward_requirement_error" in source
     assert (
-        "required cooperative LM-head backward true fused Tile kernel is unavailable"
+        "required cooperative LM-head backward Tile path is unavailable"
     ) in source
     assert "must return true before training starts" in source
     assert (
@@ -1638,6 +1641,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
+    assert "strict-llmk-fused-classifier-native-matmul-backward" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel" in source
     assert "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel" in source
@@ -1659,6 +1663,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_header
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_source
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_header
     assert "lm_head_prob_only_target_correction_threads" in source
@@ -1668,6 +1674,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
         "    return 0;\n"
+        "}"
+    ) in tile_ops_source
+    assert (
+        "int nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity() {\n"
+        "    return 1;\n"
         "}"
     ) in tile_ops_source
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
@@ -3789,7 +3800,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
-        "required_kernel_next_step": "replace-lm-head-classifier-abi-with-cooperative-dhidden-dweight-kernel",
+        "required_kernel_next_step": (
+            "keep-llmk-fused-classifier-plus-native-matmul-backward-parity-and-only-promote-single-kernel-when-measured"
+        ),
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
@@ -5311,7 +5324,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
-        "required_kernel_next_step": "replace-lm-head-classifier-abi-with-cooperative-dhidden-dweight-kernel",
+        "required_kernel_next_step": (
+            "keep-llmk-fused-classifier-plus-native-matmul-backward-parity-and-only-promote-single-kernel-when-measured"
+        ),
     }
     assert train_transformer_payload["model_dim"] == 768
     assert train_transformer_payload["hidden_dim"] == 3072

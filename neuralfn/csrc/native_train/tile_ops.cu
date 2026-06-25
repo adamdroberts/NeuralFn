@@ -5954,6 +5954,10 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {
     return 0;
 }
 
+int nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity() {
+    return 1;
+}
+
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
     std::uint16_t* logits,
     const std::uint16_t* targets,

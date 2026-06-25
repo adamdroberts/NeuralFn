@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Split strict dense GPT LM-head capability into true-fused and
+  llm.kittens-parity checks. The Tile-CUDA ABI now exports
+  `nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
+  separately from
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+  The true-fused bit remains `0`; strict `--require-cooperative-lm-head-backward`
+  now accepts the current llm.kittens-equivalent route, which performs fused
+  classifier CE/dlogits followed by native dHidden/dWeight matmul backward and
+  reports `lm_head_llmk_classifier_matmul_parity_available=true`. The native
+  trainer also fixes linked-mode strict preflight so `RTLD_DEFAULT` is not
+  misreported as a failed `dlopen`.
+
+  Breaking changes: strict LM-head availability no longer means a monolithic
+  CE+dHidden+dWeight kernel is present. Callers that need that future
+  single-kernel condition must check
+  `lm_head_cooperative_backward_fused_kernel_capability_available`; callers
+  that need the native llm.kittens-equivalent no-Torch/no-graph-editor training
+  path should check `lm_head_llmk_classifier_matmul_parity_available` and
+  `lm_head_cooperative_backward_kernel_enabled`.
+
+  Verification: ran focused source tests with
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative or lm_head or tile_plan"`; rebuilt
+  `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`; rebuilt
+  `build/nfn_gpt_native_train_linked` with
+  `bash tools/build_native_gpt_cli_linked.sh`; ran strict capability JSON with
+  `build/nfn_gpt_native_train_linked --check-tile-ops
+  --require-cooperative-lm-head-backward --backend tile-cuda`; and ran the
+  strict startup-only trainer check unsandboxed after sandboxed CUDA failed
+  with expected error 35. The strict startup JSON passed with
+  `lm_head_llmk_classifier_matmul_parity_available=true`,
+  `lm_head_cooperative_backward_kernel_enabled=true`,
+  `graph_editor_tensor_flow=false`, and `torch_required=false`.
+
 - Kept the LLaMA-fast eval helper help path out of the Torch runtime.
   `eval_llama_fast.py` now parses `--help` from lightweight CLI helpers and
   defers Torch, CUDA graph loading, tokenizer/dataset helpers, and validation
