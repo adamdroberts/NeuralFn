@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Documented the linked dense GPT native startup path as the default SDK/CLI
+  dispatch target when `build/nfn_gpt_native_train_linked` exists. The linked
+  binary resolves Tile ops through `RTLD_DEFAULT` instead of dynamic `dlopen`;
+  a 2026-06-25 one-step TinyStories probe measured
+  `setup.load_tile_ops` at about `0.083 ms` on the linked binary versus
+  `63.986 ms` on the dynamic binary, with `torch_required: false` and
+  `graph_editor_tensor_flow: false`.
+
 - Clarified dense GPT native attention fallback reporting. The normal optimized
   training path now reports `attention_forward_scalar_launch_fallback_enabled:
   false` when scalar fallback is forbidden by the default

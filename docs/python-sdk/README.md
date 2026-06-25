@@ -228,8 +228,10 @@ Backend names are strict: use `"tile-cuda"`. For the unified native training fro
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is
 used by `run_native_train(..., runner="auto")` to hand off without importing
 Torch. Dense GPT-family SDK configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) skip the
-generic `nfn_native_train` dispatcher and spawn `nfn_gpt_native_train` directly
-when `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists;
+generic `nfn_native_train` dispatcher and spawn the linked
+`nfn_gpt_native_train_linked` binary when it exists, falling back to
+`nfn_gpt_native_train` only when no linked binary or `NFN_NATIVE_GPT_CLI`
+override is available.
 `nano_gpt` and `nano-gpt` canonicalize to `nanogpt` before direct dispatch. Other
 compiled family targets also bypass the generic dispatcher when available:
 `gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and

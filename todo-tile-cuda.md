@@ -68,6 +68,13 @@ Real training tensors must not pass through graph editor node objects.
   launches. The 2026-06-25 one-step TinyStories GPU assertion reported zero
   scalar launches, zero row fallback launches, `torch_required=false`, and
   `graph_editor_tensor_flow=false`.
+- [x] Verify and document linked dense GPT startup as the default SDK/CLI
+  dispatch target. The linked binary resolves Tile ops through `RTLD_DEFAULT`
+  and self-selects `--tile-ops-lib linked`; the 2026-06-25 one-step TinyStories
+  probe reduced `setup.load_tile_ops` from about `63.986 ms` on
+  `build/nfn_gpt_native_train` to `0.083 ms` on
+  `build/nfn_gpt_native_train_linked`, with `torch_required=false` and
+  `graph_editor_tensor_flow=false`.
 - [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
   reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
   access, but the same command with GPU access sees the dedicated RTX 5090
