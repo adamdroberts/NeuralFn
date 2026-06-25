@@ -1803,16 +1803,16 @@ apart before each measured command, configurable through
 `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` /
 `NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` and the matching
 `..._RETRY_INTERVAL_SECONDS` aliases.
-Measured parity runs are measurement-only by default: they report
-NeuralFn-vs-llm.kittens ratios without exiting nonzero just because the current
-throughput target is not closed yet. Set `NFN_SM120_PARITY_ENFORCE_GATE=1` (or
-the generic `NFN_SM120_ENFORCE_PARITY_GATE=1`) to add default strict
-`train_loop_wall_ms_per_step=1.000` and, while CUDA-event loop timing is
-enabled, `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000` ratio
-gates. This prevents a candidate from passing strict llm.kittens parity only by
-improving first-step/setup timing. You can also provide explicit whitespace
-separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
-`NFN_SM120_MAX_CANDIDATE_RATIO`. Dry-run plans stay ungated.
+Measured parity runs are gating runs by default: `NFN_SM120_PARITY_ENFORCE_GATE`
+defaults to `1`, so the wrapper exits nonzero unless NeuralFn stays at or below
+llm.kittens for `train_loop_wall_ms_per_step=1.000` and, while CUDA-event loop
+timing is enabled, `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`.
+This prevents a candidate from passing strict llm.kittens parity only by
+improving first-step/setup timing. Set `NFN_SM120_PARITY_ENFORCE_GATE=0` (or
+`NFN_SM120_ENFORCE_PARITY_GATE=0`) only for diagnostic measurement-only reruns.
+You can also provide explicit whitespace separated gates through
+`NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`.
+Dry-run plans stay ungated.
 The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes

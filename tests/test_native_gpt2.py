@@ -747,6 +747,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
     assert 'TRAIN_LOOP_EVENT_TIMING="${NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING:-${NFN_SM120_TRAIN_LOOP_EVENT_TIMING:-1}}"' in parity_bench
+    assert 'ENFORCE_GATE="${NFN_SM120_PARITY_ENFORCE_GATE:-${NFN_SM120_ENFORCE_PARITY_GATE:-1}}"' in parity_bench
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
     assert 'CANDIDATE_PROFILE_RAW="${NFN_SM120_PARITY_CANDIDATE_PROFILE:-${NFN_SM120_PARITY_PROFILE:-}}"' in parity_bench
     assert "NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench

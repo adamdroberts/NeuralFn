@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the SM120 llm.kittens parity wrapper to enforce parity gates by
+  default. `tools/bench_native_gpt_sm120_parity.sh` now treats
+  `NFN_SM120_PARITY_ENFORCE_GATE` / `NFN_SM120_ENFORCE_PARITY_GATE` as enabled
+  unless explicitly set to `0`, so measured RTX 5090 parity runs fail nonzero
+  when NeuralFn is slower than llm.kittens on `train_loop_wall_ms_per_step` or
+  the steady-state CUDA-event training-loop metric. Migration note: set
+  `NFN_SM120_PARITY_ENFORCE_GATE=0` only for diagnostic measurement-only reruns.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  -q`; `NFN_SM120_PARITY_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_parity.sh`; a dedicated RTX 5090 parity probe
+  with the current kernels that correctly failed on
+  `train_loop_cuda_event_steady_state_wall_ms_per_step`; and `git diff --check`.
+
 - Made `cli/scripts/infer_jepa_semantic.py` itself lightweight to import.
   Shared parser, token decoding, prompt utility, and artifact-default helpers
   can now be imported without loading Torch, NumPy, tokenizers, the dataset
