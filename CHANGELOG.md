@@ -29,6 +29,22 @@ Future updates should append new entries here rather than replacing older notes.
   `1.001139x` steady-state CUDA-event timing while changing the CE strategy
   value from scalar stores to normal vec8 stores.
 
+- Catalogued the direct LM-head classifier/matmul fallback as a rejected SM120
+  candidate profile. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off`
+  expands to `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` and now requires
+  the rejected-profile opt-in for real GPU runs. This preserves the 2026-06-25
+  evidence that simply disabling the diagnostic CUDA Graph wrapper does not
+  close the llm.kittens parity gap.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k candidate_wrapper_covers_attention_and_ordering_profiles`;
+  earlier same-script parity evidence:
+  `NFN_SM120_PARITY_CANDIDATE_ENV="NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0"
+  bash tools/bench_native_gpt_sm120_parity.sh`, which failed at `1.019533x`
+  train-loop wall and `1.016084x` steady-state CUDA-event timing.
+
 - Added a targeted failure diagnostic to the SM120 llm.kittens parity wrapper.
   `tools/bench_native_gpt_sm120_parity.sh` still exits nonzero when the metric
   gates fail, but if the emitted JSON proves NeuralFn is already using native

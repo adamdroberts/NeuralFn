@@ -210,7 +210,13 @@ when the paired JSON proves the run is native Tile-backed and the remaining
 blocker is this wrapper-only LM-head route. On the CUDA 13.3 dedicated RTX 5090
 recheck, disabling NeuralFn train-loop event timing, prewarming the LM-head
 graph, and forcing the cooperative sequence wrapper all still failed the
-same-script llm.kittens parity gate, so those routes remain diagnostic-only.
+same-script llm.kittens parity gate. Disabling the cooperative LM-head wrapper
+entirely is also catalogued as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off`; the
+CUDA 13.3 dedicated RTX 5090 10-step parity gate ran the direct
+CE+dHidden+dWeight schedule but regressed NeuralFn versus llm.kittens to
+`1.019533x` train-loop wall and `1.016084x` steady-state CUDA-event timing.
+Those routes remain diagnostic-only.
 Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds

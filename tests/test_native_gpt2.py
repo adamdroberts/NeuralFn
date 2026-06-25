@@ -2158,6 +2158,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "
             "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
         ),
+        "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
