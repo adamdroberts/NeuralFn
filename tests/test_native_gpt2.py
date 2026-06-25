@@ -840,7 +840,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms to 1.017739x" in candidate_bench
     assert "mlp_fc_dinput_before_dweight" in candidate_bench
     assert "block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288" in candidate_bench
-    assert "stage.block_backward.mlp_fc.total_ms regressed to 1.040582x" in candidate_bench
+    assert "train_loop_wall_ms_per_step improved to 0.979044x" in candidate_bench
+    assert "stage.block_backward.total_ms improved to 0.960721x" in candidate_bench
+    assert "stage.block_backward.mlp_fc.total_ms regressed to 1.063824x" in candidate_bench
     assert "ce_bf16_threads_512" in candidate_bench
     assert "lm_head_ce_bf16_threads_per_row from 1024 to 512" in candidate_bench
     assert "stage.lm_head_backward.ce.total_ms to 1.430612x" in candidate_bench
@@ -9111,6 +9113,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_dinput_bf16_gemm_count" in gpt2_source_text
     assert "block_backward_mlp_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_mlp_fc_dinput_before_dweight_count" in gpt2_source_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT",\n'
+        '                              "NFN_NATIVE_GPT2_MLP_FC_DINPUT_BEFORE_DWEIGHT"}),\n'
+        "            true);"
+    ) in gpt2_source_text
     assert "block_backward_attn_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_qkv_dinput_before_dweight_count" in gpt2_source_text
     assert "float_arena_cuda_malloc_wall_ms" in gpt2_source_text
