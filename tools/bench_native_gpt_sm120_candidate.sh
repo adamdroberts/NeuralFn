@@ -757,7 +757,7 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-24 5-step, 3-sample confirmation forced the cooperative LM-head sequence wrapper instead of cached CUDA Graph replay and proved route changes, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.003739x, steady-state CUDA-event timing to 1.001489x, and stage.lm_head_backward.total_ms to 1.000401x. A shorter 3-step, 2-sample probe passed, so keep this profile available only for intentional graph-vs-sequence diagnostics."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1"
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
     ;;
   "lm_head_cooperative_no_loss_backward"|"lm-head-cooperative-no-loss-backward"|"lm_head_cooperative_backward_no_loss"|"lm-head-cooperative-backward-no-loss")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

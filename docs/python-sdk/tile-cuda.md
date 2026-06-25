@@ -547,11 +547,8 @@ mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
 classifier CE+dlogits kernel before dHidden and dWeight. Row-loss and loss-bin
 collection remain selected only for validation/train-loss logging paths. Dense
-GPT training requests this non-strict route by default after the CUDA Toolkit
-13.3 reinstall because the dedicated RTX 5090 3-step, 2-sample same-script
-rerun measured the cached CUDA Graph route at `0.989305x` train-loop wall,
-`1.000461x` steady-state CUDA-event timing, and `1.010931x` train tokens/sec
-versus the previous native separate-stage route. Set
+GPT training now requests the integrated native llm.kittens-parity route by
+default when it is available. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only when reproducing the older
 separate-stage schedule.
 
@@ -2351,21 +2348,26 @@ a no-op: the paired SM120 wrapper already sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
 for both the baseline and candidate commands, matching the llm.kittens SM120
 launcher policy, so it cannot prove a candidate-only kernel or scheduling
 change.
-Dense GPT training now exercises the current non-strict cooperative LM-head
-backward ABI wrapper by default. Use
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to disable it for bisection, or
+Dense GPT training now exercises the integrated native llm.kittens-parity
+LM-head route by default when the Tile ABI exposes the strict callable and
+`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
+returns nonzero. Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to
+disable it for bisection, or
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
 it against the previous separate-stage schedule. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
-when a parity/preflight run must require the strict cooperative LM-head backward
-Tile ABI. Rebuilt Tile ops libraries export the strict
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
-but current CUDA 13.3 builds return `0` from
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-That means the required guard still fails until a true fused capability replaces
-the cached CUDA Graph body. The SM120 candidate wrapper labels
-`lm_head_cooperative_backward_required` as a strict probe rather than a
+when a parity/preflight run must require that native LM-head route before
+training starts. Rebuilt Tile ops libraries export the strict
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable and
+the separate llm.kittens-parity probe. Current CUDA 13.3 builds still return
+`0` from `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`,
+so callers that require a future monolithic CE+dHidden+dWeight kernel must
+check `lm_head_cooperative_backward_fused_kernel_capability_available`, while
+callers that need the current no-Torch/no-graph-editor parity route should
+check `lm_head_llmk_classifier_matmul_parity_available` and
+`lm_head_cooperative_backward_kernel_enabled`. The SM120 candidate wrapper
+labels `lm_head_cooperative_backward_required` as a strict probe rather than a
 metric-gated speed candidate. Wrapper-only and missing-capability builds still
 fail the strict guard. Real `--train-transformer-lm
 --require-cooperative-lm-head-backward` launches now run this strict
@@ -2373,11 +2375,13 @@ symbol/capability preflight before cached token-shard discovery or CUDA runtime
 setup, so missing fused-kernel builds fail immediately. Use `--check-tile-ops
 --require-cooperative-lm-head-backward` to inspect the same capability as JSON
 without entering the training path.
-The non-required candidate route now explicitly enables the event-ordered
-sequence wrapper and reports
-`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the
-paired benchmark route-change gate reject no-op candidate runs while preserving
-the strict fused-kernel contract.
+The historical sequence-wrapper candidate route now requires
+`NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`, and the named
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
+sets both variables. That keeps paired diagnostics able to compare the older
+wrapper against the current parity route while preventing graph/sequence knobs
+from silently replacing the strict default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
 is the current no-loss classifier-store diagnostic. It expands to
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps
@@ -2395,9 +2399,16 @@ train-loop wall, `1.001085x` LM-head backward, `1.001185x` LM-head CE, and
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_loss_bins_requested`,
+`lm_head_cooperative_backward_cuda_graph_requested`,
+`lm_head_force_sequence_wrapper_diagnostic_enabled`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_sequence_wrapper_available`,
+`lm_head_cooperative_backward_cuda_graph_available`,
+`lm_head_cooperative_backward_cuda_graph_enabled`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_fused_kernel_capability_available`,
+`lm_head_llmk_classifier_matmul_parity_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
@@ -2410,31 +2421,28 @@ Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,
 dHidden, dWeight, shape metadata, loss scale, dWeight beta, flags, and stream.
-Runtime JSON reports the strict ABI as available only when the loaded library
-contains the wrapper symbol; wrapper-only libraries report
+Runtime JSON reports the strict callable separately from the semantic
+capabilities; wrapper-only libraries report
 `lm_head_cooperative_backward_abi_wrapper_available: true` and
 `lm_head_cooperative_backward_sequence_wrapper_available: true`, but
-`lm_head_cooperative_backward_kernel_available: false`.
+`lm_head_llmk_classifier_matmul_parity_available: false` and
+`lm_head_cooperative_backward_kernel_enabled: false`.
 The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 symbol remains the event-ordered sequence wrapper probe. The strict
 probe uses the separate
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
-a nonzero result from
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current CUDA 13.3 builds return `0` from that capability probe because the
-callable replays a cached graph rather than executing one fused classifier
-backward kernel. The non-strict default path can still enable graph replay and
-reports `lm_head_cooperative_backward_cuda_graph_enabled: true`, but keeps
-`lm_head_cooperative_backward_kernel_enabled: false`. Runtime JSON reports
+a nonzero result from either
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
+`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`.
+Current CUDA 13.3 builds return `0` from the true-fused capability probe and
+nonzero from the llm.kittens-parity probe. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from the
 semantic capability,
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
-capability path makes `lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` true. The route is now
-promoted only as the non-strict CUDA Graph replay default. The strict
-true-fused route remains unavailable until the capability probe returns
-nonzero.
+true-fused path sets that field, while the current parity path reports
+`lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
+route remains unavailable until its capability probe returns nonzero.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

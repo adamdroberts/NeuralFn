@@ -431,16 +431,27 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       longer increments legacy `lm_head_cooperative_sequence_*` counters on
       successful replay, so those counters continue to identify only the
       diagnostic sequence wrapper or graph fallback.
-    - 2026-06-24 added explicit graph-vs-sequence control for the diagnostic
-      cooperative LM-head path. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`
-      now forces the sequence wrapper while keeping the cooperative route
-      requested, runtime/plan JSON reports
+    - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
+      llm.kittens-parity became the default integrated LM-head route.
+      `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus
+      `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` now forces the older
+      sequence wrapper while keeping the cooperative route requested,
+      runtime/plan JSON reports
+      `lm_head_force_sequence_wrapper_diagnostic_enabled` and
       `lm_head_cooperative_backward_cuda_graph_requested`, and
       `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
-      compares default graph replay against sequence-wrapper execution in the
-      same native-vs-native script. This is measurement infrastructure for the
+      compares the current strict parity route against sequence-wrapper
+      execution in the same native-vs-native script. This is measurement
+      infrastructure for the
       open true fused classifier/dHidden/dWeight kernel, not a default route
-      promotion. The short 3-step, 2-sample stage-timed probe passed route and
+      promotion. A 2026-06-25 one-step rerun after the strict parity split
+      passed the route-change gate: baseline used
+      `strict-llmk-fused-classifier-native-matmul-backward`, candidate used
+      `diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity`,
+      sequence counters rose from `0` to `16`, graph replay counters fell from
+      `16` to `0`, and the diagnostic wrapper remained rejected at
+      `1.023585x` train-loop wall and `0.976958x` train tokens/sec. The short
+      3-step, 2-sample stage-timed probe passed route and
       timing gates, but the stronger 5-step, 3-sample confirmation rejected the
       sequence wrapper as a default at `1.003739x` train-loop wall,
       `1.001489x` steady-state CUDA-event timing, and `1.000401x` LM-head

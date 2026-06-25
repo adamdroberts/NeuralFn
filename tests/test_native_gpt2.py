@@ -1598,10 +1598,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "lm_head_cooperative_backward_cuda_graph_requested" in source
+    assert "lm_head_force_sequence_wrapper_diagnostic_enabled" in source
     assert "lm_head_cooperative_backward_graph_prewarm_requested" in source
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
@@ -2099,7 +2102,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "lm_head_cooperative_no_loss_backward": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1 NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1",
-        "lm_head_cooperative_sequence_wrapper": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0",
+        "lm_head_cooperative_sequence_wrapper": (
+            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 "
+            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "
+            "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
+        ),
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",

@@ -1196,41 +1196,43 @@ regressed to `1.009040x`, `stage.lm_head_backward.total_ms` to `1.001085x`,
 `stage.lm_head_backward.ce.total_ms` to `1.001185x`, and
 `stage.block_backward.total_ms` to `1.018917x`.
 Dense GPT training now requests the non-strict cooperative LM-head backward
-route by default. On current CUDA 13.3 RTX 5090 builds this selects the cached
-CUDA Graph wrapper when the strict callable symbol is available, reducing the
-normal classifier chunk launches while still replaying the optimized CE,
-dHidden, and dWeight kernels. Set
+route by default. On current CUDA 13.3 RTX 5090 builds this selects the strict
+llm.kittens-parity native route when the strict callable symbol and
+`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
+are available: fused classifier CE/dlogits runs in Tile CUDA, and dHidden plus
+dWeight remain native matmul backward kernels with no Torch or graph-editor
+tensor flow. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
 the route in the paired benchmark wrapper. Set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired diagnostics
-that need to force the sequence wrapper instead of the cached CUDA Graph
-wrapper while keeping the cooperative route requested; the reproducible
-same-script profile is
+`NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` only for paired
+diagnostics that need to force the older sequence wrapper instead of the
+current strict parity route while keeping the cooperative route requested; the
+reproducible same-script profile is
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`;
+that profile also sets `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` and
 real reruns require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
-because the stronger 5-step confirmation kept the sequence route rejected as a
+because the stronger confirmation kept the sequence route rejected as a
 default. The
 separate strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
-for the future fused body, but the current cached CUDA Graph body is not a true
-single-kernel/cooperative implementation. Its capability probe
+for the future fused body, but the current llm.kittens-parity route is not a
+true single-kernel/cooperative implementation. Its capability probe
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-therefore returns `0`, and runtime JSON keeps
-`lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` false until a real fused
-classifier/dHidden/dWeight kernel replaces the graph wrapper.
+therefore returns `0`; callers that require the current native parity route
+should check `lm_head_llmk_classifier_matmul_parity_available` and
+`lm_head_cooperative_backward_kernel_enabled`, while callers that require a
+future monolithic CE+dHidden+dWeight kernel must check
+`lm_head_cooperative_backward_fused_kernel_capability_available`.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a candidate run must require the optional true fused cooperative
-classifier/dHidden/dWeight Tile ABI to be available and integrated. The SM120
-wrapper treats this named profile as a strict ABI preflight probe, not a
-reference-parity requirement or metric-gated speed candidate.
-Wrapper-only or missing-capability builds still fail this strict guard and report
-`abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
-of marking the route integrated.
+a candidate run must require the integrated native LM-head parity route before
+training starts. The SM120 wrapper treats this named profile as a strict ABI
+preflight probe, not a metric-gated speed candidate. Missing native parity still
+fails this strict guard instead of falling back to Torch or graph-editor tensor
+flow.
 For optimizer-only steps that do not record train loss, the diagnostic
 CUDA Graph wrapper passes the explicit no-loss cooperative flag and reuses the
 normal BF16/u16 no-loss classifier CE+dlogits kernel instead of forcing the
@@ -1256,6 +1258,7 @@ Runtime JSON reports
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_loss_bins_requested`,
 `lm_head_cooperative_backward_cuda_graph_requested`,
+`lm_head_force_sequence_wrapper_diagnostic_enabled`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_cuda_graph_available`,

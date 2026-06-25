@@ -6,6 +6,46 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit diagnostic override for the historical dense GPT LM-head
+  sequence wrapper. `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1`
+  now disables the integrated llm.kittens-parity LM-head route only for
+  non-strict diagnostic runs, so
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
+  can compare the current strict parity path against the older sequence wrapper
+  in the same benchmark script. The default route and
+  `--require-cooperative-lm-head-backward` remain strict native parity; the
+  diagnostic flag does not make wrapper-only builds satisfy strict mode. Plan
+  and runtime JSON now report
+  `lm_head_force_sequence_wrapper_diagnostic_enabled`.
+
+  Verification: ran focused source tests with
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative or lm_head or tile_plan"`; ran
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; ran `git diff --check`;
+  rebuilt `build/nfn_gpt_native_train_linked` with
+  `bash tools/build_native_gpt_cli_linked.sh`; ran diagnostic route JSON with
+  `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1
+  NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0
+  build/nfn_gpt_native_train_linked --check-tile-ops --backend tile-cuda`;
+  reran strict preflight with
+  `build/nfn_gpt_native_train_linked --check-tile-ops
+  --require-cooperative-lm-head-backward --backend tile-cuda`, which kept
+  `lm_head_force_sequence_wrapper_diagnostic_enabled=false`,
+  `lm_head_cooperative_backward_kernel_enabled=true`, and
+  `lm_head_cooperative_backward_sequence_wrapper_enabled=false`; and
+  reran the intentionally rejected same-script profile on the dedicated RTX
+  5090 with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0
+  bash tools/bench_native_gpt_sm120_candidate.sh`. The route-change gate passed:
+  baseline used `strict-llmk-fused-classifier-native-matmul-backward`, candidate
+  used `diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity`,
+  sequence counters rose from `0` to `16`, graph replay counters fell from `16`
+  to `0`, and the diagnostic wrapper remained rejected at `1.023585x`
+  train-loop wall and `0.976958x` train tokens/sec.
+
 - Split strict dense GPT LM-head capability into true-fused and
   llm.kittens-parity checks. The Tile-CUDA ABI now exports
   `nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
