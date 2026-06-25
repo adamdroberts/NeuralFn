@@ -2121,6 +2121,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "VOCAB=16" in wrapper
     assert "ROW_STRIDE=16" in wrapper
     assert "trainer-chunk-cublaslt|trainer_chunk_cublaslt" in wrapper
+    assert "REJECTED_PROFILE=\"${PROFILE}\"" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE" in wrapper
+    assert "candidate/baseline ratio 1.466890" in wrapper
     assert "DEFAULT_REQUIRE_TRUE_FUSED=1" in wrapper
     assert "trainer-row-loss|trainer_row_loss" in wrapper
     assert "trainer-row-loss-cublaslt|trainer_row_loss_cublaslt" in wrapper

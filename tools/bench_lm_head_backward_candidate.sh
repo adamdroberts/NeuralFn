@@ -15,6 +15,8 @@ CANDIDATE_SYMBOL_OVERRIDE="${NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL:-}"
 PROFILE="${NFN_LM_HEAD_BACKWARD_PROFILE:-smoke}"
 DEFAULT_BASELINE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16"
 DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
+REJECTED_PROFILE=""
+REJECTED_REASON=""
 
 case "${PROFILE}" in
   smoke)
@@ -66,6 +68,8 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=0
     DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16"
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="CUDA 13.3 dedicated RTX 5090 trainer-chunk evidence rejects this cuBLASLt LM-head route: 37.070129 ms/iter vs 25.271233 ms/iter baseline, candidate/baseline ratio 1.466890."
     ;;
   trainer-row-loss-cublaslt|trainer_row_loss_cublaslt)
     DEFAULT_ROWS=32768
@@ -75,6 +79,8 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=0
     DEFAULT_REQUIRE_TRUE_FUSED=0
     DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16"
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="CUDA 13.3 dedicated RTX 5090 evidence rejects the cuBLASLt LM-head route; keep this profile for intentional diagnostics only."
     ;;
   trainer-row-loss|trainer_row_loss)
     DEFAULT_ROWS=32768
@@ -114,6 +120,20 @@ MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_RE
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
+ALLOW_REJECTED_PROFILE="${NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE:-0}"
+
+if [[ -n "${REJECTED_PROFILE}" ]]; then
+  case "${DRY_RUN,,}:${ALLOW_REJECTED_PROFILE,,}" in
+    1:*|true:*|yes:*|on:*|*:1|*:true|*:yes|*:on)
+      ;;
+    *)
+      echo "NFN_LM_HEAD_BACKWARD_PROFILE=${REJECTED_PROFILE} is a rejected LM-head candidate profile." >&2
+      echo "${REJECTED_REASON}" >&2
+      echo "Set NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1 to rerun it intentionally, or NFN_LM_HEAD_BACKWARD_DRY_RUN=1 to inspect the command only." >&2
+      exit 2
+      ;;
+  esac
+fi
 
 select_auto_cuda_device() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then

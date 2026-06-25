@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The LM-head backward microbench wrapper now blocks the rejected cuBLASLt
+  diagnostic profiles by default. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt`
+  and `trainer-row-loss-cublaslt` still resolve their commands in dry-run mode,
+  but real CUDA runs now require
+  `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1`. Fresh CUDA 13.3 dedicated RTX
+  5090 evidence measured `trainer-chunk-cublaslt` at `37.070129 ms/iter`
+  versus `25.271233 ms/iter` for the cooperative baseline
+  (`1.466890x`), so the route remains diagnostic-only and should not be reused
+  as an optimized candidate.
+
+  Verification: ran the dedicated RTX 5090 microbench for
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` and
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt`; ran `bash -n
+  tools/bench_lm_head_backward_candidate.sh`; ran the focused pytest slice
+  covering the wrapper contract; ran dry-run and rejection checks for the
+  cuBLASLt profiles; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; ran
+  `git diff --check`.
+
 - Added a full GPT SM120 candidate profile for the opt-in strict true-fused
   LM-head cooperative body. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative`
   now expands to a production-shape candidate with

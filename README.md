@@ -389,9 +389,15 @@ that symbol runs the same CE/dlogits stage and then forces the strided
 cuBLASLt dHidden and dWeight ABI calls, while the JSON keeps reporting the
 older generic component timings and the explicit `reference_cublaslt_components`
 timings in the same process. It is a candidate measurement route, not a strict
-true-fused kernel. The CUDA 13.3 dedicated RTX 5090 no-loss trainer-chunk
+true-fused kernel. The named cuBLASLt profiles are rejected by default; set
+`NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1` only when intentionally
+rerunning that diagnostic route, or set `NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to
+inspect the resolved command without launching CUDA. The CUDA 13.3 dedicated
+RTX 5090 no-loss trainer-chunk
 microbench rejected that cuBLASLt cooperative route: baseline-first measured
-`1.470042x` candidate/baseline time and candidate-first measured `1.463026x`.
+`1.466890x` candidate/baseline time (`37.070129 ms/iter` candidate versus
+`25.271233 ms/iter` baseline) and earlier candidate-first retesting measured
+`1.463026x`.
 The CUDA 13.3 dedicated RTX 5090 `trainer-chunk` microbench measured the strict
 graph candidate at
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
