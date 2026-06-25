@@ -263,6 +263,18 @@ gap refreshes. Native-vs-native candidate sweeps keep it opt-in through
 `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED=1` or
 `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED=1`, so unrelated block-kernel
 bisections are not blocked by the known LM-head wrapper.
+The current CUDA 13.3 dedicated RTX 5090 measurement-only parity refresh
+(`NFN_SM120_PARITY_STEPS=2`, one sample, stage timing on, strict true-fused gate
+disabled only to collect numbers) measured llm.kittens at `2429.860 ms/step`
+and NeuralFn at `2525.015 ms/step`, or `1.039161x` host wall time. The
+steady-state CUDA-event gap was narrower at `1.012150x` (`2441.650 ms/step`
+for NeuralFn versus `2412.340 ms/step` for llm.kittens), with NeuralFn at
+`0.962262x` reference tokens/sec. The same run reported
+`lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,
+`lm_head_cooperative_backward_fused_kernel_capability_available: false`, and a
+three-node graph body per replay, so the remaining parity target is still a
+true fused LM-head classifier-backward Tile kernel rather than CUDA setup,
+Torch, graph-editor tensor flow, or external GPU load.
 When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and

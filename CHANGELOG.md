@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the llm.kittens parity baseline under the current CUDA 13.3
+  dedicated RTX 5090 setup with strict true-fused enforcement disabled only for
+  measurement. The same-script stage-timed run measured llm.kittens at
+  `2429.860 ms/step` and NeuralFn at `2525.015 ms/step`
+  (`1.039161x` host wall), while steady-state CUDA-event timing was
+  `2441.650 ms/step` for NeuralFn versus `2412.340 ms/step` for llm.kittens
+  (`1.012150x`). NeuralFn tokens/sec was `0.962262x` of reference. The profile
+  still reports `lm_head_classifier_backward_path_class:
+  diagnostic-cuda-graph-wrapper`,
+  `lm_head_cooperative_backward_fused_kernel_capability_available: false`, and
+  three graph-body nodes per replay, confirming that the open parity blocker is
+  true fused LM-head classifier-backward kernel work rather than CUDA install,
+  Torch, graph-editor tensor flow, or external GPU load.
+
+  Verification: `NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=0
+  NFN_SM120_PARITY_ENFORCE_GATE=0 NFN_SM120_PARITY_STEPS=2
+  NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_continue.json
+  NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_parity_continue_profiles
+  NFN_SM120_PARITY_COMMAND_TIMEOUT_SECONDS=300
+  bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Added paired benchmark reporting for the remaining LM-head true-fused Tile
   blocker. `tools/paired_kernel_speed.py` now extracts
   `lm_head_cooperative_backward_fused_kernel_symbol_available` and
