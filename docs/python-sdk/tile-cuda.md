@@ -531,17 +531,17 @@ is the existing event-ordered sequence wrapper and only satisfies
 `lm_head_cooperative_backward_sequence_wrapper_available`.
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
 strict callable. It can satisfy `lm_head_cooperative_backward_kernel_enabled`
-when either the future monolithic capability
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
-the current llm.kittens-equivalent capability
-`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
-returns nonzero. Current CUDA 13.3 builds keep the true-fused bit at `0` and
-report `lm_head_llmk_classifier_matmul_parity_available=true`: strict mode
-uses fused classifier CE/dlogits plus native dHidden/dWeight matmul backward,
-which matches the llm.kittens SM120 dataflow and keeps real training tensors
-out of both Torch and the graph editor. SDK and CLI strict runs therefore fail
-on wrapper-only or missing-capability builds instead of silently benchmarking
-the older CE plus dHidden plus dWeight sequence.
+only when the future monolithic capability
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+returns nonzero. Current CUDA 13.3 builds keep the true-fused bit at `0`, so
+`lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` are false even when
+`lm_head_llmk_classifier_matmul_parity_available=true`. That parity field only
+identifies the diagnostic graph/wrapper route: fused classifier CE/dlogits plus
+native dHidden/dWeight matmul backward, with real training tensors kept out of
+Torch and the graph editor. SDK and CLI strict runs therefore fail on
+wrapper-only or missing true-fused builds instead of silently benchmarking the
+older CE plus dHidden plus dWeight sequence.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
@@ -2350,11 +2350,9 @@ a no-op: the paired SM120 wrapper already sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
 for both the baseline and candidate commands, matching the llm.kittens SM120
 launcher policy, so it cannot prove a candidate-only kernel or scheduling
 change.
-Dense GPT training now exercises the integrated native llm.kittens-parity
-LM-head route by default when the Tile ABI exposes the strict callable and
-`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
-returns nonzero. Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to
-disable it for bisection, or
+Dense GPT training now exercises the non-strict diagnostic graph/wrapper
+LM-head route by default when the Tile ABI exposes the strict callable. Use
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to disable it for bisection, or
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
 it against the previous separate-stage schedule. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
@@ -2368,7 +2366,7 @@ so callers that require a future monolithic CE+dHidden+dWeight kernel must
 check `lm_head_cooperative_backward_fused_kernel_capability_available`, while
 callers that need the current no-Torch/no-graph-editor parity route should
 check `lm_head_llmk_classifier_matmul_parity_available` and
-`lm_head_cooperative_backward_kernel_enabled`. The SM120 candidate wrapper
+`lm_head_cooperative_backward_cuda_graph_enabled`. The SM120 candidate wrapper
 labels `lm_head_cooperative_backward_required` as a strict probe rather than a
 metric-gated speed candidate. Wrapper-only and missing-capability builds still
 fail the strict guard. Real `--train-transformer-lm
@@ -2434,9 +2432,8 @@ The existing
 symbol remains the event-ordered sequence wrapper probe. The strict
 probe uses the separate
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
-a nonzero result from either
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
-`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`.
+a nonzero result from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
 Current CUDA 13.3 builds return `0` from the true-fused capability probe and
 nonzero from the llm.kittens-parity probe. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from the

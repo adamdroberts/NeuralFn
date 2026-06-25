@@ -181,22 +181,22 @@ does not promote the broader prob-only CE route as the normal training path.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate
-from strict native LM-head parity. Strict JSON availability now requires the
-strict callable symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus either
-the future monolithic capability
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` or
-the current llm.kittens-equivalent capability
-`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`.
-The true-fused capability still returns `0`; the accepted strict path reports
-`lm_head_llmk_classifier_matmul_parity_available=true` and uses a fused
-classifier CE/dlogits stage followed by native dHidden/dWeight matmul
-backward, matching the llm.kittens SM120 training dataflow without sending
-real training tensors through the graph editor or Torch. Real training runs
-that pass `--require-cooperative-lm-head-backward` now fail before token-shard
-resolution or CUDA runtime setup only when neither strict capability is
-available; use `--check-tile-ops --require-cooperative-lm-head-backward` when
-you want the detailed capability JSON instead of entering training. Future
+from strict native LM-head kernel availability. Strict JSON availability now
+requires the strict callable symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus the
+future monolithic capability
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+Current CUDA 13.3 builds still return `0` for that true-fused capability, so
+`lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` remain false. The
+separate `lm_head_llmk_classifier_matmul_parity_available=true` field only
+proves the diagnostic graph/wrapper path can run fused classifier CE/dlogits
+followed by native dHidden/dWeight matmul backward without sending real
+training tensors through the graph editor or Torch. Real training runs that
+pass `--require-cooperative-lm-head-backward` now fail before token-shard
+resolution or CUDA runtime setup until the true-fused capability is present;
+use `--check-tile-ops --require-cooperative-lm-head-backward` when you want the
+detailed capability JSON instead of entering training. Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
 `build/lm_head_backward_bench` and compares the current cooperative sequence
@@ -1196,12 +1196,10 @@ regressed to `1.009040x`, `stage.lm_head_backward.total_ms` to `1.001085x`,
 `stage.lm_head_backward.ce.total_ms` to `1.001185x`, and
 `stage.block_backward.total_ms` to `1.018917x`.
 Dense GPT training now requests the non-strict cooperative LM-head backward
-route by default. On current CUDA 13.3 RTX 5090 builds this selects the strict
-llm.kittens-parity native route when the strict callable symbol and
-`nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity()`
-are available: fused classifier CE/dlogits runs in Tile CUDA, and dHidden plus
-dWeight remain native matmul backward kernels with no Torch or graph-editor
-tensor flow. Set
+route by default. On current CUDA 13.3 RTX 5090 builds this selects the
+diagnostic CUDA Graph/wrapper path when the strict callable symbol is present:
+fused classifier CE/dlogits runs in Tile CUDA, and dHidden plus dWeight remain
+native matmul backward kernels with no Torch or graph-editor tensor flow. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
@@ -1222,7 +1220,7 @@ true single-kernel/cooperative implementation. Its capability probe
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 therefore returns `0`; callers that require the current native parity route
 should check `lm_head_llmk_classifier_matmul_parity_available` and
-`lm_head_cooperative_backward_kernel_enabled`, while callers that require a
+`lm_head_cooperative_backward_cuda_graph_enabled`, while callers that require a
 future monolithic CE+dHidden+dWeight kernel must check
 `lm_head_cooperative_backward_fused_kernel_capability_available`.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the

@@ -255,6 +255,32 @@ Future updates should append new entries here rather than replacing older notes.
   NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0 bash
   tools/bench_native_gpt_sm120_candidate.sh`.
 
+- Tightened dense GPT cooperative LM-head capability semantics. The runtime and
+  `--print-plan` JSON now reserve
+  `lm_head_cooperative_backward_kernel_available`,
+  `lm_head_cooperative_backward_fused_kernel_available`, and strict required
+  mode for the true-fused capability probe
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+  The current llm.kittens-parity probe remains reported separately as
+  `lm_head_llmk_classifier_matmul_parity_available`, and the CUDA Graph/sequence
+  wrappers stay diagnostic-only instead of satisfying strict kernel
+  availability.
+
+  Migration note: callers that only need the current no-Torch, no-graph-editor
+  diagnostic LM-head route should check
+  `lm_head_llmk_classifier_matmul_parity_available` together with
+  `lm_head_cooperative_backward_cuda_graph_enabled`. Callers that require a
+  future monolithic CE+dHidden+dWeight kernel should check
+  `lm_head_cooperative_backward_fused_kernel_capability_available` or use
+  `--require-cooperative-lm-head-backward`, which now fails until that true
+  fused capability exists.
+
+  Verification: ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in
+  tests/test_native_gpt2.py::test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults
+  -q` and `git diff --check`.
+
 - Fixed `build/lm_head_backward_bench` reference component timing so logits, CE,
   dHidden, and dWeight probes run the configured warmup count before timed
   iterations. The benchmark JSON now reports `reference_component_warmup`,
