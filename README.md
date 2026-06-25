@@ -772,7 +772,13 @@ gate
 `attention_backward_tk_timing_us`, and
 `attention_backward_dprep_timing_us` so packed-attention bisections fail on the
 hot substage even when total command timing is noisy. Dry-run planning and
-no-op baseline-vs-baseline checks stay ungated.
+no-op baseline-vs-baseline checks stay ungated. For explicit native-vs-native
+attribution without selecting a named attention profile, set
+`NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING=1`,
+`NFN_SM120_NATIVE_CANDIDATE_ATTENTION_SECTION_TIMING=1`, or
+`NFN_SM120_CANDIDATE_ATTENTION_SECTION_TIMING=1`; the wrapper forwards
+`NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` to both compared native
+commands so dprep/TK attention section counters are available.
 For native-vs-llm.kittens parity attribution, set
 `NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (or the generic
 `NFN_SM120_ATTENTION_SECTION_TIMING=1`) to add

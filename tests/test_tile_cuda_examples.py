@@ -1091,6 +1091,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_SETUP_EVENT_TIMING" in text
     assert 'paired_args+=(--baseline-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
+    assert "NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_ATTENTION_SECTION_TIMING" in text
+    assert "NFN_SM120_CANDIDATE_ATTENTION_SECTION_TIMING" in text
+    assert "Unsupported NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING value" in text
     assert 'paired_args+=(--min-candidate-ratio "$item")' in text
     assert "*CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text

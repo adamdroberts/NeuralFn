@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit native candidate wrapper aliases for packed-attention section
+  profiling: `NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING`,
+  `NFN_SM120_NATIVE_CANDIDATE_ATTENTION_SECTION_TIMING`, and
+  `NFN_SM120_CANDIDATE_ATTENTION_SECTION_TIMING`. Setting one to `1` now
+  forwards `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` to both native
+  commands, so baseline-vs-candidate attention diagnostics reliably emit
+  `attention_backward_dprep_timing_*` and `attention_backward_tk_timing_*`
+  counters without requiring a named attention profile.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh` and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates
+  -q`.
+
 - Tightened `tools/bench_native_gpt_sm120_parity.sh` strict enforcement. When
   `NFN_SM120_PARITY_ENFORCE_GATE=1` and CUDA-event train-loop timing is enabled,
   the wrapper now gates both `train_loop_wall_ms_per_step=1.000` and
