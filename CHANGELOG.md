@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added paired benchmark reporting for the remaining LM-head true-fused Tile
+  blocker. `tools/paired_kernel_speed.py` now extracts
+  `lm_head_cooperative_backward_fused_kernel_symbol_available` and
+  `lm_head_cooperative_backward_fused_kernel_capability_available`, writes a
+  `native_lm_head_true_fused_target` JSON block, and prints a matching text
+  section when the candidate native route is still the diagnostic CUDA Graph
+  wrapper or the strict true-fused capability is false. The block names the
+  required next ABI,
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`, the
+  capability symbol that must return true, graph replay/body-node means, and
+  whether the same run failed a candidate/reference metric gate.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_reports_lm_head_true_fused_target
+  -q`.
+
 - Added `packed_attention_bwd_batch_96` as a named rejected SM120 native
   candidate profile. The profile expands to
   `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96` and records the

@@ -4824,6 +4824,108 @@ def test_paired_kernel_speed_tool_supports_reference_command() -> None:
     assert "candidate_over_reference_native_metrics" in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    run_dir = Path(tempfile.mkdtemp())
+    output_path = run_dir / "paired-lm-head-target.json"
+    baseline_profile = run_dir / "baseline-profile.json"
+    candidate_profile = run_dir / "candidate-profile.json"
+    reference_profile = run_dir / "reference-profile.json"
+    baseline_payload = {
+        "steps_completed": 1,
+        "timing": {
+            "train_loop_wall_ms": 10.0,
+            "stage_timing": [
+                {"name": "lm_head_backward", "total_ms": 5.0, "avg_ms": 5.0, "count": 1}
+            ],
+        },
+        "lm_head_cooperative_backward_fused_kernel_symbol_available": True,
+        "lm_head_cooperative_backward_fused_kernel_capability_available": False,
+        "lm_head_cooperative_backward_fused_kernel_abi_path_class": (
+            "diagnostic-cuda-graph-wrapper"
+        ),
+        "lm_head_classifier_backward_path_class": "diagnostic-cuda-graph-wrapper",
+        "lm_head_fused_graph_replay_count": 1,
+        "lm_head_fused_graph_replay_success_count": 1,
+        "lm_head_fused_graph_fallback_count": 0,
+        "lm_head_fused_graph_body_node_count_per_replay": 3,
+        "lm_head_fused_graph_body_ce_node_count_per_replay": 1,
+        "lm_head_fused_graph_body_dhidden_node_count_per_replay": 1,
+        "lm_head_fused_graph_body_dweight_node_count_per_replay": 1,
+    }
+    candidate_payload = json.loads(json.dumps(baseline_payload))
+    candidate_payload["timing"]["train_loop_wall_ms"] = 12.0
+    candidate_payload["timing"]["stage_timing"][0]["total_ms"] = 6.5
+    reference_payload = {
+        "steps_completed": 1,
+        "timing": {
+            "train_loop_wall_ms": 9.0,
+            "stage_timing": [
+                {"name": "lm_head_backward", "total_ms": 4.0, "avg_ms": 4.0, "count": 1}
+            ],
+        },
+    }
+    baseline_profile.write_text(json.dumps(baseline_payload), encoding="utf-8")
+    candidate_profile.write_text(json.dumps(candidate_payload), encoding="utf-8")
+    reference_profile.write_text(json.dumps(reference_payload), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\" --profile-json {baseline_profile}",
+            "--candidate",
+            f"{sys.executable} -c \"print('candidate-ok')\" --profile-json {candidate_profile}",
+            "--reference",
+            f"{sys.executable} -c \"print('reference-ok')\" --profile-json {reference_profile}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--max-candidate-reference-ratio",
+            "stage.lm_head_backward.total_ms=1.0",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    target = payload["native_lm_head_true_fused_target"]
+    assert target["required"] is True
+    assert target["status"] == "diagnostic-cuda-graph-wrapper"
+    assert target["path_class"] == "diagnostic-cuda-graph-wrapper"
+    assert target["abi_path_class"] == "diagnostic-cuda-graph-wrapper"
+    assert target["symbol_available"] is True
+    assert target["true_fused_capability"] is False
+    assert target["graph_wrapper_active"] is True
+    assert target["graph_replay_mean"] == 1.0
+    assert target["graph_body_nodes_per_replay_mean"] == 3.0
+    assert target["candidate_reference_gate_failed"] is True
+    assert (
+        target["next_symbol"]
+        == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
+    )
+    assert (
+        target["next_capability_symbol"]
+        == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
+    )
+    assert target["next_required_path_class"] == "strict-true-fused-tile-kernel"
+    assert "native_lm_head_true_fused_target:" in proc.stdout
+    assert "true_fused_capability=False" in proc.stdout
+    assert "path_class=strict-true-fused-tile-kernel" in proc.stdout
+    assert "candidate reference metric ratio gate failed" in proc.stderr
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
     script = Path("tools/paired_kernel_speed.py")
     tmp = Path(tempfile.mkdtemp())

@@ -85,6 +85,13 @@ Real training tensors must not pass through graph editor node objects.
   `candidate_true_fused_capability=false` and
   `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper`. This remains
   a graph-replay optimization, not the final true fused Tile kernel.
+- [x] Make paired full-trainer benchmarks report the LM-head true-fused blocker
+  explicitly. `tools/paired_kernel_speed.py` now emits
+  `native_lm_head_true_fused_target` whenever the candidate profile is still
+  `diagnostic-cuda-graph-wrapper` or the strict true-fused capability is false,
+  including graph replay/body-node means and the required next ABI
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts

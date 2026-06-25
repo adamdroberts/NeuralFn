@@ -469,6 +469,14 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_cooperative_backward_fused_kernel_available",),
     ),
     (
+        "lm_head_cooperative_backward_fused_kernel_symbol_available",
+        ("lm_head_cooperative_backward_fused_kernel_symbol_available",),
+    ),
+    (
+        "lm_head_cooperative_backward_fused_kernel_capability_available",
+        ("lm_head_cooperative_backward_fused_kernel_capability_available",),
+    ),
+    (
         "lm_head_cooperative_backward_route_integrated",
         ("lm_head_cooperative_backward_route_integrated",),
     ),
@@ -931,6 +939,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_cooperative_backward_sequence_wrapper_available",
     "lm_head_cooperative_backward_kernel_available",
     "lm_head_cooperative_backward_fused_kernel_available",
+    "lm_head_cooperative_backward_fused_kernel_symbol_available",
+    "lm_head_cooperative_backward_fused_kernel_capability_available",
     "lm_head_cooperative_backward_route_integrated",
     "lm_head_cooperative_backward_kernel_enabled",
     "lm_head_cooperative_backward_cuda_graph_available",
@@ -3149,6 +3159,174 @@ def print_native_hot_summary(payload: dict[str, object]) -> None:
             print_metric_summary_line(metric_prefix, key, metrics.get(key), metrics)
 
 
+def _first_metric_value(
+    values: dict[str, object],
+    key: str,
+) -> str | None:
+    observed = values.get(key)
+    if not isinstance(observed, list) or not observed:
+        return None
+    return str(observed[0])
+
+
+def _observed_bool(values: dict[str, object], key: str) -> bool | None:
+    value = _first_metric_value(values, key)
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    return None
+
+
+def _metric_mean(metrics: dict[str, object], key: str) -> float | None:
+    stats = metrics.get(key)
+    if not isinstance(stats, dict):
+        return None
+    value = stats.get("mean")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str, object]:
+    metrics = payload.get("candidate_native_metrics")
+    values = payload.get("candidate_native_metric_values")
+    if not isinstance(metrics, dict) or not isinstance(values, dict):
+        return {"required": False, "status": "unobserved", "reason": "no candidate native metrics"}
+
+    path_class = _first_metric_value(values, "lm_head_classifier_backward_path_class") or ""
+    abi_path_class = (
+        _first_metric_value(values, "lm_head_cooperative_backward_fused_kernel_abi_path_class")
+        or ""
+    )
+    true_fused_capability = _observed_bool(
+        values,
+        "lm_head_cooperative_backward_fused_kernel_capability_available",
+    )
+    symbol_available = _observed_bool(
+        values,
+        "lm_head_cooperative_backward_fused_kernel_symbol_available",
+    )
+    graph_wrapper_active = path_class.startswith("diagnostic-cuda-graph-wrapper") or (
+        not path_class and abi_path_class.startswith("diagnostic-cuda-graph-wrapper")
+    )
+    strict_true_fused = (
+        true_fused_capability is True
+        and path_class == "strict-true-fused-tile-kernel"
+    )
+    required = graph_wrapper_active or true_fused_capability is False
+    status = (
+        "strict-true-fused-tile-kernel"
+        if strict_true_fused
+        else path_class or abi_path_class or "unknown"
+    )
+    candidate_reference_gates = payload.get("candidate_reference_metric_ratio_gates")
+    candidate_reference_gate_failed = (
+        isinstance(candidate_reference_gates, dict)
+        and candidate_reference_gates.get("enabled") is True
+        and candidate_reference_gates.get("passed") is False
+    )
+    reason = (
+        "candidate already reports strict true-fused Tile LM-head backward"
+        if strict_true_fused
+        else (
+            "candidate is still the diagnostic CUDA Graph wrapper, so parity work must "
+            "replace the wrapper body with a bounded true-fused Tile kernel"
+            if graph_wrapper_active
+            else (
+                "candidate strict fused symbol is present but capability is false"
+                if true_fused_capability is False
+                else "candidate true-fused LM-head capability was not observed"
+            )
+        )
+    )
+    return {
+        "required": required,
+        "status": status,
+        "path_class": path_class,
+        "abi_path_class": abi_path_class,
+        "true_fused_capability": true_fused_capability,
+        "symbol_available": symbol_available,
+        "graph_wrapper_active": graph_wrapper_active,
+        "graph_replay_mean": _metric_mean(metrics, "lm_head_fused_graph_replay_count"),
+        "graph_replay_success_mean": _metric_mean(
+            metrics,
+            "lm_head_fused_graph_replay_success_count",
+        ),
+        "graph_fallback_mean": _metric_mean(metrics, "lm_head_fused_graph_fallback_count"),
+        "graph_body_nodes_per_replay_mean": _metric_mean(
+            metrics,
+            "lm_head_fused_graph_body_node_count_per_replay",
+        ),
+        "graph_body_ce_nodes_per_replay_mean": _metric_mean(
+            metrics,
+            "lm_head_fused_graph_body_ce_node_count_per_replay",
+        ),
+        "graph_body_dhidden_nodes_per_replay_mean": _metric_mean(
+            metrics,
+            "lm_head_fused_graph_body_dhidden_node_count_per_replay",
+        ),
+        "graph_body_dweight_nodes_per_replay_mean": _metric_mean(
+            metrics,
+            "lm_head_fused_graph_body_dweight_node_count_per_replay",
+        ),
+        "candidate_reference_gate_failed": candidate_reference_gate_failed,
+        "next_symbol": "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16",
+        "next_capability_symbol": (
+            "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
+        ),
+        "next_required_path_class": "strict-true-fused-tile-kernel",
+        "reason": reason,
+    }
+
+
+def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
+    target = payload.get("native_lm_head_true_fused_target")
+    if not isinstance(target, dict):
+        return
+    if target.get("required") is not True and target.get("status") == "unobserved":
+        return
+    print("  native_lm_head_true_fused_target:")
+    print(
+        "    "
+        f"required={str(target.get('required', False)).lower()} "
+        f"status={target.get('status', '')} "
+        f"path_class={target.get('path_class', '')} "
+        f"abi_path_class={target.get('abi_path_class', '')}"
+    )
+    print(
+        "    "
+        f"symbol_available={target.get('symbol_available')} "
+        f"true_fused_capability={target.get('true_fused_capability')} "
+        f"graph_wrapper_active={str(target.get('graph_wrapper_active', False)).lower()}"
+    )
+    graph_fragments: list[str] = []
+    for key in (
+        "graph_replay_mean",
+        "graph_replay_success_mean",
+        "graph_fallback_mean",
+        "graph_body_nodes_per_replay_mean",
+        "graph_body_ce_nodes_per_replay_mean",
+        "graph_body_dhidden_nodes_per_replay_mean",
+        "graph_body_dweight_nodes_per_replay_mean",
+    ):
+        value = target.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            graph_fragments.append(f"{key}={float(value):.6f}")
+    if graph_fragments:
+        print("    " + " ".join(graph_fragments))
+    print(
+        "    next: "
+        f"{target.get('next_symbol', '')} with "
+        f"{target.get('next_capability_symbol', '')} returning true and "
+        f"path_class={target.get('next_required_path_class', '')}"
+    )
+    print(f"    reason: {target.get('reason', '')}")
+
+
 def resolve_cuda_visible_devices(
     requested: str,
     snapshot: dict[str, object],
@@ -3632,6 +3810,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         candidate_reference_metric_ratio_limits,
         ratio_key="candidate_over_reference_native_metrics",
     )
+    payload["native_lm_head_true_fused_target"] = summarize_lm_head_true_fused_target(payload)
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
         route_changes=native_route_counter_changes,
@@ -3817,6 +3996,7 @@ def print_text(payload: dict[str, object]) -> None:
             f"min={stats['min']:.6f} max={stats['max']:.6f}"
         )
     print_native_hot_summary(payload)
+    print_lm_head_true_fused_target(payload)
     for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):
         metrics = payload.get(section)
         if not isinstance(metrics, dict) or not metrics:

@@ -244,7 +244,17 @@ blocker is this wrapper-only LM-head route. The same failure diagnostic now
 also reads the newest candidate native profile sidecar from
 `--append-native-profile-json-dir` and prints the top setup timings plus float
 and uint16 arena allocation families, so startup materialization bottlenecks are
-visible in the same script output as the kernel parity failure. When
+visible in the same script output as the kernel parity failure.
+`tools/paired_kernel_speed.py` also writes a
+`native_lm_head_true_fused_target` JSON block and text section when the
+candidate native profile reports the diagnostic CUDA Graph wrapper or a false
+strict true-fused capability. That block records the wrapper path class, strict
+symbol and capability booleans, graph replay/body-node means, whether a
+candidate/reference gate failed, and the required next ABI:
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+returning true and `strict-true-fused-tile-kernel` as the path class.
+When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and
 LM-head buckets can be ranked without opening the sidecar JSON manually. On the
