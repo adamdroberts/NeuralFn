@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed generated metric gates in the SM120 native candidate wrapper so short
+  smoke runs only gate metrics they can produce. Automatically generated or
+  profile-provided gates now drop
+  `train_loop_cuda_event_steady_state_wall_ms_per_step` when `STEPS <= 1`, and
+  drop `stage.*` gates unless `NFN_SM120_NATIVE_STAGE_TIMING=1` is enabled.
+  User-supplied `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
+  `NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` values remain untouched.
+
+  Verification: `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_dinput_before_dweight
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_mlp_fc_default_scope_1step_dry_run.json
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  bash tools/bench_native_gpt_sm120_candidate.sh` showed only the valid
+  `train_loop_wall_ms_per_step` generated gate; the matching real GPU smoke
+  with
+  `NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_mlp_fc_default_scope_1step_smoke.json`
+  passed on the dedicated RTX 5090 with `candidate_over_baseline`
+  `train_loop_wall_ms_per_step=0.969182x` and the native route-change gate
+  passed; `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`.
+
 - Changed the SM120 native candidate wrapper so promoted/default-on
   default-vs-legacy profiles are judged by their paired NeuralFn native
   baseline/candidate gates, while still recording the llm.kittens reference in

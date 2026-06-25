@@ -1244,6 +1244,43 @@ if [[ "$PROMOTED_QKV_LN128_PROFILE" == "1" &&
   MIN_CANDIDATE_RATIO_RAW="train_tokens_per_second=1.000"
 fi
 
+filter_generated_candidate_ratio_gates() {
+  local raw="$1"
+  local item
+  local metric
+  local filtered=()
+  local run_has_steady_state=0
+  local run_has_stage_timing=0
+  if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
+    run_has_steady_state=1
+  fi
+  case "${STAGE_TIMING,,}" in
+    "1"|"true"|"yes"|"on")
+      run_has_stage_timing=1
+      ;;
+  esac
+  for item in $raw; do
+    metric="${item%%=*}"
+    metric="${metric#*:}"
+    if [[ "$run_has_steady_state" != "1" &&
+          "$metric" == "train_loop_cuda_event_steady_state_wall_ms_per_step" ]]; then
+      continue
+    fi
+    if [[ "$run_has_stage_timing" != "1" && "$metric" == stage.* ]]; then
+      continue
+    fi
+    filtered+=("$item")
+  done
+  printf '%s\n' "${filtered[*]}"
+}
+
+if [[ -z "$USER_MAX_CANDIDATE_RATIO_RAW" ]]; then
+  MAX_CANDIDATE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MAX_CANDIDATE_RATIO_RAW")"
+fi
+if [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" ]]; then
+  MIN_CANDIDATE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MIN_CANDIDATE_RATIO_RAW")"
+fi
+
 native_gpt_source_newer_than() {
   local target="$1"
   [[ "$ROOT_DIR/neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp" -nt "$target" ||

@@ -834,6 +834,11 @@ gate, and the JSON metadata includes `candidate_gate_scope=default-vs-legacy`.
 Set `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` or
 `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` to explicitly require a
 promoted profile to beat llm.kittens in the same run.
+Wrapper-generated candidate ratio gates are also filtered to the requested run
+shape: one-step runs do not add a steady-state CUDA-event gate, and runs
+without `NFN_SM120_NATIVE_STAGE_TIMING=1` do not add `stage.*` gates. Explicit
+`NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
+`NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` values are left untouched.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail
