@@ -2376,6 +2376,8 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` as a utility module is also lightweight; its Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
 
+Tiny native GPT diagnostic runs with `seq_len < 16` use the split-QKV row-vector attention fallback even when the default packed-QKV SM120 TK route is enabled. Normal training shapes such as the workstation default `64 x 1024` keep the packed path, while one-step CUDA smokes such as `--batch-size 1 --train-seq-len 2 --train-batch-tokens 2` avoid launching the packed attention kernel without a valid packed scratch allocation.
+
 `tools/train_gpt_sm120.sh` now exposes the same native dense-GPT selectors as
 the compiled CLI: `--base-model` / `--model-family`,
 `--template-name` / `--template` / `--preset`, and `--graph-file` / `--graph`.

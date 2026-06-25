@@ -5851,7 +5851,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["timing"]["post_train_diagnostic_samples_elided"] is False
     assert train_transformer_payload["timing"]["post_train_diagnostic_sample_d2h_count"] == 0
     assert train_transformer_payload["timing"]["post_train_diagnostic_sample_d2h_count_elided"] == 0
-    assert train_transformer_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
+    assert train_transformer_payload["attention_forward_strategy"] == "row-vector-tile-score-reuse"
     assert train_transformer_payload["attention_forward_row_count"] == 24
     assert train_transformer_payload["attention_forward_scalar_output_count"] == 1536
     assert train_transformer_payload["attention_forward_score_reuse_value_dim"] == 64
@@ -5867,39 +5867,39 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_forward_row_launch_success_count"] == 0
     assert train_transformer_payload["attention_forward_row_launch_fallback_count"] == 0
     assert train_transformer_payload["attention_forward_scalar_launch_count"] == 0
-    assert train_transformer_payload["packed_qkv_attention_enabled"] is True
+    assert train_transformer_payload["packed_qkv_attention_enabled"] is False
     assert train_transformer_payload["packed_qkv_attention_bf16_elements"] == 0
     assert train_transformer_payload["packed_qkv_attention_bf16_bytes"] == 0
-    assert train_transformer_payload["packed_qkv_float_attention_tape_elided"] is True
-    assert train_transformer_payload["packed_qkv_float_attention_tape_elements_elided"] == 1 * 2 * 768 * 8
-    assert train_transformer_payload["qkv_forward_layout_strategy"] == "packed-qkv-bf16-no-split"
-    assert train_transformer_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
+    assert train_transformer_payload["packed_qkv_float_attention_tape_elided"] is False
+    assert train_transformer_payload["packed_qkv_float_attention_tape_elements_elided"] == 0
+    assert train_transformer_payload["qkv_forward_layout_strategy"] == "fused-split-to-heads"
+    assert train_transformer_payload["qkv_forward_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
-    assert train_transformer_payload["qkv_forward_layout_launches_elided_per_block"] == 4
-    assert train_transformer_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-fused-tk-gemm"
-    assert train_transformer_payload["qkv_bias_fused_tk_gemm_enabled"] is True
-    assert train_transformer_payload["qkv_bias_layout_kernel_launches_per_block"] == 0
+    assert train_transformer_payload["qkv_forward_layout_launches_elided_per_block"] == 3
+    assert train_transformer_payload["qkv_bias_layout_strategy"] == "fused-qkv-bias-split-to-heads"
+    assert train_transformer_payload["qkv_bias_fused_tk_gemm_enabled"] is False
+    assert train_transformer_payload["qkv_bias_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_bias_layout_legacy_launches_per_block"] == 2
-    assert train_transformer_payload["qkv_bias_layout_launches_elided_per_block"] == 2
-    assert train_transformer_payload["qkv_backward_layout_strategy"] == "packed-qkv-bf16-gradient-handoff"
+    assert train_transformer_payload["qkv_bias_layout_launches_elided_per_block"] == 1
+    assert train_transformer_payload["qkv_backward_layout_strategy"] == "fused-heads-to-qkv"
     assert train_transformer_payload["qkv_backward_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
     assert train_transformer_payload["qkv_backward_layout_launches_elided_per_block"] == 3
-    assert train_transformer_payload["attention_backward_bf16_qkv_grad_handoff_enabled"] is True
-    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_enabled"] is True
-    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_elements"] == 1 * 2 * 768 * 3
+    assert train_transformer_payload["attention_backward_bf16_qkv_grad_handoff_enabled"] is False
+    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_enabled"] is False
+    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_elements"] == 0
     assert (
         train_transformer_payload["attention_backward_qkv_bridge_strategy"]
-        == "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
+        == "fused-bf16-heads-to-row-qkv"
     )
-    assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
+    assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 1
     assert train_transformer_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert train_transformer_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
     assert train_transformer_payload["bf16_projection_residual_enabled"] is True
     assert train_transformer_payload["attention_projection_input_strategy"] == (
-        "packed-o-bf16-direct-gemm-bf16-residual-consumer"
+        "float32-attention-output-bf16-gemm-bf16-residual-consumer"
     )
-    assert train_transformer_payload["attention_packed_output_unpack_strategy"] == "elided-direct-bf16-projection"
+    assert train_transformer_payload["attention_packed_output_unpack_strategy"] == "not-packed"
     assert train_transformer_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
     assert train_transformer_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert train_transformer_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
@@ -5912,15 +5912,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["projection_bf16_scratch_elements"] == 0
     assert train_transformer_payload["projection_bf16_scratch_bytes"] == 0
     assert train_transformer_payload["float_projection_outputs_elided"] is True
-    assert train_transformer_payload["float_attention_projection_output_elided"] is False
+    assert train_transformer_payload["float_attention_projection_output_elided"] is True
     assert train_transformer_payload["float_mlp_projection_output_elided"] is True
     assert (
         train_transformer_payload[
             "saved_packed_attention_recompute_needs_float_attention_projection"
         ]
-        is True
+        is False
     )
-    assert train_transformer_payload["float_projection_output_elements_elided"] == 1 * 1 * 2 * 768
+    assert train_transformer_payload["float_projection_output_elements_elided"] == 1 * 1 * 2 * 768 * 2
     assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-bf16-linear-bias-residual-add"
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
@@ -5941,7 +5941,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert (
         train_transformer_payload["attention_backward_strategy"]
-        == "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
+        == "query-row-atomic-tile-score-reuse"
     )
     assert train_transformer_payload["attention_backward_reuses_forward_workspace"] is False
     assert train_transformer_payload["attention_backward_uses_saved_forward_workspace"] is False
@@ -6000,25 +6000,21 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_attention_restore_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_consumer_strategy"] == "disabled"
-    assert train_transformer_payload["packed_attention_activation_storage_strategy"] == (
-        "packed-qkv-o-bf16-forward-store-direct-backward"
-    )
-    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 12
+    assert train_transformer_payload["packed_attention_activation_storage_strategy"] == "disabled"
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_bytes"] == 0
-    assert train_transformer_payload["stored_packed_attention_lse_enabled"] is True
-    assert train_transformer_payload["stored_packed_attention_ln1_bf16_enabled"] is True
-    assert train_transformer_payload["stored_packed_attention_ln1_bf16_blocks"] == 11
+    assert train_transformer_payload["stored_packed_attention_lse_enabled"] is False
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_enabled"] is False
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_ln1_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_ln1_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
-    assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-lse-bf16-backward-to-qkv"
-    )
+    assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
     assert train_transformer_payload["eval_batches"] == 1
@@ -6184,8 +6180,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
                 "target_block_count": 12,
                 "activation_tape_count": 1,
                 "full_activation_tape_enabled": False,
-                "packed_qkv_float_attention_tape_elided": True,
-                "packed_qkv_float_attention_tape_elements_elided": 1 * 2 * 768 * 8,
+                "packed_qkv_float_attention_tape_elided": False,
+                "packed_qkv_float_attention_tape_elements_elided": 0,
         "persistent_block_outputs": 11,
         "persistent_block_output_write_strategy": "direct-residual2-output",
         "persistent_block_output_copy_elided_count": 0,
@@ -6202,29 +6198,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "backward_recompute_blocks": 11,
         "final_block_backward_recompute_elided": True,
         "backward_recompute_mlp_fc_gelu_elided": True,
-                "backward_recompute_attention_qkv_sdpa_elided": True,
-                "backward_recompute_attention_uses_saved_o": True,
+                "backward_recompute_attention_qkv_sdpa_elided": False,
+                "backward_recompute_attention_uses_saved_o": False,
         "backward_recompute_mlp_projection_elided": True,
         "backward_recompute_final_residual_elided": True,
         "mlp_proj_backward_gelu_inplace": True,
         "mlp_proj_backward_grad_act_scratch_allocated": False,
-            "mlp_residual_next_ln1_fusion_enabled": True,
-            "mlp_residual_next_ln1_fusion_count": 0,
-            "mlp_residual_next_ln1_strategy": (
-                "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available"
-            ),
-        "float_projection_output_buffers_allocated": 1,
-        "float_projection_output_buffers_elided": 1,
-        "float_attention_projection_output_elided": False,
-        "float_mlp_projection_output_elided": True,
-        "saved_packed_attention_recompute_needs_float_attention_projection": True,
-        "float_projection_output_elements_elided": 1 * 1 * 2 * 768,
+                "mlp_residual_next_ln1_fusion_enabled": False,
+                "mlp_residual_next_ln1_fusion_count": 0,
+                "mlp_residual_next_ln1_strategy": "separate-mlp-residual-and-next-ln1",
+            "float_projection_output_buffers_allocated": 0,
+            "float_projection_output_buffers_elided": 2,
+            "float_attention_projection_output_elided": True,
+            "float_mlp_projection_output_elided": True,
+            "saved_packed_attention_recompute_needs_float_attention_projection": False,
+            "float_projection_output_elements_elided": 1 * 1 * 2 * 768 * 2,
         "mlp_fc_grad_out_float_buffer_elided": True,
         "mlp_fc_grad_out_float_elements": 0,
         "mlp_fc_grad_out_float_bytes_elided": 2 * 1 * 3072 * 4,
-                "activation_tape_strategy": (
-                    "scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward"
-                ),
+                    "activation_tape_strategy": "scratch-recompute-bf16-stored-mlp-direct-backward-opt-in",
         "forward_row_qkv_scratch_allocated": False,
         "forward_row_qkv_scratch_buffers_elided": 3,
         "per_block_parameter_buffers": 12,

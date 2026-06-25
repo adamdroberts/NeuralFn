@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tiny native GPT transformer-LM diagnostic runs now disable the packed-QKV
+  SM120 TK attention route when `seq_len < 16` and use the split-QKV
+  row-vector fallback instead. This fixes a CUDA 13.3 live smoke failure where
+  `--batch-size 1 --train-seq-len 2 --train-batch-tokens 2` attempted
+  `forward_packed_qkv_bf16_store_lse` with no valid packed scratch allocation.
+  Normal dense GPT training shapes, including the workstation default
+  `64 x 1024`, still use packed-QKV attention by default.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults
+  -q -x`; `bash tools/build_native_gpt2_cli.sh
+  /tmp/nfn_gpt_native_train_tiny_fallback_check`; unsandboxed
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  /tmp/nfn_gpt_native_train_tiny_fallback_check --backend tile-cuda
+  --tinystories --max-steps 1 --batch-size 1 --train-seq-len 2
+  --train-batch-tokens 2 --eval-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-generate-tokens 1 --native-cuda-checkpoint-every 0
+  --no-checkpoint --tile-ops-lib
+  /tmp/libnfn_native_train_tile_ops_cuda133_check.so --json-out
+  /tmp/nfn_cuda133_native_tiny_fallback_smoke.json` passed with
+  `status: native-transformer-lm-trained`, `steps_completed: 1`, and
+  `packed_qkv_attention_enabled: false`.
+
 - Aligned `tools/bench_native_gpt_sm120_candidate.sh` with the llm.kittens
   SM120 launcher by changing its default generated-token cadence from `16` to
   `144`. Native-vs-native candidate bisections already pass the same

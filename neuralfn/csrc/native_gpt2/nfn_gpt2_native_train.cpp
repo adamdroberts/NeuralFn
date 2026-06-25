@@ -336,6 +336,15 @@ bool packed_qkv_attention_default_enabled() {
            value == "ON";
 }
 
+bool packed_qkv_attention_shape_supported(int seq_len) {
+    return seq_len >= 16;
+}
+
+bool packed_qkv_attention_enabled_for_shape(int seq_len) {
+    return packed_qkv_attention_default_enabled() &&
+           packed_qkv_attention_shape_supported(seq_len);
+}
+
 bool env_flag_enabled(const std::string& value) {
     return value == "1" ||
            value == "true" ||
@@ -3864,7 +3873,8 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     add("wte.forward", "forward", "nfn_native_tile_token_embedding_float32", hidden);
     add("wpe.forward", "forward", "nfn_native_tile_absolute_position_embedding_float32", hidden);
     add("embedding_residual_add.forward", "forward", "nfn_native_tile_scaled_residual_add_float32", hidden);
-    const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
+    const bool packed_qkv_attention_enabled =
+        packed_qkv_attention_enabled_for_shape(cfg.seq_len);
     for (int layer = 0; layer < cfg.num_layers; ++layer) {
         const std::string prefix = "h." + std::to_string(layer) + ".";
         add(prefix + "ln_1.forward", "forward", "nfn_native_tile_layer_norm_float32", hidden);
@@ -4065,7 +4075,8 @@ bool print_tile_plan(
     const std::int64_t logits = lm_head_chunk_rows * padded_vocab;
     const std::int64_t attention_row_count = tokens * geometry.num_heads;
     const std::int64_t attention_scalar_output_count = hidden;
-    const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
+    const bool packed_qkv_attention_enabled =
+        packed_qkv_attention_enabled_for_shape(cfg.seq_len);
     const bool bf16_qkv_grad_handoff_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -12391,7 +12402,8 @@ int run_transformer_lm_training_json(
         store_attention_activations_env == "TRUE" ||
         store_attention_activations_env == "on" ||
         store_attention_activations_env == "ON";
-    const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
+    const bool packed_qkv_attention_enabled =
+        packed_qkv_attention_enabled_for_shape(seq_len);
     const std::string store_packed_attention_activations_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS",
                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
