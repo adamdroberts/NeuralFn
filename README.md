@@ -256,6 +256,13 @@ candidate/reference gate failed, and the required next ABI:
 returning true and `strict-true-fused-tile-kernel` as the path class.
 Pass `--require-native-lm-head-true-fused` to make the paired benchmark fail
 specifically on that condition even if ordinary timing gates are not enabled.
+`tools/bench_native_gpt_sm120_parity.sh` forwards that gate by default whenever
+strict parity enforcement is enabled; set
+`NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=0` only for measurement-only
+gap refreshes. Native-vs-native candidate sweeps keep it opt-in through
+`NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED=1` or
+`NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED=1`, so unrelated block-kernel
+bisections are not blocked by the known LM-head wrapper.
 When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and

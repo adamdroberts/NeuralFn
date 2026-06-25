@@ -421,6 +421,10 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_MAX_CANDIDATE_RATIO" in text
     assert "NFN_SM120_PARITY_ENFORCE_GATE" in text
     assert "NFN_SM120_ENFORCE_PARITY_GATE" in text
+    assert "NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED" in text
+    assert "NFN_SM120_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED" in text
+    assert 'paired_args+=(--require-native-lm-head-true-fused)' in text
+    assert "Unsupported NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED value" in text
     assert "NFN_SM120_PARITY_ATTENTION_SECTION_TIMING" in text
     assert "NFN_SM120_ATTENTION_SECTION_TIMING" in text
     assert "NFN_SM120_PARITY_SETUP_EVENT_TIMING" in text
@@ -497,6 +501,12 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "[A-Za-z_][A-Za-z0-9_]*=" in text
     assert "NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE" in text
     assert "--require-native-route-change" in text
+    assert "NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED" in text
+    assert "NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED" in text
+    assert "NFN_SM120_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED" in text
+    assert "--require-native-lm-head-true-fused" in text
+    assert "Unsupported NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED value" in text
     assert "NFN_SM120_PARITY_STEPS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text

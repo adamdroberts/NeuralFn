@@ -41,6 +41,7 @@ REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-${NFN_SM120_REFER
 DRY_RUN_PLAN="${NFN_SM120_PARITY_DRY_RUN_PLAN:-${NFN_SM120_DRY_RUN_PLAN:-0}}"
 MAX_CANDIDATE_RATIO_RAW="${NFN_SM120_PARITY_MAX_CANDIDATE_RATIO:-${NFN_SM120_MAX_CANDIDATE_RATIO:-}}"
 ENFORCE_GATE="${NFN_SM120_PARITY_ENFORCE_GATE:-${NFN_SM120_ENFORCE_PARITY_GATE:-1}}"
+REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED="${NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED:-${NFN_SM120_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED:-$ENFORCE_GATE}}"
 if [[ -n "$CANDIDATE_PROFILE_RAW" ]]; then
   cat >&2 <<EOF
 NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported by this llm.kittens parity wrapper.
@@ -122,6 +123,17 @@ esac
 for item in $CANDIDATE_ENV_RAW; do
   paired_args+=(--candidate-env "$item")
 done
+case "${REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--require-native-lm-head-true-fused)
+    ;;
+  "0"|"false"|"no"|"off")
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED value: $REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED" >&2
+    exit 2
+    ;;
+esac
 
 native_gpt_source_newer_than() {
   local target="$1"

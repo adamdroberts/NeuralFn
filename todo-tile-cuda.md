@@ -94,6 +94,11 @@ Real training tensors must not pass through graph editor node objects.
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
   The paired tool also accepts `--require-native-lm-head-true-fused` so a run
   can fail on this blocker without relying on incidental timing gates.
+  `tools/bench_native_gpt_sm120_parity.sh` forwards that gate when strict parity
+  enforcement is on, and the native candidate wrapper exposes opt-in
+  `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED` /
+  `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED` aliases for LM-head-specific
+  bisections.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts

@@ -19,11 +19,25 @@ Future updates should append new entries here rather than replacing older notes.
   whether the same run failed a candidate/reference metric gate. The new
   `--require-native-lm-head-true-fused` gate makes the paired benchmark fail
   directly when that blocker is still present.
+  `tools/bench_native_gpt_sm120_parity.sh` now forwards that gate whenever
+  strict parity enforcement is enabled, while
+  `tools/bench_native_gpt_sm120_candidate.sh` exposes the opt-in
+  `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED` /
+  `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED` aliases for native-vs-native
+  runs that intentionally target the LM-head route.
 
   Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_reports_lm_head_true_fused_target
   tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_can_require_lm_head_true_fused_target
-  -q`.
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_uses_reference_shape
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls
+  -q`; `bash -n tools/bench_native_gpt_sm120_parity.sh
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_PARITY_DRY_RUN_PLAN=1 NFN_SM120_PARITY_STEPS=1
+  NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_PROFILE_DIR=none NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_true_fused_gate_dry_run.json
+  bash tools/bench_native_gpt_sm120_parity.sh`.
 
 - Added `packed_attention_bwd_batch_96` as a named rejected SM120 native
   candidate profile. The profile expands to
