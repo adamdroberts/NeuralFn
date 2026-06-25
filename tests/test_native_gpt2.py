@@ -5402,6 +5402,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_training_dlogits_dtype"] == "bf16"
     assert train_transformer_payload["lm_head_loss_logits_dtype"] == "bf16"
     assert train_transformer_payload["lm_head_bf16_loss_enabled"] is True
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    assert "float_logits_small_chunk" not in source
     assert train_transformer_payload["lm_head_bf16_logits_enabled"] is True
     assert train_transformer_payload["lm_head_bf16_logit_elements"] == 0
     assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
@@ -6183,7 +6191,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     smaller_eval_payload = json.loads(smaller_eval_transformer_lm.stdout)
     assert smaller_eval_payload["batch_size"] == 2
     assert smaller_eval_payload["validation"]["requested_eval_batch_size"] == 1
-    assert smaller_eval_payload["validation"]["eval_batch_size"] == 2
+    assert smaller_eval_payload["validation"]["eval_batch_size"] == 1
     assert smaller_eval_payload["validation"]["eval_batches"] == 1
 
     checkpoint_out = tmp_path / "checkpoint-metadata-out"

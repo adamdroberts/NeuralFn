@@ -15879,7 +15879,7 @@ int run_transformer_lm_training_json(
             << "] for the current fixed-size activation arena; got " << requested_eval_batch_size;
         error = out.str();
     }
-    const std::int64_t eval_batch_size = batch_size;
+    const std::int64_t eval_batch_size = requested_eval_batch_size;
     std::int64_t active_batch_size = batch_size;
     std::int64_t active_rows = rows;
     std::int64_t active_activation_elements = activation_elements;
@@ -16377,10 +16377,7 @@ int run_transformer_lm_training_json(
             const std::int64_t* target_chunk =
                 direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
-            const bool small_loss_chunk_bf16_output_fallback =
-                lm_head_bf16_loss_enabled && row_count < 8192;
-            const bool use_bf16_loss_logits =
-                lm_head_bf16_loss_enabled && !small_loss_chunk_bf16_output_fallback;
+            const bool use_bf16_loss_logits = lm_head_bf16_loss_enabled;
             if (use_bf16_loss_logits) {
                 if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
                     run(linear_weight_bf16_output(
@@ -16408,9 +16405,7 @@ int run_transformer_lm_training_json(
                         label + ".lm_head.forward.bf16_logits");
                 }
             } else {
-                const char* lm_head_label = small_loss_chunk_bf16_output_fallback
-                    ? ".lm_head.forward.float_logits_small_chunk"
-                    : ".lm_head.forward";
+                const char* lm_head_label = ".lm_head.forward";
                 run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                     label + lm_head_label);
             }

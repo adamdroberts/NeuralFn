@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed dense GPT native validation loss for small eval batches. The compiled
+  transformer-LM path now honors `--eval-batch-size` as the active validation
+  batch size and keeps validation LM-head loss on the BF16 public-vocab Tile
+  path instead of falling back to the old float logits workspace, which failed
+  on the RTX 5090 CUDA 13.3 runtime with an illegal memory access.
+
+  Verification:
+  `bash tools/build_native_gpt_cli.sh /tmp/nfn_gpt_native_train_check`;
+  `CUDA_LAUNCH_BLOCKING=1 /tmp/nfn_gpt_native_train_check --tinystories
+  --template-name nanogpt --max-steps 1 --batch-size 1 --train-seq-len 1024
+  --train-batch-tokens 1024 --eval-every-steps 1 --eval-batches 1
+  --eval-batch-size 1 --train-transformer-lm --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`, which reported
+  `status: "native-transformer-lm-trained"` and one validation loss record.
+
 - Clarified the strict native GPT LM-head failure message in both
   `--check-tile-ops` metadata output and the real training-loop result. When
   `--require-cooperative-lm-head-backward` is set and only the current

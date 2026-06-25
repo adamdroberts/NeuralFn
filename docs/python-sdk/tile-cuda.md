@@ -288,7 +288,10 @@ run_native_gpt(config)
 
 Dense GPT periodic validation defaults to 20 validation batches per eval. Pass
 `--eval-batches N` or set the SDK `eval_batches` field explicitly when a smoke
-or benchmark run needs smaller validation work.
+or benchmark run needs smaller validation work. The full transformer-LM path
+honors `--eval-batch-size` as the active validation forward batch size, bounded
+by the training batch arena, and keeps small validation batches on the BF16
+public-vocab LM-head loss path instead of the older float logits workspace.
 
 The compiled dense GPT trainer accepts native layer-evolution cadence flags:
 `--layer-evo` / `--native-cuda-layer-evo`, `--evo-layer-index`,
