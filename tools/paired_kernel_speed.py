@@ -3174,6 +3174,66 @@ def print_native_hot_summary(payload: dict[str, object]) -> None:
             print_metric_summary_line(metric_prefix, key, metrics.get(key), metrics)
 
 
+def _summary_mean(summary: dict[str, object], key: str) -> float | None:
+    stats = summary.get(key)
+    if not isinstance(stats, dict):
+        return None
+    value = stats.get("mean")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def summarize_native_hot_stage_ratios(
+    baseline_summary: dict[str, dict[str, float]],
+    candidate_summary: dict[str, dict[str, float]],
+    candidate_over_baseline_summary: dict[str, dict[str, float]],
+    candidate_over_reference_summary: dict[str, dict[str, float]] | None = None,
+    *,
+    limit: int = 12,
+) -> dict[str, object]:
+    rows: list[dict[str, object]] = []
+    for key in NATIVE_HOT_SUMMARY_METRIC_KEYS:
+        if not key.startswith("stage.") or not key.endswith(".total_ms"):
+            continue
+        baseline_mean = _summary_mean(baseline_summary, key)
+        candidate_mean = _summary_mean(candidate_summary, key)
+        ratio_mean = _summary_mean(candidate_over_baseline_summary, key)
+        if baseline_mean is None or candidate_mean is None or ratio_mean is None:
+            continue
+        row: dict[str, object] = {
+            "metric": key,
+            "baseline_mean_ms": baseline_mean,
+            "candidate_mean_ms": candidate_mean,
+            "delta_mean_ms": candidate_mean - baseline_mean,
+            "candidate_over_baseline_mean": ratio_mean,
+        }
+        if candidate_over_reference_summary is not None:
+            reference_ratio = _summary_mean(candidate_over_reference_summary, key)
+            if reference_ratio is not None:
+                row["candidate_over_reference_mean"] = reference_ratio
+        rows.append(row)
+
+    return {
+        "enabled": bool(rows),
+        "limit": int(limit),
+        "top_candidate_total_ms": sorted(
+            rows,
+            key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
+            reverse=True,
+        )[:limit],
+        "top_regressions": sorted(
+            [row for row in rows if float(row.get("candidate_over_baseline_mean", 0.0)) >= 1.0],
+            key=lambda item: float(item.get("candidate_over_baseline_mean", 0.0)),
+            reverse=True,
+        )[:limit],
+        "top_improvements": sorted(
+            [row for row in rows if float(row.get("candidate_over_baseline_mean", 0.0)) < 1.0],
+            key=lambda item: float(item.get("candidate_over_baseline_mean", 0.0)),
+        )[:limit],
+    }
+
+
 def _first_metric_value(
     values: dict[str, object],
     key: str,
@@ -3794,6 +3854,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
         native_cublaslt_plan_cache = summarize_cublaslt_plan_cache(sample_rows)
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
+        candidate_over_baseline_native_metrics = summarize_metric_ratios(
+            sample_rows,
+            baseline_native_metrics,
+            candidate_native_metrics,
+        )
 
     payload = {
         "measurement": "paired_interleaved_commands",
@@ -3842,14 +3907,17 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "native_strategy_value_changes": native_strategy_value_changes,
         "native_linear_shape_stats": native_linear_shape_stats,
         "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
-        "candidate_over_baseline_native_metrics": summarize_metric_ratios(
-            sample_rows,
-            baseline_native_metrics,
-            candidate_native_metrics,
-        ),
+        "candidate_over_baseline_native_metrics": candidate_over_baseline_native_metrics,
         "paired_samples": sample_rows,
     }
+    candidate_over_reference_native_metrics: dict[str, dict[str, float]] = {}
     if reference is not None:
+        candidate_over_reference_native_metrics = summarize_metric_ratios(
+            sample_rows,
+            reference_native_metrics,
+            candidate_native_metrics,
+            denominator_name="reference",
+        )
         payload["reference_seconds"] = summarize(reference_seconds)
         payload["reference_over_baseline"] = summarize(reference_over_baseline_ratios)
         payload["candidate_over_reference"] = summarize(candidate_over_reference_ratios)
@@ -3859,12 +3927,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             reference_native_metrics,
             numerator_name="reference",
         )
-        payload["candidate_over_reference_native_metrics"] = summarize_metric_ratios(
-            sample_rows,
-            reference_native_metrics,
-            candidate_native_metrics,
-            denominator_name="reference",
-        )
+        payload["candidate_over_reference_native_metrics"] = candidate_over_reference_native_metrics
+    payload["native_hot_stage_ratios"] = summarize_native_hot_stage_ratios(
+        baseline_native_metrics,
+        candidate_native_metrics,
+        candidate_over_baseline_native_metrics,
+        candidate_over_reference_native_metrics if reference is not None else None,
+    )
     payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
     payload["candidate_reference_metric_ratio_gates"] = evaluate_metric_ratio_limits(
         payload,

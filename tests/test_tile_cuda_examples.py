@@ -4647,6 +4647,7 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     candidate_payload["timing"][
         "train_loop_cuda_event_steady_state_wall_ms_per_step"
     ] = 935.0
+    candidate_payload["timing"]["stage_timing"][3]["total_ms"] = 1000.0
     baseline_profile.write_text(json.dumps(baseline_payload), encoding="utf-8")
     candidate_profile.write_text(json.dumps(candidate_payload), encoding="utf-8")
 
@@ -4676,6 +4677,20 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     )
 
     assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    hot_stage_ratios = payload["native_hot_stage_ratios"]
+    assert hot_stage_ratios["enabled"] is True
+    assert hot_stage_ratios["top_candidate_total_ms"][0]["metric"] == (
+        "stage.block_backward.total_ms"
+    )
+    assert hot_stage_ratios["top_candidate_total_ms"][0]["candidate_mean_ms"] == 3900.0
+    assert hot_stage_ratios["top_regressions"][0]["metric"] == (
+        "stage.block_backward.mlp_proj.total_ms"
+    )
+    assert hot_stage_ratios["top_regressions"][0]["candidate_over_baseline_mean"] == (
+        1000.0 / 970.0
+    )
+    assert hot_stage_ratios["top_improvements"] == []
     assert "native_hot_summary:" in proc.stdout
     assert "baseline:" in proc.stdout
     assert "candidate:" in proc.stdout

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added structured hot-stage summaries to same-script paired benchmark JSON.
+  `tools/paired_kernel_speed.py` now emits `native_hot_stage_ratios`, derived
+  from the existing interleaved `stage.*.total_ms` native metrics, with
+  `top_candidate_total_ms`, `top_regressions`, and `top_improvements` ranked by
+  candidate time or candidate-over-baseline ratio. This does not change any
+  training route; it makes SM120 candidate decisions easier to audit from the
+  same JSON that already controls metric gates, without manually scraping each
+  appended native profile.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_prints_native_hot_summary
+  -q`.
+
 - Locked the direct native GPT script to the same linked Tile CUDA startup
   contract as the SDK and `nfn train` path. A new CLI regression verifies that
   `python cli/scripts/train_gpt_native.py ... --native-cuda-dry-run
