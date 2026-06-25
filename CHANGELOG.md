@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made `cli/scripts/infer_jepa_semantic.py` itself lightweight to import.
+  Shared parser, token decoding, prompt utility, and artifact-default helpers
+  can now be imported without loading Torch, NumPy, tokenizers, the dataset
+  manager, or graph-backed runtime modules; runtime-only helpers populate those
+  imports lazily through `_ensure_runtime_imports()`. The native no-Torch
+  verifier now includes a blocked `import infer_jepa_semantic` check in addition
+  to the script `--help` check.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  cli/scripts/infer_jepa_semantic.py tools/check_native_no_torch_deps.py`; and
+  `git diff --check`.
+
 - Added the JEPA Semantic inference helper to the lightweight no-Torch startup
   discipline. `python cli/scripts/infer_jepa_semantic.py --help` now renders
   from a pre-runtime parser path before importing Torch, NumPy, tokenizers, the

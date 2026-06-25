@@ -127,40 +127,77 @@ if __name__ == "__main__" and _is_help_request(sys.argv[1:]):
     _build_lightweight_parser().parse_args()
     raise SystemExit(0)
 
-import torch
+_RUNTIME_IMPORTS_LOADED = False
 
-from neuralfn import load_graph
-from neuralfn.inference import load_pt_checkpoint
-from neuralfn.semantic import (
-    EXPERT_TO_DIMENSION,
-    SEMANTIC_IGNORE_INDEX,
-    ConversationalVocabulary,
-    build_semantic_targets_from_topics,
-    extract_semantic_topics_from_text,
-    resolve_semantic_topics,
-    semantic_targets_to_router_vectors,
-    semantic_vocab_ref_for_graph,
-)
-from neuralfn.torch_backend import CompiledTorchGraph, resolve_amp_settings
-from server.dataset_manager import (
-    is_sentencepiece_tokenizer_name,
-    local_tiktoken_encoding_path,
-    normalize_raw_text_encoding_name,
-    raw_text_encoding_name_for_template_spec,
-    raw_text_encoding_vocab_size,
-    resolve_sentencepiece_encoding,
-    resolve_sentencepiece_model_path,
-    resolve_tiktoken_encoding,
-    validate_cached_tokenizer_contract,
-)
-from train_jepa_semantic import (
-    add_raw_text_tokenizer_arguments as add_shared_tokenizer_arguments,
-    add_dataset_download_arguments,
-    add_dataset_selector_arguments,
-    dataset_download_kwargs_from_args,
-    resolve_dataset_selector_args,
-    resolve_or_download_dataset,
-)
+
+def _ensure_runtime_imports() -> None:
+    global _RUNTIME_IMPORTS_LOADED
+    if _RUNTIME_IMPORTS_LOADED:
+        return
+
+    import torch as _torch
+
+    from neuralfn import load_graph as _load_graph
+    from neuralfn.inference import load_pt_checkpoint as _load_pt_checkpoint
+    from neuralfn.semantic import (
+        EXPERT_TO_DIMENSION as _EXPERT_TO_DIMENSION,
+        SEMANTIC_IGNORE_INDEX as _SEMANTIC_IGNORE_INDEX,
+        ConversationalVocabulary as _ConversationalVocabulary,
+        build_semantic_targets_from_topics as _build_semantic_targets_from_topics,
+        extract_semantic_topics_from_text as _extract_semantic_topics_from_text,
+        resolve_semantic_topics as _resolve_semantic_topics,
+        semantic_targets_to_router_vectors as _semantic_targets_to_router_vectors,
+        semantic_vocab_ref_for_graph as _semantic_vocab_ref_for_graph,
+    )
+    from neuralfn.torch_backend import CompiledTorchGraph as _CompiledTorchGraph
+    from neuralfn.torch_backend import resolve_amp_settings as _resolve_amp_settings
+    from server.dataset_manager import (
+        is_sentencepiece_tokenizer_name as _is_sentencepiece_tokenizer_name,
+        local_tiktoken_encoding_path as _local_tiktoken_encoding_path,
+        normalize_raw_text_encoding_name as _normalize_raw_text_encoding_name,
+        raw_text_encoding_name_for_template_spec as _raw_text_encoding_name_for_template_spec,
+        raw_text_encoding_vocab_size as _raw_text_encoding_vocab_size,
+        resolve_sentencepiece_encoding as _resolve_sentencepiece_encoding,
+        resolve_sentencepiece_model_path as _resolve_sentencepiece_model_path,
+        resolve_tiktoken_encoding as _resolve_tiktoken_encoding,
+        validate_cached_tokenizer_contract as _validate_cached_tokenizer_contract,
+    )
+    from train_jepa_semantic import (
+        dataset_download_kwargs_from_args as _dataset_download_kwargs_from_args,
+        resolve_dataset_selector_args as _resolve_dataset_selector_args,
+        resolve_or_download_dataset as _resolve_or_download_dataset,
+    )
+
+    globals().update(
+        {
+            "torch": _torch,
+            "load_graph": _load_graph,
+            "load_pt_checkpoint": _load_pt_checkpoint,
+            "EXPERT_TO_DIMENSION": _EXPERT_TO_DIMENSION,
+            "SEMANTIC_IGNORE_INDEX": _SEMANTIC_IGNORE_INDEX,
+            "ConversationalVocabulary": _ConversationalVocabulary,
+            "build_semantic_targets_from_topics": _build_semantic_targets_from_topics,
+            "extract_semantic_topics_from_text": _extract_semantic_topics_from_text,
+            "resolve_semantic_topics": _resolve_semantic_topics,
+            "semantic_targets_to_router_vectors": _semantic_targets_to_router_vectors,
+            "semantic_vocab_ref_for_graph": _semantic_vocab_ref_for_graph,
+            "CompiledTorchGraph": _CompiledTorchGraph,
+            "resolve_amp_settings": _resolve_amp_settings,
+            "is_sentencepiece_tokenizer_name": _is_sentencepiece_tokenizer_name,
+            "local_tiktoken_encoding_path": _local_tiktoken_encoding_path,
+            "normalize_raw_text_encoding_name": _normalize_raw_text_encoding_name,
+            "raw_text_encoding_name_for_template_spec": _raw_text_encoding_name_for_template_spec,
+            "raw_text_encoding_vocab_size": _raw_text_encoding_vocab_size,
+            "resolve_sentencepiece_encoding": _resolve_sentencepiece_encoding,
+            "resolve_sentencepiece_model_path": _resolve_sentencepiece_model_path,
+            "resolve_tiktoken_encoding": _resolve_tiktoken_encoding,
+            "validate_cached_tokenizer_contract": _validate_cached_tokenizer_contract,
+            "dataset_download_kwargs_from_args": _dataset_download_kwargs_from_args,
+            "resolve_dataset_selector_args": _resolve_dataset_selector_args,
+            "resolve_or_download_dataset": _resolve_or_download_dataset,
+        }
+    )
+    _RUNTIME_IMPORTS_LOADED = True
 
 LOGGER = logging.getLogger("jepa_semantic_infer")
 COMPILE_CHECKPOINT_MARKERS = (
@@ -385,6 +422,7 @@ def load_compiled_inference_graph(
     weights_path: Path | None,
     device: torch.device,
 ) -> tuple[object, CompiledTorchGraph, dict[str, torch.Tensor], Path]:
+    _ensure_runtime_imports()
     graph = load_graph(graph_path)
     resolved_weights_path = resolve_graph_weights_path(
         graph,
@@ -457,7 +495,7 @@ def graph_uses_semantic_router_vecs(graph) -> bool:
 
 
 def add_raw_text_tokenizer_arguments(parser: argparse.ArgumentParser) -> None:
-    add_shared_tokenizer_arguments(parser)
+    _add_lightweight_raw_text_tokenizer_arguments(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -469,8 +507,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--amp-dtype", choices=("float32", "bfloat16", "float16"), default=None)
     parser.add_argument("--graph", default="")
     parser.add_argument("--weights", default="")
-    add_dataset_selector_arguments(parser, default_alias=DEFAULT_DATASET_ALIAS)
-    add_dataset_download_arguments(parser)
+    _add_lightweight_dataset_selector_arguments(parser, default_alias=DEFAULT_DATASET_ALIAS)
+    _add_lightweight_dataset_download_arguments(parser)
     add_raw_text_tokenizer_arguments(parser)
     parser.add_argument("--prompt", default="")
     parser.add_argument(
@@ -528,6 +566,7 @@ def load_sentencepiece_model(
     *,
     raw_text_encoding_name: str = "gpt2",
 ):
+    _ensure_runtime_imports()
     model_candidates: list[Path] = []
     tokenizer_files = dataset_meta.get("tokenizer_files")
     if isinstance(tokenizer_files, list):
@@ -567,6 +606,7 @@ def load_tokenizer_from_graph_manifest(
     *,
     raw_text_encoding_name: str = "gpt2",
 ):
+    _ensure_runtime_imports()
     manifest = tokenizer_manifest_for_graph(graph)
     if not manifest:
         return None, None, None
@@ -641,6 +681,7 @@ def log_tokenizer_status(
 
 
 def resolve_model_vocab_size(graph, state_dict: dict[str, torch.Tensor]) -> int:
+    _ensure_runtime_imports()
     vocab_size = 0
     template_spec = dict(graph.torch_config.get("template_spec", {}))
     if template_spec.get("vocab_size") is not None:
@@ -665,6 +706,7 @@ def validate_inference_vocab_contract(
     state_dict: dict[str, torch.Tensor],
     raw_text_encoding_name: str = "gpt2",
 ) -> dict[str, Any] | None:
+    _ensure_runtime_imports()
     model_vocab_size = resolve_model_vocab_size(graph, state_dict)
     if dataset_name is not None and dataset_path is not None and dataset_meta is not None:
         contract = validate_cached_tokenizer_contract(
@@ -718,6 +760,7 @@ def resolve_inference_tokenizer_context(
     dataset_download_kwargs: dict[str, object],
     require_dataset: bool = False,
 ):
+    _ensure_runtime_imports()
     tokenizer, tokenizer_path, tokenizer_name = load_tokenizer_from_graph_manifest(
         graph,
         raw_text_encoding_name=raw_text_encoding_name,
@@ -754,6 +797,7 @@ def resolve_raw_text_encoding_name(
     encoding_override: str | None = None,
     prefer_cl100k: bool = False,
 ) -> str:
+    _ensure_runtime_imports()
     resolved_override = normalize_raw_text_encoding_name(encoding_override)
     if resolved_override is not None:
         return resolved_override
@@ -852,6 +896,7 @@ def resolve_semantic_targets(
     *,
     sequence_text: str = "",
 ) -> tuple[torch.Tensor, dict[str, str]]:
+    _ensure_runtime_imports()
     if semantic_topics.strip():
         overrides = resolve_semantic_topics(parse_topic_overrides(semantic_topics), vocab=vocab)
         values = build_semantic_targets_from_topics(overrides, vocab=vocab).tolist()
@@ -876,6 +921,7 @@ def resolve_semantic_router_vecs(
     vocab: ConversationalVocabulary,
     device: torch.device,
 ) -> torch.Tensor:
+    _ensure_runtime_imports()
     router_vecs = semantic_targets_to_router_vectors(sem_targets.detach().cpu().numpy(), vocab=vocab)
     return torch.tensor(router_vecs, dtype=torch.float32, device=device)
 
@@ -902,6 +948,7 @@ def resolve_autocast_settings(
     *,
     amp_dtype_override: str | None = None,
 ) -> tuple[torch.dtype, str, bool]:
+    _ensure_runtime_imports()
     return resolve_amp_settings(amp_dtype_override or graph.torch_config.get("amp_dtype", "float32"))
 
 
@@ -918,6 +965,7 @@ def resolve_autocast_dtype(
 
 
 def autocast_enabled_for(device: torch.device, amp_dtype: torch.dtype) -> bool:
+    _ensure_runtime_imports()
     return device.type == "cuda" and amp_dtype in {torch.float16, torch.bfloat16}
 
 
@@ -953,6 +1001,7 @@ def find_logits_trace_key(trace: dict[str, tuple[torch.Tensor, ...]], requested:
 
 
 def top_k_filter(logits: torch.Tensor, top_k: int) -> torch.Tensor:
+    _ensure_runtime_imports()
     if top_k <= 0 or top_k >= logits.size(-1):
         return logits
     values, indices = torch.topk(logits, top_k, dim=-1)
@@ -961,6 +1010,7 @@ def top_k_filter(logits: torch.Tensor, top_k: int) -> torch.Tensor:
 
 
 def top_p_filter(logits: torch.Tensor, top_p: float) -> torch.Tensor:
+    _ensure_runtime_imports()
     if top_p >= 1.0:
         return logits
     sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
@@ -994,6 +1044,7 @@ def apply_repetition_penalty(
     token_history: list[int] | tuple[int, ...],
     repetition_penalty: float,
 ) -> torch.Tensor:
+    _ensure_runtime_imports()
     if repetition_penalty <= 1.0 or not token_history:
         return logits
     penalized = logits.clone()
@@ -1025,6 +1076,7 @@ def sample_next_token(
     top_p: float = 1.0,
     generator: torch.Generator,
 ) -> int:
+    _ensure_runtime_imports()
     step_logits = apply_repetition_penalty(
         logits.float(),
         token_history=token_history,
@@ -1102,6 +1154,7 @@ def describe_token(tokenizer, token_id: int) -> str:
 
 
 def describe_routing(trace: dict[str, tuple[torch.Tensor, ...]]) -> str | None:
+    _ensure_runtime_imports()
     routing = trace.get("model/hash_router")
     if not routing or len(routing) < 2:
         return None
@@ -1118,6 +1171,7 @@ def describe_routing(trace: dict[str, tuple[torch.Tensor, ...]]) -> str | None:
 def main() -> int:
     configure_console_logging()
     args = build_parser().parse_args()
+    _ensure_runtime_imports()
     resolve_dataset_selector_args(args)
     resolve_mode_defaults(args)
 

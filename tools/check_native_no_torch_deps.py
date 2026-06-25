@@ -626,6 +626,14 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
             "import importlib.util; from pathlib import Path; p=Path('cli/scripts/train_semantic_router_moe-overnight.py'); s=importlib.util.spec_from_file_location('train_semantic_router_moe_overnight', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('train_semantic_router_moe_overnight-import-ok')",
         ),
     ),
+    (
+        "infer_jepa_semantic_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import infer_jepa_semantic; print('infer_jepa_semantic-import-ok')",
+        ),
+    ),
 )
 DEFAULT_SHELL_ENTRYPOINTS = (
     (
