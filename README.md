@@ -48,13 +48,17 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `bash tools/rebuild_native_sm120.sh` to rebuild
 `build/libnfn_native_train_tile_ops.so`, the compiled GPT/native training
 frontends, the GPT-2 compatibility frontend, and the missing-template native
-stubs against the current CUDA toolkit. The full native build script rebuilds
+stubs against the current CUDA toolkit. It also refreshes
+`build/libnfn_native_train_tile_ops_tk.so`, `build/linear_backward_bench`, and
+`build/lm_head_backward_bench`, so `tools/check_native_no_torch_deps.py` does
+not fail later on stale benchmark or TK-candidate artifacts. The full native build script rebuilds
 `libnfn_native_train_tile_ops.so` before `nfn_gpt_native_train_linked`, so the
 linked binary preferred by SDK and CLI startup paths is not left pointing at a
 stale Tile ops library. The script defaults to
 `NFN_TILE_CUDA_ARCH=sm_120a` and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
-`NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed artifacts
-somewhere other than `build/`. After rebuilding, run
+`NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the TK candidate library flags,
+or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed
+artifacts somewhere other than `build/`. After rebuilding, run
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
 to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness

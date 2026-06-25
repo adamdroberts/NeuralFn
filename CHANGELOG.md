@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/rebuild_native_sm120.sh` so the CUDA refresh path rebuilds the
+  same native artifact set checked by `tools/check_native_no_torch_deps.py`.
+  The script now refreshes `build/libnfn_native_train_tile_ops_tk.so`,
+  `build/linear_backward_bench`, and `build/lm_head_backward_bench` in addition
+  to the trainer CLIs and default Tile ops library. The TK candidate library
+  uses the current fused dGELU dInput/tanh-approx flags by default, overrideable
+  through `NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS`.
+
+  Verification: rebuilt the stale GPT/native CLI, GPT-2 compatibility CLI,
+  linear-backward bench, and TK Tile ops library artifacts, then ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`; every artifact, Python entrypoint, SDK
+  import, native binding import, inference entrypoint, and benchmark dry-run
+  passed.
+
 - Changed the no-argument SM120 native candidate sweep to focus on current
   training hot paths instead of old startup bisections. Running
   `tools/sweep_native_gpt_sm120_candidates.sh` without an explicit profile list
