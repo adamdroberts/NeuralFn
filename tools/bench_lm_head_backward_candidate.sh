@@ -266,10 +266,43 @@ if [[ "${REBUILD_TILE_OPS}" == "1" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}" >&2
 fi
 
+emit_true_fused_requirement_message() {
+  if [[ ! -f "${JSON_OUT}" ]]; then
+    return 0
+  fi
+  python -c 'import json, pathlib, sys
+try:
+    data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+except Exception:
+    raise SystemExit(0)
+if data.get("candidate_true_fused_capability", False):
+    raise SystemExit(0)
+required = data.get("next_required_kernel_body")
+required_symbol = data.get("next_required_symbol")
+required_capability = data.get("next_required_capability_symbol")
+required_path = data.get("next_required_path_class")
+if not (required or required_symbol or required_capability or required_path):
+    raise SystemExit(0)
+print(
+    "LM-head true-fused replacement required: "
+    f"next_required_symbol={required_symbol or 'unknown'}, "
+    f"next_required_capability_symbol={required_capability or 'unknown'}, "
+    f"next_required_path_class={required_path or 'unknown'}, "
+    f"next_required_kernel_body={required or 'unknown'}",
+    file=sys.stderr,
+)
+' "${JSON_OUT}"
+}
+
 if "${BENCH_BIN}" "${BENCH_ARGS[@]}"; then
   :
 else
   BENCH_STATUS=$?
+  case "${REQUIRE_TRUE_FUSED,,}" in
+    1|true|yes|on)
+      emit_true_fused_requirement_message
+      ;;
+  esac
   exit "${BENCH_STATUS}"
 fi
 
@@ -278,11 +311,23 @@ case "${REQUIRE_TRUE_FUSED,,}" in
     python -c 'import json, pathlib, sys
 data = json.loads(pathlib.Path(sys.argv[1]).read_text())
 if not data.get("candidate_true_fused_capability", False):
+    required = data.get("next_required_kernel_body")
+    required_symbol = data.get("next_required_symbol")
+    required_capability = data.get("next_required_capability_symbol")
+    required_path = data.get("next_required_path_class")
+    suffix = ""
+    if required or required_symbol or required_capability or required_path:
+        suffix = (
+            f"; next_required_symbol={required_symbol or 'unknown'}, "
+            f"next_required_capability_symbol={required_capability or 'unknown'}, "
+            f"next_required_path_class={required_path or 'unknown'}, "
+            f"next_required_kernel_body={required or 'unknown'}"
+        )
     if data.get("candidate_sequence_wrapper_only", False):
-        raise SystemExit("candidate strict symbol is still sequencing CE/dHidden/dWeight; candidate_true_fused_capability is false")
+        raise SystemExit("candidate strict symbol is still sequencing CE/dHidden/dWeight; candidate_true_fused_capability is false" + suffix)
     if data.get("candidate_cuda_graph_wrapper_only", False):
-        raise SystemExit("candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight; candidate_true_fused_capability is false")
-    raise SystemExit("candidate_true_fused_capability is false")
+        raise SystemExit("candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight; candidate_true_fused_capability is false" + suffix)
+    raise SystemExit("candidate_true_fused_capability is false" + suffix)
 ' "${JSON_OUT}"
     ;;
 esac

@@ -2126,6 +2126,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate strict symbol is still sequencing CE/dHidden/dWeight" in wrapper
     assert "candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
+    assert "next_required_symbol" in wrapper
+    assert "next_required_capability_symbol" in wrapper
+    assert "next_required_path_class" in wrapper
+    assert "next_required_kernel_body" in wrapper
+    assert "emit_true_fused_requirement_message" in wrapper
+    assert "LM-head true-fused replacement required" in wrapper
+    assert "BENCH_STATUS=$?" in wrapper
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "candidate_first" in bench_source
     assert "--candidate-first" in bench_source

@@ -341,7 +341,10 @@ ratios against CE, dHidden, and dWeight component timings, and names the next
 required body as `row-chunked-ce-dhidden-dweight-single-tile-kernel` with the
 required symbol and capability flag. This makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
-CUDA Graph wrappers, and a future real fused kernel. The bench resets
+CUDA Graph wrappers, and a future real fused kernel. Strict wrapper failures
+print those `next_required_*` fields, so a failed
+`trainer-chunk-strict` run names the exact symbol, capability flag, path class,
+and kernel body still needed before promotion. The bench resets
 Tile-CUDA LM-head counters after warmup and before timed iterations, so warmup
 graph capture/fallback launches do not contaminate the timed classification.
 CUDA 13.3 retesting can
