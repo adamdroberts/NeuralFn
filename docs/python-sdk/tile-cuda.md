@@ -2677,6 +2677,10 @@ For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
 explicit `NFN_NATIVE_GPT_CLI` or `NFN_NATIVE_TRAIN_CLI` override is set. This
 keeps SDK-native runs on the same linked Tile-ops startup path as `nfn train`
 and avoids the avoidable dynamic `dlopen` branch on workstation builds.
+A CUDA 13.3.33 dedicated RTX 5090 startup-only recheck on 2026-06-25 measured
+that linked path at `0.839094x` `setup_wall_ms` and `0.839648x`
+`total_wall_ms` versus the dynamic loader baseline, with no native route or
+strategy changes.
 The low-level dense GPT CLI build scripts skip current outputs when their C++
 sources, token-shard resolver, build script, and linked Tile ops library are not
 newer than the target; set `NFN_NATIVE_GPT_FORCE_REBUILD=1` or

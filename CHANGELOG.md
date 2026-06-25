@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` after the
+  CUDA 13.3.33 rebuild on the dedicated RTX 5090. The linked dense GPT binary
+  remains the preferred startup route when built: 3 measured startup-only
+  samples, no warmup, idle display-disabled GPU, and zero compute processes
+  before and after the run measured `setup_wall_ms` at `0.839094x` and
+  `total_wall_ms` at `0.839648x` versus the dynamic Tile-ops loader baseline.
+  Native route counters and strategy values stayed unchanged, confirming this
+  is a loader/linkage win rather than a hidden training-kernel route change.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_linked_startup_current_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_linked_startup_current.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Fixed the native SM120 candidate wrapper's unknown-profile help for cuBLASLt
   plan-prewarm bisection. The wrapper already supported
   `cublaslt_plan_prewarm_block_only`,

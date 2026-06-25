@@ -1121,6 +1121,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     startup-only zero-step timing with no warmup by default, and disables the
     route-change gate because the expected change is linked Tile-op symbol
     resolution rather than a training-loop kernel route.
+  - 2026-06-25 rechecked `linked_startup` after the CUDA 13.3.33 rebuild on
+    the dedicated RTX 5090. With 3 measured startup-only samples, no warmup,
+    zero compute processes before/after the run, and the display disabled on
+    the 5090, the linked candidate measured `0.839094x` `setup_wall_ms` and
+    `0.839648x` `total_wall_ms` versus the dynamic-loader baseline. Route
+    counters and strategy values stayed unchanged, so this remains a valid
+    loader/linkage startup default and not a training-loop kernel parity fix.
   - 2026-06-19 added an opt-in token-weight vector4 startup candidate behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1` / `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=1`. It writes FP32 token weights and BF16 shadow bits with vectorized stores. Dedicated RTX 5090 startup-only paired timing rejected it as a default (`1.078363x` token-init time, `1.033082x` total wall), so the current int32 Tile initializer remains the default.
   - 2026-06-19 fixed startup-only validation so `--startup-only --max-steps 0` reaches real Tile-CUDA setup or the relevant Tile ops load error instead of failing the positive-step training validator. Use this for setup-only benchmark smoke commands; non-startup training still requires positive `max_steps`.
   - 2026-06-20 fixed the native-vs-native candidate wrapper so measured startup-only runs auto-gate `setup_wall_ms=1.000` instead of the absent `train_loop_wall_ms_per_step`. The corrected RTX 5090 startup-only rerun for `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` failed on the right metric (`setup_wall_ms=1.008564x`), even though token init alone improved to `0.985085x`; keep threaded token initialization diagnostic-only and continue targeting either arena materialization or a stronger token init kernel before changing startup defaults.

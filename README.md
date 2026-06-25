@@ -2863,6 +2863,9 @@ with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 `NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`. A CUDA 13.3 dedicated RTX 5090
 5-sample rerun on 2026-06-24 passed the setup-wall gate again at `0.866699x`
 for the linked candidate, with zero compute processes before each paired sample.
+A CUDA 13.3.33 rebuild recheck on 2026-06-25 with 3 measured samples and no
+warmup measured the linked candidate at `0.839094x` `setup_wall_ms` and
+`0.839648x` `total_wall_ms` with no route-counter or strategy-value changes.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` measures the
 default-off cuBLAS handle prewarm route by pinning the baseline to
 `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and the candidate to
