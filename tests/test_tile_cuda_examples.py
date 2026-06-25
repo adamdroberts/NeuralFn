@@ -293,6 +293,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "stage.lm_head_backward.pipeline_final_wait.total_ms: mean=0.600000" in proc.stdout
     assert "stage.final_norm_backward.total_ms: mean=0.800000" in proc.stdout
     assert "stage.block_backward.mlp_proj.total_ms: mean=5.000000" in proc.stdout
+    assert (
+        "stage.block_backward.mlp_proj.total_ms: mean=5.000000 median=5.000000 "
+        "min=5.000000 max=5.000000 (count_mean=2.000000; avg_ms_mean=2.500000)"
+        in proc.stdout
+    )
     assert "stage.block_backward.mlp_proj.dweight_bias.total_ms: mean=4.000000" in proc.stdout
     assert "stage.block_backward.mlp_fc.dinput.total_ms: mean=8.000000" in proc.stdout
     assert "stage.block_backward.attn_proj.dinput.total_ms: mean=9.000000" in proc.stdout
@@ -301,6 +306,21 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "stage.gradient_zero.total_ms: mean=0.600000" in proc.stdout
     assert "stage.gradient_clip.total_ms: mean=1.100000" in proc.stdout
     assert "stage.adamw_update.total_ms: mean=2.200000" in proc.stdout
+    assert (
+        "stage.adamw_update.total_ms: mean=2.200000 median=2.200000 min=2.200000 "
+        "max=2.200000 (count_mean=1.000000; avg_ms_mean=2.200000)"
+        in proc.stdout
+    )
+    assert (
+        "setup.float_arena_materialize.total_ms: mean=0.700000 median=0.700000 "
+        "min=0.700000 max=0.700000 (count_mean=1.000000; avg_ms_mean=0.700000)"
+        in proc.stdout
+    )
+    assert (
+        "stage.lm_head_backward.total_ms: mean=7.000000 median=7.000000 "
+        "min=7.000000 max=7.000000 (count_mean=2.000000; avg_ms_mean=3.500000)"
+        in proc.stdout
+    )
 
 
 def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> None:
