@@ -2120,6 +2120,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    assert "block_backward_mlp_proj_dinput_before_dweight_count moved 0->288" in bench_source
+    assert "stage.block_backward.mlp_proj.dinput.total_ms regressed to 1.101843x" in bench_source
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512" in bench_source
@@ -2201,7 +2203,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "activation_tape_strategy" in speed_source
     assert "attention dprep timing to 1.000231x" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
-    assert "cuBLASLt status 14" in bench_source
+    assert "grouped layout status 0 with grouped matmul status 15" in bench_source
     assert "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1" in bench_source
     assert "stored_mlp_activation_blocks" in speed_source
     assert "stored_packed_attention_activation_blocks" in speed_source

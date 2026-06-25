@@ -1189,9 +1189,11 @@ The default MLP projection backward path also exposes
 switch. It runs fused MLP projection dInput+dGELU before dWeight+bias to mirror
 the llm.kittens `matmul_backward` order, and runtime JSON reports
 `block_backward_mlp_proj_dinput_before_dweight_enabled`. It remains disabled by
-default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
-measured `1.000405x` train-loop wall time and `0.999602x` tokens/sec versus the
-current dWeight+bias-first order.
+default because the 2026-06-25 CUDA 13.3.33 linked-trainer rerun proved the
+route counter moved `0->288` and mean train-loop wall stayed near-flat at
+`0.999180x`, but the target
+`stage.block_backward.mlp_proj.dinput.total_ms` bucket regressed to `1.101843x`
+and total MLP projection backward regressed to `1.001268x`.
 Native dense-GPT JSON also reports `linear_tk_dgelu_dinput_gemm_count`, which
 tracks successful TK fused dInput+dGELU launches separately from the generic
 `linear_tk_gemm_count`. The SM120 candidate wrapper treats this as a route

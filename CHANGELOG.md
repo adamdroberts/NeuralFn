@@ -235,6 +235,26 @@ Future updates should append new entries here rather than replacing older notes.
   NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0 bash
   tools/bench_native_gpt_sm120_candidate.sh`.
 
+- Refreshed the rejected `mlp_proj_dinput_before_dweight` profile on the
+  current linked dense-GPT trainer. The CUDA 13.3.33 dedicated RTX 5090
+  3-step, 2-sample stage-timed gate proved the route counter moved `0->288`
+  and mean train-loop wall stayed near-flat at `0.999180x`, but it still is not
+  promotable because `stage.block_backward.mlp_proj.dinput.total_ms` regressed
+  to `1.101843x` and total MLP projection backward regressed to `1.001268x`.
+  The wrapper reason, README, SDK Tile-CUDA docs, and checklist now point at
+  that target-stage failure.
+
+  Migration note: no training default changed. Keep
+  `NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1` diagnostic-only.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dinput_before_dweight
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Fixed `build/lm_head_backward_bench` reference component timing so logits, CE,
   dHidden, and dWeight probes run the configured warmup count before timed
   iterations. The benchmark JSON now reports `reference_component_warmup`,

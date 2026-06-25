@@ -444,6 +444,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0"
     ;;
   "cublaslt_grouped_probe"|"cublaslt-grouped-probe"|"grouped_cublaslt_probe"|"grouped-cublaslt-probe")
+    CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 probe currently reports grouped layout status 0 with grouped matmul status 15; this profile is telemetry-only until grouped matmul is supported."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1"
     AUTO_DISABLE_METRIC_RATIO_GATES=1
     ;;
@@ -521,7 +522,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "mlp_proj_dinput_before_dweight"|"mlp-proj-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 5-step, 3-sample stage-timed confirmation proved block_backward_mlp_proj_dinput_before_dweight_count moved 0->480 and improved train_loop_wall_ms_per_step to 0.991219x plus block backward to 0.981761x, but rejected default promotion because steady-state CUDA-event timing regressed to 1.001787x and the target stage.block_backward.mlp_proj.total_ms regressed to 1.002875x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun proved block_backward_mlp_proj_dinput_before_dweight_count moved 0->288 and kept mean train_loop_wall_ms_per_step near-flat at 0.999180x, but rejected default promotion because the target stage.block_backward.mlp_proj.dinput.total_ms regressed to 1.101843x and stage.block_backward.mlp_proj.total_ms regressed to 1.001268x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
