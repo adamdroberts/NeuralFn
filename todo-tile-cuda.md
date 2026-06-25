@@ -2052,3 +2052,18 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     and still keeps the native route-change gate, but it no longer fails solely
     on automatic strict promotion-ratio gates unless
     `NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1` is set.
+  - 2026-06-25 rechecked the native GPT path after the CUDA Toolkit 13.3 WSL
+    reinstall on the display-disabled RTX 5090. The native-vs-native
+    five-step/two-sample stage-timed gate passed with
+    `train_loop_wall_ms_per_step=0.998306x` and steady-state CUDA-event timing
+    at `1.001334x`, with no route or strategy changes. The no-Torch/default
+    dependency gate also passed, and `tests/test_native_gpt2.py` passed
+    (`90 passed, 1 skipped in 375.92s`). The external llm.kittens reference
+    comparison still shows a real parity gap: default NeuralFn measured
+    `1.029364x` llm.kittens train-loop wall and `1.010067x` steady-state
+    CUDA-event timing. Intentionally rerunning the rejected
+    `llmk_sm120_reference_flags` compile-flag bundle narrowed that to
+    `1.012296x` wall and `1.008866x` steady-state, but it still did not close
+    parity or prove a distinct hot route. Keep the next work focused on a real
+    fused/cooperative LM-head or block-backward kernel, not compile-flag
+    promotion or graph-editor/Torch/startup hypotheses.
