@@ -671,7 +671,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "bgrad_first_write_direct"|"bgrad-first-write-direct"|"linear_bgrad_first_write_direct"|"linear-bgrad-first-write-direct")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate changed cuBLASLt bgrad route counters but regressed train_loop_wall_ms_per_step to 1.003634x and tokens/sec to 0.996521x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 5-step, 3-sample rerun changed cuBLASLt bgrad route counters by moving 240 first-write bias gradients to direct writes, but regressed train_loop_wall_ms_per_step to 1.005404x, steady-state CUDA-event timing to 1.001035x, train_tokens_per_second to 0.994864x, block backward to 1.010323x, and MLP FC dWeight+bias to 1.020533x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1"
     ;;
   "qkv_concurrent_dinput_dweight"|"qkv-concurrent-dinput-dweight")

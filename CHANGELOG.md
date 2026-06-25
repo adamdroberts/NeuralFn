@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `bgrad_first_write_direct` SM120 native candidate after
+  the CUDA Toolkit 13.3 reinstall on the dedicated RTX 5090. The profile still
+  expands to `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1` and proved the intended
+  route change by moving 240 first-write bias gradients from scratch
+  accumulation to direct writes over the 5-step, 3-sample gate. It remains
+  rejected: train-loop wall regressed to `1.005404x`, steady-state CUDA-event
+  timing to `1.001035x`, tokens/sec to `0.994864x`, block backward to
+  `1.010323x`, and MLP FC dWeight+bias to `1.020533x`.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bgrad_first_write_direct
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added the rejected SM120 native candidate profile
   `cublaslt_attn_proj_dweight_h0_65536`. It expands to
   `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,768,65536,N,T,0`, but the

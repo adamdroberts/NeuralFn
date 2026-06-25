@@ -1608,9 +1608,11 @@ scratch and accumulates it into `grad_bias`. Set
 `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` only for paired benchmarks
 against the direct first-write path. The paired wrapper profile
 `bgrad_first_write_direct` is marked rejected by default: on the dedicated RTX
-5090/CUDA 13.3 gate it changed cuBLASLt bgrad counters from scratch
-accumulation to 96 direct writes, but regressed train-loop wall time to
-`1.003634x` and tokens/sec to `0.996521x`.
+5090/CUDA 13.3 gate it changed cuBLASLt bgrad counters, and the 2026-06-25
+5-step, 3-sample rerun moved 240 first-write bias gradients to direct writes.
+It still regressed train-loop wall time to `1.005404x`, steady-state CUDA-event
+timing to `1.001035x`, tokens/sec to `0.994864x`, block backward to
+`1.010323x`, and MLP FC dWeight+bias to `1.020533x`.
 
 ## Current state of play
 
