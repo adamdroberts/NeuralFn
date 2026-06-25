@@ -54,6 +54,14 @@ constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedPathClassSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class";
+constexpr const char* kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count";
+constexpr const char* kLmHeadCooperativeBackwardGraphBodyCeNodeCountSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count";
+constexpr const char* kLmHeadCooperativeBackwardGraphBodyDhiddenNodeCountSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count";
+constexpr const char* kLmHeadCooperativeBackwardGraphBodyDweightNodeCountSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count";
 constexpr const char* kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity";
 constexpr const char* kLmHeadCooperativeBackwardGraphPrewarmSymbol =
@@ -10661,6 +10669,10 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_lm_head_prob_only_dhidden_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_prob_only_dweight_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_prob_only_combined_target_correction_bf16_bits",
+        "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count",
+        "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count",
+        "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count",
+        "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count",
         "nfn_native_tile_lm_head_classifier_stats_reset",
         "nfn_native_tile_lm_head_classifier_chunk_launch_count",
         "nfn_native_tile_lm_head_classifier_last_rows",
@@ -11351,6 +11363,10 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_true_fused_capability = nullptr;
     LmHeadFusedKernelPathClassFn lm_head_classifier_backward_true_fused_path_class = nullptr;
+    LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_node_count_fn = nullptr;
+    LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_ce_node_count_fn = nullptr;
+    LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_dhidden_node_count_fn = nullptr;
+    LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_dweight_node_count_fn = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_llmk_parity_capability = nullptr;
     bool lm_head_classifier_backward_true_fused_kernel_available = false;
     bool lm_head_classifier_backward_llmk_parity_available = false;
@@ -12079,6 +12095,22 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadFusedKernelPathClassFn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardTrueFusedPathClassSymbol);
+                lm_head_classifier_backward_graph_body_node_count_fn =
+                    load_symbol<LmHeadTrueFusedCapabilityFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol);
+                lm_head_classifier_backward_graph_body_ce_node_count_fn =
+                    load_symbol<LmHeadTrueFusedCapabilityFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardGraphBodyCeNodeCountSymbol);
+                lm_head_classifier_backward_graph_body_dhidden_node_count_fn =
+                    load_symbol<LmHeadTrueFusedCapabilityFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardGraphBodyDhiddenNodeCountSymbol);
+                lm_head_classifier_backward_graph_body_dweight_node_count_fn =
+                    load_symbol<LmHeadTrueFusedCapabilityFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardGraphBodyDweightNodeCountSymbol);
                 lm_head_classifier_backward_llmk_parity_capability =
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
@@ -21967,6 +21999,54 @@ int run_transformer_lm_training_json(
         << lm_head_fused_graph_replay_count << ",\n"
         << "  \"lm_head_fused_graph_replay_success_count\": "
         << lm_head_fused_graph_replay_success_count << ",\n"
+        << "  \"lm_head_fused_graph_body_node_count_per_replay\": "
+        << (lm_head_classifier_backward_graph_body_node_count_fn != nullptr
+                ? lm_head_classifier_backward_graph_body_node_count_fn()
+                : 0)
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_ce_node_count_per_replay\": "
+        << (lm_head_classifier_backward_graph_body_ce_node_count_fn != nullptr
+                ? lm_head_classifier_backward_graph_body_ce_node_count_fn()
+                : 0)
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_dhidden_node_count_per_replay\": "
+        << (lm_head_classifier_backward_graph_body_dhidden_node_count_fn != nullptr
+                ? lm_head_classifier_backward_graph_body_dhidden_node_count_fn()
+                : 0)
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_dweight_node_count_per_replay\": "
+        << (lm_head_classifier_backward_graph_body_dweight_node_count_fn != nullptr
+                ? lm_head_classifier_backward_graph_body_dweight_node_count_fn()
+                : 0)
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_node_replay_total\": "
+        << (lm_head_fused_graph_replay_count *
+            static_cast<std::int64_t>(
+                lm_head_classifier_backward_graph_body_node_count_fn != nullptr
+                    ? lm_head_classifier_backward_graph_body_node_count_fn()
+                    : 0))
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_ce_node_replay_total\": "
+        << (lm_head_fused_graph_replay_count *
+            static_cast<std::int64_t>(
+                lm_head_classifier_backward_graph_body_ce_node_count_fn != nullptr
+                    ? lm_head_classifier_backward_graph_body_ce_node_count_fn()
+                    : 0))
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_dhidden_node_replay_total\": "
+        << (lm_head_fused_graph_replay_count *
+            static_cast<std::int64_t>(
+                lm_head_classifier_backward_graph_body_dhidden_node_count_fn != nullptr
+                    ? lm_head_classifier_backward_graph_body_dhidden_node_count_fn()
+                    : 0))
+        << ",\n"
+        << "  \"lm_head_fused_graph_body_dweight_node_replay_total\": "
+        << (lm_head_fused_graph_replay_count *
+            static_cast<std::int64_t>(
+                lm_head_classifier_backward_graph_body_dweight_node_count_fn != nullptr
+                    ? lm_head_classifier_backward_graph_body_dweight_node_count_fn()
+                    : 0))
+        << ",\n"
         << "  \"lm_head_fused_graph_fallback_count\": "
         << lm_head_fused_graph_fallback_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_attempt_count\": "

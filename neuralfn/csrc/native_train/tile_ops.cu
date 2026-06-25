@@ -6049,6 +6049,22 @@ const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class(
     return "diagnostic-cuda-graph-wrapper";
 }
 
+int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {
+    return 3;
+}
+
+int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count() {
+    return 1;
+}
+
+int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count() {
+    return 1;
+}
+
+int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count() {
+    return 1;
+}
+
 int nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity() {
     return 1;
 }

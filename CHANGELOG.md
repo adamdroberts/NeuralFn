@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit CUDA Graph body attribution to the strict LM-head
+  classifier-backward ABI. The Tile ops library now exports graph-body node
+  count helpers for the diagnostic fused symbol, and native GPT runtime JSON
+  reports per-replay and replay-total CE, dHidden, and dWeight node counts. This
+  keeps the current CUDA Graph wrapper visibly non-fused while giving
+  same-script benchmarks a stable way to compare the future true fused Tile
+  kernel against the three-node graph body.
+
+  Verification:
+  `git diff --check`;
+  `python -m py_compile tools/paired_kernel_speed.py`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative_abi or
+  native_train_tile_ops_builds_torch_free_c_abi"`;
+  `bash tools/build_native_train_tile_ops.sh build/libnfn_native_train_tile_ops.so`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`.
+  A dedicated RTX 5090 parity-smoke run executed the rebuilt native trainer and
+  wrote `/tmp/nfn_sm120_parity_profiles_10step/candidate_1782391142860633997.json`;
+  it kept the known llm.kittens steady-state parity gate failing, but verified
+  `lm_head_fused_graph_body_node_count_per_replay=3`,
+  `lm_head_fused_graph_body_ce_node_replay_total=160`,
+  `lm_head_fused_graph_body_dhidden_node_replay_total=160`, and
+  `lm_head_fused_graph_body_dweight_node_replay_total=160`.
+
 - Added an ABI-declared route class for the strict LM-head classifier-backward
   symbol. The Tile ops library now exports
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`, which

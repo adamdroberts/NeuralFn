@@ -1741,7 +1741,16 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count" in tile_ops_header
     assert "kLmHeadCooperativeBackwardTrueFusedPathClassSymbol" in source
+    assert "kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol" in source
     assert "candidate_symbol_abi_path_class" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_header
@@ -1772,6 +1781,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         "    return \"diagnostic-cuda-graph-wrapper\";\n"
         "}"
     ) in tile_ops_source
+    assert (
+        "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {\n"
+        "    return 3;\n"
+        "}"
+    ) in tile_ops_source
+    assert "lm_head_fused_graph_body_ce_node_count_per_replay" in source
+    assert "lm_head_fused_graph_body_dhidden_node_replay_total" in source
+    assert "lm_head_fused_graph_body_dweight_node_replay_total" in source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity() {\n"
         "    return 1;\n"
@@ -1878,6 +1895,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_prob_only_target_correction_threads" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
+    assert "lm_head_fused_graph_body_node_count_per_replay" in speed_tool
+    assert "lm_head_fused_graph_body_ce_node_replay_total" in speed_tool
+    assert "lm_head_fused_graph_body_dhidden_node_replay_total" in speed_tool
+    assert "lm_head_fused_graph_body_dweight_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
     assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool

@@ -133,6 +133,12 @@ Real training tensors must not pass through graph editor node objects.
   `lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
   benchmark reports `candidate_symbol_abi_path_class`. This keeps future
   strict-fused promotions from relying only on counter inference.
+- [x] Add explicit CUDA Graph body node attribution for the diagnostic LM-head
+  fused symbol. The ABI now reports a three-node graph body: CE/dlogits,
+  dHidden, and dWeight. Native GPT runtime JSON reports per-replay and
+  replay-total `lm_head_fused_graph_body_*` counts, so the next true fused Tile
+  kernel can be compared against the actual wrapper structure instead of an
+  opaque replay counter.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or

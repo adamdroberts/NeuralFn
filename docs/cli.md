@@ -1090,6 +1090,12 @@ The companion ABI function
 `lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
 LM-head backward benchmark reports the same value as
 `candidate_symbol_abi_path_class`.
+The same ABI also exposes graph-body node counts for the diagnostic wrapper:
+one CE/dlogits node, one dHidden node, and one dWeight node per replay. Native
+GPT runtime JSON reports `lm_head_fused_graph_body_*_count_per_replay` and
+`lm_head_fused_graph_body_*_replay_total` fields so candidate runs can compare a
+future true fused Tile kernel against the current three-node CUDA Graph body
+without treating graph replay as a monolithic kernel.
 The non-required default path reports
 `lm_head_cooperative_backward_cuda_graph_enabled: true`,
 `lm_head_cooperative_backward_route_integrated: true`, and

@@ -552,6 +552,12 @@ native dHidden/dWeight matmul backward, with real training tensors kept out of
 Torch and the graph editor. SDK and CLI strict runs therefore fail on
 wrapper-only or missing true-fused builds instead of silently benchmarking the
 older CE plus dHidden plus dWeight sequence.
+The diagnostic fused-symbol ABI also exposes CUDA Graph body node counts:
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count()`
+returns `3`, with one CE/dlogits node, one dHidden node, and one dWeight node.
+Native GPT JSON mirrors these as per-replay and replay-total
+`lm_head_fused_graph_body_*` fields, so same-script benchmarks can attribute the
+current wrapper without promoting it as a real fused kernel.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
