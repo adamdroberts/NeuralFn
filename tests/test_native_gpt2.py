@@ -1748,6 +1748,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_fused_graph_prewarm_failure_count" in source
     assert "lm_head_fused_graph_prewarm_last_error_code" in source
     assert "lm_head_fused_graph_prewarm_cache_entry_count" in source
+    assert "lm_head_fused_graph_prewarm_last_rows = row_count" in source
+    assert "lm_head_classifier_last_rows = lm_head_fused_graph_prewarm_last_rows" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source
     graph_body = tile_ops_source.split(
         "void launch_lm_head_classifier_backward_graph_body_bf16_u16",

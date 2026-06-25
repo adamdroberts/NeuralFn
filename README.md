@@ -1413,7 +1413,12 @@ prewarm first and the current CUDA 13.3 RTX 5090 same-script gate rejected
 promotion: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
 improved first-step event time to `0.969636x` and train-loop wall time to
 `0.994664x`, but missed strict gates with steady-state event time at
-`1.001249x` and total LM-head backward at `1.000123x`.
+`1.001249x` and total LM-head backward at `1.000123x`. When graph prewarm
+eliminates runtime LM-head graph capture, trainer JSON still preserves
+`lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
+`lm_head_classifier_last_row_stride` from the last successfully prewarmed
+capture so same-script route evidence does not look like the LM-head
+classifier shape disappeared.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

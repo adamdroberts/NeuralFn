@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed LM-head graph-prewarm telemetry in compiled dense GPT training. When
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` eliminates lazy runtime
+  LM-head CUDA Graph capture, the trainer now preserves the last successful
+  prewarm shape in `lm_head_classifier_last_rows`,
+  `lm_head_classifier_last_vocab`, and
+  `lm_head_classifier_last_row_stride` instead of reporting those fields as
+  zero after the Tile runtime stats reset. This keeps same-script route
+  evidence accurate for the diagnostic `lm_head_graph_prewarm` profile.
+
+  Migration note: no default training route changed. The fresh
+  CUDA 13.3.33 RTX 5090 reference-including run still keeps graph prewarm
+  diagnostic-only: it improved native-vs-native train-loop wall time to
+  `0.977937x`, first-step CUDA-event time to `0.939016x`, and
+  tokens/sec to `1.022595x`, and it beat the llm.kittens reference on total
+  3-step wall time at `0.991761x`, but failed the strict reference steady-state
+  gate at `1.000990x`.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative or graph_prewarm or linked or
+  native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates"`; `bash
+  -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_INCLUDE_REFERENCE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_reference_20260625.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_lm_head_graph_prewarm_reference_20260625_profiles
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed only the
+  intentional strict reference steady-state gate noted above.
+
 - Added native Tile ops ABI primitives for NVFP4 activation storage:
   `nfn_native_tile_float32_to_nvfp4_packed` and
   `nfn_native_tile_nvfp4_packed_to_float32`. The CUDA kernels pack float32

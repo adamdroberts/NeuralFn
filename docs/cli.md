@@ -1127,6 +1127,11 @@ CUDA Graph counters:
 export those optional C ABI symbols leave the values at zero. Successful
 strict graph replay leaves `lm_head_cooperative_sequence_*` at zero; nonzero
 sequence counters mean the diagnostic wrapper or graph fallback path ran.
+For the diagnostic LM-head graph-prewarm profile, trainer JSON preserves the
+last successful prewarm shape in `lm_head_classifier_last_rows`,
+`lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` even
+when runtime graph captures are eliminated and the Tile runtime stats have been
+reset before the timed train loop.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

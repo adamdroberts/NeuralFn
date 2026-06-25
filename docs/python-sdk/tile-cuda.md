@@ -179,7 +179,11 @@ the required cuBLAS handle, BF16 workspace, and LM-head-only cuBLASLt plan
 prewarm before capture. It is rejected by default: the CUDA 13.3 RTX 5090
 same-script gate improved first-step event time to `0.969636x` and train-loop
 wall time to `0.994664x`, but missed strict gates with steady-state event time
-at `1.001249x` and total LM-head backward at `1.000123x`.
+at `1.001249x` and total LM-head backward at `1.000123x`. Prewarmed runs also
+preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
+`lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` when
+runtime graph capture counters stay at zero because every LM-head chunk hit the
+prewarmed graph cache.
 
 Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
 cover the current native GPT hot linear path instead of one shape. The matrix
