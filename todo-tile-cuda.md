@@ -60,6 +60,14 @@ Real training tensors must not pass through graph editor node objects.
   `mixed_parameter_initialization_kernel_launches=1`, and
   `parameter_initialization_kernel_launches_per_startup=1`, with
   `torch_required=false` and `graph_editor_tensor_flow=false`.
+- [x] Make the optimized-attention fallback gate unambiguous in native GPT
+  JSON. Default runs now report
+  `attention_forward_scalar_launch_fallback_available=true`,
+  `attention_forward_scalar_launch_fallback_enabled=false`,
+  `attention_forward_scalar_launch_allowed=false`, and fail if scalar attention
+  launches. The 2026-06-25 one-step TinyStories GPU assertion reported zero
+  scalar launches, zero row fallback launches, `torch_required=false`, and
+  `graph_editor_tensor_flow=false`.
 - [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
   reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
   access, but the same command with GPU access sees the dedicated RTX 5090

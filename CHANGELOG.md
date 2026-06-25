@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Clarified dense GPT native attention fallback reporting. The normal optimized
+  training path now reports `attention_forward_scalar_launch_fallback_enabled:
+  false` when scalar fallback is forbidden by the default
+  `optimized_attention_required: true` guard, and separately reports
+  `attention_forward_scalar_launch_fallback_available: true` so diagnostic
+  runs can still discover the fallback path. Passing
+  `--allow-scalar-attention-fallback` flips the enabled/allowed fields for
+  explicit bisection without weakening the default optimized-kernel gate.
+
 - Reduced dense GPT native startup launch overhead by adding
   `nfn_native_tile_fill_many_values_mixed_float32_bf16_bits`, a raw CUDA Tile
   trainer ABI that initializes float32 and BF16 constant parameter descriptor

@@ -2182,7 +2182,8 @@ for the run, and falls back to scalar Tile attention without repeated
 failed-launch overhead. Native GPT-2 JSON reports
 `attention_forward_strategy: "row-vector-tile-score-reuse"`,
 `attention_forward_value_chunk_size: 64`,
-`attention_forward_scalar_launch_fallback_enabled: true`,
+`attention_forward_scalar_launch_fallback_available: true`,
+`attention_forward_scalar_launch_fallback_enabled`,
 `attention_forward_row_launch_auto_disable_enabled: true`, runtime
 row/fallback/scalar launch counts, row-kernel attribute fields, pre-launch
 error codes, row launch grid/block fields, the old scalar output count, and the

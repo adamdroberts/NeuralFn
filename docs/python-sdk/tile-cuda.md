@@ -2748,7 +2748,10 @@ Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports
 `optimized_attention_required: true`,
-`attention_forward_scalar_launch_allowed: false`, and the scalar launch count.
+`attention_forward_scalar_launch_allowed: false`,
+`attention_forward_scalar_launch_fallback_enabled: false`,
+`attention_forward_scalar_launch_fallback_available: true`, and the scalar
+launch count.
 Pass `--allow-scalar-attention-fallback` only for diagnostic benchmark
 bisections.
 

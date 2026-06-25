@@ -4402,7 +4402,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
     assert tile_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert tile_payload["attention_forward_value_chunk_size"] == 64
-    assert tile_payload["attention_forward_scalar_launch_fallback_enabled"] is True
+    assert tile_payload["attention_forward_scalar_launch_fallback_available"] is True
+    assert tile_payload["attention_forward_scalar_launch_fallback_enabled"] is False
     assert tile_payload["attention_forward_scalar_launch_allowed"] is False
     assert tile_payload["optimized_attention_required"] is True
     assert tile_payload["attention_forward_row_launch_auto_disable_enabled"] is True
@@ -5742,7 +5743,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_forward_score_reuse_value_dim"] == 64
     assert train_transformer_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert train_transformer_payload["attention_forward_value_chunk_size"] == 64
-    assert train_transformer_payload["attention_forward_scalar_launch_fallback_enabled"] is True
+    assert train_transformer_payload["attention_forward_scalar_launch_fallback_available"] is True
+    assert train_transformer_payload["attention_forward_scalar_launch_fallback_enabled"] is False
     assert train_transformer_payload["attention_forward_scalar_launch_allowed"] is False
     assert train_transformer_payload["optimized_attention_required"] is True
     assert train_transformer_payload["attention_forward_row_launch_auto_disable_enabled"] is True
