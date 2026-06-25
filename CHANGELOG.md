@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit opt-in cooperative strict LM-head fused kernel smoke path.
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` now
+  dispatches to a single cooperative Tile-CUDA body when
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE`,
+  `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE`, or
+  `NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE` is set. The kernel
+  materializes CE/dlogits, uses a cooperative grid sync, then computes dHidden
+  and dWeight inside the same launch; with the flag set, the capability symbol
+  reports true and the path class reports `strict-true-fused-tile-kernel`.
+  The default remains the existing measured graph/sequence path until
+  trainer-sized parity gates pass. `tools/bench_lm_head_backward_candidate.sh`
+  adds `NFN_LM_HEAD_BACKWARD_PROFILE=true-fused-cooperative-smoke` for a quick
+  strict ABI smoke check that sets the opt-in flag and small dimensions.
+
+  Verification: `bash tools/build_native_train_tile_ops.sh
+  /tmp/libnfn_native_train_tile_ops_true_fused.so`; `CUDA_VISIBLE_DEVICES=0
+  NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1
+  build/lm_head_backward_bench --tile-ops-lib
+  /tmp/libnfn_native_train_tile_ops_true_fused.so --rows 4 --hidden-dim 8
+  --vocab 16 --row-stride 16 --iterations 1 --warmup 0
+  --require-true-fused-candidate --json-out /tmp/nfn_true_fused_smoke.json`,
+  which reported `candidate_true_fused_capability=true`,
+  `candidate_path_class=strict-true-fused-tile-kernel`,
+  `candidate_cuda_graph_wrapper_only=false`, `graph_replay_count=0`, and
+  `true_fused_replacement_required=false`.
+
 - Added an opt-in LM-head prob-only CE target-correction kernel candidate. The
   new Tile-CUDA ABI
   `nfn_native_tile_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits`

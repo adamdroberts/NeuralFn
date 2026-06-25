@@ -237,7 +237,7 @@ requires the strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus the
 future monolithic capability
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current CUDA 13.3 builds still return `0` for that true-fused capability, so
+By default, CUDA 13.3 builds still return `0` for that true-fused capability, so
 `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` remain false. The
 separate `lm_head_llmk_classifier_matmul_parity_available=true` field only
@@ -248,6 +248,16 @@ pass `--require-cooperative-lm-head-backward` now fail before token-shard
 resolution or CUDA runtime setup until the true-fused capability is present;
 use `--check-tile-ops --require-cooperative-lm-head-backward` when you want the
 detailed capability JSON instead of entering training. The
+strict cooperative body is now available as an explicit smoke-only opt-in:
+set `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` (or the matching
+`NFN_NATIVE_GPT*_LM_HEAD_TRUE_FUSED_COOPERATIVE` flag) and run
+`NFN_LM_HEAD_BACKWARD_PROFILE=true-fused-cooperative-smoke
+tools/bench_lm_head_backward_candidate.sh`. That path launches one cooperative
+Tile-CUDA body, materializes CE/dlogits, uses a grid sync, then computes
+dHidden and dWeight without the CUDA Graph wrapper. It is not the default
+training path and is not trainer-sized parity evidence until it passes the
+same stage-timed candidate/reference gates at production dimensions.
+The
 `tools/bench_native_gpt_sm120_parity.sh` wrapper preserves its failing exit code
 when NeuralFn misses the llm.kittens gate, but now adds a targeted diagnostic
 when the paired JSON proves the run is native Tile-backed and the remaining

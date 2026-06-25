@@ -1836,14 +1836,25 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert "cooperative_streams.dhidden_done" in tile_ops_source
     assert "cooperative_streams.dweight_done" in tile_ops_source
+    assert "launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16" in tile_ops_source
+    assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in (
+        root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu"
+    ).read_text(encoding="utf-8")
+    assert "cg::this_grid()" in (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
-        "    return 0;\n"
+        "    return lm_head_true_fused_cooperative_enabled() ? 1 : 0;\n"
         "}"
     ) in tile_ops_source
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
-        "    return lm_head_graph_body_serial_enabled()"
+        "    if (lm_head_true_fused_cooperative_enabled()) {\n"
+        '        return "strict-true-fused-tile-kernel";'
     ) in tile_ops_source
     assert '"diagnostic-cuda-graph-wrapper"' in tile_ops_source
     assert (
@@ -2100,6 +2111,12 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
     assert "trainer-chunk-strict|trainer_chunk_strict" in wrapper
+    assert "true-fused-cooperative-smoke|true_fused_cooperative_smoke" in wrapper
+    assert "strict-true-fused-smoke|strict_true_fused_smoke" in wrapper
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in wrapper
+    assert "HIDDEN_DIM=8" in wrapper
+    assert "VOCAB=16" in wrapper
+    assert "ROW_STRIDE=16" in wrapper
     assert "trainer-chunk-cublaslt|trainer_chunk_cublaslt" in wrapper
     assert "DEFAULT_REQUIRE_TRUE_FUSED=1" in wrapper
     assert "trainer-row-loss|trainer_row_loss" in wrapper

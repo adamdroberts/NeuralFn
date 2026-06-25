@@ -56,6 +56,22 @@ void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits
     std::int64_t,
     float,
     cudaStream_t);
+void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+    std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    const std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    float*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    float,
+    float,
+    bool,
+    cudaStream_t);
 void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(
     const std::uint16_t*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, float, cudaStream_t);
 void launch_lm_head_prob_only_dweight_target_correction_bf16_bits(
@@ -1925,6 +1941,12 @@ bool lm_head_graph_prewarm_thread_cache_enabled() {
     std::string_view text(value);
     return !(text == "0" || text == "false" || text == "FALSE" ||
              text == "no" || text == "NO" || text == "off" || text == "OFF");
+}
+
+bool lm_head_true_fused_cooperative_enabled() {
+    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE");
 }
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
@@ -6198,6 +6220,25 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
         row_stride < vocab) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
+    if (lm_head_true_fused_cooperative_enabled()) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            hidden_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            grad_weight,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            loss_scale,
+            dweight_beta,
+            no_loss,
+            as_stream(cuda_stream));
+        return launch_status();
+    }
     const LmHeadBackwardGraphKey key{
         logits_bf16,
         targets_u16,
@@ -6243,10 +6284,13 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
 }
 
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {
-    return 0;
+    return lm_head_true_fused_cooperative_enabled() ? 1 : 0;
 }
 
 const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {
+    if (lm_head_true_fused_cooperative_enabled()) {
+        return "strict-true-fused-tile-kernel";
+    }
     return lm_head_graph_body_serial_enabled()
                ? "diagnostic-cuda-graph-wrapper-serial-body"
                : "diagnostic-cuda-graph-wrapper";

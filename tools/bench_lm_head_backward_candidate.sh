@@ -40,6 +40,24 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
     ;;
+  true-fused-cooperative-smoke|true_fused_cooperative_smoke|strict-true-fused-smoke|strict_true_fused_smoke)
+    DEFAULT_ROWS=4
+    DEFAULT_ITERATIONS=1
+    DEFAULT_WARMUP=0
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=0
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    if [[ -z "${NFN_LM_HEAD_BACKWARD_HIDDEN_DIM+x}" ]]; then
+      HIDDEN_DIM=8
+    fi
+    if [[ -z "${NFN_LM_HEAD_BACKWARD_VOCAB+x}" ]]; then
+      VOCAB=16
+    fi
+    if [[ -z "${NFN_LM_HEAD_BACKWARD_ROW_STRIDE+x}" ]]; then
+      ROW_STRIDE=16
+    fi
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    ;;
   trainer-chunk-cublaslt|trainer_chunk_cublaslt|trainer-cublaslt|trainer_cublaslt)
     DEFAULT_ROWS=32768
     DEFAULT_ITERATIONS=3
@@ -75,7 +93,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac

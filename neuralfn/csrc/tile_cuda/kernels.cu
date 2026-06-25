@@ -1,6 +1,7 @@
 #include <cuda_tile.h>
 
 #include <cuda_bf16.h>
+#include <cooperative_groups.h>
 #include <cuda_runtime_api.h>
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 #include "llmc/tk/attention_sm120.cuh"
@@ -26,6 +27,8 @@
 #include <vector>
 
 namespace neuralfn::tile_cuda {
+
+namespace cg = cooperative_groups;
 
 #ifndef NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE
 #define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE 4096
@@ -12694,6 +12697,110 @@ __global__ void lm_head_classifier_backward_prob_only_ce_target_correction_bf16_
   }
 }
 
+__global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel(
+    std::uint16_t* __restrict__ logits,
+    const std::uint16_t* __restrict__ targets,
+    float* __restrict__ row_losses,
+    const std::uint16_t* __restrict__ hidden_bf16,
+    const std::uint16_t* __restrict__ token_weight_bf16,
+    float* __restrict__ grad_hidden,
+    float* __restrict__ grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    bool no_loss) {
+  cg::grid_group grid = cg::this_grid();
+  __shared__ float reduce_max_shared[32];
+  __shared__ float reduce_sum_shared[32];
+
+  for (std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+       row < rows;
+       row += static_cast<std::int64_t>(gridDim.x)) {
+    std::uint16_t* row_logits = logits + row * row_stride;
+    float thread_max = bf16_row_max_vec8_or_scalar(row_logits, vocab, true);
+    const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
+
+    float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, false);
+    const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
+    const std::uint16_t target = targets[row];
+    const float target_logit = bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
+
+    if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {
+      row_losses[row] = logf(row_denom) + row_max - target_logit;
+    }
+
+    constexpr std::int64_t kVec = 8;
+    const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+    for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+         col < aligned_vocab;
+         col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+      const int4 packed = load_bf16_vec8(row_logits + col);
+      std::uint16_t grad[8];
+#pragma unroll
+      for (int offset = 0; offset < 8; ++offset) {
+        const std::int64_t current_col = col + offset;
+        const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
+        const float prob = expf(value - row_max) / row_denom;
+        const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        grad[offset] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
+      store_bf16_vec8_normal(
+          row_logits + col,
+          grad[0],
+          grad[1],
+          grad[2],
+          grad[3],
+          grad[4],
+          grad[5],
+          grad[6],
+          grad[7]);
+    }
+    for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+      const float value = bf16_bits_to_f32_device(row_logits[col]);
+      const float prob = expf(value - row_max) / row_denom;
+      const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+      row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    }
+  }
+
+  grid.sync();
+
+  const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+  const std::int64_t grad_hidden_total = rows * hidden_dim;
+  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < grad_hidden_total;
+       index += stride) {
+    const std::int64_t row = index / hidden_dim;
+    const std::int64_t dim = index - row * hidden_dim;
+    const std::uint16_t* row_logits = logits + row * row_stride;
+    float sum = 0.0f;
+    for (std::int64_t col = 0; col < vocab; ++col) {
+      const float dlogit = bf16_bits_to_f32_device(row_logits[col]);
+      const float weight = bf16_bits_to_f32_device(token_weight_bf16[col * hidden_dim + dim]);
+      sum += dlogit * weight;
+    }
+    grad_hidden[index] += sum;
+  }
+
+  const std::int64_t grad_weight_total = vocab * hidden_dim;
+  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < grad_weight_total;
+       index += stride) {
+    const std::int64_t col = index / hidden_dim;
+    const std::int64_t dim = index - col * hidden_dim;
+    float sum = 0.0f;
+    for (std::int64_t row = 0; row < rows; ++row) {
+      const float hidden = bf16_bits_to_f32_device(hidden_bf16[row * hidden_dim + dim]);
+      const float dlogit = bf16_bits_to_f32_device(logits[row * row_stride + col]);
+      sum += hidden * dlogit;
+    }
+    grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
+  }
+}
+
 __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel(
     std::uint16_t* __restrict__ logits,
     const std::uint16_t* __restrict__ targets,
@@ -19517,6 +19624,85 @@ void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits
       grad_weight_row_stride,
       loss_scale,
       lm_head_ce_reverse_rows_enabled());
+}
+
+void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const std::uint16_t* token_weight_bf16,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    bool no_loss,
+    cudaStream_t stream) {
+  g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
+  if (rows <= 0 || hidden_dim <= 0 || vocab <= 0 || row_stride < vocab) {
+    return;
+  }
+
+  cudaDeviceProp props{};
+  int device = 0;
+  cudaError_t status = cudaGetDevice(&device);
+  if (status != cudaSuccess) {
+    return;
+  }
+  status = cudaGetDeviceProperties(&props, device);
+  if (status != cudaSuccess || props.cooperativeLaunch == 0) {
+    return;
+  }
+
+  const int threads = cross_entropy_bf16_threads_per_row();
+  int active_blocks_per_sm = 0;
+  status = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &active_blocks_per_sm,
+      lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel,
+      threads,
+      0);
+  if (status != cudaSuccess || active_blocks_per_sm <= 0) {
+    return;
+  }
+  const std::int64_t work_items = std::max(rows, std::max(rows * hidden_dim, vocab * hidden_dim));
+  const int wanted_blocks = static_cast<int>(std::min<std::int64_t>(
+      static_cast<std::int64_t>(props.multiProcessorCount) * active_blocks_per_sm,
+      std::max<std::int64_t>(1, (work_items + threads - 1) / threads)));
+  const int blocks = std::max(1, wanted_blocks);
+
+  const std::uint16_t* targets_arg = targets;
+  const std::uint16_t* hidden_bf16_arg = hidden_bf16;
+  const std::uint16_t* token_weight_bf16_arg = token_weight_bf16;
+  void* args[] = {
+      &logits,
+      &targets_arg,
+      &row_losses,
+      &hidden_bf16_arg,
+      &token_weight_bf16_arg,
+      &grad_hidden,
+      &grad_weight,
+      &rows,
+      &hidden_dim,
+      &vocab,
+      &row_stride,
+      &loss_scale,
+      &dweight_beta,
+      &no_loss,
+  };
+  cudaLaunchCooperativeKernel(
+      reinterpret_cast<void*>(lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel),
+      blocks,
+      threads,
+      args,
+      0,
+      stream);
 }
 
 void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(
