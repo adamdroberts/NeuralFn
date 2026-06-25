@@ -259,6 +259,17 @@ Real training tensors must not pass through graph editor node objects.
     `stage.block_forward.attention.qkv.steady_state_avg_ms=1.083`, which keeps
     the next startup/parity work pointed at first-use forward-QKV/TK or plan
     warmup behavior rather than graph-editor, Torch, or validation paths.
+  - 2026-06-25 added the default-off
+    `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` diagnostic and reproducible
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm`. The route
+    proof kept `graph_editor_tensor_flow=false` and moved
+    `linear_tk_qkv_first_use_prewarm_success_count` from `0` to `1`. The
+    same-script split-stage gate improved train-loop wall to `0.982548x`,
+    first-step CUDA-event timing to `0.948385x`, and forward-QKV first-step avg
+    to `0.435121x`, but it is not a default because setup regressed to
+    `1.239921x` and total wall to `1.000981x`. Treat it as evidence that the
+    first-step QKV gap is first-use setup work; the real fix needs to remove or
+    lower that cost, not move it earlier.
   - 2026-06-25 rejected LM-head graph prewarm as a default despite native-vs-native
     startup and LM-head improvements, and also rejected the explicit cooperative
     sequence wrapper, CUDA event timing changes, and the llm.kittens SM120 macro

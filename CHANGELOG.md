@@ -44,6 +44,28 @@ Future updates should append new entries here rather than replacing older notes.
   bash tools/bench_native_gpt_sm120_candidate.sh`; the command failed as
   expected on the native route-change gate.
 
+- Added a default-off dense GPT QKV TK first-use prewarm diagnostic behind
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` and the reproducible
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm`. The setup stage
+  reuses the existing BF16 LN1/QKV scratch buffers and reports
+  `linear_tk_qkv_first_use_prewarm_*` counters in native JSON and paired
+  benchmark route attribution. The candidate remains rejected by default: it
+  moved `linear_tk_qkv_first_use_prewarm_success_count` from `0` to `1`,
+  improved train-loop wall to `0.982548x`, first-step CUDA-event timing to
+  `0.948385x`, and forward-QKV first-step avg to `0.435121x`, but setup
+  regressed to `1.239921x` and total wall to `1.000981x`, proving this only
+  shifts first-use QKV work into setup.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, ran a one-step native route proof with
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1`, then ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_tk_qkv_forward_prewarm_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_tk_qkv_forward_prewarm.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Refreshed the current NeuralFn-vs-llm.kittens SM120 parity sample after the
   LM-head graph-upload and loss-bin evidence updates. The 2026-06-25
   display-disabled RTX 5090 3-step, 2-sample same-script run measured

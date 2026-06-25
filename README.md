@@ -797,6 +797,11 @@ train-loss logging comparison. The same-script 3-step, 2-sample gate forces
 block backward, and `0.995141x` MLP projection backward versus the older
 row-loss tail. The wrapper records that evidence in `candidate_note` metadata
 for the promoted profile.
+The `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` diagnostic
+enables `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` to move the first forward-QKV
+TK launch into setup. It is intentionally rejected by default: the latest
+split-stage gate improved first-step train-loop timing but increased setup and
+total wall time, so use it only to reproduce first-use QKV attribution.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

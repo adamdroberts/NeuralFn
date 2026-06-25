@@ -10373,6 +10373,16 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_workspace_prewarm_requested = 0;
     std::int64_t linear_bf16_workspace_prewarm_success_count = 0;
     std::int64_t linear_bf16_workspace_prewarm_failure_count = 0;
+    const bool linear_tk_qkv_first_use_prewarm_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD",
+                              "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD",
+                              "NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD"}),
+            false);
+    std::int64_t linear_tk_qkv_first_use_prewarm_requested_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_enabled_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_success_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_failure_count = 0;
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
@@ -16225,6 +16235,43 @@ int run_transformer_lm_training_json(
             } else {
                 linear_cublaslt_plan_prewarm_failure_count += 1;
             }
+        }
+    });
+    run_setup_timed("setup.tk_qkv_forward_prewarm", [&]() {
+        if (error.empty()) {
+            linear_tk_qkv_first_use_prewarm_requested_count =
+                linear_tk_qkv_first_use_prewarm_requested ? 1 : 0;
+        }
+        if (!linear_tk_qkv_first_use_prewarm_requested ||
+            !packed_qkv_attention_enabled ||
+            !ln1_bf16_qkv_forward_enabled ||
+            linear_bf16_input_weight_bf16_output == nullptr ||
+            blocks.empty() ||
+            block_tapes.empty() ||
+            block_tapes[0].ln1_out_bf16 == nullptr ||
+            block_tapes[0].qkv_bf16 == nullptr ||
+            blocks[0].qkv_weight_bf16 == nullptr ||
+            !error.empty()) {
+            return;
+        }
+        linear_tk_qkv_first_use_prewarm_enabled_count = 1;
+        run(linear_bf16_input_weight_bf16_output(
+                block_tapes[0].ln1_out_bf16,
+                blocks[0].qkv_weight_bf16,
+                fuse_qkv_bias_tk_gemm_enabled ? blocks[0].qkv_bias : nullptr,
+                block_tapes[0].qkv_bf16,
+                rows,
+                kDim,
+                kQkvDim,
+                fuse_qkv_bias_tk_gemm_enabled,
+                nullptr),
+            fuse_qkv_bias_tk_gemm_enabled
+                ? "setup.tk_qkv_forward_prewarm.fused_bias"
+                : "setup.tk_qkv_forward_prewarm.no_bias");
+        if (error.empty()) {
+            linear_tk_qkv_first_use_prewarm_success_count += 1;
+        } else {
+            linear_tk_qkv_first_use_prewarm_failure_count += 1;
         }
     });
 
@@ -22738,6 +22785,16 @@ int run_transformer_lm_training_json(
         << linear_bf16_workspace_prewarm_success_count << ",\n"
         << "  \"linear_bf16_workspace_prewarm_failure_count\": "
         << linear_bf16_workspace_prewarm_failure_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_requested\": "
+        << (linear_tk_qkv_first_use_prewarm_requested ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_requested_count\": "
+        << linear_tk_qkv_first_use_prewarm_requested_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_enabled_count\": "
+        << linear_tk_qkv_first_use_prewarm_enabled_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_success_count\": "
+        << linear_tk_qkv_first_use_prewarm_success_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_failure_count\": "
+        << linear_tk_qkv_first_use_prewarm_failure_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_available\": "
         << (trainer_linear_cublaslt_prewarm_bf16_plan_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_enabled\": "
