@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the dense GPT lower-memory residual1-cache-off diagnostic route. When
+  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` is used with saved packed
+  attention, earlier-block recompute must rebuild the attention projection and
+  residual1 tensor because the BF16 residual1 cache is absent. The trainer now
+  keeps only the required float attention-projection scratch for that explicit
+  diagnostic instead of eliding it and later entering QKV backward with corrupted
+  state. Runtime JSON reports
+  `saved_packed_attention_recompute_needs_float_attention_projection`,
+  `float_attention_projection_output_elided`, and
+  `float_mlp_projection_output_elided`.
+
+  Verification: `bash tools/build_native_gpt_cli_linked.sh` rebuilt
+  `build/nfn_gpt_native_train_linked`, then
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0
+  bash tools/bench_native_gpt_sm120_candidate.sh` completed on the dedicated
+  RTX 5090 without the previous illegal memory access. The route reported
+  `stored_residual1_activation_blocks: 0`,
+  `saved_packed_attention_recompute_needs_float_attention_projection: true`,
+  `float_attention_projection_output_elided: false`,
+  `float_mlp_projection_output_elided: true`, one allocated float projection
+  scratch buffer, and one elided projection scratch buffer. It remains rejected
+  as a default because the one-step same-script gate measured
+  `1.059928x` train-loop time and `0.943455x` tokens/sec despite improving
+  setup wall time to `0.810095x`.
+
 - Added an explicit diagnostic override for the historical dense GPT LM-head
   sequence wrapper. `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1`
   now disables the integrated llm.kittens-parity LM-head route only for

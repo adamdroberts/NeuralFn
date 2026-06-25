@@ -646,7 +646,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "store_residual1_off"|"store-residual1-off"|"stored_residual1_off"|"stored-residual1-off"|"residual1_activation_store_off"|"residual1-activation-store-off")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 2-step paired gate disabled stored residual1 activations and failed before metrics with cuBLASLt status 14 in the native trainer; keep NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1 for the default path."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 1-step paired gate disabled stored residual1 activations, verified the saved-packed-attention recompute route keeps one attention-projection scratch buffer, and rejected default promotion because train_loop_wall_ms_per_step regressed to 1.059928x and tokens/sec to 0.943455x despite setup_wall_ms improving to 0.810095x; keep NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1 for the default path."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0"
     ;;

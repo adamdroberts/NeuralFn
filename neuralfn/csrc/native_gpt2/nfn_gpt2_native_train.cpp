@@ -13003,8 +13003,6 @@ int run_transformer_lm_training_json(
         layer_norm_backward_input_residual_add_with_stats_bf16_bits != nullptr &&
         layer_norm_backward_affine_accumulate_with_stats_bf16_bits != nullptr &&
         layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits != nullptr;
-    const std::int64_t float_projection_output_elements_elided =
-        elide_float_projection_outputs_enabled ? activation_elements * activation_tape_count * 2 : 0;
     const std::string startup_zero_init_strategy =
         startup_zero_adamw_state_only_enabled
             ? (startup_zero_adamw_state_ranges_enabled
@@ -13755,6 +13753,22 @@ int run_transformer_lm_training_json(
     std::int64_t stored_packed_attention_store_blocks = 0;
     std::int64_t stored_packed_attention_restore_blocks = 0;
     std::int64_t stored_packed_attention_backward_kernel_launches = 0;
+    const bool saved_packed_attention_recompute_needs_float_attention_projection =
+        elide_float_projection_outputs_enabled &&
+        stored_packed_attention_block_count > 0 &&
+        stored_residual1_block_count < stored_packed_attention_block_count;
+    const bool float_attention_projection_output_elided =
+        elide_float_projection_outputs_enabled &&
+        !saved_packed_attention_recompute_needs_float_attention_projection;
+    const bool float_mlp_projection_output_elided = elide_float_projection_outputs_enabled;
+    const std::int64_t float_projection_output_buffer_count =
+        (float_attention_projection_output_elided ? 0 : activation_tape_count) +
+        (float_mlp_projection_output_elided ? 0 : activation_tape_count);
+    const std::int64_t float_projection_output_buffers_elided =
+        (float_attention_projection_output_elided ? activation_tape_count : 0) +
+        (float_mlp_projection_output_elided ? activation_tape_count : 0);
+    const std::int64_t float_projection_output_elements_elided =
+        float_projection_output_buffers_elided * activation_elements;
     std::int64_t direct_block_output_write_count = 0;
     std::int64_t bf16_persistent_block_output_store_count = 0;
     std::int64_t bf16_persistent_block_output_restore_count = 0;
@@ -14511,7 +14525,7 @@ int run_transformer_lm_training_json(
             }
             visit(
                 &tape.attn_proj,
-                elide_float_projection_outputs_enabled ? 0 : activation_elements,
+                float_attention_projection_output_elided ? 0 : activation_elements,
                 prefix + ".attn.proj");
             visit(&tape.residual1, activation_elements, prefix + ".residual1");
             visit(&tape.ln2_out, activation_elements, prefix + ".ln2.out");
@@ -14523,7 +14537,7 @@ int run_transformer_lm_training_json(
             }
             visit(
                 &tape.mlp_out,
-                elide_float_projection_outputs_enabled ? 0 : activation_elements,
+                float_mlp_projection_output_elided ? 0 : activation_elements,
                 prefix + ".mlp.out");
             visit(&tape.residual2, activation_elements, prefix + ".residual2");
         }
@@ -22320,6 +22334,12 @@ int run_transformer_lm_training_json(
         << (bf16_projection_residual_enabled ? "true" : "false") << ",\n"
         << "  \"float_projection_outputs_elided\": "
         << (elide_float_projection_outputs_enabled ? "true" : "false") << ",\n"
+        << "  \"float_attention_projection_output_elided\": "
+        << (float_attention_projection_output_elided ? "true" : "false") << ",\n"
+        << "  \"float_mlp_projection_output_elided\": "
+        << (float_mlp_projection_output_elided ? "true" : "false") << ",\n"
+        << "  \"saved_packed_attention_recompute_needs_float_attention_projection\": "
+        << (saved_packed_attention_recompute_needs_float_attention_projection ? "true" : "false") << ",\n"
         << "  \"float_projection_output_elements_elided\": "
         << float_projection_output_elements_elided << ",\n"
         << "  \"attention_projection_input_strategy\": \""
@@ -22865,9 +22885,15 @@ int run_transformer_lm_training_json(
         << "    \"full_activation_tape_enabled\": "
         << (full_activation_tape_enabled ? "true" : "false") << ",\n"
         << "    \"float_projection_output_buffers_allocated\": "
-        << (elide_float_projection_outputs_enabled ? 0 : activation_tape_count * 2) << ",\n"
+        << float_projection_output_buffer_count << ",\n"
         << "    \"float_projection_output_buffers_elided\": "
-        << (elide_float_projection_outputs_enabled ? activation_tape_count * 2 : 0) << ",\n"
+        << float_projection_output_buffers_elided << ",\n"
+        << "    \"float_attention_projection_output_elided\": "
+        << (float_attention_projection_output_elided ? "true" : "false") << ",\n"
+        << "    \"float_mlp_projection_output_elided\": "
+        << (float_mlp_projection_output_elided ? "true" : "false") << ",\n"
+        << "    \"saved_packed_attention_recompute_needs_float_attention_projection\": "
+        << (saved_packed_attention_recompute_needs_float_attention_projection ? "true" : "false") << ",\n"
         << "    \"float_projection_output_elements_elided\": "
         << float_projection_output_elements_elided << ",\n"
         << "    \"mlp_fc_grad_out_float_buffer_elided\": "

@@ -2817,7 +2817,13 @@ workspace-LSE path in paired benchmarks, set
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` to compare against the older separate
 residual1 store, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune
 the saved packed-attention block cap. The GPT-2-prefixed variables remain
-fallbacks for existing scripts.
+fallbacks for existing scripts. When residual1 storage is disabled while saved
+packed attention stays enabled, recompute keeps one float attention-projection
+scratch buffer so it can rebuild residual1 safely; the MLP projection scratch is
+still elided. Runtime JSON reports
+`saved_packed_attention_recompute_needs_float_attention_projection`,
+`float_attention_projection_output_elided`, and
+`float_mlp_projection_output_elided` for this split projection-scratch policy.
 
 Full GPT-2 `--train-transformer-lm` also fuses the MLP `c_fc` bias add with
 GELU. `nfn_native_tile_gelu_add_bias_float32` consumes the no-bias CUBLAS

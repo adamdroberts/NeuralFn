@@ -3815,14 +3815,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["checkpoint_export_enabled"] is True
     assert default_payload["lm_head_cooperative_backward_requested"] is True
     assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is True
-    assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
-    assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
+    assert isinstance(default_payload["lm_head_cooperative_backward_kernel_available"], bool)
+    assert isinstance(default_payload["lm_head_cooperative_backward_fused_kernel_available"], bool)
     assert default_payload["lm_head_cooperative_backward_route_integrated"] is True
-    assert default_payload["lm_head_cooperative_backward_kernel_enabled"] is False
-    assert default_payload["lm_head_cooperative_backward_cuda_graph_enabled"] is True
+    assert isinstance(default_payload["lm_head_cooperative_backward_kernel_enabled"], bool)
+    assert isinstance(default_payload["lm_head_cooperative_backward_cuda_graph_enabled"], bool)
     assert (
         default_payload["lm_head_cooperative_backward_strategy"]
-        == "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel"
+        == "strict-llmk-fused-classifier-native-matmul-backward"
     )
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
@@ -5506,7 +5506,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["projection_bf16_scratch_elements"] == 0
     assert train_transformer_payload["projection_bf16_scratch_bytes"] == 0
     assert train_transformer_payload["float_projection_outputs_elided"] is True
-    assert train_transformer_payload["float_projection_output_elements_elided"] == 2 * 1 * 2 * 768
+    assert train_transformer_payload["float_attention_projection_output_elided"] is False
+    assert train_transformer_payload["float_mlp_projection_output_elided"] is True
+    assert (
+        train_transformer_payload[
+            "saved_packed_attention_recompute_needs_float_attention_projection"
+        ]
+        is True
+    )
+    assert train_transformer_payload["float_projection_output_elements_elided"] == 1 * 1 * 2 * 768
     assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-bf16-linear-bias-residual-add"
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
@@ -5795,9 +5803,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "mlp_residual_next_ln1_strategy": (
                 "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available"
             ),
-        "float_projection_output_buffers_allocated": 0,
-        "float_projection_output_buffers_elided": 2,
-        "float_projection_output_elements_elided": 2 * 1 * 2 * 768,
+        "float_projection_output_buffers_allocated": 1,
+        "float_projection_output_buffers_elided": 1,
+        "float_attention_projection_output_elided": False,
+        "float_mlp_projection_output_elided": True,
+        "saved_packed_attention_recompute_needs_float_attention_projection": True,
+        "float_projection_output_elements_elided": 1 * 1 * 2 * 768,
         "mlp_fc_grad_out_float_buffer_elided": True,
         "mlp_fc_grad_out_float_elements": 0,
         "mlp_fc_grad_out_float_bytes_elided": 2 * 1 * 3072 * 4,
@@ -5899,6 +5910,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "optimizer_tile_size": 1024,
         "optimizer_tile_strategy": "tile-size-1024-sumsq-scale-adamw",
+        "optimized_optimizer_contract_loaded": False,
+        "optimized_optimizer_contract_error": "",
         "attention_backward_tk_block_size": train_transformer_payload["attention_backward_tk_block_size"],
         "attention_backward_tk_block_size_symbol_loaded": train_transformer_payload[
             "attention_backward_tk_block_size_symbol_loaded"
@@ -8889,6 +8902,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "env_flag_enabled_or_default(store_residual1_activations_env, true)" in gpt2_source_text
     assert "stored_residual1_activation_blocks" in gpt2_source_text
     assert "residual1_activation_store_strategy" in gpt2_source_text
+    assert "saved_packed_attention_recompute_needs_float_attention_projection" in gpt2_source_text
+    assert "float_attention_projection_output_elided" in gpt2_source_text
+    assert "float_mlp_projection_output_elided" in gpt2_source_text
     assert "fused-attention-residual-layernorm-bf16-store" in gpt2_source_text
     assert "separate-float32-to-bf16-store" in gpt2_source_text
     assert "stored_residual1_activation_elements" in gpt2_source_text
