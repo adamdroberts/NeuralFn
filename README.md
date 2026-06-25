@@ -583,10 +583,13 @@ failures, and writes per-profile logs, JSON sidecars, native profile
 directories, and a `summary.tsv` under
 `NFN_SM120_NATIVE_SWEEP_OUT_DIR` (defaulting to `/tmp`). Positional arguments
 select profiles, or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; with no profile list
-it sweeps the startup bisection set
-`token_weight_vector4_strided`, `token_weight_threaded`,
-`token_weight_fast_int32`, `token_weight_two_pass_bf16`, and
-`combined_device_arena`. The sweep preserves the candidate wrapper's strict
+it sweeps the current SM120 hot-path proof set: `qkv_dinput_ln128`,
+`lm_head_loss_bins`, `cublaslt_grouped_probe`, and
+`llmk_sm120_reference_flags`. Startup-only bisections such as
+`token_weight_vector4_strided` remain available when named explicitly, but they
+are no longer the default because the current parity gap is steady-state
+block/LM-head throughput rather than token setup. The sweep preserves the
+candidate wrapper's strict
 same-script route and metric gates and exits nonzero if any profile fails; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only for exploratory evidence
 collection where rejected candidates should not fail the outer job.

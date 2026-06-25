@@ -16,11 +16,10 @@ elif [[ -n "${NFN_SM120_CANDIDATE_SWEEP_PROFILES-}" ]]; then
   profiles=($NFN_SM120_CANDIDATE_SWEEP_PROFILES)
 else
   profiles=(
-    token_weight_vector4_strided
-    token_weight_threaded
-    token_weight_fast_int32
-    token_weight_two_pass_bf16
-    combined_device_arena
+    qkv_dinput_ln128
+    lm_head_loss_bins
+    cublaslt_grouped_probe
+    llmk_sm120_reference_flags
   )
 fi
 

@@ -3500,11 +3500,11 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'NFN_SM120_NATIVE_CANDIDATE_PROFILE="$profile"' in text
     assert 'NFN_SM120_NATIVE_JSON_OUT="$json_out"' in text
     assert 'NFN_SM120_NATIVE_PROFILE_DIR="$profile_dir"' in text
-    assert 'token_weight_vector4_strided' in text
-    assert 'token_weight_threaded' in text
-    assert 'token_weight_fast_int32' in text
-    assert 'token_weight_two_pass_bf16' in text
-    assert 'combined_device_arena' in text
+    assert 'qkv_dinput_ln128' in text
+    assert 'lm_head_loss_bins' in text
+    assert 'cublaslt_grouped_probe' in text
+    assert 'llmk_sm120_reference_flags' in text
+    assert 'token_weight_vector4_strided' not in text.partition("else")[2].partition("fi")[0]
     assert 'fail_count=$((fail_count + 1))' in text
     assert 'metric_ratio_gates' in text
     assert 'native_route_change_gate' in text
