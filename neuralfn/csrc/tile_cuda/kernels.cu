@@ -3402,6 +3402,11 @@ LinearShapeTiming begin_linear_shape_timing(cudaStream_t stream) {
   if (!trainer_linear_shape_stats_enabled()) {
     return timing;
   }
+  cudaStreamCaptureStatus capture_status = cudaStreamCaptureStatusNone;
+  if (cudaStreamIsCapturing(stream, &capture_status) == cudaSuccess &&
+      capture_status != cudaStreamCaptureStatusNone) {
+    return timing;
+  }
   timing.stream = stream;
   if (cudaEventCreate(&timing.start) != cudaSuccess) {
     timing.start = nullptr;

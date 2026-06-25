@@ -610,7 +610,9 @@ the v2 Tile stats ABI, cuBLASLt rows also include
 changes from overrides that request an unavailable index. The
 timing path uses CUDA events and synchronizes measured GEMMs, so it is intended
 for kernel candidate comparisons and should stay disabled in normal training
-runs.
+runs. Streams currently being captured for CUDA Graph replay skip event timing
+and record shape attribution only, so LM-head fused graph capture remains on the
+same route when shape stats are enabled.
 Runtime timing separates `setup_wall_ms`, `train_loop_wall_ms`,
 `post_train_sample_wall_ms`, `cleanup_wall_ms`, and `total_wall_ms`, so SDK
 and CLI benchmarks can distinguish startup from in-loop training.

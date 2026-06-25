@@ -172,6 +172,8 @@ Canonical docs:
   `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and
   `cublaslt_workspace_bytes`; use those fields to prove a shape heuristic
   override actually selected a different returned candidate before promoting it.
+  CUDA Graph capture streams must record shape attribution without CUDA event
+  timing so LM-head fused graph replay does not fall back during profiling.
 - The trainer-facing linear ABI should expose and preserve the linear backend
   telemetry: `linear_backend_strategy`,
   `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`,

@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made native Tile linear shape-stat timing CUDA Graph capture-aware. When
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1` (or a GPT/Tile alias) is enabled during
+  native GPT profiling, streams currently being captured for graph replay now
+  record the linear shape bucket without creating CUDA events or synchronizing
+  timing. This keeps LM-head fused graph capture/replay on the optimized route
+  while still exposing cuBLASLt shape attribution; captured graph launches may
+  therefore contribute shape calls with zero event time instead of forcing the
+  older cooperative fallback route.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_train_tile_ops_builds_torch_free_c_abi`;
+  `NFN_NATIVE_FORCE_REBUILD=1 bash tools/build_native_gpt_cli_linked.sh
+  build/nfn_gpt_native_train_linked`;
+  `NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_shape_stats_probe_fixed.json
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_LINEAR_SHAPE_STATS=1'
+  bash tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090.
+  The paired run intentionally failed strict timing gates because shape stats
+  remain a profiling mode, but the candidate profile recorded 15 shape rows
+  while preserving `lm_head_fused_graph_capture_success_count: 3`,
+  `lm_head_fused_graph_replay_success_count: 32`,
+  `lm_head_fused_graph_fallback_count: 0`, and
+  `lm_head_cooperative_sequence_launch_count: 0`.
+
 - Added an explicit split-arena concurrent materialization probe for the native
   dense GPT trainer. `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` (or the
   compatibility `NFN_NATIVE_GPT2_CONCURRENT_ARENA_MATERIALIZE=1`) overlaps the

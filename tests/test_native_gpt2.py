@@ -8361,6 +8361,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "finish_linear_shape_timing(&timing)" in kernels_text
     assert "finish_linear_shape_timing_with_host_fallback(&timing, host_start)" in kernels_text
     assert "cudaDeviceSynchronize() != cudaSuccess" in kernels_text
+    assert "cudaStreamIsCapturing(stream, &capture_status)" in kernels_text
+    assert "capture_status != cudaStreamCaptureStatusNone" in kernels_text
     assert 'return "cublas_gemmex_bf16"' in gpt2_source_text
     assert "trainer_linear_shape_stats_entry" in kernels_text
     assert "total_us" in kernels_text
