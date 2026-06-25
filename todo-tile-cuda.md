@@ -43,6 +43,15 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
+  dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
+  rejected, but Tile-CUDA now accepts
+  `NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB`
+  and matching aliases so QKV, attention projection, MLP FC, and MLP projection
+  can be isolated in the same paired benchmark harness before any default
+  promotion. This is a kernel-selection diagnostic, not a parity completion.
+  The 2026-06-25 QKV and MLP projection shape gates both changed route counters
+  and failed timing gates, so those two profiles are rejected by default.
 - [x] Refresh the native-vs-llm.kittens parity measurement after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The 2026-06-24 CUDA 13.3.33
   3-step/1-sample same-script run measured NeuralFn at `2512.313 ms/step`

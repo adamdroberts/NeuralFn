@@ -2279,6 +2279,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
         "full_activation_tape": "NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
+        "bgrad_first_write_direct_qkv_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,2304,65536,N,T",
+        "bgrad_first_write_direct_attn_proj_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,768,65536,N,T",
+        "bgrad_first_write_direct_mlp_fc_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,3072,65536,N,T",
+        "bgrad_first_write_direct_mlp_proj_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=3072,768,65536,N,T",
     }
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
@@ -8268,9 +8272,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad" in kernels_text
     assert "trainer_linear_bgrad_first_write_direct_enabled" in kernels_text
+    assert "trainer_linear_bgrad_first_write_direct_shape_enabled" in kernels_text
     assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
     assert "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
+    assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE" in kernels_text
+    assert "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE" in kernels_text
     assert "first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim)" in kernels_text
     assert "if (!first_write_bias)" in kernels_text
     assert "bgrad_first_write_direct_enabled" in gpt2_source_text

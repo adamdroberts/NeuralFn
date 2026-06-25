@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added shape-scoped cuBLASLt BGRADB first-write diagnostics for native dense
+  GPT block dWeight+bias paths. The Tile-CUDA linear dispatcher now accepts
+  `NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB`,
+  `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`,
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`, or
+  `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`; matching shapes
+  write the first beta-zero BGRADB epilogue result directly into `grad_bias`
+  while other shapes keep the default scratch-plus-accumulate route. The SM120
+  paired wrapper adds isolated profiles for QKV, attention projection, MLP FC,
+  and MLP projection first-write candidates so they can be benchmarked against
+  the current route without enabling the rejected global direct-write profile.
+  The QKV and MLP projection shape profiles are already marked rejected: the
+  dedicated RTX 5090 CUDA 13.3 gates moved 36 first-write calls to direct writes
+  but measured QKV at `1.007904x` train-loop wall and `1.014895x` block
+  backward, and MLP projection at `1.009189x` train-loop wall,
+  `1.014958x` block backward, and `1.054470x` MLP projection dWeight+bias.
+
 - Corrected the rejected `lm_head_overlap_last_dweight` SM120 candidate profile
   so reruns exercise the actual side-stream route under the current cooperative
   graph default. The profile now sets

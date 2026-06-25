@@ -1728,7 +1728,18 @@ scratch and accumulates it into `grad_bias`. Set
 `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,
 `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or
 `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` only for paired benchmarks
-against the direct first-write path. The paired wrapper profile
+against the direct first-write path. To isolate one block bucket instead of
+enabling the global rejected route, set
+`NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB` or
+`NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`; the SM120
+paired wrapper exposes `bgrad_first_write_direct_qkv_65536`,
+`bgrad_first_write_direct_attn_proj_65536`,
+`bgrad_first_write_direct_mlp_fc_65536`, and
+`bgrad_first_write_direct_mlp_proj_65536` for the dense GPT block shapes. The
+QKV and MLP projection shape profiles are already rejected on the dedicated RTX
+5090 because they moved 36 first-write calls but regressed train-loop or block
+backward timing. The
+paired wrapper profile
 `bgrad_first_write_direct` is marked rejected by default: on the dedicated RTX
 5090/CUDA 13.3 gate it changed cuBLASLt bgrad counters, and the 2026-06-25
 5-step, 3-sample rerun moved 240 first-write bias gradients to direct writes.

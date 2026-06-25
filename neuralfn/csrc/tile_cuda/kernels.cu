@@ -3994,6 +3994,28 @@ bool trainer_linear_bgrad_first_write_direct_enabled() {
   return enabled;
 }
 
+bool trainer_linear_bgrad_first_write_direct_shape_enabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeList enabled_shapes = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE");
+    }
+    return parse_linear_shape_list(value);
+  }();
+  return linear_shape_list_matches(enabled_shapes, m, n, k, op_a, op_b);
+}
+
 bool trainer_linear_cublaslt_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_CUBLASLT");
@@ -17961,7 +17983,15 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    const bool first_write_bias =
+        beta == 0.0f &&
+        (trainer_linear_bgrad_first_write_direct_enabled() ||
+         trainer_linear_bgrad_first_write_direct_shape_enabled(
+             static_cast<int>(input_dim),
+             static_cast<int>(output_dim),
+             static_cast<int>(rows),
+             CUBLAS_OP_N,
+             CUBLAS_OP_T));
     float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
@@ -18073,7 +18103,15 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
           grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
       return;
     }
-    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    const bool first_write_bias =
+        beta == 0.0f &&
+        (trainer_linear_bgrad_first_write_direct_enabled() ||
+         trainer_linear_bgrad_first_write_direct_shape_enabled(
+             static_cast<int>(input_dim),
+             static_cast<int>(output_dim),
+             static_cast<int>(rows),
+             CUBLAS_OP_N,
+             CUBLAS_OP_T));
     float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_ab_float32_with_bgrad(
@@ -18397,7 +18435,15 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (trainer_linear_float32_bf16_bgrad_enabled() &&
       fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    const bool first_write_bias =
+        beta == 0.0f &&
+        (trainer_linear_bgrad_first_write_direct_enabled() ||
+         trainer_linear_bgrad_first_write_direct_shape_enabled(
+             static_cast<int>(input_dim),
+             static_cast<int>(output_dim),
+             static_cast<int>(rows),
+             CUBLAS_OP_N,
+             CUBLAS_OP_T));
     float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad(

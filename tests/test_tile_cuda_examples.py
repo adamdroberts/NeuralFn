@@ -1300,6 +1300,14 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "setup.uint16_arena_materialize.total_ms to 1.775565x" in text
     assert "bgrad_first_write_direct" in text
     assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1" in text
+    assert "bgrad_first_write_direct_qkv_65536" in text
+    assert "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,2304,65536,N,T" in text
+    assert "bgrad_first_write_direct_attn_proj_65536" in text
+    assert "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,768,65536,N,T" in text
+    assert "bgrad_first_write_direct_mlp_fc_65536" in text
+    assert "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,3072,65536,N,T" in text
+    assert "bgrad_first_write_direct_mlp_proj_65536" in text
+    assert "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=3072,768,65536,N,T" in text
     assert "qkv_concurrent_dinput_dweight" in text
     assert "mlp_fc_concurrent_dinput_dweight" in text
     assert "attn_proj_concurrent_dinput_dweight" in text

@@ -1086,7 +1086,16 @@ and accumulates it into `grad_bias`. Runtime JSON reports
 is active. Set `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,
 `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or
 `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` only for paired comparisons
-against direct first-write bias gradients. The SM120 wrapper profile
+against direct first-write bias gradients. The narrower
+`NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB`,
+`NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`,
+`NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...`, and
+`NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...` aliases accept the
+same shape-list syntax as the other linear bisection knobs, so a benchmark can
+route only one dense-GPT block GEMM bucket through direct first-write bias
+storage. The SM120 QKV and MLP projection shape profiles are rejected by
+default after CUDA 13.3 dedicated-RTX-5090 gates moved 36 first-write calls but
+regressed train-loop or block-backward timing. The SM120 wrapper profile
 `bgrad_first_write_direct` expands to that flag and is rejected by default:
 the CUDA 13.3 dedicated RTX 5090 same-script gate proved the route counter
 change (`linear_cublaslt_bgrad_direct_write_count: 96`) but regressed

@@ -1745,7 +1745,16 @@ Native dense-GPT JSON also reports the cuBLASLt BGRADB epilogue counters
 `linear_cublaslt_bgrad_accumulate_count`. The paired speed tool treats these as
 route counters, so BGRADB first-write or split bias-accumulation candidates can
 prove whether they changed the active block dWeight+bias path before timing is
-accepted.
+accepted. Shape-scoped first-write profiles are available as
+`bgrad_first_write_direct_qkv_65536`,
+`bgrad_first_write_direct_attn_proj_65536`,
+`bgrad_first_write_direct_mlp_fc_65536`, and
+`bgrad_first_write_direct_mlp_proj_65536`; they expand to
+`NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=...` instead of the
+global rejected `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1` flag. The QKV and
+MLP projection shape profiles are rejected by default because their CUDA 13.3
+dedicated-RTX-5090 gates changed route counters but regressed the paired timing
+gates.
 The ordering profiles `mlp_proj_dinput_before_dweight`,
 `attn_proj_dinput_before_dweight`, and `qkv_dinput_before_dweight` have
 matching execution counters in the same route-counter summary, so rejected
