@@ -1527,6 +1527,10 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert "build_command(const Config& cfg" not in native_cli_source
     assert "os.execvpe(command[0], command, _compiled_cli_env(config))" in train_gpt_native_source
     assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
+    assert (
+        'if runner_status.resolved == "compiled-cli":\n'
+        "        return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)"
+    ) in train_gpt_native_source
     assert "subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv()" not in train_gpt_native_source
 
 

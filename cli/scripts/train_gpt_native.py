@@ -668,6 +668,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)
     LOGGER.info("Launching native CUDA GPT trainer")
+    if runner_status.resolved == "compiled-cli":
+        return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)
     return run_native_gpt(native_cfg, runner=str(args.native_cuda_runner))
 
 

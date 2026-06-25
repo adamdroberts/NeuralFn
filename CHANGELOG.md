@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the normal compiled-cli fallthrough in `cli/scripts/train_gpt_native.py`
+  so direct legacy script training now calls the same `_exec_compiled_cli(...)`
+  path as native smoke/actions. Actual non-dry-run compiled-cli training now
+  replaces the Python process with `nfn_gpt_native_train` after argument
+  resolution instead of calling `run_native_gpt(...)` and keeping a Python parent
+  alive through `subprocess.run()`. Explicit `runner=auto`, `binding`, and
+  `launcher` routes remain available for callers that request them.
+
+  Verification:
+  source-contract regression coverage in `tests/test_native_gpt2.py` plus a
+  direct `train_gpt_native.py --tinystories --native-cuda-dry-run
+  --native-cuda-print-command --native-cuda-no-checkpoint` command.
+
 - Added the rejected SM120 native candidate profile
   `packed_attention_bwd_batch_32` so the smaller packed-attention backward
   chunk route is reproducible through the same wrapper as the 128-cap probe. The
