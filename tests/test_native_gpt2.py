@@ -1808,9 +1808,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     ) in tile_ops_source
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
-        "    return \"diagnostic-cuda-graph-wrapper\";\n"
-        "}"
+        "    return lm_head_graph_body_serial_enabled()"
     ) in tile_ops_source
+    assert '"diagnostic-cuda-graph-wrapper"' in tile_ops_source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {\n"
         "    return 3;\n"
@@ -1897,6 +1897,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )[0]
     assert "g_lm_head_cooperative_sequence_launch_count.fetch_add" not in strict_fused_body
     assert "g_lm_head_fused_graph_fallback_count.fetch_add" in strict_fused_body
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL" in tile_ops_source
+    assert "diagnostic-cuda-graph-wrapper-serial-body" in tile_ops_source
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
@@ -1904,6 +1906,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
+    assert '"lm_head_graph_serial_body"|"lm-head-graph-serial-body"' in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
@@ -1931,6 +1935,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
     assert "lm_head_classifier_backward_path_class" in speed_tool
+    assert "lm_head_cooperative_backward_fused_kernel_abi_path_class" in speed_tool
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool

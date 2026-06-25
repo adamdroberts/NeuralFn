@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <mutex>
+#include <string_view>
 #include <vector>
 
 #include <cuda_runtime_api.h>
@@ -1868,6 +1870,22 @@ constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
 constexpr int kLmHeadGraphThreadCacheCapacity = 8;
 
+bool env_flag_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return false;
+    }
+    const std::string_view text(value);
+    return text == "1" || text == "true" || text == "TRUE" || text == "yes" ||
+           text == "YES" || text == "on" || text == "ON";
+}
+
+bool lm_head_graph_body_serial_enabled() {
+    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL") ||
+           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL") ||
+           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_SERIAL");
+}
+
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_ce_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_dhidden_launch_count{0};
@@ -2043,8 +2061,9 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             loss_scale,
             stream);
     }
+    const bool serial_graph_body = lm_head_graph_body_serial_enabled();
     LmHeadCooperativeStreams& cooperative_streams = lm_head_cooperative_streams();
-    if (cooperative_streams.status == 0) {
+    if (!serial_graph_body && cooperative_streams.status == 0) {
         cudaEventRecord(cooperative_streams.ce_done, stream);
         cudaStreamWaitEvent(cooperative_streams.dhidden, cooperative_streams.ce_done, 0);
         cudaStreamWaitEvent(cooperative_streams.dweight, cooperative_streams.ce_done, 0);
@@ -6107,7 +6126,9 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {
 }
 
 const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {
-    return "diagnostic-cuda-graph-wrapper";
+    return lm_head_graph_body_serial_enabled()
+               ? "diagnostic-cuda-graph-wrapper-serial-body"
+               : "diagnostic-cuda-graph-wrapper";
 }
 
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {

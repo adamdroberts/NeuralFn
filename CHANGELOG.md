@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected diagnostic profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_serial_body` for the dense
+  GPT LM-head CUDA Graph body. The profile compares the default side-stream
+  graph body against a serial caller-stream body exposed through
+  `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1`, and
+  `tools/paired_kernel_speed.py` now treats
+  `lm_head_cooperative_backward_fused_kernel_abi_path_class` as strategy
+  evidence for these ABI-path changes. The dedicated RTX 5090 3-step,
+  2-sample gate rejected the serial body: train-loop wall regressed to
+  `1.005992x`, steady-state CUDA-event timing to `1.004767x`, and
+  `stage.lm_head_backward.total_ms` to `1.022264x`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, ran the focused source-contract test,
+  a route-proof native GPT run, and the same-script candidate benchmark.
+
 - Added a top-level `checkpoint_export_enabled` field to dense GPT native
   runtime JSON, matching the existing plan JSON field. Runtime JSON still
   reports `final_checkpoint_export_enabled` for older benchmark parsers, so this

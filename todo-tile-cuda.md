@@ -634,7 +634,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       80 LM-head graph replays and 77 thread-cache hits), so the next parity
       target remains GPU-side LM-head graph-body fusion or block-kernel work,
       not host-side graph cache lookup.
-      diagnostic sequence wrapper or graph fallback.
+    - 2026-06-25 added and rejected
+      `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_serial_body`, which
+      flips the strict LM-head CUDA Graph body from the default side-stream
+      dHidden/dWeight schedule to serial caller-stream dHidden then dWeight
+      through `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1`. The route-proof run
+      reported `lm_head_cooperative_backward_fused_kernel_abi_path_class:
+      diagnostic-cuda-graph-wrapper-serial-body`, graph replay success, zero
+      fallback, `torch_required=false`, and `graph_editor_tensor_flow=false`.
+      The same-script 3-step, 2-sample stage-timed gate rejected default
+      promotion because train-loop wall regressed to `1.005992x`,
+      steady-state CUDA-event timing to `1.004767x`, LM-head backward to
+      `1.022264x`, and the cooperative LM-head substage to `1.031743x`.
+      Keep the default side-stream graph body; the next useful LM-head work is
+      still a real fused classifier/dHidden/dWeight kernel, not serializing the
+      current graph body.
     - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
       llm.kittens-parity became the default integrated LM-head route.
       `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus
