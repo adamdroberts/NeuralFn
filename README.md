@@ -592,7 +592,10 @@ block/LM-head throughput rather than token setup. The sweep preserves the
 candidate wrapper's strict
 same-script route and metric gates and exits nonzero if any profile fails; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only for exploratory evidence
-collection where rejected candidates should not fail the outer job.
+collection where rejected candidates should not fail the outer job. Its
+`summary.tsv` includes compact baseline-to-candidate route proof columns for
+the default hot profiles: QKV dInput-before-dWeight launches, LM-head loss-bin
+classifier launches, and grouped cuBLASLt layout/matmul probe statuses.
 The common-shape controls also accept the explicit
 `NFN_SM120_NATIVE_CANDIDATE_*` aliases, such as
 `NFN_SM120_NATIVE_CANDIDATE_STEPS`, `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`,

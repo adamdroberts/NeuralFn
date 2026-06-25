@@ -79,6 +79,10 @@ header = [
     "setup_ratio_mean",
     "token_init_ratio_mean",
     "total_wall_ratio_mean",
+    "qkv_dinput_before_dweight",
+    "lm_head_loss_bin_launches",
+    "cublaslt_grouped_layout_status",
+    "cublaslt_grouped_matmul_status",
     "json",
     "log",
 ]
@@ -89,6 +93,26 @@ def metric_mean(payload, name):
         mean = value.get("mean")
         return "" if mean is None else f"{mean:.6f}"
     return ""
+
+def native_value(payload, side, name):
+    values = payload.get(f"{side}_native_metric_values", {}).get(name, [])
+    if isinstance(values, list) and values:
+        return str(values[-1])
+    metrics = payload.get(f"{side}_native_metrics", {}).get(name, {})
+    if isinstance(metrics, dict):
+        mean = metrics.get("mean")
+        if mean is not None:
+            if float(mean).is_integer():
+                return str(int(mean))
+            return f"{mean:.6f}"
+    return ""
+
+def route_delta(payload, name):
+    baseline = native_value(payload, "baseline", name)
+    candidate = native_value(payload, "candidate", name)
+    if baseline == "" and candidate == "":
+        return ""
+    return f"{baseline}->{candidate}"
 
 for item in sys.argv[2:]:
     profile, status, json_path, log_path = item.split("|", 3)
@@ -111,6 +135,10 @@ for item in sys.argv[2:]:
             metric_mean(payload, "setup_wall_ms"),
             metric_mean(payload, "setup.token_weight_init.total_ms"),
             metric_mean(payload, "total_wall_ms"),
+            route_delta(payload, "block_backward_qkv_dinput_before_dweight_count"),
+            route_delta(payload, "lm_head_classifier_loss_bin_launch_count"),
+            route_delta(payload, "linear_cublaslt_grouped_layout_probe_status"),
+            route_delta(payload, "linear_cublaslt_grouped_matmul_probe_status"),
             json_path,
             log_path,
         ]

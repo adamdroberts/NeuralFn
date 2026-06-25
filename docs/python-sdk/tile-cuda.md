@@ -2344,7 +2344,11 @@ hot-path proof set when no profiles are supplied: `qkv_dinput_ln128`,
 `lm_head_loss_bins`, and `cublaslt_grouped_probe`. Name startup profiles
 explicitly when retesting
 setup-only work; the no-argument sweep starts from the block/LM-head routes
-that matter for steady-state training parity.
+that matter for steady-state training parity. The generated `summary.tsv`
+includes baseline-to-candidate route proof columns for QKV
+dInput-before-dWeight launches, LM-head loss-bin classifier launches, and
+grouped cuBLASLt layout/matmul probe statuses, so the default sweep can be read
+without opening the large per-profile JSON files.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
 LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when

@@ -3508,6 +3508,12 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'fail_count=$((fail_count + 1))' in text
     assert 'metric_ratio_gates' in text
     assert 'native_route_change_gate' in text
+    assert 'qkv_dinput_before_dweight' in text
+    assert 'lm_head_loss_bin_launches' in text
+    assert 'cublaslt_grouped_layout_status' in text
+    assert 'cublaslt_grouped_matmul_status' in text
+    assert 'route_delta(payload, "block_backward_qkv_dinput_before_dweight_count")' in text
+    assert 'route_delta(payload, "lm_head_classifier_loss_bin_launch_count")' in text
     assert 'summary.tsv' in text
     assert 'NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES' in text
 
