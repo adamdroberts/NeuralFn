@@ -25,6 +25,14 @@ References:
 
 Real training tensors must not pass through graph editor node objects.
 
+- [x] Add a zero-Python SM120 dense GPT training helper. `tools/train_gpt_sm120.sh`
+  mirrors `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` at the process
+  boundary by execing `nfn_gpt_native_train` directly instead of starting from
+  Python wrappers, preferring llm.kittens TinyStories token bins when they are
+  present, and preserving the same 20,000-step, 64x1024, 524,288-token, AdamW,
+  validation/sample/checkpoint defaults. This does not close the measured
+  kernel-throughput parity gap, but it removes remaining wrapper startup
+  overhead from the workstation path used for apples-to-apples SM120 runs.
 - [x] Compile graph topology into a static execution plan before training.
 - [x] Make `CompiledTorchGraph.forward()` use the precompiled plan instead of walking `NeuronGraph.nodes` and `NeuronGraph._incoming()` per batch.
 - [x] Add regression coverage proving forward still works after graph edge traversal is made unavailable post-compilation.

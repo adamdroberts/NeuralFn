@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `tools/train_gpt_sm120.sh` as the zero-Python workstation equivalent of
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`. The helper execs the
+  compiled `nfn_gpt_native_train` binary directly, prefers llm.kittens
+  `TinyStories_train.bin` / `TinyStories_val.bin` token files when present,
+  defaults `CUDA_DEVICE_MAX_CONNECTIONS=1` and `CUDA_MODULE_LOADING=LAZY`, and
+  preserves the SM120 schedule defaults: validation every 250 steps, sample
+  every 20,000 steps, 144 generated tokens, batch 64, sequence length 1024,
+  524,288 train tokens per optimizer step, AdamW weight decay 0.1, learning rate
+  0.0006, final LR fraction 0, 60 warmup steps, 200-step checkpoint cadence, and
+  20,000 max steps. Extra flags are forwarded to the compiled native trainer
+  after those defaults so callers can override cadence or checkpoint behavior
+  without entering the Python wrapper.
+
+  Verification:
+  `bash -n tools/train_gpt_sm120.sh`;
+  `tools/train_gpt_sm120.sh --help`;
+  `tools/train_gpt_sm120.sh --print-command --dry-run --no-checkpoint`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_sm120_gpt_helper_calls_native_cpp_directly
+  -q`.
+
 - Corrected the `lm_head_graph_prewarm` SM120 candidate profile to measure the
   real graph-only default-vs-opt-out path. The trainer already defaults cuBLAS
   handle and BF16 workspace prewarm on, so the profile no longer weakens the

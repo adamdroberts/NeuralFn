@@ -2538,6 +2538,29 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("--max-steps 20000", content)
                 self.assertIn("--optimizer-profile adamw", content)
 
+    def test_sm120_gpt_helper_calls_native_cpp_directly(self) -> None:
+        content = (NEURALFN_ROOT / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
+
+        self.assertIn("nfn_gpt_native_train", content)
+        self.assertIn("TinyStories_train.bin", content)
+        self.assertIn("TinyStories_val.bin", content)
+        self.assertIn('CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"', content)
+        self.assertIn("--train-batch-tokens 524288", content)
+        self.assertIn("--batch-size 64", content)
+        self.assertIn("--train-seq-len 1024", content)
+        self.assertIn("--learning-rate 0.0006", content)
+        self.assertIn("--weight-decay 0.1", content)
+        self.assertIn("--warmup-steps 60", content)
+        self.assertIn("--max-steps 20000", content)
+        self.assertIn("--eval-every-steps 250", content)
+        self.assertIn("--native-cuda-generate-tokens 144", content)
+        self.assertIn("--native-cuda-checkpoint-every 200", content)
+        self.assertIn("--train-transformer-lm", content)
+        self.assertNotIn("python", content)
+        self.assertNotIn("train_gpt2cu", content)
+        self.assertNotIn("--max-wallclock-seconds", content)
+        self.assertNotIn("TorchTrainer", content)
+
     def test_nfn_train_gpt2_rejects_torch_runtime_without_importing_torch(self) -> None:
         code = textwrap.dedent(
             f"""

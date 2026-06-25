@@ -679,6 +679,17 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "NFN_NATIVE_TILE_OPS_LIB": "/tmp/libnfn-native-train-tile-ops-stub.so",
         },
     ),
+    (
+        "train_gpt_sm120_dry_run",
+        (
+            "bash",
+            "tools/train_gpt_sm120.sh",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
