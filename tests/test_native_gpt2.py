@@ -798,8 +798,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "bf16_workspace_prewarm" in candidate_bench
     assert "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1" in candidate_bench
     assert "combined_device_arena" in candidate_bench
-    assert "train_loop_wall_ms_per_step to 1.004991x" in candidate_bench
-    assert "setup_wall_ms to 1.063067x" in candidate_bench
+    assert "setup_wall_ms to 1.031475x" in candidate_bench
+    assert "setup.uint16_arena_materialize.total_ms to 2.339592x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.289567x" in candidate_bench
     assert "lm_head_cooperative_backward" in candidate_bench
     assert "activated the cooperative LM-head CUDA Graph path" in candidate_bench
     assert "steady-state CUDA-event timing to 1.005839x" in candidate_bench
