@@ -661,6 +661,8 @@ int main(int argc, char** argv) {
                 "--native-cuda-allow-train-val-fallback",
                 "--native-cuda-no-checkpoint",
                 "--native-cuda-write-checkpoint",
+                "--native-cuda-require-cooperative-lm-head-backward",
+                "--require-cooperative-lm-head-backward",
                 "--native-cuda-startup-only",
             })) {
             if (arg == "--native-cuda-print-plan") {
@@ -691,6 +693,9 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--no-checkpoint");
             } else if (arg == "--native-cuda-write-checkpoint") {
                 forwarded.push_back("--write-checkpoint");
+            } else if (arg == "--native-cuda-require-cooperative-lm-head-backward" ||
+                       arg == "--require-cooperative-lm-head-backward") {
+                forwarded.push_back("--require-cooperative-lm-head-backward");
             } else if (arg == "--native-cuda-startup-only") {
                 forwarded.push_back("--startup-only");
             }

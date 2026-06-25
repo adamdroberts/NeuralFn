@@ -1951,6 +1951,16 @@ AdamW or gradient-clip improvement and missed unrelated strict hot-stage gates.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and prints it directly from the lightweight `train_gpt.py` or `nfn train` wrapper without spawning `nfn_gpt_native_train`. Shard validation or raw-text rejection is left to the compiled frontend for actions that actually enter C++. The inspection path must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 
+Use `NativeGptRunConfig(require_cooperative_lm_head_backward=True)` or the
+compatibility `NativeGpt2RunConfig` field when SDK code must require the
+compiled true-fused cooperative LM-head backward route. The generated compiled
+CLI argv includes `--require-cooperative-lm-head-backward`, and
+`cli/scripts/train_gpt.py`, `cli/scripts/train_gpt_native.py`, and
+`nfn-native-train` also forward the wrapper spelling
+`--native-cuda-require-cooperative-lm-head-backward`. Current CUDA 13.3 builds
+still fail that strict route because the callable is a CUDA Graph wrapper until
+a real fused CE+dHidden+dWeight kernel replaces it.
+
 For LM-head backward kernel work, `tools/bench_lm_head_backward_candidate.sh`
 is the focused CUDA gate. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` selects
 the default 32768-row optimizer no-loss trainer chunk,

@@ -1283,7 +1283,12 @@ a candidate run must require the integrated native LM-head parity route before
 training starts. The SM120 wrapper treats this named profile as a strict ABI
 preflight probe, not a metric-gated speed candidate. Missing native parity still
 fails this strict guard instead of falling back to Torch or graph-editor tensor
-flow.
+flow. The generic `NativeGptRunConfig` / compatibility `NativeGpt2RunConfig`
+field `require_cooperative_lm_head_backward=True`, direct
+`cli/scripts/train_gpt.py`, direct `cli/scripts/train_gpt_native.py`, and
+`nfn-native-train` all forward the same compiled flag; the
+`--native-cuda-require-cooperative-lm-head-backward` spelling is accepted by the
+wrapper entrypoints.
 For optimizer-only steps that do not record train loss, the diagnostic
 CUDA Graph wrapper passes the explicit no-loss cooperative flag and reuses the
 normal BF16/u16 no-loss classifier CE+dlogits kernel instead of forcing the

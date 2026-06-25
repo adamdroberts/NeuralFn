@@ -113,6 +113,7 @@ class NativeGpt2RunConfig:
     smoke_embedding_lm_step: bool = False
     train_embedding_lm: bool = False
     train_transformer_lm: bool = True
+    require_cooperative_lm_head_backward: bool = False
     startup_only: bool = False
     checkpoint_metadata_smoke: bool = False
     write_checkpoint: bool = True
@@ -274,6 +275,8 @@ class NativeGpt2RunConfig:
             args.append("--train-embedding-lm")
         if self.train_transformer_lm:
             args.append("--train-transformer-lm")
+        if self.require_cooperative_lm_head_backward:
+            args.append("--require-cooperative-lm-head-backward")
         if self.startup_only:
             args.append("--startup-only")
         if self.checkpoint_metadata_smoke:
@@ -884,6 +887,7 @@ def build_native_gpt2_run_config(
     smoke_embedding_lm_step: bool = False,
     train_embedding_lm: bool = False,
     train_transformer_lm: bool = True,
+    require_cooperative_lm_head_backward: bool = False,
     startup_only: bool = False,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
@@ -949,6 +953,7 @@ def build_native_gpt2_run_config(
         smoke_embedding_lm_step=bool(smoke_embedding_lm_step),
         train_embedding_lm=bool(train_embedding_lm),
         train_transformer_lm=bool(train_transformer_lm),
+        require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),
@@ -999,6 +1004,7 @@ def build_native_gpt2_compiled_cli_run_config(
     smoke_embedding_lm_step: bool = False,
     train_embedding_lm: bool = False,
     train_transformer_lm: bool = True,
+    require_cooperative_lm_head_backward: bool = False,
     startup_only: bool = False,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
@@ -1059,6 +1065,7 @@ def build_native_gpt2_compiled_cli_run_config(
         smoke_embedding_lm_step=bool(smoke_embedding_lm_step),
         train_embedding_lm=bool(train_embedding_lm),
         train_transformer_lm=bool(train_transformer_lm),
+        require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),

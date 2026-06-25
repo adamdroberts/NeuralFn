@@ -1038,6 +1038,11 @@ that it is not a true fused/cooperative kernel. Set
 separate-stage LM-head schedule, or pass
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
 parity/preflight run must require the strict cooperative LM-head backward ABI.
+Direct `python cli/scripts/train_gpt.py`, direct
+`python cli/scripts/train_gpt_native.py`, and `nfn-native-train` also accept
+`--native-cuda-require-cooperative-lm-head-backward` and forward it to the same
+compiled flag, so wrapper dry-runs and real runs exercise the same strict
+preflight contract.
 Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired
 diagnostics that need to force the sequence wrapper instead of the cached graph
 wrapper while keeping the cooperative LM-head route requested.

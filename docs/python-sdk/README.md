@@ -143,6 +143,9 @@ preserve `eval_every_steps=0`, `sample_every_steps=0`, and
 `checkpoint_every_steps=0` as explicit disabled cadences, matching the compiled
 C++ trainer. Use those zero values for same-script kernel benchmarks when
 validation, prompt sampling, and checkpoint export cadence should not run.
+Set `require_cooperative_lm_head_backward=True` on either the generic or
+compatibility native GPT run config when SDK code must fail before training
+unless the compiled true-fused LM-head backward route is available.
 New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/

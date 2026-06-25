@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added public forwarding for the strict native GPT LM-head route requirement.
+  `NativeGptRunConfig` / `NativeGpt2RunConfig` now serialize
+  `require_cooperative_lm_head_backward=True` to
+  `--require-cooperative-lm-head-backward`, and `train_gpt.py`,
+  `train_gpt_native.py`, plus `nfn-native-train` preserve both the canonical
+  flag and `--native-cuda-require-cooperative-lm-head-backward`. This keeps SDK,
+  direct script, and unified CLI dry-runs aligned with the compiled trainer
+  preflight that rejects the current CUDA Graph wrapper when a true fused
+  LM-head kernel is required.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_template_presets.py -q -k 'strict_lm_head or compiled_cli_serializes'`;
+  `bash -n tools/bench_lm_head_backward_candidate.sh`; `git diff --check`.
+
 - Added a native `--require-true-fused-candidate` contract to the compiled
   LM-head backward microbenchmark and wired
   `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` through

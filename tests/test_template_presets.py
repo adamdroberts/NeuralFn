@@ -214,6 +214,31 @@ def test_native_gpt_compiled_cli_alias_accepts_every_gpt_template_name() -> None
         assert argv[argv.index("--template-name") + 1] == preset
 
 
+def test_native_gpt_compiled_cli_serializes_strict_lm_head_requirement() -> None:
+    config = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="/tmp/native-cache",
+        executable="/bin/echo",
+        output_dir=Path("/tmp/native-output"),
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        require_cooperative_lm_head_backward=True,
+    )
+    argv = config.compiled_cli_argv(cli="/tmp/nfn_gpt2_native_train")
+    assert "--require-cooperative-lm-head-backward" in argv
+
+
 def test_train_gpt2_fast_path_accepts_every_gpt_template_name() -> None:
     module = _load_train_gpt2_script_module()
     for preset in PRESETS:
@@ -261,6 +286,14 @@ def test_train_gpt_fast_path_treats_auto_runner_as_compiled_cli() -> None:
     assert "--model-family" in argv
     assert argv[argv.index("--model-family") + 1] == "gpt"
     assert "--native-cuda-runner" not in argv
+
+
+def test_train_gpt_fast_path_forwards_strict_lm_head_requirement() -> None:
+    module = _load_train_gpt_script_module()
+    for flag in ("--require-cooperative-lm-head-backward", "--native-cuda-require-cooperative-lm-head-backward"):
+        argv = module._fast_compiled_cli_argv(["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", flag])
+        assert argv is not None
+        assert "--require-cooperative-lm-head-backward" in argv
 
 
 def test_native_gpt2_compiled_cli_accepts_custom_graph_file() -> None:

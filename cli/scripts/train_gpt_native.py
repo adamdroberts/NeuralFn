@@ -272,6 +272,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         smoke_embedding_lm_step=bool(args.native_cuda_smoke_embedding_lm_step),
         train_embedding_lm=bool(args.train_embedding_lm),
         train_transformer_lm=bool(args.train_transformer_lm),
+        require_cooperative_lm_head_backward=bool(args.require_cooperative_lm_head_backward),
         cuda_runtime_lib=str(args.native_cuda_cuda_runtime_lib or ""),
         template_name=str(args.template_name or "gpt"),
         graph_file=str(args.graph_file or ""),
@@ -423,6 +424,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--native-cuda-smoke-embedding-lm-step", "--smoke-embedding-lm-step", action="store_true")
     parser.add_argument("--train-embedding-lm", action="store_true")
     parser.add_argument("--train-transformer-lm", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--require-cooperative-lm-head-backward",
+        "--native-cuda-require-cooperative-lm-head-backward",
+        action="store_true",
+        help=(
+            "Require the compiled true-fused cooperative LM-head backward Tile route; "
+            "fails before training if only graph or sequence wrappers are available."
+        ),
+    )
     parser.add_argument("--native-cuda-allow-train-val-fallback", action="store_true")
     parser.add_argument(
         "--native-cuda-checkpoint-every",
@@ -575,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
             smoke_embedding_lm_step=bool(args.native_cuda_smoke_embedding_lm_step),
             train_embedding_lm=bool(args.train_embedding_lm),
             train_transformer_lm=bool(args.train_transformer_lm),
+            require_cooperative_lm_head_backward=bool(args.require_cooperative_lm_head_backward),
             cuda_runtime_lib=str(args.native_cuda_cuda_runtime_lib or ""),
             template_name=str(args.template_name or "gpt"),
             graph_file=str(args.graph_file or ""),
