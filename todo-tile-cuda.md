@@ -294,6 +294,15 @@ Real training tensors must not pass through graph editor node objects.
     backward, `0.956792x` block backward, and `0.911989x` MLP projection
     backward. The native trainer now defaults graph prewarm on, with
     `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` as the bisection route.
+  - 2026-06-25 added and rejected
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_thread_cache_prewarm`.
+    The route primes the LM-head CUDA Graph replay thread cache during graph
+    prewarm with `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE=1`, moving
+    `lm_head_fused_graph_thread_cache_hit_count` from `45` to `48`. The
+    same-script 3-step, 1-sample stage-timed RTX 5090 gate rejected default
+    promotion because train-loop wall regressed to `1.003958x`, steady-state
+    CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
+    tokens/sec to `0.996059x`. Keep the route default-off and diagnostic-only.
   - 2026-06-25 added and rejected the opt-in
     `lm_head_ce_no_loss_vec8_normal_store_specialized` CUDA Tile kernel
     candidate. It selected the new no-loss CE+dlogits path and changed

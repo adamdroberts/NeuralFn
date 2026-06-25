@@ -1899,6 +1899,19 @@ bool lm_head_graph_upload_enabled() {
              text == "no" || text == "NO" || text == "off" || text == "OFF");
 }
 
+bool lm_head_graph_prewarm_thread_cache_enabled() {
+    const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+    const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+    const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+    const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
+    if (value == nullptr) {
+        return false;
+    }
+    std::string_view text(value);
+    return !(text == "0" || text == "false" || text == "FALSE" ||
+             text == "no" || text == "NO" || text == "off" || text == "OFF");
+}
+
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_ce_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_dhidden_launch_count{0};
@@ -1957,9 +1970,40 @@ struct LmHeadBackwardGraphEntry {
     cudaGraphExec_t exec = nullptr;
 };
 
+struct LmHeadBackwardThreadGraphCache {
+    LmHeadBackwardGraphEntry entries[kLmHeadGraphThreadCacheCapacity];
+    int count = 0;
+};
+
 std::mutex g_lm_head_backward_graph_mutex;
 std::vector<LmHeadBackwardGraphEntry> g_lm_head_backward_graph_cache;
 cudaStream_t g_lm_head_backward_graph_capture_stream = nullptr;
+
+LmHeadBackwardThreadGraphCache& lm_head_backward_thread_graph_cache() {
+    thread_local LmHeadBackwardThreadGraphCache cache;
+    return cache;
+}
+
+cudaGraphExec_t find_lm_head_backward_thread_graph(const LmHeadBackwardGraphKey& key) {
+    LmHeadBackwardThreadGraphCache& cache = lm_head_backward_thread_graph_cache();
+    for (int i = 0; i < cache.count; ++i) {
+        if (cache.entries[i].key == key) {
+            g_lm_head_fused_graph_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+            g_lm_head_fused_graph_thread_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+            return cache.entries[i].exec;
+        }
+    }
+    return nullptr;
+}
+
+void store_lm_head_backward_thread_graph(const LmHeadBackwardGraphKey& key, cudaGraphExec_t exec) {
+    LmHeadBackwardThreadGraphCache& cache = lm_head_backward_thread_graph_cache();
+    if (cache.count < kLmHeadGraphThreadCacheCapacity) {
+        cache.entries[cache.count++] = {key, exec};
+    } else {
+        cache.entries[kLmHeadGraphThreadCacheCapacity - 1] = {key, exec};
+    }
+}
 
 struct LmHeadCooperativeStreams {
     cudaStream_t dhidden = nullptr;
@@ -2192,17 +2236,7 @@ int capture_lm_head_classifier_backward_graph_bf16_u16(
 int run_lm_head_classifier_backward_graph_bf16_u16(
     const LmHeadBackwardGraphKey& key,
     cudaStream_t stream) {
-    thread_local LmHeadBackwardGraphEntry fast_entries[kLmHeadGraphThreadCacheCapacity];
-    thread_local int fast_entry_count = 0;
-    cudaGraphExec_t exec = nullptr;
-    for (int i = 0; i < fast_entry_count; ++i) {
-        if (fast_entries[i].key == key) {
-            exec = fast_entries[i].exec;
-            g_lm_head_fused_graph_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
-            g_lm_head_fused_graph_thread_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
-            break;
-        }
-    }
+    cudaGraphExec_t exec = find_lm_head_backward_thread_graph(key);
     if (exec == nullptr) {
         std::lock_guard<std::mutex> lock(g_lm_head_backward_graph_mutex);
         for (const auto& entry : g_lm_head_backward_graph_cache) {
@@ -2219,11 +2253,7 @@ int run_lm_head_classifier_backward_graph_bf16_u16(
             }
             g_lm_head_backward_graph_cache.push_back({key, exec});
         }
-        if (fast_entry_count < kLmHeadGraphThreadCacheCapacity) {
-            fast_entries[fast_entry_count++] = {key, exec};
-        } else {
-            fast_entries[kLmHeadGraphThreadCacheCapacity - 1] = {key, exec};
-        }
+        store_lm_head_backward_thread_graph(key, exec);
     }
     g_lm_head_fused_graph_replay_count.fetch_add(1, std::memory_order_relaxed);
     const int launch_status = static_cast<int>(cudaGraphLaunch(exec, stream));
@@ -2235,10 +2265,17 @@ int run_lm_head_classifier_backward_graph_bf16_u16(
 
 int prewarm_lm_head_classifier_backward_graph_bf16_u16(
     const LmHeadBackwardGraphKey& key) {
+    const bool prime_thread_cache = lm_head_graph_prewarm_thread_cache_enabled();
+    if (prime_thread_cache && find_lm_head_backward_thread_graph(key) != nullptr) {
+        return 0;
+    }
     std::lock_guard<std::mutex> lock(g_lm_head_backward_graph_mutex);
     for (const auto& entry : g_lm_head_backward_graph_cache) {
         if (entry.key == key) {
             g_lm_head_fused_graph_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+            if (prime_thread_cache) {
+                store_lm_head_backward_thread_graph(key, entry.exec);
+            }
             return 0;
         }
     }
@@ -2248,6 +2285,9 @@ int prewarm_lm_head_classifier_backward_graph_bf16_u16(
         return status;
     }
     g_lm_head_backward_graph_cache.push_back({key, exec});
+    if (prime_thread_cache) {
+        store_lm_head_backward_thread_graph(key, exec);
+    }
     return 0;
 }
 

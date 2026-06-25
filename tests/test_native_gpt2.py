@@ -1875,6 +1875,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_prewarm_last_rows = row_count" in source
     assert "lm_head_classifier_last_rows = lm_head_fused_graph_prewarm_last_rows" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source
+    assert "store_lm_head_backward_thread_graph(key, exec)" in tile_ops_source
+    assert "find_lm_head_backward_thread_graph(key)" in tile_ops_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE" in tile_ops_source
     graph_body = tile_ops_source.split(
         "void launch_lm_head_classifier_backward_graph_body_bf16_u16",
         1,
@@ -1922,6 +1925,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
+    assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert "lm_head_fused_graph_upload_success_count from 3 to 0" in bench_source
     assert "1.001492x" in bench_source

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a rejected LM-head CUDA Graph replay thread-cache prewarm diagnostic.
+  The accepted graph-prewarm route already captures the no-loss and active
+  train-loss/loss-bin graph keys before training; the new opt-in
+  `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE=1` also stores those graph
+  execs in the trainer thread's small replay cache. It keeps the route
+  classified as `diagnostic-cuda-graph-wrapper`, not a strict true-fused Tile
+  kernel, and remains default-off because same-script timing rejected it.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_thread_cache_prewarm`
+  compares the default against that opt-in in the same benchmark window.
+
+  Verification: rebuilt SM120 native artifacts, ran focused native source/CLI
+  tests, ran `tools/check_native_no_torch_deps.py`, and ran the CUDA-visible
+  candidate profile on the dedicated RTX 5090. The route moved
+  `lm_head_fused_graph_thread_cache_hit_count` from `45` to `48`, but failed
+  promotion with `1.003958x` train-loop wall, `1.002099x` steady-state
+  CUDA-event timing, `1.000922x` LM-head backward, and `0.996059x` tokens/sec.
+
 - Moved native dense GPT stage-timing CUDA event allocation out of the hot
   training loop for normal stage-timed diagnostics. When
   `NFN_NATIVE_GPT_STAGE_TIMING=1` is set, the trainer now preallocates up to

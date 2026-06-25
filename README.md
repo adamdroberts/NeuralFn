@@ -1555,7 +1555,19 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 default for real training and now captures both the no-loss graph key and the
 active train-loss graph key, including the loss-bin variant when configured, so
 the first logged train-loss step does not lazily capture a separate LM-head
-backward graph. The default was promoted after the CUDA 13.3.33 RTX 5090 post-reinstall
+backward graph. The default intentionally leaves per-thread replay-cache
+priming off because the same-script RTX 5090 gate showed that adding those
+first-use thread-cache hits did not improve training throughput. The diagnostic
+profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_thread_cache_prewarm`
+compares this default against the previous global-cache-only prewarm path; set
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE=1` only for that rejected
+bisection. The route moved `lm_head_fused_graph_thread_cache_hit_count` from
+`45` to `48`, but regressed train-loop wall to `1.003958x`, steady-state
+CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
+tokens/sec to `0.996059x`. The
+default was promoted after the CUDA 13.3.33 RTX 5090 post-reinstall
 graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
 steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
 backward `0.956792x`, and MLP projection backward `0.911989x` versus explicit
