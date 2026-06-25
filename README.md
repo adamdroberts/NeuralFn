@@ -749,6 +749,11 @@ set: `train_loop_wall_ms_per_step <= 1.000`, steady-state CUDA-event wall time
 `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
 `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` when a diagnostic run needs a
 different llm.kittens acceptance threshold.
+For promoted native default-vs-legacy checks, the wrapper can use a narrow
+steady-state event tolerance where the wall and hot-stage gates remain strict:
+`qkv_dinput_ln128` now matches `lm_head_graph_prewarm` with a `1.002x`
+steady-state CUDA-event cap, so sub-percent event noise does not fail a route
+that still improves train-loop wall and block-backward time.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail

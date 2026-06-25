@@ -2287,6 +2287,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert "kept 512 as the default" in bench_source
     assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source
     assert "block_backward_mlp_proj_dinput_before_dweight_count moved 0->288" in bench_source

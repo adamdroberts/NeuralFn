@@ -1282,7 +1282,11 @@ part of the promoted 128-row LayerNorm affine route, and reports
 default against the old 256-row/QKV-dWeight-first baseline in one paired
 script; the profile is allowed by default, emits `candidate_note` metadata, and
 gates train-loop wall, steady-state CUDA-event wall, total block backward, and
-train tokens/sec.
+train tokens/sec. Because it is a promoted default-vs-legacy regression check,
+the train-loop and block-backward gates stay strict while the steady-state
+CUDA-event gate allows up to `1.002x`, matching the LM-head graph-prewarm
+default gate and avoiding failure on tiny event-timing noise when wall and block
+timing still win.
 The QKV-only and 64-row variants remain rejected profiles.
 The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,

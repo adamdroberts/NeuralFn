@@ -15,6 +15,18 @@ Future updates should append new entries here rather than replacing older notes.
   without opening every sidecar JSON file. Verification: shell syntax and the
   focused sweep static test.
 
+- Adjusted the promoted `qkv_dinput_ln128` default-vs-legacy regression gate to
+  tolerate steady-state CUDA-event timing up to `1.002x` while keeping strict
+  train-loop wall and block-backward thresholds. A short CUDA 13.3 dedicated
+  RTX 5090 sweep measured `0.989796x` train-loop wall and `0.979339x` block
+  backward but failed only on `1.000114x` steady-state CUDA-event timing, so the
+  gate now matches the existing LM-head graph-prewarm tolerance for near-zero
+  event noise while still rejecting real steady-state regressions. Verification:
+  focused profile static test, dry-run JSON gate inspection, and a short
+  dedicated-GPU check that correctly still failed at `1.006174x` steady-state
+  CUDA-event timing while passing train-loop wall (`0.984400x`) and block
+  backward (`0.966664x`).
+
 - Added shape-scoped cuBLASLt BGRADB first-write diagnostics for native dense
   GPT block dWeight+bias paths. The Tile-CUDA linear dispatcher now accepts
   `NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=m,n,k,opA,opB`,

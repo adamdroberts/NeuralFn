@@ -1778,6 +1778,9 @@ steady-state CUDA-event timing to `0.995384x`, train throughput to
 `1.010326x`, and total block backward to `0.986375x`, while still missing tiny
 strict adjacent-stage gates at `stage.lm_head_backward.total_ms=1.000256x` and
 `stage.block_backward.qkv.total_ms=1.000779x`.
+As a promoted default-vs-legacy regression check, it now keeps strict
+train-loop and block-backward gates while allowing steady-state CUDA-event
+timing up to `1.002x`, matching the LM-head graph-prewarm default gate.
 `qkv_dinput_ln64` combines the QKV dInput-before-dWeight route with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` for a reproducible
 same-script check of the closest current block-backward near-miss. It remains

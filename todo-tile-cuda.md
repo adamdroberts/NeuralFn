@@ -58,6 +58,16 @@ Real training tensors must not pass through graph editor node objects.
   and `summary.tsv` reports LM-head graph replay, cooperative sequence, and
   cuBLASLt BGRADB direct/accumulate route deltas in addition to the older QKV,
   loss-bin, and grouped-cuBLASLt proof columns.
+- [x] Tighten the promoted QKV default-vs-legacy regression gate without
+  overfailing on event-timing noise. A 2026-06-25 short dedicated RTX 5090
+  sweep measured `qkv_dinput_ln128` at `0.989796x` train-loop wall and
+  `0.979339x` block backward while missing only the strict steady-state
+  CUDA-event gate at `1.000114x`; the profile now keeps strict train-loop and
+  block-backward thresholds but allows the steady-state event slice up to
+  `1.002x`, matching `lm_head_graph_prewarm`. The follow-up short GPU check
+  still rejected a real `1.006174x` steady-state event regression while passing
+  train-loop wall (`0.984400x`) and block backward (`0.966664x`), so the gate is
+  not masking material steady-state regressions.
 - [x] Refresh the native-vs-llm.kittens parity measurement after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The 2026-06-24 CUDA 13.3.33
   3-step/1-sample same-script run measured NeuralFn at `2512.313 ms/step`

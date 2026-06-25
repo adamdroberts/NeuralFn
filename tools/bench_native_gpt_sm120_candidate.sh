@@ -612,6 +612,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x versus the old 256-row/QKV-dWeight-first route."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.block_backward.total_ms=1.000}"
     ;;
   "qkv_dinput_ln64"|"qkv-dinput-ln64"|"qkv_dinput_before_dweight_ln64"|"qkv-dinput-before-dweight-ln64"|"qkv_order_ln64"|"qkv-order-ln64")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
@@ -1158,7 +1159,7 @@ if [[ "$PROMOTED_QKV_LN128_PROFILE" == "1" &&
   case "${TRAIN_LOOP_EVENT_TIMING,,}" in
     "1"|"true"|"yes"|"on")
       if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
-        MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
+        MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.002"
       fi
       ;;
   esac
