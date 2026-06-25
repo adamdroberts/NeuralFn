@@ -2454,7 +2454,8 @@ Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
-`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
+`lm_head_cooperative_backward_sequence_wrapper_enabled`,
+`lm_head_classifier_backward_path_class`, and
 `lm_head_cooperative_backward_strategy`. Runtime JSON also reports
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status`, which
 the paired benchmark treats as strategy values so CE-only changes are not
@@ -2468,7 +2469,10 @@ capabilities; wrapper-only libraries report
 `lm_head_cooperative_backward_abi_wrapper_available: true` and
 `lm_head_cooperative_backward_sequence_wrapper_available: true`, but
 `lm_head_llmk_classifier_matmul_parity_available: false` and
-`lm_head_cooperative_backward_kernel_enabled: false`.
+`lm_head_cooperative_backward_kernel_enabled: false`. It also reports
+`lm_head_classifier_backward_path_class`, a compact route label such as
+`diagnostic-cuda-graph-wrapper`, `diagnostic-cublaslt-sequence-wrapper`, or
+`strict-true-fused-tile-kernel` for full-trainer parity comparisons.
 The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 symbol remains the event-ordered sequence wrapper probe. The strict

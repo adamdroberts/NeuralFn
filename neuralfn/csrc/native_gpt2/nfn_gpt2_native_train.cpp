@@ -4321,6 +4321,16 @@ bool print_tile_plan(
         !cooperative_lm_head_backward_enabled &&
         !cooperative_lm_head_backward_cuda_graph_enabled &&
         cooperative_lm_head_backward_sequence_wrapper_found;
+    const std::string lm_head_classifier_backward_path_class =
+        cooperative_lm_head_backward_enabled
+            ? "strict-true-fused-tile-kernel"
+            : (cooperative_lm_head_backward_cuda_graph_enabled
+                   ? "diagnostic-cuda-graph-wrapper"
+                   : (cooperative_lm_head_backward_sequence_wrapper_enabled
+                          ? "diagnostic-sequence-wrapper"
+                          : (cooperative_lm_head_backward_sequence_wrapper_found
+                                 ? "legacy-abi-sequence-wrapper"
+                                 : "missing")));
     if (plan_error.empty() &&
         cfg.require_cooperative_lm_head_backward &&
         !cooperative_lm_head_backward_enabled) {
@@ -4417,6 +4427,8 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_cuda_graph_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
         << (cooperative_lm_head_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_backward_path_class\": \""
+        << json_escape(lm_head_classifier_backward_path_class) << "\",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
                 ? (cooperative_lm_head_loss_bins_requested
@@ -12933,6 +12945,18 @@ int run_transformer_lm_training_json(
         token_weight_bf16_shadow_enabled &&
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled;
+    const std::string lm_head_classifier_backward_path_class =
+        lm_head_cooperative_backward_kernel_enabled
+            ? "strict-true-fused-tile-kernel"
+            : (lm_head_cooperative_backward_cuda_graph_enabled
+                   ? "diagnostic-cuda-graph-wrapper"
+                   : (lm_head_cooperative_backward_cublaslt_wrapper_enabled
+                          ? "diagnostic-cublaslt-sequence-wrapper"
+                          : (lm_head_cooperative_backward_sequence_wrapper_enabled
+                                 ? "diagnostic-sequence-wrapper"
+                                 : (lm_head_cooperative_backward_sequence_wrapper_available
+                                        ? "legacy-abi-sequence-wrapper"
+                                        : "missing"))));
     void* lm_head_dhidden_stream = nullptr;
     void* lm_head_dweight_stream = nullptr;
     void* lm_head_ce_done_event = nullptr;
@@ -21871,6 +21895,8 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_graph_prewarm_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
         << (lm_head_cooperative_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_backward_path_class\": \""
+        << json_escape(lm_head_classifier_backward_path_class) << "\",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested

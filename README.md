@@ -1378,7 +1378,8 @@ Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
-`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
+`lm_head_cooperative_backward_sequence_wrapper_enabled`,
+`lm_head_classifier_backward_path_class`, and
 `lm_head_cooperative_backward_strategy`. Runtime JSON also reports
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
 paired benchmarks distinguish the reference-parity separate-stage LM-head
@@ -1422,7 +1423,12 @@ than executing a true fused classifier-backward kernel. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability path can make `lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` true.
+`lm_head_cooperative_backward_fused_kernel_available` true. The
+`lm_head_classifier_backward_path_class` field summarizes the active class as
+`strict-true-fused-tile-kernel`, `diagnostic-cuda-graph-wrapper`,
+`diagnostic-cublaslt-sequence-wrapper`, `diagnostic-sequence-wrapper`,
+`legacy-abi-sequence-wrapper`, or `missing` so full-trainer parity reports do
+not have to infer the route from multiple booleans and counters.
 The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` route exercises
 the CUDA Graph body by default when the strict symbol is present. In that case
 runtime JSON reports `lm_head_cooperative_backward_cuda_graph_available: true`,

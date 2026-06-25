@@ -1676,6 +1676,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_llmk_classifier_matmul_parity_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
+    assert "lm_head_classifier_backward_path_class" in source
+    assert "strict-true-fused-tile-kernel" in source
+    assert "diagnostic-cuda-graph-wrapper" in source
+    assert "diagnostic-cublaslt-sequence-wrapper" in source
+    assert "diagnostic-sequence-wrapper" in source
+    assert "legacy-abi-sequence-wrapper" in source
     assert "cooperative_lm_head_backward_requirement_error" in source
     assert (
         "required cooperative LM-head backward Tile path is unavailable"
@@ -1852,6 +1858,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
+    assert "lm_head_classifier_backward_path_class" in speed_tool
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool

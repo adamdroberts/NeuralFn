@@ -1092,7 +1092,8 @@ Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
-`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
+`lm_head_cooperative_backward_sequence_wrapper_enabled`,
+`lm_head_classifier_backward_path_class`, and
 `lm_head_cooperative_backward_strategy`. The same runtime JSON includes
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
 same-script candidate reports can distinguish the default llm.kittens-style
@@ -1116,6 +1117,9 @@ reports `lm_head_cooperative_backward_fused_kernel_symbol_available`
 separately from
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability satisfies `lm_head_cooperative_backward_fused_kernel_available`.
+Runtime JSON also reports `lm_head_classifier_backward_path_class`; the path
+class is a compact route label such as `diagnostic-cuda-graph-wrapper` or
+`strict-true-fused-tile-kernel` for same-script benchmark comparisons.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
 The non-strict route is now the normal dense GPT default after the CUDA Toolkit

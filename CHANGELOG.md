@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit LM-head classifier-backward route class to native GPT
+  runtime and plan JSON. The trainer now reports
+  `lm_head_classifier_backward_path_class` as one of
+  `strict-true-fused-tile-kernel`, `diagnostic-cuda-graph-wrapper`,
+  `diagnostic-cublaslt-sequence-wrapper`, `diagnostic-sequence-wrapper`,
+  `legacy-abi-sequence-wrapper`, or `missing`, and the paired speed parser
+  preserves that field as a route value. This makes SM120 parity evidence
+  explicit when the default path is still the diagnostic CUDA Graph wrapper and
+  prevents future fused-kernel promotion checks from inferring the path from
+  several booleans and counters.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`; `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative_abi or
+  candidate_wrapper_covers_attention_and_ordering_profiles"`;
+  dedicated RTX 5090 SM120 JSON-contract parity smoke with
+  `NFN_SM120_PARITY_STEPS=2 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_MAX_CANDIDATE_RATIO='train_loop_wall_ms_per_step=10
+  train_loop_cuda_event_steady_state_wall_ms_per_step=10'
+  bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Promoted native GPT LM-head CUDA Graph prewarm for real training. The dense
   GPT native path now defaults `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM`,
   `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE`, and
