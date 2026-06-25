@@ -5765,6 +5765,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["timing"]["stage_timing_max_events"] == 20000
     assert train_transformer_payload["timing"]["stage_timing_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_dropped_event_count"] == 0
+    assert train_transformer_payload["timing"]["stage_timing_prealloc_event_pairs_requested"] == 4096
+    assert train_transformer_payload["timing"]["stage_timing_event_pair_create_count"] == 0
+    assert train_transformer_payload["timing"]["stage_timing_event_pair_preallocated_count"] == 0
+    assert train_transformer_payload["timing"]["stage_timing_event_pair_hot_create_count"] == 0
+    assert train_transformer_payload["timing"]["stage_timing_event_pair_unused_destroy_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing"] == []
     assert train_transformer_payload["timing"]["post_train_diagnostic_samples_elided"] is False
     assert train_transformer_payload["timing"]["post_train_diagnostic_sample_d2h_count"] == 0
@@ -9260,6 +9265,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stage_timing_max_events" in gpt2_source_text
     assert "stage_timing_event_count" in gpt2_source_text
     assert "stage_timing_dropped_event_count" in gpt2_source_text
+    assert "stage_timing_prealloc_event_pairs_requested" in gpt2_source_text
+    assert "stage_timing_event_pair_preallocated_count" in gpt2_source_text
+    assert "stage_timing_event_pair_hot_create_count" in gpt2_source_text
     assert "stage_timing" in gpt2_source_text
     assert "first_step_total_ms" in gpt2_source_text
     assert "steady_state_total_ms" in gpt2_source_text

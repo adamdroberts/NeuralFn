@@ -66,6 +66,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"setup_cuda_event_timing_enabled\\\": true, "
                 "\\\"setup_cuda_event_timing_sync_count\\\": 2, "
                 "\\\"setup_cuda_event_timing_skipped_count\\\": 0, "
+                "\\\"stage_timing_prealloc_event_pairs_requested\\\": 128, "
+                "\\\"stage_timing_event_pair_create_count\\\": 128, "
+                "\\\"stage_timing_event_pair_preallocated_count\\\": 128, "
+                "\\\"stage_timing_event_pair_hot_create_count\\\": 0, "
+                "\\\"stage_timing_event_pair_unused_destroy_count\\\": 111, "
                 "\\\"setup_timing\\\": [{\\\"name\\\": \\\"setup.float_arena_materialize\\\", "
                 "\\\"total_ms\\\": 0.7, \\\"avg_ms\\\": 0.7, \\\"count\\\": 1}], "
                 "\\\"setup_cuda_event_timing\\\": [{\\\"name\\\": \\\"setup.token_weight_init\\\", "
@@ -183,6 +188,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metric_values"]["setup_cuda_event_timing_enabled"] == ["true"]
     assert payload["candidate_native_metrics"]["setup_cuda_event_timing_sync_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["setup_cuda_event_timing_skipped_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["stage_timing_prealloc_event_pairs_requested"]["mean"] == 128.0
+    assert payload["candidate_native_metrics"]["stage_timing_event_pair_create_count"]["mean"] == 128.0
+    assert payload["candidate_native_metrics"]["stage_timing_event_pair_preallocated_count"]["mean"] == 128.0
+    assert payload["candidate_native_metrics"]["stage_timing_event_pair_hot_create_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["stage_timing_event_pair_unused_destroy_count"]["mean"] == 111.0
     assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.total_ms"]["mean"] == 0.3
     assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.avg_ms"]["mean"] == 0.3
     assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.count"]["mean"] == 1.0

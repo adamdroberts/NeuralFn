@@ -12354,6 +12354,10 @@ int run_transformer_lm_training_json(
         void* stop = nullptr;
         std::int64_t step = 0;
     };
+    struct StageTimingEventPair {
+        void* start = nullptr;
+        void* stop = nullptr;
+    };
     const std::string stage_timing_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STAGE_TIMING", "NFN_NATIVE_GPT2_STAGE_TIMING"});
     const bool stage_timing_requested =
@@ -13308,13 +13312,26 @@ int run_transformer_lm_training_json(
     std::int64_t stage_timing_event_count = 0;
     std::int64_t stage_timing_dropped_event_count = 0;
     std::int64_t stage_timing_current_step = 0;
+    std::int64_t stage_timing_event_pair_create_count = 0;
+    std::int64_t stage_timing_event_pair_preallocated_count = 0;
+    std::int64_t stage_timing_event_pair_hot_create_count = 0;
+    std::int64_t stage_timing_event_pair_unused_destroy_count = 0;
     std::vector<StageTimingRecord> stage_timing_records;
     std::vector<StageTimingEvent> stage_timing_events;
+    std::vector<StageTimingEventPair> stage_timing_free_event_pairs;
     const std::int64_t stage_timing_max_events = std::max<std::int64_t>(
         1,
         env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS",
                                 "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS"},
                                20000));
+    const std::int64_t default_stage_timing_prealloc_events =
+        std::min<std::int64_t>(stage_timing_max_events, 4096);
+    const std::int64_t stage_timing_prealloc_event_pairs_requested =
+        std::min<std::int64_t>(
+            stage_timing_max_events,
+            env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS",
+                                    "NFN_NATIVE_GPT2_STAGE_TIMING_PREALLOC_EVENTS"},
+                                   default_stage_timing_prealloc_events));
     if (error.empty() && stage_timing_requested) {
         if (cuda_event_create_with_flags == nullptr || cuda_event_record == nullptr ||
             cuda_event_elapsed_time == nullptr || cuda_event_destroy == nullptr) {
@@ -13323,6 +13340,53 @@ int run_transformer_lm_training_json(
             stage_timing_enabled = true;
         }
     }
+    auto destroy_stage_timing_event_pair = [&](StageTimingEventPair& pair, const std::string& label) {
+        if (pair.start != nullptr) {
+            const int status = cuda_event_destroy(pair.start);
+            if (status != 0 && error.empty()) {
+                error = cuda_error(status, "cudaEventDestroy " + label + ".start");
+            }
+            pair.start = nullptr;
+        }
+        if (pair.stop != nullptr) {
+            const int status = cuda_event_destroy(pair.stop);
+            if (status != 0 && error.empty()) {
+                error = cuda_error(status, "cudaEventDestroy " + label + ".stop");
+            }
+            pair.stop = nullptr;
+        }
+    };
+    auto create_stage_timing_event_pair = [&](StageTimingEventPair& pair, const std::string& label) -> bool {
+        pair = StageTimingEventPair{};
+        int status = cuda_event_create_with_flags(&pair.start, 0);
+        if (status == 0) {
+            status = cuda_event_create_with_flags(&pair.stop, 0);
+        }
+        if (status != 0) {
+            destroy_stage_timing_event_pair(pair, label);
+            if (error.empty()) {
+                error = cuda_error(status, "cudaEventCreateWithFlags " + label);
+            }
+            return false;
+        }
+        stage_timing_event_pair_create_count += 1;
+        return true;
+    };
+    auto preallocate_stage_timing_event_pairs = [&](std::int64_t count) {
+        if (!stage_timing_enabled || count <= 0 || !error.empty()) {
+            return;
+        }
+        stage_timing_free_event_pairs.reserve(
+            static_cast<std::size_t>(std::min<std::int64_t>(count, stage_timing_max_events)));
+        for (std::int64_t i = 0; i < count && error.empty(); ++i) {
+            StageTimingEventPair pair;
+            if (!create_stage_timing_event_pair(pair, "stage timing prealloc")) {
+                break;
+            }
+            stage_timing_free_event_pairs.push_back(pair);
+            stage_timing_event_pair_preallocated_count += 1;
+        }
+    };
     auto stage_record_index = [&](const std::string& name) -> std::size_t {
         for (std::size_t i = 0; i < stage_timing_records.size(); ++i) {
             if (stage_timing_records[i].name == name) {
@@ -13339,31 +13403,29 @@ int run_transformer_lm_training_json(
             }
             return -1;
         }
-        void* start = nullptr;
-        void* stop = nullptr;
-        int status = cuda_event_create_with_flags(&start, 0);
-        if (status == 0) {
-            status = cuda_event_create_with_flags(&stop, 0);
+        StageTimingEventPair pair;
+        if (!stage_timing_free_event_pairs.empty()) {
+            pair = stage_timing_free_event_pairs.back();
+            stage_timing_free_event_pairs.pop_back();
+        } else if (create_stage_timing_event_pair(pair, "stage timing hot path " + name)) {
+            stage_timing_event_pair_hot_create_count += 1;
+        } else {
+            return -1;
         }
+        int status = cuda_event_record(pair.start, nullptr);
         if (status == 0) {
-            status = cuda_event_record(start, nullptr);
-        }
-        if (status != 0) {
-            if (start != nullptr) {
-                cuda_event_destroy(start);
-            }
-            if (stop != nullptr) {
-                cuda_event_destroy(stop);
-            }
+            const std::size_t record_index = stage_record_index(name);
+            stage_timing_events.push_back(
+                StageTimingEvent{record_index, pair.start, pair.stop, stage_timing_current_step});
+            stage_timing_event_count += 1;
+            return static_cast<std::int64_t>(stage_timing_events.size() - 1);
+        } else {
+            destroy_stage_timing_event_pair(pair, "stage timing failed record " + name);
             if (error.empty()) {
                 error = cuda_error(status, "cudaEventRecord stage timing " + name);
             }
             return -1;
         }
-        const std::size_t record_index = stage_record_index(name);
-        stage_timing_events.push_back(StageTimingEvent{record_index, start, stop, stage_timing_current_step});
-        stage_timing_event_count += 1;
-        return static_cast<std::int64_t>(stage_timing_events.size() - 1);
     };
     auto stage_end = [&](std::int64_t event_index, const std::string& name) {
         if (event_index < 0 || !stage_timing_enabled) {
@@ -13416,6 +13478,13 @@ int run_transformer_lm_training_json(
                 event.stop = nullptr;
             }
         }
+        for (StageTimingEventPair& pair : stage_timing_free_event_pairs) {
+            if (pair.start != nullptr || pair.stop != nullptr) {
+                stage_timing_event_pair_unused_destroy_count += 1;
+            }
+            destroy_stage_timing_event_pair(pair, "stage timing unused pool");
+        }
+        stage_timing_free_event_pairs.clear();
     };
 
     const float initial_token_weight_sample = kInitialTokenWeightSample;
@@ -20520,6 +20589,10 @@ int run_transformer_lm_training_json(
         });
     };
 
+    run_setup_timed("setup.stage_timing_event_pool", [&]() {
+        preallocate_stage_timing_event_pairs(stage_timing_prealloc_event_pairs_requested);
+    });
+
     prewarm_lm_head_backward_graphs();
 
     const auto train_loop_start_time = Clock::now();
@@ -21473,6 +21546,16 @@ int run_transformer_lm_training_json(
         << "    \"stage_timing_max_events\": " << stage_timing_max_events << ",\n"
         << "    \"stage_timing_event_count\": " << stage_timing_event_count << ",\n"
         << "    \"stage_timing_dropped_event_count\": " << stage_timing_dropped_event_count << ",\n"
+        << "    \"stage_timing_prealloc_event_pairs_requested\": "
+        << stage_timing_prealloc_event_pairs_requested << ",\n"
+        << "    \"stage_timing_event_pair_create_count\": "
+        << stage_timing_event_pair_create_count << ",\n"
+        << "    \"stage_timing_event_pair_preallocated_count\": "
+        << stage_timing_event_pair_preallocated_count << ",\n"
+        << "    \"stage_timing_event_pair_hot_create_count\": "
+        << stage_timing_event_pair_hot_create_count << ",\n"
+        << "    \"stage_timing_event_pair_unused_destroy_count\": "
+        << stage_timing_event_pair_unused_destroy_count << ",\n"
         << "    \"stage_timing\": [\n";
     for (std::size_t i = 0; i < stage_timing_records.size(); ++i) {
         const StageTimingRecord& record = stage_timing_records[i];

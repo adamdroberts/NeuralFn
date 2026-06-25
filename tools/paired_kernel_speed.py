@@ -90,6 +90,26 @@ NATIVE_METRIC_PATHS = (
         "setup_cuda_event_timing_skipped_count",
         ("timing", "setup_cuda_event_timing_skipped_count"),
     ),
+    (
+        "stage_timing_prealloc_event_pairs_requested",
+        ("timing", "stage_timing_prealloc_event_pairs_requested"),
+    ),
+    (
+        "stage_timing_event_pair_create_count",
+        ("timing", "stage_timing_event_pair_create_count"),
+    ),
+    (
+        "stage_timing_event_pair_preallocated_count",
+        ("timing", "stage_timing_event_pair_preallocated_count"),
+    ),
+    (
+        "stage_timing_event_pair_hot_create_count",
+        ("timing", "stage_timing_event_pair_hot_create_count"),
+    ),
+    (
+        "stage_timing_event_pair_unused_destroy_count",
+        ("timing", "stage_timing_event_pair_unused_destroy_count"),
+    ),
     ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
     ("total_wall_ms", ("timing", "total_wall_ms")),
     ("train_tokens_per_second", ("timing", "train_tokens_per_second")),

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Moved native dense GPT stage-timing CUDA event allocation out of the hot
+  training loop for normal stage-timed diagnostics. When
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` is set, the trainer now preallocates up to
+  `NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS` event pairs during setup
+  (default `4096`, capped by `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`) and
+  falls back to hot-path event creation only if a diagnostic run exceeds the
+  pool. Native JSON and `tools/paired_kernel_speed.py` now report
+  `stage_timing_prealloc_event_pairs_requested`,
+  `stage_timing_event_pair_create_count`,
+  `stage_timing_event_pair_preallocated_count`,
+  `stage_timing_event_pair_hot_create_count`, and
+  `stage_timing_event_pair_unused_destroy_count`, making instrumentation
+  overhead visible in same-script SM120 parity runs.
+
+  Verification: rebuilt the linked native GPT trainer, ran the focused paired
+  metric extraction test, ran the focused native GPT source/JSON tests, and ran
+  a CUDA-visible one-step stage-timed native GPT smoke on the dedicated RTX
+  5090.
+
 - Added first-step versus steady-state stage timing aggregation to the native
   dense GPT CUDA-event stage profiler. Each `timing.stage_timing[]` JSON record
   now includes `first_step_total_ms`, `first_step_count`,

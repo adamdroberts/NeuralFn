@@ -2219,6 +2219,15 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `0.989380x`; however strict steady-state parity still failed at
     `1.015315x`, so this is a partial scheduling win, not completion of the
     remaining parity item.
+  - 2026-06-25 moved native GPT stage-timing event allocation out of the hot
+    diagnostic path. Stage-timed runs now preallocate CUDA event pairs during
+    setup with `NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS` /
+    `NFN_NATIVE_GPT2_STAGE_TIMING_PREALLOC_EVENTS` defaulting to `4096`, then
+    report requested, preallocated, hot-created, and unused-destroyed pair
+    counts in native JSON and `tools/paired_kernel_speed.py`. This makes future
+    stage-timed parity evidence less polluted by per-stage event creation, but
+    it is diagnostic overhead cleanup only; the remaining parity item is still
+    the fused/co-scheduled LM-head classifier-backward kernel body.
   - 2026-06-22 kept the no-loss LM-head classifier CE route default-off after
     retesting it against the current packed-QKV dense GPT default. The route
     sends normal no-loss optimizer steps through the classifier row-loss kernel
