@@ -585,7 +585,6 @@ def test_native_gpt_sm120_candidate_wrapper_includes_llmk_reference_by_default(
             "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_NATIVE_STEPS": "2",
             "NFN_SM120_NATIVE_SAMPLE_EVERY": "0",
-            "NFN_SM120_NATIVE_GENERATE_TOKENS": "144",
             "NFN_SM120_NATIVE_CHECKPOINT_EVERY": "0",
             "NFN_SM120_NATIVE_ACTIVATION": "gelu",
             "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
@@ -617,6 +616,20 @@ def test_native_gpt_sm120_candidate_wrapper_includes_llmk_reference_by_default(
     assert payload["candidate_command"][payload["candidate_command"].index("--native-cuda-activation") + 1] == "gelu"
     assert "-x" in reference_command
     assert "2" in reference_command
+    assert "-g" in reference_command
+    assert reference_command[reference_command.index("-g") + 1] == "144"
+    assert (
+        payload["baseline_command"][
+            payload["baseline_command"].index("--native-cuda-generate-tokens") + 1
+        ]
+        == "144"
+    )
+    assert (
+        payload["candidate_command"][
+            payload["candidate_command"].index("--native-cuda-generate-tokens") + 1
+        ]
+        == "144"
+    )
     assert "  reference:" in proc.stdout
 
 

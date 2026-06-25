@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned `tools/bench_native_gpt_sm120_candidate.sh` with the llm.kittens
+  SM120 launcher by changing its default generated-token cadence from `16` to
+  `144`. Native-vs-native candidate bisections already pass the same
+  `GENERATE_TOKENS` value to both NeuralFn commands and the optional
+  llm.kittens reference; the default now matches `train-sm120.sh -g 144` and
+  `tools/bench_native_gpt_sm120_parity.sh` unless an explicit
+  `NFN_SM120_NATIVE_GENERATE_TOKENS`,
+  `NFN_SM120_NATIVE_CANDIDATE_GENERATE_TOKENS`, or
+  `NFN_SM120_GENERATE_TOKENS` override is provided.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_includes_llmk_reference_by_default
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k "native_gpt_sm120_candidate_wrapper"`.
+
 - Added the `attention_dprep_grid3d` SM120 native candidate profile to
   `tools/bench_native_gpt_sm120_candidate.sh`. The profile expands to
   `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1`, enables attention section

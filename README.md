@@ -824,6 +824,11 @@ The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT` as the lowest-priority fallback, so a copied parity or
 candidate command does not silently return to default step/sample counts.
+The native candidate wrapper now defaults `GENERATE_TOKENS` to `144`, matching
+the llm.kittens `train-sm120.sh` `-g 144` cadence and the parity wrapper. Set
+`NFN_SM120_NATIVE_GENERATE_TOKENS`,
+`NFN_SM120_NATIVE_CANDIDATE_GENERATE_TOKENS`, or `NFN_SM120_GENERATE_TOKENS`
+only for an explicit generation-shape bisection.
 Named candidate profiles are intentionally limited to
 `tools/bench_native_gpt_sm120_candidate.sh`. The llm.kittens parity wrapper
 refuses `NFN_SM120_PARITY_CANDIDATE_PROFILE` / `NFN_SM120_PARITY_PROFILE`
@@ -2147,6 +2152,10 @@ selected-GPU idle guards. The NeuralFn candidate side passes
 `train-sm120.sh` `-d 524288` contract while
 `NFN_SM120_PARITY_TRAIN_BATCH_TOKENS` / `NFN_SM120_TRAIN_BATCH_TOKENS` change
 both sides together for shape bisection.
+Both the parity wrapper and the native-vs-native candidate wrapper default to
+`144` generated tokens, matching `train-sm120.sh` `-g 144`; override the
+`NFN_SM120_*_GENERATE_TOKENS` controls only when intentionally comparing a
+different sampling cadence.
 The parity wrapper uses the same default selected-GPU idle polling policy as
 the native candidate wrapper: three utilization samples spaced 0.25 seconds
 apart before each measured command, configurable through
