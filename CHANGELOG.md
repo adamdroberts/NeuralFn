@@ -21,7 +21,10 @@ Future updates should append new entries here rather than replacing older notes.
   `0.977937x`, first-step CUDA-event time to `0.939016x`, and
   tokens/sec to `1.022595x`, and it beat the llm.kittens reference on total
   3-step wall time at `0.991761x`, but failed the strict reference steady-state
-  gate at `1.000990x`.
+  gate at `1.000990x`. A longer 10-step, 2-sample native-vs-native rerun also
+  kept prewarm diagnostic-only: train-loop wall improved to `0.990304x` and
+  first-step CUDA-event time to `0.913676x`, but the steady-state CUDA-event
+  gate still missed at `1.000369x`.
 
   Verification:
   `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
@@ -35,7 +38,15 @@ Future updates should append new entries here rather than replacing older notes.
   NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_reference_20260625.json
   NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_lm_head_graph_prewarm_reference_20260625_profiles
   bash tools/bench_native_gpt_sm120_candidate.sh`, which failed only the
-  intentional strict reference steady-state gate noted above.
+  intentional strict reference steady-state gate noted above. Also reran
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=10 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_10step_20260625.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_lm_head_graph_prewarm_10step_20260625_profiles
+  bash tools/bench_native_gpt_sm120_candidate.sh`; it passed as allowed
+  rejected-candidate diagnostic evidence and confirmed the fixed LM-head shape
+  counters stayed at parity instead of dropping to zero.
 
 - Added native Tile ops ABI primitives for NVFP4 activation storage:
   `nfn_native_tile_float32_to_nvfp4_packed` and
