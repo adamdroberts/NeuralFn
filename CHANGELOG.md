@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native Tile ops ABI primitives for NVFP4 activation storage:
+  `nfn_native_tile_float32_to_nvfp4_packed` and
+  `nfn_native_tile_nvfp4_packed_to_float32`. The CUDA kernels pack float32
+  activations into the NeuralFn block-size-16 FP4 E2M1 layout with FP8 E4M3
+  block-scale bytes and dequantize that representation back to float32. This is
+  the first native C++ storage primitive required before dense GPT projection
+  and attention routes can consume packed NVFP4 activations directly.
+
+  Verification:
+  source/export coverage in `tests/test_native_gpt2.py`; native Tile ops build
+  coverage through `test_native_train_tile_ops_builds_torch_free_c_abi`; direct
+  `bash tools/build_native_train_tile_ops.sh
+  /tmp/libnfn_native_train_tile_ops_nvfp4_check.so`; `nm -D` confirmed both
+  symbols; an unsandboxed CUDA runtime smoke packed and dequantized a 20-value
+  float32 buffer with finite output and nonzero NVFP4 block-scale bytes.
+
 - Added a hard native NVFP4 activation-packing contract for dense GPT and
   GPT-2-evo native training. `--require-native-nvfp4-activation-packing` (or
   wrapper alias `--native-cuda-require-native-nvfp4-activation-packing`) now

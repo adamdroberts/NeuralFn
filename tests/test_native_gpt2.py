@@ -7876,6 +7876,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_uint16_to_int64" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits" in header_text
     assert "nfn_native_tile_bf16_bits_to_float32" in header_text
+    assert "nfn_native_tile_float32_to_nvfp4_packed" in header_text
+    assert "nfn_native_tile_nvfp4_packed_to_float32" in header_text
     assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in header_text
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text
@@ -7981,6 +7983,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_cublas_prewarm" in header_text
     assert "launch_float32_to_bf16_bits" in source_text
     assert "launch_bf16_bits_to_float32" in source_text
+    assert "launch_float32_to_nvfp4_packed" in source_text
+    assert "launch_nvfp4_packed_to_float32" in source_text
     assert "launch_bf16_bits_add_bias_inplace_float32" in source_text
     assert "launch_store_mlp_activations_bf16_float32" in source_text
     assert "launch_restore_mlp_activations_bf16_float32" in source_text
@@ -8010,6 +8014,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in source_text
     assert "f32_to_bf16_bits_kernel" in kernels_text
     assert "f32_to_bf16_bits_vec4_kernel" in kernels_text
+    assert "float32_to_nvfp4_packed_kernel" in kernels_text
+    assert "nvfp4_packed_to_float32_kernel" in kernels_text
+    assert "nvfp4_float_to_e4m3fn_device" in kernels_text
+    assert "nvfp4_float_to_e2m1_code_device" in kernels_text
     assert "NFN_TILE_CUDA_F32_TO_BF16_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT_F32_TO_BF16_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT2_F32_TO_BF16_VEC4" in kernels_text
@@ -9782,6 +9790,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_uint16_to_int64" in exported
         assert "nfn_native_tile_float32_to_bf16_bits" in exported
         assert "nfn_native_tile_bf16_bits_to_float32" in exported
+        assert "nfn_native_tile_float32_to_nvfp4_packed" in exported
+        assert "nfn_native_tile_nvfp4_packed_to_float32" in exported
         assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in exported
         assert (
             "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets"

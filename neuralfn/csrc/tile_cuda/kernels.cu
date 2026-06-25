@@ -582,6 +582,82 @@ __device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
   return __uint_as_float(static_cast<unsigned int>(value) << 16);
 }
 
+__device__ __forceinline__ float nvfp4_e4m3fn_to_float_device(std::uint8_t code) {
+  if (code == 0) {
+    return 0.0f;
+  }
+  const int sign = (code >> 7) & 1;
+  const int exp = (code >> 3) & 0x0f;
+  const int mant = code & 0x07;
+  float value = 0.0f;
+  if (exp == 0) {
+    value = ldexpf(static_cast<float>(mant) / 8.0f, -6);
+  } else if (exp == 15) {
+    value = mant >= 7 ? 448.0f : ldexpf(1.0f + static_cast<float>(mant) / 8.0f, 8);
+  } else {
+    value = ldexpf(1.0f + static_cast<float>(mant) / 8.0f, exp - 7);
+  }
+  return sign ? -value : value;
+}
+
+__device__ __forceinline__ std::uint8_t nvfp4_float_to_e4m3fn_device(float value) {
+  if (!(value > 0.0f)) {
+    return 0;
+  }
+  if (value >= 448.0f) {
+    return 0x7e;
+  }
+  std::uint8_t best_code = 0;
+  float best_distance = fabsf(value);
+  for (int code = 1; code <= 0x7e; ++code) {
+    const float candidate = nvfp4_e4m3fn_to_float_device(static_cast<std::uint8_t>(code));
+    if (!(candidate >= 0.0f)) {
+      continue;
+    }
+    const float distance = fabsf(value - candidate);
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_code = static_cast<std::uint8_t>(code);
+    }
+  }
+  return best_code;
+}
+
+__device__ __forceinline__ float nvfp4_e2m1_code_to_float_device(std::uint8_t code) {
+  switch (code & 0x0f) {
+    case 0x0: return 0.0f;
+    case 0x1: return 0.5f;
+    case 0x2: return 1.0f;
+    case 0x3: return 1.5f;
+    case 0x4: return 2.0f;
+    case 0x5: return 3.0f;
+    case 0x6: return 4.0f;
+    case 0x7: return 6.0f;
+    case 0x8: return -0.0f;
+    case 0x9: return -0.5f;
+    case 0xa: return -1.0f;
+    case 0xb: return -1.5f;
+    case 0xc: return -2.0f;
+    case 0xd: return -3.0f;
+    case 0xe: return -4.0f;
+    default: return -6.0f;
+  }
+}
+
+__device__ __forceinline__ std::uint8_t nvfp4_float_to_e2m1_code_device(float value) {
+  std::uint8_t best_code = 0;
+  float best_distance = fabsf(value);
+  for (int code = 1; code < 16; ++code) {
+    const float candidate = nvfp4_e2m1_code_to_float_device(static_cast<std::uint8_t>(code));
+    const float distance = fabsf(value - candidate);
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_code = static_cast<std::uint8_t>(code);
+    }
+  }
+  return best_code;
+}
+
 __global__ void bf16_bits_to_f32_vec4_kernel(
     const std::uint16_t* __restrict__ src,
     float* __restrict__ dst,
@@ -608,6 +684,69 @@ __global__ void bf16_bits_add_bias_inplace_kernel(
   }
   const std::int64_t col = idx % output_dim;
   values[idx] = f32_to_bf16_bits_device(bf16_bits_to_f32_device(values[idx]) + bias[col]);
+}
+
+__global__ void float32_to_nvfp4_packed_kernel(
+    const float* __restrict__ source,
+    std::uint8_t* __restrict__ packed,
+    std::uint8_t* __restrict__ block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t elements) {
+  constexpr int kNvfp4BlockSize = 16;
+  __shared__ float values[kNvfp4BlockSize];
+  const std::int64_t block = static_cast<std::int64_t>(blockIdx.x);
+  const int lane = threadIdx.x;
+  const std::int64_t index = block * kNvfp4BlockSize + lane;
+  const float value = index < elements ? source[index] : 0.0f;
+  values[lane] = fabsf(value);
+  __syncthreads();
+  for (int stride = kNvfp4BlockSize / 2; stride > 0; stride >>= 1) {
+    if (lane < stride) {
+      values[lane] = fmaxf(values[lane], values[lane + stride]);
+    }
+    __syncthreads();
+  }
+  const float safe_tensor_scale = tensor_scale > 0.0f ? tensor_scale : 1.0f;
+  const float raw_scale = values[0] > 0.0f ? values[0] / 6.0f : 0.0f;
+  const float encoded_block_scale_value = raw_scale > 0.0f ? raw_scale / safe_tensor_scale : 0.0f;
+  std::uint8_t scale_code = 0;
+  if (lane == 0) {
+    scale_code = nvfp4_float_to_e4m3fn_device(encoded_block_scale_value);
+    block_scales_e4m3[block] = scale_code;
+  }
+  __syncthreads();
+  scale_code = block_scales_e4m3[block];
+  const float block_scale = nvfp4_e4m3fn_to_float_device(scale_code) * safe_tensor_scale;
+  const float normalized = block_scale > 0.0f ? value / block_scale : 0.0f;
+  const std::uint8_t code = nvfp4_float_to_e2m1_code_device(normalized);
+  if ((lane & 1) == 0) {
+    const std::int64_t other_index = index + 1;
+    const float other_value = other_index < elements ? source[other_index] : 0.0f;
+    const float other_normalized = block_scale > 0.0f ? other_value / block_scale : 0.0f;
+    const std::uint8_t other_code = nvfp4_float_to_e2m1_code_device(other_normalized);
+    packed[block * 8 + lane / 2] =
+        static_cast<std::uint8_t>((code & 0x0f) | ((other_code & 0x0f) << 4));
+  }
+}
+
+__global__ void nvfp4_packed_to_float32_kernel(
+    const std::uint8_t* __restrict__ packed,
+    const std::uint8_t* __restrict__ block_scales_e4m3,
+    float tensor_scale,
+    float* __restrict__ dest,
+    std::int64_t elements) {
+  constexpr int kNvfp4BlockSize = 16;
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t block = idx / kNvfp4BlockSize;
+  const std::uint8_t packed_byte = packed[idx / 2];
+  const std::uint8_t code =
+      (idx & 1) == 0 ? (packed_byte & 0x0f) : ((packed_byte >> 4) & 0x0f);
+  const float safe_tensor_scale = tensor_scale > 0.0f ? tensor_scale : 1.0f;
+  const float block_scale = nvfp4_e4m3fn_to_float_device(block_scales_e4m3[block]) * safe_tensor_scale;
+  dest[idx] = nvfp4_e2m1_code_to_float_device(code) * block_scale;
 }
 
 __tile_global__ void bf16_bits_add_bias_inplace_tile_float32_kernel(
@@ -14889,6 +15028,37 @@ void launch_bf16_bits_to_float32(
     std::int64_t n,
     cudaStream_t stream) {
   launch_bf16_bits_to_float32_internal(source, dest, n, stream);
+}
+
+void launch_float32_to_nvfp4_packed(
+    const float* source,
+    std::uint8_t* packed,
+    std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
+  constexpr std::int64_t kNvfp4BlockSize = 16;
+  const int blocks = static_cast<int>((n + kNvfp4BlockSize - 1) / kNvfp4BlockSize);
+  float32_to_nvfp4_packed_kernel<<<blocks, static_cast<int>(kNvfp4BlockSize), 0, stream>>>(
+      source, packed, block_scales_e4m3, tensor_scale, n);
+}
+
+void launch_nvfp4_packed_to_float32(
+    const std::uint8_t* packed,
+    const std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    float* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  nvfp4_packed_to_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      packed, block_scales_e4m3, tensor_scale, dest, n);
 }
 
 void launch_store_mlp_activations_bf16_float32(

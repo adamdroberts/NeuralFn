@@ -181,6 +181,20 @@ void launch_evo_adopt_candidate_float32(
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_float32_to_bf16_bits(const float* source, std::uint16_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_bf16_bits_to_float32(const std::uint16_t* source, float* dest, std::int64_t n, cudaStream_t stream);
+void launch_float32_to_nvfp4_packed(
+    const float* source,
+    std::uint8_t* packed,
+    std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t n,
+    cudaStream_t stream);
+void launch_nvfp4_packed_to_float32(
+    const std::uint8_t* packed,
+    const std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    float* dest,
+    std::int64_t n,
+    cudaStream_t stream);
 void launch_store_mlp_activations_bf16_float32(
     const float* ln2_out,
     const float* fc_out,
@@ -2908,6 +2922,30 @@ int nfn_native_tile_bf16_bits_to_float32(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_bf16_bits_to_float32(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_float32_to_nvfp4_packed(
+    const float* source,
+    std::uint8_t* packed,
+    std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_float32_to_nvfp4_packed(
+        source, packed, block_scales_e4m3, tensor_scale, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_nvfp4_packed_to_float32(
+    const std::uint8_t* packed,
+    const std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    float* dest,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_nvfp4_packed_to_float32(
+        packed, block_scales_e4m3, tensor_scale, dest, n, as_stream(cuda_stream));
     return launch_status();
 }
 

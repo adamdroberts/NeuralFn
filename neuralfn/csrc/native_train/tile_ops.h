@@ -439,6 +439,22 @@ int nfn_native_tile_bf16_bits_to_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_float32_to_nvfp4_packed(
+    const float* source,
+    std::uint8_t* packed,
+    std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_nvfp4_packed_to_float32(
+    const std::uint8_t* packed,
+    const std::uint8_t* block_scales_e4m3,
+    float tensor_scale,
+    float* dest,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_store_mlp_activations_bf16_float32(
     const float* ln2_out,
     const float* fc_out,

@@ -1956,7 +1956,10 @@ storage is mandatory; dense GPT fails before token-shard resolution or GPU
 training if the request is still intent-only. The same contract is available
 through `--native-cuda-require-native-nvfp4-activation-packing`,
 `NFN_NATIVE_GPT_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`, or
-`NFN_NATIVE_GPT2_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`.
+`NFN_NATIVE_GPT2_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`. The raw native Tile
+ops library now exports `nfn_native_tile_float32_to_nvfp4_packed` and
+`nfn_native_tile_nvfp4_packed_to_float32`; these are the pack/dequantize storage
+primitives that later dense GPT projection and attention routes should consume.
 
 The no-Torch verifier also executes the guarded legacy training scripts with no
 native flags against stubbed native CLIs, and it imports the installed
