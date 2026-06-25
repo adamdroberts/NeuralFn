@@ -49,12 +49,16 @@ CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from
 `neuralfn/csrc/tile_cuda/kernels.cu`; after toolkit changes, run
 `bash tools/rebuild_native_sm120.sh` to rebuild
-`build/libnfn_native_train_tile_ops.so`, the compiled GPT/native training
-frontends, the GPT-2 compatibility frontend, and the missing-template native
-stubs against the current CUDA toolkit. It also refreshes
+`build/libnfn_native_train_tile_ops.so`, the SDK C++ bindings
+(`neuralfn._native_gpt`, `neuralfn._native_gpt2`, and
+`neuralfn._native_train`), the compiled GPT/native training frontends, the
+GPT-2 compatibility frontend, and the missing-template native stubs against
+the current CUDA toolkit. It also refreshes
 `build/libnfn_native_train_tile_ops_tk.so`, `build/linear_backward_bench`, and
 `build/lm_head_backward_bench`, so `tools/check_native_no_torch_deps.py` does
-not fail later on stale benchmark or TK-candidate artifacts. The full native build script rebuilds
+not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. Set
+`NFN_NATIVE_REBUILD_BINDINGS=0` only when intentionally rebuilding raw trainer
+binaries without touching the importable SDK extensions. The full native build script rebuilds
 `libnfn_native_train_tile_ops.so` before `nfn_gpt_native_train_linked`, so the
 linked binary preferred by SDK and CLI startup paths is not left pointing at a
 stale Tile ops library. The script defaults to

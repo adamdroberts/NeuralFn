@@ -15,6 +15,21 @@ printf '  NVCC=%s\n' "${NVCC:-nvcc}"
 printf '  CXX=%s\n' "${CXX:-c++}"
 printf '  NFN_TILE_CUDA_ARCH=%s\n' "${NFN_TILE_CUDA_ARCH}"
 printf '  NFN_TILE_CUDA_USE_TK_ATTENTION=%s\n' "${NFN_TILE_CUDA_USE_TK_ATTENTION}"
+printf '  NFN_NATIVE_REBUILD_BINDINGS=%s\n' "${NFN_NATIVE_REBUILD_BINDINGS:-1}"
+
+case "${NFN_NATIVE_REBUILD_BINDINGS:-1}" in
+  1|true|TRUE|yes|YES|on|ON)
+    bash "${ROOT_DIR}/tools/build_native_gpt_binding.sh"
+    bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh"
+    bash "${ROOT_DIR}/tools/build_native_train_binding.sh"
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_NATIVE_REBUILD_BINDINGS value: ${NFN_NATIVE_REBUILD_BINDINGS}" >&2
+    exit 2
+    ;;
+esac
 
 NFN_NATIVE_TRAIN_TILE_OPS_OUT="${OUT_DIR}/libnfn_native_train_tile_ops.so" \
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"

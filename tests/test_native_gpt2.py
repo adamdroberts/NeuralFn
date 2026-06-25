@@ -719,6 +719,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
         "build_native_gpt_cli_linked.sh"
     )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
+    assert "NFN_NATIVE_REBUILD_BINDINGS" in rebuild_sm120
+    assert "build_native_gpt_binding.sh" in rebuild_sm120
+    assert "build_native_gpt2_binding.sh" in rebuild_sm120
+    assert "build_native_train_binding.sh" in rebuild_sm120
     assert "libnfn_native_train_tile_ops_tk.so" in rebuild_sm120
     assert "NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS" in rebuild_sm120
     assert "build_linear_backward_bench.sh" in rebuild_sm120

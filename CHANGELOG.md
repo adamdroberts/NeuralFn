@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the SM120 native rebuild workflow to refresh the importable C++ SDK
+  extensions by default. `tools/rebuild_native_sm120.sh` now rebuilds
+  `neuralfn._native_gpt`, `neuralfn._native_gpt2`, and
+  `neuralfn._native_train` before rebuilding Tile CUDA ops, compiled GPT/native
+  trainer frontends, GPT-2 compatibility frontends, benchmark binaries, and
+  missing-template stubs. Set `NFN_NATIVE_REBUILD_BINDINGS=0` only when you
+  intentionally want to skip the SDK binding refresh for a raw binary rebuild.
+  This keeps the no-Torch SDK import path aligned with CUDA/native ABI changes;
+  it does not change training defaults.
+
+  Verification:
+  `git diff --check`; `bash -n tools/rebuild_native_sm120.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  -q`; `bash tools/build_native_gpt_binding.sh`;
+  `bash tools/build_native_gpt2_binding.sh`;
+  `bash tools/build_native_train_binding.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts`.
+
 - Corrected dense GPT runtime JSON attribution for diagnostic LM-head
   probability-only CE+dlogits runs. When
   `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1` or

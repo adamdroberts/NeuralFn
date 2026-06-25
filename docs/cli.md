@@ -1308,6 +1308,11 @@ also refresh their default `nfn_gpt_native_train` or
 `nfn_gpt_native_train_linked` binary before non-dry runs when the native GPT
 source, token shard resolver, or linked Tile ABI inputs are newer. User-pinned
 `NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer paths are not rebuilt.
+After CUDA toolkit or native ABI changes, `bash tools/rebuild_native_sm120.sh`
+refreshes the importable SDK C++ bindings (`neuralfn._native_gpt`,
+`neuralfn._native_gpt2`, and `neuralfn._native_train`) before rebuilding the
+trainer binaries and benchmark harnesses. Set `NFN_NATIVE_REBUILD_BINDINGS=0`
+only for a raw-binary rebuild that should leave local SDK extensions untouched.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.
