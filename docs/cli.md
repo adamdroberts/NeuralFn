@@ -1247,8 +1247,9 @@ cooperative sequence ABI against the strict fused-kernel symbol inside one CUDA
 process and emits `reference_components` JSON with decomposed logits, CE,
 dHidden, and dWeight timings for the current raw Tile ABI. The strict result
 also reports `candidate_sequence_wrapper_only` and
-`candidate_cuda_graph_wrapper_only`, so a failed true-fused gate names whether
-the candidate is still sequencing kernels or replaying a captured CUDA Graph.
+`candidate_cuda_graph_wrapper_only`, plus the compact `candidate_path_class`
+label, so a failed true-fused gate names whether the candidate is still
+sequencing kernels or replaying a captured CUDA Graph.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
 selects the 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` selects the same shape and

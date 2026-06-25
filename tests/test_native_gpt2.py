@@ -1891,6 +1891,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_sequence_wrapper_only" in bench_source
     assert "candidate_strict_symbol_is_placeholder_sequence" in bench_source
     assert "candidate_cuda_graph_wrapper_only" in bench_source
+    assert "candidate_path_class" in bench_source
     assert "graph_replay_success_count > 0" in bench_source
     assert "ce_launch_count > 0" in bench_source
     assert "dhidden_launch_count > 0" in bench_source

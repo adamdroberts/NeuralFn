@@ -648,6 +648,14 @@ std::string render_json(
         candidate.ce_launch_count == 0 &&
         candidate.dhidden_launch_count == 0 &&
         candidate.dweight_launch_count == 0;
+    const std::string candidate_path_class =
+        true_fused_capability
+            ? "strict-true-fused-tile-kernel"
+            : (candidate_cuda_graph_wrapper_only
+                   ? "diagnostic-cuda-graph-wrapper"
+                   : (candidate_sequence_wrapper_only
+                          ? "diagnostic-sequence-wrapper"
+                          : "unknown"));
     auto variant_json = [](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
@@ -692,6 +700,7 @@ std::string render_json(
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
         << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
+        << "  \"candidate_path_class\": \"" << json_escape(candidate_path_class) << "\",\n"
         << "  \"reference_components\": {"
         << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.logits_ms_per_iter << ","
         << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.ce_ms_per_iter << ","

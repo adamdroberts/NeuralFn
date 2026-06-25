@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the same compact route vocabulary to the focused LM-head backward
+  microbenchmark. `tools/bench_lm_head_backward_candidate.sh` now emits
+  `candidate_path_class` alongside `candidate_sequence_wrapper_only` and
+  `candidate_cuda_graph_wrapper_only`, so symbol-level checks and full-trainer
+  parity reports describe the strict LM-head candidate consistently.
+
+  Verification:
+  `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench or
+  cooperative_abi"`;
+  `NFN_LM_HEAD_BACKWARD_NO_LOSS=1 NFN_LM_HEAD_BACKWARD_ROWS=32768
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=5 NFN_LM_HEAD_BACKWARD_WARMUP=1
+  bash tools/bench_lm_head_backward_candidate.sh`.
+
 - Added an explicit LM-head classifier-backward route class to native GPT
   runtime and plan JSON. The trainer now reports
   `lm_head_classifier_backward_path_class` as one of
