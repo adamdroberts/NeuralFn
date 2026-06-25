@@ -496,6 +496,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `lm_head_fused_graph_capture_attempt_count`,
       `lm_head_fused_graph_capture_success_count`,
       `lm_head_fused_graph_cache_hit_count`,
+      `lm_head_fused_graph_thread_cache_hit_count`,
       `lm_head_fused_graph_cache_entry_count`,
       `lm_head_fused_graph_replay_count`,
       `lm_head_fused_graph_replay_success_count`, and
@@ -504,6 +505,17 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       promote the CUDA Graph body as the default. The strict graph path no
       longer increments legacy `lm_head_cooperative_sequence_*` counters on
       successful replay, so those counters continue to identify only the
+      fallback/diagnostic sequence wrapper. The thread-cache counter was added
+      2026-06-25 to prove hot replays are skipping the mutex-protected graph
+      cache scan after the small per-thread graph exec cache is warmed. The
+      same-script RTX 5090 run moved
+      `lm_head_fused_graph_thread_cache_hit_count` from `0` to `45`, passed
+      route and ratio gates, and measured `0.980403x` train-loop wall time,
+      `0.998423x` steady-state CUDA-event step time, `1.019998x` tokens/sec,
+      and `0.999734x` LM-head backward; the standalone LM-head microbench
+      reported candidate `graph_thread_cache_hit_count=5`,
+      `graph_replay_success_count=5`, fallback `0`, and `0.983870x`
+      candidate/baseline time.
       diagnostic sequence wrapper or graph fallback.
     - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
       llm.kittens-parity became the default integrated LM-head route.

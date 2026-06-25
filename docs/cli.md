@@ -1176,12 +1176,16 @@ CUDA Graph counters:
 `lm_head_fused_graph_capture_attempt_count`,
 `lm_head_fused_graph_capture_success_count`,
 `lm_head_fused_graph_cache_hit_count`,
+`lm_head_fused_graph_thread_cache_hit_count`,
 `lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
 `lm_head_fused_graph_replay_success_count`, and
 `lm_head_fused_graph_fallback_count`. Older Tile ops libraries that do not
 export those optional C ABI symbols leave the values at zero. Successful
 strict graph replay leaves `lm_head_cooperative_sequence_*` at zero; nonzero
 sequence counters mean the diagnostic wrapper or graph fallback path ran.
+`lm_head_fused_graph_thread_cache_hit_count` counts hot training-loop replays
+that reused the small per-thread graph exec cache without re-entering the
+mutex-protected graph cache scan.
 LM-head graph prewarm is now enabled by default for real native GPT training.
 Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and

@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a hot per-thread replay cache for the diagnostic strict LM-head CUDA
+  Graph wrapper used by native dense GPT Tile-CUDA training. After the first
+  mutex-backed lookup or capture for a given LM-head backward graph key,
+  subsequent same-thread replays reuse a tiny eight-entry thread-local
+  `cudaGraphExec_t` cache directly, avoiding the graph-cache mutex and vector
+  scan in the hot training loop while keeping the existing captured graph body
+  and fallback behavior. Runtime JSON, `tools/paired_kernel_speed.py`, and the
+  standalone LM-head backward microbench now report
+  `lm_head_fused_graph_thread_cache_hit_count` /
+  `graph_thread_cache_hit_count` so same-script candidate runs can prove this
+  route is active.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
+  -q`; `git diff --check`; `bash tools/build_native_train_tile_ops.sh
+  build/libnfn_native_train_tile_ops.so`; `NFN_NATIVE_TILE_OPS_LIB=/tmp/libnfn_native_train_tile_ops_before_thread_cache.so
+  NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB=/mnt/disk2/dev/innovation/NeuralFn/build/libnfn_native_train_tile_ops.so
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_lm_head_thread_cache_candidate_profiles_v2
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_thread_cache_candidate_v2.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`; `NFN_LM_HEAD_BACKWARD_PROFILE=smoke
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_thread_cache_smoke.json
+  bash tools/bench_lm_head_backward_candidate.sh`. The SM120 same-script run
+  moved `lm_head_fused_graph_thread_cache_hit_count` from `0` to `45`, passed
+  the route-change gate, and measured `0.980403x` train-loop wall time,
+  `0.998423x` steady-state CUDA-event step time, `1.019998x` tokens/sec, and
+  `0.999734x` LM-head backward. The standalone LM-head microbench emitted
+  `graph_thread_cache_hit_count=5`, graph replay success `5`, fallback `0`,
+  and `0.983870x` candidate/baseline time.
+
 - Refreshed the SM120 parity and BF16 attention grad-out evidence after the
   512-thread Tile linear-bias reducer default. The llm.kittens parity wrapper
   still shows a real remaining gap on the dedicated RTX 5090:

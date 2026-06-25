@@ -125,6 +125,7 @@ struct VariantResult {
     std::int64_t graph_capture_attempt_count = 0;
     std::int64_t graph_capture_success_count = 0;
     std::int64_t graph_cache_hit_count = 0;
+    std::int64_t graph_thread_cache_hit_count = 0;
     std::int64_t graph_cache_entry_count = 0;
     std::int64_t graph_replay_count = 0;
     std::int64_t graph_replay_success_count = 0;
@@ -319,6 +320,7 @@ VariantResult run_variant(
     CountFn graph_capture_attempt_count,
     CountFn graph_capture_success_count,
     CountFn graph_cache_hit_count,
+    CountFn graph_thread_cache_hit_count,
     CountFn graph_cache_entry_count,
     CountFn graph_replay_count,
     CountFn graph_replay_success_count,
@@ -418,6 +420,7 @@ VariantResult run_variant(
     result.graph_capture_attempt_count = graph_capture_attempt_count();
     result.graph_capture_success_count = graph_capture_success_count();
     result.graph_cache_hit_count = graph_cache_hit_count();
+    result.graph_thread_cache_hit_count = graph_thread_cache_hit_count();
     result.graph_cache_entry_count = graph_cache_entry_count();
     result.graph_replay_count = graph_replay_count();
     result.graph_replay_success_count = graph_replay_success_count();
@@ -675,6 +678,7 @@ std::string render_json(
             << "\"graph_capture_attempt_count\":" << value.graph_capture_attempt_count << ","
             << "\"graph_capture_success_count\":" << value.graph_capture_success_count << ","
             << "\"graph_cache_hit_count\":" << value.graph_cache_hit_count << ","
+            << "\"graph_thread_cache_hit_count\":" << value.graph_thread_cache_hit_count << ","
             << "\"graph_cache_entry_count\":" << value.graph_cache_entry_count << ","
             << "\"graph_replay_count\":" << value.graph_replay_count << ","
             << "\"graph_replay_success_count\":" << value.graph_replay_success_count << ","
@@ -774,6 +778,8 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_capture_success_count");
         auto graph_cache_hit_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_cache_hit_count");
+        auto graph_thread_cache_hit_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count");
         auto graph_cache_entry_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_cache_entry_count");
         auto graph_replay_count =
@@ -858,6 +864,7 @@ int main(int argc, char** argv) {
                 graph_capture_attempt_count,
                 graph_capture_success_count,
                 graph_cache_hit_count,
+                graph_thread_cache_hit_count,
                 graph_cache_entry_count,
                 graph_replay_count,
                 graph_replay_success_count,

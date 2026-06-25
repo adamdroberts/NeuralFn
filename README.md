@@ -1478,6 +1478,7 @@ Fresh Tile ops builds also report CUDA Graph evidence for the strict
 `lm_head_fused_graph_capture_attempt_count`,
 `lm_head_fused_graph_capture_success_count`,
 `lm_head_fused_graph_cache_hit_count`,
+`lm_head_fused_graph_thread_cache_hit_count`,
 `lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
 `lm_head_fused_graph_replay_success_count`, and
 `lm_head_fused_graph_fallback_count`. These counters are included in native
@@ -1487,7 +1488,10 @@ standalone `tools/bench_lm_head_backward_candidate.sh` microbench JSON, so
 instead of only proving the cooperative route was requested. Missing older Tile
 ops symbols report zero in trainer-side summaries; current microbench builds
 require the graph counter ABI so baseline and candidate variants both carry
-capture/replay/fallback evidence. This does not promote the graph body as a
+capture/replay/fallback evidence. `lm_head_fused_graph_thread_cache_hit_count`
+counts hot replays that reused the small per-thread graph exec cache without
+taking the graph-cache mutex/vector-scan path. This does not promote the graph
+body as a
 default training route. Successful strict graph replay does not increment the
 legacy `lm_head_cooperative_sequence_*` counters; those counters identify the
 diagnostic sequence wrapper or graph fallback path.

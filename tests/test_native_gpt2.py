@@ -1814,12 +1814,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_fused_graph_capture_attempt_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_capture_success_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_hit_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_entry_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_replay_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_replay_success_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in tile_ops_header
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
+    assert "lm_head_fused_graph_thread_cache_hit_count" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_failure_count" in source
     assert "lm_head_fused_graph_prewarm_last_error_code" in source
@@ -1898,6 +1900,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
+    assert "lm_head_fused_graph_thread_cache_hit_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
     assert "lm_head_fused_graph_body_node_count_per_replay" in speed_tool
     assert "lm_head_fused_graph_body_ce_node_replay_total" in speed_tool
@@ -1969,6 +1972,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "graph_capture_attempt_count" in bench_source
     assert "graph_capture_success_count" in bench_source
     assert "graph_cache_hit_count" in bench_source
+    assert "graph_thread_cache_hit_count" in bench_source
     assert "graph_cache_entry_count" in bench_source
     assert "graph_replay_count" in bench_source
     assert "graph_replay_success_count" in bench_source

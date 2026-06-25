@@ -165,6 +165,7 @@ for the optional
 `lm_head_fused_graph_capture_attempt_count`,
 `lm_head_fused_graph_capture_success_count`,
 `lm_head_fused_graph_cache_hit_count`,
+`lm_head_fused_graph_thread_cache_hit_count`,
 `lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
 `lm_head_fused_graph_replay_success_count`, and
 `lm_head_fused_graph_fallback_count`. These counters are optional C ABI
@@ -174,6 +175,9 @@ route-change counters so LM-head cooperative candidates can prove graph replay
 or fallback directly. Successful strict graph replay leaves the legacy
 `lm_head_cooperative_sequence_*` counters at zero; those counters are for the
 diagnostic sequence wrapper or graph fallback path.
+`lm_head_fused_graph_thread_cache_hit_count` reports hot graph replays that
+reused the small per-thread graph exec cache without taking the
+mutex-protected graph cache lookup.
 The capture-only
 `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
 ABI is also available for diagnostics. Dense GPT JSON reports

@@ -489,6 +489,10 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_fused_graph_cache_hit_count",),
     ),
     (
+        "lm_head_fused_graph_thread_cache_hit_count",
+        ("lm_head_fused_graph_thread_cache_hit_count",),
+    ),
+    (
         "lm_head_fused_graph_cache_entry_count",
         ("lm_head_fused_graph_cache_entry_count",),
     ),
@@ -730,6 +734,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_fused_graph_capture_attempt_count",
     "lm_head_fused_graph_capture_success_count",
     "lm_head_fused_graph_cache_hit_count",
+    "lm_head_fused_graph_thread_cache_hit_count",
     "lm_head_fused_graph_cache_entry_count",
     "lm_head_fused_graph_replay_count",
     "lm_head_fused_graph_replay_success_count",
@@ -1072,6 +1077,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_fused_graph_capture_attempt_count",
     "lm_head_fused_graph_capture_success_count",
     "lm_head_fused_graph_cache_hit_count",
+    "lm_head_fused_graph_thread_cache_hit_count",
     "lm_head_fused_graph_cache_entry_count",
     "lm_head_fused_graph_replay_count",
     "lm_head_fused_graph_replay_success_count",

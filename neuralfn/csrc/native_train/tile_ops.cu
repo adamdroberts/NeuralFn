@@ -1854,6 +1854,7 @@ namespace {
 constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
 constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
+constexpr int kLmHeadGraphThreadCacheCapacity = 8;
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_ce_launch_count{0};
@@ -1865,6 +1866,7 @@ std::atomic<std::int64_t> g_lm_head_cooperative_sequence_loss_bin_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_capture_attempt_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_capture_success_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_cache_hit_count{0};
+std::atomic<std::int64_t> g_lm_head_fused_graph_thread_cache_hit_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_replay_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_replay_success_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_fallback_count{0};
@@ -1966,6 +1968,7 @@ void reset_lm_head_cooperative_sequence_stats() {
     g_lm_head_fused_graph_capture_attempt_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_capture_success_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_cache_hit_count.store(0, std::memory_order_relaxed);
+    g_lm_head_fused_graph_thread_cache_hit_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_replay_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_replay_success_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_fallback_count.store(0, std::memory_order_relaxed);
@@ -2133,8 +2136,18 @@ int capture_lm_head_classifier_backward_graph_bf16_u16(
 int run_lm_head_classifier_backward_graph_bf16_u16(
     const LmHeadBackwardGraphKey& key,
     cudaStream_t stream) {
+    thread_local LmHeadBackwardGraphEntry fast_entries[kLmHeadGraphThreadCacheCapacity];
+    thread_local int fast_entry_count = 0;
     cudaGraphExec_t exec = nullptr;
-    {
+    for (int i = 0; i < fast_entry_count; ++i) {
+        if (fast_entries[i].key == key) {
+            exec = fast_entries[i].exec;
+            g_lm_head_fused_graph_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+            g_lm_head_fused_graph_thread_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+            break;
+        }
+    }
+    if (exec == nullptr) {
         std::lock_guard<std::mutex> lock(g_lm_head_backward_graph_mutex);
         for (const auto& entry : g_lm_head_backward_graph_cache) {
             if (entry.key == key) {
@@ -2149,6 +2162,11 @@ int run_lm_head_classifier_backward_graph_bf16_u16(
                 return status;
             }
             g_lm_head_backward_graph_cache.push_back({key, exec});
+        }
+        if (fast_entry_count < kLmHeadGraphThreadCacheCapacity) {
+            fast_entries[fast_entry_count++] = {key, exec};
+        } else {
+            fast_entries[kLmHeadGraphThreadCacheCapacity - 1] = {key, exec};
         }
     }
     g_lm_head_fused_graph_replay_count.fetch_add(1, std::memory_order_relaxed);
@@ -2348,6 +2366,10 @@ std::int64_t nfn_native_tile_lm_head_fused_graph_capture_success_count() {
 
 std::int64_t nfn_native_tile_lm_head_fused_graph_cache_hit_count() {
     return g_lm_head_fused_graph_cache_hit_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count() {
+    return g_lm_head_fused_graph_thread_cache_hit_count.load(std::memory_order_relaxed);
 }
 
 std::int64_t nfn_native_tile_lm_head_fused_graph_cache_entry_count() {
