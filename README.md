@@ -975,9 +975,11 @@ Native GPT run JSON also reports the loaded SM120 TK GEMM compile settings:
 `linear_tk_sm120_super_m`, `linear_tk_sm120_dinput_super_m`,
 `linear_tk_sm120_dweight_super_m`, `linear_tk_sm120_huge_n_k_tile`,
 `linear_tk_sm120_fast_dgelu_enabled`, and
-`linear_tk_sm120_approx_dgelu_tanh_enabled`. The paired benchmark treats these
-as strategy values, so compile-time Tile ops candidates can prove generated
-kernel changes even when their launch counters stay constant.
+`linear_tk_sm120_approx_dgelu_tanh_enabled`. Native `--check-tile-ops` and
+plan JSON query those values from the loaded Tile ops library too, so build
+flag changes are visible before a full training run. The paired benchmark
+treats these as strategy values, so compile-time Tile ops candidates can prove
+generated kernel changes even when their launch counters stay constant.
 The
 named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` are now
 rejected/no-op historical diagnostics. The current linked SM120 baseline

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed dense-GPT `--check-tile-ops` / plan telemetry for SM120 TK linear
+  compile settings. The preflight JSON now queries the loaded Tile ops library
+  for `linear_tk_sm120_*` config symbols instead of hardcoding the config as
+  absent, so build-flag changes such as the default fused dGELU dInput macros
+  are visible before a full training run.
+
+  Verification: focused cooperative LM-head ABI/static test, native
+  `--check-tile-ops` against a freshly rebuilt temporary SM120 Tile ops library,
+  and `git diff --check`.
+
 - Expanded LM-head CUDA Graph prewarm to cover the loss-recording graph variant
   used by normal dense-GPT training. The native GPT trainer still warms the
   no-loss LM-head backward graph, and now also warms the active train-loss graph

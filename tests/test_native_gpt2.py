@@ -1736,6 +1736,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel" in source
     assert "diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity" in source
+    assert "linear_tk_sm120_config_symbol_loaded = false" in source
+    assert 'dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_k_tile")' in source
+    assert (
+        'dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled")'
+        in source
+    )
+    assert '"linear_tk_sm120_config_symbol_loaded": false' not in source
+    assert '"linear_tk_sm120_fast_dgelu_enabled": false' not in source
     assert (
         "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
         in source

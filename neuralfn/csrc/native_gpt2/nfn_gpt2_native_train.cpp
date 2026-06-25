@@ -4251,6 +4251,15 @@ bool print_tile_plan(
     bool cooperative_lm_head_backward_true_fused_kernel_found = false;
     bool cooperative_lm_head_backward_true_fused_kernel_capable = false;
     bool cooperative_lm_head_backward_llmk_parity_capable = false;
+    bool linear_tk_sm120_config_symbol_loaded = false;
+    int linear_tk_sm120_k_tile = 0;
+    int linear_tk_sm120_grad_k_tile = 0;
+    int linear_tk_sm120_super_m = 0;
+    int linear_tk_sm120_dinput_super_m = 0;
+    int linear_tk_sm120_dweight_super_m = 0;
+    int linear_tk_sm120_huge_n_k_tile = 0;
+    bool linear_tk_sm120_fast_dgelu_enabled = false;
+    bool linear_tk_sm120_approx_dgelu_tanh_enabled = false;
     std::string cooperative_lm_head_backward_fused_kernel_abi_path_class = "missing";
     std::string error;
     std::vector<bool> found(symbols.size(), false);
@@ -4279,6 +4288,7 @@ bool print_tile_plan(
                 dlsym(handle, kLmHeadCooperativeBackwardTrueFusedKernelSymbol) != nullptr;
             using LmHeadTrueFusedCapabilityFn = int (*)();
             using LmHeadFusedKernelPathClassFn = const char* (*)();
+            using TileIntCapabilityFn = int (*)();
             auto true_fused_capability =
                 reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
@@ -4299,6 +4309,52 @@ bool print_tile_plan(
                 cooperative_lm_head_backward_true_fused_kernel_found &&
                 llmk_parity_capability != nullptr &&
                 llmk_parity_capability() != 0;
+            auto tk_k_tile =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_k_tile"));
+            auto tk_grad_k_tile =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_grad_k_tile"));
+            auto tk_super_m =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_super_m"));
+            auto tk_dinput_super_m =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_dinput_super_m"));
+            auto tk_dweight_super_m =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_dweight_super_m"));
+            auto tk_huge_n_k_tile =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_huge_n_k_tile"));
+            auto tk_fast_dgelu =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_fast_dgelu_enabled"));
+            auto tk_approx_dgelu_tanh =
+                reinterpret_cast<TileIntCapabilityFn>(
+                    dlsym(handle, "nfn_native_tile_trainer_linear_tk_sm120_approx_dgelu_tanh_enabled"));
+            linear_tk_sm120_config_symbol_loaded =
+                tk_k_tile != nullptr &&
+                tk_grad_k_tile != nullptr &&
+                tk_super_m != nullptr &&
+                tk_dinput_super_m != nullptr &&
+                tk_dweight_super_m != nullptr &&
+                tk_huge_n_k_tile != nullptr &&
+                tk_fast_dgelu != nullptr &&
+                tk_approx_dgelu_tanh != nullptr;
+            linear_tk_sm120_k_tile = tk_k_tile != nullptr ? tk_k_tile() : 0;
+            linear_tk_sm120_grad_k_tile = tk_grad_k_tile != nullptr ? tk_grad_k_tile() : 0;
+            linear_tk_sm120_super_m = tk_super_m != nullptr ? tk_super_m() : 0;
+            linear_tk_sm120_dinput_super_m =
+                tk_dinput_super_m != nullptr ? tk_dinput_super_m() : 0;
+            linear_tk_sm120_dweight_super_m =
+                tk_dweight_super_m != nullptr ? tk_dweight_super_m() : 0;
+            linear_tk_sm120_huge_n_k_tile =
+                tk_huge_n_k_tile != nullptr ? tk_huge_n_k_tile() : 0;
+            linear_tk_sm120_fast_dgelu_enabled =
+                tk_fast_dgelu != nullptr && tk_fast_dgelu() != 0;
+            linear_tk_sm120_approx_dgelu_tanh_enabled =
+                tk_approx_dgelu_tanh != nullptr && tk_approx_dgelu_tanh() != 0;
             if (!linked_tile_ops_requested) {
                 dlclose(handle);
             }
@@ -4673,15 +4729,18 @@ bool print_tile_plan(
         << "  \"linear_bf16_gemm_count\": 0,\n"
         << "  \"linear_tk_gemm_count\": 0,\n"
         << "  \"linear_tk_dgelu_dinput_gemm_count\": 0,\n"
-        << "  \"linear_tk_sm120_config_symbol_loaded\": false,\n"
-        << "  \"linear_tk_sm120_k_tile\": 0,\n"
-        << "  \"linear_tk_sm120_grad_k_tile\": 0,\n"
-        << "  \"linear_tk_sm120_super_m\": 0,\n"
-        << "  \"linear_tk_sm120_dinput_super_m\": 0,\n"
-        << "  \"linear_tk_sm120_dweight_super_m\": 0,\n"
-        << "  \"linear_tk_sm120_huge_n_k_tile\": 0,\n"
-        << "  \"linear_tk_sm120_fast_dgelu_enabled\": false,\n"
-        << "  \"linear_tk_sm120_approx_dgelu_tanh_enabled\": false,\n"
+        << "  \"linear_tk_sm120_config_symbol_loaded\": "
+        << (linear_tk_sm120_config_symbol_loaded ? "true" : "false") << ",\n"
+        << "  \"linear_tk_sm120_k_tile\": " << linear_tk_sm120_k_tile << ",\n"
+        << "  \"linear_tk_sm120_grad_k_tile\": " << linear_tk_sm120_grad_k_tile << ",\n"
+        << "  \"linear_tk_sm120_super_m\": " << linear_tk_sm120_super_m << ",\n"
+        << "  \"linear_tk_sm120_dinput_super_m\": " << linear_tk_sm120_dinput_super_m << ",\n"
+        << "  \"linear_tk_sm120_dweight_super_m\": " << linear_tk_sm120_dweight_super_m << ",\n"
+        << "  \"linear_tk_sm120_huge_n_k_tile\": " << linear_tk_sm120_huge_n_k_tile << ",\n"
+        << "  \"linear_tk_sm120_fast_dgelu_enabled\": "
+        << (linear_tk_sm120_fast_dgelu_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_tk_sm120_approx_dgelu_tanh_enabled\": "
+        << (linear_tk_sm120_approx_dgelu_tanh_enabled ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_direct_write_count\": 0,\n"
