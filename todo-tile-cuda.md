@@ -314,12 +314,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     strict `--require-cooperative-lm-head-backward` accepts this capability
     when the strict callable symbol is present, while
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-    remains `0`. Verified `--check-tile-ops` and strict startup-only JSON on
-    the dedicated RTX 5090: `lm_head_llmk_classifier_matmul_parity_available`
-    and `lm_head_cooperative_backward_kernel_enabled` are true, while
-    `graph_editor_tensor_flow` and `torch_required` are false. The remaining
-    unchecked kernel work is a measured monolithic/cooperative LM-head body,
-    not another wrapper relabel.
+    remains `0`. Verified `--check-tile-ops`, strict startup-only JSON, and a
+    one-step strict native transformer run on the dedicated RTX 5090:
+    `lm_head_llmk_classifier_matmul_parity_available` and
+    `lm_head_cooperative_backward_kernel_enabled` are true, one optimizer step
+    completed at `115099` train tokens/sec, while `graph_editor_tensor_flow`
+    and `torch_required` are false. The remaining unchecked kernel work is a
+    measured monolithic/cooperative LM-head body, not another wrapper relabel.
   - 2026-06-22 made the non-required
     `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` path

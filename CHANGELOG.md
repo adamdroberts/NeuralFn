@@ -39,7 +39,10 @@ Future updates should append new entries here rather than replacing older notes.
   with expected error 35. The strict startup JSON passed with
   `lm_head_llmk_classifier_matmul_parity_available=true`,
   `lm_head_cooperative_backward_kernel_enabled=true`,
-  `graph_editor_tensor_flow=false`, and `torch_required=false`.
+  `graph_editor_tensor_flow=false`, and `torch_required=false`. A one-step
+  strict native transformer run also completed successfully with
+  `steps_completed=1`, `train_tokens_per_second=115099`, the same strict
+  llm.kittens-parity route, and no graph-editor or Torch tensor flow.
 
 - Kept the LLaMA-fast eval helper help path out of the Torch runtime.
   `eval_llama_fast.py` now parses `--help` from lightweight CLI helpers and
