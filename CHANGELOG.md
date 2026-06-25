@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT MLP projection side-stream candidate behind
+  `NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the
+  GPT-2-prefixed alias. The native trainer now has a stream-aware MLP
+  projection backward body that pre-materializes the shared BF16 grad-out, then
+  can launch projection dInput+dGELU and projection dWeight+bias on
+  non-blocking side streams before synchronizing for the following MLP FC
+  backward stage. Runtime JSON and `tools/paired_kernel_speed.py` report
+  `block_backward_mlp_proj_concurrent_dinput_dweight_requested`,
+  `block_backward_mlp_proj_concurrent_dinput_dweight_enabled`, and
+  `block_backward_mlp_proj_concurrent_dinput_dweight_count`.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_concurrent_dinput_dweight`
+  compares the candidate against the serial default and gates
+  `stage.block_backward.mlp_proj.total_ms` on stage-timed runs. The profile is
+  now blocked as rejected unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set: the CUDA
+  13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed gate moved
+  `block_backward_mlp_proj_concurrent_dinput_dweight_count` from `0` to `288`,
+  but regressed train-loop wall to `1.004101x`, steady-state CUDA-event timing
+  to `1.004144x`, LM-head backward to `1.000889x`, block backward to
+  `1.009823x`, and MLP projection backward to `1.025216x`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, ran the focused source-contract tests, a
+  one-step route-proof native GPT run, and the same-script
+  `mlp_proj_concurrent_dinput_dweight` candidate benchmark.
+
 - Added default CUDA Graph executable upload for the dense GPT LM-head
   diagnostic graph wrapper. The Tile ABI now calls `cudaGraphUpload` after
   LM-head graph instantiate during prewarm unless

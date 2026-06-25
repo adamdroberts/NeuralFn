@@ -265,6 +265,10 @@ NATIVE_METRIC_PATHS = (
         ("block_backward_mlp_proj_dinput_before_dweight_count",),
     ),
     (
+        "block_backward_mlp_proj_concurrent_dinput_dweight_count",
+        ("block_backward_mlp_proj_concurrent_dinput_dweight_count",),
+    ),
+    (
         "block_backward_mlp_fc_dinput_before_dweight_count",
         ("block_backward_mlp_fc_dinput_before_dweight_count",),
     ),
@@ -911,6 +915,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "block_forward_linear_strategy",
     "block_backward_input_linear_strategy",
     "block_backward_weight_linear_strategy",
+    "block_backward_mlp_proj_concurrent_dinput_dweight_requested",
+    "block_backward_mlp_proj_concurrent_dinput_dweight_enabled",
     "block_backward_mlp_fc_concurrent_dinput_dweight_requested",
     "block_backward_pair_streams_available",
     "block_backward_mlp_fc_concurrent_dinput_dweight_enabled",
@@ -1024,6 +1030,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "block_backward_dinput_bf16_gemm_count",
     "bf16_persistent_block_input_ln1_backward_count",
     "block_backward_mlp_proj_dinput_before_dweight_count",
+    "block_backward_mlp_proj_concurrent_dinput_dweight_count",
     "block_backward_mlp_fc_dinput_before_dweight_count",
     "block_backward_attn_proj_dinput_before_dweight_count",
     "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",

@@ -855,6 +855,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "train_loop_wall_ms_per_step improved to 0.979044x" in candidate_bench
     assert "stage.block_backward.total_ms improved to 0.960721x" in candidate_bench
     assert "stage.block_backward.mlp_fc.total_ms regressed to 1.063824x" in candidate_bench
+    assert '"mlp_proj_concurrent_dinput_dweight"|"mlp-proj-concurrent-dinput-dweight"' in candidate_bench
+    assert "NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1" in candidate_bench
+    assert "block_backward_mlp_proj_concurrent_dinput_dweight_count from 0 to 288" in candidate_bench
+    assert "stage.block_backward.mlp_proj.total_ms to 1.025216x" in candidate_bench
+    assert "stage.block_backward.mlp_proj.total_ms=1.000" in candidate_bench
     assert "ce_bf16_threads_512" in candidate_bench
     assert "lm_head_ce_bf16_threads_per_row from 1024 to 512" in candidate_bench
     assert "stage.lm_head_backward.ce.total_ms to 1.430612x" in candidate_bench
@@ -2272,6 +2277,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "attention_dprep_float_hd64_specialized": "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1",
         "packed_attention_saved_lse_off": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0",
         "mlp_proj_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1",
+        "mlp_proj_concurrent_dinput_dweight": "NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1",
         "mlp_fc_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1",
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "qkv_dinput_before_dweight": "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1",
@@ -2434,6 +2440,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "steady-state CUDA-event timing missed at 1.000937x" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
     assert "Known profiles:" in bench_source
+    assert "mlp_proj_concurrent_dinput_dweight" in bench_source
     assert (
         "cublaslt_plan_prewarm_block_only, "
         "cublaslt_plan_prewarm_lm_head_only, "
@@ -9218,6 +9225,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_pair_streams_available" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward.mlp_fc.dinput_dweight_concurrent" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "block_backward_mlp_proj_concurrent_dinput_dweight_requested" in gpt2_source_text
+    assert "block_backward_mlp_proj_concurrent_dinput_dweight_enabled" in gpt2_source_text
+    assert "block_backward_mlp_proj_concurrent_dinput_dweight_count" in gpt2_source_text
+    assert "block_backward.mlp_proj.dinput_dweight_concurrent" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward.qkv.dinput_dweight_concurrent" in gpt2_source_text
