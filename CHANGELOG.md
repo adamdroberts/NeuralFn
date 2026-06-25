@@ -2866,14 +2866,15 @@ Future updates should append new entries here rather than replacing older notes.
   not.
 
 - Refreshed the promoted SM120 native `lm_head_loss_bins` train-loss logging
-  profile after the latest CUDA 13.3 RTX 5090 rebuilds. The profile now records
-  a `candidate_note` metadata field explaining that it is the default
+  profile after the latest CUDA 13.3.33 RTX 5090 rebuilds. The profile now
+  records a `candidate_note` metadata field explaining that it is the default
   loss-bin-vs-row-loss comparison, not a no-loss-path optimization. The
   same-script gate forced `--train-loss-every-steps 1` on both baseline and
   candidate, moved `lm_head_classifier_loss_bin_launch_count` from `0` to
-  `48`, and measured `0.981781x` train-loop wall, `0.977802x` steady-state
-  CUDA-event timing, `1.018709x` train tokens/sec, `0.909450x` LM-head
-  backward, and `0.541560x` LM-head CE versus the older row-loss tail.
+  `48`, and measured `0.981541x` train-loop wall, `0.982697x` steady-state
+  CUDA-event timing, `1.018809x` train tokens/sec, `0.927229x` LM-head
+  backward, `0.999905x` block backward, and `0.995141x` MLP projection
+  backward versus the older row-loss tail.
 
   Verification: ran
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` on the display-disabled

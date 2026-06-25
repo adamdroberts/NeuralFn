@@ -781,15 +781,16 @@ steady-state CUDA-event slice instead of passing only on first-step or setup
 movement. Set `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` or
 `NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING=0` for a timing-only rerun without
 native CUDA-event records.
-The 2026-06-24 CUDA 13.3 dedicated RTX 5090 refresh now keeps
+The 2026-06-25 CUDA 13.3.33 dedicated RTX 5090 refresh now keeps
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` as the accepted
 train-loss logging comparison. The same-script 3-step, 2-sample gate forces
 `--train-loss-every-steps 1`, moves
 `lm_head_classifier_loss_bin_launch_count` from `0` to `48`, and measured
-`0.981781x` train-loop wall, `0.977802x` steady-state CUDA-event timing,
-`1.018709x` train tokens/sec, `0.909450x` LM-head backward, and `0.541560x`
-LM-head CE versus the older row-loss tail. The wrapper records that evidence in
-`candidate_note` metadata for the promoted profile.
+`0.981541x` train-loop wall, `0.982697x` steady-state CUDA-event timing,
+`1.018809x` train tokens/sec, `0.927229x` LM-head backward, `0.999905x`
+block backward, and `0.995141x` MLP projection backward versus the older
+row-loss tail. The wrapper records that evidence in `candidate_note` metadata
+for the promoted profile.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.
@@ -2898,10 +2899,11 @@ atomically accumulate row losses into 1024 bins, then reduce those bins with
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`. That profile now forces
 the baseline side to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` so the
 same-script benchmark continues to compare the new default against the older
-row-loss path. The latest CUDA 13.3 dedicated RTX 5090 gate measured the
-default loss-bin route at `0.981781x` train-loop wall, `0.977802x`
-steady-state CUDA-event timing, `1.018709x` train tokens/sec, `0.909450x`
-LM-head backward, and `0.541560x` LM-head CE. Set
+row-loss path. The latest CUDA 13.3.33 dedicated RTX 5090 gate measured the
+default loss-bin route at `0.981541x` train-loop wall, `0.982697x`
+steady-state CUDA-event timing, `1.018809x` train tokens/sec, `0.927229x`
+LM-head backward, `0.999905x` block backward, and `0.995141x` MLP projection
+backward. Set
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` only for regression checks
 against the older row-loss tail.
 
