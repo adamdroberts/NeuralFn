@@ -10334,7 +10334,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS",
                               "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS",
                               "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM"}),
-            !cfg.startup_only);
+            false);
     std::string linear_cublaslt_plan_prewarm_mode =
         normalize_env_mode(env_or_empty_any(
             {"NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE",

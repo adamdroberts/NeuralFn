@@ -1106,13 +1106,12 @@ matmul statuses are `0`.
 It intentionally does not request the classic cuBLAS grouped BF16 probe because the
 CUDA 13.3 recheck showed that unsupported route still poisons the selected CUDA
 context before the trainer can allocate model arenas.
-The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for
-real training runs, but leaves prewarm off for `--startup-only` probes so
-startup diagnostics do not pay the extra setup cost. Set
-`NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`,
-`NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=0`, or
-`NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=0` to disable it for paired bisection, or
-set the same variables to `1` to force it during startup-only diagnostics.
+The native trainer keeps CUDA 13.3 BF16 cuBLASLt plan prewarm off by default so
+normal training startup matches the direct llm.kittens-style launch more
+closely. Set `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=1` only for paired bisection or a
+machine-local run that proves prewarm improves total time.
 The optional mode selector
 `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE`,
 `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLAN_MODE`, or
@@ -1130,7 +1129,8 @@ Native JSON reports
 `linear_cublaslt_plan_prewarm_failure_count`, and setup timing includes
 `setup.cublaslt_plan_prewarm`. The dedicated RTX 5090 CUDA 13.3 retest measured
 the prewarmed route at `0.989405x` train-loop wall time and `0.964634x`
-LM-head backward time, while startup-only remains unprewarmed by default.
+LM-head backward time, but normal startup now leaves prewarm disabled until a
+same-script total-runtime gate justifies enabling it for a local profile.
 The native candidate wrapper also exposes rejected diagnostic profile
 `cublaslt_plan_prewarm_off`, which pins the baseline to full cuBLASLt plan
 prewarm and the candidate to `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`.

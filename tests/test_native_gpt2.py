@@ -989,7 +989,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert 'linear_cublaslt_plan_prewarm_mode = "all"' in gpt_source
     assert 'linear_cublaslt_plan_prewarm_mode == "block_only"' in gpt_source
     assert 'linear_cublaslt_plan_prewarm_mode == "lm_head_only"' in gpt_source
-    assert "!cfg.startup_only" in gpt_source
+    assert '"NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM"}),\n            false)' in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_requested" in gpt_source
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT" in gpt_source

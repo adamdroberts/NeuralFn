@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Moved dense GPT cuBLASLt BF16 plan prewarm back to opt-in. Normal
+  transformer-LM training no longer precomputes nine cuBLASLt plan shapes during
+  startup; use `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1`,
+  `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=1`, or
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=1` only for paired diagnostics or a
+  local profile that proves the startup cost is worth paying.
+
+  Verification:
+  `bash tools/build_native_gpt_cli.sh /tmp/nfn_gpt_native_train_check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cublaslt_plan or cpp_cli_builds"`;
+  a one-step NanoGPT TinyStories CUDA smoke with `--json-out` reported
+  `linear_cublaslt_plan_prewarm_enabled: false`,
+  `linear_cublaslt_plan_prewarm_attempted_count: 0`, and
+  `setup.cublaslt_plan_prewarm` at `0.00002 ms`; an opt-in startup-only smoke
+  with `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1` reported 9 attempted and 9
+  successful prewarm shapes.
+
 - Fixed dense GPT native validation loss for small eval batches. The compiled
   transformer-LM path now honors `--eval-batch-size` as the active validation
   batch size and keeps validation LM-head loss on the BF16 public-vocab Tile
