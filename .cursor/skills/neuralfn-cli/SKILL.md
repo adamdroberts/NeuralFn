@@ -407,6 +407,10 @@ Canonical docs:
   --list-models` should report `gpt`, `gpt2`, and `gpt3` as the same dense GPT
   native trainer aliases, with `nanogpt` reported as `partial-native-trainer`
   until full transformer geometry is implemented.
+- Keep `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` diagnostic-only. The
+  CUDA 13.3 dedicated RTX 5090 startup-only gate overlapped split float/uint16
+  arena `cudaMalloc` calls but rejected default promotion because median setup
+  wall regressed and uint16 arena allocation became much slower.
 - `nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib PATH` / wrapper
   `--native-cuda-smoke-tile-ops` launches `nfn_native_tile_fill_float32`
   through dynamically loaded CUDA runtime and verifies copyback without Python,

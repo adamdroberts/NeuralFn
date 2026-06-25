@@ -734,9 +734,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_FORCE_REBUILD" in build_script
     assert "source_newer_than_out" in build_script
     assert "TOKEN_SHARDS_HEADER" in build_script
+    assert '"${SRC}" "${TOKEN_SHARDS_SRC}" -pthread -ldl -o "${OUT}"' in build_script
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
     assert "source_newer_than_out" in linked_build
     assert '! source_newer_than_out "${TILE_OPS_LIB}"' in linked_build
+    assert '-pthread -ldl -o "${OUT}"' in linked_build
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in parity_bench
     assert "ensure_default_native_gpt_trainer_current" in parity_bench
@@ -2141,6 +2143,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "uint16_arena_pointer_assign_wall_ms" in speed_source
     assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
     assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
+    assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
+    assert "concurrent_arena_materialize_requested" in speed_source
+    assert "concurrent_arena_materialize_enabled" in speed_source
+    assert "concurrent_arena_materialize_count" in speed_source
 
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
@@ -2193,6 +2199,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
             "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
         ),
         "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
+        "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
@@ -7779,6 +7786,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "float_allocation_cuda_malloc_count" in gpt2_source_text
     assert "uint16_allocation_strategy" in gpt2_source_text
     assert "uint16_arena_cuda_malloc_count" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE" in gpt2_source_text
+    assert "materialize_float_and_uint16_arenas_concurrently" in gpt2_source_text
+    assert "concurrent_arena_materialize_requested" in gpt2_source_text
+    assert "concurrent_arena_materialize_enabled" in gpt2_source_text
+    assert "concurrent_arena_materialize_count" in gpt2_source_text
     assert "transformer_device_arena_requested_bytes" in gpt2_source_text
     assert "transformer_device_arena_allocated_bytes" in gpt2_source_text
     assert "DescriptorArenaRequest" in gpt2_source_text

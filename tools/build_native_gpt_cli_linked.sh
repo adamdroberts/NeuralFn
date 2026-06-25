@@ -40,5 +40,5 @@ mkdir -p "$(dirname "${OUT}")"
   -rdynamic -Wl,--export-dynamic \
   -Wl,--no-as-needed "${TILE_OPS_LIB}" -Wl,--as-needed \
   -Wl,-rpath,"$(dirname "${TILE_OPS_LIB}")" \
-  -ldl -o "${OUT}"
+  -pthread -ldl -o "${OUT}"
 printf '%s\n' "${OUT}"

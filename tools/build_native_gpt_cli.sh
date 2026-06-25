@@ -27,5 +27,5 @@ fi
 mkdir -p "$(dirname "${OUT}")"
 "${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic \
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
-  "${SRC}" "${TOKEN_SHARDS_SRC}" -ldl -o "${OUT}"
+  "${SRC}" "${TOKEN_SHARDS_SRC}" -pthread -ldl -o "${OUT}"
 printf '%s\n' "${OUT}"

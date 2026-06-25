@@ -2782,7 +2782,19 @@ CUDA 13.3 explicit arena-gated retest measured `1.177290x` setup wall time,
 materialization, and `1.176781x` total startup wall time. Runtime JSON
 reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
 `device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
-counts, and `device_cuda_malloc_async_fallback_count`. The same dense GPT
+counts, and `device_cuda_malloc_async_fallback_count`. Set
+`NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena startup
+profiling. It overlaps the float and uint16 arena `cudaMalloc` calls with host
+`std::thread` workers when the default split-arena `cudaMalloc` path is active,
+falls back to serial materialization for combined-arena or `cudaMallocAsync`
+diagnostics, and reports `concurrent_arena_materialize_requested`,
+`concurrent_arena_materialize_enabled`,
+`concurrent_arena_materialize_count`, and
+`setup.float_uint16_arena_materialize_concurrent.total_ms`. The CUDA 13.3
+dedicated RTX 5090 startup-only gate rejected the concurrent profile as a
+default: mean setup wall was a noisy `0.987871x`, while median setup wall
+regressed to `1.003922x` and uint16 arena allocation regressed to `2.664592x`
+mean. The same dense GPT
 transformer-LM arenas now default to split float and BF16/uint16 device arenas
 (`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`); runtime JSON reports
 `float_allocation_strategy: "single-arena"` and

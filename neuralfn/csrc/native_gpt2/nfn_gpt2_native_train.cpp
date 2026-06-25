@@ -22,6 +22,7 @@
 #include <string_view>
 #include <stdexcept>
 #include <type_traits>
+#include <thread>
 #include <vector>
 
 #if defined(_WIN32)
@@ -13311,6 +13312,9 @@ int run_transformer_lm_training_json(
     std::int64_t uint16_arena_cuda_malloc_count = 0;
     double uint16_arena_cuda_malloc_wall_ms = 0.0;
     double uint16_arena_pointer_assign_wall_ms = 0.0;
+    std::int64_t concurrent_arena_materialize_requested = 0;
+    std::int64_t concurrent_arena_materialize_enabled = 0;
+    std::int64_t concurrent_arena_materialize_count = 0;
     std::size_t transformer_device_arena_requested_bytes = 0;
     std::size_t transformer_device_arena_allocated_bytes = 0;
     std::size_t transformer_device_arena_uint16_byte_offset = 0;
@@ -13357,6 +13361,12 @@ int run_transformer_lm_training_json(
             false);
     const bool async_device_allocator_enabled =
         async_device_allocator_requested && cuda_malloc_async != nullptr && cuda_free_async != nullptr;
+    const bool concurrent_arena_materialize_requested_flag =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE",
+                              "NFN_NATIVE_GPT2_CONCURRENT_ARENA_MATERIALIZE"}),
+            false);
+    concurrent_arena_materialize_requested = concurrent_arena_materialize_requested_flag ? 1 : 0;
     const bool skip_exit_device_free_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_SKIP_EXIT_CUDA_FREE",
@@ -13583,6 +13593,84 @@ int run_transformer_lm_training_json(
             *request.ptr = uint16_arena + request.offset;
         }
         uint16_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
+    };
+    auto materialize_float_and_uint16_arenas_concurrently = [&]() {
+        if (!error.empty()) {
+            return;
+        }
+        if (combined_transformer_device_arena_enabled || !combined_uint16_arena_enabled ||
+            float_arena_requests.empty() || uint16_arena_requests.empty() ||
+            async_device_allocator_enabled) {
+            materialize_float_arena();
+            materialize_uint16_arena();
+            return;
+        }
+        float_arena_allocated_elements = align_float_arena_offset(float_arena_allocated_elements);
+        uint16_arena_allocated_elements = align_uint16_arena_offset(uint16_arena_allocated_elements);
+        if (float_arena_allocated_elements >
+            static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(float))) {
+            error = "float arena allocation byte size overflow";
+            return;
+        }
+        if (uint16_arena_allocated_elements >
+            static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "uint16 arena allocation byte size overflow";
+            return;
+        }
+        concurrent_arena_materialize_enabled = 1;
+        concurrent_arena_materialize_count += 1;
+        std::string float_error;
+        std::string uint16_error;
+        std::thread float_thread([&]() {
+            const auto malloc_start = Clock::now();
+            const int status = device_malloc(
+                reinterpret_cast<void**>(&float_arena),
+                sizeof(float) * static_cast<std::size_t>(float_arena_allocated_elements));
+            float_arena_cuda_malloc_wall_ms += elapsed_ms(malloc_start, Clock::now());
+            if (status != 0) {
+                float_error = cuda_error(status, "cudaMalloc transformer_lm_float_arena");
+                return;
+            }
+            float_arena_cuda_malloc_count = 1;
+            const auto assign_start = Clock::now();
+            for (const FloatArenaRequest& request : float_arena_requests) {
+                *request.ptr = float_arena + request.offset;
+            }
+            float_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
+        });
+        std::thread uint16_thread([&]() {
+            const auto malloc_start = Clock::now();
+            const int status = device_malloc(
+                reinterpret_cast<void**>(&uint16_arena),
+                sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements));
+            uint16_arena_cuda_malloc_wall_ms += elapsed_ms(malloc_start, Clock::now());
+            if (status != 0) {
+                uint16_error = cuda_error(status, "cudaMalloc transformer_lm_uint16_arena");
+                return;
+            }
+            uint16_arena_cuda_malloc_count = 1;
+            const auto assign_start = Clock::now();
+            for (const Uint16ArenaRequest& request : uint16_arena_requests) {
+                *request.ptr = uint16_arena + request.offset;
+            }
+            uint16_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
+        });
+        float_thread.join();
+        uint16_thread.join();
+        if (float_arena != nullptr) {
+            float_ptrs.push_back(float_arena);
+        }
+        if (uint16_arena != nullptr) {
+            uint16_ptrs.push_back(uint16_arena);
+        }
+        if (!float_error.empty()) {
+            error = float_error;
+            return;
+        }
+        if (!uint16_error.empty()) {
+            error = uint16_error;
+            return;
+        }
     };
 
     struct TransformerBlockParams {
@@ -14822,13 +14910,20 @@ int run_transformer_lm_training_json(
                 "block_dweight_bf16_staging_arena");
         }
     };
-    run_setup_timed("setup.float_arena_materialize", [&]() {
-        materialize_float_arena();
-    });
-    run_setup_timed("setup.uint16_arena_materialize", [&]() {
-        request_uint16_arenas();
-        materialize_uint16_arena();
-    });
+    if (concurrent_arena_materialize_requested_flag) {
+        run_setup_timed("setup.float_uint16_arena_materialize_concurrent", [&]() {
+            request_uint16_arenas();
+            materialize_float_and_uint16_arenas_concurrently();
+        });
+    } else {
+        run_setup_timed("setup.float_arena_materialize", [&]() {
+            materialize_float_arena();
+        });
+        run_setup_timed("setup.uint16_arena_materialize", [&]() {
+            request_uint16_arenas();
+            materialize_uint16_arena();
+        });
+    }
     if (stored_packed_attention_lse_arena != nullptr && stored_packed_attention_lse_elements > 0) {
         stored_packed_attention_lse_arena_elements = stored_packed_attention_lse_elements;
         stored_packed_attention_lse_arena_bytes =
@@ -22815,6 +22910,12 @@ int run_transformer_lm_training_json(
         << "  \"device_cuda_free_async_count\": " << device_cuda_free_async_count << ",\n"
         << "  \"device_cuda_malloc_async_fallback_count\": "
         << device_cuda_malloc_async_fallback_count << ",\n"
+        << "  \"concurrent_arena_materialize_requested\": "
+        << (concurrent_arena_materialize_requested != 0 ? "true" : "false") << ",\n"
+        << "  \"concurrent_arena_materialize_enabled\": "
+        << (concurrent_arena_materialize_enabled != 0 ? "true" : "false") << ",\n"
+        << "  \"concurrent_arena_materialize_count\": "
+        << concurrent_arena_materialize_count << ",\n"
         << "  \"device_exit_cuda_free_elision_enabled\": "
         << (skip_exit_device_free_enabled ? "true" : "false") << ",\n"
         << "  \"device_exit_cuda_free_skipped_count\": "

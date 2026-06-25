@@ -619,6 +619,18 @@ NATIVE_METRIC_PATHS = (
         ("transformer_device_arena_pointer_assign_wall_ms",),
     ),
     (
+        "concurrent_arena_materialize_requested",
+        ("concurrent_arena_materialize_requested",),
+    ),
+    (
+        "concurrent_arena_materialize_enabled",
+        ("concurrent_arena_materialize_enabled",),
+    ),
+    (
+        "concurrent_arena_materialize_count",
+        ("concurrent_arena_materialize_count",),
+    ),
+    (
         "block_state_layout.mlp_residual_next_ln1_fusion_enabled",
         ("block_state_layout", "mlp_residual_next_ln1_fusion_enabled"),
     ),
@@ -1055,6 +1067,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "attention_backward_tk_chunk_batch_min",
     "attention_backward_tk_chunk_batch_last",
     "attention_backward_tk_block_size",
+    "concurrent_arena_materialize_count",
     "lm_head_classifier.reference_full_bf16_logit_bytes",
     "lm_head_classifier.native_chunk_bf16_logit_bytes",
     "lm_head_classifier.resident_logit_reduction_ratio",
@@ -1146,6 +1159,7 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "train_loop_cuda_event_steady_state_wall_ms_per_step",
     "train_tokens_per_second",
     "setup_wall_ms",
+    "setup.float_uint16_arena_materialize_concurrent.total_ms",
     "setup.float_arena_materialize.total_ms",
     "float_arena_cuda_malloc_wall_ms",
     "float_arena_pointer_assign_wall_ms",

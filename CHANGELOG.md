@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit split-arena concurrent materialization probe for the native
+  dense GPT trainer. `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` (or the
+  compatibility `NFN_NATIVE_GPT2_CONCURRENT_ARENA_MATERIALIZE=1`) overlaps the
+  float and uint16 arena `cudaMalloc` calls with host `std::thread` workers when
+  the default split-arena `cudaMalloc` path is active. Runtime JSON reports
+  `concurrent_arena_materialize_requested`,
+  `concurrent_arena_materialize_enabled`,
+  `concurrent_arena_materialize_count`, and the combined setup bucket
+  `setup.float_uint16_arena_materialize_concurrent.total_ms`. The build scripts
+  now link the compiled native GPT CLI with `-pthread`, and
+  `tools/paired_kernel_speed.py` includes the new setup bucket/counters in its
+  native summaries. The SM120 wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_arena_materialize` is
+  intentionally rejected by default: the CUDA 13.3 dedicated RTX 5090
+  startup-only gate moved `concurrent_arena_materialize_count` from `0` to `1`,
+  but median setup wall regressed to `1.003922x` and
+  `uint16_arena_cuda_malloc_wall_ms` regressed to `2.664592x` mean despite a
+  noisy `0.987871x` mean setup wall.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  or native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  or native_train_tile_ops_builds_torch_free_c_abi"`;
+  `NFN_NATIVE_FORCE_REBUILD=1 bash tools/build_native_gpt_cli_linked.sh
+  build/nfn_gpt_native_train_linked`;
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_arena_materialize
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_STARTUP_ONLY=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_concurrent_arena_materialize_rejected_allowed.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`;
+  `git diff --check`.
+
 - Added the native trainer's existing arena allocation sub-timers to the paired
   benchmark hot summary. `tools/paired_kernel_speed.py` now prints
   `float_arena_cuda_malloc_wall_ms`,
