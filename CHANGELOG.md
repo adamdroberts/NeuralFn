@@ -21,6 +21,22 @@ Future updates should append new entries here rather than replacing older notes.
   bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the promotion
   gates at `1.012417x` train-loop wall and `1.020275x` block-backward time.
 
+- Refreshed the SM120 native candidate rejection record for
+  `lm_head_graph_prewarm` after the CUDA Toolkit 13.3 WSL reinstall. A short
+  rerun passed, but the stronger 5-step/3-sample gate still rejected default
+  promotion on steady-state event timing, so LM-head CUDA Graph prewarm remains
+  diagnostic-only and runtime defaults are unchanged.
+
+  Verification:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_5x3_after_cuda133_retry.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the promotion
+  gate at `1.000678x` steady-state CUDA-event timing.
+
 - Changed the default dense GPT cooperative LM-head CUDA Graph wrapper to
   capture the same post-CE fork/join schedule used by the cooperative sequence
   path. The graph body now records CE completion, launches dHidden and dWeight

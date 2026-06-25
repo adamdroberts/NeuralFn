@@ -2080,3 +2080,18 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     256-thread Tile-CUDA bias reducer as default; the next viable
     block-backward work needs a different dWeight+bias kernel or grouped/fused
     schedule, not a larger scalar bias-reduction block.
+  - 2026-06-25 rechecked LM-head CUDA Graph prewarm after the CUDA Toolkit
+    13.3 reinstall. A short 3-step, 2-sample gate passed for the combined
+    bundle (`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1`,
+    `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`, and
+    `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`) at
+    `train_loop_wall_ms_per_step=0.980626x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=0.998421x`, and
+    `stage.lm_head_backward.total_ms=0.998617x`. The isolated graph-only flag
+    failed the LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample
+    combined rerun rejected promotion because steady-state CUDA-event timing
+    regressed to `1.000678x` even though train-loop wall improved to
+    `0.988694x` and LM-head backward improved to `0.999611x`. Keep LM-head
+    graph prewarm default-off/diagnostic-only; the remaining parity work still
+    needs steady-state LM-head or block-backward kernel work, not first-step
+    capture relocation.

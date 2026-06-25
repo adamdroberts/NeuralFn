@@ -752,7 +752,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-24 5-step, 2-sample same-script gate proved setup prewarm eliminated runtime LM-head CUDA Graph captures and improved first-step event time to 0.969636x plus train-loop wall to 0.994664x, but rejected default promotion because steady-state event time regressed to 1.001249x and stage.lm_head_backward.total_ms to 1.000123x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-reinstall 5-step, 3-sample same-script gate proved setup prewarm eliminated runtime LM-head CUDA Graph captures and improved train_loop_wall_ms_per_step to 0.988694x plus stage.lm_head_backward.total_ms to 0.999611x, but rejected default promotion because steady-state CUDA-event timing regressed to 1.000678x. Keep graph prewarm diagnostic-only until the long-loop steady gate passes."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1 NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1 NFN_NATIVE_GPT_CUBLASLT_PLAN_PREWARM=1 NFN_NATIVE_GPT_CUBLASLT_PLAN_PREWARM_MODE=lm_head_only"
     ;;
   "lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"|"lm_head_cooperative_cuda_graph_off"|"lm-head-cooperative-cuda-graph-off")
