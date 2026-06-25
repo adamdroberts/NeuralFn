@@ -2747,6 +2747,13 @@ dedicated RTX 5090 attention-section gate changed
 train-loop wall time to `1.013207x`, steady-state CUDA-event timing to
 `1.000470x`, block backward to `1.029008x`, and
 `attention_backward_tk_timing_us` to `1.002850x`.
+The midpoint
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_96` diagnostic is
+also rejected. A CUDA 13.3.33 dedicated RTX 5090 3-step/2-sample
+current/native/reference gate changed `attention_backward_tk_batch_cap` from
+`64` to `96`, but regressed attention `to_qkv` to `1.000638x`, dprep timing to
+`1.000149x`, and still measured the candidate at `1.035674x` train-loop wall
+time versus llm.kittens.
 The wrapper also keeps
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_attn_proj_dweight_h0_65536`
 rejected. It expands to

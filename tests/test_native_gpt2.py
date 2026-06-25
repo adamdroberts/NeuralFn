@@ -2343,6 +2343,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",
+        "packed_attention_bwd_batch_96": "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96",
         "cublaslt_grouped_probe_required": "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1",
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
@@ -2395,6 +2396,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "train_loop_wall_ms_per_step regressed to 7.368793x" in bench_source
     assert "8.037520x versus llm.kittens" in bench_source
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms collapsed to 63.207371x" in bench_source
+    assert "changed attention_backward_tk_batch_cap from 64 to 96" in bench_source
+    assert "stage.block_backward.attn_sdpa.to_qkv.total_ms to 1.000638x" in bench_source
+    assert "candidate-over-llm.kittens train_loop_wall_ms_per_step remained 1.035674x" in bench_source
     assert "train_loop_wall_ms_per_step to 0.981541x" in bench_source
     assert "stage.block_backward.total_ms to 0.999905x" in bench_source
     assert (

@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `packed_attention_bwd_batch_96` as a named rejected SM120 native
+  candidate profile. The profile expands to
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96` and records the
+  midpoint attention batch-cap gate between the existing rejected 32 and 128
+  probes. The CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample
+  current/native/reference run proved the route changed
+  `attention_backward_tk_batch_cap` from 64 to 96, but rejected default
+  promotion because `stage.block_backward.attn_sdpa.total_ms` regressed to
+  `1.000597x`, `stage.block_backward.attn_sdpa.to_qkv.total_ms` to
+  `1.000638x`, `attention_backward_dprep_timing_us` to `1.000149x`, and
+  candidate-over-llm.kittens `train_loop_wall_ms_per_step` remained
+  `1.035674x`.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_ENV=NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_attention_bwd_batch_96_3step_2sample.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_attention_bwd_batch_96_3step_2sample_profiles
+  NFN_SM120_NATIVE_COMMAND_TIMEOUT_SECONDS=300
+  bash tools/bench_native_gpt_sm120_candidate.sh`;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `git diff --check`.
+
 - Marked the `lm_head_row_chunk_65536` SM120 native candidate profile rejected by
   default instead of only timeout-prone. The CUDA 13.3.33 dedicated RTX 5090
   same-script current/native/reference rerun proved the unsafe 65536-row route
