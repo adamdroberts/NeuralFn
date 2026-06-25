@@ -1877,6 +1877,15 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `candidate_cuda_graph_wrapper_only: true`. This keeps the existing graph
     wrapper rejected as parity evidence; the next implementation still needs a
     real fused or co-scheduled LM-head classifier/backward kernel contract.
+  - 2026-06-25 changed the default LM-head CUDA Graph body from a single-stream
+    CE -> dHidden -> dWeight capture to a post-CE fork/join capture that
+    launches dHidden and dWeight on cooperative non-blocking streams before
+    joining the caller stream. The focused trainer-chunk microbench improved
+    versus the older cooperative sequence (`0.969899x`, and `0.971587x` with
+    candidate first), and the full parity probe improved average loop wall to
+    `0.989380x`; however strict steady-state parity still failed at
+    `1.015315x`, so this is a partial scheduling win, not completion of the
+    remaining parity item.
   - 2026-06-22 kept the no-loss LM-head classifier CE route default-off after
     retesting it against the current packed-QKV dense GPT default. The route
     sends normal no-loss optimizer steps through the classifier row-loss kernel

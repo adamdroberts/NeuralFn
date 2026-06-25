@@ -1309,8 +1309,15 @@ The CUDA Graph body is still ABI groundwork rather than the final fused kernel:
 same-script reports must keep showing
 `lm_head_cooperative_backward_kernel_enabled: false` and
 `lm_head_cooperative_backward_strategy:
-diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel` until a later
-single-kernel body passes the strict capability probe.
+diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel` until a
+later single-kernel body passes the strict capability probe. That graph wrapper
+now captures a post-CE fork/join schedule: CE/dlogits runs first, dHidden and
+dWeight are launched on cooperative non-blocking streams, and the captured graph
+joins both streams before the caller can reuse the row-chunk workspace. It is a
+measurable scheduling improvement over the older single-stream graph replay, but
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` still
+returns false and strict SM120 parity still requires further LM-head or
+block-backward kernel work.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

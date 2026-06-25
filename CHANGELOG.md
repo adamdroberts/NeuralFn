@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the default dense GPT cooperative LM-head CUDA Graph wrapper to
+  capture the same post-CE fork/join schedule used by the cooperative sequence
+  path. The graph body now records CE completion, launches dHidden and dWeight
+  on cooperative non-blocking streams, then joins both streams before the
+  row-chunk workspace can be reused. Runtime JSON strategy strings now report
+  `diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel` (or
+  the loss-bin variant) to distinguish this route from the older single-stream
+  graph replay. Migration note: this remains a diagnostic graph wrapper rather
+  than a strict true-fused LM-head kernel;
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  still returns false.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`; ran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_graph_fork_join.json bash
+  tools/bench_lm_head_backward_candidate.sh` on the dedicated RTX 5090
+  (`candidate_to_baseline_ms_per_iter_ratio=0.969899`); reran with
+  `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1`
+  (`candidate_to_baseline_ms_per_iter_ratio=0.971587`); and ran the default
+  strict SM120 parity wrapper, which improved average train-loop wall time to
+  `0.989380x` but still failed the steady-state CUDA-event parity gate at
+  `1.015315x`.
+
 - Changed the SM120 llm.kittens parity wrapper to enforce parity gates by
   default. `tools/bench_native_gpt_sm120_parity.sh` now treats
   `NFN_SM120_PARITY_ENFORCE_GATE` / `NFN_SM120_ENFORCE_PARITY_GATE` as enabled

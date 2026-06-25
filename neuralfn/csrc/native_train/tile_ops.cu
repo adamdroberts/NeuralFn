@@ -1900,6 +1900,47 @@ std::mutex g_lm_head_backward_graph_mutex;
 std::vector<LmHeadBackwardGraphEntry> g_lm_head_backward_graph_cache;
 cudaStream_t g_lm_head_backward_graph_capture_stream = nullptr;
 
+struct LmHeadCooperativeStreams {
+    cudaStream_t dhidden = nullptr;
+    cudaStream_t dweight = nullptr;
+    cudaEvent_t ce_done = nullptr;
+    cudaEvent_t dhidden_done = nullptr;
+    cudaEvent_t dweight_done = nullptr;
+    int status = 0;
+};
+
+LmHeadCooperativeStreams& lm_head_cooperative_streams() {
+    static LmHeadCooperativeStreams resources;
+    static std::once_flag init_once;
+    std::call_once(init_once, []() {
+        int status = static_cast<int>(cudaStreamCreateWithFlags(
+            &resources.dhidden,
+            cudaStreamNonBlocking));
+        if (status == 0) {
+            status = static_cast<int>(cudaStreamCreateWithFlags(
+                &resources.dweight,
+                cudaStreamNonBlocking));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.ce_done,
+                cudaEventDisableTiming));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.dhidden_done,
+                cudaEventDisableTiming));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.dweight_done,
+                cudaEventDisableTiming));
+        }
+        resources.status = status;
+    });
+    return resources;
+}
+
 void reset_lm_head_cooperative_sequence_stats() {
     g_lm_head_cooperative_sequence_launch_count.store(0, std::memory_order_relaxed);
     g_lm_head_cooperative_sequence_ce_launch_count.store(0, std::memory_order_relaxed);
@@ -1972,6 +2013,34 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             row_stride,
             loss_scale,
             stream);
+    }
+    LmHeadCooperativeStreams& cooperative_streams = lm_head_cooperative_streams();
+    if (cooperative_streams.status == 0) {
+        cudaEventRecord(cooperative_streams.ce_done, stream);
+        cudaStreamWaitEvent(cooperative_streams.dhidden, cooperative_streams.ce_done, 0);
+        cudaStreamWaitEvent(cooperative_streams.dweight, cooperative_streams.ce_done, 0);
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            row_stride,
+            cooperative_streams.dhidden);
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            row_stride,
+            dweight_beta,
+            cooperative_streams.dweight);
+        cudaEventRecord(cooperative_streams.dhidden_done, cooperative_streams.dhidden);
+        cudaEventRecord(cooperative_streams.dweight_done, cooperative_streams.dweight);
+        cudaStreamWaitEvent(stream, cooperative_streams.dhidden_done, 0);
+        cudaStreamWaitEvent(stream, cooperative_streams.dweight_done, 0);
+        return;
     }
     neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
         logits_bf16,
@@ -2100,47 +2169,6 @@ cudaStream_t as_stream(void* cuda_stream) {
 
 int launch_status() {
     return static_cast<int>(cudaPeekAtLastError());
-}
-
-struct LmHeadCooperativeStreams {
-    cudaStream_t dhidden = nullptr;
-    cudaStream_t dweight = nullptr;
-    cudaEvent_t ce_done = nullptr;
-    cudaEvent_t dhidden_done = nullptr;
-    cudaEvent_t dweight_done = nullptr;
-    int status = 0;
-};
-
-LmHeadCooperativeStreams& lm_head_cooperative_streams() {
-    static LmHeadCooperativeStreams resources;
-    static std::once_flag init_once;
-    std::call_once(init_once, []() {
-        int status = static_cast<int>(cudaStreamCreateWithFlags(
-            &resources.dhidden,
-            cudaStreamNonBlocking));
-        if (status == 0) {
-            status = static_cast<int>(cudaStreamCreateWithFlags(
-                &resources.dweight,
-                cudaStreamNonBlocking));
-        }
-        if (status == 0) {
-            status = static_cast<int>(cudaEventCreateWithFlags(
-                &resources.ce_done,
-                cudaEventDisableTiming));
-        }
-        if (status == 0) {
-            status = static_cast<int>(cudaEventCreateWithFlags(
-                &resources.dhidden_done,
-                cudaEventDisableTiming));
-        }
-        if (status == 0) {
-            status = static_cast<int>(cudaEventCreateWithFlags(
-                &resources.dweight_done,
-                cudaEventDisableTiming));
-        }
-        resources.status = status;
-    });
-    return resources;
 }
 
 }  // namespace

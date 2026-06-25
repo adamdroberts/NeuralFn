@@ -1668,8 +1668,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "strict-true-fused-cooperative-classifier-backward" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
-    assert "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel" in source
-    assert "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel" in source
+    assert "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel" in source
+    assert (
+        "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
+        in source
+    )
     assert "strict-true-fused-cooperative-classifier-loss-bins-backward" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
@@ -1694,6 +1697,17 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
     assert "prewarm_lm_head_classifier_backward_graph_bf16_u16" in tile_ops_source
     assert "cudaStreamCreateWithFlags" in tile_ops_source
+    assert "cudaEventRecord(cooperative_streams.ce_done, stream)" in tile_ops_source
+    assert (
+        "cudaStreamWaitEvent(cooperative_streams.dhidden, cooperative_streams.ce_done, 0)"
+        in tile_ops_source
+    )
+    assert (
+        "cudaStreamWaitEvent(cooperative_streams.dweight, cooperative_streams.ce_done, 0)"
+        in tile_ops_source
+    )
+    assert "cooperative_streams.dhidden_done" in tile_ops_source
+    assert "cooperative_streams.dweight_done" in tile_ops_source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
         "    return 0;\n"
@@ -3848,7 +3862,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert isinstance(default_payload["lm_head_cooperative_backward_cuda_graph_enabled"], bool)
     assert (
         default_payload["lm_head_cooperative_backward_strategy"]
-        == "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel"
+        == "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel"
     )
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True

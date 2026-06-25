@@ -4388,8 +4388,8 @@ bool print_tile_plan(
                     : "strict-true-fused-cooperative-classifier-backward")
                 : (cooperative_lm_head_backward_cuda_graph_enabled
                     ? (cooperative_lm_head_loss_bins_requested
-                        ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
-                        : "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel")
+                        ? "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
+                        : "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel")
                 : (cooperative_lm_head_backward_sequence_wrapper_enabled
                     ? (cooperative_lm_head_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
@@ -21610,8 +21610,8 @@ int run_transformer_lm_training_json(
                     : "strict-true-fused-cooperative-classifier-backward")
         : (lm_head_cooperative_backward_cuda_graph_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight"
-                    : "diagnostic-cuda-graph-ce-dhidden-dweight")
+                    ? "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight"
+                    : "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight")
         : (lm_head_cooperative_backward_sequence_wrapper_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cooperative-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight"
@@ -21673,8 +21673,8 @@ int run_transformer_lm_training_json(
                     : "strict-true-fused-cooperative-classifier-backward")
                 : (lm_head_cooperative_backward_cuda_graph_enabled
                     ? (lm_head_cooperative_loss_bins_requested
-                        ? "diagnostic-cuda-graph-loss-bins-ce-dhidden-dweight-not-single-kernel"
-                        : "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel")
+                        ? "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
+                        : "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel")
                 : (lm_head_cooperative_backward_sequence_wrapper_enabled
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
