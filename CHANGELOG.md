@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense GPT Tile-CUDA linear-bias reducer launch width from 256 to
+  512 threads per block. The native trainer still accepts
+  `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS`,
+  `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS`, and
+  `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS` for paired diagnostics or
+  regression checks against the older 256-thread route, and runtime JSON
+  continues to report
+  `block_state_layout.linear_backward_bias_threads_per_block`.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_threads_512
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_linear_bias_threads_512_recheck
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_linear_bias_threads_512_recheck.json bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090 with
+  CUDA 13.3.33. The same-script gate proved
+  `block_state_layout.linear_backward_bias_threads_per_block: 256 -> 512` and
+  measured `0.984417x` train-loop wall time, `0.999644x` steady-state
+  CUDA-event step time, `1.015834x` tokens/sec, `0.971708x` block backward,
+  `0.859800x` MLP FC dWeight+bias, and `0.930817x` MLP projection
+  dWeight+bias.
+
 - Changed the SM120 native rebuild workflow to refresh the importable C++ SDK
   extensions by default. `tools/rebuild_native_sm120.sh` now rebuilds
   `neuralfn._native_gpt`, `neuralfn._native_gpt2`, and

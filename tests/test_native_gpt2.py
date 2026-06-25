@@ -2229,6 +2229,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "mlp_proj_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T",
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
         "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
+        "linear_bias_threads_512": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512",
         "lm_head_loss_bins": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1",
         "lm_head_loss_bins_bf16_workspace_prewarm": (
             "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 "
@@ -2268,6 +2269,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    assert "promoted 512 as the default" in bench_source
+    assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.859800x" in bench_source
     assert "block_backward_mlp_proj_dinput_before_dweight_count moved 0->288" in bench_source
     assert "stage.block_backward.mlp_proj.dinput.total_ms regressed to 1.101843x" in bench_source
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
@@ -6055,7 +6058,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "linear_bias_gradient_scratch_buffers_allocated": False,
         "linear_bias_gradient_microbatch_full_copy_elided": True,
         "linear_backward_bias_row_chunk_size": 256,
-        "linear_backward_bias_threads_per_block": 256,
+        "linear_backward_bias_threads_per_block": 512,
         "position_gradient_accumulation_direct": True,
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,

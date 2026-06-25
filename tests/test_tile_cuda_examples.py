@@ -1179,7 +1179,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
     assert "1.005344x" in text
-    assert "0.978512x" in text
+    assert "1.044177x attention backward" in text
     assert "1.010632x" in text
     assert "attention_bwd_block_32" in text
     assert "-DLLMK_SM120_ATTN_BWD_BLOCK=32" in text

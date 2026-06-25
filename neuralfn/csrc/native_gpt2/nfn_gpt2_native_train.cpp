@@ -299,7 +299,7 @@ int resolved_linear_backward_bias_threads_per_block() {
         env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS",
                           "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS",
                           "NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS"});
-    constexpr int kDefaultThreads = 256;
+    constexpr int kDefaultThreads = 512;
     if (raw.empty()) {
         return kDefaultThreads;
     }
