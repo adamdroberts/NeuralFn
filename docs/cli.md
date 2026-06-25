@@ -1950,7 +1950,13 @@ reported as `tile_cuda.requested_activation_dtype: "nvfp4"`, while
 and `tile_cuda.activation_dtype_status` show whether native dense GPT actually
 packed projection/attention activations. Until that FP4 path is wired into the
 compiled trainer, NVFP4 requests report effective `bf16-float32-mixed` storage
-and `native_activation_packing_active: false`.
+and `native_activation_packing_active: false`. Pass
+`--require-native-nvfp4-activation-packing` when native packed NVFP4 activation
+storage is mandatory; dense GPT fails before token-shard resolution or GPU
+training if the request is still intent-only. The same contract is available
+through `--native-cuda-require-native-nvfp4-activation-packing`,
+`NFN_NATIVE_GPT_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`, or
+`NFN_NATIVE_GPT2_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`.
 
 The no-Torch verifier also executes the guarded legacy training scripts with no
 native flags against stubbed native CLIs, and it imports the installed

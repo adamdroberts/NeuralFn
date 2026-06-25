@@ -51,6 +51,7 @@ struct Gpt2EvoPlan {
     bool layer_evo_enabled = true;
     bool startup_only = false;
     bool smoke_evo_kernels = false;
+    bool require_native_nvfp4_activation_packing = false;
     std::string tile_ops_lib;
     std::string cuda_runtime_lib;
     std::vector<std::string> unparsed_args;
@@ -349,6 +350,8 @@ void print_usage(const char* program) {
         << "  --num-heads N                   Attention heads, default 12\n"
         << "  --optimizer-profile adamw       Native optimizer profile; only adamw is accepted\n"
         << "  --tile-cuda-activation-dtype nvfp4|float32|none\n"
+        << "  --require-native-nvfp4-activation-packing\n"
+        << "                                  Forward a hard NVFP4 native-packing requirement to the dense GPT delegate\n"
         << "  --evo-layer-index N             Evo-trained block index, default 6\n"
         << "  --evo-layer-interval N          Candidate search cadence, default 10\n"
         << "  --evo-layer-population N        Candidate population, default 8\n"
@@ -471,8 +474,17 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "    \"effective_activation_dtype\": \"bf16-float32-mixed\",\n"
         << "    \"native_activation_packing_active\": false,\n"
         << "    \"nvfp4_activation_packing_active\": false,\n"
+        << "    \"native_activation_packing_required\": "
+        << (plan.require_native_nvfp4_activation_packing ? "true" : "false") << ",\n"
+        << "    \"native_activation_packing_error\": \""
+        << (plan.require_native_nvfp4_activation_packing && plan.tile_activation_dtype == "nvfp4"
+                ? "native NVFP4 activation packing required, but dense GPT delegate currently records nvfp4 as intent only"
+                : "")
+        << "\",\n"
         << "    \"activation_dtype_status\": \""
-        << (plan.tile_activation_dtype == "nvfp4"
+        << (plan.require_native_nvfp4_activation_packing && plan.tile_activation_dtype == "nvfp4"
+                ? "required-nvfp4-native-packing-missing"
+                : plan.tile_activation_dtype == "nvfp4"
                 ? "requested-nvfp4-not-yet-packed-native-dense-gpt"
                 : "native-dense-gpt-bf16-float32-activation-storage")
         << "\",\n"
@@ -933,6 +945,11 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
             plan.tile_activation_dtype = after_equals("--tile-cuda-activation-dtype=");
             continue;
         }
+        if (arg == "--require-native-nvfp4-activation-packing" ||
+            arg == "--native-cuda-require-native-nvfp4-activation-packing") {
+            plan.require_native_nvfp4_activation_packing = true;
+            continue;
+        }
         if (arg == "--tile-ops-lib" || arg == "--native-cuda-tile-ops-lib") {
             plan.tile_ops_lib = value_for(arg);
             continue;
@@ -1016,6 +1033,9 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
     args.push_back(std::to_string(plan.weight_decay));
     args.push_back("--tile-cuda-activation-dtype");
     args.push_back(plan.tile_activation_dtype);
+    if (plan.require_native_nvfp4_activation_packing) {
+        args.push_back("--require-native-nvfp4-activation-packing");
+    }
     if (!plan.tile_ops_lib.empty()) {
         args.push_back("--tile-ops-lib");
         args.push_back(plan.tile_ops_lib);

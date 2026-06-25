@@ -124,6 +124,7 @@ struct Config {
     bool write_checkpoint = true;
     bool require_optimized_attention = true;
     bool require_cooperative_lm_head_backward = false;
+    bool require_native_nvfp4_activation_packing = false;
     bool template_explicit = false;
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
@@ -518,6 +519,8 @@ void print_usage(const char* program) {
         << "  --no-layer-evo                   Disable native layer-evo cadence\n"
         << "  --tile-cuda-activation-dtype nvfp4|float32|none\n"
         << "                                     Preserve native activation dtype intent in plan/runtime JSON; default nvfp4\n"
+        << "  --require-native-nvfp4-activation-packing\n"
+        << "                                     Fail before dataset/GPU work if nvfp4 is requested but native dense GPT cannot pack activations\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
         << "SM120 defaults match llm.kittens/train-sm120.sh: -v 250 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n";
 }
@@ -1416,10 +1419,33 @@ bool native_nvfp4_activation_packing_active(const Config&) {
     return false;
 }
 
+bool native_nvfp4_activation_packing_required(const Config& cfg) {
+    return cfg.require_native_nvfp4_activation_packing ||
+           env_flag_enabled_or_default(
+               env_or_empty_any({"NFN_NATIVE_GPT_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING",
+                                 "NFN_NATIVE_GPT2_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING"}),
+               false);
+}
+
+std::string native_nvfp4_activation_packing_requirement_error(const Config& cfg) {
+    if (!native_nvfp4_activation_packing_required(cfg) ||
+        cfg.tile_cuda_activation_dtype != "nvfp4" ||
+        native_nvfp4_activation_packing_active(cfg)) {
+        return std::string();
+    }
+    return "native NVFP4 activation packing required, but the dense GPT C++ trainer "
+           "currently records nvfp4 as intent only; required next step: wire packed "
+           "FP4 activation buffers and projection/attention FP4 GEMM routes before "
+           "using this run as an NVFP4 training path";
+}
+
 std::string native_tile_cuda_activation_json(const Config& cfg) {
     std::ostringstream out;
     const bool nvfp4_requested = cfg.tile_cuda_activation_dtype == "nvfp4";
     const bool nvfp4_active = native_nvfp4_activation_packing_active(cfg);
+    const bool nvfp4_required = native_nvfp4_activation_packing_required(cfg);
+    const std::string nvfp4_requirement_error =
+        native_nvfp4_activation_packing_requirement_error(cfg);
     out
         << "{\"requested_activation_dtype\":\""
         << json_escape(cfg.tile_cuda_activation_dtype)
@@ -1431,8 +1457,15 @@ std::string native_tile_cuda_activation_json(const Config& cfg) {
         << (nvfp4_active ? "true" : "false")
         << ",\"nvfp4_activation_packing_active\":"
         << (nvfp4_active ? "true" : "false")
+        << ",\"native_activation_packing_required\":"
+        << (nvfp4_required ? "true" : "false")
+        << ",\"native_activation_packing_error\":\""
+        << json_escape(nvfp4_requirement_error)
+        << "\""
         << ",\"activation_dtype_status\":\""
-        << (nvfp4_requested && !nvfp4_active
+        << (!nvfp4_requirement_error.empty()
+                ? "required-nvfp4-native-packing-missing"
+                : nvfp4_requested && !nvfp4_active
                 ? "requested-nvfp4-not-yet-packed-native-dense-gpt"
                 : "native-dense-gpt-bf16-float32-activation-storage")
         << "\"}";
@@ -4296,6 +4329,9 @@ bool print_tile_plan(
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
             "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
             "with a cooperative classifier/dHidden/dWeight kernel";
+    }
+    if (plan_error.empty()) {
+        plan_error = native_nvfp4_activation_packing_requirement_error(cfg);
     }
 
     std::cout
@@ -24097,6 +24133,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--require-cooperative-lm-head-backward" ||
                    arg == "--native-cuda-require-cooperative-lm-head-backward") {
             cfg.require_cooperative_lm_head_backward = true;
+        } else if (arg == "--require-native-nvfp4-activation-packing" ||
+                   arg == "--native-cuda-require-native-nvfp4-activation-packing") {
+            cfg.require_native_nvfp4_activation_packing = true;
         } else if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             cfg.dry_run = true;
         } else if (arg == "--print-command" || arg == "--native-cuda-print-command") {
@@ -24316,6 +24355,18 @@ int main(int argc, char** argv) {
                 cooperative_lm_head_backward_requirement_error(cfg, argv[0]);
             if (!strict_lm_head_error.empty()) {
                 std::cerr << strict_lm_head_error << "\n";
+                return 2;
+            }
+        }
+        if (!cfg.print_plan &&
+            !cfg.smoke_transformer_lm_step &&
+            !cfg.smoke_embedding_lm_step &&
+            !cfg.checkpoint_metadata_smoke &&
+            cfg.train_transformer_lm) {
+            const std::string nvfp4_error =
+                native_nvfp4_activation_packing_requirement_error(cfg);
+            if (!nvfp4_error.empty()) {
+                print_tile_plan(cfg, neuralfn::native_train::TokenShardDataset(), argv[0], false);
                 return 2;
             }
         }

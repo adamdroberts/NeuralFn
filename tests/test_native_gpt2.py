@@ -6687,6 +6687,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert "std::string tile_cuda_activation_dtype = \"nvfp4\";" in dense_gpt_source
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in dense_gpt_source
+    assert "--require-native-nvfp4-activation-packing" in dense_gpt_source
+    assert "required-nvfp4-native-packing-missing" in dense_gpt_source
     assert "native_tile_cuda_activation_json" in dense_gpt_source
     assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in dense_gpt_source
     assert "json_escape(cfg.tile_cuda_activation_dtype)" in dense_gpt_source
@@ -6710,6 +6712,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--evo-layer-population N" in evo_help.stdout
     assert "--tile-ops-lib PATH" in evo_help.stdout
     assert "--cuda-runtime-lib PATH" in evo_help.stdout
+    assert "--require-native-nvfp4-activation-packing" in evo_help.stdout
     assert "--smoke-evo-kernels" in evo_help.stdout
     assert "--native-cuda-*" in evo_help.stdout
 
@@ -6754,6 +6757,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["tile_cuda"]["effective_activation_dtype"] == "bf16-float32-mixed"
     assert evo_plan["tile_cuda"]["native_activation_packing_active"] is False
     assert evo_plan["tile_cuda"]["nvfp4_activation_packing_active"] is False
+    assert evo_plan["tile_cuda"]["native_activation_packing_required"] is False
+    assert evo_plan["tile_cuda"]["native_activation_packing_error"] == ""
     assert (
         evo_plan["tile_cuda"]["activation_dtype_status"]
         == "requested-nvfp4-not-yet-packed-native-dense-gpt"
@@ -6872,6 +6877,26 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_unknown_plan["template_known"] is False
     assert evo_unknown_plan["selected_graph_support_status"] == "unknown-template"
     assert evo_unknown_plan["selected_graph_native_runnable"] is False
+
+    evo_required_nvfp4 = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--print-plan",
+            "--require-native-nvfp4-activation-packing",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_required_nvfp4.returncode == 0, evo_required_nvfp4.stderr
+    evo_required_nvfp4_plan = json.loads(evo_required_nvfp4.stdout)
+    assert evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_required"] is True
+    assert (
+        evo_required_nvfp4_plan["tile_cuda"]["activation_dtype_status"]
+        == "required-nvfp4-native-packing-missing"
+    )
+    assert "intent only" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
 
     bad_evo_optimizer = subprocess.run(
         [str(gpt2_evo), "--print-plan", "--optimizer-profile", "sm120_adamw"],
@@ -7378,6 +7403,21 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
     assert "--startup-only" in evo_delegate_print_command.stdout
     assert "--native-cuda-startup-only" not in evo_delegate_print_command.stdout
+
+    evo_required_nvfp4_delegate = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--require-native-nvfp4-activation-packing",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_required_nvfp4_delegate.returncode == 0
+    assert "--require-native-nvfp4-activation-packing" in evo_required_nvfp4_delegate.stdout
 
 
 def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> None:

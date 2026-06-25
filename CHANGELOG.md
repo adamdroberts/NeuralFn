@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a hard native NVFP4 activation-packing contract for dense GPT and
+  GPT-2-evo native training. `--require-native-nvfp4-activation-packing` (or
+  wrapper alias `--native-cuda-require-native-nvfp4-activation-packing`) now
+  makes compiled dense GPT fail before token-shard resolution or GPU training
+  when `--tile-cuda-activation-dtype nvfp4` is still intent-only. Runtime and
+  plan JSON now include `tile_cuda.native_activation_packing_required`,
+  `tile_cuda.native_activation_packing_error`, and
+  `activation_dtype_status: "required-nvfp4-native-packing-missing"` for that
+  case. The same hard gate can be enabled with
+  `NFN_NATIVE_GPT_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1` or
+  `NFN_NATIVE_GPT2_REQUIRE_NATIVE_NVFP4_ACTIVATION_PACKING=1`.
+
+  Migration note: existing `--tile-cuda-activation-dtype nvfp4` runs continue
+  to record NVFP4 as requested intent while dense GPT uses the current
+  bf16/float32 native storage path. Use the new `--require-*` flag only for
+  jobs that must reject intent-only NVFP4 until packed FP4 activation buffers
+  and projection/attention FP4 GEMM routes are implemented.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "missing_family"`; `bash
+  tools/build_native_gpt_cli.sh`; `build/nfn_gpt_native_train --backend
+  tile-cuda --train-transformer-lm
+  --require-native-nvfp4-activation-packing --dataset-alias
+  /tmp/does-not-need-to-exist --json-out
+  /tmp/nfn_required_nvfp4_preflight.json` exited `2` with
+  `token_shards_resolved: false`.
+
 - Added `NFN_SM120_NATIVE_INCLUDE_REFERENCE=1` as a short alias for
   `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` in
   `tools/bench_native_gpt_sm120_candidate.sh`. The SM120 paired benchmark now
