@@ -350,6 +350,7 @@ def print_profile_summary():
     print(f"    {sidecar}")
     timing = profile.get("timing") if isinstance(profile, dict) else {}
     setup = timing.get("setup_timing") if isinstance(timing, dict) else None
+    stage = timing.get("stage_timing") if isinstance(timing, dict) else None
     if isinstance(setup, list) and setup:
         top_setup = sorted(
             (item for item in setup if isinstance(item, dict)),
@@ -359,6 +360,21 @@ def print_profile_summary():
         if top_setup:
             print("  Top candidate setup timings:")
             for item in top_setup:
+                print(
+                    "    "
+                    f"{item.get('name', 'unknown')}: "
+                    f"{format_ms(item.get('total_ms'))} "
+                    f"(count={item.get('count', 'n/a')})"
+                )
+    if isinstance(stage, list) and stage:
+        top_stage = sorted(
+            (item for item in stage if isinstance(item, dict)),
+            key=lambda item: float(item.get("total_ms") or 0.0),
+            reverse=True,
+        )[:8]
+        if top_stage:
+            print("  Top candidate stage timings:")
+            for item in top_stage:
                 print(
                     "    "
                     f"{item.get('name', 'unknown')}: "

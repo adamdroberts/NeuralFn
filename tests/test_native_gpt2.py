@@ -759,6 +759,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'glob.glob(os.path.join(profile_dir, "candidate_*.json"))' in parity_bench
     assert "Candidate native profile sidecar:" in parity_bench
     assert "Top candidate setup timings:" in parity_bench
+    assert "Top candidate stage timings:" in parity_bench
     assert "float_arena_request_stats" in parity_bench
     assert "uint16_arena_request_stats" in parity_bench
     assert "top_families" in parity_bench

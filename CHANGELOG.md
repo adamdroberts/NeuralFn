@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the SM120 parity wrapper sidecar diagnostic to include stage-timing
+  rankings when `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled. Failed
+  llm.kittens parity runs now print the largest candidate native stages from
+  the same sidecar as the setup/arena summary, making the next kernel target
+  visible in the failed run output.
+
+  Verification:
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k transformer_lm_supports_linked_tile_ops_loader`;
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1
+  NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_stage_current.json
+  NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_sm120_parity_stage_current_profiles
+  bash tools/bench_native_gpt_sm120_parity.sh`, which preserved the expected
+  metric-gate failure while showing `stage.block_backward.total_ms`,
+  `stage.train.model_forward.total_ms`, `stage.block_forward.total_ms`, and
+  `stage.lm_head_backward.total_ms` as the largest candidate timing buckets.
+
 - Expanded the SM120 llm.kittens parity wrapper failure diagnostic. When
   `tools/bench_native_gpt_sm120_parity.sh` fails a metric gate and the paired
   JSON proves NeuralFn is on the native Tile CUDA Graph LM-head wrapper route,
