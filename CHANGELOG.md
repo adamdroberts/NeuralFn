@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed `lm_head_backward_bench` counter attribution so warmup graph capture and
+  fallback launches do not pollute timed-result classification. The benchmark
+  now resets Tile-CUDA LM-head counters after warmup and before timed
+  iterations, so candidate-first runs can correctly report the CUDA Graph
+  wrapper as graph replay during the timed section while still keeping
+  `candidate_true_fused_capability=false` until a real fused kernel exists.
+
+  Verification:
+  `bash tools/build_lm_head_backward_bench.sh build/lm_head_backward_bench`;
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_cuda133_candidate_first.json
+  bash tools/bench_lm_head_backward_candidate.sh`.
+
 - Refreshed grouped-GEMM capability telemetry after the CUDA 13.3.33 reinstall.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` now records that
   grouped cuBLASLt layout still succeeds while grouped cuBLASLt matmul still

@@ -362,6 +362,7 @@ VariantResult run_variant(
         }
         cuda_check(cudaDeviceSynchronize(), name + " warmup synchronize");
     }
+    reset_stats();
 
     cudaEvent_t start = nullptr;
     cudaEvent_t stop = nullptr;

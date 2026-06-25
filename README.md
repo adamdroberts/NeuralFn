@@ -216,7 +216,10 @@ CUDA/cuBLAS/TK setup. The same JSON also reports
 `candidate_cuda_graph_wrapper_only` for the current strict symbol that replays
 captured CE, dHidden, and dWeight work through a CUDA Graph. This makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
-CUDA Graph wrappers, and a future real fused kernel. CUDA 13.3 retesting can
+CUDA Graph wrappers, and a future real fused kernel. The bench resets
+Tile-CUDA LM-head counters after warmup and before timed iterations, so warmup
+graph capture/fallback launches do not contaminate the timed classification.
+CUDA 13.3 retesting can
 also compare the explicit cuBLASLt LM-head candidate with
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` or
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss-cublaslt`, or by setting
