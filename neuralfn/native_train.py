@@ -53,9 +53,11 @@ class NativeTrainRunConfig:
     native_train_cli: str | None = None
     cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
+    require_cooperative_lm_head_backward: bool = False
 
     def argv(self) -> list[str]:
         normalized_family = normalize_native_model_family(self.model_family)
+        args = self._resolved_args(normalized_family)
         family_cli = resolve_native_train_family_cli(normalized_family, self.native_train_cli)
         if family_cli is not None:
             if native_train_family_uses_model_family_arg(normalized_family):
@@ -63,17 +65,17 @@ class NativeTrainRunConfig:
                     family_cli,
                     "--model-family",
                     normalized_family,
-                    *self.args,
+                    *args,
                 ]
             return [
                 family_cli,
-                *self.args,
+                *args,
             ]
         return [
             resolve_native_train_cli(self.native_train_cli),
             "--base-model",
             normalized_family,
-            *self.args,
+            *args,
         ]
 
     def command(self) -> str:
@@ -87,6 +89,21 @@ class NativeTrainRunConfig:
             "argv": self.argv(),
             "command": self.command(),
         }
+
+    def _resolved_args(self, normalized_family: str) -> tuple[str, ...]:
+        args = self.args
+        if not self.require_cooperative_lm_head_backward:
+            return args
+        if normalized_family not in DENSE_GPT_MODEL_FAMILIES:
+            raise ValueError(
+                "require_cooperative_lm_head_backward is only supported for dense GPT native train families"
+            )
+        if (
+            "--require-cooperative-lm-head-backward" in args
+            or "--native-cuda-require-cooperative-lm-head-backward" in args
+        ):
+            return args
+        return (*args, "--require-cooperative-lm-head-backward")
 
 
 def normalize_native_model_family(value: str | None) -> str:
@@ -165,11 +182,13 @@ def build_native_train_run_config(
     args: Sequence[str] | None = None,
     *,
     native_train_cli: str | None = None,
+    require_cooperative_lm_head_backward: bool = False,
 ) -> NativeTrainRunConfig:
     return NativeTrainRunConfig(
         model_family=normalize_native_model_family(model_family),
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=native_train_cli,
+        require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
     )
 
 

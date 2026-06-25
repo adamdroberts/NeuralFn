@@ -249,6 +249,13 @@ If an older local `neuralfn._native_train` extension shadows the rebuilt one,
 binding discovery skips it unless it exposes both `run_train` and
 `resolve_command`, then probes the remaining package search path before falling
 back to the compiled CLI.
+Pass `require_cooperative_lm_head_backward=True` to
+`build_native_train_run_config()` for dense GPT-family SDK runs that must
+enforce the strict `--require-cooperative-lm-head-backward` parity guard. The
+helper appends that flag once, accepts either existing CLI spelling without
+duplicating it, and raises for non-dense families such as `llama`. Current builds
+still fail the guard because the LM-head path is a diagnostic CUDA Graph wrapper
+rather than a true fused classifier/dHidden/dWeight Tile kernel.
 The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
 environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the

@@ -36,9 +36,14 @@ def test_native_train_sdk_import_does_not_import_torch() -> None:
     code = """
 import sys
 from neuralfn.native_train import build_native_train_run_config, exec_native_train, native_train_runner_status
-cfg = build_native_train_run_config("gpt2", ["--dry-run"])
+cfg = build_native_train_run_config(
+    "gpt2",
+    ["--dry-run"],
+    require_cooperative_lm_head_backward=True,
+)
 status = native_train_runner_status("subprocess")
 print("ARGV", " ".join(cfg.argv()[:3]))
+print("STRICT_FLAG", "--require-cooperative-lm-head-backward" in cfg.argv())
 print("STATUS", status.resolved)
 print("EXEC_CALLABLE", callable(exec_native_train))
 print("TORCH_LOADED", "torch" in sys.modules)
@@ -54,6 +59,7 @@ print("TORCH_LOADED", "torch" in sys.modules)
 
     assert proc.returncode == 0, proc.stderr
     assert "ARGV" in proc.stdout
+    assert "STRICT_FLAG True" in proc.stdout
     assert "STATUS subprocess" in proc.stdout
     assert "EXEC_CALLABLE True" in proc.stdout
     assert "TORCH_LOADED False" in proc.stdout

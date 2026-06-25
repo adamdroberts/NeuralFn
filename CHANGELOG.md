@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exposed the strict cooperative LM-head backward guard through the public
+  Python native-training SDK. `NativeTrainRunConfig` and
+  `build_native_train_run_config()` now accept
+  `require_cooperative_lm_head_backward=True` for dense GPT-family runs, append
+  `--require-cooperative-lm-head-backward` once, accept the existing native
+  CUDA spelling without duplication, and raise for non-dense families. This
+  gives Python launchers a no-Torch way to enforce the same parity contract as
+  the native CLI while preserving the current direct dense-GPT compiled handoff.
+  Current builds still fail that guard until the true fused LM-head
+  classifier/dHidden/dWeight Tile kernel replaces the diagnostic CUDA Graph
+  wrapper.
+
+  Verification: focused native SDK dispatch tests, the no-Torch SDK import
+  check, Python compile for `neuralfn/native_train.py`, and `git diff --check`.
+
 - Expanded the SM120 native candidate sweep summary for current dense-GPT
   parity work. The no-argument sweep now includes the promoted
   `lm_head_graph_prewarm` regression gate alongside `qkv_dinput_ln128`,

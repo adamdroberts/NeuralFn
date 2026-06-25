@@ -3654,6 +3654,51 @@ def test_native_train_run_config_uses_direct_dense_gpt_cli(
     assert "CUDA_MODULE_LOADING=LAZY" in env_output.read_text(encoding="utf-8").splitlines()
 
 
+def test_native_train_run_config_can_require_strict_dense_gpt_lm_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    family_cli = tmp_path / "nfn_gpt_native_train"
+    family_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    family_cli.chmod(0o755)
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(family_cli))
+
+    cfg = build_native_train_run_config(
+        "gpt3",
+        ["--tinystories", "--dry-run"],
+        require_cooperative_lm_head_backward=True,
+    )
+
+    assert cfg.to_dict()["require_cooperative_lm_head_backward"] is True
+    assert cfg.argv() == [
+        str(family_cli),
+        "--model-family",
+        "gpt3",
+        "--tinystories",
+        "--dry-run",
+        "--require-cooperative-lm-head-backward",
+    ]
+
+    duplicate_cfg = build_native_train_run_config(
+        "gpt",
+        ["--dry-run", "--native-cuda-require-cooperative-lm-head-backward"],
+        require_cooperative_lm_head_backward=True,
+    )
+
+    assert duplicate_cfg.argv().count("--require-cooperative-lm-head-backward") == 0
+    assert duplicate_cfg.argv().count("--native-cuda-require-cooperative-lm-head-backward") == 1
+
+    unsupported_cfg = build_native_train_run_config(
+        "llama",
+        ["--dry-run"],
+        require_cooperative_lm_head_backward=True,
+    )
+
+    with pytest.raises(ValueError, match="only supported for dense GPT"):
+        unsupported_cfg.argv()
+
+
 def test_native_train_run_config_prefers_linked_dense_gpt_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -1999,6 +1999,13 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   `NFN_NATIVE_TRAIN_CLI` / `native_train_cli=` still forces the unified
   frontend. Dense GPT aliases keep passing `--model-family`; family-specific
   binaries receive only their native args.
+- [x] Exposed the strict cooperative LM-head backward guard through the Python
+  native-training SDK. `build_native_train_run_config(...,
+  require_cooperative_lm_head_backward=True)` now appends the dense-GPT
+  `--require-cooperative-lm-head-backward` flag without importing Torch,
+  suppresses duplicate strict flag spellings, and raises for non-dense family
+  targets. This keeps Python launchers on the same native parity gate while the
+  real fused LM-head Tile kernel remains the next open performance item.
 - [x] Removed the matching top-level `nfn train` dispatch hop for those family
   targets. `nfn train --base-model gpt2-evo ...` and the other compiled-family
   names now go straight to `NFN_NATIVE_<FAMILY>_CLI`, `build/nfn_<family>_native_train`,
