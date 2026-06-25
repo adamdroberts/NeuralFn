@@ -1959,7 +1959,10 @@ CLI argv includes `--require-cooperative-lm-head-backward`, and
 `nfn-native-train` also forward the wrapper spelling
 `--native-cuda-require-cooperative-lm-head-backward`. Current CUDA 13.3 builds
 still fail that strict route because the callable is a CUDA Graph wrapper until
-a real fused CE+dHidden+dWeight kernel replaces it.
+a real fused CE+dHidden+dWeight kernel replaces it. The separate
+llm.kittens-style classifier/matmul parity probe remains useful for diagnostics
+and no-Torch runtime coverage, but it does not satisfy
+`require_cooperative_lm_head_backward=True`.
 
 For LM-head backward kernel work, `tools/bench_lm_head_backward_candidate.sh`
 is the focused CUDA gate. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` selects

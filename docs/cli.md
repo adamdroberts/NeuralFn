@@ -1037,8 +1037,10 @@ that it is not a true fused/cooperative kernel. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or pass
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
-parity/preflight run must require the strict cooperative LM-head backward ABI.
-Direct `python cli/scripts/train_gpt.py`, direct
+preflight run must require the strict true-fused cooperative LM-head backward
+ABI. The current llm.kittens-style classifier/matmul parity route is reported
+separately for diagnostics and does not satisfy that strict flag. Direct
+`python cli/scripts/train_gpt.py`, direct
 `python cli/scripts/train_gpt_native.py`, and `nfn-native-train` also accept
 `--native-cuda-require-cooperative-lm-head-backward` and forward it to the same
 compiled flag, so wrapper dry-runs and real runs exercise the same strict

@@ -4010,31 +4010,27 @@ std::string cooperative_lm_head_backward_requirement_error(
     auto true_fused_capability =
         reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
             dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
-    auto llmk_parity_capability =
-        reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
-            dlsym(handle, kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol));
     const bool true_fused_capable =
         true_fused_kernel != nullptr &&
         true_fused_capability != nullptr &&
         true_fused_capability() != 0;
-    const bool llmk_parity_capable =
-        true_fused_kernel != nullptr &&
-        llmk_parity_capability != nullptr &&
-        llmk_parity_capability() != 0;
     if (!linked) {
         dlclose(handle);
     }
-    if (true_fused_capable || llmk_parity_capable) {
+    if (true_fused_capable) {
         return {};
     }
 
     std::ostringstream out;
     out << "required cooperative LM-head backward Tile path is unavailable: "
         << kLmHeadCooperativeBackwardTrueFusedKernelSymbol
-        << " must be present and either "
+        << " must be present and "
         << kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol
-        << " or " << kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol
-        << " must return true before training starts; run --check-tile-ops for capability JSON";
+        << " must return true before training starts; "
+        << kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol
+        << " is reported separately for classifier/matmul parity diagnostics "
+        << "but does not satisfy the strict true-fused requirement; "
+        << "run --check-tile-ops for capability JSON";
     return out.str();
 }
 

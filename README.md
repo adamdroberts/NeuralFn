@@ -1279,12 +1279,14 @@ future monolithic CE+dHidden+dWeight kernel must check
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a candidate run must require the integrated native LM-head parity route before
-training starts. The SM120 wrapper treats this named profile as a strict ABI
-preflight probe, not a metric-gated speed candidate. Missing native parity still
-fails this strict guard instead of falling back to Torch or graph-editor tensor
-flow. The generic `NativeGptRunConfig` / compatibility `NativeGpt2RunConfig`
-field `require_cooperative_lm_head_backward=True`, direct
+a candidate run must require the future true-fused native LM-head backward
+kernel before training starts. The SM120 wrapper treats this named profile as a
+strict ABI preflight probe, not a metric-gated speed candidate. The current
+llm.kittens-style classifier/matmul parity route remains a diagnostic runtime
+route and does not satisfy this strict guard, so strict runs fail instead of
+falling back to wrapper replay, Torch, or graph-editor tensor flow. The generic
+`NativeGptRunConfig` / compatibility `NativeGpt2RunConfig` field
+`require_cooperative_lm_head_backward=True`, direct
 `cli/scripts/train_gpt.py`, direct `cli/scripts/train_gpt_native.py`, and
 `nfn-native-train` all forward the same compiled flag; the
 `--native-cuda-require-cooperative-lm-head-backward` spelling is accepted by the

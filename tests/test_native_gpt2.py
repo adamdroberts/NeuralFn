@@ -1651,6 +1651,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         "required cooperative LM-head backward Tile path is unavailable"
     ) in source
     assert "must return true before training starts" in source
+    assert "does not satisfy the strict true-fused requirement" in source
     assert (
         source.index("cooperative_lm_head_backward_requirement_error(cfg, argv[0])")
         < source.index("resolve_token_shards(")

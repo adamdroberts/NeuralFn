@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the strict native GPT LM-head preflight with the compiled trainer
+  runtime contract. `--require-cooperative-lm-head-backward` now requires the
+  true-fused
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  capability before training starts; the llm.kittens-style classifier/matmul
+  parity probe remains JSON diagnostics for the current no-Torch graph/wrapper
+  route, but no longer satisfies the strict flag.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k cooperative`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_template_presets.py -q -k 'strict_lm_head or
+  compiled_cli_serializes'`; `bash tools/build_native_gpt_cli.sh
+  /tmp/nfn_gpt_native_train_check`; `git diff --check`.
+
 - Added public forwarding for the strict native GPT LM-head route requirement.
   `NativeGptRunConfig` / `NativeGpt2RunConfig` now serialize
   `require_cooperative_lm_head_backward=True` to
