@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an ABI-declared route class for the strict LM-head classifier-backward
+  symbol. The Tile ops library now exports
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`, which
+  returns `diagnostic-cuda-graph-wrapper` for current CUDA Graph wrapper builds.
+  Native GPT runtime JSON reports this as
+  `lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
+  LM-head benchmark reports it as `candidate_symbol_abi_path_class`. This keeps
+  future `strict-true-fused-tile-kernel` promotion checks tied to an explicit
+  ABI contract instead of only inferring the route from launch counters.
+
+  Verification:
+  `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative_abi or lm_head_backward_microbench
+  or native_train_tile_ops_builds_torch_free_c_abi"`;
+  `bash tools/build_native_train_tile_ops.sh build/libnfn_native_train_tile_ops.so`;
+  `bash tools/build_lm_head_backward_bench.sh build/lm_head_backward_bench`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`;
+  `build/lm_head_backward_bench --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so --rows 64 --hidden-dim 128
+  --vocab 1024 --row-stride 1024 --iterations 1 --warmup 0
+  --json-out /tmp/nfn_lm_head_path_class_smoke.json`.
+
 - Switched the default-off padded token-weight initializer to the precomputed
   BF16 pattern writer for public vocab rows. The
   `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`

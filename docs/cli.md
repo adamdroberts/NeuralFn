@@ -1084,6 +1084,12 @@ The callable captures the optimized CE, dHidden, and dWeight launches
 into a cached CUDA Graph per row-chunk pointer/shape/beta/flag tuple. It is not
 a monolithic single CUDA kernel, so `--require-cooperative-lm-head-backward`
 still fails until a real fused capability replaces the graph wrapper.
+The companion ABI function
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()` returns
+`diagnostic-cuda-graph-wrapper` on current builds. Runtime JSON reports that as
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
+LM-head backward benchmark reports the same value as
+`candidate_symbol_abi_path_class`.
 The non-required default path reports
 `lm_head_cooperative_backward_cuda_graph_enabled: true`,
 `lm_head_cooperative_backward_route_integrated: true`, and
@@ -1096,6 +1102,7 @@ Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`,

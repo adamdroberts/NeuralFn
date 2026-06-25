@@ -40,6 +40,7 @@ using LmHeadBackwardFn = int (*)(
     void*);
 
 using IntFn = int (*)();
+using StringFn = const char* (*)();
 using VoidFn = void (*)();
 using CountFn = std::int64_t (*)();
 using LmHeadCeRowLossFn = int (*)(
@@ -611,6 +612,7 @@ ComponentResult run_reference_components(
 std::string render_json(
     const Options& options,
     bool true_fused_capability,
+    std::string_view candidate_symbol_abi_path_class,
     const VariantResult& baseline,
     const VariantResult& candidate,
     const ComponentResult& reference_components,
@@ -697,6 +699,8 @@ std::string render_json(
         << "  \"require_true_fused_candidate\": " << (options.require_true_fused_candidate ? "true" : "false") << ",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
+        << "  \"candidate_symbol_abi_path_class\": \""
+        << json_escape(candidate_symbol_abi_path_class) << "\",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
         << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
@@ -747,6 +751,8 @@ int main(int argc, char** argv) {
         auto candidate_fn = load_symbol<LmHeadBackwardFn>(handle, options.candidate_symbol);
         auto true_fused_capability =
             load_symbol<IntFn>(handle, "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused");
+        auto fused_kernel_path_class =
+            load_symbol<StringFn>(handle, "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class");
         auto reset_stats = load_symbol<VoidFn>(handle, "nfn_native_tile_lm_head_classifier_stats_reset");
         auto launch_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_launch_count");
@@ -909,6 +915,7 @@ int main(int argc, char** argv) {
             render_json(
                 options,
                 true_fused_capability() != 0,
+                fused_kernel_path_class() != nullptr ? fused_kernel_path_class() : "missing",
                 baseline,
                 candidate,
                 reference_components,

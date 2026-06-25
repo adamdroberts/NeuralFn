@@ -52,6 +52,8 @@ constexpr const char* kLmHeadCooperativeBackwardTrueFusedKernelSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused";
+constexpr const char* kLmHeadCooperativeBackwardTrueFusedPathClassSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class";
 constexpr const char* kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity";
 constexpr const char* kLmHeadCooperativeBackwardGraphPrewarmSymbol =
@@ -4241,6 +4243,7 @@ bool print_tile_plan(
     bool cooperative_lm_head_backward_true_fused_kernel_found = false;
     bool cooperative_lm_head_backward_true_fused_kernel_capable = false;
     bool cooperative_lm_head_backward_llmk_parity_capable = false;
+    std::string cooperative_lm_head_backward_fused_kernel_abi_path_class = "missing";
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     const std::vector<std::string> optimizer_contract_symbols =
@@ -4267,12 +4270,19 @@ bool print_tile_plan(
             cooperative_lm_head_backward_true_fused_kernel_found =
                 dlsym(handle, kLmHeadCooperativeBackwardTrueFusedKernelSymbol) != nullptr;
             using LmHeadTrueFusedCapabilityFn = int (*)();
+            using LmHeadFusedKernelPathClassFn = const char* (*)();
             auto true_fused_capability =
                 reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
+            auto true_fused_path_class =
+                reinterpret_cast<LmHeadFusedKernelPathClassFn>(
+                    dlsym(handle, kLmHeadCooperativeBackwardTrueFusedPathClassSymbol));
             auto llmk_parity_capability =
                 reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol));
+            if (true_fused_path_class != nullptr && true_fused_path_class() != nullptr) {
+                cooperative_lm_head_backward_fused_kernel_abi_path_class = true_fused_path_class();
+            }
             cooperative_lm_head_backward_true_fused_kernel_capable =
                 cooperative_lm_head_backward_true_fused_kernel_found &&
                 true_fused_capability != nullptr &&
@@ -4410,6 +4420,8 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_true_fused_kernel_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
         << (cooperative_lm_head_backward_true_fused_kernel_capable ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
+        << json_escape(cooperative_lm_head_backward_fused_kernel_abi_path_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
         << (cooperative_lm_head_backward_llmk_parity_capable ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
@@ -11020,6 +11032,7 @@ int run_transformer_lm_training_json(
         int flags,
         void* stream);
     using LmHeadTrueFusedCapabilityFn = int (*)();
+    using LmHeadFusedKernelPathClassFn = const char* (*)();
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
@@ -11337,6 +11350,7 @@ int run_transformer_lm_training_json(
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_true_fused_capability = nullptr;
+    LmHeadFusedKernelPathClassFn lm_head_classifier_backward_true_fused_path_class = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_llmk_parity_capability = nullptr;
     bool lm_head_classifier_backward_true_fused_kernel_available = false;
     bool lm_head_classifier_backward_llmk_parity_available = false;
@@ -12061,6 +12075,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol);
+                lm_head_classifier_backward_true_fused_path_class =
+                    load_symbol<LmHeadFusedKernelPathClassFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardTrueFusedPathClassSymbol);
                 lm_head_classifier_backward_llmk_parity_capability =
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
@@ -12873,6 +12891,11 @@ int run_transformer_lm_training_json(
     const bool lm_head_cooperative_backward_fused_kernel_available =
         lm_head_classifier_backward_true_fused_kernel_available &&
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
+    const std::string lm_head_cooperative_backward_fused_kernel_abi_path_class =
+        lm_head_classifier_backward_true_fused_path_class != nullptr &&
+                lm_head_classifier_backward_true_fused_path_class() != nullptr
+            ? std::string(lm_head_classifier_backward_true_fused_path_class())
+            : std::string("missing");
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
         lm_head_cooperative_backward_fused_kernel_available &&
@@ -21874,6 +21897,8 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_fused_kernel_symbol_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
         << (lm_head_cooperative_backward_fused_kernel_capability_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
+        << json_escape(lm_head_cooperative_backward_fused_kernel_abi_path_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
         << (lm_head_llmk_classifier_matmul_parity_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "

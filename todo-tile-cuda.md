@@ -127,6 +127,12 @@ Real training tensors must not pass through graph editor node objects.
   `lm_head_classifier_backward_path_class: diagnostic-cuda-graph-wrapper`,
   which keeps the current CUDA Graph wrapper visibly separate from the future
   `strict-true-fused-tile-kernel` route.
+- [x] Add an ABI-declared path class for the strict LM-head fused symbol.
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`
+  currently returns `diagnostic-cuda-graph-wrapper`; native GPT JSON reports
+  `lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
+  benchmark reports `candidate_symbol_abi_path_class`. This keeps future
+  strict-fused promotions from relying only on counter inference.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or

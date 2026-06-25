@@ -1681,6 +1681,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_backward_cuda_graph_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
     assert "lm_head_classifier_backward_path_class" in source
+    assert "lm_head_cooperative_backward_fused_kernel_abi_path_class" in source
     assert "strict-true-fused-tile-kernel" in source
     assert "diagnostic-cuda-graph-wrapper" in source
     assert "diagnostic-cublaslt-sequence-wrapper" in source
@@ -1738,6 +1739,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_header
+    assert "kLmHeadCooperativeBackwardTrueFusedPathClassSymbol" in source
+    assert "candidate_symbol_abi_path_class" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_header
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_source
@@ -1760,6 +1765,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() {\n"
         "    return 0;\n"
+        "}"
+    ) in tile_ops_source
+    assert (
+        "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
+        "    return \"diagnostic-cuda-graph-wrapper\";\n"
         "}"
     ) in tile_ops_source
     assert (

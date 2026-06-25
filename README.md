@@ -1327,6 +1327,14 @@ should check `lm_head_llmk_classifier_matmul_parity_available` and
 `lm_head_cooperative_backward_cuda_graph_enabled`, while callers that require a
 future monolithic CE+dHidden+dWeight kernel must check
 `lm_head_cooperative_backward_fused_kernel_capability_available`.
+The Tile ops ABI also exports
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`, which
+returns `diagnostic-cuda-graph-wrapper` for current builds. Native GPT runtime
+JSON reports that value as
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
+LM-head benchmark reports it as `candidate_symbol_abi_path_class` so strict
+candidate gates can compare ABI-declared route class against counter-inferred
+route class.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
@@ -1421,7 +1429,8 @@ Current CUDA 13.3 builds return `0` from that capability probe because the
 existing CUDA Graph body still replays CE, dHidden, and dWeight launches rather
 than executing a true fused classifier-backward kernel. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from
-`lm_head_cooperative_backward_fused_kernel_capability_available`; only the
+`lm_head_cooperative_backward_fused_kernel_capability_available` and
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`; only the
 capability path can make `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` true. The
 `lm_head_classifier_backward_path_class` field summarizes the active class as

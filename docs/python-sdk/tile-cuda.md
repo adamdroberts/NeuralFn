@@ -2472,7 +2472,12 @@ capabilities; wrapper-only libraries report
 `lm_head_cooperative_backward_kernel_enabled: false`. It also reports
 `lm_head_classifier_backward_path_class`, a compact route label such as
 `diagnostic-cuda-graph-wrapper`, `diagnostic-cublaslt-sequence-wrapper`, or
-`strict-true-fused-tile-kernel` for full-trainer parity comparisons.
+`strict-true-fused-tile-kernel` for full-trainer parity comparisons. The
+separate `lm_head_cooperative_backward_fused_kernel_abi_path_class` field comes
+directly from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`;
+current Tile ops return `diagnostic-cuda-graph-wrapper`, and future true fused
+kernels must update this ABI class with the capability bit.
 The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 symbol remains the event-ordered sequence wrapper probe. The strict
@@ -2483,7 +2488,7 @@ a nonzero result from
 Current CUDA 13.3 builds return `0` from the true-fused capability probe and
 nonzero from the llm.kittens-parity probe. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from the
-semantic capability,
+semantic capability and the ABI-declared route class,
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 true-fused path sets that field, while the current parity path reports
 `lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
