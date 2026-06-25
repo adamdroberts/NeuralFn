@@ -1419,6 +1419,69 @@ def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
     }
 
 
+def egg_info_dependency_report(repo_root: Path) -> dict[str, object]:
+    egg_info = repo_root / "neuralfn.egg-info"
+    metadata_files = [egg_info / "PKG-INFO", egg_info / "requires.txt"]
+    offenders: list[str] = []
+    forbidden_extra_hits: list[str] = []
+    for path in metadata_files:
+        if not path.exists():
+            continue
+        current_extra = ""
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                current_extra = line[1:-1].strip().lower().replace("_", "-")
+                if current_extra in FORBIDDEN_OPTIONAL_EXTRA_NAMES:
+                    forbidden_extra_hits.append(f"{path.name}:{line}")
+                continue
+            candidate = line
+            dependency_extra = current_extra
+            if line.startswith("Requires-Dist:"):
+                candidate = line.split(":", 1)[1].strip()
+                marker = "; extra =="
+                if marker in candidate:
+                    extra_name = (
+                        candidate.split(marker, 1)[1]
+                        .strip()
+                        .strip("'\"")
+                        .lower()
+                        .replace("_", "-")
+                    )
+                    dependency_extra = extra_name
+                    if extra_name in FORBIDDEN_OPTIONAL_EXTRA_NAMES:
+                        forbidden_extra_hits.append(f"{path.name}:{line}")
+            normalized = candidate.lower().replace("_", "-")
+            forbidden_prefixes = (
+                FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES.get(dependency_extra, ())
+                if dependency_extra
+                else FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES
+            )
+            for prefix in forbidden_prefixes:
+                if (
+                    normalized == prefix
+                    or normalized.startswith(prefix + ">")
+                    or normalized.startswith(prefix + "=")
+                    or normalized.startswith(prefix + "[")
+                    or normalized.startswith(prefix + "~")
+                    or normalized.startswith(prefix + "!")
+                ):
+                    offenders.append(f"{path.name}:{line}")
+                    break
+    return {
+        "name": "egg_info_dependencies",
+        "path": str(egg_info),
+        "exists": egg_info.exists(),
+        "passed": not offenders and not forbidden_extra_hits,
+        "offenders": offenders,
+        "forbidden_optional_extra_hits": forbidden_extra_hits,
+        "forbidden_dependency_prefixes": list(FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES),
+        "forbidden_optional_extra_names": list(FORBIDDEN_OPTIONAL_EXTRA_NAMES),
+    }
+
+
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
@@ -1462,11 +1525,14 @@ def main() -> int:
     shell_report: list[dict[str, object]] = []
     dependency_report: dict[str, object] | None = None
     requirements_report: dict[str, object] | None = None
+    egg_info_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
         requirements_report = requirements_dependency_report(repo_root)
         failed = failed or not bool(requirements_report["passed"])
+        egg_info_report = egg_info_dependency_report(repo_root)
+        failed = failed or not bool(egg_info_report["passed"])
         python_report = python_entrypoint_report(
             repo_root,
             max_entrypoint_seconds=float(args.max_entrypoint_seconds),
@@ -1487,6 +1553,7 @@ def main() -> int:
                     "artifacts": artifact_report,
                     "project_dependencies": dependency_report,
                     "requirements_dependencies": requirements_report,
+                    "egg_info_dependencies": egg_info_report,
                     "python_entrypoints": python_report,
                     "shell_entrypoints": shell_report,
                 },
@@ -1527,6 +1594,15 @@ def main() -> int:
                 print(f"{requirements_report['name']}: failed", file=sys.stderr)
                 for dependency in requirements_report["offenders"]:
                     print(f"  requirement dependency: {dependency}", file=sys.stderr)
+        if egg_info_report is not None:
+            if egg_info_report["passed"]:
+                print(f"{egg_info_report['name']}: ok")
+            else:
+                print(f"{egg_info_report['name']}: failed", file=sys.stderr)
+                for dependency in egg_info_report["offenders"]:
+                    print(f"  egg-info dependency: {dependency}", file=sys.stderr)
+                for extra_name in egg_info_report["forbidden_optional_extra_hits"]:
+                    print(f"  forbidden egg-info optional extra: {extra_name}", file=sys.stderr)
         for entry in python_report:
             if entry["passed"]:
                 print(f"{entry['name']}: ok ({float(entry['elapsed_seconds']):.3f}s)")

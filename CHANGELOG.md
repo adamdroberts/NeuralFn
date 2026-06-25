@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency gate to validate generated
+  `neuralfn.egg-info` metadata when it exists. The gate now fails stale
+  `PKG-INFO` or `requires.txt` files that re-advertise default dependencies, a
+  `torch` extra, or Torch under `tile-cuda`/`all`, matching the current
+  `pyproject.toml` package contract where the default install has no
+  dependencies and `tile-cuda` depends only on `ninja`. This closes a local
+  editable-install audit surface where ignored generated metadata could still
+  appear to require Torch even though the native GPT SDK and compiled CUDA Tile
+  training path are Torch-free.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_dependencies.py -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+
 - Fixed LM-head graph-prewarm telemetry in compiled dense GPT training. When
   `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` eliminates lazy runtime
   LM-head CUDA Graph capture, the trainer now preserves the last successful

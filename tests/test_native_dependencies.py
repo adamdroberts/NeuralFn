@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+import importlib.util
 import subprocess
 import sys
 
@@ -19,6 +20,16 @@ def test_torch_is_not_an_install_dependency() -> None:
     assert not any(str(item).startswith("torch") for item in optional["all"])
     for extra_name, requirements in optional.items():
         assert not any(str(item).startswith(("torch", "torchvision", "torchaudio")) for item in requirements), extra_name
+
+    requires_path = Path("neuralfn.egg-info/requires.txt")
+    pkg_info_path = Path("neuralfn.egg-info/PKG-INFO")
+    if requires_path.exists() and pkg_info_path.exists():
+        requires_txt = requires_path.read_text(encoding="utf-8")
+        pkg_info = pkg_info_path.read_text(encoding="utf-8")
+        assert "[torch]" not in requires_txt
+        assert "torch>=2.0" not in requires_txt
+        assert 'Provides-Extra: torch' not in pkg_info
+        assert 'Requires-Dist: torch' not in pkg_info
 
 
 def test_native_train_sdk_import_does_not_import_torch() -> None:
@@ -88,6 +99,27 @@ print("TORCH_LOADED", "torch" in sys.modules)
     assert "TORCH_LOADED False" in proc.stdout
 
 
+def test_no_torch_verifier_rejects_stale_egg_info(tmp_path: Path) -> None:
+    module_path = Path("tools/check_native_no_torch_deps.py")
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    egg_info = tmp_path / "neuralfn.egg-info"
+    egg_info.mkdir()
+    (egg_info / "requires.txt").write_text("[torch]\ntorch>=2.0\n", encoding="utf-8")
+    (egg_info / "PKG-INFO").write_text(
+        'Provides-Extra: torch\nRequires-Dist: torch>=2.0; extra == "torch"\n',
+        encoding="utf-8",
+    )
+
+    report = module.egg_info_dependency_report(tmp_path)
+    assert report["passed"] is False
+    assert report["offenders"]
+    assert report["forbidden_optional_extra_hits"]
+
+
 def test_no_torch_verifier_covers_console_train_fast_path() -> None:
     proc = subprocess.run(
         [
@@ -107,6 +139,7 @@ def test_no_torch_verifier_covers_console_train_fast_path() -> None:
     import json
 
     report = json.loads(proc.stdout)
+    assert report["egg_info_dependencies"]["passed"] is True
     entries = {
         str(entry["name"]): entry
         for entry in report["python_entrypoints"]
