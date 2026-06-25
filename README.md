@@ -2500,6 +2500,13 @@ BF16-shadow padded-zero opt-in variant, `token_weight_padded_init_fusion_request
 `token_weight_bf16_pattern_init_requested`,
 `token_weight_fast_int32_init_enabled`, and
 `token_weight_host_materialization: false`.
+The `token_weight_bf16_pattern` startup candidate remains rejected after the
+2026-06-25 dedicated RTX 5090 rerun: total setup wall improved only to
+`0.984342x`, while `setup.token_weight_init.total_ms` regressed to `1.009464x`
+mean, `1.001840x` median, and `1.048989x` max versus the conversion-based
+vector4 BF16-shadow writer. Keep
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` as a deliberate paired
+diagnostic, not a training default.
 
 GPT-2 transformer-LM startup has a single owner for per-block buffers. The block-vector visitors allocate parameters, gradients, AdamW state, and scratch-tape activations for every transformer block, including block 0; the global startup list now covers only token/position/final-norm/shared workspace buffers. Training JSON reports `block0_duplicate_allocation_elided`, `block0_duplicate_activation_allocation_elided`, `block0_duplicate_parameter_initialization_elided`, and `block0_duplicate_adamw_state_zero_elided` under `block_state_layout`.
 

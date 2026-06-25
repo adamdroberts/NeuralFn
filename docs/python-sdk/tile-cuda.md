@@ -2499,10 +2499,10 @@ The `token_weight_bf16_pattern` profile compares
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=0` against candidate `=1` and
 labels the candidate route as
 `device-vector4-power2-deterministic-fused-bf16-pattern-shadow` in native JSON.
-It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 5-sample
-startup-only revalidation improved mean setup wall time to `0.954257x` and mean
-token-weight initialization to `0.913903x`, but token-weight init was unstable
-with median `1.021956x` and max `1.095803x`. Set
+It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 2026-06-25
+5-sample startup-only revalidation improved total setup wall only to
+`0.984342x`, while token-weight initialization regressed to `1.009464x` mean,
+`1.001840x` median, and `1.048989x` max. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
 post-kernel-change revalidation.
 

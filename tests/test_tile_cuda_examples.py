@@ -1259,6 +1259,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
+    assert "token_weight_bf16_pattern" in text
+    assert "setup.token_weight_init.total_ms to 1.009464x mean" in text
     assert "token_weight_fast_int32" in text
     assert "token_weight_two_pass_bf16" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text

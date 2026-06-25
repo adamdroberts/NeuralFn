@@ -788,6 +788,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "candidate-over-llm.kittens wall to 1.018312x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.122857x" in candidate_bench
+    assert "token_weight_bf16_pattern" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.009464x mean" in candidate_bench
+    assert "1.001840x median" in candidate_bench
+    assert "1.048989x max" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
     assert "setup_wall_ms to 1.009714x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.035894x" in candidate_bench

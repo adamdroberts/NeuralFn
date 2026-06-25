@@ -210,6 +210,31 @@ Future updates should append new entries here rather than replacing older notes.
   ran the dedicated RTX 5090 5-sample startup-only paired revalidation; and ran
   `git diff --check`.
 
+- Refreshed the rejected `token_weight_bf16_pattern` startup evidence after the
+  CUDA 13.3 WSL reinstall. The 2026-06-25 dedicated RTX 5090 5-sample
+  startup-only gate still changes the strategy route, but total setup wall only
+  improved to `0.984342x` and token-weight initialization regressed to
+  `1.009464x` mean, `1.001840x` median, and `1.048989x` max versus the
+  conversion-based vector4 BF16-shadow writer. The wrapper's rejected-profile
+  reason, README, SDK Tile-CUDA docs, and todo checklist now carry the fresher
+  evidence so this candidate is not mistaken for a promotion target.
+
+  Migration note: no training default changed. Keep
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_bf16_pattern` for deliberate
+  diagnostics only.
+
+  Verification: ran unsandboxed `nvidia-smi` to confirm the dedicated RTX 5090
+  was idle with CUDA UMD 13.3; ran unsandboxed
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi
+  -q -rs`; ran
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_bf16_pattern
+  NFN_SM120_NATIVE_STARTUP_ONLY=1 NFN_SM120_NATIVE_STEPS=0
+  NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Fixed `build/lm_head_backward_bench` reference component timing so logits, CE,
   dHidden, and dWeight probes run the configured warmup count before timed
   iterations. The benchmark JSON now reports `reference_component_warmup`,
