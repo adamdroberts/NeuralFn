@@ -412,6 +412,11 @@ operations when selected. The CUDA 13.3 dedicated RTX 5090 startup-only retest
 rejected the route at `1.011381x` setup wall time versus the current vector4
 BF16-shadow default, despite a noise-equivalent `0.995702x` token-init
 sub-bucket.
+The combined float+BF16 transformer arena is also still diagnostic-only behind
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`. A CUDA 13.3.33 dedicated RTX 5090
+startup-only recheck proved the route change, but rejected it at `1.031475x`
+setup wall time, with the combined allocation bucket shifting cost into
+`setup.uint16_arena_materialize` and slowing token initialization.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern,
 including the final dlogit write pass when scalar stores are selected; set

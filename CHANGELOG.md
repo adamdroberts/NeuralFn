@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revalidated the combined transformer device arena after the CUDA 13.3.33 WSL
+  reinstall and kept it rejected by default. The SM120 candidate profile now
+  records the current dedicated RTX 5090 evidence: the route changed
+  `float_allocation_strategy` and `uint16_allocation_strategy` to
+  `combined-transformer-device-arena` and moved
+  `transformer_device_arena_cuda_malloc_count` from `0` to `1`, but the
+  startup-only 5-sample gate regressed setup wall time to `1.031475x`,
+  `setup.uint16_arena_materialize.total_ms` to `2.339592x`, and
+  `setup.token_weight_init.total_ms` to `1.289567x`.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python tools/check_native_no_torch_deps.py --skip-artifacts --json`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest tests/test_native_gpt2.py -q -x`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STARTUP_ONLY=1 NFN_SM120_NATIVE_STEPS=0
+  NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_WARMUP=1
+  NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_startup_combined_arena_recheck.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_startup_combined_arena_recheck_profiles
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added an opt-in CUDA Tile no-loss LM-head CE+dlogits kernel candidate for
   vec8 normal stores. Set
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` or run
