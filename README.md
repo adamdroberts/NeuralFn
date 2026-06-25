@@ -1685,6 +1685,11 @@ satisfy the strict true-fused LM-head kernel gate. Successful strict graph
 replay does not increment the
 legacy `lm_head_cooperative_sequence_*` counters; those counters identify the
 diagnostic sequence wrapper or graph fallback path.
+When a paired benchmark includes an llm.kittens reference command, the compact
+`native_hot_stage_ratios` summary also includes `top_reference_gaps`, sorted by
+`candidate_over_reference_mean`. Use that list before kernel work to identify
+the largest NeuralFn-vs-reference stage gaps without scanning the full raw
+stage-counter JSON.
 The Tile ops ABI also exposes
 `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
 for capture-only diagnostics. It creates cache entries without launching the

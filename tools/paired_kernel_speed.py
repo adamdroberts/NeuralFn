@@ -3231,6 +3231,18 @@ def summarize_native_hot_stage_ratios(
             [row for row in rows if float(row.get("candidate_over_baseline_mean", 0.0)) < 1.0],
             key=lambda item: float(item.get("candidate_over_baseline_mean", 0.0)),
         )[:limit],
+        "top_reference_gaps": sorted(
+            [
+                row
+                for row in rows
+                if float(row.get("candidate_over_reference_mean", 0.0)) > 1.0
+            ],
+            key=lambda item: (
+                float(item.get("candidate_over_reference_mean", 0.0)),
+                float(item.get("candidate_mean_ms", 0.0)),
+            ),
+            reverse=True,
+        )[:limit],
     }
 
 
@@ -3265,7 +3277,12 @@ def print_native_hot_stage_ratios(payload: dict[str, object]) -> None:
     if not isinstance(ratios, dict) or not ratios.get("enabled"):
         return
     print("  native_hot_stage_ratios:")
-    for label in ("top_candidate_total_ms", "top_regressions", "top_improvements"):
+    for label in (
+        "top_candidate_total_ms",
+        "top_reference_gaps",
+        "top_regressions",
+        "top_improvements",
+    ):
         rows = ratios.get(label)
         if not isinstance(rows, list) or not rows:
             continue

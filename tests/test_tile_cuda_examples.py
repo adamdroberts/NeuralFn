@@ -4638,6 +4638,7 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     output_path = run_dir / "paired-hot-summary.json"
     baseline_profile = run_dir / "baseline-profile.json"
     candidate_profile = run_dir / "candidate-profile.json"
+    reference_profile = run_dir / "reference-profile.json"
     baseline_payload = {
         "steps_completed": 3,
         "timing": {
@@ -4667,8 +4668,13 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
         "train_loop_cuda_event_steady_state_wall_ms_per_step"
     ] = 935.0
     candidate_payload["timing"]["stage_timing"][3]["total_ms"] = 1000.0
+    reference_payload = json.loads(json.dumps(baseline_payload))
+    reference_payload["timing"]["train_loop_wall_ms"] = 2940.0
+    reference_payload["timing"]["stage_timing"][1]["total_ms"] = 3600.0
+    reference_payload["timing"]["stage_timing"][3]["total_ms"] = 900.0
     baseline_profile.write_text(json.dumps(baseline_payload), encoding="utf-8")
     candidate_profile.write_text(json.dumps(candidate_payload), encoding="utf-8")
+    reference_profile.write_text(json.dumps(reference_payload), encoding="utf-8")
 
     proc = subprocess.run(
         [
@@ -4678,6 +4684,8 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
             f"{sys.executable} -c \"print('baseline-ok')\" --profile-json {baseline_profile}",
             "--candidate",
             f"{sys.executable} -c \"print('candidate-ok')\" --profile-json {candidate_profile}",
+            "--reference",
+            f"{sys.executable} -c \"print('reference-ok')\" --profile-json {reference_profile}",
             "--samples",
             "1",
             "--warmup",
@@ -4709,6 +4717,12 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert hot_stage_ratios["top_regressions"][0]["candidate_over_baseline_mean"] == (
         1000.0 / 970.0
     )
+    assert hot_stage_ratios["top_reference_gaps"][0]["metric"] == (
+        "stage.block_backward.mlp_proj.total_ms"
+    )
+    assert hot_stage_ratios["top_reference_gaps"][0]["candidate_over_reference_mean"] == (
+        1000.0 / 900.0
+    )
     assert hot_stage_ratios["top_improvements"] == []
     assert "native_hot_summary:" in proc.stdout
     assert "baseline:" in proc.stdout
@@ -4720,8 +4734,10 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms" in proc.stdout
     assert "native_hot_stage_ratios:" in proc.stdout
     assert "top_candidate_total_ms:" in proc.stdout
+    assert "top_reference_gaps:" in proc.stdout
     assert "top_regressions:" in proc.stdout
     assert "candidate_over_baseline_mean=1.030928x" in proc.stdout
+    assert "candidate_over_reference_mean=1.111111x" in proc.stdout
     assert (
         "ratio train_loop_cuda_event_steady_state_wall_ms_per_step: "
         "mean=1.016304"

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/paired_kernel_speed.py` now adds `top_reference_gaps` to
+  `native_hot_stage_ratios` whenever a reference command is present. The list is
+  sorted by `candidate_over_reference_mean`, so SM120 native-vs-llm.kittens
+  benchmark JSON and stdout identify the biggest remaining NeuralFn stage gaps
+  directly instead of requiring manual scans through the full raw stage metrics.
+
+  Verification: ran the focused paired-kernel-speed pytest that covers
+  `native_hot_stage_ratios`; ran `python -m py_compile
+  tools/paired_kernel_speed.py`; ran `git diff --check`.
+
 - The LM-head backward microbench wrapper now blocks the rejected cuBLASLt
   diagnostic profiles by default. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt`
   and `trainer-row-loss-cublaslt` still resolve their commands in dry-run mode,
