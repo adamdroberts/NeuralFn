@@ -51,6 +51,16 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
+  reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
+  access, but the same command with GPU access sees the dedicated RTX 5090
+  (`NVIDIA-SMI 610.43.02`, CUDA UMD 13.3) and the smoke profile passes. The
+  2026-06-25 smoke measured the diagnostic CUDA Graph wrapper candidate at
+  `1.807552 ms/iter` versus the legacy cooperative sequence at
+  `1.840461 ms/iter` (`0.982119x`) on 2,048 rows, but the ABI still reports
+  `candidate_true_fused_capability=false` and
+  `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper`. This remains
+  a graph-replay optimization, not the final true fused Tile kernel.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts
