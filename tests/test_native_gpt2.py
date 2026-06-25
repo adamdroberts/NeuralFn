@@ -1798,6 +1798,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_CUBLASLT_PLAN_PREWARM_MODE=lm_head_only" in bench_source
+    assert "2026-06-25 post-reinstall rerun" in bench_source
+    assert "candidate-over-llm.kittens regressed train_loop_wall_ms_per_step to 1.004960x" in bench_source
+    assert "steady-state CUDA-event timing to 1.001805x" in bench_source
+    assert "train_tokens_per_second to 0.993865x" in bench_source
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
