@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the JEPA Semantic inference helper to the lightweight no-Torch startup
+  discipline. `python cli/scripts/infer_jepa_semantic.py --help` now renders
+  from a pre-runtime parser path before importing Torch, NumPy, tokenizers, the
+  dataset manager, or graph-backed runtime modules, and
+  `tools/check_native_no_torch_deps.py` verifies that path under the native
+  import blocker. Actual JEPA graph-backed generation still imports the CUDA
+  runtime after argument parsing.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  cli/scripts/infer_jepa_semantic.py tools/check_native_no_torch_deps.py`; and
+  `git diff --check`.
+
 - Added low-overhead packed-attention TK backward chunk diagnostics to the
   native Tile-CUDA ABI and dense GPT runtime JSON. The raw ABI now exposes
   `nfn_native_tile_attention_backward_tk_batch_cap`,

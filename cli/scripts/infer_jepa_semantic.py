@@ -8,9 +8,127 @@ from pathlib import Path
 import sys
 from typing import Any, Callable
 
+from cli_utils import artifact_path, create_argument_parser
+
+DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
+DEFAULT_WEIGHTS_ARTIFACT = artifact_path("jepa_semantic_hybrid.pt")
+DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
+SUPPORTED_TOKENIZER_CHOICES = ("gpt2", "cl100k_base", "o200k_base", "sp1024", "sp2048", "sp4096", "sp8192")
+
+
+def _add_lightweight_dataset_selector_arguments(parser: argparse.ArgumentParser, *, default_alias: str) -> None:
+    parser.add_argument("--tinystories", action="store_true")
+    parser.add_argument(
+        "--dataset",
+        choices=("golf1", "golf10", "shakespear", "shakespeare", "tinystories"),
+        default=None,
+    )
+    parser.add_argument("--dataset-alias", default=default_alias)
+
+
+def _add_lightweight_dataset_download_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--download-if-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--dataset-hf-path", default=None)
+    parser.add_argument("--dataset-variant", default=None)
+    parser.add_argument("--dataset-train-shards", type=int, default=None)
+    parser.add_argument("--dataset-repo-id", default=None)
+    parser.add_argument("--dataset-remote-root-prefix", default=None)
+    parser.add_argument("--dataset-train-file", default=None)
+    parser.add_argument("--dataset-val-file", default=None)
+
+
+def _add_lightweight_raw_text_tokenizer_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--tokenizer", choices=SUPPORTED_TOKENIZER_CHOICES, dest="raw_text_encoding_override", default=None)
+    group.add_argument("--tokgpt2", action="store_const", const="gpt2", dest="raw_text_encoding_override")
+    group.add_argument("--cl100k", action="store_const", const="cl100k_base", dest="raw_text_encoding_override")
+    group.add_argument("--o200k", action="store_const", const="o200k_base", dest="raw_text_encoding_override")
+    parser.add_argument("--tokenizer-hf-path", default=None)
+    parser.add_argument("--tokenizer-repo-id", default=None)
+    parser.add_argument("--tokenizer-remote-root-prefix", default=None)
+    parser.add_argument("--tokenizer-repo-type", choices=("model", "dataset"), default=None)
+    parser.set_defaults(tokenizer=None, raw_text_encoding_override=None)
+
+
+def _lightweight_repetition_penalty_arg(raw: str) -> float:
+    value = float(raw)
+    if value < 1.0:
+        raise argparse.ArgumentTypeError("--repetition-penalty must be greater than or equal to 1.0")
+    return value
+
+
+def _build_lightweight_parser() -> argparse.ArgumentParser:
+    parser = create_argument_parser(
+        description="Run text generation with exported jepa_semantic_hybrid artifacts on CUDA."
+    )
+    parser.add_argument("--megakernel", action="store_true", help="Use the jepa_semantic_hybrid_megakernel artifacts.")
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--amp-dtype", choices=("float32", "bfloat16", "float16"), default=None)
+    parser.add_argument("--graph", default="")
+    parser.add_argument("--weights", default="")
+    _add_lightweight_dataset_selector_arguments(parser, default_alias=DEFAULT_DATASET_ALIAS)
+    _add_lightweight_dataset_download_arguments(parser)
+    _add_lightweight_raw_text_tokenizer_arguments(parser)
+    parser.add_argument("--prompt", default="")
+    parser.add_argument(
+        "--prompt-tokens",
+        default="",
+        help="Comma-separated token ids. Overrides --prompt when provided.",
+    )
+    parser.add_argument(
+        "--sem-targets",
+        default="",
+        help=(
+            "Optional comma-separated semantic target ids. Defaults to ignore "
+            "sentinels so routing is selected automatically."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-topics",
+        default="",
+        help="Optional comma-separated dimension=topic overrides, e.g. emotion_sentiment=love,domain=psychology.",
+    )
+    parser.add_argument(
+        "--experimental-semantic-router-vecs",
+        action="store_true",
+        help="Generate the 0..1 semantic_router_vecs tensor. Required automatically when the loaded graph expects it.",
+    )
+    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=32)
+    parser.add_argument(
+        "--repetition-penalty",
+        type=_lightweight_repetition_penalty_arg,
+        default=1.0,
+        help="Penalty applied to tokens already seen in the prompt or generated continuation. 1.0 disables it.",
+    )
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--stop-token", type=int, default=None)
+    parser.add_argument(
+        "--logits-node",
+        default="auto",
+        help="Trace key to read logits from. Defaults to auto-detecting model/softcap or model/lm_head.",
+    )
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=0,
+        help="Optional override for the traced context window. Default: dataset_source seq_len from the graph.",
+    )
+    return parser
+
+
+def _is_help_request(argv: list[str]) -> bool:
+    return any(arg in {"-h", "--help"} for arg in argv)
+
+
+if __name__ == "__main__" and _is_help_request(sys.argv[1:]):
+    _build_lightweight_parser().parse_args()
+    raise SystemExit(0)
+
 import torch
 
-from cli_utils import artifact_path, create_argument_parser
 from neuralfn import load_graph
 from neuralfn.inference import load_pt_checkpoint
 from neuralfn.semantic import (
@@ -43,10 +161,6 @@ from train_jepa_semantic import (
     resolve_dataset_selector_args,
     resolve_or_download_dataset,
 )
-
-DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
-DEFAULT_WEIGHTS_ARTIFACT = artifact_path("jepa_semantic_hybrid.pt")
-DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
 
 LOGGER = logging.getLogger("jepa_semantic_infer")
 COMPILE_CHECKPOINT_MARKERS = (

@@ -1145,6 +1145,14 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "infer_jepa_semantic_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_jepa_semantic.py",
+                    "--help",
+                ),
+            ),
+            (
                 "eval_llama_fast_help_no_torch",
                 (
                     sys.executable,
