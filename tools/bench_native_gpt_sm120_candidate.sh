@@ -852,6 +852,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
     ;;
   "lm_head_graph_upload_off"|"lm-head-graph-upload-off"|"lm_head_cooperative_graph_upload_off"|"lm-head-cooperative-graph-upload-off")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate proved the route by moving lm_head_fused_graph_upload_success_count from 3 to 0, but rejected the opt-out path because train_loop_wall_ms_per_step regressed to 1.001492x, steady-state CUDA-event timing to 1.000055x, stage.lm_head_backward.total_ms to 1.000583x, and stage.lm_head_backward.cooperative.total_ms to 1.000593x."
     CANDIDATE_NOTE="Compares the default LM-head CUDA Graph executable upload against the opt-out route. The default calls cudaGraphUpload after graph instantiate during prewarm; this candidate sets NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0 and must not beat default on train-loop or hot-stage timing before the upload can remain justified."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=1"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0"

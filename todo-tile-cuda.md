@@ -664,7 +664,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `1.000583x`, cooperative LM-head `1.000593x`, block backward
       `1.002290x`, and MLP projection backward `1.008134x`. Keep graph upload
       default-on; this is still launch/setup hygiene, not the true fused
-      LM-head classifier/dHidden/dWeight kernel.
+      LM-head classifier/dHidden/dWeight kernel. The opt-out profile is now
+      marked rejected and requires
+      `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional
+      reruns.
     - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
       llm.kittens-parity became the default integrated LM-head route.
       `NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus

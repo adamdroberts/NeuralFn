@@ -20,7 +20,9 @@ Future updates should append new entries here rather than replacing older notes.
   `lm_head_fused_graph_upload_success_count` moved `3 -> 0` in the opt-out
   candidate, but train-loop wall regressed to `1.001492x`, steady-state
   CUDA-event timing to `1.000055x`, LM-head backward to `1.000583x`, and the
-  cooperative LM-head substage to `1.000593x`.
+  cooperative LM-head substage to `1.000593x`. The opt-out profile is now
+  blocked as rejected unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
   `build/nfn_gpt_native_train_linked`, ran the focused source-contract test,
