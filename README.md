@@ -216,6 +216,15 @@ entirely is also catalogued as
 CUDA 13.3 dedicated RTX 5090 10-step parity gate ran the direct
 CE+dHidden+dWeight schedule but regressed NeuralFn versus llm.kittens to
 `1.019533x` train-loop wall and `1.016084x` steady-state CUDA-event timing.
+The full-trainer cuBLASLt cooperative wrapper diagnostic is also available as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt`, expanding to
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1`. It proves the full GPT loop can
+select the cuBLASLt LM-head wrapper, but it is rejected by default: the CUDA
+13.3 dedicated RTX 5090 3-step stage-timed gate changed
+`lm_head_cooperative_backward_strategy` to
+`diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity` and
+regressed train-loop wall time to `1.084807x`, steady-state CUDA-event step
+time to `1.085418x`, and `stage.lm_head_backward.total_ms` to `1.339292x`.
 Those routes remain diagnostic-only.
 Future
 single-kernel LM-head candidates should first run

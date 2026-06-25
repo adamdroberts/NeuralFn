@@ -45,6 +45,8 @@ constexpr const char* kLmHeadCooperativeBackwardSymbol =
     "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardSequenceWrapperSymbol =
     "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16";
+constexpr const char* kLmHeadCooperativeBackwardCublasLtSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedKernelSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
@@ -11316,6 +11318,8 @@ int run_transformer_lm_training_json(
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_cooperative_fused_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
+        lm_head_classifier_backward_cooperative_cublaslt_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
@@ -12028,6 +12032,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardSequenceWrapperSymbol);
+                lm_head_classifier_backward_cooperative_cublaslt_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardCublasLtSymbol);
                 lm_head_classifier_backward_true_fused_kernel_bf16_u16 =
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
@@ -12778,6 +12786,13 @@ int run_transformer_lm_training_json(
                 {"NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC",
                  "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC"}),
             false);
+    const bool lm_head_cooperative_cublaslt_requested =
+        lm_head_cooperative_backward_requested &&
+        !cfg.require_cooperative_lm_head_backward &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT"}),
+            false);
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -12834,6 +12849,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_sequence_wrapper_available =
         lm_head_classifier_backward_cooperative_fused_bf16_u16 != nullptr;
+    const bool lm_head_cooperative_backward_cublaslt_wrapper_available =
+        lm_head_classifier_backward_cooperative_cublaslt_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_fused_kernel_symbol_available =
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_fused_kernel_capability_available =
@@ -12863,6 +12880,7 @@ int run_transformer_lm_training_json(
     const bool lm_head_cooperative_backward_cuda_graph_enabled =
         lm_head_cooperative_backward_requested &&
         lm_head_cooperative_backward_cuda_graph_requested &&
+        !lm_head_cooperative_cublaslt_requested &&
         !lm_head_force_sequence_wrapper_diagnostic &&
         !cfg.require_cooperative_lm_head_backward &&
         !lm_head_cooperative_backward_kernel_enabled &&
@@ -12888,10 +12906,24 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_sequence_wrapper_enabled =
         lm_head_cooperative_backward_requested &&
+        !lm_head_cooperative_cublaslt_requested &&
         !cfg.require_cooperative_lm_head_backward &&
         !lm_head_cooperative_backward_kernel_enabled &&
         !lm_head_cooperative_backward_cuda_graph_enabled &&
         lm_head_cooperative_backward_sequence_wrapper_available &&
+        lm_head_bf16_logits_enabled &&
+        lm_head_public_vocab_ce_enabled &&
+        direct_u16_token_ids_enabled &&
+        lm_head_fused_loss_backward_enabled &&
+        lm_head_prepack_bf16_hidden_enabled &&
+        token_weight_bf16_shadow_enabled &&
+        !lm_head_reuse_forward_logits_enabled &&
+        !lm_head_full_batch_reuse_schedule_enabled;
+    const bool lm_head_cooperative_backward_cublaslt_wrapper_enabled =
+        lm_head_cooperative_cublaslt_requested &&
+        !lm_head_cooperative_backward_kernel_enabled &&
+        !lm_head_cooperative_backward_cuda_graph_enabled &&
+        lm_head_cooperative_backward_cublaslt_wrapper_available &&
         lm_head_bf16_logits_enabled &&
         lm_head_public_vocab_ce_enabled &&
         direct_u16_token_ids_enabled &&
@@ -16796,6 +16828,7 @@ int run_transformer_lm_training_json(
             const bool use_cooperative_lm_head_backward =
                 (lm_head_cooperative_backward_kernel_enabled ||
                  lm_head_cooperative_backward_cuda_graph_enabled ||
+                 lm_head_cooperative_backward_cublaslt_wrapper_enabled ||
                  lm_head_cooperative_backward_sequence_wrapper_enabled) &&
                 (!record_loss ||
                  (use_loss_bin_reduction
@@ -16828,7 +16861,9 @@ int run_transformer_lm_training_json(
                         (lm_head_cooperative_backward_kernel_enabled ||
                          lm_head_cooperative_backward_cuda_graph_enabled)
                             ? lm_head_classifier_backward_true_fused_kernel_bf16_u16
-                            : lm_head_classifier_backward_cooperative_fused_bf16_u16;
+                            : (lm_head_cooperative_backward_cublaslt_wrapper_enabled
+                                   ? lm_head_classifier_backward_cooperative_cublaslt_bf16_u16
+                                   : lm_head_classifier_backward_cooperative_fused_bf16_u16);
                     if (cooperative_backward_fn == nullptr) {
                         error = "cooperative LM-head backward route selected without a callable Tile function";
                         return;
@@ -21679,6 +21714,8 @@ int run_transformer_lm_training_json(
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight"
                     : "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight")
+        : (lm_head_cooperative_backward_cublaslt_wrapper_enabled
+                ? "diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight"
         : (lm_head_cooperative_backward_sequence_wrapper_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cooperative-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight"
@@ -21692,7 +21729,7 @@ int run_transformer_lm_training_json(
                 : (lm_head_overlap_last_dweight_enabled
                 ? "last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight"))))))))
+                                                          : "serial-dhidden-before-dweight")))))))))
         << "\",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
@@ -21708,6 +21745,12 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_abi_wrapper_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_available\": "
         << (lm_head_cooperative_backward_sequence_wrapper_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_cublaslt_requested\": "
+        << (lm_head_cooperative_cublaslt_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_cublaslt_wrapper_available\": "
+        << (lm_head_cooperative_backward_cublaslt_wrapper_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_cublaslt_wrapper_enabled\": "
+        << (lm_head_cooperative_backward_cublaslt_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_symbol_available\": "
         << (lm_head_cooperative_backward_fused_kernel_symbol_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
@@ -21742,13 +21785,15 @@ int run_transformer_lm_training_json(
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
                         : "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel")
+                : (lm_head_cooperative_backward_cublaslt_wrapper_enabled
+                    ? "diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity"
                 : (lm_head_cooperative_backward_sequence_wrapper_enabled
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
                         : "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity")
                 : (lm_head_cooperative_backward_sequence_wrapper_available
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
-                    : "missing-required-sm120-parity-kernel"))))
+                    : "missing-required-sm120-parity-kernel")))))
         << "\",\n"
         << "  \"lm_head_cooperative_sequence_launch_count\": "
         << lm_head_cooperative_sequence_launch_count << ",\n"

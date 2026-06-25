@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in full-trainer diagnostic for the existing LM-head cooperative
+  cuBLASLt wrapper. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt`
+  expands to `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1`, the compiled
+  trainer now loads
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`,
+  and JSON reports the cuBLASLt request/availability/enabled state plus the
+  selected diagnostic strategy. The route remains rejected by default: the CUDA
+  13.3 dedicated RTX 5090 3-step stage-timed gate changed
+  `lm_head_cooperative_backward_strategy` to
+  `diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity`, but
+  regressed train-loop wall time to `1.084807x`, steady-state CUDA-event step
+  time to `1.085418x`, and `stage.lm_head_backward.total_ms` to `1.339292x`.
+
+  Verification:
+  `bash tools/build_native_gpt_cli_linked.sh`;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "cooperative_abi or
+  candidate_wrapper_covers_attention_and_ordering_profiles"`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_cooperative_cublaslt.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed the expected
+  promotion gates above.
+
 - Revalidated the combined transformer device arena after the CUDA 13.3.33 WSL
   reinstall and kept it rejected by default. The SM120 candidate profile now
   records the current dedicated RTX 5090 evidence: the route changed

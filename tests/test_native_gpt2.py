@@ -1628,12 +1628,16 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "lm_head_cooperative_backward_cuda_graph_requested" in source
+    assert "lm_head_cooperative_cublaslt_requested" in source
     assert "lm_head_force_sequence_wrapper_diagnostic_enabled" in source
     assert "lm_head_cooperative_backward_graph_prewarm_requested" in source
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in source
@@ -1662,10 +1666,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         "                         lm_head_cooperative_backward_cuda_graph_enabled"
     ) in source
     assert "? lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
-    assert ": lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
+    assert "lm_head_classifier_backward_cooperative_cublaslt_bf16_u16" in source
+    assert "lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert (
         "cooperative LM-head backward route selected without a callable Tile function"
     ) in source
+    assert "lm_head_cooperative_backward_cublaslt_wrapper_available" in source
+    assert "lm_head_cooperative_backward_cublaslt_wrapper_enabled" in source
     assert "lm_head_cooperative_backward_sequence_wrapper_available" in source
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
@@ -1674,6 +1681,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "strict-true-fused-cooperative-classifier-backward" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel" in source
+    assert "diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity" in source
     assert (
         "diagnostic-cuda-graph-loss-bins-ce-fork-join-dhidden-dweight-not-single-kernel"
         in source
@@ -1804,10 +1812,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "steady-state CUDA-event timing to 1.001805x" in bench_source
     assert "train_tokens_per_second to 0.993865x" in bench_source
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
+    assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
+    assert "1.339292x stage.lm_head_backward.total_ms" in bench_source
     assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1" in bench_source
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
