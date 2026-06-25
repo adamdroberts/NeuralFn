@@ -5765,7 +5765,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["timing"]["stage_timing_max_events"] == 20000
     assert train_transformer_payload["timing"]["stage_timing_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_dropped_event_count"] == 0
-    assert train_transformer_payload["timing"]["stage_timing_prealloc_event_pairs_requested"] == 4096
+    assert train_transformer_payload["timing"]["stage_timing_prealloc_event_pairs_requested"] == 16384
     assert train_transformer_payload["timing"]["stage_timing_event_pair_create_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_event_pair_preallocated_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_event_pair_hot_create_count"] == 0

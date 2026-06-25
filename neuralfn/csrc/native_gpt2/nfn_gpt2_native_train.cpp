@@ -13325,7 +13325,7 @@ int run_transformer_lm_training_json(
                                 "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS"},
                                20000));
     const std::int64_t default_stage_timing_prealloc_events =
-        std::min<std::int64_t>(stage_timing_max_events, 4096);
+        std::min<std::int64_t>(stage_timing_max_events, 16384);
     const std::int64_t stage_timing_prealloc_event_pairs_requested =
         std::min<std::int64_t>(
             stage_timing_max_events,

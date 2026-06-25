@@ -252,7 +252,7 @@ those as `stage.<name>.first_step_avg_ms` and
 compared against steady-state kernels in the same candidate-vs-current script.
 Stage-timed native GPT diagnostics preallocate CUDA event pairs before the
 training loop by default (`NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS`, also
-available as the `NFN_NATIVE_GPT2_...` alias, defaults to `4096` capped by
+available as the `NFN_NATIVE_GPT2_...` alias, defaults to `16384` capped by
 `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`). Native JSON and
 `tools/paired_kernel_speed.py` report the requested, preallocated, hot-created,
 and unused-destroyed event-pair counts so stage-timed parity runs can separate
