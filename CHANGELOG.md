@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated direct strict `lm_head_backward_bench` failures to print the same
+  true-fused replacement target as the JSON and shell wrapper: required strict
+  symbol, capability symbol, path class, and
+  `row-chunked-ce-dhidden-dweight-single-tile-kernel`. Direct users of the
+  compiled benchmark no longer need to inspect the sidecar JSON just to see the
+  remaining LM-head Tile kernel body requirement.
+
+  Verification: `bash -n tools/bench_lm_head_backward_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
+  -q`; expected-failing strict GPU run
+  `CUDA_VISIBLE_DEVICES=0 NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_direct_failure_target.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which rebuilt
+  `build/lm_head_backward_bench`, exited `3`, and printed the C++ error with
+  `next_required_symbol`, `next_required_capability_symbol`,
+  `next_required_path_class`, and
+  `next_required_kernel_body=row-chunked-ce-dhidden-dweight-single-tile-kernel`.
+
 - Improved strict LM-head backward candidate failures. When
   `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` or
   `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` rejects a candidate, the

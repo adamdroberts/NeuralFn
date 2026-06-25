@@ -962,7 +962,14 @@ int main(int argc, char** argv) {
         if (options.require_true_fused_candidate && true_fused_capability() == 0) {
             std::cerr
                 << "lm_head_backward_bench: candidate strict symbol is not a true fused "
-                << "LM-head backward kernel; it is still a sequence or CUDA Graph wrapper\n";
+                << "LM-head backward kernel; it is still a sequence or CUDA Graph wrapper; "
+                << "next_required_symbol="
+                << "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
+                << ", next_required_capability_symbol="
+                << "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
+                << ", next_required_path_class=strict-true-fused-tile-kernel"
+                << ", next_required_kernel_body="
+                << "row-chunked-ce-dhidden-dweight-single-tile-kernel\n";
             if (!options.json_out.empty()) {
                 std::filesystem::path out_path(options.json_out);
                 if (!out_path.parent_path().empty()) {
