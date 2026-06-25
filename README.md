@@ -2464,7 +2464,14 @@ workstation shape. A CUDA 13.3 RTX 5090 3-step/3-sample
 `attention_backward_tk_launch_count` from `288` to `576` and regressed
 train-loop wall time to `1.006515x`, block backward to `1.014077x`,
 attention backward to `1.072186x`, attention `to_qkv` to `1.072565x`, and
-`attention_backward_tk_timing_us` to `1.063855x`.
+`attention_backward_tk_timing_us` to `1.063855x`. The larger-cap
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_128`
+diagnostic is also rejected by the SM120 candidate wrapper: a CUDA 13.3.33
+dedicated RTX 5090 attention-section gate changed
+`attention_backward_tk_batch_cap` from `64` to `128`, but regressed
+train-loop wall time to `1.013207x`, steady-state CUDA-event timing to
+`1.000470x`, block backward to `1.029008x`, and
+`attention_backward_tk_timing_us` to `1.002850x`.
 Keep `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS` at the default `3`.
 Although `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4` passed a short
 3-step/3-sample gate, the longer CUDA 13.3 RTX 5090 10-step/3-sample gate

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected SM120 native candidate profile
+  `packed_attention_bwd_batch_128` so larger packed-attention backward chunks
+  cannot be promoted from noise-only measurements. The profile sets
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=128`, enables
+  attention-section timing, and requires
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real launches.
+  Runtime defaults remain unchanged at cap 64.
+
+  Verification:
+  `NFN_SM120_NATIVE_PROFILE=packed_attention_bwd_batch_128
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=128'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which changed
+  `attention_backward_tk_batch_cap` from `64` to `128` but failed promotion at
+  `1.013207x` train-loop wall, `1.000470x` steady-state CUDA-event timing, and
+  `1.029008x` block backward.
+
 - Hardened the SM120 native candidate wrapper's llm.kittens reference mode.
   When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` is set and the candidate
   changes the native binary, Tile library, build flags, environment, or extra

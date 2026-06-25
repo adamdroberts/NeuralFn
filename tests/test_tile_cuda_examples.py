@@ -1722,6 +1722,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     rejected_attention_profiles = (
         "bf16_attention_grad_out",
         "bf16_attention_dprep_grad_out",
+        "packed_attention_bwd_batch_128",
         "attention_dprep_float_hd64_specialized",
     )
     for rejected_attention_profile in rejected_attention_profiles:

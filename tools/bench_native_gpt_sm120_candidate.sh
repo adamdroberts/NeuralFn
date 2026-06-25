@@ -497,6 +497,12 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gates rejected the BF16 dprep-only attention grad-out route: the latest gate measured 1.005344x train_loop_wall_ms_per_step, 1.010632x stage.block_backward.total_ms, and 1.044177x attention backward."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1"
     ;;
+  "packed_attention_bwd_batch_128"|"packed-attention-bwd-batch-128"|"attention_bwd_batch_128"|"attention-bwd-batch-128"|"packed_attention_backward_batch_128"|"packed-attention-backward-batch-128")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 attention-section gate changed attention_backward_tk_batch_cap from 64 to 128, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.013207x, steady-state CUDA-event timing to 1.000470x, stage.block_backward.total_ms to 1.029008x, attention_backward_tk_timing_us to 1.002850x, and attention_backward_dprep_timing_us to 1.000088x."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=128"
+    AUTO_ATTENTION_SECTION_TIMING=1
+    ;;
   "attention_dprep_float_hd64_specialized"|"attention-dprep-float-hd64-specialized"|"float_attention_dprep_hd64"|"float-attention-dprep-hd64")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate proved the float HD64 dprep route and improved dprep timing, but rejected default promotion because adjacent hot-stage gates regressed."
