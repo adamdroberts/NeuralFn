@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Locked the direct native GPT script to the same linked Tile CUDA startup
+  contract as the SDK and `nfn train` path. A new CLI regression verifies that
+  `python cli/scripts/train_gpt_native.py ... --native-cuda-dry-run
+  --native-cuda-print-command` prefers `nfn_gpt_native_train_linked`, appends
+  `--tile-ops-lib linked`, keeps `--train-transformer-lm`, and does not import
+  Torch or the Python dataset manager. The current CUDA 13.3 dedicated RTX 5090
+  recheck showed why this is the only startup route to keep promoting:
+  `linked_startup` improved setup wall time to `0.891407x` versus the dynamic
+  baseline, while `llmk_sm120_reference_flags` remained timing-only
+  (`1.000479x` steady-state CUDA event, `1.027799x` versus llm.kittens wall).
+  The LM-head alternatives also stay diagnostic: the strict cooperative
+  true-fused smoke proved a real single-kernel path but measured
+  `8.985042x` slower than the cooperative baseline at trainer chunk size, and
+  the isolated cuBLASLt LM-head microbench (`0.305305x`) regressed in the full
+  native trainer (`1.076611x` train-loop wall, `1.398116x`
+  `stage.lm_head_backward.total`).
+
+  Verification: direct dry-run
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  cli/scripts/train_gpt_native.py --tinystories --native-cuda-dry-run
+  --native-cuda-print-command --native-cuda-no-checkpoint`, which printed
+  `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked`; dedicated RTX
+  5090 paired reruns of `linked_startup`, `llmk_sm120_reference_flags`,
+  `lm_head_cooperative_cublaslt`, and trainer-sized LM-head strict/cublasLt
+  microbench profiles.
+
 - Added an explicit opt-in cooperative strict LM-head fused kernel smoke path.
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` now
   dispatches to a single cooperative Tile-CUDA body when

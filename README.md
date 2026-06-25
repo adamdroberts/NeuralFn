@@ -97,6 +97,16 @@ steady-state, LM-head, and MLP-projection gates, while the latter improved
 short-run wall time but regressed steady-state timing and MLP projection
 dInput attribution. Keep both as diagnostic profiles unless a later same-script
 gate passes all hot-stage and steady-state criteria.
+The linked native trainer remains the preferred workstation startup path for
+direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3 dedicated
+RTX 5090 startup-only gate measured `linked_startup` at `0.891407x` setup wall
+time versus the dynamic Tile-ops baseline, and a direct dry run prints
+`build/nfn_gpt_native_train_linked ... --tile-ops-lib linked` without importing
+Torch or the Python dataset manager. The current LM-head alternatives are still
+diagnostics rather than defaults: the strict cooperative true-fused smoke is a
+real single-kernel path but was `8.985042x` slower at trainer chunk size, and
+the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
+trainer to `1.076611x` train-loop wall time.
 Dense GPT native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
 default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row

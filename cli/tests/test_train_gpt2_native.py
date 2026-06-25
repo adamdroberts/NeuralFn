@@ -767,6 +767,74 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
+    def test_train_gpt_native_direct_dry_run_prefers_linked_cli(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+            import tempfile
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            import neuralfn.native_gpt2 as native_gpt2
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp = Path(tmpdir)
+                linked_cli = tmp / "nfn_gpt_native_train_linked"
+                dynamic_cli = tmp / "nfn_gpt_native_train"
+                linked_cli.write_text("#!/usr/bin/env bash\\nexit 0\\n", encoding="utf-8")
+                dynamic_cli.write_text("#!/usr/bin/env bash\\nexit 0\\n", encoding="utf-8")
+                linked_cli.chmod(0o755)
+                dynamic_cli.chmod(0o755)
+                native_gpt2.DEFAULT_NATIVE_GPT_CLI_LINKED = str(linked_cli)
+                native_gpt2.DEFAULT_NATIVE_GPT2_CLI = str(dynamic_cli)
+
+                sys.argv = [
+                    str(root / "cli" / "scripts" / "train_gpt_native.py"),
+                    "--dataset-alias",
+                    str(tmp / "cached-shards"),
+                    "--no-download-if-missing",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ]
+                try:
+                    runpy.run_path(str(root / "cli" / "scripts" / "train_gpt_native.py"), run_name="__main__")
+                except SystemExit as exc:
+                    exit_code = int(exc.code or 0)
+                else:
+                    exit_code = 0
+                print("TORCH_LOADED", "torch" in sys.modules)
+                print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+                raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
+        env.pop("NFN_NATIVE_GPT_CLI", None)
+        env.pop("NFN_NATIVE_GPT2_CLI", None)
+        env.pop("NFN_NATIVE_GPT_LINKED_CLI", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("nfn_gpt_native_train_linked", proc.stdout)
+        self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertIn("--no-checkpoint", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+
     def test_nfn_train_gpt_alias_default_dispatches_directly_to_compiled_cli(self) -> None:
         code = textwrap.dedent(
             f"""
