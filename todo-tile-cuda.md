@@ -121,6 +121,12 @@ Real training tensors must not pass through graph editor node objects.
   wrapper now prints the exact blocker and points at the strict true-fused
   LM-head Tile kernel ABI. This preserves the failing exit code instead of
   weakening the gate.
+- [x] Add a compact LM-head classifier-backward path class to native GPT
+  runtime JSON and paired benchmark extraction. As of 2026-06-25 the dedicated
+  RTX 5090 JSON-contract parity smoke reports
+  `lm_head_classifier_backward_path_class: diagnostic-cuda-graph-wrapper`,
+  which keeps the current CUDA Graph wrapper visibly separate from the future
+  `strict-true-fused-tile-kernel` route.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
