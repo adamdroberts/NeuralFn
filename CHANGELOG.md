@@ -16,10 +16,13 @@ Future updates should append new entries here rather than replacing older notes.
   required next ABI,
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`, the
   capability symbol that must return true, graph replay/body-node means, and
-  whether the same run failed a candidate/reference metric gate.
+  whether the same run failed a candidate/reference metric gate. The new
+  `--require-native-lm-head-true-fused` gate makes the paired benchmark fail
+  directly when that blocker is still present.
 
   Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_reports_lm_head_true_fused_target
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_can_require_lm_head_true_fused_target
   -q`.
 
 - Added `packed_attention_bwd_batch_96` as a named rejected SM120 native

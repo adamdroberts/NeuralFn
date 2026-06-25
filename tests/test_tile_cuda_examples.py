@@ -4926,6 +4926,62 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert "candidate reference metric ratio gate failed" in proc.stderr
 
 
+def test_paired_kernel_speed_tool_can_require_lm_head_true_fused_target() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    run_dir = Path(tempfile.mkdtemp())
+    output_path = run_dir / "paired-lm-head-required.json"
+    baseline_profile = run_dir / "baseline-profile.json"
+    candidate_profile = run_dir / "candidate-profile.json"
+    native_payload = {
+        "steps_completed": 1,
+        "timing": {"train_loop_wall_ms": 10.0},
+        "lm_head_cooperative_backward_fused_kernel_symbol_available": True,
+        "lm_head_cooperative_backward_fused_kernel_capability_available": False,
+        "lm_head_cooperative_backward_fused_kernel_abi_path_class": (
+            "diagnostic-cuda-graph-wrapper"
+        ),
+        "lm_head_classifier_backward_path_class": "diagnostic-cuda-graph-wrapper",
+    }
+    baseline_profile.write_text(json.dumps(native_payload), encoding="utf-8")
+    candidate_profile.write_text(json.dumps(native_payload), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\" --profile-json {baseline_profile}",
+            "--candidate",
+            f"{sys.executable} -c \"print('candidate-ok')\" --profile-json {candidate_profile}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-lm-head-true-fused",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    gate = payload["native_lm_head_true_fused_gate"]
+    assert gate["enabled"] is True
+    assert gate["passed"] is False
+    assert gate["status"] == "diagnostic-cuda-graph-wrapper"
+    assert "true_fused_capability=False" in gate["failure_reason"]
+    assert "native_lm_head_true_fused_gate: passed=false" in proc.stdout
+    assert "native LM-head true-fused gate failed" in proc.stderr
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
     script = Path("tools/paired_kernel_speed.py")
     tmp = Path(tempfile.mkdtemp())

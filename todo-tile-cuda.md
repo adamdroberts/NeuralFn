@@ -92,6 +92,8 @@ Real training tensors must not pass through graph editor node objects.
   including graph replay/body-node means and the required next ABI
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+  The paired tool also accepts `--require-native-lm-head-true-fused` so a run
+  can fail on this blocker without relying on incidental timing gates.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts

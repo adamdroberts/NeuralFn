@@ -1580,6 +1580,15 @@ def parse_args() -> argparse.Namespace:
             "noise cannot pass as an implementation change."
         ),
     )
+    parser.add_argument(
+        "--require-native-lm-head-true-fused",
+        action="store_true",
+        help=(
+            "Fail after measurement when candidate native metrics show the LM-head "
+            "backward path is still the diagnostic CUDA Graph wrapper or the strict "
+            "true-fused Tile capability is unavailable."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -3283,6 +3292,32 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
     }
 
 
+def evaluate_lm_head_true_fused_gate(
+    *,
+    required: bool,
+    target: dict[str, object],
+) -> dict[str, object]:
+    status = str(target.get("status", "unknown"))
+    needs_work = target.get("required") is True
+    passed = not required or not needs_work
+    failure_reason = ""
+    if required and needs_work:
+        failure_reason = (
+            "candidate native LM-head backward is not strict true-fused Tile "
+            f"(status={status}, path_class={target.get('path_class', '')}, "
+            f"true_fused_capability={target.get('true_fused_capability')})"
+        )
+    elif required and status == "unobserved":
+        passed = False
+        failure_reason = "candidate native LM-head true-fused metrics were not observed"
+    return {
+        "enabled": required,
+        "passed": passed,
+        "status": status,
+        "failure_reason": failure_reason,
+    }
+
+
 def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
     target = payload.get("native_lm_head_true_fused_target")
     if not isinstance(target, dict):
@@ -3325,6 +3360,20 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
         f"path_class={target.get('next_required_path_class', '')}"
     )
     print(f"    reason: {target.get('reason', '')}")
+
+
+def print_lm_head_true_fused_gate(payload: dict[str, object]) -> None:
+    gate = payload.get("native_lm_head_true_fused_gate")
+    if not isinstance(gate, dict) or gate.get("enabled") is not True:
+        return
+    print(
+        "  native_lm_head_true_fused_gate: "
+        f"passed={str(gate.get('passed', False)).lower()} "
+        f"status={gate.get('status', '')}"
+    )
+    failure_reason = gate.get("failure_reason")
+    if failure_reason:
+        print(f"    failure_reason: {failure_reason}")
 
 
 def resolve_cuda_visible_devices(
@@ -3560,6 +3609,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     | ({"max_ratio": limit.max_ratio} if limit.max_ratio is not None else {}))
                     for limit in candidate_reference_metric_ratio_limits
                 ],
+            },
+            "native_lm_head_true_fused_gate": {
+                "enabled": bool(args.require_native_lm_head_true_fused),
+                "passed": True,
+                "status": "dry-run",
+                "failure_reason": "",
             },
             "sample_order_plan": order_plan,
             "run_env_overrides": {
@@ -3811,6 +3866,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         ratio_key="candidate_over_reference_native_metrics",
     )
     payload["native_lm_head_true_fused_target"] = summarize_lm_head_true_fused_target(payload)
+    payload["native_lm_head_true_fused_gate"] = evaluate_lm_head_true_fused_gate(
+        required=bool(args.require_native_lm_head_true_fused),
+        target=payload["native_lm_head_true_fused_target"],
+    )
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
         route_changes=native_route_counter_changes,
@@ -3997,6 +4056,7 @@ def print_text(payload: dict[str, object]) -> None:
         )
     print_native_hot_summary(payload)
     print_lm_head_true_fused_target(payload)
+    print_lm_head_true_fused_gate(payload)
     for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):
         metrics = payload.get(section)
         if not isinstance(metrics, dict) or not metrics:
@@ -4280,6 +4340,19 @@ def main() -> int:
         print(
             f"{label} failed"
             + (": " + ", ".join(metric for metric in failed if metric) if failed else ""),
+            file=sys.stderr,
+        )
+        return 1
+    lm_head_gate = payload.get("native_lm_head_true_fused_gate")
+    if (
+        isinstance(lm_head_gate, dict)
+        and lm_head_gate.get("enabled") is True
+        and lm_head_gate.get("passed") is False
+    ):
+        reason = str(lm_head_gate.get("failure_reason", "")).strip()
+        print(
+            "native LM-head true-fused gate failed"
+            + (": " + reason if reason else ""),
             file=sys.stderr,
         )
         return 1

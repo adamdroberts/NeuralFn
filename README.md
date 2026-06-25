@@ -254,6 +254,8 @@ candidate/reference gate failed, and the required next ABI:
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 returning true and `strict-true-fused-tile-kernel` as the path class.
+Pass `--require-native-lm-head-true-fused` to make the paired benchmark fail
+specifically on that condition even if ordinary timing gates are not enabled.
 When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and
