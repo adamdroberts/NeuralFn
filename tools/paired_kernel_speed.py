@@ -3192,9 +3192,22 @@ def summarize_native_hot_stage_ratios(
     *,
     limit: int = 12,
 ) -> dict[str, object]:
+    def is_duration_metric(key: str) -> bool:
+        if key == "setup_wall_ms":
+            return True
+        if key.startswith("train_loop") and "wall_ms" in key:
+            return True
+        if key.startswith("setup.") and key.endswith(".total_ms"):
+            return True
+        if key.startswith("stage.") and (
+            key.endswith(".total_ms") or key.endswith(".avg_ms")
+        ):
+            return True
+        return False
+
     rows: list[dict[str, object]] = []
     for key in NATIVE_HOT_SUMMARY_METRIC_KEYS:
-        if not key.startswith("stage.") or not key.endswith(".total_ms"):
+        if not is_duration_metric(key):
             continue
         baseline_mean = _summary_mean(baseline_summary, key)
         candidate_mean = _summary_mean(candidate_summary, key)

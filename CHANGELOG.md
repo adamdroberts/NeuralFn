@@ -9,8 +9,10 @@ Future updates should append new entries here rather than replacing older notes.
 - `tools/paired_kernel_speed.py` now adds `top_reference_gaps` to
   `native_hot_stage_ratios` whenever a reference command is present. The list is
   sorted by `candidate_over_reference_mean`, so SM120 native-vs-llm.kittens
-  benchmark JSON and stdout identify the biggest remaining NeuralFn stage gaps
-  directly instead of requiring manual scans through the full raw stage metrics.
+  benchmark JSON and stdout identify the biggest remaining NeuralFn duration
+  gaps directly, including train-loop wall timing when the reference does not
+  expose NeuralFn stage counters, instead of requiring manual scans through the
+  full raw timing metrics.
 
   Verification: ran the focused paired-kernel-speed pytest that covers
   `native_hot_stage_ratios`; ran `python -m py_compile

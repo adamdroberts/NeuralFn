@@ -4723,7 +4723,10 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert hot_stage_ratios["top_reference_gaps"][0]["candidate_over_reference_mean"] == (
         1000.0 / 900.0
     )
-    assert hot_stage_ratios["top_improvements"] == []
+    assert hot_stage_ratios["top_improvements"][0]["metric"] == (
+        "train_loop_wall_ms_per_step"
+    )
+    assert hot_stage_ratios["top_improvements"][0]["candidate_over_baseline_mean"] == 0.99
     assert "native_hot_summary:" in proc.stdout
     assert "baseline:" in proc.stdout
     assert "candidate:" in proc.stdout
