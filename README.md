@@ -253,8 +253,9 @@ select the cuBLASLt LM-head wrapper, but it is rejected by default: the CUDA
 13.3 dedicated RTX 5090 3-step stage-timed gate changed
 `lm_head_cooperative_backward_strategy` to
 `diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity` and
-regressed train-loop wall time to `1.084807x`, steady-state CUDA-event step
-time to `1.085418x`, and `stage.lm_head_backward.total_ms` to `1.339292x`.
+regressed train-loop wall time to `1.077251x`, steady-state CUDA-event step
+time to `1.083727x`, `stage.lm_head_backward.total_ms` to `1.335573x`, and
+`stage.lm_head_backward.cooperative.total_ms` to `1.477219x`.
 Those routes remain diagnostic-only.
 Future
 single-kernel LM-head candidates should first run

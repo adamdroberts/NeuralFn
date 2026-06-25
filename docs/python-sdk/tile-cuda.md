@@ -2501,6 +2501,10 @@ capabilities; wrapper-only libraries report
 `lm_head_classifier_backward_path_class`, a compact route label such as
 `diagnostic-cuda-graph-wrapper`, `diagnostic-cublaslt-sequence-wrapper`, or
 `strict-true-fused-tile-kernel` for full-trainer parity comparisons. The
+current CUDA 13.3.33 full-trainer rerun keeps the cuBLASLt sequence wrapper
+diagnostic-only after regressing train-loop wall to `1.077251x`, steady-state
+CUDA-event timing to `1.083727x`, LM-head backward to `1.335573x`, and the
+cooperative LM-head substage to `1.477219x`. The
 separate `lm_head_cooperative_backward_fused_kernel_abi_path_class` field comes
 directly from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`;

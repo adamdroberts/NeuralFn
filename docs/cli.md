@@ -1086,6 +1086,10 @@ bash tools/bench_lm_head_backward_candidate.sh`. The benchmark JSON includes
 both `reference_components` for the current generic component calls and
 `reference_cublaslt_components` for the forced cuBLASLt dHidden/dWeight calls,
 so CUDA/driver retests compare old and candidate kernels inside one process.
+The current CUDA 13.3.33 full-trainer rerun keeps the cuBLASLt route rejected:
+it regressed train-loop wall to `1.077251x`, steady-state CUDA-event timing to
+`1.083727x`, LM-head backward to `1.335573x`, and the cooperative LM-head
+substage to `1.477219x`.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from

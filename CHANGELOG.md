@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `lm_head_cooperative_cublaslt` full-trainer diagnostic
+  after the CUDA 13.3.33 rebuild. The route still proves the compiled GPT loop
+  can select the cuBLASLt LM-head wrapper and changes
+  `lm_head_cooperative_backward_strategy` to
+  `diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity`, but the
+  current 3-step, 2-sample RTX 5090 rerun rejected it harder than the earlier
+  one-sample probe: train-loop wall regressed to `1.077251x`, steady-state
+  CUDA-event timing to `1.083727x`, LM-head backward to `1.335573x`, and the
+  LM-head cooperative substage to `1.477219x`. Keep this route diagnostic-only;
+  it is not a replacement for a true fused LM-head classifier-backward Tile
+  kernel.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_lm_head_cooperative_cublaslt_current_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_cooperative_cublaslt_current.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in
+  -q`; `git diff --check`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt bash
+  tools/bench_native_gpt_sm120_candidate.sh` exits with code 2 before launching
+  GPU work unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
 - Rejected the stale `lm_head_graph_prewarm` promotion record after rerunning
   the paired same-script profile on the CUDA 13.3.33 dedicated RTX 5090. Graph
   prewarm still eliminates runtime LM-head graph capture and improved

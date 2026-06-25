@@ -228,7 +228,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"|"lm_head_cublaslt_cooperative"|"lm-head-cublaslt-cooperative")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-step, 1-sample stage-timed full-trainer gate selected the LM-head cooperative cuBLASLt wrapper and moved lm_head_cooperative_backward_strategy to diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity, but rejected it at 1.084807x train_loop_wall_ms_per_step, 1.085418x steady-state CUDA-event step time, and 1.339292x stage.lm_head_backward.total_ms."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun selected the LM-head cooperative cuBLASLt wrapper and moved lm_head_cooperative_backward_strategy to diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity, but rejected it at 1.077251x train_loop_wall_ms_per_step, 1.083727x steady-state CUDA-event step time, 1.335573x stage.lm_head_backward.total_ms, and 1.477219x stage.lm_head_backward.cooperative.total_ms."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1"
     ;;
   "lm_head_tk_dweight_32768"|"lm-head-tk-dweight-32768")

@@ -1891,7 +1891,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         "lm_head_dhidden_fast16bf_32768, lm_head_cooperative_cublaslt, lm_head_tk_dweight_32768"
         in bench_source
     )
-    assert "1.339292x stage.lm_head_backward.total_ms" in bench_source
+    assert "1.335573x stage.lm_head_backward.total_ms" in bench_source
+    assert "1.477219x stage.lm_head_backward.cooperative.total_ms" in bench_source
     assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0" in bench_source
