@@ -8349,6 +8349,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in kernels_text
     assert "lm_head_prob_only_target_correction_threads()" in kernels_text
     assert "return 512;" in kernels_text
+    prob_only_body = kernels_text.split(
+        "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_prob_only_kernel",
+        1,
+    )[1].split(
+        "__global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel",
+        1,
+    )[0]
+    assert "load_bf16_vec8(row_logits + col)" in prob_only_body
+    assert "store_bf16_vec8_normal(" in prob_only_body
     assert "NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text

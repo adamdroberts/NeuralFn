@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Optimized the diagnostic LM-head probability-only BF16/u16 CE+dlogits Tile
+  kernel to use the existing vec8 normal-store helper for its aligned vec8
+  loop instead of eight scalar stores. This only affects explicit
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1` or
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1` runs; the default
+  dense GPT trainer stays on the CUDA Graph wrapper route because the broader
+  probability-only correction schedule is still slower overall.
+
+  Verification:
+  `git diff --check`;
+  `bash tools/build_native_train_tile_ops.sh build/libnfn_native_train_tile_ops.so`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads
+  -q`; ran the direct ABI pytest selection, which skipped in this environment;
+  and reran the dedicated RTX 5090 same-script gate with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
+  over 3 steps, 2 samples, stage timing, and explicit rejected-profile opt-in.
+  The candidate proved the route change and improved LM-head backward slightly
+  (`stage.lm_head_backward.total_ms=0.999740x`,
+  `stage.lm_head_backward.cooperative.total_ms=0.999728x`) but remains
+  diagnostic-only because train-loop wall regressed to `1.005718x`,
+  tokens/sec fell to `0.994390x`, and block backward regressed to `1.012704x`.
+
 - Added explicit CUDA Graph body attribution to the strict LM-head
   classifier-backward ABI. The Tile ops library now exports graph-body node
   count helpers for the diagnostic fused symbol, and native GPT runtime JSON

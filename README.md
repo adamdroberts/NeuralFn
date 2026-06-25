@@ -107,6 +107,15 @@ but real wrapper launches now reject it by default: the CUDA 13.3 dedicated RTX
 LM-head, block-backward, and MLP-projection gates. Use
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for an intentional
 diagnostic rerun.
+The diagnostic probability-only LM-head CE route now writes its aligned BF16
+dlogits rows with vec8 normal stores instead of scalar stores, but it remains
+default-off. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
+only for same-script bisection of
+`NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1`; the current RTX 5090
+gate still rejects that broader route for default training because total
+train-loop and block-backward timing regress despite a slight LM-head substage
+improvement.
 Real paired-wrapper runs of timeout-prone LM-head profiles now also
 require `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1`; dry-run plan
 expansion remains available without that opt-in. The native runner now rejects

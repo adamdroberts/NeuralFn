@@ -72,6 +72,14 @@ sub-bucket. Enable it only for paired bisection with
 `token_weight_padded_init_fusion_enabled`, and
 `token_weight_padding_zero_launches_elided`.
 
+The diagnostic dense GPT LM-head probability-only CE+dlogits kernel writes
+aligned BF16 rows with vec8 normal stores in the raw Tile C ABI. It is only
+used when explicit prob-only correction flags such as
+`NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1` are selected through
+same-script candidate profiling. Default training keeps the CUDA Graph wrapper
+LM-head route because the prob-only correction schedule still regresses total
+train-loop timing despite the faster aligned-store body.
+
 On SM120 with TK attention enabled, that script defines
 `LLMK_SM120_USE_CUBLASLT_GEMM` by default to match the supported llm.kittens
 CUDA 13.3 build path. It also normalizes inherited

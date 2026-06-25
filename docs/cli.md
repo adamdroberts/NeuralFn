@@ -117,6 +117,12 @@ PyTorch install outside the default CLI training workflow.
 
 The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
+compares the default LM-head route against the diagnostic probability-only
+CE+dlogits path with combined target correction. That path uses vec8 normal
+stores for aligned BF16 dlogits, but it remains default-off because the current
+same-script RTX 5090 gate still regresses total train-loop and block-backward
+timing.
 Native linear-backward kernel candidates should be isolated before full parity
 runs with `bash tools/bench_linear_backward_candidate.sh`. The wrapper builds
 `build/linear_backward_bench`, loads the raw Tile C ABI, and compares baseline

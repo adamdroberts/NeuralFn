@@ -12536,13 +12536,23 @@ __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bi
        col < aligned_vocab;
        col += static_cast<std::int64_t>(blockDim.x) * kVec) {
     const int4 packed = load_bf16_vec8(row_logits + col);
+    std::uint16_t grad[8];
 #pragma unroll
     for (int offset = 0; offset < 8; ++offset) {
-      const std::int64_t current_col = col + offset;
       const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
       const float prob = expf(value - row_max) / row_denom;
-      row_logits[current_col] = f32_to_bf16_bits_device(prob * loss_scale);
+      grad[offset] = f32_to_bf16_bits_device(prob * loss_scale);
     }
+    store_bf16_vec8_normal(
+        row_logits + col,
+        grad[0],
+        grad[1],
+        grad[2],
+        grad[3],
+        grad[4],
+        grad[5],
+        grad[6],
+        grad[7]);
   }
   for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
     const float value = bf16_bits_to_f32_device(row_logits[col]);
