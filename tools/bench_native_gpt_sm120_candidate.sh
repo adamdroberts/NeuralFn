@@ -807,7 +807,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "mlp_fc_concurrent_dinput_dweight"|"mlp-fc-concurrent-dinput-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.005830x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 3-step, 1-sample stage-timed recheck proved the route changed by enabling block_backward_mlp_fc_concurrent_dinput_dweight and moving block_backward_mlp_fc_dinput_before_dweight_count from 288 to 0. It still remains rejected because stage.block_backward.mlp_fc.total_ms regressed to 1.025442x, stage.block_backward.total_ms to 1.005941x, stage.lm_head_backward.total_ms to 1.001738x, steady-state CUDA-event step time to 1.003685x, and candidate-over-llm.kittens train_loop_wall_ms_per_step stayed at 1.028729x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1"
     ;;
   "attn_proj_concurrent_dinput_dweight"|"attn-proj-concurrent-dinput-dweight")

@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `mlp_fc_concurrent_dinput_dweight` native SM120
+  profile with current CUDA 13.3.33 dedicated RTX 5090 evidence. The paired
+  stage-timed recheck proved the route changed by enabling
+  `block_backward_mlp_fc_concurrent_dinput_dweight` and moving
+  `block_backward_mlp_fc_dinput_before_dweight_count` from `288` to `0`, but it
+  remains rejected because `stage.block_backward.mlp_fc.total_ms` regressed to
+  `1.025442x`, block backward to `1.005941x`, LM-head backward to `1.001738x`,
+  steady-state CUDA-event timing to `1.003685x`, and candidate-over-llm.kittens
+  train-loop wall time stayed at `1.028729x`.
+
+  Verification: `env CUDA_VISIBLE_DEVICES=0
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_concurrent_dinput_dweight
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_mlp_fc_concurrent_current.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_mlp_fc_concurrent_current_profiles
+  NFN_SM120_NATIVE_COMMAND_TIMEOUT_SECONDS=420
+  tools/bench_native_gpt_sm120_candidate.sh` exited with the expected rejection
+  after the candidate-reference metric gates failed.
+
 - Printed native hot-stage ratio rankings in same-script paired benchmark
   output. `tools/paired_kernel_speed.py` now prints the already-recorded
   `native_hot_stage_ratios` section after `native_hot_summary`, including the
