@@ -918,8 +918,12 @@ for the promoted profile.
 The `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` diagnostic
 enables `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` to move the first forward-QKV
 TK launch into setup. It is intentionally rejected by default: the latest
-split-stage gate improved first-step train-loop timing but increased setup and
-total wall time, so use it only to reproduce first-use QKV attribution.
+split-stage gate with the `train-sm120.sh` `-g 144` cadence improved NeuralFn
+train-loop wall to `0.974484x` and forward-QKV first-step avg to `0.348893x`,
+but increased setup to `1.130868x` and still failed strict llm.kittens
+reference gates at `1.006435x` train-loop wall, `1.006220x` steady-state
+CUDA-event timing, and `0.993532x` tokens/sec. Use it only to reproduce
+first-use QKV attribution; it moves setup cost, not long-run steady throughput.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

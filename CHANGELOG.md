@@ -22,6 +22,28 @@ Future updates should append new entries here rather than replacing older notes.
   -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_tile_cuda_examples.py -q -k "native_gpt_sm120_candidate_wrapper"`.
 
+- Refreshed the rejected `tk_qkv_forward_prewarm` SM120 candidate with the
+  current CUDA 13.3.33 dedicated RTX 5090 and `train-sm120.sh -g 144` cadence.
+  The route still proves first-use attribution by moving
+  `linear_tk_qkv_first_use_prewarm_success_count` from `0` to `1`, improving
+  NeuralFn train-loop wall to `0.974484x` and forward-QKV first-step average to
+  `0.348893x`, but it remains default-off because setup regressed to
+  `1.130868x` and strict llm.kittens gates still failed at `1.006435x`
+  train-loop wall, `1.006220x` steady-state CUDA-event timing, and `0.993532x`
+  tokens/sec. This confirms the profile moves first-use QKV work into setup
+  rather than improving the long-run steady training path.
+
+  Verification: `env CUDA_VISIBLE_DEVICES=0
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_tk_qkv_forward_prewarm_current.json
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_tk_qkv_forward_prewarm_current_profiles
+  NFN_SM120_NATIVE_COMMAND_TIMEOUT_SECONDS=420
+  tools/bench_native_gpt_sm120_candidate.sh` exited with the expected strict
+  llm.kittens gate failure.
+
 - Added the `attention_dprep_grid3d` SM120 native candidate profile to
   `tools/bench_native_gpt_sm120_candidate.sh`. The profile expands to
   `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1`, enables attention section

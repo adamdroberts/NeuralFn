@@ -337,7 +337,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "tk_qkv_forward_prewarm"|"tk-qkv-forward-prewarm"|"qkv_forward_tk_prewarm"|"qkv-forward-tk-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 split-stage 3-step, 2-sample gate proved the route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and improved train-loop wall to 0.982548x plus forward-QKV first-step avg to 0.435121x, but rejected default promotion because setup_wall_ms regressed to 1.239921x and total_wall_ms to 1.000981x. This moves first-use QKV work from train loop to setup instead of removing it."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 3-step, 1-sample stage-timed gate with the train-sm120 -g 144 cadence proved the route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and improved NeuralFn train-loop wall to 0.974484x plus forward-QKV first-step avg to 0.348893x, but rejected default promotion because setup_wall_ms regressed to 1.130868x and the candidate still failed strict llm.kittens reference gates at 1.006435x train-loop wall, 1.006220x steady-state CUDA-event timing, and 0.993532x tokens/sec. This moves first-use QKV work from train loop to setup instead of improving long-run steady throughput."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"
