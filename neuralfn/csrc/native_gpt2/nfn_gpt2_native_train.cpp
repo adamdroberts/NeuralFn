@@ -10367,13 +10367,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE",
                               "NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE",
                               "NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM"}),
-            false);
+            true);
     const bool linear_bf16_workspace_prewarm_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE",
                               "NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE",
                               "NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM"}),
-            false);
+            true);
     struct LinearShapeStat {
         int path = 0;
         int m = 0;
@@ -12901,7 +12901,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),
-            false);
+            true);
     const bool lm_head_cooperative_backward_graph_prewarm_enabled =
         lm_head_cooperative_backward_graph_prewarm_requested &&
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;

@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted native GPT LM-head CUDA Graph prewarm for real training. The dense
+  GPT native path now defaults `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM`,
+  `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE`, and
+  `NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE` to on, while preserving the `=0`
+  opt-outs for lazy-capture and lazy-initialization regression checks. The
+  `lm_head_graph_prewarm` SM120 profile now compares the old lazy baseline
+  against the default prewarmed route instead of treating prewarm as a rejected
+  diagnostic. This eliminates runtime LM-head graph capture on normal runs and
+  leaves the remaining llm.kittens parity gap focused on replacing the
+  diagnostic graph wrapper with a true fused LM-head classifier-backward Tile
+  kernel.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_lm_head_graph_prewarm_fixed_gates.json
+  bash tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090
+  passed the route-change gate and explicit metric gates after the wrapper was
+  fixed so profile-specific `MAX_CANDIDATE_RATIO_RAW` defaults are not
+  overwritten by later env parsing. The gated run improved native-vs-native
+  train-loop wall to `0.976542x`, train tokens/sec to `1.024025x`,
+  LM-head backward to `0.967861x`, block backward to `0.974829x`, and MLP
+  projection backward to `0.845548x` versus lazy capture while passing the
+  `1.002` steady-state CUDA-event tolerance at `1.000614x`. Direct llm.kittens
+  parity with
+  `NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1
+  NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1
+  NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1'` improved wall time to
+  `0.991613x` and tokens/sec to `1.001803x`, but still missed the strict
+  steady-state CUDA-event gate at `1.010282x`.
+
 - Made native Tile linear shape-stat timing CUDA Graph capture-aware. When
   `NFN_NATIVE_LINEAR_SHAPE_STATS=1` (or a GPT/Tile alias) is enabled during
   native GPT profiling, streams currently being captured for graph replay now

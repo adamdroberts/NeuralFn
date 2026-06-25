@@ -1192,26 +1192,25 @@ to `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to
 `0.984974x`, LM-head backward to `1.031614x`, and block backward to
 `1.023253x`. Keep full plan prewarm enabled for real training unless a future
 same-script gate improves both setup and hot training metrics.
-The raw Tile ABI also exposes a default-off cuBLAS handle prewarm hook for the
-remaining GEMMEx routes that are not covered by cuBLASLt plan-cache prewarm.
-Set `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`,
-`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=1`, or
-`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=1` to initialize the process-wide cuBLAS
-handle during setup; native JSON reports
+The raw Tile ABI also exposes a cuBLAS handle prewarm hook for the remaining
+GEMMEx routes that are not covered by cuBLASLt plan-cache prewarm. Native GPT
+training now initializes this handle during setup by default; set
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=0`, or
+`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=0` only when reproducing the older lazy
+initialization route. Native JSON reports
 `linear_cublas_handle_prewarm_available`,
 `linear_cublas_handle_prewarm_enabled`,
 `linear_cublas_handle_prewarm_success_count`, and
 `linear_cublas_handle_prewarm_failure_count`, and setup timing includes
-`setup.cublas_handle_prewarm`. The paired
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` route is currently
-rejected for real runs because the dedicated RTX 5090 gate measured a small
-strict-stage regression.
-The trainer also exposes a separate default-off BF16 GEMMEx workspace prewarm
-for bisection of first-step allocation cost. Set
-`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=1`,
-`NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE=1`, or
-`NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM=1` to reserve the dense GPT
-workstation BF16 linear scratch buffers during setup. Native JSON reports
+`setup.cublas_handle_prewarm`.
+The trainer also exposes a BF16 GEMMEx workspace prewarm for first-step
+allocation cost. Native GPT reserves the dense GPT workstation BF16 linear
+scratch buffers during setup by default; set
+`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0`,
+`NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE=0`, or
+`NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM=0` only for lazy-allocation
+regression checks. Native JSON reports
 `linear_bf16_workspace_prewarm_available`,
 `linear_bf16_workspace_prewarm_enabled`,
 `linear_bf16_workspace_prewarm_success_count`, and
@@ -1471,14 +1470,20 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is
-diagnostic-only by default because setup capture needs cuBLAS/cuBLASLt
-prewarm first and the current CUDA 13.3 RTX 5090 same-script gate rejected
-promotion: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-improved first-step event time to `0.969636x` and train-loop wall time to
-`0.994664x`, but missed strict gates with steady-state event time at
-`1.001249x` and total LM-head backward at `1.000123x`. When graph prewarm
-eliminates runtime LM-head graph capture, trainer JSON still preserves
+`lm_head_fused_graph_prewarm_cache_entry_count`. The prewarm route is now the
+native GPT default for real training and can be disabled with
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` for lazy-capture
+regression checks. The CUDA 13.3 RTX 5090 gated refresh promoted it after the
+3-step same-script gate eliminated runtime LM-head graph capture and improved
+train-loop wall to `0.976542x`, tokens/sec to `1.024025x`, LM-head backward
+to `0.967861x`, block backward to `0.974829x`, and MLP projection backward to
+`0.845548x` versus lazy capture while passing the `1.002` steady-state
+CUDA-event tolerance. The llm.kittens parity gate still misses strict
+steady-state CUDA-event timing, so the remaining implementation target is a
+true fused LM-head classifier-backward Tile kernel. When graph prewarm
+eliminates runtime LM-head graph capture,
+trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` from the last successfully prewarmed
 capture so same-script route evidence does not look like the LM-head

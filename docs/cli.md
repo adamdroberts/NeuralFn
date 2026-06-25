@@ -1149,11 +1149,17 @@ CUDA Graph counters:
 export those optional C ABI symbols leave the values at zero. Successful
 strict graph replay leaves `lm_head_cooperative_sequence_*` at zero; nonzero
 sequence counters mean the diagnostic wrapper or graph fallback path ran.
-For the diagnostic LM-head graph-prewarm profile, trainer JSON preserves the
-last successful prewarm shape in `lm_head_classifier_last_rows`,
-`lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` even
-when runtime graph captures are eliminated and the Tile runtime stats have been
-reset before the timed train loop.
+LM-head graph prewarm is now enabled by default for real native GPT training.
+Trainer JSON preserves the last successful prewarm shape in
+`lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
+`lm_head_classifier_last_row_stride` even when runtime graph captures are
+eliminated and the Tile runtime stats have been reset before the timed train
+loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` only to reproduce the
+older lazy-capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
+compares that old baseline against the default prewarmed route and gates
+train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
+LM-head backward, block backward, and MLP projection backward.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -2046,20 +2052,20 @@ plan change as kernel-level attribution when deciding whether to emit the
 timing-only candidate warning.
 
 The native trainer also exposes `nfn_native_tile_trainer_linear_cublas_prewarm`
-for the non-Lt cuBLAS handle used by BF16 GEMMEx fallback paths. It is
-default-off: set `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`,
-`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=1`, or
-`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=1` to initialize the handle during setup.
+for the non-Lt cuBLAS handle used by BF16 GEMMEx fallback paths. Native GPT
+training initializes this handle during setup by default; set
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=0`, or
+`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=0` only for lazy-initialization regression
+checks.
 Runtime JSON reports `linear_cublas_handle_prewarm_available`,
 `linear_cublas_handle_prewarm_enabled`,
 `linear_cublas_handle_prewarm_requested`,
 `linear_cublas_handle_prewarm_success_count`, and
 `linear_cublas_handle_prewarm_failure_count`; setup timing includes
 `setup.cublas_handle_prewarm`.
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` compares baseline
-off versus candidate on in the native-vs-native wrapper, but it is guarded as a
-rejected real-run profile after the CUDA 13.3 RTX 5090 gate regressed strict
-timing metrics.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` remains available
+for historical lazy-vs-prewarmed bisection.
 
 The native GPT runtime `timing` block separates `setup_wall_ms`, `train_loop_wall_ms`, `post_train_sample_wall_ms`, `cleanup_wall_ms`, `checkpoint_wall_ms`, and `total_wall_ms`. Use `setup_wall_ms` for time-to-ready/training-start checks, `train_loop_wall_ms` for throughput comparisons, and `cleanup_wall_ms` to identify teardown from explicit CUDA frees and library close operations.
 

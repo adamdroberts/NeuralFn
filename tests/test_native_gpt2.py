@@ -1021,6 +1021,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE" in gpt_source
     assert "NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE" in gpt_source
     assert "NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM" in gpt_source
+    assert (
+        '"NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM"}),\n'
+        "            true)"
+    ) in gpt_source
     assert "linear_cublas_handle_prewarm_available" in gpt_source
     assert "linear_cublas_handle_prewarm_enabled" in gpt_source
     assert "linear_cublas_handle_prewarm_success_count" in gpt_source
@@ -1028,6 +1032,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE" in gpt_source
     assert "NFN_NATIVE_GPT2_PREWARM_BF16_WORKSPACE" in gpt_source
     assert "NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM" in gpt_source
+    assert (
+        '"NFN_TILE_CUDA_LINEAR_BF16_WORKSPACE_PREWARM"}),\n'
+        "            true)"
+    ) in gpt_source
     assert "linear_bf16_workspace_prewarm_available" in gpt_source
     assert "linear_bf16_workspace_prewarm_enabled" in gpt_source
     assert "linear_bf16_workspace_prewarm_success_count" in gpt_source
@@ -1642,6 +1650,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
+    assert (
+        '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
+        "            true)"
+    ) in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "lm_head_cooperative_loss_bins_requested" in source
@@ -1820,11 +1832,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
-    assert "NFN_NATIVE_GPT_CUBLASLT_PLAN_PREWARM_MODE=lm_head_only" in bench_source
-    assert "2026-06-25 post-reinstall rerun" in bench_source
-    assert "candidate-over-llm.kittens regressed train_loop_wall_ms_per_step to 1.004960x" in bench_source
-    assert "steady-state CUDA-event timing to 1.001805x" in bench_source
-    assert "train_tokens_per_second to 0.993865x" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
+    assert "2026-06-25 gated refresh promoted graph prewarm" in bench_source
+    assert "train_loop_wall_ms_per_step to 0.976542x" in bench_source
+    assert "train_tokens_per_second to 1.024025x" in bench_source
+    assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
     assert (

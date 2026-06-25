@@ -173,14 +173,17 @@ ABI is also available for diagnostics. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. The named
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` profile enables
-the required cuBLAS handle, BF16 workspace, and LM-head-only cuBLASLt plan
-prewarm before capture. It is rejected by default: the CUDA 13.3 RTX 5090
-same-script gate improved first-step event time to `0.969636x` and train-loop
-wall time to `0.994664x`, but missed strict gates with steady-state event time
-at `1.001249x` and total LM-head backward at `1.000123x`. Prewarmed runs also
-preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
+`lm_head_fused_graph_prewarm_cache_entry_count`. Native GPT training now
+enables LM-head graph prewarm, cuBLAS handle prewarm, and BF16 workspace
+prewarm by default for real training. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0`,
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0`, or
+`NFN_NATIVE_GPT_PREWARM_BF16_WORKSPACE=0` only for historical lazy-path
+comparisons. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
+compares that old baseline against the default prewarmed route and gates
+train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
+LM-head backward, block backward, and MLP projection backward. Prewarmed runs
+also preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
 `lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` when
 runtime graph capture counters stay at zero because every LM-head chunk hit the
 prewarmed graph cache.
@@ -659,7 +662,8 @@ workload instead of falling back to the default 10-step/3-sample run.
 For non-Lt cuBLAS initialization bisection, use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm`. The profile keeps
 baseline and candidate on the same native command while setting
-`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` for baseline and `1` for candidate.
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` for baseline and `1` for candidate;
+normal native GPT training uses the prewarmed route by default.
 The corresponding runtime fields are
 `linear_cublas_handle_prewarm_available`,
 `linear_cublas_handle_prewarm_enabled`,
