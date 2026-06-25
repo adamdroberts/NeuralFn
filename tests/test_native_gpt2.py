@@ -504,6 +504,12 @@ def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in source
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in source
     assert "tk_packed_attention_backward_max_batch_per_launch()" in source
+    assert "record_attention_backward_tk_chunk_batch(chunk_batch)" in source
+    assert "attention_backward_tk_batch_cap()" in source
+    assert "attention_backward_tk_chunk_batch_total()" in source
+    assert "attention_backward_tk_chunk_batch_max()" in source
+    assert "attention_backward_tk_chunk_batch_min()" in source
+    assert "attention_backward_tk_chunk_batch_last()" in source
     assert "for (std::int64_t batch_begin = 0; batch_begin < batch;" in source
     assert "chunk_batch = std::min(max_batch_per_launch, batch - batch_begin)" in source
     assert "qkv_bf16_bits + batch_begin * packed_elements_per_batch" in source

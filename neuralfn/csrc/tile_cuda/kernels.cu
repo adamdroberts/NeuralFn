@@ -84,6 +84,11 @@ std::atomic<std::int64_t> g_attention_backward_dprep_timing_us{0};
 std::atomic<std::int64_t> g_attention_backward_dprep_timing_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_timing_us{0};
 std::atomic<std::int64_t> g_attention_backward_tk_timing_count{0};
+std::atomic<std::int64_t> g_attention_backward_tk_chunk_batch_total{0};
+std::atomic<std::int64_t> g_attention_backward_tk_chunk_batch_max{0};
+std::atomic<std::int64_t> g_attention_backward_tk_chunk_batch_min{
+    std::numeric_limits<std::int64_t>::max()};
+std::atomic<std::int64_t> g_attention_backward_tk_chunk_batch_last{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_allocation_count{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_element_capacity{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_row_capacity{0};
@@ -1182,6 +1187,26 @@ bool tk_attention_backward_section_timing_enabled() {
   return enabled;
 }
 
+void record_attention_backward_tk_chunk_batch(std::int64_t chunk_batch) {
+  if (chunk_batch <= 0) {
+    return;
+  }
+  g_attention_backward_tk_chunk_batch_total.fetch_add(chunk_batch, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_last.store(chunk_batch, std::memory_order_relaxed);
+  std::int64_t observed_max =
+      g_attention_backward_tk_chunk_batch_max.load(std::memory_order_relaxed);
+  while (chunk_batch > observed_max &&
+         !g_attention_backward_tk_chunk_batch_max.compare_exchange_weak(
+             observed_max, chunk_batch, std::memory_order_relaxed, std::memory_order_relaxed)) {
+  }
+  std::int64_t observed_min =
+      g_attention_backward_tk_chunk_batch_min.load(std::memory_order_relaxed);
+  while (chunk_batch < observed_min &&
+         !g_attention_backward_tk_chunk_batch_min.compare_exchange_weak(
+             observed_min, chunk_batch, std::memory_order_relaxed, std::memory_order_relaxed)) {
+  }
+}
+
 class CudaSectionTimer {
  public:
   CudaSectionTimer(
@@ -2062,6 +2087,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
   std::int64_t tk_backward_chunk_launches = 0;
   for (std::int64_t batch_begin = 0; batch_begin < batch; batch_begin += max_batch_per_launch) {
     const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
+    record_attention_backward_tk_chunk_batch(chunk_batch);
     const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
     dim3 dprep_block(32, static_cast<unsigned int>(tk_packed_attention_dprep_warps_per_block()), 1);
     {
@@ -19531,6 +19557,11 @@ void reset_attention_forward_launch_stats() {
   g_attention_backward_dprep_timing_count.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_timing_us.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_timing_count.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_total.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_max.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_min.store(
+      std::numeric_limits<std::int64_t>::max(), std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_last.store(0, std::memory_order_relaxed);
   g_attention_tk_workspace_allocation_count.store(0, std::memory_order_relaxed);
 #endif
   g_attention_forward_row_launch_count.store(0, std::memory_order_relaxed);
@@ -20577,6 +20608,48 @@ std::int64_t attention_forward_tk_launch_count() {
 std::int64_t attention_backward_tk_launch_count() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_launch_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_batch_cap() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return std::max<std::int64_t>(1, tk_packed_attention_backward_max_batch_per_launch());
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_chunk_batch_total() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_chunk_batch_total.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_chunk_batch_max() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_chunk_batch_max.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_chunk_batch_min() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  const std::int64_t value =
+      g_attention_backward_tk_chunk_batch_min.load(std::memory_order_relaxed);
+  return value == std::numeric_limits<std::int64_t>::max() ? 0 : value;
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_chunk_batch_last() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_chunk_batch_last.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

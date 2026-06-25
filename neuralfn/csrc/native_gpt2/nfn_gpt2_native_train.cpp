@@ -3345,6 +3345,11 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_attention_forward_row_launch_count",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_tk_batch_cap",
+        "nfn_native_tile_attention_backward_tk_chunk_batch_total",
+        "nfn_native_tile_attention_backward_tk_chunk_batch_max",
+        "nfn_native_tile_attention_backward_tk_chunk_batch_min",
+        "nfn_native_tile_attention_backward_tk_chunk_batch_last",
         "nfn_native_tile_attention_backward_tk_block_size",
         "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count",
         "nfn_native_tile_attention_backward_dprep_timing_us",
@@ -10145,6 +10150,11 @@ int run_transformer_lm_training_json(
     std::int64_t attention_forward_row_launches = 0;
     std::int64_t attention_forward_tk_launches = 0;
     std::int64_t attention_backward_tk_launches = 0;
+    std::int64_t attention_backward_tk_batch_cap = 0;
+    std::int64_t attention_backward_tk_chunk_batch_total = 0;
+    std::int64_t attention_backward_tk_chunk_batch_max = 0;
+    std::int64_t attention_backward_tk_chunk_batch_min = 0;
+    std::int64_t attention_backward_tk_chunk_batch_last = 0;
     std::int64_t attention_backward_float_hd64_dprep_launches = 0;
     std::int64_t attention_backward_dprep_timing_us = 0;
     std::int64_t attention_backward_dprep_timing_count = 0;
@@ -11124,6 +11134,11 @@ int run_transformer_lm_training_json(
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
     AttentionStatsCountFn attention_backward_tk_launch_count = nullptr;
+    AttentionStatsCountFn attention_backward_tk_batch_cap_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_chunk_batch_total_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_chunk_batch_max_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_chunk_batch_min_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_chunk_batch_last_fn = nullptr;
     TileOptimizerTileSizeFn attention_backward_tk_block_size_fn = nullptr;
     AttentionStatsCountFn attention_backward_float_hd64_dprep_launch_count_fn = nullptr;
     AttentionStatsCountFn attention_backward_dprep_timing_us_fn = nullptr;
@@ -11624,6 +11639,16 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_attention_forward_tk_launch_count");
                 attention_backward_tk_launch_count = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_tk_launch_count");
+                attention_backward_tk_batch_cap_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_batch_cap");
+                attention_backward_tk_chunk_batch_total_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_chunk_batch_total");
+                attention_backward_tk_chunk_batch_max_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_chunk_batch_max");
+                attention_backward_tk_chunk_batch_min_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_chunk_batch_min");
+                attention_backward_tk_chunk_batch_last_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_chunk_batch_last");
                 attention_backward_tk_block_size_fn = load_symbol<TileOptimizerTileSizeFn>(
                     tile_handle, "nfn_native_tile_attention_backward_tk_block_size");
                 attention_backward_float_hd64_dprep_launch_count_fn = load_symbol<AttentionStatsCountFn>(
@@ -20415,6 +20440,21 @@ int run_transformer_lm_training_json(
     if (attention_backward_tk_launch_count != nullptr) {
         attention_backward_tk_launches = attention_backward_tk_launch_count();
     }
+    if (attention_backward_tk_batch_cap_fn != nullptr) {
+        attention_backward_tk_batch_cap = attention_backward_tk_batch_cap_fn();
+    }
+    if (attention_backward_tk_chunk_batch_total_fn != nullptr) {
+        attention_backward_tk_chunk_batch_total = attention_backward_tk_chunk_batch_total_fn();
+    }
+    if (attention_backward_tk_chunk_batch_max_fn != nullptr) {
+        attention_backward_tk_chunk_batch_max = attention_backward_tk_chunk_batch_max_fn();
+    }
+    if (attention_backward_tk_chunk_batch_min_fn != nullptr) {
+        attention_backward_tk_chunk_batch_min = attention_backward_tk_chunk_batch_min_fn();
+    }
+    if (attention_backward_tk_chunk_batch_last_fn != nullptr) {
+        attention_backward_tk_chunk_batch_last = attention_backward_tk_chunk_batch_last_fn();
+    }
     if (attention_backward_float_hd64_dprep_launch_count_fn != nullptr) {
         attention_backward_float_hd64_dprep_launches =
             attention_backward_float_hd64_dprep_launch_count_fn();
@@ -22421,6 +22461,15 @@ int run_transformer_lm_training_json(
         << (attention_backward_tk_launches > 0 || stored_packed_attention_backward_kernel_launches > 0 ? 1 : 0)
         << ",\n"
         << "  \"attention_backward_tk_launch_count\": " << attention_backward_tk_launches << ",\n"
+        << "  \"attention_backward_tk_batch_cap\": " << attention_backward_tk_batch_cap << ",\n"
+        << "  \"attention_backward_tk_chunk_batch_total\": "
+        << attention_backward_tk_chunk_batch_total << ",\n"
+        << "  \"attention_backward_tk_chunk_batch_max\": "
+        << attention_backward_tk_chunk_batch_max << ",\n"
+        << "  \"attention_backward_tk_chunk_batch_min\": "
+        << attention_backward_tk_chunk_batch_min << ",\n"
+        << "  \"attention_backward_tk_chunk_batch_last\": "
+        << attention_backward_tk_chunk_batch_last << ",\n"
         << "  \"attention_backward_section_timing_enabled\": "
         << (attention_backward_dprep_timing_count > 0 || attention_backward_tk_timing_count > 0 ? "true" : "false")
         << ",\n"

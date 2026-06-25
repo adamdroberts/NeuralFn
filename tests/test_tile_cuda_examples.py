@@ -5003,6 +5003,11 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "attention_backward_dprep_timing_us": 30000,
                 "attention_backward_dprep_timing_count": 12,
                 "attention_backward_tk_block_size": 16,
+                "attention_backward_tk_batch_cap": 64,
+                "attention_backward_tk_chunk_batch_total": 6144,
+                "attention_backward_tk_chunk_batch_max": 64,
+                "attention_backward_tk_chunk_batch_min": 64,
+                "attention_backward_tk_chunk_batch_last": 64,
                 "attention_backward_tk_block_size_symbol_loaded": True,
                 "block_state_layout": {
                     "optimizer_tile_size": 1024,
@@ -5113,6 +5118,11 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["attention_backward_dprep_timing_us"] == 30000
     assert metrics["attention_backward_dprep_timing_count"] == 12
     assert metrics["attention_backward_tk_block_size"] == 16
+    assert metrics["attention_backward_tk_batch_cap"] == 64
+    assert metrics["attention_backward_tk_chunk_batch_total"] == 6144
+    assert metrics["attention_backward_tk_chunk_batch_max"] == 64
+    assert metrics["attention_backward_tk_chunk_batch_min"] == 64
+    assert metrics["attention_backward_tk_chunk_batch_last"] == 64
     assert metrics["attention_backward_tk_block_size_symbol_loaded"] is True
     assert metrics["block_state_layout.optimizer_tile_size"] == 1024
     assert metrics["block_state_layout.optimizer_tile_strategy"] == "tile-size-1024-sumsq-scale-adamw"

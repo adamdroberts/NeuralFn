@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added low-overhead packed-attention TK backward chunk diagnostics to the
+  native Tile-CUDA ABI and dense GPT runtime JSON. The raw ABI now exposes
+  `nfn_native_tile_attention_backward_tk_batch_cap`,
+  `nfn_native_tile_attention_backward_tk_chunk_batch_total`,
+  `nfn_native_tile_attention_backward_tk_chunk_batch_max`,
+  `nfn_native_tile_attention_backward_tk_chunk_batch_min`, and
+  `nfn_native_tile_attention_backward_tk_chunk_batch_last`; the native trainer
+  emits matching `attention_backward_tk_*` fields next to
+  `attention_backward_tk_launch_count`, and `tools/paired_kernel_speed.py`
+  extracts them for same-script native-vs-native comparisons. This does not
+  change the default packed-attention route or enable synchronizing section
+  timers; it records the actual chunk plan used by the existing TK backward
+  launches.
+
+  Verification: `bash tools/rebuild_native_sm120.sh`; `nm -D
+  build/libnfn_native_train_tile_ops_tk.so | rg
+  'attention_backward_tk_(batch_cap|chunk_batch)'`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_packed_qkv_attention_backward_chunks_large_batches
+  tests/test_tile_cuda_examples.py::test_paired_kernel_speed_tool_reads_native_json_out_sidecar
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/paired_kernel_speed.py`; `git diff --check`; and a one-step dedicated
+  RTX 5090 native-only smoke with `NFN_SM120_NATIVE_STEPS=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0` that emitted
+  `attention_backward_tk_batch_cap=64`,
+  `attention_backward_tk_chunk_batch_total=6144`,
+  `attention_backward_tk_chunk_batch_max=64`,
+  `attention_backward_tk_chunk_batch_min=64`, and
+  `attention_backward_tk_chunk_batch_last=64`.
+
 - Added explicit native candidate wrapper aliases for packed-attention section
   profiling: `NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING`,
   `NFN_SM120_NATIVE_CANDIDATE_ATTENTION_SECTION_TIMING`, and

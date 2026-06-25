@@ -13,6 +13,11 @@ void reset_attention_forward_launch_stats();
 std::int64_t attention_forward_row_launch_count();
 std::int64_t attention_forward_tk_launch_count();
 std::int64_t attention_backward_tk_launch_count();
+std::int64_t attention_backward_tk_batch_cap();
+std::int64_t attention_backward_tk_chunk_batch_total();
+std::int64_t attention_backward_tk_chunk_batch_max();
+std::int64_t attention_backward_tk_chunk_batch_min();
+std::int64_t attention_backward_tk_chunk_batch_last();
 int attention_backward_tk_block_size();
 std::int64_t attention_backward_float_hd64_dprep_launch_count();
 std::int64_t attention_backward_dprep_timing_us();
@@ -2164,6 +2169,26 @@ std::int64_t nfn_native_tile_attention_forward_tk_launch_count() {
 
 std::int64_t nfn_native_tile_attention_backward_tk_launch_count() {
     return neuralfn::tile_cuda::attention_backward_tk_launch_count();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_batch_cap() {
+    return neuralfn::tile_cuda::attention_backward_tk_batch_cap();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_chunk_batch_total() {
+    return neuralfn::tile_cuda::attention_backward_tk_chunk_batch_total();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_chunk_batch_max() {
+    return neuralfn::tile_cuda::attention_backward_tk_chunk_batch_max();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_chunk_batch_min() {
+    return neuralfn::tile_cuda::attention_backward_tk_chunk_batch_min();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_chunk_batch_last() {
+    return neuralfn::tile_cuda::attention_backward_tk_chunk_batch_last();
 }
 
 int nfn_native_tile_attention_backward_tk_block_size() {
