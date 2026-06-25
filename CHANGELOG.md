@@ -37,7 +37,14 @@ Future updates should append new entries here rather than replacing older notes.
   `0.998423x` steady-state CUDA-event step time, `1.019998x` tokens/sec, and
   `0.999734x` LM-head backward. The standalone LM-head microbench emitted
   `graph_thread_cache_hit_count=5`, graph replay success `5`, fallback `0`,
-  and `0.983870x` candidate/baseline time.
+  and `0.983870x` candidate/baseline time. A follow-up fair no-stage
+  llm.kittens parity run with 5 steps and 3 samples still failed the
+  steady-state gate: NeuralFn measured `0.996810x` train-loop wall time but
+  `1.004028x` steady-state CUDA-event step time and `0.997129x` tokens/sec,
+  with `lm_head_fused_graph_thread_cache_hit_count=77` and 80 graph replays.
+  The remaining parity gap is therefore still GPU-side work inside the
+  diagnostic LM-head graph body or block kernels, not the LM-head host graph
+  cache lookup.
 
 - Refreshed the SM120 parity and BF16 attention grad-out evidence after the
   512-thread Tile linear-bias reducer default. The llm.kittens parity wrapper

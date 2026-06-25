@@ -515,7 +515,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       and `0.999734x` LM-head backward; the standalone LM-head microbench
       reported candidate `graph_thread_cache_hit_count=5`,
       `graph_replay_success_count=5`, fallback `0`, and `0.983870x`
-      candidate/baseline time.
+      candidate/baseline time. A fair no-stage llm.kittens parity rerun still
+      failed the steady-state gate (`0.996810x` train-loop wall,
+      `1.004028x` steady-state CUDA-event step time, `0.997129x` tokens/sec,
+      80 LM-head graph replays and 77 thread-cache hits), so the next parity
+      target remains GPU-side LM-head graph-body fusion or block-kernel work,
+      not host-side graph cache lookup.
       diagnostic sequence wrapper or graph fallback.
     - 2026-06-25 updated the diagnostic graph-vs-sequence control after strict
       llm.kittens-parity became the default integrated LM-head route.
