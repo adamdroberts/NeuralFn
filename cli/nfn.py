@@ -833,6 +833,12 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
 def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
     command = _direct_native_train_cli_argv(tokens)
+    model = _native_train_model(tokens)
+    token_lm_requested = any(arg == "--train-token-lm" for arg in tokens)
+    direct_family_cli = (
+        not (_is_dense_gpt_native_model(model) and not (model in {"nanogpt", "nano-gpt"} and token_lm_requested))
+        and _resolve_direct_native_train_family_cli(model) is not None
+    )
     env = os.environ.copy()
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
@@ -852,7 +858,12 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         "--smoke-transformer-lm-step",
         "--smoke-embedding-lm-step",
     }
-    if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in native_execution_flags):
+    if (
+        "--dry-run" in command
+        and "--print-command" in command
+        and not direct_family_cli
+        and not any(flag in command for flag in native_execution_flags)
+    ):
         print(shlex.join(command))
         return 0
     if "--dry-run" in command or "--print-command" in command:

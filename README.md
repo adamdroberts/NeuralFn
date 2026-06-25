@@ -12,7 +12,10 @@ back to `nfn_gpt_native_train`; other compiled families such as `gpt2-evo`,
 matching `nfn_<family>_native_train` binary when present or when
 `NFN_NATIVE_<FAMILY>_CLI` is set. Set `NFN_NATIVE_TRAIN_CLI` only when you
 intentionally want to force the unified `nfn_native_train --base-model ...`
-frontend.
+frontend. For direct family binaries, `nfn train --base-model ... --dry-run
+--print-command` runs the family frontend so GPT-2-evo and similar targets can
+print their final compiled delegate command instead of the Python wrapper's
+intermediate argv.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
 shim: `from nfn import main; main()` can serve root help, direct dense GPT

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed top-level `nfn train --base-model ... --dry-run --print-command`
+  handling for direct family-native binaries. When a compiled family frontend
+  such as `nfn_gpt2_evo_native_train` is available, the wrapper now invokes that
+  binary for dry-run command rendering instead of printing the Python wrapper's
+  intermediate argv. GPT-2-evo can therefore show the final dense GPT delegate
+  command with `--layer-evo`, NVFP4 activation intent, validation cadence, and
+  other model-aware defaults.
+
+  Verification:
+  focused `tests/test_native_gpt2.py` coverage for the top-level GPT-2-evo
+  family dispatch, plus direct `nfn train --base-model gpt2-evo --tinystories
+  --native-cuda-dry-run --native-cuda-print-command --no-checkpoint` command
+  inspection against the built native binaries.
+
 - Fixed the normal compiled-cli fallthrough in `cli/scripts/train_gpt_native.py`
   so direct legacy script training now calls the same `_exec_compiled_cli(...)`
   path as native smoke/actions. Actual non-dry-run compiled-cli training now

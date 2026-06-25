@@ -10060,6 +10060,51 @@ def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) ->
     assert "TorchTrainer path" not in proc.stderr
 
 
+def test_top_level_nfn_train_gpt2_evo_prints_family_delegate_command(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    family_cli = tmp_path / "nfn_gpt2_evo_native_train"
+    family_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'delegate-native %s\\n' \"$*\"\n",
+        encoding="utf-8",
+    )
+    family_cli.chmod(0o755)
+
+    env = os.environ.copy()
+    env.pop("NFN_NATIVE_TRAIN_CLI", None)
+    env["NFN_NATIVE_GPT2_EVO_CLI"] = str(family_cli)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--base-model",
+            "gpt2-evo",
+            "--tinystories",
+            "--native-cuda-print-command",
+            "--native-cuda-dry-run",
+            "--eval-every-steps",
+            "1000",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.startswith("delegate-native ")
+    assert str(family_cli) not in proc.stdout
+    assert "--tinystories" in proc.stdout
+    assert "--dry-run" in proc.stdout
+    assert "--print-command" in proc.stdout
+    assert "--eval-every-steps 1000" in proc.stdout
+    assert "--base-model" not in proc.stdout
+    assert "--model-family" not in proc.stdout
+
+
 def test_top_level_nfn_train_explicit_unified_cli_overrides_direct_family_native_cli(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     family_cli = tmp_path / "nfn_gpt2_evo_native_train"
