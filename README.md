@@ -2467,13 +2467,15 @@ block-backward gates but failed the strict attention substage gates at
 `stage.block_backward.attn_sdpa.total_ms=1.000768x` and
 `stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000766x`.
 Keep the packed-attention backward batch cap at the default 64 on the
-workstation shape. A CUDA 13.3 RTX 5090 3-step/3-sample
-`NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32` probe doubled
-`attention_backward_tk_launch_count` from `288` to `576` and regressed
-train-loop wall time to `1.006515x`, block backward to `1.014077x`,
-attention backward to `1.072186x`, attention `to_qkv` to `1.072565x`, and
-`attention_backward_tk_timing_us` to `1.063855x`. The larger-cap
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_128`
+workstation shape. The rejected
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_32` diagnostic
+sets `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32`; a CUDA 13.3.33
+RTX 5090 3-step/2-sample attention-section rerun doubled
+`attention_backward_tk_launch_count` from `288` to `576`, improved dprep timing
+to `0.943271x`, but regressed train-loop wall time to `1.010819x`,
+steady-state CUDA-event timing to `1.009021x`, attention `to_qkv` to
+`1.077143x`, and `attention_backward_tk_timing_us` to `1.066848x`. The
+larger-cap `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_128`
 diagnostic is also rejected by the SM120 candidate wrapper: a CUDA 13.3.33
 dedicated RTX 5090 attention-section gate changed
 `attention_backward_tk_batch_cap` from `64` to `128`, but regressed

@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected SM120 native candidate profile
+  `packed_attention_bwd_batch_32` so the smaller packed-attention backward
+  chunk route is reproducible through the same wrapper as the 128-cap probe. The
+  profile sets `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32`, enables
+  attention-section timing, and requires
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real launches. The
+  CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample rerun doubled
+  `attention_backward_tk_launch_count` from 288 to 576 and improved dprep timing
+  to `0.943271x`, but rejected promotion because train-loop wall regressed to
+  `1.010819x`, steady-state CUDA-event timing to `1.009021x`, attention
+  `to_qkv` to `1.077143x`, and `attention_backward_tk_timing_us` to
+  `1.066848x`.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_ENV=NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Refreshed the rejected `bgrad_first_write_direct` SM120 native candidate after
   the CUDA Toolkit 13.3 reinstall on the dedicated RTX 5090. The profile still
   expands to `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1` and proved the intended
