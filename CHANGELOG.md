@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the SM120 parity and BF16 attention grad-out evidence after the
+  512-thread Tile linear-bias reducer default. The llm.kittens parity wrapper
+  still shows a real remaining gap on the dedicated RTX 5090:
+  `1.011475x` train-loop wall time, `1.012495x` steady-state CUDA-event step
+  time, and `0.983134x` tokens/sec versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`.
+  The candidate JSON confirmed the no-Torch native path, no train-loss host D2H
+  copies, and `block_state_layout.linear_backward_bias_threads_per_block=512`;
+  the hottest remaining buckets are block backward, model/block forward, and
+  LM-head backward with 80 diagnostic CUDA Graph LM-head replays. Rechecked
+  `bf16_attention_grad_out` under the new default: it improved steady-state
+  CUDA-event timing to `0.997577x` and attention to-QKV to `0.978000x`, but
+  remains rejected because wall time, tokens/sec, MLP FC dWeight+bias, and
+  attention projection regressed.
+
+  Verification:
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_parity_after_bias_threads_512
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_after_bias_threads_512.json bash
+  tools/bench_native_gpt_sm120_parity.sh`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_attention_grad_out
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_bf16_attention_grad_out_after_bias512
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_bf16_attention_grad_out_after_bias512.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Promoted the dense GPT Tile-CUDA linear-bias reducer launch width from 256 to
   512 threads per block. The native trainer still accepts
   `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS`,

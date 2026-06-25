@@ -144,13 +144,14 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
-  - 2026-06-25 rejected promoting `lm_head_graph_prewarm`, the explicit
-    cooperative sequence wrapper, CUDA event timing changes, and the
-    llm.kittens SM120 macro rebuild as parity fixes. The macro rebuild improved
-    current NeuralFn wall time to `0.996738x` native-vs-native but changed no
-    route counters and still missed the steady-state gate, so it remains timing
-    noise rather than a kernel implementation. The active implementation target
-    is now narrowed to replacing
+  - 2026-06-25 promoted LM-head graph prewarm for native-vs-native startup
+    stability, but rejected treating graph prewarm, the explicit cooperative
+    sequence wrapper, CUDA event timing changes, or the llm.kittens SM120 macro
+    rebuild as complete parity fixes. The macro rebuild improved current
+    NeuralFn wall time to `0.996738x` native-vs-native but changed no route
+    counters and still missed the steady-state gate, so it remains timing noise
+    rather than a kernel implementation. The active implementation target is now
+    narrowed to replacing
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with a
     real fused classifier-backward CUDA Tile kernel and flipping
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
@@ -2169,6 +2170,21 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     against the old route. Remaining parity work still needs true fused or
     cooperative LM-head/block kernels, not startup, Torch, graph-editor flow, or
     external-load explanations.
+  - 2026-06-25 refreshed llm.kittens parity after the 512-thread bias reducer
+    default. The same-script 5-step, 2-sample stage-timed run on the
+    display-disabled RTX 5090 selected the dedicated GPU with zero compute
+    processes before and after each sample, but NeuralFn still missed parity:
+    `train_loop_wall_ms_per_step=1.011475x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=1.012495x`, and
+    `train_tokens_per_second=0.983134x` versus llm.kittens. Candidate JSON
+    confirmed `block_state_layout.linear_backward_bias_threads_per_block: 512`,
+    zero train-loss host D2H copies, and no graph-editor/Torch data path. The
+    hottest buckets remained `stage.block_backward.total_ms=6566.650 ms`,
+    `stage.train.model_forward.total_ms=3196.490 ms`, and
+    `stage.lm_head_backward.total_ms=2864.970 ms`, with 80 LM-head CUDA Graph
+    replays and a three-node CE/dHidden/dWeight graph body. The next parity
+    slice remains a true fused LM-head classifier-backward Tile kernel or a real
+    block-backward kernel, not another startup or route-toggle rerun.
   - 2026-06-25 rechecked LM-head CUDA Graph prewarm after the CUDA Toolkit
     13.3 reinstall. A short 3-step, 2-sample gate passed for the combined
     bundle (`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1`,
@@ -2178,12 +2194,20 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `train_loop_cuda_event_steady_state_wall_ms_per_step=0.998421x`, and
     `stage.lm_head_backward.total_ms=0.998617x`. The isolated graph-only flag
     failed the LM-head gate at `1.000054x`, and the stronger 5-step, 3-sample
-    combined rerun rejected promotion because steady-state CUDA-event timing
-    regressed to `1.000678x` even though train-loop wall improved to
-    `0.988694x` and LM-head backward improved to `0.999611x`. Keep LM-head
-    graph prewarm default-off/diagnostic-only; the remaining parity work still
-    needs steady-state LM-head or block-backward kernel work, not first-step
-    capture relocation.
+    combined rerun rejected treating graph prewarm as a parity-closing fix
+    because steady-state CUDA-event timing regressed to `1.000678x` even though
+    train-loop wall improved to `0.988694x` and LM-head backward improved to
+    `0.999611x`. LM-head graph prewarm is now a native default for startup
+    stability; the remaining parity work still needs steady-state LM-head or
+    block-backward kernel work, not first-step capture relocation.
+  - 2026-06-25 rechecked `bf16_attention_grad_out` after the 512-thread bias
+    reducer became the default. The same-script 3-step, 2-sample stage-timed
+    run proved the BF16 attention grad-out handoff route by moving 288 block
+    dInput GEMMs from cuBLASLt to BF16, improved steady-state CUDA-event timing
+    to `0.997577x` and attention to-QKV to `0.978000x`, but still rejected
+    default promotion because train-loop wall regressed to `1.002882x`,
+    tokens/sec to `0.997149x`, block backward to `1.005784x`, MLP FC
+    dWeight+bias to `1.062723x`, and attention projection to `1.025902x`.
   - 2026-06-25 reran the rejected `lm_head_row_chunk_49152` route after the
     CUDA Toolkit 13.3 reinstall with
     `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The route proof
