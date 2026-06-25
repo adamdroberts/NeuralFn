@@ -732,6 +732,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "block_backward_dinput_bf16_gemm_count",
     "bf16_persistent_block_input_ln1_backward_count",
     "block_backward_mlp_proj_dinput_before_dweight_count",
+    "block_backward_mlp_proj_concurrent_dinput_dweight_count",
     "block_backward_mlp_fc_dinput_before_dweight_count",
     "block_backward_attn_proj_dinput_before_dweight_count",
     "block_backward_attn_proj_first_step_concurrent_dinput_dweight_count",

@@ -9230,6 +9230,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_mlp_proj_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_mlp_proj_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward_mlp_proj_concurrent_dinput_dweight_count" in gpt2_source_text
+    assert '"block_backward_mlp_proj_concurrent_dinput_dweight_count",' in speed_source
     assert "block_backward.mlp_proj.dinput_dweight_concurrent" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_enabled" in gpt2_source_text

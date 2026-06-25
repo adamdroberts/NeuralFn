@@ -15,7 +15,9 @@ Future updates should append new entries here rather than replacing older notes.
   backward stage. Runtime JSON and `tools/paired_kernel_speed.py` report
   `block_backward_mlp_proj_concurrent_dinput_dweight_requested`,
   `block_backward_mlp_proj_concurrent_dinput_dweight_enabled`, and
-  `block_backward_mlp_proj_concurrent_dinput_dweight_count`.
+  `block_backward_mlp_proj_concurrent_dinput_dweight_count`; the count is also
+  included in the benchmark wrapper's route-counter change summary so rejected
+  or promoted runs show that the hot path actually moved.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_concurrent_dinput_dweight`
   compares the candidate against the serial default and gates
   `stage.block_backward.mlp_proj.total_ms` on stage-timed runs. The profile is
