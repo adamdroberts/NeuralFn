@@ -2341,8 +2341,8 @@ steady-state CUDA-event timing to `0.998529x`, but regressed train-loop wall to
 `1.004308x`, and QKV backward to `1.007310x`.
 `tools/sweep_native_gpt_sm120_candidates.sh` now defaults to the current SM120
 hot-path proof set when no profiles are supplied: `qkv_dinput_ln128`,
-`lm_head_loss_bins`, `cublaslt_grouped_probe`, and
-`llmk_sm120_reference_flags`. Name startup profiles explicitly when retesting
+`lm_head_loss_bins`, and `cublaslt_grouped_probe`. Name startup profiles
+explicitly when retesting
 setup-only work; the no-argument sweep starts from the block/LM-head routes
 that matter for steady-state training parity.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to

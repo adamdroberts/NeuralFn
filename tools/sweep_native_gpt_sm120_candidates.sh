@@ -19,7 +19,6 @@ else
     qkv_dinput_ln128
     lm_head_loss_bins
     cublaslt_grouped_probe
-    llmk_sm120_reference_flags
   )
 fi
 

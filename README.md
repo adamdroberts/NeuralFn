@@ -584,8 +584,8 @@ directories, and a `summary.tsv` under
 `NFN_SM120_NATIVE_SWEEP_OUT_DIR` (defaulting to `/tmp`). Positional arguments
 select profiles, or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; with no profile list
 it sweeps the current SM120 hot-path proof set: `qkv_dinput_ln128`,
-`lm_head_loss_bins`, `cublaslt_grouped_probe`, and
-`llmk_sm120_reference_flags`. Startup-only bisections such as
+`lm_head_loss_bins`, and `cublaslt_grouped_probe`. Startup-only bisections such
+as
 `token_weight_vector4_strided` remain available when named explicitly, but they
 are no longer the default because the current parity gap is steady-state
 block/LM-head throughput rather than token setup. The sweep preserves the

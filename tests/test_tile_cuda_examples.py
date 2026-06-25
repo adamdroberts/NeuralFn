@@ -3503,7 +3503,7 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'qkv_dinput_ln128' in text
     assert 'lm_head_loss_bins' in text
     assert 'cublaslt_grouped_probe' in text
-    assert 'llmk_sm120_reference_flags' in text
+    assert 'llmk_sm120_reference_flags' not in text.partition("else")[2].partition("fi")[0]
     assert 'token_weight_vector4_strided' not in text.partition("else")[2].partition("fi")[0]
     assert 'fail_count=$((fail_count + 1))' in text
     assert 'metric_ratio_gates' in text

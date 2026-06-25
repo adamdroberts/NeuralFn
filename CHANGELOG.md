@@ -9,11 +9,12 @@ Future updates should append new entries here rather than replacing older notes.
 - Changed the no-argument SM120 native candidate sweep to focus on current
   training hot paths instead of old startup bisections. Running
   `tools/sweep_native_gpt_sm120_candidates.sh` without an explicit profile list
-  now retests `qkv_dinput_ln128`, `lm_head_loss_bins`,
-  `cublaslt_grouped_probe`, and `llmk_sm120_reference_flags`. Startup profiles
-  such as `token_weight_vector4_strided` are still available when named
-  explicitly, but they are no longer the default because current parity work is
-  steady-state block/LM-head kernel throughput.
+  now retests `qkv_dinput_ln128`, `lm_head_loss_bins`, and
+  `cublaslt_grouped_probe`. Startup and intentionally rejected profiles such as
+  `token_weight_vector4_strided` and `llmk_sm120_reference_flags` are still
+  available when named explicitly, but they are no longer the default because
+  current parity work is steady-state block/LM-head kernel throughput and the
+  no-argument sweep should launch only runnable profiles.
 
   Verification: `bash -n tools/sweep_native_gpt_sm120_candidates.sh` and the
   focused pytest coverage for the sweep defaults were run.
