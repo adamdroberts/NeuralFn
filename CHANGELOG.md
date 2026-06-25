@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added first-step versus steady-state stage timing aggregation to the native
+  dense GPT CUDA-event stage profiler. Each `timing.stage_timing[]` JSON record
+  now includes `first_step_total_ms`, `first_step_count`,
+  `first_step_avg_ms`, `steady_state_total_ms`, `steady_state_count`, and
+  `steady_state_avg_ms`, and `tools/paired_kernel_speed.py` extracts the new
+  fields into `stage.<name>.first_step_*` / `stage.<name>.steady_state_*`
+  metrics. The hot summary now surfaces the measured forward-QKV startup
+  bucket so same-script SM120 candidate gates can distinguish one-time
+  first-step cost from steady-state kernel throughput.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, then ran a 3-step TinyStories native
+  timing sample with `NFN_NATIVE_GPT_STAGE_TIMING=1` and
+  `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1`. The sample reported
+  `train_loop_cuda_event_first_step_wall_ms_per_step=2695.35`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=2444.04`, and
+  `stage.block_forward.attention.qkv.first_step_avg_ms=3.315` versus
+  `steady_state_avg_ms=1.083`, identifying forward QKV first-use cost as the
+  largest current startup-stage delta.
+
 - Refreshed the current NeuralFn-vs-llm.kittens SM120 parity sample after the
   LM-head graph-upload and loss-bin evidence updates. The 2026-06-25
   display-disabled RTX 5090 3-step, 2-sample same-script run measured

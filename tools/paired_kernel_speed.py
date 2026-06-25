@@ -1249,7 +1249,13 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "setup.token_weight_init.total_ms",
     "setup.cublaslt_plan_prewarm.total_ms",
     "stage.train.model_forward.total_ms",
+    "stage.train.model_forward.first_step_avg_ms",
+    "stage.train.model_forward.steady_state_avg_ms",
     "stage.block_forward.total_ms",
+    "stage.block_forward.first_step_avg_ms",
+    "stage.block_forward.steady_state_avg_ms",
+    "stage.block_forward.attention.qkv.first_step_avg_ms",
+    "stage.block_forward.attention.qkv.steady_state_avg_ms",
     "stage.lm_head_backward.total_ms",
     "stage.lm_head_backward.logits.total_ms",
     "stage.lm_head_backward.cooperative.total_ms",
@@ -1649,6 +1655,12 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
                     ("total_ms", "total_ms"),
                     ("avg_ms", "avg_ms"),
                     ("count", "count"),
+                    ("first_step_total_ms", "first_step_total_ms"),
+                    ("first_step_avg_ms", "first_step_avg_ms"),
+                    ("first_step_count", "first_step_count"),
+                    ("steady_state_total_ms", "steady_state_total_ms"),
+                    ("steady_state_avg_ms", "steady_state_avg_ms"),
+                    ("steady_state_count", "steady_state_count"),
                 ):
                     value = stage.get(source_key)
                     if isinstance(value, (int, float)) and not isinstance(value, bool):

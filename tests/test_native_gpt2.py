@@ -9256,6 +9256,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stage_timing_event_count" in gpt2_source_text
     assert "stage_timing_dropped_event_count" in gpt2_source_text
     assert "stage_timing" in gpt2_source_text
+    assert "first_step_total_ms" in gpt2_source_text
+    assert "steady_state_total_ms" in gpt2_source_text
     assert "block_backward" in gpt2_source_text
     assert "block_recompute" in gpt2_source_text
     assert "lm_head_backward" in gpt2_source_text

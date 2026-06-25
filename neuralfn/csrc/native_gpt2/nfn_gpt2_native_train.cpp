@@ -12333,11 +12333,16 @@ int run_transformer_lm_training_json(
         std::string name;
         double total_ms = 0.0;
         std::int64_t count = 0;
+        double first_step_total_ms = 0.0;
+        std::int64_t first_step_count = 0;
+        double steady_state_total_ms = 0.0;
+        std::int64_t steady_state_count = 0;
     };
     struct StageTimingEvent {
         std::size_t record_index = 0;
         void* start = nullptr;
         void* stop = nullptr;
+        std::int64_t step = 0;
     };
     const std::string stage_timing_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STAGE_TIMING", "NFN_NATIVE_GPT2_STAGE_TIMING"});
@@ -13292,6 +13297,7 @@ int run_transformer_lm_training_json(
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
     std::int64_t stage_timing_dropped_event_count = 0;
+    std::int64_t stage_timing_current_step = 0;
     std::vector<StageTimingRecord> stage_timing_records;
     std::vector<StageTimingEvent> stage_timing_events;
     const std::int64_t stage_timing_max_events = std::max<std::int64_t>(
@@ -13313,7 +13319,7 @@ int run_transformer_lm_training_json(
                 return i;
             }
         }
-        stage_timing_records.push_back(StageTimingRecord{name, 0.0, 0});
+        stage_timing_records.push_back(StageTimingRecord{name, 0.0, 0, 0.0, 0, 0.0, 0});
         return stage_timing_records.size() - 1;
     };
     auto stage_begin = [&](const std::string& name) -> std::int64_t {
@@ -13345,7 +13351,7 @@ int run_transformer_lm_training_json(
             return -1;
         }
         const std::size_t record_index = stage_record_index(name);
-        stage_timing_events.push_back(StageTimingEvent{record_index, start, stop});
+        stage_timing_events.push_back(StageTimingEvent{record_index, start, stop, stage_timing_current_step});
         stage_timing_event_count += 1;
         return static_cast<std::int64_t>(stage_timing_events.size() - 1);
     };
@@ -13377,8 +13383,17 @@ int run_transformer_lm_training_json(
             float elapsed = 0.0f;
             const int status = cuda_event_elapsed_time(&elapsed, event.start, event.stop);
             if (status == 0 && event.record_index < stage_timing_records.size()) {
-                stage_timing_records[event.record_index].total_ms += static_cast<double>(elapsed);
-                stage_timing_records[event.record_index].count += 1;
+                StageTimingRecord& record = stage_timing_records[event.record_index];
+                const double elapsed_ms = static_cast<double>(elapsed);
+                record.total_ms += elapsed_ms;
+                record.count += 1;
+                if (event.step == 1) {
+                    record.first_step_total_ms += elapsed_ms;
+                    record.first_step_count += 1;
+                } else if (event.step > 1) {
+                    record.steady_state_total_ms += elapsed_ms;
+                    record.steady_state_count += 1;
+                }
             } else if (status != 0 && error.empty()) {
                 error = cuda_error(status, "cudaEventElapsedTime stage timing");
             }
@@ -20498,7 +20513,9 @@ int run_transformer_lm_training_json(
                 cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
             const bool should_record_train_loss =
                 cfg.train_loss_every_steps > 0 && (step % cfg.train_loss_every_steps) == 0;
+            stage_timing_current_step = step;
             const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
+            stage_timing_current_step = 0;
             if (error.empty()) {
                 if (train_loop_cuda_event_timing_enabled) {
                     if (step == 1) {
@@ -21417,6 +21434,18 @@ int run_transformer_lm_training_json(
             << "\"total_ms\": " << record.total_ms << ", "
             << "\"count\": " << record.count << ", "
             << "\"avg_ms\": " << (record.count > 0 ? record.total_ms / static_cast<double>(record.count) : 0.0)
+            << ", \"first_step_total_ms\": " << record.first_step_total_ms
+            << ", \"first_step_count\": " << record.first_step_count
+            << ", \"first_step_avg_ms\": "
+            << (record.first_step_count > 0
+                    ? record.first_step_total_ms / static_cast<double>(record.first_step_count)
+                    : 0.0)
+            << ", \"steady_state_total_ms\": " << record.steady_state_total_ms
+            << ", \"steady_state_count\": " << record.steady_state_count
+            << ", \"steady_state_avg_ms\": "
+            << (record.steady_state_count > 0
+                    ? record.steady_state_total_ms / static_cast<double>(record.steady_state_count)
+                    : 0.0)
             << "}";
         if (i + 1 != stage_timing_records.size()) {
             stage_timing_json << ",";

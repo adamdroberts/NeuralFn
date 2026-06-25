@@ -5656,6 +5656,12 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
                         "total_ms": 6.0,
                         "avg_ms": 1.2,
                         "count": 5,
+                        "first_step_total_ms": 1.5,
+                        "first_step_avg_ms": 1.5,
+                        "first_step_count": 1,
+                        "steady_state_total_ms": 4.5,
+                        "steady_state_avg_ms": 1.125,
+                        "steady_state_count": 4,
                     },
                 ]
             }
@@ -5672,6 +5678,9 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
     assert metrics["stage.block_forward.attention.total_ms"] == 3.0
     assert metrics["stage.block_recompute.mlp_proj.count"] == 5
     assert metrics["stage.block_backward.qkv.dinput_dweight_concurrent.total_ms"] == 6.0
+    assert metrics["stage.block_backward.qkv.dinput_dweight_concurrent.first_step_total_ms"] == 1.5
+    assert metrics["stage.block_backward.qkv.dinput_dweight_concurrent.first_step_count"] == 1
+    assert metrics["stage.block_backward.qkv.dinput_dweight_concurrent.steady_state_avg_ms"] == 1.125
 
 
 def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:

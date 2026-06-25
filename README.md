@@ -245,6 +245,12 @@ visible in the same script output as the kernel parity failure. When
 `NFN_SM120_PARITY_STAGE_TIMING=1` is enabled, the same summary prints the
 largest candidate native stage timings so block-forward, block-backward, and
 LM-head buckets can be ranked without opening the sidecar JSON manually. On the
+native JSON side, each stage timing record also carries `first_step_*` and
+`steady_state_*` totals/counts/averages. The paired benchmark extractor reports
+those as `stage.<name>.first_step_avg_ms` and
+`stage.<name>.steady_state_avg_ms`, so first-step startup penalties can be
+compared against steady-state kernels in the same candidate-vs-current script.
+On the
 paired native-vs-native and native-vs-llm.kittens summaries, startup hot
 metrics now include the native trainer's existing arena sub-timers
 `float_arena_cuda_malloc_wall_ms`, `float_arena_pointer_assign_wall_ms`,

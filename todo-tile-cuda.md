@@ -249,6 +249,16 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
+  - 2026-06-25 added first-step versus steady-state stage aggregation to the
+    native GPT CUDA-event timing JSON and paired benchmark extractor. The
+    rebuilt linked trainer's 3-step TinyStories native-only diagnostic measured
+    `train_loop_cuda_event_first_step_wall_ms_per_step=2695.35` versus
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=2444.04`. The biggest
+    first-step delta was forward attention QKV:
+    `stage.block_forward.attention.qkv.first_step_avg_ms=3.315` versus
+    `stage.block_forward.attention.qkv.steady_state_avg_ms=1.083`, which keeps
+    the next startup/parity work pointed at first-use forward-QKV/TK or plan
+    warmup behavior rather than graph-editor, Torch, or validation paths.
   - 2026-06-25 rejected LM-head graph prewarm as a default despite native-vs-native
     startup and LM-head improvements, and also rejected the explicit cooperative
     sequence wrapper, CUDA event timing changes, and the llm.kittens SM120 macro
