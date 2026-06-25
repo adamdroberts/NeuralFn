@@ -1331,6 +1331,16 @@ when evaluating a fused classifier/LM-head-backward kernel or a memory-gated
 full-logit candidate. The paired benchmark helper extracts and prints the
 contract's full/chunk BF16 byte counts, chunk rows/count, and resident-logit
 reduction ratio alongside LM-head stage timing.
+`tools/bench_native_gpt_sm120_candidate.sh` includes the llm.kittens
+`train_gpt2cu` reference by default, so normal SM120 candidate runs compare
+current NeuralFn, candidate NeuralFn, and the external reference inside the
+same selected-GPU lock. Set `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0` or the
+shorter alias `NFN_SM120_NATIVE_INCLUDE_REFERENCE=0` only for intentional
+two-way native bisection runs where the external reference cost is not needed.
+When a candidate changes the native route and no explicit reference gates are
+provided, the wrapper adds candidate-over-reference gates for train-loop wall
+time, steady-state CUDA-event step time, and tokens/sec so a noisy native-only
+win cannot be promoted while still losing to the llm.kittens baseline.
 The raw Tile ABI also exposes the LM-head classifier row-chunk route as a
 distinct symbol,
 `nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets`,

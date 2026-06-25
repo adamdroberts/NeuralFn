@@ -551,11 +551,17 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_NATIVE_INCLUDE_REFERENCE" in text
     assert "NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE" in text
     assert "NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE" in text
+    assert (
+        "INCLUDE_LLMK_REFERENCE=\"$(env_or_alias6 NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE "
+        "NFN_SM120_NATIVE_INCLUDE_REFERENCE NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE "
+        "NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE "
+        "NFN_SM120_INCLUDE_LLMK_REFERENCE 1)\""
+    ) in text
     assert "--reference \"$reference_cmd\"" in text
     assert "NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1" in text
 
 
-def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
+def test_native_gpt_sm120_candidate_wrapper_includes_llmk_reference_by_default(
     tmp_path: Path,
 ) -> None:
     script = Path("tools/bench_native_gpt_sm120_candidate.sh")
@@ -572,7 +578,6 @@ def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
             "NFN_SM120_NATIVE_GENERATE_TOKENS": "144",
             "NFN_SM120_NATIVE_CHECKPOINT_EVERY": "0",
             "NFN_SM120_NATIVE_ACTIVATION": "gelu",
-            "NFN_SM120_NATIVE_INCLUDE_REFERENCE": "1",
             "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
             "LLM_KITTENS_ROOT": str(tmp_path / "llm.kittens"),
         }
@@ -603,6 +608,40 @@ def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
     assert "-x" in reference_command
     assert "2" in reference_command
     assert "  reference:" in proc.stdout
+
+
+def test_native_gpt_sm120_candidate_wrapper_can_disable_llmk_reference(
+    tmp_path: Path,
+) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-no-reference.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_STEPS": "2",
+            "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE": "0",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+            "LLM_KITTENS_ROOT": str(tmp_path / "llm.kittens"),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["reference_command"] == []
+    assert "  reference:" not in proc.stdout
 
 
 def test_native_gpt_sm120_candidate_wrapper_auto_gates_llmk_reference_candidate(

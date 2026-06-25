@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the SM120 native candidate benchmark wrapper to run the llm.kittens
+  `train_gpt2cu` reference by default. `tools/bench_native_gpt_sm120_candidate.sh`
+  now defaults `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE` to `1`, so candidate
+  benchmarking normally measures current NeuralFn, candidate NeuralFn, and the
+  external reference in the same selected-GPU lock. Use
+  `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0` or
+  `NFN_SM120_NATIVE_INCLUDE_REFERENCE=0` for deliberate native-only two-way
+  bisection. This preserves the existing candidate-over-reference gates for
+  route-changing candidates and makes llm.kittens parity the default evidence
+  path.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_includes_llmk_reference_by_default
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_can_disable_llmk_reference
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_auto_gates_llmk_reference_candidate
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`.
+
 - Added a rejected LM-head CUDA Graph replay thread-cache prewarm diagnostic.
   The accepted graph-prewarm route already captures the no-loss and active
   train-loss/loss-bin graph keys before training; the new opt-in
