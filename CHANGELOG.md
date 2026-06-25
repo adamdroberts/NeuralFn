@@ -26,6 +26,24 @@ Future updates should append new entries here rather than replacing older notes.
   `steady_state_avg_ms=1.083`, identifying forward QKV first-use cost as the
   largest current startup-stage delta.
 
+- Refreshed the rejected `cublaslt_plan_prewarm_block_only` SM120 candidate
+  note using the new split-stage timing metrics. The 2026-06-25 dedicated RTX
+  5090 rerun improved setup wall time to `0.989552x`, but still rejected
+  selective block-only plan prewarm because train-loop wall regressed to
+  `1.001350x`, first-step CUDA-event time to `1.002789x`, forward-QKV
+  first-step avg to `1.022751x`, and the native route gate observed no route,
+  strategy, or plan-cache change.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_plan_prewarm_block_only
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_cublaslt_plan_prewarm_block_split_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_cublaslt_plan_prewarm_block_split.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`; the command failed as
+  expected on the native route-change gate.
+
 - Refreshed the current NeuralFn-vs-llm.kittens SM120 parity sample after the
   LM-head graph-upload and loss-bin evidence updates. The 2026-06-25
   display-disabled RTX 5090 3-step, 2-sample same-script run measured
