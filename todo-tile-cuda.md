@@ -2107,3 +2107,17 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     graph prewarm default-off/diagnostic-only; the remaining parity work still
     needs steady-state LM-head or block-backward kernel work, not first-step
     capture relocation.
+  - 2026-06-25 reran the rejected `lm_head_row_chunk_49152` route after the
+    CUDA Toolkit 13.3 reinstall with
+    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The route proof
+    changed `lm_head_classifier_last_rows` from `32768` to `16384`, but the
+    same-script 3-step stage-timed gate rejected it decisively:
+    `train_loop_wall_ms_per_step=1.272313x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=1.257891x`, and
+    `train_tokens_per_second=0.785970x`. LM-head timing stayed flat
+    (`stage.lm_head_backward.total_ms=1.000772x`), while block backward
+    regressed (`stage.block_backward.total_ms=1.532127x`,
+    `stage.block_backward.attn_sdpa.to_qkv.total_ms=3.363801x`,
+    `stage.block_backward.attn_proj.total_ms=1.342615x`). Keep the default
+    two-`32768`-row LM-head route; larger row chunks are not a viable parity
+    path on the current dedicated RTX 5090/CUDA 13.3 setup.
