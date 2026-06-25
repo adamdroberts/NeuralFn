@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a full GPT SM120 candidate profile for the opt-in strict true-fused
+  LM-head cooperative body. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative`
+  now expands to a production-shape candidate with
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1`,
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, and the paired wrapper's
+  `--require-native-lm-head-true-fused` gate, so the CE+dHidden+dWeight
+  cooperative kernel can be measured in the full GPT loop against both the
+  current graph-wrapper default and llm.kittens before promotion. The profile is
+  intentionally marked rejected until that full-loop gate passes.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  -q`; `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_true_fused_full_loop_dry_run.json
+  tools/bench_native_gpt_sm120_candidate.sh`, whose JSON shows candidate env
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` and
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`.
+
 - Tiny native GPT transformer-LM diagnostic runs now disable the packed-QKV
   SM120 TK attention route when `seq_len < 16` and use the split-QKV
   row-vector fallback instead. This fixes a CUDA 13.3 live smoke failure where

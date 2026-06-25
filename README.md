@@ -427,6 +427,14 @@ the matching benchmark source changes, and rebuild
 `libnfn_native_train_tile_ops.so` when `tile_ops.cu`, `tile_ops.h`, or
 `tile_cuda/kernels.cu` is newer than the shared library, so header-only Tile ABI
 edits are not measured against stale harnesses or kernels.
+For full-loop production-shape checks, use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative` with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. That profile forces
+`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1`,
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, and the paired wrapper's
+`--require-native-lm-head-true-fused` gate so the opt-in strict body is measured
+against the current full GPT loop and the llm.kittens reference before any
+default promotion.
 The full SM120 parity and native-candidate wrappers also refresh the default
 `nfn_gpt_native_train` or `nfn_gpt_native_train_linked` binary before non-dry
 runs when the native GPT source, token shard resolver, or linked Tile ABI inputs
