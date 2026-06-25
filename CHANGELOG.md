@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the default-off `bf16_attention_grad_out` rejection with current
+  CUDA 13.3.33 dedicated RTX 5090 evidence. A 2026-06-25 3-step, 2-sample,
+  stage-timed native-vs-native recheck still proves the route switch from
+  `tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff`
+  to
+  `tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff`,
+  and it improved `attention_backward_dprep_timing_us` to `0.802066x` and
+  steady-state CUDA-event mean to `0.996857x`. It remains rejected because
+  `train_loop_wall_ms_per_step` regressed to `1.004521x`,
+  `train_tokens_per_second` to `0.995500x`,
+  `stage.block_backward.total_ms` to `1.010979x`, and
+  `stage.block_backward.mlp_proj.total_ms` to `1.054337x`.
+
+  Verification:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_attention_grad_out
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_ATTENTION_SECTION_TIMING=1
+  NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=1
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_bf16_attention_grad_out_recheck_2sample.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added an opt-in full-trainer diagnostic for the existing LM-head cooperative
   cuBLASLt wrapper. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt`
   expands to `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1`, the compiled
