@@ -573,6 +573,66 @@ def test_native_gpt_sm120_candidate_wrapper_can_include_llmk_reference(
     assert "  reference:" in proc.stdout
 
 
+def test_native_gpt_sm120_candidate_wrapper_auto_gates_llmk_reference_candidate(
+    tmp_path: Path,
+) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-reference-gated.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_STEPS": "3",
+            "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE": "1",
+            "NFN_SM120_NATIVE_CANDIDATE_ENV": "NFN_NATIVE_GPT_CE_BF16_EXP2=1",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+            "LLM_KITTENS_ROOT": str(tmp_path / "llm.kittens"),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    reference_gates = payload["candidate_reference_metric_ratio_gates"]
+    assert reference_gates["enabled"] is True
+    limits = reference_gates["results"]
+    assert {
+        "metric": "train_loop_wall_ms_per_step",
+        "stat": "mean",
+        "actual_mean_ratio": None,
+        "missing": True,
+        "passed": True,
+        "max_ratio": 1.0,
+    } in limits
+    assert {
+        "metric": "train_loop_cuda_event_steady_state_wall_ms_per_step",
+        "stat": "mean",
+        "actual_mean_ratio": None,
+        "missing": True,
+        "passed": True,
+        "max_ratio": 1.0,
+    } in limits
+    assert {
+        "metric": "train_tokens_per_second",
+        "stat": "mean",
+        "actual_mean_ratio": None,
+        "missing": True,
+        "passed": True,
+        "min_ratio": 1.0,
+    } in limits
+
+
 def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path) -> None:
     script = Path("tools/bench_native_gpt_sm120_candidate.sh")
     output_path = tmp_path / "candidate-alias.json"

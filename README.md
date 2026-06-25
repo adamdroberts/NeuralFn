@@ -657,7 +657,15 @@ aliases). It builds the reference command from `LLM_KITTENS_ROOT`,
 `NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR`, and the existing step/sample/checkpoint
 controls, then forwards it to `tools/paired_kernel_speed.py --reference`. Dry
 runs include the resolved `reference_command` in the JSON plan without requiring
-the llm.kittens binary to exist.
+the llm.kittens binary to exist. When a candidate actually changes the native
+binary, Tile library, build flags, environment, or extra args, the wrapper now
+adds default candidate-over-reference gates unless explicit reference gates are
+set: `train_loop_wall_ms_per_step <= 1.000`, steady-state CUDA-event wall time
+`<= 1.000` for multi-step event-timed runs, and
+`train_tokens_per_second >= 1.000`. Set
+`NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` /
+`NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO` when a diagnostic run needs a
+different llm.kittens acceptance threshold.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail

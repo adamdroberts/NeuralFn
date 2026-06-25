@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the SM120 native candidate wrapper's llm.kittens reference mode.
+  When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1` is set and the candidate
+  changes the native binary, Tile library, build flags, environment, or extra
+  args, `tools/bench_native_gpt_sm120_candidate.sh` now adds default
+  candidate-over-reference gates unless the caller provided explicit reference
+  gates. Candidate runs must match or beat llm.kittens on train-loop wall time,
+  steady-state CUDA-event time for multi-step event-timed runs, and
+  tokens/second before promotion. Measurement-only runs can still override the
+  limits with `NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO` and
+  `NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO`.
+
+  Verification: `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  "candidate_wrapper_can_include_llmk_reference or
+  candidate_wrapper_auto_gates_llmk_reference_candidate"`; `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`; and `git diff --check`.
+
 - Refreshed the SM120 native candidate rejection record for
   `linear_bias_threads_512` after the CUDA Toolkit 13.3 WSL reinstall. The
   benchmark wrapper still rejects the profile by default, but the reason now

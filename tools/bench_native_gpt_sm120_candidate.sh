@@ -811,6 +811,8 @@ MAX_CANDIDATE_REFERENCE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE
 MIN_CANDIDATE_REFERENCE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO NFN_SM120_CANDIDATE_MIN_CANDIDATE_REFERENCE_RATIO "")"
 USER_MAX_CANDIDATE_RATIO_RAW="$MAX_CANDIDATE_RATIO_RAW"
 USER_MIN_CANDIDATE_RATIO_RAW="$MIN_CANDIDATE_RATIO_RAW"
+USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW="$MAX_CANDIDATE_REFERENCE_RATIO_RAW"
+USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW="$MIN_CANDIDATE_REFERENCE_RATIO_RAW"
 if [[ -n "$REJECTED_CANDIDATE_PROFILE" ]]; then
   case "${DRY_RUN_PLAN,,}:${ALLOW_REJECTED_CANDIDATE_PROFILE,,}" in
     1:*|true:*|yes:*|on:*|*:1|*:true|*:yes|*:on)
@@ -1268,6 +1270,36 @@ case "${INCLUDE_LLMK_REFERENCE,,}" in
     reference_paired_args=(--reference "$reference_cmd")
     ;;
 esac
+
+if [[ -n "${reference_paired_args[*]-}" &&
+      -z "$USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW" &&
+      -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" ]]; then
+  has_reference_candidate_change=0
+  if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||
+        "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
+        -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ||
+        -n "$CANDIDATE_ENV_RAW" ||
+        -n "$CANDIDATE_EXTRA_ARGS_RAW" ]]; then
+    has_reference_candidate_change=1
+  fi
+  if [[ "$has_reference_candidate_change" == "1" ]]; then
+    case "${STARTUP_ONLY,,}" in
+      "1"|"true"|"yes"|"on")
+        ;;
+      *)
+        MAX_CANDIDATE_REFERENCE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+        case "${TRAIN_LOOP_EVENT_TIMING,,}" in
+          "1"|"true"|"yes"|"on")
+            if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
+              MAX_CANDIDATE_REFERENCE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
+            fi
+            ;;
+        esac
+        MIN_CANDIDATE_REFERENCE_RATIO_RAW="train_tokens_per_second=1.000"
+        ;;
+    esac
+  fi
+fi
 
 profile_args=()
 case "${PROFILE_DIR_RAW,,}" in

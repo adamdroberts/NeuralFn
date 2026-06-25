@@ -574,6 +574,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      `lm_head_cooperative_sequence_loss_bin_count`, so future fused-kernel
 	      candidates can prove they are no longer just sequencing the old
 	      CE/dHidden/dWeight launches.
+	    - 2026-06-25 hardened external-reference promotion checks for native GPT
+	      kernel candidates. When `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`
+	      is set and the candidate changes the native binary, Tile library,
+	      build flags, env, or extra args, the wrapper now adds default
+	      candidate-over-llm.kittens gates for train-loop wall time,
+	      steady-state CUDA-event wall time on multi-step runs, and tokens/sec.
+	      This keeps benchmark evidence from promoting a candidate that only
+	      beats the previous NeuralFn route while still missing the llm.kittens
+	      SM120 reference in the same selected-GPU window.
 	    - 2026-06-22 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
 	      as the reproducible wrapper for the current full-resident logits/full-batch
 	      LM-head reuse diagnostic. It proves why llm.kittens-style resident logits
