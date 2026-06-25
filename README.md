@@ -1075,7 +1075,10 @@ cuBLASLt grouped layout and grouped execution probes through the same native
 paired wrapper as the other SM120 candidates; the current CUDA 13.3 WSL recheck
 still reports layout status `0` and grouped matmul status `15`; a later
 one-step dedicated RTX 5090 rerun after the CUDA reinstall reported the same
-`0`/`15` probe result. The 2026-06-24 dedicated RTX 5090 3-step, 2-sample
+`0`/`15` probe result. A CUDA 13.3.33 dedicated RTX 5090 one-step probe again
+reported grouped layout status `0` and grouped matmul status `15`, while the
+separate classic cuBLAS grouped BF16 probe still failed with status `700`.
+The 2026-06-24 dedicated RTX 5090 3-step, 2-sample
 stage-timed rerun also kept the normal hot route counters unchanged, so this
 remains capability telemetry rather than a training route. A follow-up strict
 preflight with the 32-bit grouped shape-array probe also returned `0`/`15`;

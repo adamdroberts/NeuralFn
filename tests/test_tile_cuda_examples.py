@@ -2261,6 +2261,15 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         ]
         == "1"
     )
+    assert "CUDA 13.3.33 dedicated RTX 5090 probe" in grouped_probe_payload[
+        "metadata"
+    ]["candidate_note"]
+    assert "grouped matmul status 15" in grouped_probe_payload["metadata"][
+        "candidate_note"
+    ]
+    assert "classic cuBLAS grouped BF16 probe still fails separately with status 700" in (
+        grouped_probe_payload["metadata"]["candidate_note"]
+    )
     assert grouped_probe_payload["metric_ratio_gates"]["enabled"] is False
     assert "AUTO_DISABLE_METRIC_RATIO_GATES=1" in text
     assert "NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES" in text

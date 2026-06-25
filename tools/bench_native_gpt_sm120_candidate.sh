@@ -445,7 +445,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0"
     ;;
   "cublaslt_grouped_probe"|"cublaslt-grouped-probe"|"grouped_cublaslt_probe"|"grouped-cublaslt-probe")
-    CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 probe currently reports grouped layout status 0 with grouped matmul status 15; this profile is telemetry-only until grouped matmul is supported."
+    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 probe currently reports grouped layout status 0 with grouped matmul status 15; the classic cuBLAS grouped BF16 probe still fails separately with status 700. This profile is telemetry-only until grouped matmul is supported."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1"
     AUTO_DISABLE_METRIC_RATIO_GATES=1
     ;;

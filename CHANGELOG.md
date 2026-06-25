@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed grouped-GEMM capability telemetry after the CUDA 13.3.33 reinstall.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` now records that
+  grouped cuBLASLt layout still succeeds while grouped cuBLASLt matmul still
+  returns status `15`; the separate classic cuBLAS grouped BF16 probe still
+  fails with status `700`. This keeps grouped GEMM blocked as a training
+  route until execution support is available.
+
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_STAGE_TIMING=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`; and
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1'
+  NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which failed fast with
+  status `700`.
+
 - Added the rejected SM120 native candidate profile
   `packed_attention_bwd_batch_128` so larger packed-attention backward chunks
   cannot be promoted from noise-only measurements. The profile sets
