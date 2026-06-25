@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the current NeuralFn-vs-llm.kittens SM120 parity sample after the
+  LM-head graph-upload and loss-bin evidence updates. The 2026-06-25
+  display-disabled RTX 5090 3-step, 2-sample same-script run measured
+  llm.kittens at `2455.180 ms/step` and NeuralFn at `2503.315 ms/step`, or
+  `1.019609x` train-loop wall and `0.980724x` tokens/sec. Steady-state
+  CUDA-event timing was closer at `1.002080x`, but the parity gate still
+  failed. The wrapper diagnostic reported native Tile training active with
+  LM-head CUDA Graph replay (`lm_head_fused_graph_replay_count=48`), while
+  `lm_head_cooperative_backward_fused_kernel_available=false` and
+  `lm_head_classifier_backward_path_class=diagnostic-cuda-graph-wrapper`; the
+  remaining parity target is still a true fused implementation of
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`.
+
+  Verification: ran
+  `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=1
+  NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_parity_after_loss_bins_refresh
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_after_loss_bins_refresh.json
+  NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=15
+  bash tools/bench_native_gpt_sm120_parity.sh`; the command failed as expected
+  on the strict parity ratio gates.
+
 - Added a default-off dense GPT MLP projection side-stream candidate behind
   `NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the
   GPT-2-prefixed alias. The native trainer now has a stream-aware MLP

@@ -231,6 +231,19 @@ Real training tensors must not pass through graph editor node objects.
   and `avg_ms_mean` beside hot-stage `*.total_ms` lines so future
   candidate-vs-current gates do not require manual sidecar JSON parsing to see
   whether a regression is per-layer, per-chunk, or one-time setup work.
+- [x] Refresh current no-stage SM120 parity after the LM-head graph-upload and
+  loss-bin evidence updates. The 2026-06-25 3-step, 2-sample same-script run
+  with the display-disabled RTX 5090 measured llm.kittens at `2455.180 ms/step`
+  and NeuralFn at `2503.315 ms/step`, or `1.019609x` train-loop wall and
+  `0.980724x` tokens/sec. Steady-state CUDA-event timing was much closer at
+  `1.002080x`, but the wrapper still failed strict parity gates and printed
+  the current blocker: native Tile training is active, LM-head graph replay is
+  active (`lm_head_fused_graph_replay_count=48`), but
+  `lm_head_cooperative_backward_fused_kernel_available=false` and
+  `lm_head_classifier_backward_path_class=diagnostic-cuda-graph-wrapper`.
+  The next implementation target remains replacing
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with a
+  true fused classifier-backward Tile kernel.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
