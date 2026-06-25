@@ -2274,6 +2274,21 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     default promotion because train-loop wall regressed to `1.002882x`,
     tokens/sec to `0.997149x`, block backward to `1.005784x`, MLP FC
     dWeight+bias to `1.062723x`, and attention projection to `1.025902x`.
+  - 2026-06-25 reran the 3-step, 1-sample llm.kittens parity check after the
+    candidate-profile help fix to make sure the harness-only change did not
+    hide the remaining kernel gap. The dedicated display-disabled RTX 5090 was
+    idle before and after the sample, and native JSON still confirmed zero
+    train-loss host D2H copies plus the no-Torch native path. NeuralFn failed
+    strict parity at `1.034824x` train-loop wall and `1.012863x`
+    steady-state CUDA-event step time versus llm.kittens. The current LM-head
+    path remained `diagnostic-cuda-graph-wrapper` with three captures, 45
+    thread-cache hits, and 48 graph replays across the CE, dHidden, and dWeight
+    graph body. Hot buckets were unchanged: `stage.block_backward.total_ms`
+    `4038.430 ms`, `stage.train.model_forward.total_ms` `1992.760 ms`,
+    `stage.lm_head_backward.total_ms` `1774.240 ms`, and
+    `stage.lm_head_backward.cooperative.total_ms` `1248.000 ms`. Keep the next
+    implementation slice on a true fused/cooperative LM-head classifier-backward
+    Tile kernel or a real block-backward GEMM/TK route change.
   - 2026-06-25 reran the rejected `lm_head_row_chunk_49152` route after the
     CUDA Toolkit 13.3 reinstall with
     `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The route proof
