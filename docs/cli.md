@@ -122,7 +122,11 @@ compares the default LM-head route against the diagnostic probability-only
 CE+dlogits path with combined target correction. That path uses vec8 normal
 stores for aligned BF16 dlogits, but it remains default-off because the current
 same-script RTX 5090 gate still regresses total train-loop and block-backward
-timing.
+timing. Runtime JSON reports prob-only samples with
+`lm_head_ce_kernel_strategy:
+no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction`
+and `lm_head_ce_bf16_vector_io_strategy:
+vec8-loads-normal-vec8-stores`.
 Native linear-backward kernel candidates should be isolated before full parity
 runs with `bash tools/bench_linear_backward_candidate.sh`. The wrapper builds
 `build/linear_backward_bench`, loads the raw Tile C ABI, and compares baseline

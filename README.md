@@ -182,6 +182,10 @@ target-correction launch. It is also rejected by default: the CUDA 13.3
 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the strategy to
 `no-loss-prob-only-dlogits-plus-combined-target-correction`, but regressed
 train-loop wall time to `1.006574x` and LM-head backward to `1.003646x`.
+After the aligned-store kernel update, runtime JSON names the route as
+`no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction`
+and reports `lm_head_ce_bf16_vector_io_strategy:
+vec8-loads-normal-vec8-stores` when the prob-only path actually runs.
 Within that diagnostic route, the combined target-correction kernel now
 defaults to 512 threads instead of 256. Override
 `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,

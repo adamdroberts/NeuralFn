@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected dense GPT runtime JSON attribution for diagnostic LM-head
+  probability-only CE+dlogits runs. When
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1` or
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1` actually executes,
+  `lm_head_ce_kernel_strategy` now includes
+  `vec8-loads-normal-vec8-stores`, and
+  `lm_head_ce_bf16_vector_io_strategy` reports
+  `vec8-loads-normal-vec8-stores` instead of the generic scalar-store default.
+  This is a telemetry contract fix for same-script candidate evidence; no
+  training default changes.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads
+  -q`; `git diff --check`.
+
 - Optimized the diagnostic LM-head probability-only BF16/u16 CE+dlogits Tile
   kernel to use the existing vec8 normal-store helper for its aligned vec8
   loop instead of eight scalar stores. This only affects explicit

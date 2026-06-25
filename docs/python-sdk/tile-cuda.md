@@ -78,7 +78,10 @@ used when explicit prob-only correction flags such as
 `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1` are selected through
 same-script candidate profiling. Default training keeps the CUDA Graph wrapper
 LM-head route because the prob-only correction schedule still regresses total
-train-loop timing despite the faster aligned-store body.
+train-loop timing despite the faster aligned-store body. Runtime JSON reports
+that diagnostic path with `lm_head_ce_bf16_vector_io_strategy:
+vec8-loads-normal-vec8-stores` and a prob-only `lm_head_ce_kernel_strategy`
+string that includes `vec8-loads-normal-vec8-stores`.
 
 On SM120 with TK attention enabled, that script defines
 `LLMK_SM120_USE_CUBLASLT_GEMM` by default to match the supported llm.kittens

@@ -8949,6 +8949,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_row_loss_reduction_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in gpt2_source_text
     assert "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
+    assert "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-target-corrections" in gpt2_source_text
+    assert (
+        "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction"
+        in gpt2_source_text
+    )
+    assert "lm_head_prob_only_corrections_chunk_count > 0" in gpt2_source_text
     assert "no-loss-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text

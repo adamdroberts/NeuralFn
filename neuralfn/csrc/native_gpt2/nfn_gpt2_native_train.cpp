@@ -21739,9 +21739,9 @@ int run_transformer_lm_training_json(
         << (lm_head_ce_loss_bins_default_specialized_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_kernel_strategy\": \""
         << (lm_head_prob_only_corrections_chunk_count > 0 && lm_head_prob_only_combined_correction_launch_count > 0
-                ? "no-loss-prob-only-dlogits-plus-combined-target-correction"
+                ? "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction"
                 : (lm_head_prob_only_corrections_chunk_count > 0
-                ? "no-loss-prob-only-dlogits-plus-target-corrections"
+                ? "no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-target-corrections"
                 : (lm_head_ce_no_loss_runtime_enabled
                 ? (lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled
                        ? "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores"
@@ -21760,7 +21760,9 @@ int run_transformer_lm_training_json(
                               ? "default-specialized-row-loss-vec8-loads-scalar-stores"
                               : "generic-runtime-configured")))))) << "\",\n"
         << "  \"lm_head_ce_bf16_vector_io_strategy\": \""
-        << (lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled
+        << (lm_head_prob_only_corrections_chunk_count > 0
+                ? "vec8-loads-normal-vec8-stores"
+                : (lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled
                 ? "vec8-loads-streaming-vec8-stores"
                 : (lm_head_ce_no_loss_vec8_normal_store_specialized_enabled
                 ? "vec8-loads-normal-vec8-stores"
@@ -21774,7 +21776,7 @@ int run_transformer_lm_training_json(
                                      : "vec8-loads-scalar-stores")
                               : (lm_head_ce_bf16_scalar_streaming_stores_enabled
                                      ? "scalar-loads-scalar-streaming-stores"
-                                     : "scalar-loads-scalar-stores"))))))
+                                     : "scalar-loads-scalar-stores")))))))
         << "\",\n"
         << "  \"lm_head_bf16_logits_enabled\": "
         << (lm_head_bf16_logits_enabled ? "true" : "false") << ",\n"
