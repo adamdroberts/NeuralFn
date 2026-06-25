@@ -1965,9 +1965,12 @@ chunk comparison,
 shape against the cuBLASLt cooperative candidate, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the 32768-row,
 1024-bin loss-reduction shape. Set
-`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence
-or CUDA Graph wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a
-candidate slower than the baseline before running the full GPT trainer. The
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to pass the compiled
+`--require-true-fused-candidate` contract, rejecting the current sequence or
+CUDA Graph wrapper inside the C++ microbench before a full GPT trainer run
+treats it as a production fused-kernel candidate.
+Set `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower than
+the baseline before running the full GPT trainer. The
 benchmark JSON reports `candidate_sequence_wrapper_only` and
 `candidate_cuda_graph_wrapper_only` separately so strict failures identify the
 diagnostic route. Set

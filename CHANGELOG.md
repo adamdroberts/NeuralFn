@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a native `--require-true-fused-candidate` contract to the compiled
+  LM-head backward microbenchmark and wired
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` through
+  `tools/bench_lm_head_backward_candidate.sh`. The benchmark now writes its JSON
+  evidence and exits nonzero from C++ when the candidate strict symbol is still
+  a CE/dHidden/dWeight sequence or CUDA Graph wrapper instead of a real fused
+  LM-head backward kernel. This keeps the next LM-head candidate gate aligned
+  with the requested CUDA Tile C++ training path instead of allowing wrapper
+  replay to masquerade as a production kernel.
+
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k lm_head_backward_microbench`; `bash -n
+  tools/bench_lm_head_backward_candidate.sh`;
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_true_fused_contract.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which exited `3` from the
+  compiled benchmark and reported `candidate_cuda_graph_wrapper_only: true`.
+
 - Refreshed the rejected `lm_head_graph_prewarm` SM120 benchmark evidence after
   the CUDA 13.3 WSL reinstall on the dedicated RTX 5090. The profile still
   eliminates runtime LM-head CUDA Graph captures and improves native-vs-native

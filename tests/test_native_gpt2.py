@@ -1923,6 +1923,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO" in wrapper
     assert "check_json_ratio" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
+    assert "REQUIRE_TRUE_FUSED_ARG=(--require-true-fused-candidate)" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_DRY_RUN" in wrapper
     assert "CANDIDATE_FIRST_ARG=(--candidate-first)" in wrapper
@@ -1938,6 +1939,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "candidate_first" in bench_source
     assert "--candidate-first" in bench_source
+    assert "--require-true-fused-candidate" in bench_source
+    assert "require_true_fused_candidate" in bench_source
+    assert "candidate strict symbol is not a true fused" in bench_source
     assert '\\"run_order\\": \\"' in bench_source
     assert "candidate-first" in bench_source
     assert "baseline-first" in bench_source

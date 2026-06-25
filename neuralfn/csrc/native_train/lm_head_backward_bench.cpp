@@ -106,6 +106,7 @@ struct Options {
     int flags = 0;
     bool no_loss = false;
     bool candidate_first = false;
+    bool require_true_fused_candidate = false;
 };
 
 struct VariantResult {
@@ -154,6 +155,7 @@ struct ComponentResult {
         << "  --no-loss\n"
         << "  --loss-bins N\n"
         << "  --candidate-first\n"
+        << "  --require-true-fused-candidate\n"
         << "  --cuda-device N\n"
         << "  --json-out PATH\n";
     std::exit(2);
@@ -214,6 +216,8 @@ Options parse_options(int argc, char** argv) {
             }
         } else if (arg == "--candidate-first") {
             options.candidate_first = true;
+        } else if (arg == "--require-true-fused-candidate") {
+            options.require_true_fused_candidate = true;
         } else if (arg == "--cuda-device") {
             options.cuda_device = static_cast<int>(parse_i64(require_value(arg), arg));
         } else if (arg == "--json-out") {
@@ -682,6 +686,7 @@ std::string render_json(
         << "  \"no_loss\": " << (options.no_loss ? "true" : "false") << ",\n"
         << "  \"flags\": " << options.flags << ",\n"
         << "  \"run_order\": \"" << (options.candidate_first ? "candidate-first" : "baseline-first") << "\",\n"
+        << "  \"require_true_fused_candidate\": " << (options.require_true_fused_candidate ? "true" : "false") << ",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
@@ -899,6 +904,22 @@ int main(int argc, char** argv) {
                 candidate,
                 reference_components,
                 reference_cublaslt_components);
+        if (options.require_true_fused_candidate && true_fused_capability() == 0) {
+            std::cerr
+                << "lm_head_backward_bench: candidate strict symbol is not a true fused "
+                << "LM-head backward kernel; it is still a sequence or CUDA Graph wrapper\n";
+            if (!options.json_out.empty()) {
+                std::filesystem::path out_path(options.json_out);
+                if (!out_path.parent_path().empty()) {
+                    std::filesystem::create_directories(out_path.parent_path());
+                }
+                std::ofstream file(options.json_out);
+                file << json;
+            }
+            std::cout << json;
+            dlclose(handle);
+            return 3;
+        }
         if (!options.json_out.empty()) {
             std::filesystem::path out_path(options.json_out);
             if (!out_path.parent_path().empty()) {

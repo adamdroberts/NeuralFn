@@ -174,6 +174,19 @@ case "${CANDIDATE_FIRST,,}" in
     ;;
 esac
 
+case "${REQUIRE_TRUE_FUSED,,}" in
+  1|true|yes|on)
+    REQUIRE_TRUE_FUSED_ARG=(--require-true-fused-candidate)
+    ;;
+  0|false|no|off|"")
+    REQUIRE_TRUE_FUSED_ARG=()
+    ;;
+  *)
+    echo "Invalid NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED='${REQUIRE_TRUE_FUSED}'" >&2
+    exit 2
+    ;;
+esac
+
 if [[ "${#NO_LOSS_ARG[@]}" -gt 0 && "${LOSS_BINS}" != "0" ]]; then
   echo "NFN_LM_HEAD_BACKWARD_NO_LOSS cannot be combined with NFN_LM_HEAD_BACKWARD_LOSS_BINS=${LOSS_BINS}" >&2
   exit 2
@@ -192,6 +205,7 @@ BENCH_ARGS=(
   "${NO_LOSS_ARG[@]}"
   --loss-bins "${LOSS_BINS}"
   "${CANDIDATE_FIRST_ARG[@]}"
+  "${REQUIRE_TRUE_FUSED_ARG[@]}"
   --cuda-device "${CUDA_DEVICE}"
   --json-out "${JSON_OUT}"
 )
@@ -251,8 +265,12 @@ if [[ "${REBUILD_TILE_OPS}" == "1" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}" >&2
 fi
 
-"${BENCH_BIN}" \
-  "${BENCH_ARGS[@]}"
+if "${BENCH_BIN}" "${BENCH_ARGS[@]}"; then
+  :
+else
+  BENCH_STATUS=$?
+  exit "${BENCH_STATUS}"
+fi
 
 case "${REQUIRE_TRUE_FUSED,,}" in
   1|true|yes|on)

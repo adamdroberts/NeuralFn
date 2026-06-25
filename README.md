@@ -210,7 +210,10 @@ single-kernel LM-head candidates should first run
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, decomposed
 `reference_components` timings for logits, CE, dHidden, and dWeight, and a
-`candidate_true_fused_capability` JSON field. Reference component timings honor
+`candidate_true_fused_capability` JSON field. Use the compiled
+`--require-true-fused-candidate` contract, or the wrapper profile
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict`, before promoting any
+candidate into the full GPT loop. Reference component timings honor
 the same `--warmup` count as the baseline/candidate variants and report that
 count as `reference_component_warmup`, so those numbers do not include first-use
 CUDA/cuBLAS/TK setup. The same JSON also reports
