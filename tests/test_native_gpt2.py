@@ -2429,6 +2429,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
         "cublaslt_plan_prewarm_off": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0",
+        "cublaslt_heavy_shape_flip": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,1:768,3072,65536,N,T,1:768,65536,3072,N,N,0:768,65536,2304,N,N,0:768,2304,65536,N,T,0",
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",
@@ -2509,6 +2510,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "The Tile-CUDA default remains 256" in bench_source
     assert "1.002081x steady-state CUDA-event step time" in bench_source
     assert "1.000470x stage.block_backward.mlp_fc.dweight_bias.total_ms" in bench_source
+    assert '"cublaslt_heavy_shape_flip"|"cublaslt-heavy-shape-flip"' in bench_source
+    assert "The candidate proved plan-cache and linear-shape changes" in bench_source
+    assert "steady-state CUDA-event timing to 1.005491x" in bench_source
+    assert "MLP FC backward to 1.031422x" in bench_source
     assert "full-final-norm BF16 prepack to per-chunk BF16 packing" in bench_source
     assert "stage.lm_head_backward.total_ms to 1.055161x" in bench_source
     assert (

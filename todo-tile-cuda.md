@@ -57,6 +57,14 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Preserve rejected heavy cuBLASLt plan retunes as named profiles instead of
+  implicit defaults. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip`
+  now records the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample
+  shape-stat gate that changed cuBLASLt plan-cache and linear-shape telemetry
+  but regressed train-loop wall time (`1.002525x`), steady-state CUDA-event
+  time (`1.005491x`), block backward (`1.011881x`), MLP FC backward
+  (`1.031422x`), and QKV backward (`1.029108x`). The default planner stays on
+  the current per-shape choices.
 - [x] Reduce dense GPT native startup parameter-fill launches. The raw Tile ABI
   now exposes `nfn_native_tile_fill_many_values_mixed_float32_bf16_bits`, and
   `nfn_gpt_native_train` uses it to initialize float32 and BF16 constant

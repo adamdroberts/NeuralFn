@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now preserves the rejected
+  heavy cuBLASLt shape-plan retune as the named
+  `cublaslt_heavy_shape_flip` profile. The profile flips the hot block
+  cuBLASLt returned-multiple-candidate plans with
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE`, but remains blocked by default
+  because the CUDA 13.3.33 dedicated RTX 5090 gate proved plan-cache and
+  linear-shape changes while regressing `train_loop_wall_ms_per_step` to
+  `1.002525x`, steady-state CUDA-event timing to `1.005491x`, block backward
+  to `1.011881x`, MLP FC backward to `1.031422x`, and QKV backward to
+  `1.029108x`.
+
+  Verification: ran a 3-step, 2-sample native-vs-native candidate benchmark
+  with linear shape stats and stage timing enabled; the benchmark exited
+  nonzero through the metric-ratio gate as expected. Ran the focused native GPT
+  source-contract pytest for the candidate profile table, `bash -n` on the
+  wrapper, and `git diff --check`.
+
 - `tools/paired_kernel_speed.py` now enforces the native runtime contract for
   NeuralFn native candidates. When the candidate command is a native GPT
   trainer, the paired benchmark extracts `graph_editor_tensor_flow` and

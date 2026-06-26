@@ -671,6 +671,12 @@ device across the whole gradient-accumulation optimizer step and copied to the
 host once per logged step, so train-loss logging does not add one host sync per
 microbatch. Validation loss still uses `--eval-every-steps` and remains
 separate from sampled train loss.
+For native-vs-native SM120 cuBLASLt route work, use the named candidate
+profiles rather than ad hoc defaults. The heavy returned-multiple-candidate
+plan flip is preserved as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip`, but it is
+rejected by default because the CUDA 13.3.33 dedicated RTX 5090 gate proved
+plan-cache and linear-shape changes while regressing steady-state training.
 The native Tile ABI also includes opt-in public-vocab strided LM-head dHidden
 and dWeight GEMM routes for padded BF16 dlogit chunks. They remain disabled by
 default (`NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=0`) because the

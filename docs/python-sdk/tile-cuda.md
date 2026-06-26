@@ -1183,6 +1183,13 @@ candidate bisection. The matching QKV dWeight+bias hot shape
 heuristic `1` to `0` changed the intended plan and measured
 `stage.block_backward.qkv.dweight_bias.total_ms=1.003363x` plus
 `stage.block_backward.total_ms=1.000055x` on the CUDA 13.3 RTX 5090 stage gate.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip` records the
+broader rejected retune that flips the hot returned-multiple-candidate block
+cuBLASLt plans in one run. It proved plan-cache and linear-shape changes, but
+the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample gate regressed
+`train_loop_wall_ms_per_step` to `1.002525x`, steady-state CUDA-event timing to
+`1.005491x`, block backward to `1.011881x`, MLP FC backward to `1.031422x`,
+and QKV backward to `1.029108x`, so the default planner stays unchanged.
 Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
 change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because
