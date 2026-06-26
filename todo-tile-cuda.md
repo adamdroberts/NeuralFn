@@ -39,6 +39,12 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Extend the same invariant to future CUDA Tile graph execution plans.
 - [x] Add a benchmark that compares old graph-walk execution, static PyTorch execution, and CUDA Tile execution.
 - [x] Add an assertion helper for tests: no training forward/backward path may read editor position, viewport, React store, or mutable graph-editor metadata.
+- [x] Gate paired SM120 native benchmarks on the same runtime invariant.
+  `tools/paired_kernel_speed.py` now extracts `graph_editor_tensor_flow` and
+  `torch_required` from candidate native JSON and fails NeuralFn native
+  candidates unless both are exactly `false`. This keeps benchmark promotion
+  paths from accepting graph-editor tensor flow or Torch fallback while chasing
+  kernel throughput parity.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
 - [x] Guard the Python SDK native-training boundary against accidental Python or
   shell launcher fallback. `NativeTrainRunConfig.strict_native_command` now

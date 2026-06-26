@@ -3278,7 +3278,7 @@ Every entry must be accounted for as one of:
 
 ## Training Hot Path
 
-Real training tensors must not pass through graph editor nodes. `CompiledTorchGraph` compiles graph topology and edge routing once, then forwards tensors through fixed modules and precomputed routing plans. Future CUDA Tile graph execution must preserve the same invariant.
+Real training tensors must not pass through graph editor nodes. `CompiledTorchGraph` compiles graph topology and edge routing once, then forwards tensors through fixed modules and precomputed routing plans. Future CUDA Tile graph execution must preserve the same invariant. The SM120 paired benchmark harness now treats that invariant as a default native-runtime gate: NeuralFn native candidates must report `graph_editor_tensor_flow=false` and `torch_required=false`, or `tools/paired_kernel_speed.py` exits nonzero before a route can be promoted.
 
 `CompiledTorchGraph(..., kernel_backend="tile_cuda", tile_cuda_strict=True)` validates coverage before batches run. Any node still marked `torch_fallback` or `planned` fails at compile time in strict mode. Scalar function and simple module dtype-contract failures include the rejected tensor dtype, supported dtype set, contiguity, device, and shape.
 

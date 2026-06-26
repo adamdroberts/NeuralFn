@@ -912,6 +912,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
     "error",
     "selected_graph_support_status",
+    "graph_editor_tensor_flow",
+    "torch_required",
     "train_loss_device_accumulation_strategy",
     "train_loss_host_copy_scope",
     "lm_head_training_logits_dtype",
@@ -3494,6 +3496,47 @@ def evaluate_lm_head_true_fused_gate(
     }
 
 
+def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[str, object]:
+    candidate_command = payload.get("candidate_command")
+    candidate_is_native = (
+        isinstance(candidate_command, list)
+        and all(isinstance(item, str) for item in candidate_command)
+        and looks_like_neuralfn_native_command(candidate_command)
+    )
+    values = payload.get("candidate_native_metric_values")
+    if not isinstance(values, dict):
+        values = {}
+    observed_contract = any(
+        key in values for key in ("graph_editor_tensor_flow", "torch_required")
+    )
+    enabled = candidate_is_native or observed_contract
+    results: list[dict[str, object]] = []
+    if enabled:
+        for key in ("graph_editor_tensor_flow", "torch_required"):
+            observed = values.get(key)
+            passed = observed == ["false"]
+            results.append(
+                {
+                    "metric": key,
+                    "expected": ["false"],
+                    "observed": observed if isinstance(observed, list) else [],
+                    "passed": passed,
+                }
+            )
+    failed = [item for item in results if item.get("passed") is False]
+    return {
+        "enabled": enabled,
+        "passed": not failed,
+        "results": results,
+        "failure_reason": (
+            ""
+            if not failed
+            else "candidate native training must report graph_editor_tensor_flow=false "
+            "and torch_required=false"
+        ),
+    }
+
+
 def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
     target = payload.get("native_lm_head_true_fused_target")
     if not isinstance(target, dict):
@@ -3549,6 +3592,31 @@ def print_lm_head_true_fused_gate(payload: dict[str, object]) -> None:
         f"status={gate.get('status', '')}"
     )
     failure_reason = gate.get("failure_reason")
+    if failure_reason:
+        print(f"    failure_reason: {failure_reason}")
+
+
+def print_native_runtime_contract_gate(payload: dict[str, object]) -> None:
+    gate = payload.get("native_runtime_contract_gate")
+    if not isinstance(gate, dict) or gate.get("enabled") is not True:
+        return
+    print("  native_runtime_contract_gate:")
+    print(f"    passed={str(gate.get('passed') is True).lower()}")
+    for result in gate.get("results", []):
+        if not isinstance(result, dict):
+            continue
+        observed = result.get("observed")
+        observed_text = (
+            ",".join(str(item) for item in observed)
+            if isinstance(observed, list)
+            else ""
+        )
+        print(
+            f"    {result.get('metric', '')}: expected=false "
+            f"observed={observed_text or 'missing'} "
+            f"passed={str(result.get('passed') is True).lower()}"
+        )
+    failure_reason = str(gate.get("failure_reason", "")).strip()
     if failure_reason:
         print(f"    failure_reason: {failure_reason}")
 
@@ -4056,6 +4124,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         required=bool(args.require_native_lm_head_true_fused),
         target=payload["native_lm_head_true_fused_target"],
     )
+    payload["native_runtime_contract_gate"] = evaluate_native_runtime_contract_gate(payload)
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
         route_changes=native_route_counter_changes,
@@ -4244,6 +4313,7 @@ def print_text(payload: dict[str, object]) -> None:
     print_native_hot_stage_ratios(payload)
     print_lm_head_true_fused_target(payload)
     print_lm_head_true_fused_gate(payload)
+    print_native_runtime_contract_gate(payload)
     for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):
         metrics = payload.get(section)
         if not isinstance(metrics, dict) or not metrics:
@@ -4539,6 +4609,19 @@ def main() -> int:
         reason = str(lm_head_gate.get("failure_reason", "")).strip()
         print(
             "native LM-head true-fused gate failed"
+            + (": " + reason if reason else ""),
+            file=sys.stderr,
+        )
+        return 1
+    runtime_contract_gate = payload.get("native_runtime_contract_gate")
+    if (
+        isinstance(runtime_contract_gate, dict)
+        and runtime_contract_gate.get("enabled") is True
+        and runtime_contract_gate.get("passed") is False
+    ):
+        reason = str(runtime_contract_gate.get("failure_reason", "")).strip()
+        print(
+            "native runtime contract gate failed"
             + (": " + reason if reason else ""),
             file=sys.stderr,
         )

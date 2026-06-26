@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/paired_kernel_speed.py` now enforces the native runtime contract for
+  NeuralFn native candidates. When the candidate command is a native GPT
+  trainer, the paired benchmark extracts `graph_editor_tensor_flow` and
+  `torch_required` from candidate JSON, prints a
+  `native_runtime_contract_gate`, and exits nonzero unless both values are
+  exactly `false`. This turns the "real data must not pass through graph editor
+  nodes during training" rule into a default SM120 promotion gate instead of a
+  passive JSON field.
+
+  Verification: ran the focused paired-speed runtime-contract pytest; ran the
+  paired-speed source-contract pytest; ran `python -m py_compile
+  tools/paired_kernel_speed.py`; ran a CUDA-visible one-step SM120 parity smoke
+  on the dedicated RTX 5090 with selected-GPU locking, which reported zero
+  compute processes, `graph_editor_tensor_flow=false`, `torch_required=false`,
+  and the current remaining one-step train-loop gap at `1.062378x` versus
+  llm.kittens.
+
 - `tools/bench_native_gpt_sm120_parity.sh` now mirrors the native-vs-native
   candidate wrapper's stale NVML utilization policy. It defaults
   `NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1` and forwards

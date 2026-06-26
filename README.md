@@ -2084,6 +2084,10 @@ CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 argument. Set
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
 CUDA device policy, and alternating sample order without launching the GPU jobs.
+Measured NeuralFn native candidates must also prove the runtime contract in
+their JSON: `tools/paired_kernel_speed.py` fails the run if the candidate omits
+or changes `graph_editor_tensor_flow=false` or `torch_required=false`, so SM120
+promotion gates cannot pass through graph-editor tensor flow or Torch fallback.
 The wrapper leaves `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT` off by default,
 matching normal compiled trainer startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` only when the benchmark should

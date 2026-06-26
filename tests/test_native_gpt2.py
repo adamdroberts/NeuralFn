@@ -1133,6 +1133,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_requested" in speed_tool
     assert "linear_bf16_workspace_prewarm_success_count" in speed_tool
     assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
+    assert '"graph_editor_tensor_flow"' in speed_tool
+    assert '"torch_required"' in speed_tool
+    assert "native_runtime_contract_gate" in speed_tool
+    assert "candidate native training must report graph_editor_tensor_flow=false" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_count" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_success_count" in speed_tool
@@ -10541,6 +10545,75 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
     assert "--native-cuda-no-checkpoint" not in proc.stdout
     assert "--native-cuda-startup-only" not in proc.stdout
     assert "TorchTrainer path" not in proc.stderr
+
+
+def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    baseline = tmp_path / "baseline"
+    candidate = tmp_path / "nfn_gpt_native_train"
+    baseline.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"status\":\"baseline\",\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
+        "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
+        "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
+        encoding="utf-8",
+    )
+    baseline.chmod(0o755)
+    candidate.chmod(0o755)
+
+    base_cmd = [
+        sys.executable,
+        str(root / "tools" / "paired_kernel_speed.py"),
+        "--baseline",
+        str(baseline),
+        "--candidate",
+        str(candidate),
+        "--samples",
+        "1",
+        "--warmup",
+        "0",
+        "--cuda-visible-devices",
+        "",
+    ]
+    passing = subprocess.run(
+        base_cmd,
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert passing.returncode == 0, passing.stderr
+    assert "native_runtime_contract_gate" in passing.stdout
+    assert "graph_editor_tensor_flow: expected=false observed=false passed=true" in passing.stdout
+    assert "torch_required: expected=false observed=false passed=true" in passing.stdout
+
+    candidate.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
+        "\"graph_editor_tensor_flow\":true,\"torch_required\":false,"
+        "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
+        encoding="utf-8",
+    )
+    candidate.chmod(0o755)
+    failing = subprocess.run(
+        base_cmd,
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert failing.returncode == 1
+    assert "native runtime contract gate failed" in failing.stderr
+    assert "graph_editor_tensor_flow: expected=false observed=true passed=false" in failing.stdout
 
 
 def test_canonical_infer_gpt_wrapper_reports_generic_program_name() -> None:
