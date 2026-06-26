@@ -2060,7 +2060,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "candidate_true_fused_production_env="
         "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1"
     ) in bench_source
-    assert "Production-shape full-GPT strict true-fused LM-head profile" in bench_source
+    assert "current scalar diagnostic body" in bench_source
+    assert "stage.lm_head_backward.total_ms to 30.473055x" in bench_source
+    assert "must remain rejected until a tiled replacement passes the promotion gate" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
