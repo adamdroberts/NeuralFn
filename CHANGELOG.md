@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened strict true-fused LM-head launch telemetry. The raw Tile CUDA
+  launcher now increments
+  `nfn_native_tile_lm_head_classifier_true_fused_launch_count()` only after
+  CUDA accepts the cooperative `cudaLaunchCooperativeKernel` call. Invalid
+  shapes, devices without cooperative launch support, occupancy failures, and
+  rejected prelaunch attempts no longer count as observed true-fused kernel
+  launches, so focused and full-loop strict gates cannot pass on an attempted
+  launch.
+
+  Verification: ran the focused native LM-head source-contract pytest, rebuilt
+  the linked native GPT CLI, reran the strict true-fused LM-head smoke benchmark
+  on the dedicated RTX 5090, and ran `git diff --check`.
+
 - Added a row-count bisection knob for the rejected TK QKV first-use prewarm
   diagnostic. `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` /
   `NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional setup

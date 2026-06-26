@@ -581,7 +581,9 @@ The strict cooperative true-fused route has its own launch counter:
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`. Focused
 LM-head benchmark JSON mirrors it as `true_fused_launch_count` on each variant,
 which lets candidate tests prove that the monolithic cooperative kernel
-actually launched instead of relying only on ABI path-class strings. The strict
+actually launched instead of relying only on ABI path-class strings. The counter
+is incremented only after CUDA accepts `cudaLaunchCooperativeKernel`; launcher
+validation exits and rejected prelaunch attempts do not count. The strict
 LM-head benchmark wrapper treats a zero candidate true-fused launch count as a
 failed candidate even when the capability probe returns true.
 Full-loop native GPT JSON reports the same evidence as

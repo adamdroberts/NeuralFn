@@ -19644,7 +19644,6 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
     bool no_loss,
     cudaStream_t stream) {
   g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
-  g_lm_head_classifier_true_fused_launch_count.fetch_add(1, std::memory_order_relaxed);
   g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
   g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
   g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
@@ -19698,13 +19697,16 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
       &dweight_beta,
       &no_loss,
   };
-  cudaLaunchCooperativeKernel(
+  status = cudaLaunchCooperativeKernel(
       reinterpret_cast<void*>(lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel),
       blocks,
       threads,
       args,
       0,
       stream);
+  if (status == cudaSuccess && cudaPeekAtLastError() == cudaSuccess) {
+    g_lm_head_classifier_true_fused_launch_count.fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(

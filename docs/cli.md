@@ -1118,10 +1118,11 @@ Strict true-fused cooperative smoke profiles additionally report
 `true_fused_launch_count` for each focused LM-head benchmark variant. The field
 comes from
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()` and is separate
-from the diagnostic sequence-wrapper and CUDA Graph counters, so candidate
-gates can prove the monolithic cooperative kernel launched. Strict LM-head
-benchmark profiles now fail when the candidate declares true-fused capability
-but its `candidate.true_fused_launch_count` stays at zero.
+from the diagnostic sequence-wrapper and CUDA Graph counters. It increments
+only after CUDA accepts the cooperative kernel launch, so candidate gates can
+prove the monolithic cooperative kernel launched. Strict LM-head benchmark
+profiles now fail when the candidate declares true-fused capability but its
+`candidate.true_fused_launch_count` stays at zero.
 The same ABI also exposes graph-body node counts for the diagnostic wrapper:
 one CE/dlogits node, one dHidden node, and one dWeight node per replay. Native
 GPT runtime JSON reports `lm_head_fused_graph_body_*_count_per_replay` and

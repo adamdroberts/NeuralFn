@@ -106,6 +106,11 @@ Real training tensors must not pass through graph editor node objects.
     GPT full-loop JSON reports `lm_head_classifier_true_fused_launch_count`, and
     the paired speed gate treats zero observed full-loop true-fused launches as
     a failure even when capability/path metadata says strict true fused.
+  - 2026-06-26 tightened the same counter again so it increments only after
+    CUDA accepts the cooperative `cudaLaunchCooperativeKernel` call. Validation
+    exits, unsupported cooperative launch devices, occupancy failures, and
+    rejected prelaunch attempts no longer count as observed true-fused kernel
+    launches.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts

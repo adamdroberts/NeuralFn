@@ -1557,10 +1557,11 @@ True-fused cooperative smoke runs also expose
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()` through the Tile
 ops ABI, and `tools/bench_lm_head_backward_candidate.sh` includes
 `true_fused_launch_count` in each variant JSON payload. This counter is separate
-from the sequence-wrapper and CUDA Graph counters, so a strict true-fused
-candidate must prove that the cooperative kernel actually launched instead of
-passing only on capability strings. Strict LM-head benchmark profiles now fail
-when `candidate_true_fused_capability=true` but
+from the sequence-wrapper and CUDA Graph counters, and it increments only after
+CUDA accepts the cooperative kernel launch, so a strict true-fused candidate
+must prove that the cooperative kernel actually launched instead of passing
+only on capability strings. Strict LM-head benchmark profiles now fail when
+`candidate_true_fused_capability=true` but
 `candidate.true_fused_launch_count` remains zero. Full-loop native GPT JSON
 reports the same evidence as `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats it as a hot route counter for

@@ -1851,6 +1851,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "g_lm_head_classifier_true_fused_launch_count" in kernels_source
     assert "lm_head_classifier_true_fused_launch_count()" in kernels_source
     assert "g_lm_head_classifier_true_fused_launch_count.fetch_add" in kernels_source
+    assert "status = cudaLaunchCooperativeKernel(" in kernels_source
+    assert (
+        "if (status == cudaSuccess && cudaPeekAtLastError() == cudaSuccess) {\n"
+        "    g_lm_head_classifier_true_fused_launch_count.fetch_add"
+    ) in kernels_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
     assert "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
     assert "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
