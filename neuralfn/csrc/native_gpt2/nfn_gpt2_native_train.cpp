@@ -3290,7 +3290,26 @@ std::vector<std::string> cuda_runtime_candidates(const Config& cfg) {
     if (!env_value.empty()) {
         return {env_value};
     }
-    return {"libcudart.so", "libcudart.so.13", "libcudart.so.12"};
+    std::vector<std::string> candidates;
+    auto append_existing = [&](const std::string& path) {
+        if (fs::exists(path) &&
+            std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+            candidates.push_back(path);
+        }
+    };
+    auto append = [&](const std::string& path) {
+        if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+            candidates.push_back(path);
+        }
+    };
+    append_existing("/usr/local/cuda/lib64/libcudart.so.13");
+    append_existing("/usr/local/cuda/lib64/libcudart.so");
+    append_existing("/usr/local/cuda-13/lib64/libcudart.so.13");
+    append_existing("/usr/local/cuda-13/lib64/libcudart.so");
+    append("libcudart.so.13");
+    append("libcudart.so");
+    append("libcudart.so.12");
+    return candidates;
 }
 
 std::string cuda_version_string(int encoded_version) {

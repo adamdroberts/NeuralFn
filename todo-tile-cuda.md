@@ -75,6 +75,15 @@ Real training tensors must not pass through graph editor node objects.
   `build/nfn_gpt_native_train` to `0.083 ms` on
   `build/nfn_gpt_native_train_linked`, with `torch_required=false` and
   `graph_editor_tensor_flow=false`.
+- [x] Prefer the installed CUDA 13 runtime path in native C++ startup when no
+  explicit `--cuda-runtime-lib` / `NFN_CUDA_RUNTIME_LIB` is supplied. The
+  resolver now checks `/usr/local/cuda/lib64/libcudart.so.13` and adjacent
+  installed Toolkit paths before generic sonames. A 2026-06-26 linked one-step
+  TinyStories run selected `/usr/local/cuda/lib64/libcudart.so.13`, reported
+  `setup.load_cuda_runtime=0.174629 ms`, `torch_required=false`, and
+  `graph_editor_tensor_flow=false`; explicit generic `libcudart.so` comparison
+  measured `0.195069 ms`. This removes a small loader-search cost only; large
+  startup buckets remain arena materialization and token-weight initialization.
 - [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
   reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
   access, but the same command with GPU access sees the dedicated RTX 5090

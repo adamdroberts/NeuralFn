@@ -638,6 +638,10 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "setup.load_tile_ops" in source
     assert "setup.load_cuda_runtime" in source
     assert "setup.cuda_runtime_symbols" in source
+    assert 'append_existing("/usr/local/cuda/lib64/libcudart.so.13")' in source
+    assert 'append_existing("/usr/local/cuda/lib64/libcudart.so")' in source
+    assert 'append("libcudart.so.13")' in source
+    assert 'append("libcudart.so")' in source
     assert "tile_ops_dlopen_binding_strategy" in source
     assert "RTLD_LAZY | RTLD_LOCAL" in source
     assert "tile_ops_dlopen_wall_ms" in source

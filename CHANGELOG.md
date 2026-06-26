@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native CUDA runtime discovery now prefers concrete installed CUDA Toolkit
+  paths before generic loader sonames when `--cuda-runtime-lib` /
+  `NFN_CUDA_RUNTIME_LIB` is not set. On the CUDA 13.3 WSL workstation path the
+  linked dense GPT binary selects `/usr/local/cuda/lib64/libcudart.so.13`
+  directly, then falls back to `libcudart.so.13`, `libcudart.so`, and
+  `libcudart.so.12` only when no installed path exists. This is a small startup
+  cleanup; the remaining large setup buckets are still arena materialization
+  and token-weight initialization, and the main throughput gap remains
+  LM-head/block kernel work.
+
+  Verification: ran the focused native GPT startup source-contract pytest;
+  rebuilt the linked native GPT CLI; ran linked `--smoke-tile-ops` on the
+  dedicated RTX 5090 and confirmed
+  `cuda_runtime_library=/usr/local/cuda/lib64/libcudart.so.13`; ran one native
+  dense GPT training step with stage timing and confirmed
+  `setup.load_cuda_runtime=0.174629 ms`, `torch_required=false`, and
+  `graph_editor_tensor_flow=false`; compared explicit generic
+  `--cuda-runtime-lib libcudart.so` at `setup.load_cuda_runtime=0.195069 ms`;
+  ran `git diff --check`.
+
 - Tightened strict true-fused LM-head launch telemetry. The raw Tile CUDA
   launcher now increments
   `nfn_native_tile_lm_head_classifier_true_fused_launch_count()` only after
