@@ -1455,7 +1455,7 @@ The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved setup wall to
 `0.834325x`, but moved lazy plan work into training: train-loop wall regressed
 to `1.015300x`, first-step CUDA-event time to `1.044809x`, tokens/sec to
 `0.984974x`, LM-head backward to `1.031614x`, and block backward to
-`1.023253x`. Keep full plan prewarm enabled for real training unless a future
+`1.023253x`. Keep full plan prewarm disabled for real training unless a future
 same-script gate improves both setup and hot training metrics.
 The raw Tile ABI also exposes a cuBLAS handle prewarm hook for the remaining
 GEMMEx routes that are not covered by cuBLASLt plan-cache prewarm. Native GPT
@@ -1499,7 +1499,10 @@ Normal native JSON also reports `linear_cublaslt_plan_cache_available`,
 `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache` entries
 with shape, transpose, selected heuristic, returned heuristic count, workspace,
 and epilogue metadata. This is a low-overhead plan-cache snapshot and stays
-available when synchronized `linear_shape_stats` timing is disabled.
+available when synchronized `linear_shape_stats` timing is disabled. The paired
+speed tool treats shared-shape plan differences plus baseline-only or
+candidate-only plan-cache shapes as native route-gate evidence, so a candidate
+that only primes a new cuBLASLt plan is no longer mislabeled as timing-only.
 
 The compiled `nfn_native_train` frontend can now be used directly as the
 startup-fast dense GPT training command instead of relying on the Python

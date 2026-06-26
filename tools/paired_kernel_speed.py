@@ -2384,7 +2384,7 @@ def evaluate_native_route_change_gate(
     has_hot_route_counter_change = route_changes.get("has_hot_route_counter_change") is True
     has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
     has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
-    has_plan_cache_change = bool(cublaslt_plan_cache.get("plan_cache_changed"))
+    has_plan_cache_change = bool(cublaslt_plan_cache.get("has_plan_cache_change"))
     passed = (
         not required
         or has_hot_route_counter_change
@@ -2530,12 +2530,14 @@ def summarize_cublaslt_plan_cache(rows: Sequence[dict[str, object]]) -> dict[str
         }
         if changed_fields:
             plan_changes.append({"shape": key, "changed": changed_fields})
+    baseline_only = sorted(set(by_command["baseline"]) - set(by_command["candidate"]))
+    candidate_only = sorted(set(by_command["candidate"]) - set(by_command["baseline"]))
     return {
         "enabled": bool(rows_out),
         "shared_count": len(rows_out),
-        "baseline_only": sorted(set(by_command["baseline"]) - set(by_command["candidate"])),
-        "candidate_only": sorted(set(by_command["candidate"]) - set(by_command["baseline"])),
-        "has_plan_cache_change": bool(plan_changes),
+        "baseline_only": baseline_only,
+        "candidate_only": candidate_only,
+        "has_plan_cache_change": bool(plan_changes or baseline_only or candidate_only),
         "plan_cache_changed_count": len(plan_changes),
         "plan_cache_changed": plan_changes,
         "shared": rows_out,

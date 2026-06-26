@@ -5836,6 +5836,52 @@ def test_paired_kernel_speed_tool_summarizes_cublaslt_plan_cache() -> None:
     assert changed["selected_heuristics"] == {"baseline": [1], "candidate": [0]}
 
 
+def test_paired_kernel_speed_tool_counts_side_only_plan_cache_as_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    candidate_plan = {
+        "m": 768,
+        "n": 65536,
+        "k": 2304,
+        "op_a_name": "N",
+        "op_b_name": "N",
+        "selected_heuristic": 1,
+        "returned_heuristics": 8,
+        "workspace_bytes": 134217728,
+        "epilogue": 512,
+    }
+    rows = [
+        {
+            "baseline": {"native_cublaslt_plan_cache": []},
+            "candidate": {"native_cublaslt_plan_cache": [candidate_plan]},
+        }
+    ]
+
+    summary = module.summarize_cublaslt_plan_cache(rows)
+    gate = module.evaluate_native_route_change_gate(
+        required=True,
+        route_changes={"has_route_counter_change": False, "has_hot_route_counter_change": False},
+        strategy_changes={"has_strategy_value_change": False},
+        linear_shape_stats={},
+        cublaslt_plan_cache=summary,
+    )
+
+    assert summary["enabled"] is False
+    assert summary["has_plan_cache_change"] is True
+    assert summary["candidate_only"] == ["cublaslt:768x65536x2304:N,N"]
+    assert gate["passed"] is True
+    assert gate["has_cublaslt_plan_cache_change"] is True
+
+
 def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:
     script = Path("tools/paired_kernel_speed.py")
     failing = tmp_path / "native_fail.py"

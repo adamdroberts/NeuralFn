@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed SM120 paired benchmark route gating for cuBLASLt plan-cache-only
+  candidates. `tools/paired_kernel_speed.py` now reads
+  `native_cublaslt_plan_cache.has_plan_cache_change` in the route gate and
+  treats baseline-only or candidate-only plan-cache shapes as real plan-cache
+  evidence, in addition to shared-shape heuristic/workspace/epilogue changes.
+  This prevents candidates such as cuBLASLt plan prewarm from being mislabeled
+  as timing-only when they prime an extra plan without changing ordinary route
+  counters. The README and CLI/SDK docs now also clarify that full cuBLASLt plan
+  prewarm remains default-off for native GPT training.
+
+  Migration note: benchmark JSON gains stricter semantics for
+  `native_route_change_gate.has_cublaslt_plan_cache_change`; consumers that
+  expected side-only plan-cache entries to be ignored should treat them as
+  route evidence.
+
+  Verification: reran a production no-stage cuBLASLt prewarm comparison on the
+  dedicated RTX 5090 that exposed the candidate-only plan-cache entry, then
+  added focused unit coverage for side-only plan-cache route gating.
+
 - Added SM120 native GPT stored-activation placement diagnostics for reduced
   cache counts. The trainer now accepts
   `NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=head|tail` and
