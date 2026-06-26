@@ -722,6 +722,10 @@ NATIVE_METRIC_PATHS = (
         "uint16_arena_pointer_assign_wall_ms",
         ("uint16_arena_pointer_assign_wall_ms",),
     ),
+    (
+        "token_weight_bf16_padding_memset_count",
+        ("token_weight_bf16_padding_memset_count",),
+    ),
     ("uint16_arena_first_requested", ("uint16_arena_first_requested",)),
     ("uint16_arena_first_enabled", ("uint16_arena_first_enabled",)),
     ("arena_materialize_order", ("arena_materialize_order",)),
@@ -1055,6 +1059,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "token_weight_init_legacy_mod17_enabled",
     "token_weight_bf16_initial_refresh_fusion_enabled",
     "token_weight_bf16_initial_refresh_elided",
+    "token_weight_bf16_padding_memset_count",
 )
 NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_wall_ms_per_step",

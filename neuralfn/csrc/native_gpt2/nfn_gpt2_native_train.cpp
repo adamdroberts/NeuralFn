@@ -13688,6 +13688,7 @@ int run_transformer_lm_training_json(
     std::int64_t adamw_bf16_param_kernel_launches = 0;
     std::int64_t adamw_bf16_param_bf16_grad_kernel_launches = 0;
     std::int64_t token_weight_bf16_fused_adamw_refresh_count = 0;
+    std::int64_t token_weight_bf16_padding_memset_count = 0;
     std::int64_t gradient_sumsq_kernel_launches = 0;
     std::int64_t accumulation_zero_kernel_launches = 0;
     std::int64_t float_arena_requested_elements = 0;
@@ -16286,14 +16287,38 @@ int run_transformer_lm_training_json(
                     token_weight_padding_elements,
                     "token_weight.padding.zero");
                 if (error.empty() && token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
-                    run(float32_to_bf16_bits(
-                            token_weight + public_token_weight_elements,
+                    if (cuda_memset_async != nullptr) {
+                        const std::size_t bytes =
+                            sizeof(std::uint16_t) * static_cast<std::size_t>(token_weight_padding_elements);
+                        const int status = cuda_memset_async(
                             token_weight_bf16 + public_token_weight_elements,
-                            token_weight_padding_elements,
-                            nullptr),
-                        "token_weight_bf16.padding.zero_refresh");
-                    if (error.empty()) {
-                        token_weight_bf16_refresh_count += 1;
+                            0,
+                            bytes,
+                            nullptr);
+                        if (status == 0) {
+                            token_weight_bf16_padding_memset_count += 1;
+                            token_weight_bf16_refresh_count += 1;
+                        } else {
+                            run(float32_to_bf16_bits(
+                                    token_weight + public_token_weight_elements,
+                                    token_weight_bf16 + public_token_weight_elements,
+                                    token_weight_padding_elements,
+                                    nullptr),
+                                "token_weight_bf16.padding.zero_refresh");
+                            if (error.empty()) {
+                                token_weight_bf16_refresh_count += 1;
+                            }
+                        }
+                    } else {
+                        run(float32_to_bf16_bits(
+                                token_weight + public_token_weight_elements,
+                                token_weight_bf16 + public_token_weight_elements,
+                                token_weight_padding_elements,
+                                nullptr),
+                            "token_weight_bf16.padding.zero_refresh");
+                        if (error.empty()) {
+                            token_weight_bf16_refresh_count += 1;
+                        }
                     }
                 }
             }
@@ -23744,6 +23769,8 @@ int run_transformer_lm_training_json(
         << "  \"token_i64_arena_elements\": " << token_i64_arena_elements << ",\n"
         << "  \"token_u16_device_arena_elements\": " << token_u16_device_arena_elements << ",\n"
         << "  \"token_u16_pinned_arena_elements\": " << token_u16_pinned_arena_elements << ",\n"
+        << "  \"token_weight_bf16_padding_memset_count\": "
+        << token_weight_bf16_padding_memset_count << ",\n"
         << "  \"token_weight_init_strategy\": \"" << token_weight_init_strategy << "\",\n"
         << "  \"token_weight_threaded_init_enabled\": "
         << (token_weight_threaded_init_enabled ? "true" : "false") << ",\n"
@@ -24248,6 +24275,8 @@ int run_transformer_lm_training_json(
         << "    \"token_weight_bf16_shadow_enabled\": "
         << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
+        << "    \"token_weight_bf16_padding_memset_count\": "
+        << token_weight_bf16_padding_memset_count << ",\n"
         << "    \"token_weight_bf16_initial_refresh_fusion_enabled\": "
         << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_bf16_adamw_refresh_fusion_enabled\": "

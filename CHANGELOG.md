@@ -237,6 +237,18 @@ Future updates should append new entries here rather than replacing older notes.
   The linked candidate passed the setup wall gate at `0.868933x` of the dynamic
   baseline and token-weight init measured `0.937122x` of baseline.
 
+- The default dense GPT token-weight padding path now zeroes known-zero BF16
+  padded vocabulary rows with `cudaMemsetAsync` when the CUDA runtime symbol is
+  available, instead of launching a float-to-BF16 conversion kernel over the
+  already-zero FP32 padding. Runtime JSON reports
+  `token_weight_bf16_padding_memset_count` at the top level and inside
+  `block_state_layout`.
+
+  Verification: rebuilt the linked native GPT trainer, reran the focused paired
+  benchmark metric tests, ran a startup-only linked trainer probe on the RTX
+  5090 and confirmed `token_weight_bf16_padding_memset_count: 1`, and ran
+  `git diff --check`.
+
 - `tools/train_gpt_sm120.sh` documentation and failure guidance now match the
   actual workstation default: the helper prefers
   `build/nfn_gpt_native_train_linked`, passes `--tile-ops-lib linked` on that

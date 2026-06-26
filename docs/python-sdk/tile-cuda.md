@@ -70,7 +70,10 @@ sub-bucket. Enable it only for paired bisection with
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
-`token_weight_padding_zero_launches_elided`.
+`token_weight_padding_zero_launches_elided`. On the default initializer path,
+known-zero BF16 padding rows use direct `cudaMemsetAsync` when that runtime
+symbol is available, and runtime JSON reports
+`token_weight_bf16_padding_memset_count`.
 
 The diagnostic dense GPT LM-head probability-only CE+dlogits kernel writes
 aligned BF16 rows with vec8 normal stores in the raw Tile C ABI. It is only
@@ -1834,8 +1837,10 @@ reproduce the older two-pass startup path. Runtime JSON reports
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
-`token_weight_padding_zero_launches_elided`, and `startup_only=True` isolates
-the setup cost for SDK-side paired timing.
+`token_weight_padding_zero_launches_elided`, plus
+`token_weight_bf16_padding_memset_count` for the default direct-BF16-padding
+zero route, and `startup_only=True` isolates the setup cost for SDK-side paired
+timing.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head
 CE backward scale includes the microbatch accumulation factor, LM-head dWeight

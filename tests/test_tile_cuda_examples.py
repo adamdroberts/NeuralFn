@@ -4582,7 +4582,8 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "\\\"token_weight_init_strategy\\\": \\\"device-vector4-power2-deterministic-fused-bf16-shadow\\\", "
         "\\\"token_weight_vector4_init_enabled\\\": true, "
         "\\\"token_weight_fast_int32_init_enabled\\\": true, "
-        "\\\"token_weight_bf16_initial_refresh_fusion_enabled\\\": true"
+        "\\\"token_weight_bf16_initial_refresh_fusion_enabled\\\": true, "
+        "\\\"token_weight_bf16_padding_memset_count\\\": 1"
         "}"
     )
     candidate_json = baseline_json.replace(
@@ -4638,11 +4639,16 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     assert payload["candidate_native_metric_values"]["token_weight_init_strategy"] == [
         "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
     ]
+    assert payload["candidate_native_metric_values"]["token_weight_bf16_padding_memset_count"] == [
+        "1"
+    ]
+    assert payload["candidate_native_metrics"]["token_weight_bf16_padding_memset_count"]["mean"] == 1.0
     assert "device_allocator_strategy: cudaMallocAsync-null-stream" in proc.stdout
     assert (
         "token_weight_init_strategy: "
         "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
     ) in proc.stdout
+    assert "token_weight_bf16_padding_memset_count: 1" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:

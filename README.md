@@ -2785,7 +2785,10 @@ scrubbing padded dlogit columns every row. Set
 only for paired diagnostics against the previous full-padded-token-init and
 CE-padding-scrub route. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
 `token_weight_padding_zero_enabled`, `token_weight_init_elements`, and
-`token_weight_padding_elements`.
+`token_weight_padding_elements`. When a BF16 token-weight shadow is present and
+`cudaMemsetAsync` is available, the trainer now zeroes the padded BF16 rows
+directly instead of launching a float-to-BF16 conversion kernel over known-zero
+FP32 padding; JSON reports `token_weight_bf16_padding_memset_count`.
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` defaults on for dense GPT startup,
 using the vectorized token-weight initializer while preserving the deterministic
 power-of-two initialization contract and fused BF16 shadow write. The

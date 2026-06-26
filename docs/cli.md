@@ -148,7 +148,10 @@ The compiled runtime reports token-weight startup routes with
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
-`token_weight_padding_zero_launches_elided`. The padded-vocab fused BF16-shadow
+`token_weight_padding_zero_launches_elided`. On the default initializer path,
+known-zero BF16 padding rows are zeroed with `cudaMemsetAsync` when available
+instead of a float-to-BF16 conversion kernel; JSON reports
+`token_weight_bf16_padding_memset_count`. The padded-vocab fused BF16-shadow
 initializer is diagnostic-only and default-off; set
 `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only for paired startup
 bisection after rebuilding the trainer-facing Tile ops library. The padded

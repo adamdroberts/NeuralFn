@@ -2505,6 +2505,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "float_arena_pointer_assign_wall_ms" in speed_source
     assert "uint16_arena_cuda_malloc_wall_ms" in speed_source
     assert "uint16_arena_pointer_assign_wall_ms" in speed_source
+    assert "token_weight_bf16_padding_memset_count" in speed_source
     assert "uint16_arena_first_enabled" in speed_source
     assert "arena_materialize_order" in speed_source
     assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
@@ -9614,6 +9615,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in source_text
     assert "zero_token_padding_enabled" in gpt2_source_text
+    assert "token_weight_bf16_padding_memset_count" in gpt2_source_text
+    assert "cuda_memset_async(\n                            token_weight_bf16 + public_token_weight_elements" in gpt2_source_text
+    assert '\\"token_weight_bf16_padding_memset_count\\"' in gpt2_source_text
     assert "wte.backward_weight.u16" in gpt2_source_text
     assert "elided-direct-u16-kernels" in gpt2_source_text
     assert "token_u16_arena.copy_async" in gpt2_source_text
