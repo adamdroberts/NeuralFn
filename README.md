@@ -1543,6 +1543,13 @@ JSON reports that value as
 LM-head benchmark reports it as `candidate_symbol_abi_path_class` so strict
 candidate gates can compare ABI-declared route class against counter-inferred
 route class.
+True-fused cooperative smoke runs also expose
+`nfn_native_tile_lm_head_classifier_true_fused_launch_count()` through the Tile
+ops ABI, and `tools/bench_lm_head_backward_candidate.sh` includes
+`true_fused_launch_count` in each variant JSON payload. This counter is separate
+from the sequence-wrapper and CUDA Graph counters, so a strict true-fused
+candidate must prove that the cooperative kernel actually launched instead of
+passing only on capability strings.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

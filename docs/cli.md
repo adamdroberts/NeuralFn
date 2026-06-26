@@ -1114,6 +1114,12 @@ The companion ABI function
 `lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
 LM-head backward benchmark reports the same value as
 `candidate_symbol_abi_path_class`.
+Strict true-fused cooperative smoke profiles additionally report
+`true_fused_launch_count` for each focused LM-head benchmark variant. The field
+comes from
+`nfn_native_tile_lm_head_classifier_true_fused_launch_count()` and is separate
+from the diagnostic sequence-wrapper and CUDA Graph counters, so candidate
+gates can prove the monolithic cooperative kernel launched.
 The same ABI also exposes graph-body node counts for the diagnostic wrapper:
 one CE/dlogits node, one dHidden node, and one dWeight node per replay. Native
 GPT runtime JSON reports `lm_head_fused_graph_body_*_count_per_replay` and

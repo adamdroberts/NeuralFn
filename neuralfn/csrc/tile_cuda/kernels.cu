@@ -119,6 +119,7 @@ std::atomic<std::int64_t> g_lm_head_classifier_last_rows{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_vocab{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_row_stride{0};
 std::atomic<std::int64_t> g_lm_head_classifier_loss_bin_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_classifier_true_fused_launch_count{0};
 std::atomic<std::int64_t> g_bf16_to_f32_vec4_count{0};
 struct TokenCrossEntropyWorkspace {
   float* row_max = nullptr;
@@ -19643,6 +19644,7 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
     bool no_loss,
     cudaStream_t stream) {
   g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_true_fused_launch_count.fetch_add(1, std::memory_order_relaxed);
   g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
   g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
   g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
@@ -21423,6 +21425,7 @@ void reset_lm_head_classifier_chunk_stats() {
   g_lm_head_classifier_last_vocab.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_last_row_stride.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_loss_bin_launch_count.store(0, std::memory_order_relaxed);
+  g_lm_head_classifier_true_fused_launch_count.store(0, std::memory_order_relaxed);
 }
 
 std::int64_t lm_head_classifier_chunk_launch_count() {
@@ -21443,6 +21446,10 @@ std::int64_t lm_head_classifier_last_row_stride() {
 
 std::int64_t lm_head_classifier_loss_bin_launch_count() {
   return g_lm_head_classifier_loss_bin_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_true_fused_launch_count() {
+  return g_lm_head_classifier_true_fused_launch_count.load(std::memory_order_relaxed);
 }
 
 std::int64_t attention_forward_row_fallback_count() {

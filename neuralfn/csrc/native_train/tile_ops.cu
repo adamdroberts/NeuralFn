@@ -39,6 +39,7 @@ std::int64_t lm_head_classifier_last_rows();
 std::int64_t lm_head_classifier_last_vocab();
 std::int64_t lm_head_classifier_last_row_stride();
 std::int64_t lm_head_classifier_loss_bin_launch_count();
+std::int64_t lm_head_classifier_true_fused_launch_count();
 void launch_lm_head_classifier_backward_prob_only_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
     std::uint16_t*, const std::uint16_t*, std::int64_t, std::int64_t, std::int64_t, float, cudaStream_t);
 void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits(
@@ -2459,6 +2460,10 @@ std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride() {
 
 std::int64_t nfn_native_tile_lm_head_classifier_loss_bin_launch_count() {
     return neuralfn::tile_cuda::lm_head_classifier_loss_bin_launch_count();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_true_fused_launch_count() {
+    return neuralfn::tile_cuda::lm_head_classifier_true_fused_launch_count();
 }
 
 std::int64_t nfn_native_tile_lm_head_cooperative_sequence_launch_count() {

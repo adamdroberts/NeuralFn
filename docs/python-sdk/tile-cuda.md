@@ -577,6 +577,11 @@ returns `3`, with one CE/dlogits node, one dHidden node, and one dWeight node.
 Native GPT JSON mirrors these as per-replay and replay-total
 `lm_head_fused_graph_body_*` fields, so same-script benchmarks can attribute the
 current wrapper without promoting it as a real fused kernel.
+The strict cooperative true-fused route has its own launch counter:
+`nfn_native_tile_lm_head_classifier_true_fused_launch_count()`. Focused
+LM-head benchmark JSON mirrors it as `true_fused_launch_count` on each variant,
+which lets candidate tests prove that the monolithic cooperative kernel
+actually launched instead of relying only on ABI path-class strings.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

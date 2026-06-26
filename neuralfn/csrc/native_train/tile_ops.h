@@ -34,6 +34,7 @@ std::int64_t nfn_native_tile_lm_head_classifier_last_rows();
 std::int64_t nfn_native_tile_lm_head_classifier_last_vocab();
 std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride();
 std::int64_t nfn_native_tile_lm_head_classifier_loss_bin_launch_count();
+std::int64_t nfn_native_tile_lm_head_classifier_true_fused_launch_count();
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count();
 std::int64_t nfn_native_tile_attention_forward_scalar_launch_count();
 int nfn_native_tile_attention_forward_row_last_error();

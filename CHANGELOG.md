@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit strict true-fused LM-head launch telemetry. The Tile ops ABI
+  now exports `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`,
+  the true-fused cooperative launcher increments it separately from the
+  diagnostic sequence-wrapper and CUDA Graph counters, and
+  `neuralfn/csrc/native_train/lm_head_backward_bench.cpp` reports
+  `true_fused_launch_count` for each variant JSON payload. Candidate runs can
+  now prove that the strict cooperative true-fused kernel actually launched
+  instead of relying only on capability/path-class strings.
+
+  Verification: ran the focused source-contract pytest for the cooperative
+  LM-head ABI and torch-free Tile ops export contract; ran the strict
+  true-fused LM-head smoke benchmark, which reported candidate
+  `true_fused_launch_count: 1` with sequence-wrapper and CUDA Graph counters at
+  zero; ran `git diff --check`.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now adds
   `train_loop_cuda_event_first_step_wall_ms_per_step <= 1.000` to the automatic
   candidate-over-llm.kittens reference gate for multi-step event-timed runs that

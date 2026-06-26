@@ -122,6 +122,7 @@ struct VariantResult {
     std::int64_t concurrent_count = 0;
     std::int64_t legacy_count = 0;
     std::int64_t loss_bin_count = 0;
+    std::int64_t true_fused_launch_count = 0;
     std::int64_t graph_capture_attempt_count = 0;
     std::int64_t graph_capture_success_count = 0;
     std::int64_t graph_cache_hit_count = 0;
@@ -317,6 +318,7 @@ VariantResult run_variant(
     CountFn concurrent_count,
     CountFn legacy_count,
     CountFn loss_bin_count,
+    CountFn true_fused_launch_count,
     CountFn graph_capture_attempt_count,
     CountFn graph_capture_success_count,
     CountFn graph_cache_hit_count,
@@ -417,6 +419,7 @@ VariantResult run_variant(
     result.concurrent_count = concurrent_count();
     result.legacy_count = legacy_count();
     result.loss_bin_count = loss_bin_count();
+    result.true_fused_launch_count = true_fused_launch_count();
     result.graph_capture_attempt_count = graph_capture_attempt_count();
     result.graph_capture_success_count = graph_capture_success_count();
     result.graph_cache_hit_count = graph_cache_hit_count();
@@ -692,6 +695,7 @@ std::string render_json(
             << "\"concurrent_count\":" << value.concurrent_count << ","
             << "\"legacy_count\":" << value.legacy_count << ","
             << "\"loss_bin_count\":" << value.loss_bin_count << ","
+            << "\"true_fused_launch_count\":" << value.true_fused_launch_count << ","
             << "\"graph_capture_attempt_count\":" << value.graph_capture_attempt_count << ","
             << "\"graph_capture_success_count\":" << value.graph_capture_success_count << ","
             << "\"graph_cache_hit_count\":" << value.graph_cache_hit_count << ","
@@ -804,6 +808,8 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
         auto loss_bin_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
+        auto true_fused_launch_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_classifier_true_fused_launch_count");
         auto graph_capture_attempt_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_capture_attempt_count");
         auto graph_capture_success_count =
@@ -893,6 +899,7 @@ int main(int argc, char** argv) {
                 concurrent_count,
                 legacy_count,
                 loss_bin_count,
+                true_fused_launch_count,
                 graph_capture_attempt_count,
                 graph_capture_success_count,
                 graph_cache_hit_count,

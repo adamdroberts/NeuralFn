@@ -1804,6 +1804,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count" in tile_ops_source
@@ -1837,12 +1839,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "cooperative_streams.dhidden_done" in tile_ops_source
     assert "cooperative_streams.dweight_done" in tile_ops_source
     assert "launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16" in tile_ops_source
-    assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in (
-        root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu"
-    ).read_text(encoding="utf-8")
-    assert "cg::this_grid()" in (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+    kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
         encoding="utf-8"
     )
+    assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in kernels_source
+    assert "cg::this_grid()" in kernels_source
+    assert "g_lm_head_classifier_true_fused_launch_count" in kernels_source
+    assert "lm_head_classifier_true_fused_launch_count()" in kernels_source
+    assert "g_lm_head_classifier_true_fused_launch_count.fetch_add" in kernels_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
     assert "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
     assert "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE" in tile_ops_source
@@ -1873,6 +1877,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source
+    bench_source = (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "true_fused_launch_count" in bench_source
+    assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in bench_source
     assert "g_lm_head_cooperative_sequence_launch_count" in tile_ops_source
     assert "linked_tile_ops_requested ? RTLD_DEFAULT : dlopen" in source
     assert "if (!linked_tile_ops_requested && handle == nullptr)" in source
@@ -7989,6 +7998,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     gpt2_evo_source = root / "neuralfn" / "csrc" / "native_train" / "gpt2_evo_native_train.cpp"
     build_script = root / "tools" / "build_native_train_tile_ops.sh"
     candidate_bench = root / "tools" / "bench_native_gpt_sm120_candidate.sh"
+    speed_tool = root / "tools" / "paired_kernel_speed.py"
     gpt2_source_text = gpt2_source.read_text()
     gpt2_evo_source_text = gpt2_evo_source.read_text()
     token_shards_header_text = token_shards_header.read_text()
@@ -7998,6 +8008,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     kernels_text = kernels.read_text()
     script_text = build_script.read_text()
     candidate_bench_text = candidate_bench.read_text()
+    speed_source = speed_tool.read_text(encoding="utf-8")
 
     assert "-Xlinker -Bsymbolic" in script_text
     assert "cudaRuntimeGetVersion" in gpt2_source_text
@@ -9006,6 +9017,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     )
     assert "nfn_native_tile_lm_head_classifier_chunk_launch_count" in header_text
     assert "nfn_native_tile_lm_head_classifier_chunk_launch_count" in source_text
+    assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in header_text
+    assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in source_text
     assert "launch_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in kernels_text
     assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in kernels_text
     assert "launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in kernels_text
