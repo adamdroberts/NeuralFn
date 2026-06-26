@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the rejected TK QKV first-use prewarm profiles after the WSL CUDA
+  reinstall. Full-shape prewarm still only shifts latency from the first train
+  step into setup: it improved NeuralFn train-loop wall to `0.976642x` and
+  forward-QKV first-step average to `0.360843x`, but setup regressed to
+  `1.204975x` and strict llm.kittens reference gates still failed at
+  `1.006631x` train-loop wall, `1.008535x` first-step CUDA-event timing,
+  `1.005693x` steady-state CUDA-event timing, and `0.993379x` tokens/sec. The
+  one-row prewarm variant also remains rejected: it improved train-loop wall to
+  `0.975482x` and forward-QKV first-step average to `0.364558x`, but setup
+  regressed to `1.249672x` and still missed reference gates at `1.007550x`,
+  `1.009389x`, `1.006644x`, and `0.992498x` tokens/sec.
+
+  Verification: reran both rejected profiles on the dedicated RTX 5090 with
+  3-step, 1-sample stage timing and the train-sm120 `-g 144` cadence; both
+  exited with the expected strict llm.kittens candidate/reference gate failure.
+
 - The paired SM120 benchmark gate for `--require-native-lm-head-true-fused` now
   fails strict single-kernel candidates that launch successfully but miss the
   candidate/reference parity gates. Those runs report
