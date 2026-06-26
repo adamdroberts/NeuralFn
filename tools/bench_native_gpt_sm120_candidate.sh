@@ -761,12 +761,18 @@ case "${CANDIDATE_PROFILE,,}" in
   "combined_device_arena"|"combined-device-arena")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 recheck still rejects the combined float+uint16 transformer device arena. The startup-only 5-sample gate changed float_allocation_strategy/uint16_allocation_strategy to combined-transformer-device-arena and moved transformer_device_arena_cuda_malloc_count 0->1, but regressed setup_wall_ms to 1.031475x, setup.uint16_arena_materialize.total_ms to 2.339592x, and setup.token_weight_init.total_ms to 1.289567x."
+    STARTUP_ONLY=1
+    STEPS=0
+    FORCE_DISABLE_ROUTE_CHANGE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1"
     ;;
   "cuda_malloc_async"|"cuda-malloc-async"|"async_device_allocator"|"async-device-allocator")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-sample startup-only rerun enabled cudaMallocAsync but regressed setup_wall_ms to 1.145549x and setup.uint16_arena_materialize.total_ms to 1.775565x."
+    STARTUP_ONLY=1
+    STEPS=0
+    FORCE_DISABLE_ROUTE_CHANGE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1"
     ;;

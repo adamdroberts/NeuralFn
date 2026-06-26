@@ -2557,6 +2557,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "lm_head_cooperative_no_loss_backward": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1 NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1",
+        "combined_device_arena": "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1",
+        "cuda_malloc_async": "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1",
         "lm_head_cooperative_sequence_wrapper": (
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 "
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "
@@ -2578,6 +2580,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    for profile in ("combined_device_arena", "cuda_malloc_async"):
+        profile_block = bench_source.split(f'"{profile}"|', 1)[1].split("    ;;", 1)[0]
+        assert "STARTUP_ONLY=1" in profile_block
+        assert "STEPS=0" in profile_block
+        assert "FORCE_DISABLE_ROUTE_CHANGE=1" in profile_block
     assert "setup_wall_ms to 3.467504x" in bench_source
     assert "first-step CUDA-event timing to 1.048444x" in bench_source
     assert "mixed-fp32-direct-output-plus-fused-bf16-persistent-store" in (

@@ -2209,7 +2209,10 @@ startup-only 5-sample recheck regressed setup wall time to `1.031475x`,
 `setup.uint16_arena_materialize.total_ms` to `2.339592x`, and
 `setup.token_weight_init.total_ms` to `1.289567x`. The trainer now defaults
 `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`; set it to `1` only for explicit arena
-bisection.
+bisection. The `combined_device_arena` and `cuda_malloc_async` wrapper profiles
+are hard startup-only probes: they force `STARTUP_ONLY=1`, `STEPS=0`, and disable
+the route-change gate so allocator candidates are bounded by setup timing instead
+of accidentally running full training/reference loops.
 Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the

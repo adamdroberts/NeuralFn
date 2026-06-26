@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the SM120 allocator benchmark profiles `combined_device_arena` and
+  `cuda_malloc_async` so they actually run as startup-only gates. Both profiles
+  now force `STARTUP_ONLY=1`, `STEPS=0`, and disable the route-change gate,
+  matching their documented purpose and preventing accidental full training or
+  llm.kittens reference loops during allocator startup bisections.
+
+  Migration note: no native training default changed. This only changes the
+  benchmark wrapper expansion for those two rejected profiles.
+
+  Verification: added source-contract assertions that both profiles include the
+  startup-only controls, dry-ran both profiles to confirm
+  `--max-steps 0 --startup-only`, and reran a one-sample isolated
+  `cuda_malloc_async` startup gate on the dedicated RTX 5090. The fixed profile
+  completed in bounded startup time and remains rejected at `1.147787x`
+  `setup_wall_ms`, `1.120529x` float arena materialization, and `1.451783x`
+  uint16 arena materialization.
+
 - Tightened the SM120 `lm_head_true_fused_cooperative` benchmark profile
   metadata after a post-CUDA-reinstall strict probe. The profile remains
   rejected and now records that the current strict body is a scalar diagnostic:
