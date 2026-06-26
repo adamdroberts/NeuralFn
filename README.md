@@ -2679,7 +2679,7 @@ Dense GPT native train-loss sampling copies the scalar LM-head loss back with a 
 
 `NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed alias enable a default-off MLP projection side-stream diagnostic. The native trainer first materializes the shared BF16 projection grad-out, then runs fused projection dInput+dGELU and projection dWeight+bias on non-blocking side streams before synchronizing for the following MLP FC backward stage. Runtime JSON reports `block_backward_mlp_proj_concurrent_dinput_dweight_requested`, `block_backward_mlp_proj_concurrent_dinput_dweight_enabled`, and `block_backward_mlp_proj_concurrent_dinput_dweight_count`; paired benchmark summaries print the same fields. Keep it disabled for normal training: the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed gate moved the route counter from `0` to `288`, but regressed train-loop wall to `1.004101x`, steady-state CUDA-event timing to `1.004144x`, block backward to `1.009823x`, and MLP projection backward to `1.025216x`. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_concurrent_dinput_dweight` is now marked rejected unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 
-`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` disables the default dense GPT MLP FC backward ordering and restores the older dWeight+bias-before-dInput order for bisection. The default now runs MLP FC dInput before dWeight+bias because the CUDA 13.3.33 dedicated RTX 5090 rerun moved `block_backward_mlp_fc_dinput_before_dweight_count` from `0` to `288`, improved train-loop wall to `0.979044x`, steady-state CUDA-event timing to `0.997216x`, tokens/sec to `1.021478x`, block backward to `0.960721x`, and LM-head backward to `0.998613x`. The named MLP FC substage still regressed to `1.063824x`, so this remains a whole-loop default rather than a narrow MLP FC microstage win.
+`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` enables a diagnostic dense GPT MLP FC backward ordering that runs dInput before dWeight+bias. The default is restored to the older dWeight+bias-before-dInput order because the CUDA 13.3.33 dedicated RTX 5090 post-reinstall gate proved the route (`block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288`) but rejected it at `1.001167x` steady-state CUDA-event timing, `1.001447x` block backward, `1.000127x` LM-head backward, `1.004199x` MLP projection backward, and `1.003817x` MLP FC backward. The route kept train-loop wall slightly faster at `0.998065x`, but that is not enough for a quality default.
 
 `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed alias enable a diagnostic two-stream schedule for the MLP FC backward dInput and dWeight+bias pair. The trainer records a CUDA event on the default stream, waits from non-blocking dInput and dWeight streams, launches the independent kernels on those streams, and synchronizes before LayerNorm backward consumes `grad_ln2`. Runtime JSON reports `block_backward_mlp_fc_concurrent_dinput_dweight_requested`, `block_backward_pair_streams_available`, and `block_backward_mlp_fc_concurrent_dinput_dweight_enabled`; paired benchmark summaries print those fields. Keep this default-off: a CUDA 13.3.33 dedicated RTX 5090 stage-timed recheck proved the route enabled and moved `block_backward_mlp_fc_dinput_before_dweight_count` from `288` to `0`, but rejected it because `stage.block_backward.mlp_fc.total_ms` regressed to `1.025442x`, block backward to `1.005941x`, LM-head backward to `1.001738x`, steady-state CUDA-event step time to `1.003685x`, and candidate-over-llm.kittens train-loop wall time stayed at `1.028729x`.
 
@@ -3241,10 +3241,10 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
-`mlp_fc_dinput_before_dweight` is the promoted default-vs-legacy ordering gate;
-it forces the baseline to `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and
-the candidate to `1`, then gates whole-loop/block metrics rather than the
-regressed narrow MLP FC substage.
+`mlp_fc_dinput_before_dweight` is a rejected diagnostic ordering gate; it
+forces the baseline to `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and the
+candidate to `1`, then rejects the candidate unless every strict whole-loop,
+block, and LM-head gate passes.
 The wrapper also has named profiles for existing diagnostic switches that used
 to require raw candidate env overrides: `bf16_attention_grad_out`,
 `bf16_attention_dprep_grad_out`, `mlp_proj_dinput_before_dweight`,

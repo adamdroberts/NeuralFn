@@ -884,9 +884,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms to 1.017739x" in candidate_bench
     assert "mlp_fc_dinput_before_dweight" in candidate_bench
     assert "block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288" in candidate_bench
-    assert "train_loop_wall_ms_per_step improved to 0.979044x" in candidate_bench
-    assert "stage.block_backward.total_ms improved to 0.960721x" in candidate_bench
-    assert "stage.block_backward.mlp_fc.total_ms regressed to 1.063824x" in candidate_bench
+    assert "post-reinstall recheck proved the route" in candidate_bench
+    assert "steady-state CUDA-event timing regressed to 1.001167x" in candidate_bench
+    assert "The native default is restored to dWeight+bias before dInput" in candidate_bench
     assert '"mlp_proj_concurrent_dinput_dweight"|"mlp-proj-concurrent-dinput-dweight"' in candidate_bench
     assert "NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1" in candidate_bench
     assert "block_backward_mlp_proj_concurrent_dinput_dweight_count from 0 to 288" in candidate_bench
@@ -9429,7 +9429,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert (
         'env_or_empty_any({"NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT",\n'
         '                              "NFN_NATIVE_GPT2_MLP_FC_DINPUT_BEFORE_DWEIGHT"}),\n'
-        "            true);"
+        "            false);"
     ) in gpt2_source_text
     assert "block_backward_attn_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_qkv_dinput_before_dweight_count" in gpt2_source_text

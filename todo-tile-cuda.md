@@ -1495,14 +1495,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Default dense GPT native forward to fuse MLP projection residual into the next block's LN1 stats/BF16 output through `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32`, with `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=0` for bisection. The 2026-06-17 dedicated RTX 5090 same-script 3-sample run measured `0.995763x` train-loop wall time and `1.004256x` tokens/sec versus opt-out; one-step stage probe reported `mlp_residual_next_ln1_fusion_count: 88`.
 - [x] Add and reject default-off MLP projection backward order bisection (`NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1`). It mirrors the llm.kittens `matmul_backward` dInput-before-dWeight consumer order for the dense GPT MLP projection, but the 2026-06-18 dedicated RTX 5090 5-step, 3-sample same-script run measured `1.000405x` train-loop wall time and `0.999602x` tokens/sec versus the current dWeight+bias-first default, so it remains diagnostic-only.
   - 2026-06-25 reran the linked-trainer profile with stage timing. The route counter moved `0->288` and mean train-loop wall stayed near-flat at `0.999180x`, but the target `stage.block_backward.mlp_proj.dinput.total_ms` bucket regressed to `1.101843x` and total MLP projection backward regressed to `1.001268x`, so the dWeight+bias-first default remains correct.
-- [x] Promote MLP FC backward dInput-before-dWeight ordering as the dense GPT
-  native default while keeping
-  `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` as the legacy
-  dWeight+bias-first bisection path. It mirrors the llm.kittens
-  dInput-before-dWeight consumer order for dense GPT MLP FC. The original
-  2026-06-18 dedicated RTX 5090 5-step, 3-sample same-script run measured
-  `1.000858x` train-loop wall time and `0.999153x` tokens/sec, so it was first
-  kept diagnostic-only.
+- [x] Keep MLP FC backward dInput-before-dWeight ordering rejected by default
+  (`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1`). It mirrors the
+  llm.kittens dInput-before-dWeight consumer order for dense GPT MLP FC. The
+  original 2026-06-18 dedicated RTX 5090 5-step, 3-sample same-script run
+  measured `1.000858x` train-loop wall time and `0.999153x` tokens/sec, so it
+  was first kept diagnostic-only.
   - 2026-06-25 reran the profile after the 512-thread bias reducer became the
     default. The first rerun moved
     `block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288` and improved
@@ -1511,8 +1509,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     whole-loop gates: train-loop wall `0.979044x`, steady-state CUDA-event
     timing `0.997216x`, tokens/sec `1.021478x`, block backward `0.960721x`,
     and LM-head backward `0.998613x`. The named MLP FC bucket regressed to
-    `1.063824x`, so the profile is promoted as a whole-loop default-vs-legacy
-    gate, not as a narrow MLP FC microstage win.
+    `1.063824x`, so the profile was temporarily promoted as a whole-loop gate.
+  - 2026-06-26 reran the same profile after the CUDA reinstall. The route still
+    proved execution by moving
+    `block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288` and kept
+    train-loop wall slightly faster at `0.998065x`, but missed strict gates:
+    steady-state CUDA-event timing `1.001167x`, block backward `1.001447x`,
+    LM-head backward `1.000127x`, MLP projection backward `1.004199x`, and MLP
+    FC backward `1.003817x`. The dense GPT default is restored to
+    dWeight+bias-before-dInput.
 - [x] Keep attention projection backward dInput-before-dWeight ordering rejected by default (`NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1`). It mirrors the llm.kittens dInput-before-dWeight consumer order for dense GPT attention projection, but the 2026-06-24 CUDA 13.3 dedicated RTX 5090 rebuilt-binary 5-step, 3-sample same-script gate proved `block_backward_attn_proj_dinput_before_dweight_count: 0 -> 480` and rejected default promotion because train-loop wall regressed to `1.001501x`, `stage.lm_head_backward.total_ms` to `1.000290x`, `stage.block_backward.total_ms` to `1.003886x`, `stage.block_backward.mlp_proj.total_ms` to `1.002417x`, and `stage.block_backward.attn_proj.total_ms` to `1.081569x`.
 - [x] Keep the full combined projection-order route rejected after the CUDA 13.3 reinstall. Enabling the MLP projection, MLP FC, and attention projection dInput-before-dWeight switches together measured `1.000696x` train-loop wall time and `0.999321x` tokens/sec over a 5-step, 2-sample same-script dedicated RTX 5090 run, so all three dWeight-first projection schedules remain the defaults.
 - [x] Add and reject default-off attention dprep-only BF16 grad-out bisection (`NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1`). The candidate keeps attention projection dInput on the default float output path, packs dO to BF16 just before packed-attention dprep/backward, and reports `attention_backward_grad_out_dtype: "bf16-dprep-pack"`. A one-step attribution run reduced dprep timing from roughly `30.5 ms` to `24.8 ms` but added a `22.473 ms` pack, and the 2026-06-18 dedicated RTX 5090 same-script 10-step, 3-sample benchmark measured `1.007803x` train-loop wall time and `0.992260x` tokens/sec versus default, so the current float-dO dprep route remains the default.

@@ -1307,16 +1307,15 @@ baseline to
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so paired SDK/CLI runs compare the
 older separate dInput plus GELU-backward path against the fused TK route instead
 of timing the current default against itself.
-`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` disables the default MLP FC
-backward ordering and restores the older dWeight+bias-before-dInput order for
-bisection. The default reports
-`block_backward_mlp_fc_dinput_before_dweight_enabled` and moved
-`block_backward_mlp_fc_dinput_before_dweight_count` from `0` to `288` in the
-CUDA 13.3.33 RTX 5090 rerun, improving train-loop wall to `0.979044x`,
-steady-state CUDA-event timing to `0.997216x`, tokens/sec to `1.021478x`,
-block backward to `0.960721x`, and LM-head backward to `0.998613x`. The named
-MLP FC substage still regressed to `1.063824x`, so this is a whole-loop default
-rather than a narrow MLP FC microstage win.
+`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` enables a diagnostic MLP FC
+backward ordering that runs dInput before dWeight+bias. The default is restored
+to the older dWeight+bias-before-dInput order because the CUDA 13.3.33 RTX 5090
+post-reinstall gate proved the route
+(`block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288`) but rejected it
+at `1.001167x` steady-state CUDA-event timing, `1.001447x` block backward,
+`1.000127x` LM-head backward, `1.004199x` MLP projection backward, and
+`1.003817x` MLP FC backward. It kept train-loop wall slightly faster at
+`0.998065x`, but missed the strict quality gates.
 `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
 ordering switch for attention projection backward. It runs dInput before
 dWeight+bias and reports

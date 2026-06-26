@@ -636,8 +636,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
-    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 current 3-step, 2-sample stage-timed rerun promoted MLP FC dInput-before-dWeight as the native default: the route counter moved block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288, train_loop_wall_ms_per_step improved to 0.979044x, steady-state CUDA-event timing improved to 0.997216x, train_tokens_per_second improved to 1.021478x, stage.block_backward.total_ms improved to 0.960721x, and stage.lm_head_backward.total_ms improved to 0.998613x. The named stage.block_backward.mlp_fc.total_ms regressed to 1.063824x, so keep the profile as an explicit whole-loop default-vs-legacy gate rather than a narrow MLP FC microstage promotion."
-    DEFAULT_VS_LEGACY_PROFILE=1
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 3-step, 2-sample post-reinstall recheck proved the route by moving block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288 and kept train_loop_wall_ms_per_step faster at 0.998065x, but rejected the route because steady-state CUDA-event timing regressed to 1.001167x, block backward to 1.001447x, LM-head backward to 1.000127x, MLP projection backward to 1.004199x, and MLP FC backward to 1.003817x. The native default is restored to dWeight+bias before dInput; set NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1 only for intentional diagnostics."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000 stage.block_backward.total_ms=1.000 stage.lm_head_backward.total_ms=1.000}"

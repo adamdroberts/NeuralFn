@@ -1814,11 +1814,10 @@ The ordering profiles `mlp_proj_dinput_before_dweight`,
 matching execution counters in the same route-counter summary, so rejected
 scheduling candidates can be reproduced with proof that the alternate order
 actually ran.
-`mlp_fc_dinput_before_dweight` is now the promoted default-vs-legacy gate: the
-wrapper forces the baseline to
-`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and the candidate to `1`, then
-gates train-loop wall, steady-state CUDA-event timing, block backward, and
-LM-head backward rather than the regressed narrow MLP FC substage.
+`mlp_fc_dinput_before_dweight` is now a rejected diagnostic gate: the wrapper
+forces the baseline to `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and the
+candidate to `1`, then rejects the route unless train-loop wall,
+steady-state CUDA-event timing, block backward, and LM-head backward all pass.
 `qkv_dinput_ln128` reproduces the promoted default against the older
 256-row/QKV-dWeight-first route. The CUDA 13.3 dedicated RTX 5090 3-step,
 2-sample stage-timed gate improved train-loop wall to `0.989784x`,

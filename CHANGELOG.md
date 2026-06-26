@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now defaults MLP FC backward back to
+  dWeight+bias-before-dInput. `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1`
+  remains available as a diagnostic opt-in, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_dinput_before_dweight` is now a
+  rejected profile by default. The CUDA 13.3.33 dedicated RTX 5090 3-step,
+  2-sample post-reinstall gate proved the route by moving
+  `block_backward_mlp_fc_dinput_before_dweight_count` from `0` to `288` and
+  kept train-loop wall slightly faster at `0.998065x`, but rejected it on
+  strict gates: steady-state CUDA-event timing `1.001167x`, block backward
+  `1.001447x`, LM-head backward `1.000127x`, MLP projection backward
+  `1.004199x`, and MLP FC backward `1.003817x`.
+
+  **Breaking changes**: callers that relied on the implicit dense GPT native
+  MLP FC dInput-before-dWeight ordering must now set
+  `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` explicitly. The default is
+  restored to the older dWeight+bias-before-dInput order because the strict
+  quality gates no longer pass after the CUDA reinstall.
+
+  Verification: ran the post-reinstall MLP FC default-vs-legacy candidate gate
+  on the dedicated RTX 5090 and confirmed it failed through the strict metric
+  ratio gate; ran the accepted `qkv_dinput_ln128` gate and confirmed it still
+  passed; ran focused native GPT source-contract tests, `bash -n`, the runtime
+  smoke, and `git diff --check`.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now preserves the rejected
   heavy cuBLASLt shape-plan retune as the named
   `cublaslt_heavy_shape_flip` profile. The profile flips the hot block
