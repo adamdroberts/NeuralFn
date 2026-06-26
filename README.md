@@ -435,7 +435,10 @@ defaults `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
 `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000`, and
 `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so intentional runs
 fail until the strict candidate reaches current-wrapper and same-process
-reference parity. Focused benchmark JSON
+reference parity. The current strict body uses 32x32 shared-memory tiles for
+the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3 RTX
+5090 evidence still keeps it rejected (`7.046530x` slower than the current
+wrapper on a one-iteration trainer chunk). Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_forced_production_debug`; it only reports

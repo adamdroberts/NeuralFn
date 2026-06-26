@@ -12787,36 +12787,81 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
 
   grid.sync();
 
-  const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
-  const std::int64_t grad_hidden_total = rows * hidden_dim;
-  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-       index < grad_hidden_total;
-       index += stride) {
-    const std::int64_t row = index / hidden_dim;
-    const std::int64_t dim = index - row * hidden_dim;
-    const std::uint16_t* row_logits = logits + row * row_stride;
+  constexpr int kMatTile = 32;
+  __shared__ float tile_a[kMatTile][kMatTile];
+  __shared__ float tile_b[kMatTile][kMatTile];
+  const int lane = static_cast<int>(threadIdx.x);
+  const int tile_row = lane / kMatTile;
+  const int tile_col = lane - tile_row * kMatTile;
+  const bool tile_thread = lane < kMatTile * kMatTile;
+
+  const std::int64_t hidden_row_tiles = (rows + kMatTile - 1) / kMatTile;
+  const std::int64_t hidden_col_tiles = (hidden_dim + kMatTile - 1) / kMatTile;
+  const std::int64_t hidden_tiles = hidden_row_tiles * hidden_col_tiles;
+  for (std::int64_t tile_index = static_cast<std::int64_t>(blockIdx.x);
+       tile_index < hidden_tiles;
+       tile_index += static_cast<std::int64_t>(gridDim.x)) {
+    const std::int64_t row_tile = tile_index / hidden_col_tiles;
+    const std::int64_t dim_tile = tile_index - row_tile * hidden_col_tiles;
+    const std::int64_t row = row_tile * kMatTile + tile_row;
+    const std::int64_t dim = dim_tile * kMatTile + tile_col;
     float sum = 0.0f;
-    for (std::int64_t col = 0; col < vocab; ++col) {
-      const float dlogit = bf16_bits_to_f32_device(row_logits[col]);
-      const float weight = bf16_bits_to_f32_device(token_weight_bf16[col * hidden_dim + dim]);
-      sum += dlogit * weight;
+    for (std::int64_t col_base = 0; col_base < vocab; col_base += kMatTile) {
+      if (tile_thread) {
+        const std::int64_t a_col = col_base + tile_col;
+        const std::int64_t b_row = col_base + tile_row;
+        tile_a[tile_row][tile_col] =
+            row < rows && a_col < vocab ? bf16_bits_to_f32_device(logits[row * row_stride + a_col]) : 0.0f;
+        tile_b[tile_row][tile_col] =
+            b_row < vocab && dim < hidden_dim ? bf16_bits_to_f32_device(token_weight_bf16[b_row * hidden_dim + dim]) : 0.0f;
+      }
+      __syncthreads();
+      if (tile_thread && row < rows && dim < hidden_dim) {
+#pragma unroll
+        for (int k = 0; k < kMatTile; ++k) {
+          sum += tile_a[tile_row][k] * tile_b[k][tile_col];
+        }
+      }
+      __syncthreads();
     }
-    grad_hidden[index] += sum;
+    if (tile_thread && row < rows && dim < hidden_dim) {
+      grad_hidden[row * hidden_dim + dim] += sum;
+    }
   }
 
-  const std::int64_t grad_weight_total = vocab * hidden_dim;
-  for (std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-       index < grad_weight_total;
-       index += stride) {
-    const std::int64_t col = index / hidden_dim;
-    const std::int64_t dim = index - col * hidden_dim;
+  const std::int64_t weight_row_tiles = (vocab + kMatTile - 1) / kMatTile;
+  const std::int64_t weight_col_tiles = hidden_col_tiles;
+  const std::int64_t weight_tiles = weight_row_tiles * weight_col_tiles;
+  for (std::int64_t tile_index = static_cast<std::int64_t>(blockIdx.x);
+       tile_index < weight_tiles;
+       tile_index += static_cast<std::int64_t>(gridDim.x)) {
+    const std::int64_t vocab_tile = tile_index / weight_col_tiles;
+    const std::int64_t dim_tile = tile_index - vocab_tile * weight_col_tiles;
+    const std::int64_t col = vocab_tile * kMatTile + tile_row;
+    const std::int64_t dim = dim_tile * kMatTile + tile_col;
     float sum = 0.0f;
-    for (std::int64_t row = 0; row < rows; ++row) {
-      const float hidden = bf16_bits_to_f32_device(hidden_bf16[row * hidden_dim + dim]);
-      const float dlogit = bf16_bits_to_f32_device(logits[row * row_stride + col]);
-      sum += hidden * dlogit;
+    for (std::int64_t row_base = 0; row_base < rows; row_base += kMatTile) {
+      if (tile_thread) {
+        const std::int64_t a_row = row_base + tile_row;
+        const std::int64_t b_row = row_base + tile_col;
+        tile_a[tile_row][tile_col] =
+            a_row < rows && dim < hidden_dim ? bf16_bits_to_f32_device(hidden_bf16[a_row * hidden_dim + dim]) : 0.0f;
+        tile_b[tile_row][tile_col] =
+            b_row < rows && col < vocab ? bf16_bits_to_f32_device(logits[b_row * row_stride + col]) : 0.0f;
+      }
+      __syncthreads();
+      if (tile_thread && col < vocab && dim < hidden_dim) {
+#pragma unroll
+        for (int k = 0; k < kMatTile; ++k) {
+          sum += tile_a[k][tile_col] * tile_b[k][tile_row];
+        }
+      }
+      __syncthreads();
     }
-    grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
+    if (tile_thread && col < vocab && dim < hidden_dim) {
+      const std::int64_t index = col * hidden_dim + dim;
+      grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
+    }
   }
 }
 

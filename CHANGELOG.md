@@ -272,6 +272,20 @@ Future updates should append new entries here rather than replacing older notes.
   it now fails on the default parity gate while writing JSON evidence, and ran
   `git diff --check`.
 
+- Replaced the strict true-fused cooperative LM-head kernel's scalar dHidden and
+  dWeight output-element scans with 32x32 shared-memory tiled phases inside the
+  same cooperative launch. This is an intermediate kernel-body improvement, not
+  a promoted trainer route: CUDA 13.3 RTX 5090 trainer-chunk evidence still
+  fails the default parity gate at `7.046530x` candidate/current-wrapper time,
+  so the profile remains rejected until a Tensor Core or otherwise competitive
+  Tile body lands.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops`, reran the focused
+  native GPT source-contract test, ran the tiny true-fused cooperative LM-head
+  smoke on the RTX 5090, reran the one-iteration trainer-shape true-fused gate
+  and confirmed it still exits nonzero while improving over the earlier scalar
+  body, and ran `git diff --check`.
+
 - Focused LM-head backward benchmark JSON now reports
   `candidate_true_fused_production_shape`,
   `candidate_true_fused_allow_production_env`, and

@@ -2112,7 +2112,9 @@ rejected-by-default focused true-fused candidate measurement. It also defaults
 `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000`, and
 `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so the wrapper exits
 nonzero until the strict candidate reaches current-wrapper and same-process
-reference parity. The resulting
+reference parity. The current strict cooperative body uses 32x32 shared-memory
+tiles for dHidden and dWeight after the CE phase, but it is still slower than
+the CUDA graph wrapper at trainer scale and remains rejected by default. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a

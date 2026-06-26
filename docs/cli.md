@@ -1369,7 +1369,9 @@ turns on the true-fused requirement by default,
 production shape, exports the strict true-fused cooperative selector, and
 defaults the candidate/current-wrapper, candidate/reference, and
 candidate/cuBLASLt-reference ratio limits to `1.000`; keep it rejected until
-those gates pass,
+those gates pass. Its current dHidden/dWeight body uses 32x32 shared-memory
+tiles inside the cooperative launch, but trainer-scale CUDA 13.3 RTX 5090
+evidence still fails the default parity gate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
 chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the same chunk with

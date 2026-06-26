@@ -1914,6 +1914,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         1,
     )[0]
     assert "if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {\n      const float target_logit" in true_fused_kernel_body
+    assert "constexpr int kMatTile = 32;" in true_fused_kernel_body
+    assert "__shared__ float tile_a[kMatTile][kMatTile];" in true_fused_kernel_body
+    assert "__shared__ float tile_b[kMatTile][kMatTile];" in true_fused_kernel_body
+    assert "hidden_tiles = hidden_row_tiles * hidden_col_tiles" in true_fused_kernel_body
+    assert "weight_tiles = weight_row_tiles * weight_col_tiles" in true_fused_kernel_body
+    assert "tile_a[tile_row][k] * tile_b[k][tile_col]" in true_fused_kernel_body
+    assert "tile_a[k][tile_col] * tile_b[k][tile_row]" in true_fused_kernel_body
     assert "g_lm_head_classifier_true_fused_launch_count" in kernels_source
     assert "lm_head_classifier_true_fused_launch_count()" in kernels_source
     assert "g_lm_head_classifier_true_fused_launch_count.fetch_add" in kernels_source
