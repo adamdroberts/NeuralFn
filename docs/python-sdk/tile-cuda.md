@@ -2521,16 +2521,17 @@ steady-state CUDA-event timing to `0.998529x`, but regressed train-loop wall to
 `1.004308x`, and QKV backward to `1.007310x`.
 `tools/sweep_native_gpt_sm120_candidates.sh` now defaults to the current SM120
 hot-path proof set when no profiles are supplied: `qkv_dinput_ln128`,
-`lm_head_graph_prewarm`, `lm_head_loss_bins`, and `cublaslt_grouped_probe`.
+`linear_bias_threads_512`, `lm_head_graph_prewarm`, `lm_head_loss_bins`, and
+`cublaslt_grouped_probe`.
 Name startup profiles explicitly when retesting
 setup-only work; the no-argument sweep starts from the block/LM-head routes
 that matter for steady-state training parity. The generated `summary.tsv`
 includes baseline-to-candidate route proof columns for QKV
 dInput-before-dWeight launches, LM-head loss-bin classifier launches, LM-head
-graph replay counts, cooperative LM-head sequence launches, cuBLASLt BGRADB
-direct/accumulate route counts, and grouped cuBLASLt layout/matmul probe
-statuses, so the default sweep can be read without opening the large
-per-profile JSON files.
+graph replay counts, cooperative LM-head sequence launches, linear bias reducer
+thread counts, cuBLASLt BGRADB direct/accumulate route counts, and grouped
+cuBLASLt layout/matmul probe statuses, so the default sweep can be read without
+opening the large per-profile JSON files.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
 LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when

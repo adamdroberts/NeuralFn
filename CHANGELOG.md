@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the promoted `linear_bias_threads_512` route to the default SM120
+  native GPT candidate sweep. `tools/sweep_native_gpt_sm120_candidates.sh` now
+  runs that default-vs-legacy proof alongside the QKV ordering, LM-head graph,
+  LM-head loss-bin, and grouped cuBLASLt profiles when no explicit profile list
+  is supplied. The sweep `summary.tsv` also reports
+  `linear_bias_threads_per_block` as a baseline-to-candidate route delta, so the
+  promoted 512-thread Tile bias-reduction path is visible without opening each
+  per-profile JSON file.
+
+  Migration note: no trainer kernel default changed. This only expands the
+  no-argument benchmark workflow and its summary columns; pass explicit
+  profiles or `NFN_SM120_NATIVE_SWEEP_PROFILES` to keep the old four-profile
+  sweep shape.
+
+  Verification: ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates
+  -q`, `bash -n tools/sweep_native_gpt_sm120_candidates.sh`,
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_SWEEP_OUT_DIR=/tmp/nfn_sweep_linear_bias_threads_dryrun bash
+  tools/sweep_native_gpt_sm120_candidates.sh`, and `git diff --check`.
+
 - Fixed SM120 paired benchmark route gating for cuBLASLt plan-cache-only
   candidates. `tools/paired_kernel_speed.py` now reads
   `native_cublaslt_plan_cache.has_plan_cache_change` in the route gate and

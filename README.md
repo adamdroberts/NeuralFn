@@ -870,7 +870,8 @@ directories, and a `summary.tsv` under
 `NFN_SM120_NATIVE_SWEEP_OUT_DIR` (defaulting to `/tmp`). Positional arguments
 select profiles, or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; with no profile list
 it sweeps the current SM120 hot-path proof set: `qkv_dinput_ln128`,
-`lm_head_graph_prewarm`, `lm_head_loss_bins`, and `cublaslt_grouped_probe`.
+`linear_bias_threads_512`, `lm_head_graph_prewarm`, `lm_head_loss_bins`, and
+`cublaslt_grouped_probe`.
 Startup-only bisections such as
 `token_weight_vector4_strided` remain available when named explicitly, but they
 are no longer the default because the current parity gap is steady-state
@@ -882,8 +883,8 @@ collection where rejected candidates should not fail the outer job. Its
 `summary.tsv` includes compact baseline-to-candidate route proof columns for
 the default hot profiles: QKV dInput-before-dWeight launches, LM-head loss-bin
 classifier launches, LM-head graph replay counts, cooperative LM-head sequence
-launches, cuBLASLt BGRADB direct/accumulate route counts, and grouped cuBLASLt
-layout/matmul probe statuses.
+launches, linear bias reducer thread counts, cuBLASLt BGRADB direct/accumulate
+route counts, and grouped cuBLASLt layout/matmul probe statuses.
 The common-shape controls also accept the explicit
 `NFN_SM120_NATIVE_CANDIDATE_*` aliases, such as
 `NFN_SM120_NATIVE_CANDIDATE_STEPS`, `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`,

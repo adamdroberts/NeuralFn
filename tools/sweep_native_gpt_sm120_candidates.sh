@@ -17,6 +17,7 @@ elif [[ -n "${NFN_SM120_CANDIDATE_SWEEP_PROFILES-}" ]]; then
 else
   profiles=(
     qkv_dinput_ln128
+    linear_bias_threads_512
     lm_head_graph_prewarm
     lm_head_loss_bins
     cublaslt_grouped_probe
@@ -86,6 +87,7 @@ header = [
     "lm_head_graph_replay_success",
     "lm_head_graph_replay",
     "lm_head_sequence_launches",
+    "linear_bias_threads_per_block",
     "linear_bgrad_direct_writes",
     "linear_bgrad_accumulates",
     "cublaslt_grouped_layout_status",
@@ -148,6 +150,7 @@ for item in sys.argv[2:]:
             route_delta(payload, "lm_head_fused_graph_replay_success_count"),
             route_delta(payload, "lm_head_fused_graph_replay_count"),
             route_delta(payload, "lm_head_cooperative_sequence_launch_count"),
+            route_delta(payload, "block_state_layout.linear_backward_bias_threads_per_block"),
             route_delta(payload, "linear_cublaslt_bgrad_direct_write_count"),
             route_delta(payload, "linear_cublaslt_bgrad_accumulate_count"),
             route_delta(payload, "linear_cublaslt_grouped_layout_probe_status"),
