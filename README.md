@@ -2631,7 +2631,9 @@ linked dense-GPT CLI for installed `nfn-gpt-native`,
 `nfn-gpt-native-train`, `nfn-gpt2-native`, and `nfn-gpt2-native-train`
 symlinks when the linked binary exists. Set `NFN_NATIVE_GPT_CLI` for an
 explicit command override, or `NFN_NATIVE_GPT_LINKED_CLI` when the linked
-binary lives outside `build/`.
+binary lives outside `build/`. The installer also links the compiled SM120
+launcher as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
+`NFN_NATIVE_SM120_CLI` when the launcher lives outside `build/`.
 
 The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
 LM-head loss-bin profiles so the old and new commands both execute the logged

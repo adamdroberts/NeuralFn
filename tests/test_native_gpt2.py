@@ -10856,6 +10856,16 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_launcher.returncode == 0, build_launcher.stderr
+    sm120_launcher = tmp_path / "nfn_train_gpt_sm120"
+    build_sm120_launcher = subprocess.run(
+        ["bash", str(root / "tools" / "build_train_gpt_sm120_cli.sh"), str(sm120_launcher)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build_sm120_launcher.returncode == 0, build_sm120_launcher.stderr
     build_missing = subprocess.run(
         ["bash", str(root / "tools" / "build_native_missing_trainers.sh"), str(missing_dir)],
         cwd=root,
@@ -10875,6 +10885,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     env["NFN_NATIVE_GPT2_CLI"] = str(compat_native_cli)
     env["NFN_NATIVE_TRAIN_CLI"] = str(native_train_cli)
     env["NFN_NATIVE_GPT2_LAUNCHER"] = str(launcher)
+    env["NFN_NATIVE_SM120_CLI"] = str(sm120_launcher)
     env["NFN_NATIVE_MISSING_TRAINERS_DIR"] = str(missing_dir)
     install = subprocess.run(
         ["bash", str(root / "tools" / "install_native_gpt2_commands.sh")],
@@ -10894,6 +10905,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     linked_gpt2_compat = bin_dir / "nfn-gpt2-native-compat"
     linked_unified = bin_dir / "nfn-native-train"
     linked_launcher = bin_dir / "nfn-gpt2-tile-launcher"
+    linked_sm120 = bin_dir / "nfn-train-gpt-sm120"
+    linked_sm120_alias = bin_dir / "nfn-gpt-sm120-train"
     linked_nanogpt_underscore = bin_dir / "nfn_nanogpt_native_train"
     linked_nanogpt = bin_dir / "nfn-nanogpt-native-train"
     assert linked_native.is_symlink()
@@ -10903,6 +10916,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt2_compat.is_symlink()
     assert linked_unified.is_symlink()
     assert linked_launcher.is_symlink()
+    assert linked_sm120.is_symlink()
+    assert linked_sm120_alias.is_symlink()
     assert linked_nanogpt_underscore.is_symlink()
     assert linked_nanogpt.is_symlink()
     assert linked_native.resolve() == linked_native_cli
@@ -10912,6 +10927,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
     assert linked_launcher.resolve() == launcher
+    assert linked_sm120.resolve() == sm120_launcher
+    assert linked_sm120_alias.resolve() == sm120_launcher
     assert linked_nanogpt_underscore.resolve() == missing_dir / "nfn_nanogpt_native_train"
     assert linked_nanogpt.resolve() == missing_dir / "nfn_nanogpt_native_train"
 
@@ -10934,6 +10951,16 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert unified_help.returncode == 0, unified_help.stderr
     assert "Unified no-Python NeuralFn native training frontend" in unified_help.stdout
+
+    sm120_help = subprocess.run(
+        [str(linked_sm120), "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert sm120_help.returncode == 0, sm120_help.stderr
+    assert "Compiled SM120 dense GPT training helper" in sm120_help.stdout
 
     nanogpt_help = subprocess.run(
         [str(linked_nanogpt), "--help"],

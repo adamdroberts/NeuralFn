@@ -1259,6 +1259,10 @@ Future updates should append new entries here rather than replacing older notes.
   `tools/check_native_no_torch_deps.py` treats it as an optional native artifact
   with direct dry-run coverage.
 
+- `tools/install_native_gpt2_commands.sh` now installs the compiled SM120 GPT
+  launcher as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`, with
+  `NFN_NATIVE_SM120_CLI` available for non-default launcher paths.
+
 - Corrected the `lm_head_graph_prewarm` SM120 candidate profile to measure the
   real graph-only default-vs-opt-out path. The trainer already defaults cuBLAS
   handle and BF16 workspace prewarm on, so the profile no longer weakens the

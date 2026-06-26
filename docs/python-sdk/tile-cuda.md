@@ -318,7 +318,10 @@ public-vocab LM-head loss path instead of the older float logits workspace.
 
 For workstation SM120 runs that should avoid both Python and Bash startup before
 the native exec boundary, build `build/nfn_train_gpt_sm120` with
-`bash tools/build_train_gpt_sm120_cli.sh`. The launcher mirrors
+`bash tools/build_train_gpt_sm120_cli.sh`. `tools/install_native_gpt2_commands.sh`
+links it as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
+`NFN_NATIVE_SM120_CLI` when installing a launcher from a non-default path. The
+launcher mirrors
 `tools/train_gpt_sm120.sh`, prefers `build/nfn_gpt_native_train_linked`, injects
 `--tile-ops-lib linked` for that binary, supports `--base-model`,
 `--template-name`, and `--graph-file`, and is included in

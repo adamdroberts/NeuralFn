@@ -16,6 +16,7 @@ fi
 COMPAT_NATIVE_CLI="${NFN_NATIVE_GPT2_CLI:-${ROOT_DIR}/build/nfn_gpt2_native_train}"
 NATIVE_TRAIN_CLI="${NFN_NATIVE_TRAIN_CLI:-${ROOT_DIR}/build/nfn_native_train}"
 LAUNCHER="${NFN_NATIVE_GPT2_LAUNCHER:-${ROOT_DIR}/build/nfn_gpt2_tile_train}"
+SM120_LAUNCHER="${NFN_NATIVE_SM120_CLI:-${ROOT_DIR}/build/nfn_train_gpt_sm120}"
 MISSING_TRAINERS_DIR="${NFN_NATIVE_MISSING_TRAINERS_DIR:-${ROOT_DIR}/build}"
 MISSING_TARGETS=(
   nfn_gpt2_evo_native_train
@@ -47,6 +48,12 @@ if [[ ! -x "${LAUNCHER}" ]]; then
   exit 2
 fi
 
+if [[ ! -x "${SM120_LAUNCHER}" ]]; then
+  echo "Native SM120 GPT launcher not found or not executable: ${SM120_LAUNCHER}" >&2
+  echo "Run: bash ${ROOT_DIR}/tools/build_train_gpt_sm120_cli.sh" >&2
+  exit 2
+fi
+
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-train"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt-native"
@@ -56,6 +63,8 @@ if [[ -x "${COMPAT_NATIVE_CLI}" ]]; then
 fi
 ln -sfn "${NATIVE_TRAIN_CLI}" "${BIN_DIR}/nfn-native-train"
 ln -sfn "${LAUNCHER}" "${BIN_DIR}/nfn-gpt2-tile-launcher"
+ln -sfn "${SM120_LAUNCHER}" "${BIN_DIR}/nfn-train-gpt-sm120"
+ln -sfn "${SM120_LAUNCHER}" "${BIN_DIR}/nfn-gpt-sm120-train"
 for target in "${MISSING_TARGETS[@]}"; do
   if [[ -x "${MISSING_TRAINERS_DIR}/${target}" ]]; then
     ln -sfn "${MISSING_TRAINERS_DIR}/${target}" "${BIN_DIR}/${target}"
@@ -72,6 +81,8 @@ if [[ -L "${BIN_DIR}/nfn-gpt2-native-compat" ]]; then
 fi
 printf '%s\n' "${BIN_DIR}/nfn-native-train"
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-tile-launcher"
+printf '%s\n' "${BIN_DIR}/nfn-train-gpt-sm120"
+printf '%s\n' "${BIN_DIR}/nfn-gpt-sm120-train"
 for target in "${MISSING_TARGETS[@]}"; do
   if [[ -L "${BIN_DIR}/${target}" ]]; then
     printf '%s\n' "${BIN_DIR}/${target}"

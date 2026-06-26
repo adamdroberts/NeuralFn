@@ -1477,9 +1477,13 @@ replace the Tile ops `.so` at runtime.
 `tools/install_native_gpt2_commands.sh` uses the same startup-oriented default
 for installed command symlinks: `nfn-gpt-native`, `nfn-gpt-native-train`,
 `nfn-gpt2-native`, and `nfn-gpt2-native-train` point at the linked dense-GPT
-CLI when it exists. `NFN_NATIVE_GPT_CLI` remains an explicit override, and
+CLI when it exists. It also links the compiled SM120 launcher as
+`nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`, so an installed workstation
+can launch the llm.kittens-shaped dense GPT defaults without Python or Bash.
+`NFN_NATIVE_GPT_CLI` remains an explicit override,
 `NFN_NATIVE_GPT_LINKED_CLI` points the installer at a linked binary outside
-`build/`.
+`build/`, and `NFN_NATIVE_SM120_CLI` points it at a compiled SM120 launcher
+outside `build/`.
 
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,
