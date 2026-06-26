@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/rebuild_native_sm120.sh` now rebuilds the SM120 no-Bash launcher
+  (`build/nfn_train_gpt_sm120`) as part of the normal CUDA 13.3 workstation
+  refresh. This keeps the documented rebuild workflow aligned with
+  `tools/check_native_no_torch_deps.py`, which treats that launcher as a
+  default native artifact and fails when it is older than
+  `train_gpt_sm120.cpp` or its build script.
+
+  Verification: reran the full SM120 native rebuild after the CUDA reinstall
+  and reran the no-Torch native dependency verifier.
+
 - Rechecked the rejected TK QKV first-use prewarm profiles after the WSL CUDA
   reinstall. Full-shape prewarm still only shifts latency from the first train
   step into setup: it improved NeuralFn train-loop wall to `0.976642x` and

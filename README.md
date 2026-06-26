@@ -52,8 +52,9 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `build/libnfn_native_train_tile_ops.so`, the SDK C++ bindings
 (`neuralfn._native_gpt`, `neuralfn._native_gpt2`, and
 `neuralfn._native_train`), the compiled GPT/native training frontends, the
-GPT-2 compatibility frontend, and the missing-template native stubs against
-the current CUDA toolkit. It also refreshes
+SM120 no-Bash launcher (`build/nfn_train_gpt_sm120`), the GPT-2 compatibility
+frontend, and the missing-template native stubs against the current CUDA
+toolkit. It also refreshes
 `build/libnfn_native_train_tile_ops_tk.so`, `build/linear_backward_bench`, and
 `build/lm_head_backward_bench`, so `tools/check_native_no_torch_deps.py` does
 not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. Set
