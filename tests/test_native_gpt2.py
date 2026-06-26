@@ -709,6 +709,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ).read_text(encoding="utf-8")
     build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
+    train_sm120 = (root / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
     tile_ops_build = (root / "tools" / "build_native_train_tile_ops.sh").read_text(
         encoding="utf-8"
     )
@@ -761,6 +762,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "linked_local_build" in native_train_source
     assert "nfn_gpt_native_train_linked" in gpt2_evo_source
     assert "linked_build_path" in gpt2_evo_source
+    assert "NATIVE_GPT_TRAIN_BIN" in train_sm120
+    assert "build/nfn_gpt_native_train_linked" in train_sm120
+    assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
+    assert "build_native_gpt_cli_linked.sh" in train_sm120
     assert "GPT_LINKED_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
     assert "SM120_CLI_OUT" in build_all

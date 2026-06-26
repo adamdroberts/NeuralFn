@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/train_gpt_sm120.sh` documentation and failure guidance now match the
+  actual workstation default: the helper prefers
+  `build/nfn_gpt_native_train_linked`, passes `--tile-ops-lib linked` on that
+  path, and only falls back to `build/nfn_gpt_native_train` when the linked
+  executable is absent. CLI documentation now also names the linked cached-shard
+  trainer as the preferred compiled-cli path.
+
+  Verification: reran the linked startup same-script benchmark on the RTX 5090
+  with CUDA 13.3 after rebuilding stale native artifacts; it passed the setup
+  wall gate at `0.899496x` baseline and showed Tile ops load time reduced to
+  about `0.001185x` of the dynamic baseline. Also reran focused source-contract
+  coverage and shell syntax checks.
+
 - The strict true-fused cooperative LM-head kernel now skips the target-logit
   load when running no-loss trainer chunks. This removes an unused global load
   from the production no-loss candidate path while preserving row-loss behavior

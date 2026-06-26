@@ -200,20 +200,25 @@ nfn train --base-model gpt --dataset tinystories --native-cuda-runner launcher
 nfn train --base-model gpt --dataset tinystories --native-cuda-runner binding
 ```
 
-For an already-cached uint16 dataset, bypass Python entirely:
+For an already-cached uint16 dataset, bypass Python entirely. Build the linked
+trainer on workstations so the Tile ops ABI is resolved from the executable and
+the trainer can pass `--tile-ops-lib linked` instead of paying the dynamic
+Tile-ops loader path:
 
 ```bash
-bash tools/build_native_gpt_cli.sh
+bash tools/build_native_gpt_cli_linked.sh
+# fallback only: bash tools/build_native_gpt_cli.sh
 nfn-gpt-native --dataset-alias roneneldan__TinyStories__TinyStoriesV2-GPT4
 nfn-gpt-native --dataset-alias /path/to/cached-dataset --dry-run
 nfn-gpt-native --dataset-alias /path/to/cached-dataset --backend tile-cuda --print-plan
 ```
 
 The Python-facing GPT harness defaults to `--native-cuda-runner compiled-cli`,
-which requires the no-Python cached-shard CLI at `build/nfn_gpt_native_train`.
-Explicit `--native-cuda-runner auto` uses that same direct compiled C++ fast
-path for `python scripts/train_gpt.py` and dense `nfn train` commands; use
-`binding` or `launcher` only when you intentionally want those wrapper routes.
+which prefers `build/nfn_gpt_native_train_linked` when it exists and falls back
+to the dynamic no-Python cached-shard CLI at `build/nfn_gpt_native_train`.
+Explicit `--native-cuda-runner auto` uses that same direct compiled C++ fast path
+for `python scripts/train_gpt.py` and dense `nfn train` commands; use `binding`
+or `launcher` only when you intentionally want those wrapper routes.
 That compiled CLI exposes `--backend tile-cuda`, the default and only NeuralFn-owned
 12-layer transformer/LM loop over the raw trainer ABI. Use `--backend tile-cuda
 --print-plan` or `--check-tile-ops --tile-ops-lib PATH` to inspect it, and use

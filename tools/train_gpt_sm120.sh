@@ -35,8 +35,9 @@ usage() {
   cat <<'USAGE'
 Usage: tools/train_gpt_sm120.sh [options] [-- extra native args]
 
-Zero-Python SM120 dense GPT training helper. It calls nfn_gpt_native_train
-directly with the same core defaults as llm.kittens/train-sm120.sh:
+Zero-Python SM120 dense GPT training helper. It prefers
+build/nfn_gpt_native_train_linked, falls back to build/nfn_gpt_native_train, and
+uses the same core defaults as llm.kittens/train-sm120.sh:
   eval=250 sample=20000 generate=144 batch=64 seq=1024 tokens/step=524288
   weight_decay=0.1 lr=0.0006 final_lr_fraction=0 warmup=60 checkpoint=200
   max_steps=20000 activation=gelu CUDA_DEVICE_MAX_CONNECTIONS=1
@@ -55,9 +56,9 @@ Options:
   --output-dir PATH      Native output directory
   -h, --help             Show this help
 
-Any other option is forwarded to nfn_gpt_native_train after the defaults, so it
-can override defaults such as --batch-size, --train-seq-len, --max-steps,
---eval-every-steps, or --no-checkpoint.
+Any other option is forwarded to the selected native GPT trainer after the
+defaults, so it can override defaults such as --batch-size, --train-seq-len,
+--max-steps, --eval-every-steps, or --no-checkpoint.
 USAGE
 }
 
@@ -208,7 +209,7 @@ esac
 
 if [[ ! -x "${NATIVE_GPT_TRAIN_BIN}" ]]; then
   echo "Native GPT trainer is not executable: ${NATIVE_GPT_TRAIN_BIN}" >&2
-  echo "Build it with: bash tools/build_native_gpt_cli.sh" >&2
+  echo "Build it with: bash tools/build_native_gpt_cli_linked.sh" >&2
   exit 127
 fi
 
