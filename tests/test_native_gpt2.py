@@ -2591,6 +2591,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK" in bench_source
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source
+    assert "SKIP_LM_HEAD_CE_STAGE_GATE=0" in bench_source
+    assert "SKIP_LM_HEAD_CE_STAGE_GATE=1" in bench_source
+    assert 'if [[ "$SKIP_LM_HEAD_CE_STAGE_GATE" != "1" ]]; then' in bench_source
 
     tile_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
         encoding="utf-8"

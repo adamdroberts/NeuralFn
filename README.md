@@ -3286,7 +3286,13 @@ keeps `--train-loss-every-steps 0`, and reports
 against the older generic no-loss CE+dlogits kernel.
 The wrapper treats that default-route profile as an LM-head candidate for strict
 stage-timed gates; it still records whole-loop and block-stage ratios, but does
-not reject the default-specialized CE route for unrelated block-stage variance.
+not reject the default-specialized CE route for unrelated block-stage variance
+or for the missing standalone CE sub-stage metric while the LM-head path is
+reported as a diagnostic CUDA Graph wrapper. A 2026-06-26 CUDA 13.3.33
+dedicated RTX 5090 rerun measured the default-specialized route at `0.975099x`
+train-loop wall, `0.976966x` steady-state CUDA-event wall, `1.025547x`
+tokens/sec, and `0.911191x` LM-head backward versus the older generic no-loss
+CE+dlogits kernel.
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` is a
 separate opt-in CUDA Tile kernel candidate for the same no-loss CE+dlogits path.
 It keeps vec8 BF16 loads but writes aligned vec8 BF16 gradients with normal

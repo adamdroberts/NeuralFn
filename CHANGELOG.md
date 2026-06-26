@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now treats
+  `lm_head_ce_no_loss_default_specialized` as a wrapper-compatible LM-head gate.
+  The profile still compares the current
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` default against
+  the older generic no-loss CE+dlogits path, but it no longer requires the
+  missing `stage.lm_head_backward.ce.total_ms` sub-stage while the LM-head body
+  is reported as the diagnostic CUDA Graph wrapper. The CUDA 13.3.33 dedicated
+  RTX 5090 3-step, 2-sample rerun measured `0.975099x` train-loop wall,
+  `0.976966x` steady-state CUDA-event wall, `1.025547x` tokens/sec, and
+  `0.911191x` LM-head backward versus the older generic no-loss kernel.
+
+  Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
+  before the harness fix and confirmed only the missing CE sub-stage gate
+  failed; reran the wrapper after the fix, then ran the focused native GPT
+  source-contract pytest, `bash -n`, and `git diff --check`.
+
 - Dense GPT native training now defaults MLP FC backward back to
   dWeight+bias-before-dInput. `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1`
   remains available as a diagnostic opt-in, and

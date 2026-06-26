@@ -172,6 +172,7 @@ STRICT_PROBE_CANDIDATE_PROFILE=""
 STRICT_GROUPED_CUBLASLT_PROBE=0
 AUTO_ATTENTION_SECTION_TIMING=0
 FORCE_DISABLE_ROUTE_CHANGE=0
+SKIP_LM_HEAD_CE_STAGE_GATE=0
 if [[ -z "$CANDIDATE_EXTRA_ARGS_RAW" && -n "${NFN_SM120_NATIVE_CANDIDATE_ARGS-}" ]]; then
   CANDIDATE_EXTRA_ARGS_RAW="$NFN_SM120_NATIVE_CANDIDATE_ARGS"
 fi
@@ -402,6 +403,7 @@ case "${CANDIDATE_PROFILE,,}" in
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
+    SKIP_LM_HEAD_CE_STAGE_GATE=1
     ;;
   "lm_head_prob_only_corrections"|"lm-head-prob-only-corrections"|"lm_head_ce_prob_only_corrections"|"lm-head-ce-prob-only-corrections")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
@@ -1137,7 +1139,9 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             fi
             case "$candidate_gate_text" in
               *CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*)
-                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
+                if [[ "$SKIP_LM_HEAD_CE_STAGE_GATE" != "1" ]]; then
+                  MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
+                fi
                 ;;
             esac
             case "$candidate_gate_text" in

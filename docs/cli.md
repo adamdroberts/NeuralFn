@@ -2009,7 +2009,12 @@ default measured `0.982840x` train-loop wall, `0.978568x` steady-state
 CUDA-event wall, `1.017518x` tokens/sec, `0.912973x` LM-head backward, and
 `0.551519x` LM-head CE. The wrapper still records whole-loop and block-stage
 ratios for this profile, but strict stage gates are LM-head-focused so unrelated
-block-backward timing variance does not reject the default-specialized CE route.
+block-backward timing variance, and the missing standalone CE sub-stage metric
+under the diagnostic CUDA Graph wrapper, do not reject the default-specialized
+CE route. A 2026-06-26 CUDA 13.3.33 dedicated RTX 5090 rerun measured
+`0.975099x` train-loop wall, `0.976966x` steady-state CUDA-event wall,
+`1.025547x` tokens/sec, and `0.911191x` LM-head backward with that
+wrapper-compatible gate.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

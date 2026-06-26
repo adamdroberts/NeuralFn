@@ -479,12 +479,17 @@ against the older generic no-loss CE+dlogits kernel.
 The paired SM120 wrapper treats this route as an LM-head candidate for strict
 stage-timed gates. It still records whole-loop and block-stage ratios, but does
 not reject the default-specialized CE route for unrelated block-backward timing
-variance.
+variance or for the missing standalone CE sub-stage metric while the LM-head
+path is reported as a diagnostic CUDA Graph wrapper.
 The 2026-06-24 CUDA 13.3 dedicated RTX 5090 same-script confirmation kept this
 as the default on the rebuilt 32768-row default: the profile measured
 `0.982840x` train-loop wall, `0.978568x` steady-state CUDA-event wall,
 `1.017518x` tokens/sec, `0.912973x` LM-head backward, and `0.551519x` LM-head CE
-versus the older generic no-loss CE+dlogits path.
+versus the older generic no-loss kernel. A 2026-06-26 CUDA 13.3.33 dedicated
+RTX 5090 rerun measured `0.975099x` train-loop wall, `0.976966x` steady-state
+CUDA-event wall, `1.025547x` tokens/sec, and `0.911191x` LM-head backward
+versus the older generic no-loss CE+dlogits path with the wrapper-compatible
+gate.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
