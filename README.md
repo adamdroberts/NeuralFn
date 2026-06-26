@@ -98,6 +98,14 @@ steady-state, LM-head, and MLP-projection gates, while the latter improved
 short-run wall time but regressed steady-state timing and MLP projection
 dInput attribution. Keep both as diagnostic profiles unless a later same-script
 gate passes all hot-stage and steady-state criteria.
+The CUDA module-loading bisection is also pinned as a rejected diagnostic:
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` compares the default
+`CUDA_MODULE_LOADING=LAZY` wrapper route against `CUDA_MODULE_LOADING=EAGER`.
+The CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun after the WSL CUDA
+reinstall left LAZY as the default because EAGER changed no tracked kernel
+route and regressed setup wall time to `3.467504x`, train-loop wall time to
+`1.009903x`, first-step CUDA-event timing to `1.048444x`, and tokens/sec to
+`0.990197x`.
 The linked native trainer remains the preferred workstation startup path for
 direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3 dedicated
 RTX 5090 startup-only gate measured `linked_startup` at `0.868933x` setup wall

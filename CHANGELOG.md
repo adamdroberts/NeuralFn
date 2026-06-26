@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` to the SM120
+  native-vs-native benchmark wrapper as a rejected diagnostic profile. It
+  compares the default `CUDA_MODULE_LOADING=LAZY` native wrapper route against
+  `CUDA_MODULE_LOADING=EAGER` without changing any kernel route, so future
+  first-step investigations can reproduce the module-loading bisection without
+  accidentally promoting it.
+
+  Migration note: no runtime default changed. The native Python wrappers and
+  compiled handoff paths still set `CUDA_MODULE_LOADING=LAZY` when the caller
+  has not provided an override.
+
+  Verification: reran the candidate after the WSL CUDA reinstall on the
+  dedicated RTX 5090 with 5 steps, 3 samples, one warmup, and the llm.kittens
+  reference included. The EAGER candidate changed no tracked route and remained
+  rejected at `3.467504x` setup wall time, `1.009903x` train-loop wall time,
+  `1.048444x` first-step CUDA-event timing, and `0.990197x` tokens/sec versus
+  the LAZY baseline.
+
 - `tools/rebuild_native_sm120.sh` now rebuilds the SM120 no-Bash launcher
   (`build/nfn_train_gpt_sm120`) as part of the normal CUDA 13.3 workstation
   refresh. This keeps the documented rebuild workflow aligned with

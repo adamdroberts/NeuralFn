@@ -2513,6 +2513,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "qkv_dinput_ln64": "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64",
         "lm_head_fused_loss_backward_off": "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0",
         "lm_head_classifier_ce_no_loss": "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1",
+        "cuda_module_eager": "CUDA_MODULE_LOADING=EAGER",
         "lm_head_prepack_bf16_hidden_off": "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0",
         "lm_head_tk_dweight_49152": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
@@ -2571,6 +2572,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    assert "setup_wall_ms to 3.467504x" in bench_source
+    assert "first-step CUDA-event timing to 1.048444x" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert "kept 512 as the default" in bench_source
     assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source
