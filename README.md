@@ -1002,8 +1002,9 @@ part of that value.
 Use `NFN_SM120_COMMON_EXTRA_ARGS` only for args that must be appended to both
 commands, and use `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`,
 `NFN_SM120_NATIVE_CANDIDATE_ARGS`, or `NFN_SM120_CANDIDATE_EXTRA_ARGS` for
-candidate-only CLI flags such as `--lm-head-row-chunk-size 32768`; the dry-run plan prints both resolved
-commands so command separation can be audited before launching a long GPU job.
+candidate-only CLI flags such as `--lm-head-row-chunk-size 32768`; the dry-run
+plan prints both resolved commands and each command's effective env overrides
+so command/env separation can be audited before launching a long GPU job.
 When comparing a saved or freshly compiled native trainer executable, set
 `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/tmp/nfn_gpt_native_train_candidate`
 or the shorter `NFN_SM120_CANDIDATE_TRAIN_BIN=...`; the baseline still comes

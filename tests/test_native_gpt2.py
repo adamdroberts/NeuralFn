@@ -2497,6 +2497,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "concurrent_arena_materialize_requested" in speed_source
     assert "concurrent_arena_materialize_enabled" in speed_source
     assert "concurrent_arena_materialize_count" in speed_source
+    assert "baseline_env: {json.dumps(baseline_env, sort_keys=True)}" in speed_source
+    assert "candidate_env: {json.dumps(candidate_env, sort_keys=True)}" in speed_source
 
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",

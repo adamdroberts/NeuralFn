@@ -4169,16 +4169,25 @@ def print_text(payload: dict[str, object]) -> None:
             "  baseline: "
             f"{shlex.join([str(item) for item in payload.get('baseline_command', [])])}"
         )
+        baseline_env = payload.get("baseline_env")
+        if isinstance(baseline_env, dict) and baseline_env:
+            print(f"  baseline_env: {json.dumps(baseline_env, sort_keys=True)}")
         print(
             "  candidate: "
             f"{shlex.join([str(item) for item in payload.get('candidate_command', [])])}"
         )
+        candidate_env = payload.get("candidate_env")
+        if isinstance(candidate_env, dict) and candidate_env:
+            print(f"  candidate_env: {json.dumps(candidate_env, sort_keys=True)}")
         reference_command = payload.get("reference_command")
         if isinstance(reference_command, list) and reference_command:
             print(
                 "  reference: "
                 f"{shlex.join([str(item) for item in reference_command])}"
             )
+            reference_env = payload.get("reference_env")
+            if isinstance(reference_env, dict) and reference_env:
+                print(f"  reference_env: {json.dumps(reference_env, sort_keys=True)}")
         metadata = payload.get("metadata")
         if isinstance(metadata, dict) and metadata:
             print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")

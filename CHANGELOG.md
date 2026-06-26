@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 paired benchmark dry-run plans now print `baseline_env`,
+  `candidate_env`, and `reference_env` when the resolved commands have
+  environment overrides. This makes candidate profile expansion auditable before
+  launching a long GPU job, including profiles that only differ by env such as
+  `cuda_module_eager`.
+
+  Verification: reran the dry-run plan for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` and confirmed the
+  output prints `CUDA_MODULE_LOADING=LAZY` for the baseline and
+  `CUDA_MODULE_LOADING=EAGER` for the candidate.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` to the SM120
   native-vs-native benchmark wrapper as a rejected diagnostic profile. It
   compares the default `CUDA_MODULE_LOADING=LAZY` native wrapper route against
