@@ -1754,11 +1754,13 @@ bisection. The route moved `lm_head_fused_graph_thread_cache_hit_count` from
 `45` to `48`, but regressed train-loop wall to `1.003958x`, steady-state
 CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
 tokens/sec to `0.996059x`. The
-default was promoted after the CUDA 13.3.33 RTX 5090 post-reinstall
-graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
-steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
-backward `0.956792x`, and MLP projection backward `0.911989x` versus explicit
-prewarm opt-out. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
+default was rechecked after the CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback
+graph-only rerun passed same-script gates: train-loop wall `0.985915x`,
+steady-state CUDA-event timing `0.999199x`, LM-head backward `0.957549x`, block
+backward `0.997858x`, and MLP projection backward `0.992403x` versus explicit
+prewarm opt-out. Route proof moved graph capture attempts from `3` to `0` and
+graph cache hits from `45` to `48`. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
 capture path for bisection. The remaining implementation target is still a true
 fused LM-head classifier-backward Tile kernel. When graph prewarm

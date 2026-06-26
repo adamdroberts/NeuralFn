@@ -911,7 +911,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-reinstall graph-only rerun eliminated runtime LM-head graph capture and passed same-script gates at 0.970282x train_loop_wall_ms_per_step, 1.001894x steady-state CUDA-event timing, 0.968319x stage.lm_head_backward.total_ms, 0.956792x stage.block_backward.total_ms, and 0.911989x stage.block_backward.mlp_proj.total_ms. The native trainer now defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 post-MLP-FC-rollback rerun eliminated runtime LM-head graph capture and passed same-script gates at 0.985915x train_loop_wall_ms_per_step, 0.999199x steady-state CUDA-event timing, 0.957549x stage.lm_head_backward.total_ms, 0.997858x stage.block_backward.total_ms, and 0.992403x stage.block_backward.mlp_proj.total_ms. Route proof moved graph capture attempts 3->0 and graph cache hits 45->48. The native trainer defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"

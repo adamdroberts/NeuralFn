@@ -192,11 +192,12 @@ ABI is also available for diagnostics. Dense GPT JSON reports
 LM-head graph prewarm by default. Prewarm captures both the no-loss graph key
 and the active train-loss graph key, including the loss-bin variant when that
 route is configured, so the first logged train-loss step does not lazily
-capture a separate LM-head backward graph. The default was promoted after the
-CUDA 13.3.33 RTX 5090 post-reinstall
-graph-only rerun passed same-script gates: train-loop wall `0.970282x`,
-steady-state CUDA-event timing `1.001894x`, LM-head backward `0.968319x`, block
-backward `0.956792x`, and MLP projection backward `0.911989x`. Set
+capture a separate LM-head backward graph. The default was rechecked after the
+CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback graph-only rerun passed same-script
+gates: train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
+LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection
+backward `0.992403x`. Route proof moved graph capture attempts from `3` to `0`
+and graph cache hits from `45` to `48`. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` only for lazy-capture
 bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` compares

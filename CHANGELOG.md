@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the `lm_head_graph_prewarm` default-vs-legacy SM120 profile after
+  the CUDA 13.3.33 reinstall and MLP FC ordering rollback. The graph-prewarm
+  default still eliminates timed LM-head graph capture, moving capture attempts
+  from `3` to `0` and graph cache hits from `45` to `48`, and passed the
+  configured gates at `0.985915x` train-loop wall, `0.999199x` steady-state
+  CUDA-event timing, `0.957549x` LM-head backward, `0.997858x` block backward,
+  and `0.992403x` MLP projection backward versus explicit prewarm opt-out. The
+  benchmark profile reason now records this current passing evidence.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` with 3 optimizer
+  steps, 2 paired samples, stage timing enabled, no warmup, and no llm.kittens
+  reference; ran the focused native GPT source-contract pytest, `bash -n`, and
+  `git diff --check`.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now treats
   `lm_head_ce_no_loss_default_specialized` as a wrapper-compatible LM-head gate.
   The profile still compares the current

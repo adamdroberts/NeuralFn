@@ -1244,10 +1244,11 @@ compares explicit prewarm opt-out against the default-on prewarmed route without
 also disabling the already-default cuBLAS handle or BF16 workspace prewarm. It gates
 train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
 LM-head backward, block backward, and MLP projection backward. The current CUDA
-13.3.33 RTX 5090 post-reinstall graph-only refresh passed those gates:
-train-loop wall `0.970282x`, steady-state CUDA-event timing `1.001894x`,
-LM-head backward `0.968319x`, block backward `0.956792x`, and MLP projection
-backward `0.911989x`.
+13.3.33 RTX 5090 post-MLP-FC-rollback graph-only refresh passed those gates:
+train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
+LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection
+backward `0.992403x`. Route proof moved graph capture attempts from `3` to `0`
+and graph cache hits from `45` to `48`.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
