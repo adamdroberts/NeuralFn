@@ -1341,6 +1341,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "regressed the target stage.block_forward.attention.qkv.total_ms to 1.143374x" in text
     assert "tk_qkv_forward_prewarm" in text
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1" in text
+    assert "tk_qkv_forward_prewarm_1row" in text
+    assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1" in text
     assert "stage.block_forward.attention.qkv.first_step_avg_ms=1.000" in text
     assert "mlp_fc_forward_bf16_fallback_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N" in text

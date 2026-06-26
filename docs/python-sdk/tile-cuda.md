@@ -588,6 +588,15 @@ Full-loop native GPT JSON reports the same evidence as
 `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats that field as a hot route counter for
 same-script native-vs-native and native-vs-llm.kittens candidate gates.
+For QKV first-use diagnostics,
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup GEMM to the first `N` rows.
+Native GPT JSON reports `linear_tk_qkv_first_use_prewarm_requested_rows` and
+`linear_tk_qkv_first_use_prewarm_effective_rows`, and the
+`tk_qkv_forward_prewarm_1row` SM120 profile uses this as a rejected-by-default
+bisection route. The first same-script RTX 5090 gate proved the one-row route
+but kept it rejected because setup and total wall time regressed and the
+candidate still missed llm.kittens reference gates.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

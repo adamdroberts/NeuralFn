@@ -1094,7 +1094,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_success_count" in gpt_source
     assert "setup.linear_bf16_workspace_prewarm" in gpt_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD" in gpt_source
+    assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS" in gpt_source
     assert "setup.tk_qkv_forward_prewarm" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_requested_rows" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_mode" in gpt_source
@@ -1122,6 +1125,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_success_count" in speed_tool
     assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_count" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_success_count" in speed_tool
     assert "stored_packed_attention_lse_enabled" in speed_tool
     assert "stored_packed_attention_lse_elements" in speed_tool

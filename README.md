@@ -939,6 +939,16 @@ but increased setup to `1.130868x` and still failed strict llm.kittens
 reference gates at `1.006435x` train-loop wall, `1.006220x` steady-state
 CUDA-event timing, and `0.993532x` tokens/sec. Use it only to reproduce
 first-use QKV attribution; it moves setup cost, not long-run steady throughput.
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` limits that diagnostic prewarm
+to the first `N` rows and reports
+`linear_tk_qkv_first_use_prewarm_requested_rows` plus
+`linear_tk_qkv_first_use_prewarm_effective_rows` in native GPT JSON. The
+`tk_qkv_forward_prewarm_1row` profile uses this to test whether a tiny setup
+launch can pay TK first-use overhead without the full-row setup regression; it
+remains rejected. The first same-script RTX 5090 gate proved the one-row route
+and improved forward-QKV first-step timing, but setup regressed to `1.415877x`,
+total wall to `1.018835x`, and the candidate still lost to llm.kittens on
+train-loop wall and tokens/sec.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

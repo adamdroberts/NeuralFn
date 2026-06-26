@@ -10390,6 +10390,17 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD",
                               "NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD"}),
             false);
+    std::int64_t linear_tk_qkv_first_use_prewarm_requested_rows =
+        env_nonnegative_i64_or(
+            {"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS",
+             "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD_ROWS",
+             "NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD_ROWS"},
+            rows);
+    if (linear_tk_qkv_first_use_prewarm_requested_rows <= 0) {
+        linear_tk_qkv_first_use_prewarm_requested_rows = rows;
+    }
+    const std::int64_t linear_tk_qkv_first_use_prewarm_effective_rows =
+        std::min<std::int64_t>(rows, linear_tk_qkv_first_use_prewarm_requested_rows);
     std::int64_t linear_tk_qkv_first_use_prewarm_requested_count = 0;
     std::int64_t linear_tk_qkv_first_use_prewarm_enabled_count = 0;
     std::int64_t linear_tk_qkv_first_use_prewarm_success_count = 0;
@@ -16391,7 +16402,7 @@ int run_transformer_lm_training_json(
                 blocks[0].qkv_weight_bf16,
                 fuse_qkv_bias_tk_gemm_enabled ? blocks[0].qkv_bias : nullptr,
                 block_tapes[0].qkv_bf16,
-                rows,
+                linear_tk_qkv_first_use_prewarm_effective_rows,
                 kDim,
                 kQkvDim,
                 fuse_qkv_bias_tk_gemm_enabled,
@@ -22976,6 +22987,10 @@ int run_transformer_lm_training_json(
         << linear_bf16_workspace_prewarm_failure_count << ",\n"
         << "  \"linear_tk_qkv_first_use_prewarm_requested\": "
         << (linear_tk_qkv_first_use_prewarm_requested ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_requested_rows\": "
+        << linear_tk_qkv_first_use_prewarm_requested_rows << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_effective_rows\": "
+        << linear_tk_qkv_first_use_prewarm_effective_rows << ",\n"
         << "  \"linear_tk_qkv_first_use_prewarm_requested_count\": "
         << linear_tk_qkv_first_use_prewarm_requested_count << ",\n"
         << "  \"linear_tk_qkv_first_use_prewarm_enabled_count\": "

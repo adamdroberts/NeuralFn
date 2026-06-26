@@ -204,6 +204,14 @@ NATIVE_METRIC_PATHS = (
         ("linear_tk_qkv_first_use_prewarm_success_count",),
     ),
     (
+        "linear_tk_qkv_first_use_prewarm_requested_rows",
+        ("linear_tk_qkv_first_use_prewarm_requested_rows",),
+    ),
+    (
+        "linear_tk_qkv_first_use_prewarm_effective_rows",
+        ("linear_tk_qkv_first_use_prewarm_effective_rows",),
+    ),
+    (
         "linear_tk_qkv_first_use_prewarm_failure_count",
         ("linear_tk_qkv_first_use_prewarm_failure_count",),
     ),

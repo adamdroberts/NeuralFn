@@ -1213,6 +1213,16 @@ Full-loop native GPT JSON also reports
 `tools/paired_kernel_speed.py` treats it as a hot route counter. Strict
 true-fused full-GPT candidate profiles therefore have to move that launch count
 instead of relying only on ABI path-class metadata.
+For QKV first-use diagnostics,
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup GEMM to the first `N` rows.
+Native GPT JSON reports `linear_tk_qkv_first_use_prewarm_requested_rows` and
+`linear_tk_qkv_first_use_prewarm_effective_rows`; the rejected-by-default
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm_1row` profile uses a
+one-row launch to test whether TK first-use overhead can be paid without the
+full-row setup regression. It remains rejected after the first same-script RTX
+5090 gate because setup and total wall time regressed and llm.kittens reference
+gates still failed.
 LM-head graph prewarm is enabled by default for real native GPT training.
 It warms both the no-loss graph key and the active train-loss graph key,
 including loss-bin flags when that route is configured, so the first logged

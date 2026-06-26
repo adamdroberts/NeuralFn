@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a row-count bisection knob for the rejected TK QKV first-use prewarm
+  diagnostic. `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` /
+  `NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional setup
+  prewarm GEMM to the first `N` rows while native GPT JSON reports
+  `linear_tk_qkv_first_use_prewarm_requested_rows` and
+  `linear_tk_qkv_first_use_prewarm_effective_rows`. The SM120 candidate wrapper
+  adds rejected-by-default `tk_qkv_forward_prewarm_1row` to test whether a tiny
+  launch pays first-use TK overhead without the full-row setup regression.
+
+  Verification: ran focused source-contract tests for native prewarm counters
+  and the SM120 candidate wrapper; ran `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`; ran `python -m py_compile
+  tools/paired_kernel_speed.py`; compiled the linked native GPT CLI; ran the
+  wrapper dry-run and confirmed candidate env
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1`; ran the same-script RTX 5090
+  candidate benchmark. The one-row route moved
+  `linear_tk_qkv_first_use_prewarm_success_count` from `0` to `1` and improved
+  forward-QKV first-step avg to `0.477316x`, but remains rejected because setup
+  regressed to `1.415877x`, total wall to `1.018835x`, and llm.kittens
+  reference gates failed.
+
 - Native GPT full-loop JSON now reports
   `lm_head_classifier_true_fused_launch_count`, and
   `tools/paired_kernel_speed.py` tracks it as a hot native route counter.

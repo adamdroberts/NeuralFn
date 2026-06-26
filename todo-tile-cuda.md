@@ -291,6 +291,14 @@ Real training tensors must not pass through graph editor node objects.
     `1.239921x` and total wall to `1.000981x`. Treat it as evidence that the
     first-step QKV gap is first-use setup work; the real fix needs to remove or
     lower that cost, not move it earlier.
+  - 2026-06-26 added
+    `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` plus the rejected
+    `tk_qkv_forward_prewarm_1row` profile. The one-row route proved the row cap
+    and moved `linear_tk_qkv_first_use_prewarm_success_count` from `0` to `1`,
+    improving forward-QKV first-step avg to `0.477316x`, but setup regressed to
+    `1.415877x`, total wall to `1.018835x`, and llm.kittens reference gates
+    still failed. Keep QKV prewarm diagnostic-only; startup parity needs a
+    cheaper first-use/TK setup path, not another prewarm relocation.
   - 2026-06-25 rejected LM-head graph prewarm as a default despite native-vs-native
     startup and LM-head improvements, and also rejected the explicit cooperative
     sequence wrapper, CUDA event timing changes, and the llm.kittens SM120 macro
