@@ -26,7 +26,18 @@ Future updates should append new entries here rather than replacing older notes.
   -q`, `bash -n tools/sweep_native_gpt_sm120_candidates.sh`,
   `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
   NFN_SM120_NATIVE_SWEEP_OUT_DIR=/tmp/nfn_sweep_linear_bias_threads_dryrun bash
-  tools/sweep_native_gpt_sm120_candidates.sh`, and `git diff --check`.
+  tools/sweep_native_gpt_sm120_candidates.sh`, and `git diff --check`. After
+  the commit, reran the newly defaulted profile at its documented GPU cadence
+  with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_threads_512
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=0
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_linear_bias_threads_512_sweep_member_3x2.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`; it passed route and metric
+  gates with train-loop wall `0.996969x`, steady CUDA-event wall `0.999330x`,
+  block backward `0.998608x`, and
+  `block_state_layout.linear_backward_bias_threads_per_block: 256 -> 512`.
 
 - Fixed SM120 paired benchmark route gating for cuBLASLt plan-cache-only
   candidates. `tools/paired_kernel_speed.py` now reads
