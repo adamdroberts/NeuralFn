@@ -1208,6 +1208,11 @@ sequence counters mean the diagnostic wrapper or graph fallback path ran.
 `lm_head_fused_graph_thread_cache_hit_count` counts hot training-loop replays
 that reused the small per-thread graph exec cache without re-entering the
 mutex-protected graph cache scan.
+Full-loop native GPT JSON also reports
+`lm_head_classifier_true_fused_launch_count`, and
+`tools/paired_kernel_speed.py` treats it as a hot route counter. Strict
+true-fused full-GPT candidate profiles therefore have to move that launch count
+instead of relying only on ABI path-class metadata.
 LM-head graph prewarm is enabled by default for real native GPT training.
 It warms both the no-loss graph key and the active train-loss graph key,
 including loss-bin flags when that route is configured, so the first logged

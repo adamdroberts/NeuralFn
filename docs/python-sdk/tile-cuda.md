@@ -584,6 +584,10 @@ which lets candidate tests prove that the monolithic cooperative kernel
 actually launched instead of relying only on ABI path-class strings. The strict
 LM-head benchmark wrapper treats a zero candidate true-fused launch count as a
 failed candidate even when the capability probe returns true.
+Full-loop native GPT JSON reports the same evidence as
+`lm_head_classifier_true_fused_launch_count`, and
+`tools/paired_kernel_speed.py` treats that field as a hot route counter for
+same-script native-vs-native and native-vs-llm.kittens candidate gates.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

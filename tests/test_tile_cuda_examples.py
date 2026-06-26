@@ -3748,6 +3748,7 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'native_route_change_gate' in text
     assert 'qkv_dinput_before_dweight' in text
     assert 'lm_head_loss_bin_launches' in text
+    assert 'lm_head_true_fused_launches' in text
     assert 'lm_head_graph_replay_success' in text
     assert 'lm_head_graph_replay' in text
     assert 'lm_head_sequence_launches' in text
@@ -3757,6 +3758,7 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'cublaslt_grouped_matmul_status' in text
     assert 'route_delta(payload, "block_backward_qkv_dinput_before_dweight_count")' in text
     assert 'route_delta(payload, "lm_head_classifier_loss_bin_launch_count")' in text
+    assert 'route_delta(payload, "lm_head_classifier_true_fused_launch_count")' in text
     assert 'route_delta(payload, "lm_head_fused_graph_replay_success_count")' in text
     assert 'route_delta(payload, "lm_head_fused_graph_replay_count")' in text
     assert 'route_delta(payload, "lm_head_cooperative_sequence_launch_count")' in text
@@ -5433,6 +5435,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_classifier_chunk_kernel_available": True,
                 "lm_head_classifier_chunk_kernel_enabled": True,
                 "lm_head_classifier_chunk_launch_count": 32,
+                "lm_head_classifier_true_fused_launch_count": 0,
                 "lm_head_classifier_last_rows": 4096,
                 "lm_head_classifier_last_vocab": 50257,
                 "lm_head_classifier_last_row_stride": 50304,
@@ -5547,6 +5550,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_classifier_chunk_kernel_available"] is True
     assert metrics["lm_head_classifier_chunk_kernel_enabled"] is True
     assert metrics["lm_head_classifier_chunk_launch_count"] == 32
+    assert metrics["lm_head_classifier_true_fused_launch_count"] == 0
     assert metrics["lm_head_classifier_last_rows"] == 4096
     assert metrics["lm_head_classifier_last_vocab"] == 50257
     assert metrics["lm_head_classifier_last_row_stride"] == 50304

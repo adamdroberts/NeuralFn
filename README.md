@@ -1551,7 +1551,10 @@ from the sequence-wrapper and CUDA Graph counters, so a strict true-fused
 candidate must prove that the cooperative kernel actually launched instead of
 passing only on capability strings. Strict LM-head benchmark profiles now fail
 when `candidate_true_fused_capability=true` but
-`candidate.true_fused_launch_count` remains zero.
+`candidate.true_fused_launch_count` remains zero. Full-loop native GPT JSON
+reports the same evidence as `lm_head_classifier_true_fused_launch_count`, and
+`tools/paired_kernel_speed.py` treats it as a hot route counter for
+same-script candidate gates.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

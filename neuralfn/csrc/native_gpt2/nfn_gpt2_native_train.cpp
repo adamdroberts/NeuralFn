@@ -10408,6 +10408,7 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_prob_only_target_correction_threads = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
+    std::int64_t lm_head_classifier_true_fused_launch_count = 0;
     std::int64_t lm_head_classifier_no_loss_chunk_count = 0;
     std::int64_t lm_head_prob_only_corrections_chunk_count = 0;
     std::int64_t lm_head_prob_only_ce_target_correction_chunk_count = 0;
@@ -10769,6 +10770,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_lm_head_classifier_last_vocab",
         "nfn_native_tile_lm_head_classifier_last_row_stride",
         "nfn_native_tile_lm_head_classifier_loss_bin_launch_count",
+        "nfn_native_tile_lm_head_classifier_true_fused_launch_count",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -11394,6 +11396,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_classifier_last_vocab_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_row_stride_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_loss_bin_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_classifier_true_fused_launch_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_launch_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_ce_launch_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_dhidden_launch_count_fn = nullptr;
@@ -12010,6 +12013,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_classifier_last_row_stride");
                 lm_head_classifier_loss_bin_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_classifier_loss_bin_launch_count");
+                lm_head_classifier_true_fused_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_classifier_true_fused_launch_count");
                 lm_head_cooperative_sequence_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_launch_count");
                 lm_head_cooperative_sequence_ce_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -21313,6 +21318,10 @@ int run_transformer_lm_training_json(
     if (lm_head_classifier_loss_bin_launch_count_fn != nullptr) {
         lm_head_classifier_loss_bin_launch_count = lm_head_classifier_loss_bin_launch_count_fn();
     }
+    if (lm_head_classifier_true_fused_launch_count_fn != nullptr) {
+        lm_head_classifier_true_fused_launch_count =
+            lm_head_classifier_true_fused_launch_count_fn();
+    }
     if (lm_head_classifier_last_rows_fn != nullptr) {
         lm_head_classifier_last_rows = lm_head_classifier_last_rows_fn();
     }
@@ -22465,6 +22474,8 @@ int run_transformer_lm_training_json(
         << lm_head_cooperative_sequence_legacy_count << ",\n"
         << "  \"lm_head_cooperative_sequence_loss_bin_count\": "
         << lm_head_cooperative_sequence_loss_bin_count << ",\n"
+        << "  \"lm_head_classifier_true_fused_launch_count\": "
+        << lm_head_classifier_true_fused_launch_count << ",\n"
         << "  \"lm_head_fused_graph_capture_attempt_count\": "
         << lm_head_fused_graph_capture_attempt_count << ",\n"
         << "  \"lm_head_fused_graph_capture_success_count\": "
@@ -22681,6 +22692,8 @@ int run_transformer_lm_training_json(
         << lm_head_classifier_chunk_launch_count << ",\n"
         << "  \"lm_head_classifier_loss_bin_launch_count\": "
         << lm_head_classifier_loss_bin_launch_count << ",\n"
+        << "  \"lm_head_classifier_true_fused_launch_count\": "
+        << lm_head_classifier_true_fused_launch_count << ",\n"
         << "  \"lm_head_classifier_last_rows\": "
         << lm_head_classifier_last_rows << ",\n"
         << "  \"lm_head_classifier_last_vocab\": "

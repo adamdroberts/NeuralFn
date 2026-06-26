@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT full-loop JSON now reports
+  `lm_head_classifier_true_fused_launch_count`, and
+  `tools/paired_kernel_speed.py` tracks it as a hot native route counter.
+  Full-GPT strict true-fused candidates can now prove that the cooperative
+  true-fused kernel launched inside the training loop instead of relying only
+  on focused microbench JSON or ABI path-class strings.
+
+  Verification: ran the focused native source-contract, SM120 sweep-summary,
+  and paired speed sidecar parser tests; ran `bash -n
+  tools/sweep_native_gpt_sm120_candidates.sh`; ran `python -m py_compile
+  tools/paired_kernel_speed.py`; compiled the linked native GPT CLI with
+  `NFN_NATIVE_GPT_FORCE_REBUILD=1 bash tools/build_native_gpt_cli_linked.sh`;
+  ran `git diff --check`.
+
 - `tools/bench_lm_head_backward_candidate.sh` now gates strict true-fused
   LM-head profiles on the new candidate `true_fused_launch_count` field. A run
   with `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` can no longer pass solely
