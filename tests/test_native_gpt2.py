@@ -3839,6 +3839,27 @@ def test_native_sm120_gpt_run_config_uses_compiled_launcher(
     ]
 
 
+def test_native_sm120_gpt_run_config_runs_when_global_status_probe_misses_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sm120_cli = tmp_path / "nfn_train_gpt_sm120"
+    sm120_cli.write_text("#!/usr/bin/env bash\nexit 48\n", encoding="utf-8")
+    sm120_cli.chmod(0o755)
+    missing_global_cli = tmp_path / "missing-nfn-native-train"
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setattr(
+        native_train_module,
+        "resolve_available_native_train_cli_for_status",
+        lambda: missing_global_cli,
+    )
+
+    cfg = build_native_sm120_gpt_run_config("gpt", ["--dry-run"], native_sm120_cli=str(sm120_cli))
+
+    assert native_train_runner_status("compiled-cli").available is False
+    assert run_native_train(cfg, runner="compiled-cli") == 48
+
+
 def test_native_sm120_gpt_run_config_rejects_non_gpt_family_and_python_launcher() -> None:
     with pytest.raises(ValueError, match="dense GPT"):
         build_native_sm120_gpt_run_config("llama", ["--dry-run"])

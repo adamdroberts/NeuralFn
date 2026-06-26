@@ -14,7 +14,11 @@ Future updates should append new entries here rather than replacing older notes.
   `nfn-gpt-sm120-train`. This lets SDK callers hand off to the compiled
   llm.kittens-shaped SM120 launcher through the existing C++ native-train
   binding/subprocess path without importing Torch or routing real tensors
-  through graph-editor nodes.
+  through graph-editor nodes. `run_native_train()` and `exec_native_train()`
+  also now allow a validated explicit config command to run when the generic
+  compiled-CLI availability probe does not know about that launcher, which
+  keeps lean SM120-only installs from failing before spawning their configured
+  binary.
 
   Verification: ran targeted native-train pytest coverage, the no-Torch native
   dependency checker, Python bytecode compilation for the changed Python files,

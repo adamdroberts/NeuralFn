@@ -224,6 +224,9 @@ def resolve_available_native_train_cli_for_status() -> Path:
         family_cli = resolve_native_train_family_cli(family)
         if family_cli:
             return Path(family_cli)
+    sm120_cli = resolve_native_sm120_train_cli()
+    if Path(sm120_cli).exists():
+        return Path(sm120_cli)
     return cli
 
 
@@ -386,6 +389,15 @@ def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]
     return env
 
 
+def _native_train_command_available(argv: Sequence[str]) -> bool:
+    if not argv:
+        return False
+    executable = str(argv[0])
+    if os.sep in executable or (os.altsep is not None and os.altsep in executable):
+        return Path(executable).exists()
+    return shutil.which(executable) is not None
+
+
 def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> int:
     status = native_train_runner_status(runner)
     if status.resolved == "binding":
@@ -393,9 +405,10 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
             raise RuntimeError(f"Native train binding requested but unavailable: {status.reason}")
         _module_name, binding_runner, _resolver = _load_native_train_binding()
         return int(binding_runner(config.to_dict()))
-    if not status.available:
+    argv = config.argv()
+    if not status.available and not _native_train_command_available(argv):
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
-    proc = subprocess.run(config.argv(), env=_native_train_subprocess_env(config), check=False)
+    proc = subprocess.run(argv, env=_native_train_subprocess_env(config), check=False)
     return int(proc.returncode)
 
 
@@ -405,9 +418,9 @@ def exec_native_train(config: NativeTrainRunConfig, *, runner: str = "compiled-c
     status = native_train_runner_status(runner)
     if status.resolved == "binding":
         raise ValueError("exec_native_train requires runner='compiled-cli' or 'subprocess'; use run_native_train for binding")
-    if not status.available:
-        raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
     argv = config.argv()
+    if not status.available and not _native_train_command_available(argv):
+        raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
     os.execvpe(argv[0], argv, _native_train_subprocess_env(config))
     return 127
 
