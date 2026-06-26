@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
+  profile as rejected for real SM120 candidate launches. The profile still
+  compares forced 256-thread versus 512-thread prob-only combined target
+  correction in the non-cooperative LM-head diagnostic schedule, but now
+  requires `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real GPU
+  reruns.
+
+  Migration note: no trainer default changed. This only blocks accidental real
+  launches of a diagnostic profile that improves some non-cooperative LM-head
+  submetrics but still misses the strict paired gates and does not close the
+  llm.kittens parity gap.
+
+  Verification: ran the same-script GPU candidate with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_INCLUDE_LLMK_REFERENCE=1`; the route gate detected
+  `lm_head_prob_only_target_correction_threads: 256 -> 512`, but metric gates
+  rejected it because steady-state CUDA-event timing regressed to `1.001297x`
+  and candidate-over-llm.kittens train-loop wall time remained `1.039342x`.
+
 - Added an opt-in diagnostic cuBLASLt route for the cached cooperative LM-head
   CUDA Graph body. `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`,
   `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, or

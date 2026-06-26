@@ -127,6 +127,14 @@ timing. Runtime JSON reports prob-only samples with
 no-loss-prob-only-dlogits-vec8-loads-normal-vec8-stores-plus-combined-target-correction`
 and `lm_head_ce_bf16_vector_io_strategy:
 vec8-loads-normal-vec8-stores`.
+The related rejected profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
+keeps the forced 256-versus-512 target-correction thread-count comparison
+available. The CUDA 13.3 RTX 5090 3-step, 1-sample recheck improved the
+non-cooperative diagnostic train-loop wall ratio to `0.993286x` and LM-head
+backward to `0.986391x`, but failed the strict gate because steady-state
+CUDA-event step time regressed to `1.001297x` and the candidate still trailed
+llm.kittens at `1.039342x` train-loop wall time.
 Native linear-backward kernel candidates should be isolated before full parity
 runs with `bash tools/bench_linear_backward_candidate.sh`. The wrapper builds
 `build/linear_backward_bench`, loads the raw Tile C ABI, and compares baseline

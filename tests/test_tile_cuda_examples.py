@@ -1356,6 +1356,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_ce_exp2" in text
     assert "NFN_NATIVE_GPT_CE_BF16_EXP2=1" in text
     assert "1.140828x LM-head cooperative time" in text
+    assert "lm_head_prob_only_combined_corrections_threads_512" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512" in text
+    assert "candidate-over-llm.kittens train_loop_wall_ms_per_step remained 1.039342x" in text
     assert "lm_head_ce_vec8_normal_store" in text
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1" in text
     assert "stage.lm_head_backward.total_ms to 1.009078x" in text

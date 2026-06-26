@@ -2319,9 +2319,12 @@ target-correction launch shape through
 `lm_head_prob_only_target_correction_threads`, and the paired speed route-change
 gate treats it as hot route evidence. The
 `lm_head_prob_only_combined_corrections_threads_512` SM120 profile keeps a
-forced 256-versus-512 comparison for that diagnostic route; the 512-thread
-launch passed the CUDA 13.3 RTX 5090 3-step, 2-sample gate, but the broader
-prob-only CE route remains diagnostic-only.
+forced 256-versus-512 comparison for that diagnostic route, but real launches
+reject it by default. The CUDA 13.3 RTX 5090 3-step, 1-sample recheck improved
+the non-cooperative diagnostic train-loop wall ratio to `0.993286x` and
+LM-head backward to `0.986391x`, but failed the strict gate because
+steady-state CUDA-event step time regressed to `1.001297x` and the candidate
+still trailed llm.kittens at `1.039342x` train-loop wall time.
 Setup-only/prewarm route counters remain visible in `native_route_counter_changes`
 but do not satisfy the required gate by themselves. The JSON reports
 `has_hot_route_counter_change`, `hot_changed`, and `setup_only_changed`, and

@@ -252,10 +252,12 @@ defaults to 512 threads instead of 256. Override
 `512`, or `1024` for paired bisection. The native JSON reports
 `lm_head_prob_only_target_correction_threads`, and
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
-keeps the forced 256-versus-512 comparison available. The CUDA 13.3 dedicated
-RTX 5090 3-step, 2-sample gate passed that isolated launch-shape comparison at
-`0.988300x` train-loop wall time and `0.999215x` LM-head backward, but this
-does not promote the broader prob-only CE route as the normal training path.
+keeps the forced 256-versus-512 comparison available, but it is rejected by
+default. The CUDA 13.3 dedicated RTX 5090 3-step, 1-sample recheck improved
+the non-cooperative diagnostic train-loop wall ratio to `0.993286x` and
+LM-head backward to `0.986391x`, but failed the strict gate because
+steady-state CUDA-event step time regressed to `1.001297x` and the candidate
+still trailed llm.kittens at `1.039342x` train-loop wall time.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate

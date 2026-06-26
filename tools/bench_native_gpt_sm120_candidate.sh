@@ -439,6 +439,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_DEFAULTS+=("stage.lm_head_backward.total_ms=1.000" "stage.lm_head_backward.ce.total_ms=1.000" "stage.lm_head_backward.dhidden.total_ms=1.000" "stage.lm_head_backward.dweight.total_ms=1.000")
     ;;
   "lm_head_prob_only_combined_corrections_threads_512"|"lm-head-prob-only-combined-corrections-threads-512"|"lm_head_ce_prob_only_combined_corrections_threads_512"|"lm-head-ce-prob-only-combined-corrections-threads-512")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-26 3-step, 1-sample stage-timed gate changed lm_head_prob_only_target_correction_threads from 256 to 512 and improved train_loop_wall_ms_per_step to 0.993286x plus stage.lm_head_backward.total_ms to 0.986391x in the non-cooperative diagnostic schedule, but rejected it because steady-state CUDA-event step time regressed to 1.001297x and candidate-over-llm.kittens train_loop_wall_ms_per_step remained 1.039342x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1 NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1 NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
