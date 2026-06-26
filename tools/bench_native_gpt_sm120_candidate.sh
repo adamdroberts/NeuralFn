@@ -234,6 +234,11 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun selected the LM-head cooperative cuBLASLt wrapper and moved lm_head_cooperative_backward_strategy to diagnostic-cublaslt-sequence-wrapper-ce-dhidden-dweight-not-parity, but rejected it at 1.077251x train_loop_wall_ms_per_step, 1.083727x steady-state CUDA-event step time, 1.335573x stage.lm_head_backward.total_ms, and 1.477219x stage.lm_head_backward.cooperative.total_ms."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1"
     ;;
+  "lm_head_graph_body_cublaslt"|"lm-head-graph-body-cublaslt"|"lm_head_cooperative_graph_body_cublaslt"|"lm-head-cooperative-graph-body-cublaslt")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-26 3-step, 1-sample stage-timed gate routed the cooperative CUDA graph body through the existing strided cuBLASLt LM-head dHidden/dWeight kernels, but rejected it at 1.079498x train_loop_wall_ms_per_step, 1.083841x steady-state CUDA-event step time, 1.344089x stage.lm_head_backward.total_ms, and 1.495431x stage.lm_head_backward.cooperative.total_ms."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1"
+    ;;
   "lm_head_tk_dweight_32768"|"lm-head-tk-dweight-32768")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2-sample stage-timed rerun moved 48 LM-head dWeight calls to TK but regressed train_loop_wall_ms_per_step to 1.052253x and stage.lm_head_backward.dweight.total_ms to 1.337552x."

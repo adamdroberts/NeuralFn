@@ -1274,6 +1274,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_cublaslt_dhidden_32768" in text
     assert "lm_head_dhidden_fast16bf_32768" in text
     assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N" in text
+    assert "lm_head_graph_body_cublaslt" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1" in text
+    assert "1.495431x stage.lm_head_backward.cooperative.total_ms" in text
     assert "lm_head_tk_dweight_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
     assert "lm_head_tk_dweight_49152" in text

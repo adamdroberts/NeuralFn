@@ -1944,6 +1944,12 @@ bool lm_head_graph_prewarm_thread_cache_enabled() {
              text == "no" || text == "NO" || text == "off" || text == "OFF");
 }
 
+bool lm_head_graph_body_cublaslt_enabled() {
+    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
+           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
+           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT");
+}
+
 bool lm_head_true_fused_cooperative_enabled() {
     const bool requested =
         env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
@@ -2164,11 +2170,74 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             stream);
     }
     const bool serial_graph_body = lm_head_graph_body_serial_enabled();
+    const bool cublaslt_graph_body = lm_head_graph_body_cublaslt_enabled();
     LmHeadCooperativeStreams& cooperative_streams = lm_head_cooperative_streams();
     if (!serial_graph_body && cooperative_streams.status == 0) {
         cudaEventRecord(cooperative_streams.ce_done, stream);
         cudaStreamWaitEvent(cooperative_streams.dhidden, cooperative_streams.ce_done, 0);
         cudaStreamWaitEvent(cooperative_streams.dweight, cooperative_streams.ce_done, 0);
+        const bool cublaslt_dhidden_launched =
+            cublaslt_graph_body &&
+            neuralfn::tile_cuda::cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+                logits_bf16,
+                token_weight_bf16,
+                grad_hidden,
+                rows,
+                hidden_dim,
+                vocab,
+                row_stride,
+                cooperative_streams.dhidden);
+        if (!cublaslt_dhidden_launched) {
+            neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+                logits_bf16,
+                token_weight_bf16,
+                grad_hidden,
+                rows,
+                hidden_dim,
+                row_stride,
+                cooperative_streams.dhidden);
+        }
+        const bool cublaslt_dweight_launched =
+            cublaslt_graph_body &&
+            neuralfn::tile_cuda::cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+                hidden_bf16,
+                logits_bf16,
+                grad_weight,
+                rows,
+                hidden_dim,
+                vocab,
+                row_stride,
+                dweight_beta,
+                cooperative_streams.dweight);
+        if (!cublaslt_dweight_launched) {
+            neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+                hidden_bf16,
+                logits_bf16,
+                grad_weight,
+                rows,
+                hidden_dim,
+                row_stride,
+                dweight_beta,
+                cooperative_streams.dweight);
+        }
+        cudaEventRecord(cooperative_streams.dhidden_done, cooperative_streams.dhidden);
+        cudaEventRecord(cooperative_streams.dweight_done, cooperative_streams.dweight);
+        cudaStreamWaitEvent(stream, cooperative_streams.dhidden_done, 0);
+        cudaStreamWaitEvent(stream, cooperative_streams.dweight_done, 0);
+        return;
+    }
+    const bool cublaslt_dhidden_launched =
+        cublaslt_graph_body &&
+        neuralfn::tile_cuda::cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            stream);
+    if (!cublaslt_dhidden_launched) {
         neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
             logits_bf16,
             token_weight_bf16,
@@ -2176,7 +2245,21 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             rows,
             hidden_dim,
             row_stride,
-            cooperative_streams.dhidden);
+            stream);
+    }
+    const bool cublaslt_dweight_launched =
+        cublaslt_graph_body &&
+        neuralfn::tile_cuda::cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            dweight_beta,
+            stream);
+    if (!cublaslt_dweight_launched) {
         neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
             hidden_bf16,
             logits_bf16,
@@ -2185,30 +2268,8 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             hidden_dim,
             row_stride,
             dweight_beta,
-            cooperative_streams.dweight);
-        cudaEventRecord(cooperative_streams.dhidden_done, cooperative_streams.dhidden);
-        cudaEventRecord(cooperative_streams.dweight_done, cooperative_streams.dweight);
-        cudaStreamWaitEvent(stream, cooperative_streams.dhidden_done, 0);
-        cudaStreamWaitEvent(stream, cooperative_streams.dweight_done, 0);
-        return;
+            stream);
     }
-    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
-        logits_bf16,
-        token_weight_bf16,
-        grad_hidden,
-        rows,
-        hidden_dim,
-        row_stride,
-        stream);
-    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
-        hidden_bf16,
-        logits_bf16,
-        grad_weight,
-        rows,
-        hidden_dim,
-        row_stride,
-        dweight_beta,
-        stream);
 }
 
 int capture_lm_head_classifier_backward_graph_bf16_u16(

@@ -1125,6 +1125,15 @@ The current CUDA 13.3.33 full-trainer rerun keeps the cuBLASLt route rejected:
 it regressed train-loop wall to `1.077251x`, steady-state CUDA-event timing to
 `1.083727x`, LM-head backward to `1.335573x`, and the cooperative LM-head
 substage to `1.477219x`.
+The cached cooperative graph body also has an explicit cuBLASLt bisection
+profile:
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt`, which expands
+to `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`. It asks the graph body to try
+the existing strided cuBLASLt LM-head dHidden/dWeight kernels before falling
+back to the default Tile launchers. Keep it off for normal training: the CUDA
+13.3 dedicated RTX 5090 3-step, 1-sample gate rejected it at `1.079498x`
+train-loop wall, `1.083841x` steady-state CUDA-event timing, `1.344089x`
+LM-head backward, and `1.495431x` cooperative LM-head substage time.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from

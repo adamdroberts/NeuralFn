@@ -1023,6 +1023,16 @@ the CUDA 13.3.33 dedicated RTX 5090 rerun because enabling exp2 moved the
 no-loss classifier off the specialized CE kernel and regressed train-loop wall
 to `1.019757x`, steady-state CUDA-event wall to `1.022252x`, LM-head backward
 to `1.097477x`, and LM-head cooperative time to `1.140828x`.
+Set `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, or
+`NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT=1` only when bisecting the cached
+cooperative LM-head CUDA Graph body. The flag makes the graph body try the
+existing strided cuBLASLt dHidden/dWeight kernels before falling back to the
+default Tile launchers. The named wrapper profile is
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt`; it remains
+rejected after the CUDA 13.3 dedicated RTX 5090 rerun because it regressed
+train-loop wall to `1.079498x`, steady-state CUDA-event wall to `1.083841x`,
+LM-head backward to `1.344089x`, and LM-head cooperative time to `1.495431x`.
 For SDK launches through `NativeGpt2RunConfig` or the generic
 `NativeGptRunConfig`, `batch_size_explicit`, `seq_len_explicit`, and
 `num_layers_explicit` control whether the compiled CLI receives those shape

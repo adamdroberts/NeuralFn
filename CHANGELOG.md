@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in diagnostic cuBLASLt route for the cached cooperative LM-head
+  CUDA Graph body. `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`,
+  `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, or
+  `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT=1` now asks the graph body to try
+  the existing strided cuBLASLt dHidden/dWeight kernels before falling back to
+  the default Tile launchers. The SM120 candidate wrapper exposes the same
+  route as the rejected profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt`.
+
+  Migration note: no trainer default changed. Keep this route off for normal
+  training; it is a reproducible bisection profile for proving that the
+  existing cuBLASLt strided LM-head component path is slower inside the cached
+  cooperative graph body.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`, then ran the
+  same-script GPU candidate with
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_INCLUDE_LLMK_REFERENCE=1`; the route gate detected the cuBLASLt
+  path and the metric gates rejected it at `1.079498x` train-loop wall,
+  `1.083841x` steady-state CUDA-event wall, `1.344089x` LM-head backward, and
+  `1.495431x` LM-head cooperative time.
+
 - Added a named rejected SM120 paired benchmark profile for the BF16 LM-head CE
   exp2 path. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_exp2` now expands to
   `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, dry-runs without the rejected-profile opt-in,
