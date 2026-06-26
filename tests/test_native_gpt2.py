@@ -2188,9 +2188,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
     assert "trainer-chunk-strict|trainer_chunk_strict" in wrapper
+    assert "trainer-chunk-true-fused|trainer_chunk_true_fused" in wrapper
     assert "true-fused-cooperative-smoke|true_fused_cooperative_smoke" in wrapper
     assert "strict-true-fused-smoke|strict_true_fused_smoke" in wrapper
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in wrapper
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in wrapper
+    assert "Production-shape focused strict true-fused LM-head profile" in wrapper
+    assert "DRY_RUN_ENV_PREFIX" in wrapper
     assert "HIDDEN_DIM=8" in wrapper
     assert "VOCAB=16" in wrapper
     assert "ROW_STRIDE=16" in wrapper

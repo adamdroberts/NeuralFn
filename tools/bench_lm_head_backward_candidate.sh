@@ -42,6 +42,18 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
     ;;
+  trainer-chunk-true-fused|trainer_chunk_true_fused|true-fused-trainer-chunk|true_fused_trainer_chunk)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 so the focused trainer-chunk microbench measures the cooperative single-kernel CE+dHidden+dWeight body. Keep rejected until this focused gate proves candidate/reference parity."
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    ;;
   true-fused-cooperative-smoke|true_fused_cooperative_smoke|strict-true-fused-smoke|strict_true_fused_smoke)
     DEFAULT_ROWS=4
     DEFAULT_ITERATIONS=1
@@ -99,7 +111,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-true-fused, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
@@ -250,6 +262,21 @@ BENCH_ARGS=(
 
 case "${DRY_RUN,,}" in
   1|true|yes|on)
+    DRY_RUN_ENV_PREFIX=()
+    for ENV_NAME in \
+      NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE \
+      NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION; do
+      if [[ -n "${!ENV_NAME+x}" ]]; then
+        DRY_RUN_ENV_PREFIX+=("${ENV_NAME}=${!ENV_NAME}")
+      fi
+    done
+    if [[ "${#DRY_RUN_ENV_PREFIX[@]}" -gt 0 ]]; then
+      printf '%q' env
+      for ARG in "${DRY_RUN_ENV_PREFIX[@]}"; do
+        printf ' %q' "${ARG}"
+      done
+      printf ' '
+    fi
     printf '%q' "${BENCH_BIN}"
     for ARG in "${BENCH_ARGS[@]}"; do
       printf ' %q' "${ARG}"

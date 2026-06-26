@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a focused `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused`
+  profile to `tools/bench_lm_head_backward_candidate.sh`. It uses the same
+  32768-row no-loss trainer chunk shape as `trainer-chunk-strict`, but also
+  exports `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` and
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` so the
+  microbench can deliberately measure the production-shape cooperative
+  single-kernel CE+dHidden+dWeight body. The profile is rejected by default
+  until it proves focused candidate/reference parity, and dry-run output now
+  prints the true-fused env prefix so the selected kernel gates are visible
+  without launching CUDA work.
+
+  Verification: ran the focused LM-head dry-run expansion for
+  `trainer-chunk-true-fused`, reran the native GPT and Tile CUDA source-contract
+  tests that cover the focused and full-loop wrappers, checked shell syntax for
+  both LM-head benchmark wrappers, and ran `git diff --check`.
+
 - The rejected-by-default SM120 native candidate profile
   `lm_head_true_fused_cooperative` now sets
   `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` alongside
