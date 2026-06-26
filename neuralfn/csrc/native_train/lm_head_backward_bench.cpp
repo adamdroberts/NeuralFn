@@ -11,6 +11,7 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <initializer_list>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -474,6 +475,35 @@ double time_component(
     return iterations > 0 ? total_ms / static_cast<double>(iterations) : 0.0;
 }
 
+bool env_flag_enabled(std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        const char* raw = std::getenv(name);
+        if (raw != nullptr &&
+            (std::strcmp(raw, "1") == 0 || std::strcmp(raw, "true") == 0 ||
+             std::strcmp(raw, "TRUE") == 0 || std::strcmp(raw, "on") == 0 ||
+             std::strcmp(raw, "ON") == 0 || std::strcmp(raw, "yes") == 0 ||
+             std::strcmp(raw, "YES") == 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool true_fused_allow_production_env_enabled() {
+    return env_flag_enabled({
+        "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION",
+        "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION",
+        "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION",
+    });
+}
+
+bool true_fused_production_shape(const Options& options) {
+    return options.rows > 4096 ||
+           options.hidden_dim > 1024 ||
+           options.vocab > 4096 ||
+           options.row_stride > 4096;
+}
+
 ComponentResult run_reference_components(
     LinearBf16InputWeightBf16OutputFn logits_fn,
     LmHeadCeRowLossFn ce_fn,
@@ -618,6 +648,8 @@ ComponentResult run_reference_components(
 std::string render_json(
     const Options& options,
     bool true_fused_capability,
+    bool true_fused_candidate_production_shape,
+    bool true_fused_allow_production_env,
     std::string_view candidate_symbol_abi_path_class,
     const VariantResult& baseline,
     const VariantResult& candidate,
@@ -668,7 +700,11 @@ std::string render_json(
                           : "unknown"));
     const bool true_fused_replacement_required =
         strict_candidate_symbol &&
-        (!true_fused_capability || candidate_path_class != "strict-true-fused-tile-kernel");
+        (!true_fused_capability ||
+         candidate_path_class != "strict-true-fused-tile-kernel" ||
+         (true_fused_candidate_production_shape && !true_fused_allow_production_env));
+    const bool true_fused_production_ready =
+        !true_fused_candidate_production_shape || true_fused_allow_production_env;
     const double candidate_ce_component_ratio =
         reference_components.ce_ms_per_iter > 0.0
             ? candidate.ms_per_iter / reference_components.ce_ms_per_iter
@@ -724,6 +760,12 @@ std::string render_json(
         << "  \"require_true_fused_candidate\": " << (options.require_true_fused_candidate ? "true" : "false") << ",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
+        << "  \"candidate_true_fused_production_shape\": "
+        << (true_fused_candidate_production_shape ? "true" : "false") << ",\n"
+        << "  \"candidate_true_fused_allow_production_env\": "
+        << (true_fused_allow_production_env ? "true" : "false") << ",\n"
+        << "  \"candidate_true_fused_production_ready\": "
+        << (true_fused_production_ready ? "true" : "false") << ",\n"
         << "  \"candidate_symbol_abi_path_class\": \""
         << json_escape(candidate_symbol_abi_path_class) << "\",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
@@ -961,6 +1003,8 @@ int main(int argc, char** argv) {
             render_json(
                 options,
                 true_fused_capability() != 0,
+                true_fused_production_shape(options),
+                true_fused_allow_production_env_enabled(),
                 fused_kernel_path_class() != nullptr ? fused_kernel_path_class() : "missing",
                 baseline,
                 candidate,

@@ -2103,7 +2103,11 @@ defaults the true-fused requirement on,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused` selects that production
 shape and exports `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` plus
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` for a
-rejected-by-default focused true-fused candidate measurement,
+rejected-by-default focused true-fused candidate measurement. The resulting
+JSON reports `candidate_true_fused_production_shape`,
+`candidate_true_fused_allow_production_env`, and
+`candidate_true_fused_production_ready`, so trainer-shape runs distinguish a
+selected strict symbol from a production-ready true-fused launch contract,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` selects the same
 optimizer no-loss trainer chunk while comparing against the explicit
 cuBLASLt dHidden/dWeight cooperative candidate,

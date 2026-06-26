@@ -410,7 +410,11 @@ symbol (`1.000186x`). Use
 `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1` to opt into
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` and
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` for a focused
-production-shape true-fused candidate measurement,
+production-shape true-fused candidate measurement. Focused benchmark JSON
+reports `candidate_true_fused_production_shape`,
+`candidate_true_fused_allow_production_env`, and
+`candidate_true_fused_production_ready` so a selected strict symbol cannot be
+mistaken for a production-ready trainer-shape candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` to compare that same
 optimizer chunk against the cuBLASLt cooperative candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss

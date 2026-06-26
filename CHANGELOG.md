@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Focused LM-head backward benchmark JSON now reports
+  `candidate_true_fused_production_shape`,
+  `candidate_true_fused_allow_production_env`, and
+  `candidate_true_fused_production_ready`. The strict-symbol replacement flag
+  also remains true when a trainer-sized true-fused candidate is selected without
+  the production-shape allow env, preventing a selector-only run from being
+  mistaken for a production-ready fused kernel contract.
+
+  Verification: compiled `lm_head_backward_bench`, reran the focused native GPT
+  source-contract test, ran the tiny true-fused cooperative LM-head smoke on the
+  RTX 5090 outside the sandbox and confirmed the new JSON readiness fields, and
+  ran `git diff --check`.
+
 - Added a focused `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused`
   profile to `tools/bench_lm_head_backward_candidate.sh`. It uses the same
   32768-row no-loss trainer chunk shape as `trainer-chunk-strict`, but also

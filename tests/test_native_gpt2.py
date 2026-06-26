@@ -2108,6 +2108,11 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in bench_source
     assert "reference_cublaslt_components" in bench_source
     assert "candidate_true_fused_capability" in bench_source
+    assert "candidate_true_fused_production_shape" in bench_source
+    assert "candidate_true_fused_allow_production_env" in bench_source
+    assert "candidate_true_fused_production_ready" in bench_source
+    assert "true_fused_allow_production_env_enabled" in bench_source
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in bench_source
     assert "candidate_sequence_wrapper_only" in bench_source
     assert "candidate_strict_symbol_is_placeholder_sequence" in bench_source
     assert "candidate_cuda_graph_wrapper_only" in bench_source
