@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the documented `linked_startup` SM120 startup evidence after the
+  CUDA 13.3.33 workstation rebuild. The linked native GPT binary remains the
+  preferred SDK, CLI, and `nfn train` startup path, but the current 2026-06-26
+  dedicated RTX 5090 recheck measures it at `0.898449x` `setup_wall_ms` and
+  `0.898865x` `total_wall_ms` versus the dynamic Tile-ops loader baseline,
+  rather than the older, faster 2026-06-25 numbers.
+
+  Migration note: no trainer default changed. This keeps the operational docs
+  aligned with the current benchmark evidence so future startup work compares
+  against the right post-reinstall baseline.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_MAX_GPU_UTILIZATION_PCT=25
+  bash tools/bench_native_gpt_sm120_candidate.sh`; the route gate stayed
+  disabled as intended for the linked-vs-dynamic loader comparison, and the
+  setup-wall gate passed.
+
 - Marked the
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
   profile as rejected for real SM120 candidate launches. The profile still

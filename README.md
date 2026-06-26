@@ -107,10 +107,11 @@ route and regressed setup wall time to `3.467504x`, train-loop wall time to
 `1.009903x`, first-step CUDA-event timing to `1.048444x`, and tokens/sec to
 `0.990197x`.
 The linked native trainer remains the preferred workstation startup path for
-direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3 dedicated
-RTX 5090 startup-only gate measured `linked_startup` at `0.868933x` setup wall
-time versus the dynamic Tile-ops baseline after switching token-weight
-initialization to a precomputed float4 pattern helper, and a direct dry run prints
+direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3.33
+dedicated RTX 5090 startup-only recheck on 2026-06-26 measured
+`linked_startup` at `0.898449x` setup wall time and `0.898865x` total wall time
+versus the dynamic Tile-ops baseline with zero compute processes before each
+paired sample, and a direct dry run prints
 `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked` without importing
 Torch or the Python dataset manager. The current LM-head alternatives are still
 diagnostics rather than defaults: the strict cooperative true-fused smoke is a
@@ -3274,9 +3275,9 @@ with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 `NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`. A CUDA 13.3 dedicated RTX 5090
 5-sample rerun on 2026-06-24 passed the setup-wall gate again at `0.866699x`
 for the linked candidate, with zero compute processes before each paired sample.
-A CUDA 13.3.33 rebuild recheck on 2026-06-25 with 3 measured samples and no
-warmup measured the linked candidate at `0.839094x` `setup_wall_ms` and
-`0.839648x` `total_wall_ms` with no route-counter or strategy-value changes.
+A CUDA 13.3.33 dedicated RTX 5090 recheck on 2026-06-26 with 3 measured samples
+and no warmup measured the linked candidate at `0.898449x` `setup_wall_ms` and
+`0.898865x` `total_wall_ms` with no route-counter or strategy-value changes.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` measures the
 default-off cuBLAS handle prewarm route by pinning the baseline to
 `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and the candidate to

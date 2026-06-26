@@ -2098,9 +2098,9 @@ because the benchmark is measuring dynamic Tile-ops loading versus linked
 Tile-ops startup. Use `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 `NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN` when comparing binaries outside
 `build/`.
-On the CUDA 13.3.33 dedicated RTX 5090 workstation, a 2026-06-25 3-sample
-startup-only recheck measured the linked candidate at `0.839094x`
-`setup_wall_ms` and `0.839648x` `total_wall_ms`, with unchanged native route
+On the CUDA 13.3.33 dedicated RTX 5090 workstation, a 2026-06-26 3-sample
+startup-only recheck measured the linked candidate at `0.898449x`
+`setup_wall_ms` and `0.898865x` `total_wall_ms`, with unchanged native route
 counters and strategy values.
 
 Prefer the generic dense GPT environment names for new native runs:
