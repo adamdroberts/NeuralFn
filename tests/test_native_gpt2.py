@@ -2123,7 +2123,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_true_fused_capability" in bench_source
     assert "candidate_true_fused_production_shape" in bench_source
     assert "candidate_true_fused_allow_production_env" in bench_source
+    assert "candidate_true_fused_forced_production_debug" in bench_source
     assert "candidate_true_fused_production_ready" in bench_source
+    assert "true_fused_candidate_production_shape && true_fused_allow_production_env" in bench_source
+    assert "candidate_path_class == \"strict-true-fused-tile-kernel\"" in bench_source
     assert "true_fused_allow_production_env_enabled" in bench_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in bench_source
     assert "candidate_sequence_wrapper_only" in bench_source

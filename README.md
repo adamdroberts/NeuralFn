@@ -414,8 +414,10 @@ symbol (`1.000186x`). Use
 production-shape true-fused candidate measurement. Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
-`candidate_true_fused_production_ready` so a selected strict symbol cannot be
-mistaken for a production-ready trainer-shape candidate,
+`candidate_true_fused_forced_production_debug`; it only reports
+`candidate_true_fused_production_ready` for non-production smoke shapes until
+the trainer-sized strict kernel beats the paired parity gates, so a selected
+strict symbol cannot be mistaken for a defaultable trainer-shape candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` to compare that same
 optimizer chunk against the cuBLASLt cooperative candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss

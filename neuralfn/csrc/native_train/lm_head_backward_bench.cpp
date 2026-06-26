@@ -698,13 +698,17 @@ std::string render_json(
                    : (candidate_sequence_wrapper_only
                           ? "diagnostic-sequence-wrapper"
                           : "unknown"));
+    const bool true_fused_forced_production_debug =
+        true_fused_candidate_production_shape && true_fused_allow_production_env;
     const bool true_fused_replacement_required =
         strict_candidate_symbol &&
         (!true_fused_capability ||
          candidate_path_class != "strict-true-fused-tile-kernel" ||
-         (true_fused_candidate_production_shape && !true_fused_allow_production_env));
+         true_fused_candidate_production_shape);
     const bool true_fused_production_ready =
-        !true_fused_candidate_production_shape || true_fused_allow_production_env;
+        true_fused_capability &&
+        candidate_path_class == "strict-true-fused-tile-kernel" &&
+        !true_fused_candidate_production_shape;
     const double candidate_ce_component_ratio =
         reference_components.ce_ms_per_iter > 0.0
             ? candidate.ms_per_iter / reference_components.ce_ms_per_iter
@@ -764,6 +768,8 @@ std::string render_json(
         << (true_fused_candidate_production_shape ? "true" : "false") << ",\n"
         << "  \"candidate_true_fused_allow_production_env\": "
         << (true_fused_allow_production_env ? "true" : "false") << ",\n"
+        << "  \"candidate_true_fused_forced_production_debug\": "
+        << (true_fused_forced_production_debug ? "true" : "false") << ",\n"
         << "  \"candidate_true_fused_production_ready\": "
         << (true_fused_production_ready ? "true" : "false") << ",\n"
         << "  \"candidate_symbol_abi_path_class\": \""

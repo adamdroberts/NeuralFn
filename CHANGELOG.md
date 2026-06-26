@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Focused LM-head backward benchmark JSON now distinguishes forced
+  production-shape true-fused investigations from promotion readiness. The
+  trainer-sized strict single-kernel profile reports
+  `candidate_true_fused_forced_production_debug: true` and keeps
+  `candidate_true_fused_production_ready: false` until the strict Tile kernel
+  beats the same-script LM-head and full-loop gates, preventing the rejected
+  diagnostic profile from being confused with a defaultable training route.
+
+  Verification: reran the focused native GPT source-contract test, compiled the
+  LM-head backward microbench, ran the tiny true-fused smoke on the dedicated
+  RTX 5090, and ran `git diff --check`.
+
 - The default vector4 GPT token-weight initializer now uses a precomputed
   `float4` pattern helper for the repeating `-0.08` through `0.07` initialization
   sequence instead of recomputing four float values in every vector thread. The

@@ -2642,7 +2642,11 @@ full-loop candidate runs fail if they silently fall back to the diagnostic graph
 wrapper instead of measuring the production true-fused body. Dry-run plans for
 that profile include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
-auditable before any GPU work starts.
+auditable before any GPU work starts. Focused LM-head benchmark JSON separates
+that forced investigation mode from promotion readiness with
+`candidate_true_fused_forced_production_debug`; production-sized trainer chunks
+continue to report `candidate_true_fused_production_ready: false` until the
+strict single-kernel route beats the paired LM-head and full-loop gates.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,
