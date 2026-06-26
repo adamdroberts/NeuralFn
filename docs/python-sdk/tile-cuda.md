@@ -691,7 +691,11 @@ The wrapper also defaults
 `NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`, which keeps a
 stuck high `nvidia-smi` utilization counter from blocking a dedicated-GPU run
 when the selected GPU has no compute processes. Set it to `0` for strict
-utilization gating; active compute processes still fail immediately.
+utilization gating; active compute processes still fail immediately. The
+llm.kittens parity wrapper mirrors this behavior with
+`NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`, so
+native-vs-native and native-vs-reference runs share the same selected-GPU idle
+policy.
 For candidate-only native CLI flags, use
 `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short

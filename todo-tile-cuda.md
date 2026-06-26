@@ -84,6 +84,12 @@ Real training tensors must not pass through graph editor node objects.
   `graph_editor_tensor_flow=false`; explicit generic `libcudart.so` comparison
   measured `0.195069 ms`. This removes a small loader-search cost only; large
   startup buckets remain arena materialization and token-weight initialization.
+- [x] Align the llm.kittens parity wrapper with the native-vs-native candidate
+  wrapper's dedicated-GPU stale-utilization guard. `tools/bench_native_gpt_sm120_parity.sh`
+  now defaults `NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`
+  and forwards the paired-runner flag that tolerates high NVML utilization only
+  when the selected display-disabled GPU has no compute processes; set it to
+  `0` for strict stale-utilization rejection.
 - [x] Revisit the LM-head backward microbench after the CUDA 13.3.33 WSL
   reinstall. Sandboxed GPU probes still fail with OS-blocked NVML/runtime
   access, but the same command with GPU access sees the dedicated RTX 5090

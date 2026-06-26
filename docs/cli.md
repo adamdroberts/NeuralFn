@@ -1286,7 +1286,11 @@ NeuralFn-vs-llm.kittens env change.
 an idle display-disabled NVIDIA GPU for mixed display/compute workstations; set
 it to `auto` only when fallback to the lowest-utilization NVIDIA GPU is
 acceptable, or set it to `0` or another explicit CUDA device value when you want
-manual pinning.
+manual pinning. The parity wrapper also defaults
+`NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`, matching the
+native-vs-native candidate wrapper: high NVML utilization samples are tolerated
+only when the selected GPU has no compute processes. Set it to `0` to reject
+stale utilization samples as hard failures.
 The wrapper writes NeuralFn native profile sidecars by default. Set
 `NFN_SM120_PARITY_PROFILE_DIR=none` for a run without sidecars, or set it to a
 directory to keep them. Sidecars do not enable CUDA-event stage timing by

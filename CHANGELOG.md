@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_parity.sh` now mirrors the native-vs-native
+  candidate wrapper's stale NVML utilization policy. It defaults
+  `NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1` and forwards
+  `--allow-stale-selected-gpu-utilization-without-compute-processes` to
+  `tools/paired_kernel_speed.py`, so a dedicated display-disabled RTX 5090 can
+  continue when NVML reports stale utilization but no compute process owns the
+  selected GPU. Set the env var to `0` to reject stale utilization as a hard
+  parity failure.
+
+  Verification: ran the focused native GPT source-contract pytest; ran
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`; ran
+  `NFN_SM120_PARITY_DRY_RUN_PLAN=1 NFN_SM120_PARITY_STEPS=1
+  NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_stale_gpu_policy_dry_run.json
+  bash tools/bench_native_gpt_sm120_parity.sh`; ran `git diff --check`.
+
 - Native CUDA runtime discovery now prefers concrete installed CUDA Toolkit
   paths before generic loader sonames when `--cuda-runtime-lib` /
   `NFN_CUDA_RUNTIME_LIB` is not set. On the CUDA 13.3 WSL workstation path the

@@ -791,6 +791,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
     assert 'CANDIDATE_PROFILE_RAW="${NFN_SM120_PARITY_CANDIDATE_PROFILE:-${NFN_SM120_PARITY_PROFILE:-}}"' in parity_bench
     assert "NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench
+    assert (
+        'ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE="${NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE:-${NFN_SM120_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE:-1}}"'
+        in parity_bench
+    )
+    assert "--allow-stale-selected-gpu-utilization-without-compute-processes" in parity_bench
     assert "Refusing to run because a parity profile would otherwise be ignored" in parity_bench
     assert "def bool_value(value)" in parity_bench
     assert 'lowered in {"1", "true", "yes", "on"}' in parity_bench
