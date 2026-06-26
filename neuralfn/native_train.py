@@ -15,6 +15,8 @@ from typing import Any, Sequence
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
 DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
+DEFAULT_NATIVE_SM120_TRAIN_CLI = "build/nfn_train_gpt_sm120"
+NATIVE_SM120_TRAIN_COMMANDS = ("nfn-train-gpt-sm120", "nfn-gpt-sm120-train", "nfn_train_gpt_sm120")
 DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt"})
 NATIVE_TRAIN_FAMILY_TARGETS = {
     "gpt": "nfn_gpt_native_train",
@@ -134,6 +136,24 @@ def resolve_native_train_cli(value: str | None = None) -> str:
     return str(repo_root / DEFAULT_NATIVE_TRAIN_CLI)
 
 
+def resolve_native_sm120_train_cli(value: str | None = None) -> str:
+    requested = str(value or "").strip()
+    if requested:
+        return requested
+    env_value = str(os.environ.get("NFN_NATIVE_SM120_CLI", "")).strip()
+    if env_value:
+        return env_value
+    repo_root = Path(__file__).resolve().parents[1]
+    build_cli = repo_root / DEFAULT_NATIVE_SM120_TRAIN_CLI
+    if build_cli.exists():
+        return str(build_cli)
+    for command in NATIVE_SM120_TRAIN_COMMANDS:
+        resolved = shutil.which(command)
+        if resolved:
+            return resolved
+    return str(build_cli)
+
+
 def validate_strict_native_train_command(argv: Sequence[str], *, strict: bool = True) -> list[str]:
     """Reject Python/shell launcher commands on the native training SDK path."""
 
@@ -219,6 +239,28 @@ def build_native_train_run_config(
         model_family=normalize_native_model_family(model_family),
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=native_train_cli,
+        require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        strict_native_command=bool(strict_native_command),
+    )
+
+
+def build_native_sm120_gpt_run_config(
+    model_family: str = "gpt",
+    args: Sequence[str] | None = None,
+    *,
+    native_sm120_cli: str | None = None,
+    require_cooperative_lm_head_backward: bool = False,
+    strict_native_command: bool = True,
+) -> NativeTrainRunConfig:
+    """Return a dense GPT config that launches the compiled SM120 trainer directly."""
+
+    normalized_family = normalize_native_model_family(model_family)
+    if normalized_family not in DENSE_GPT_MODEL_FAMILIES:
+        raise ValueError("SM120 GPT launcher supports only dense GPT model families")
+    return NativeTrainRunConfig(
+        model_family=normalized_family,
+        args=tuple(str(arg) for arg in (args or ())),
+        native_train_cli=resolve_native_sm120_train_cli(native_sm120_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         strict_native_command=bool(strict_native_command),
     )

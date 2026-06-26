@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `resolve_native_sm120_train_cli()` and
+  `build_native_sm120_gpt_run_config()` to the Python SDK. The helper builds a
+  normal `NativeTrainRunConfig` for dense GPT families while resolving the
+  compiled no-Bash SM120 launcher from `NFN_NATIVE_SM120_CLI`,
+  `build/nfn_train_gpt_sm120`, or installed `nfn-train-gpt-sm120` /
+  `nfn-gpt-sm120-train`. This lets SDK callers hand off to the compiled
+  llm.kittens-shaped SM120 launcher through the existing C++ native-train
+  binding/subprocess path without importing Torch or routing real tensors
+  through graph-editor nodes.
+
+  Verification: ran targeted native-train pytest coverage, the no-Torch native
+  dependency checker, Python bytecode compilation for the changed Python files,
+  and `git diff --check`.
+
 - Rechecked the `lm_head_graph_prewarm` default-vs-legacy SM120 profile after
   the CUDA 13.3.33 reinstall and MLP FC ordering rollback. The graph-prewarm
   default still eliminates timed LM-head graph capture, moving capture attempts
