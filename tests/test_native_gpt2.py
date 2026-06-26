@@ -8300,6 +8300,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel" in kernels_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel" in kernels_text
     assert "bool token_weight_bf16_pattern_init_enabled()" in kernels_text
+    assert "gpt2_token_weight_init_float_pattern4" in kernels_text
+    assert "make_float4(-0.08f, -0.07f, -0.06f, -0.05f)" in kernels_text
     assert "gpt2_token_weight_init_bf16_pattern4" in kernels_text
     assert "gpt2_token_weight_init_bf16_pattern1" in kernels_text
     assert "make_ushort4(0xbda4u, 0xbd8fu, 0xbd76u, 0xbd4du)" in kernels_text
@@ -8314,7 +8316,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
     ]
-    assert "bf16_bits_from_float(value0)" in vector4_convert_shadow_init
+    assert "const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket)" in vector4_convert_shadow_init
+    assert "bf16_bits_from_float(pattern.x)" in vector4_convert_shadow_init
+    assert "bf16_bits_from_float(value0)" not in vector4_convert_shadow_init
     token_threaded_init_helper = kernels_text[
         kernels_text.index("bool token_weight_threaded_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
@@ -10696,7 +10700,9 @@ def test_native_tile_token_weight_bf16_pattern_initializer_is_opt_in() -> None:
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
     ]
-    assert "bf16_bits_from_float(value0)" in convert_kernel
+    assert "const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket)" in convert_kernel
+    assert "bf16_bits_from_float(pattern.x)" in convert_kernel
+    assert "bf16_bits_from_float(value0)" not in convert_kernel
 
 
 def test_cli_install_script_help_and_no_native_mode() -> None:

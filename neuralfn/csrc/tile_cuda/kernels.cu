@@ -7323,6 +7323,25 @@ __device__ __forceinline__ std::uint16_t bf16_bits_from_float(float value) {
   return *reinterpret_cast<const std::uint16_t*>(&bf16_value);
 }
 
+__device__ __forceinline__ float4 gpt2_token_weight_init_float_pattern4(int bucket) {
+  switch (bucket & 15) {
+    case 0:
+      return make_float4(-0.08f, -0.07f, -0.06f, -0.05f);
+    case 4:
+      return make_float4(-0.04f, -0.03f, -0.02f, -0.01f);
+    case 8:
+      return make_float4(0.0f, 0.01f, 0.02f, 0.03f);
+    case 12:
+      return make_float4(0.04f, 0.05f, 0.06f, 0.07f);
+    default:
+      return make_float4(
+          static_cast<float>((bucket & 15) - 8) * 0.01f,
+          static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f,
+          static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f,
+          static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f);
+  }
+}
+
 __device__ __forceinline__ ushort4 gpt2_token_weight_init_bf16_pattern4(int bucket) {
   switch (bucket & 15) {
     case 0:
@@ -7369,11 +7388,8 @@ __global__ void init_gpt2_token_weight_vector4_float32_kernel(
   const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
   if (idx + 3 < n) {
     const int bucket = static_cast<int>(idx) & 15;
-    reinterpret_cast<float4*>(values)[idx / 4] = make_float4(
-        static_cast<float>(bucket - 8) * 0.01f,
-        static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f,
-        static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f,
-        static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f);
+    reinterpret_cast<float4*>(values)[idx / 4] =
+        gpt2_token_weight_init_float_pattern4(bucket);
     return;
   }
   for (std::int64_t tail = idx; tail < n; ++tail) {
@@ -7389,11 +7405,8 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel(
   const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
   if (idx + 3 < n) {
     const int bucket = static_cast<int>(idx) & 15;
-    const float value0 = static_cast<float>(bucket - 8) * 0.01f;
-    const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
-    const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
-    const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
-    reinterpret_cast<float4*>(values)[idx / 4] = make_float4(value0, value1, value2, value3);
+    reinterpret_cast<float4*>(values)[idx / 4] =
+        gpt2_token_weight_init_float_pattern4(bucket);
     reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] =
         gpt2_token_weight_init_bf16_pattern4(bucket);
     return;
@@ -7413,16 +7426,13 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_
   const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
   if (idx + 3 < n) {
     const int bucket = static_cast<int>(idx) & 15;
-    const float value0 = static_cast<float>(bucket - 8) * 0.01f;
-    const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
-    const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
-    const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
-    reinterpret_cast<float4*>(values)[idx / 4] = make_float4(value0, value1, value2, value3);
+    const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket);
+    reinterpret_cast<float4*>(values)[idx / 4] = pattern;
     reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] = make_ushort4(
-        bf16_bits_from_float(value0),
-        bf16_bits_from_float(value1),
-        bf16_bits_from_float(value2),
-        bf16_bits_from_float(value3));
+        bf16_bits_from_float(pattern.x),
+        bf16_bits_from_float(pattern.y),
+        bf16_bits_from_float(pattern.z),
+        bf16_bits_from_float(pattern.w));
     return;
   }
   for (std::int64_t tail = idx; tail < n; ++tail) {
@@ -7447,11 +7457,8 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_k
     }
     if (idx + 3 < public_n) {
       const int bucket = static_cast<int>(idx) & 15;
-      const float value0 = static_cast<float>(bucket - 8) * 0.01f;
-      const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
-      const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
-      const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
-      reinterpret_cast<float4*>(values)[idx / 4] = make_float4(value0, value1, value2, value3);
+      reinterpret_cast<float4*>(values)[idx / 4] =
+          gpt2_token_weight_init_float_pattern4(bucket);
       reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] =
           gpt2_token_weight_init_bf16_pattern4(bucket);
       return;
@@ -7482,11 +7489,8 @@ __global__ void init_gpt2_token_weight_vector4_strided_float32_kernel(
     const std::int64_t idx = vector_idx * 4;
     if (idx + 3 < n) {
       const int bucket = static_cast<int>(idx) & 15;
-      reinterpret_cast<float4*>(values)[vector_idx] = make_float4(
-          static_cast<float>(bucket - 8) * 0.01f,
-          static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f,
-          static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f,
-          static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f);
+      reinterpret_cast<float4*>(values)[vector_idx] =
+          gpt2_token_weight_init_float_pattern4(bucket);
       continue;
     }
     for (std::int64_t tail = idx; tail < n; ++tail) {
@@ -7509,16 +7513,13 @@ __global__ void init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_
     const std::int64_t idx = vector_idx * 4;
     if (idx + 3 < n) {
       const int bucket = static_cast<int>(idx) & 15;
-      const float value0 = static_cast<float>(bucket - 8) * 0.01f;
-      const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
-      const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
-      const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
-      reinterpret_cast<float4*>(values)[vector_idx] = make_float4(value0, value1, value2, value3);
+      const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket);
+      reinterpret_cast<float4*>(values)[vector_idx] = pattern;
       reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] = make_ushort4(
-          bf16_bits_from_float(value0),
-          bf16_bits_from_float(value1),
-          bf16_bits_from_float(value2),
-          bf16_bits_from_float(value3));
+          bf16_bits_from_float(pattern.x),
+          bf16_bits_from_float(pattern.y),
+          bf16_bits_from_float(pattern.z),
+          bf16_bits_from_float(pattern.w));
       continue;
     }
     for (std::int64_t tail = idx; tail < n; ++tail) {

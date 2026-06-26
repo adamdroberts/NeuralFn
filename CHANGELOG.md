@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The default vector4 GPT token-weight initializer now uses a precomputed
+  `float4` pattern helper for the repeating `-0.08` through `0.07` initialization
+  sequence instead of recomputing four float values in every vector thread. The
+  BF16 shadow conversion path still converts those exact float pattern lanes,
+  while the opt-in BF16 pattern writer remains separate for benchmarking.
+
+  Verification: rebuilt the Tile ops shared library and linked native GPT
+  trainer, reran the focused token-initializer/source-contract tests, reran
+  `git diff --check`, and ran the CUDA 13.3 RTX 5090 `linked_startup` benchmark.
+  The linked candidate passed the setup wall gate at `0.868933x` of the dynamic
+  baseline and token-weight init measured `0.937122x` of baseline.
+
 - `tools/train_gpt_sm120.sh` documentation and failure guidance now match the
   actual workstation default: the helper prefers
   `build/nfn_gpt_native_train_linked`, passes `--tile-ops-lib linked` on that

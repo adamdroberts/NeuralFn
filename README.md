@@ -99,8 +99,9 @@ dInput attribution. Keep both as diagnostic profiles unless a later same-script
 gate passes all hot-stage and steady-state criteria.
 The linked native trainer remains the preferred workstation startup path for
 direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3 dedicated
-RTX 5090 startup-only gate measured `linked_startup` at `0.891407x` setup wall
-time versus the dynamic Tile-ops baseline, and a direct dry run prints
+RTX 5090 startup-only gate measured `linked_startup` at `0.868933x` setup wall
+time versus the dynamic Tile-ops baseline after switching token-weight
+initialization to a precomputed float4 pattern helper, and a direct dry run prints
 `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked` without importing
 Torch or the Python dataset manager. The current LM-head alternatives are still
 diagnostics rather than defaults: the strict cooperative true-fused smoke is a
