@@ -4899,6 +4899,16 @@ def test_paired_kernel_speed_tool_supports_reference_command() -> None:
     assert payload["candidate_over_reference_native_metrics"][
         "train_loop_wall_ms_per_step"
     ]["mean"] == 11.0 / 9.0
+    first_sample = payload["paired_samples"][0]
+    assert first_sample["candidate_over_baseline_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ] == 1.1
+    assert first_sample["reference_over_baseline_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ] == 0.9
+    assert first_sample["candidate_over_reference_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ] == 11.0 / 9.0
     assert "reference_env" in proc.stdout
     assert "reference_seconds" in proc.stdout
     assert "candidate_over_reference_native_metrics" in proc.stdout

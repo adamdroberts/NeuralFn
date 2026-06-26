@@ -2266,6 +2266,29 @@ def summarize_metric_ratios(
     return {key: summarize(values) for key, values in ratios_by_metric.items() if values}
 
 
+def sample_metric_ratios(
+    denominator: dict[str, object],
+    numerator: dict[str, object],
+) -> dict[str, float]:
+    denominator_metrics = denominator.get("native_metrics")
+    numerator_metrics = numerator.get("native_metrics")
+    if not isinstance(denominator_metrics, dict) or not isinstance(numerator_metrics, dict):
+        return {}
+    ratios: dict[str, float] = {}
+    for key in sorted(set(denominator_metrics).intersection(numerator_metrics)):
+        denominator_value = denominator_metrics.get(key)
+        numerator_value = numerator_metrics.get(key)
+        if (
+            isinstance(denominator_value, (int, float))
+            and not isinstance(denominator_value, bool)
+            and isinstance(numerator_value, (int, float))
+            and not isinstance(numerator_value, bool)
+            and float(denominator_value) != 0.0
+        ):
+            ratios[key] = float(numerator_value) / float(denominator_value)
+    return ratios
+
+
 def summarize_native_route_counter_changes(
     baseline_summary: dict[str, dict[str, float]],
     candidate_summary: dict[str, dict[str, float]],
@@ -4008,6 +4031,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             row["baseline"] = by_name["baseline"]
             row["candidate"] = by_name["candidate"]
             row["candidate_over_baseline"] = ratios[-1]
+            row["candidate_over_baseline_native_metrics"] = sample_metric_ratios(
+                by_name["baseline"],
+                by_name["candidate"],
+            )
             if reference is not None:
                 reference_time = float(by_name["reference"]["seconds"])
                 reference_seconds.append(reference_time)
@@ -4022,6 +4049,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 row["reference"] = by_name["reference"]
                 row["reference_over_baseline"] = reference_over_baseline
                 row["candidate_over_reference"] = candidate_over_reference
+                row["reference_over_baseline_native_metrics"] = sample_metric_ratios(
+                    by_name["baseline"],
+                    by_name["reference"],
+                )
+                row["candidate_over_reference_native_metrics"] = sample_metric_ratios(
+                    by_name["reference"],
+                    by_name["candidate"],
+                )
             row["gpu_after"] = gpu_snapshot()
             sample_rows.append(row)
         gpu_after = gpu_snapshot()

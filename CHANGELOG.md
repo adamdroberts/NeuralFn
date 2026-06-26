@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/paired_kernel_speed.py` now writes direct per-sample native metric
+  ratio maps under each `paired_samples[]` row:
+  `candidate_over_baseline_native_metrics`,
+  `reference_over_baseline_native_metrics`, and
+  `candidate_over_reference_native_metrics`. The existing top-level aggregate
+  ratio summaries are unchanged, but individual samples now carry the same
+  candidate-vs-old-native and candidate-vs-reference evidence needed to inspect
+  noisy CUDA Tile kernel gates under a single selected-GPU lock.
+
+  Migration note: aggregate JSON consumers do not need to change. Consumers that
+  inspect `paired_samples[]` can read the new maps as direct `metric -> ratio`
+  values, not `mean/median/min/max` summaries.
+
+  Verification: added a contract assertion to the paired reference-command unit
+  test so sample-level candidate/baseline, reference/baseline, and
+  candidate/reference native metric ratios are all emitted.
+
 - Added `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT=head|tail`
   and `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_persistent_block_outputs_last6`.
   Partial BF16 persistent-output diagnostics now report

@@ -892,9 +892,14 @@ the tool rotates baseline, candidate, and reference order per sample and emits
 `reference_over_baseline`, `candidate_over_reference`,
 `reference_native_metrics`, `reference_over_baseline_native_metrics`, and
 `candidate_over_reference_native_metrics` beside the existing
-candidate-over-baseline fields. Use this when a candidate should be accepted
-only if it improves the old native route and remains competitive with the
-external llm.kittens timing under the same selected-GPU lock. Add
+candidate-over-baseline fields. Each `paired_samples[]` row also includes direct
+per-sample `candidate_over_baseline_native_metrics`,
+`reference_over_baseline_native_metrics`, and
+`candidate_over_reference_native_metrics` maps, so one noisy sample can be
+inspected against the exact native metric ratios instead of only the top-level
+aggregate summaries. Use this when a candidate should be accepted only if it
+improves the old native route and remains competitive with the external
+llm.kittens timing under the same selected-GPU lock. Add
 `--max-candidate-reference-ratio [STAT:]METRIC=RATIO` or
 `--min-candidate-reference-ratio [STAT:]METRIC=RATIO` to fail the run when the
 candidate loses to that reference on the same native metric. The SM120 native
