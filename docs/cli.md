@@ -1009,7 +1009,10 @@ For no-Bash SM120 workstation runs, build the compiled launcher with
 `tools/build_native_gpt2_all.sh` also builds it. The launcher mirrors
 `tools/train_gpt_sm120.sh`, prefers the linked native GPT trainer, injects
 `--tile-ops-lib linked` when appropriate, preserves the GPT/GPT3/custom-graph
-selector defaults, and execs the CUDA Tile trainer without Python startup.
+selector defaults, and execs the CUDA Tile trainer without Python startup. It
+honors `NFN_SM120_NATIVE_*` env controls for cadence, shape, optimizer,
+sampling, checkpointing, and train-loss defaults, with `NFN_SM120_*` fallbacks,
+before appending extra CLI flags.
 
 Native dense GPT validation defaults to 20 validation batches per periodic
 evaluation. Use `--eval-batches N` or `--eval-batch-size N` to shrink validation

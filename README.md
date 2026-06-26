@@ -3593,7 +3593,10 @@ launcher, no-Python cached-shard CLI, and unified native training frontend, and
 links `nfn-gpt-native`, `nfn-gpt-native-train`, compatibility `nfn-gpt2-native`
 names, and `nfn-native-train` into the active Python scripts
 directory. Pass `./install.sh --no-native` to skip native artifact builds. The
-generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
+compiled SM120 launcher accepts the same `NFN_SM120_NATIVE_*` cadence, shape,
+optimizer, sample, checkpoint, and train-loss env controls as the benchmark
+wrappers, with `NFN_SM120_*` fallbacks, before it execs the native GPT trainer.
+The generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
 configs; alias-only GPT configs prefer `compiled_cli_argv` so dataset aliases
 stay on the compiled C++ resolver instead of raw external trainer paths. The
 GPT native CLI exposes `--backend tile-cuda`; this is the

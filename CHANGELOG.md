@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The compiled no-Bash SM120 launcher `nfn_train_gpt_sm120` now honors
+  `NFN_SM120_NATIVE_*` env controls, with `NFN_SM120_*` fallbacks, for cadence,
+  batch shape, optimizer, schedule, checkpoint, sampling, and train-loss
+  defaults before it execs `nfn_gpt_native_train`. This makes the compiled
+  launcher a closer drop-in for the shell SM120 helper and benchmark wrappers
+  while keeping the final training process in native C++/CUDA Tile code.
+
+  Verification: built the compiled SM120 launcher in a focused pytest with a
+  fake native trainer and confirmed env-driven argv emission; reran the native
+  no-Torch dependency checker, Python bytecode checks, and `git diff --check`.
+
 - Added `resolve_native_sm120_train_cli()` and
   `build_native_sm120_gpt_run_config()` to the Python SDK. The helper builds a
   normal `NativeTrainRunConfig` for dense GPT families while resolving the

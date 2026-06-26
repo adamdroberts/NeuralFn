@@ -325,7 +325,11 @@ launcher mirrors
 `tools/train_gpt_sm120.sh`, prefers `build/nfn_gpt_native_train_linked`, injects
 `--tile-ops-lib linked` for that binary, supports `--base-model`,
 `--template-name`, and `--graph-file`, and is included in
-`tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker.
+`tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker. The
+compiled launcher also honors `NFN_SM120_NATIVE_*` cadence, shape, optimizer,
+sample/checkpoint, and train-loss env controls with `NFN_SM120_*` fallbacks, so
+benchmark profiles can use the no-Bash entrypoint without losing the wrapper's
+runtime knobs.
 
 The compiled dense GPT trainer accepts native layer-evolution cadence flags:
 `--layer-evo` / `--native-cuda-layer-evo`, `--evo-layer-index`,

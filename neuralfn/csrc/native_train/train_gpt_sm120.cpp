@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <initializer_list>
 #include <iostream>
 #include <string>
 #include <system_error>
@@ -17,6 +18,16 @@ namespace {
 std::string env_or(const char* name, std::string fallback = {}) {
     const char* value = std::getenv(name);
     return value != nullptr && value[0] != '\0' ? std::string(value) : std::move(fallback);
+}
+
+std::string env_first(std::initializer_list<const char*> names, std::string fallback = {}) {
+    for (const char* name : names) {
+        const char* value = std::getenv(name);
+        if (value != nullptr && value[0] != '\0') {
+            return std::string(value);
+        }
+    }
+    return fallback;
 }
 
 std::string lower(std::string value) {
@@ -70,6 +81,8 @@ std::string value_after_equals(const std::string& arg) {
         << "Usage: nfn_train_gpt_sm120 [options] [-- extra native args]\n\n"
         << "Compiled SM120 dense GPT training helper. It calls nfn_gpt_native_train\n"
         << "directly with the same core defaults as tools/train_gpt_sm120.sh.\n\n"
+        << "Default cadence, shape, and optimizer values can be overridden with\n"
+        << "NFN_SM120_NATIVE_* or NFN_SM120_* environment variables before launch.\n\n"
         << "Options:\n"
         << "  --activation NAME\n"
         << "  --moa-interval N\n"
@@ -107,8 +120,30 @@ int main(int argc, char** argv) {
     std::string model_family = env_or("NFN_SM120_MODEL_FAMILY", "gpt");
     std::string template_name = env_or("NFN_SM120_TEMPLATE_NAME", "gpt");
     std::string graph_file = env_or("NFN_SM120_GRAPH_FILE");
-    std::string train_seq_len = env_or("NFN_SM120_TRAIN_SEQ_LEN", "1024");
-    std::string batch_size = env_or("NFN_SM120_BATCH_SIZE", "64");
+    std::string train_seq_len = env_first({"NFN_SM120_NATIVE_TRAIN_SEQ_LEN", "NFN_SM120_TRAIN_SEQ_LEN"}, "1024");
+    std::string batch_size = env_first({"NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE"}, "64");
+    std::string eval_every_steps =
+        env_first({"NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "250");
+    std::string eval_batches = env_first({"NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES"}, "20");
+    std::string sample_every =
+        env_first({"NFN_SM120_NATIVE_SAMPLE_EVERY", "NFN_SM120_SAMPLE_EVERY"}, "20000");
+    std::string generate_tokens =
+        env_first({"NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS"}, "144");
+    std::string checkpoint_every =
+        env_first({"NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY"}, "200");
+    std::string train_batch_tokens =
+        env_first({"NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS"}, "524288");
+    std::string learning_rate =
+        env_first({"NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE"}, "0.0006");
+    std::string final_lr_fraction =
+        env_first({"NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION"}, "0.0");
+    std::string weight_decay =
+        env_first({"NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY"}, "0.1");
+    std::string warmup_steps =
+        env_first({"NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "60");
+    std::string max_steps = env_first({"NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
+    std::string train_loss_every_steps =
+        env_first({"NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS"});
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
     bool template_explicit = false;
@@ -243,19 +278,22 @@ int main(int argc, char** argv) {
         append_pair(out, "--tile-ops-lib", "linked");
     }
     append_pair(out, "--output-dir", output_dir);
-    append_pair(out, "--eval-every-steps", "250");
-    append_pair(out, "--eval-batches", "20");
-    append_pair(out, "--native-cuda-sample-every", "20000");
-    append_pair(out, "--native-cuda-generate-tokens", "144");
+    append_pair(out, "--eval-every-steps", eval_every_steps);
+    append_pair(out, "--eval-batches", eval_batches);
+    if (!train_loss_every_steps.empty()) {
+        append_pair(out, "--train-loss-every-steps", train_loss_every_steps);
+    }
+    append_pair(out, "--native-cuda-sample-every", sample_every);
+    append_pair(out, "--native-cuda-generate-tokens", generate_tokens);
     append_pair(out, "--batch-size", batch_size);
     append_pair(out, "--train-seq-len", train_seq_len);
-    append_pair(out, "--train-batch-tokens", "524288");
-    append_pair(out, "--learning-rate", "0.0006");
-    append_pair(out, "--final-lr-fraction", "0.0");
-    append_pair(out, "--weight-decay", "0.1");
-    append_pair(out, "--warmup-steps", "60");
-    append_pair(out, "--native-cuda-checkpoint-every", "200");
-    append_pair(out, "--max-steps", "20000");
+    append_pair(out, "--train-batch-tokens", train_batch_tokens);
+    append_pair(out, "--learning-rate", learning_rate);
+    append_pair(out, "--final-lr-fraction", final_lr_fraction);
+    append_pair(out, "--weight-decay", weight_decay);
+    append_pair(out, "--warmup-steps", warmup_steps);
+    append_pair(out, "--native-cuda-checkpoint-every", checkpoint_every);
+    append_pair(out, "--max-steps", max_steps);
     append_pair(out, "--native-cuda-activation", activation);
     if (activation == "moa") {
         append_pair(out, "--native-cuda-moa-interval", moa_interval);
