@@ -2540,6 +2540,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_no_loss_vec8_normal_store_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "bf16_persistent_block_outputs6": "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT=6",
         "lm_head_row_chunk_65536": "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
@@ -2576,6 +2577,12 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         assert env_assignment in bench_source
     assert "setup_wall_ms to 3.467504x" in bench_source
     assert "first-step CUDA-event timing to 1.048444x" in bench_source
+    assert "mixed-fp32-direct-output-plus-fused-bf16-persistent-store" in (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    assert "bf16_persistent_block_output_count" in (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert "kept 512 as the default" in bench_source
     assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source
@@ -6485,6 +6492,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_elements"] == 0
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_bytes_elided"] == 2 * 1 * 3072 * 4
     assert train_transformer_payload["bf16_persistent_block_outputs_enabled"] is False
+    assert train_transformer_payload["bf16_persistent_block_output_count"] == 0
     assert train_transformer_payload["bf16_persistent_block_output_store_count"] == 0
     assert train_transformer_payload["bf16_persistent_block_output_restore_count"] == 0
     assert train_transformer_payload["fp32_persistent_block_output_elements_elided"] == 0
@@ -6500,6 +6508,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "persistent_block_output_write_strategy": "direct-residual2-output",
         "persistent_block_output_copy_elided_count": 0,
         "bf16_persistent_block_outputs_enabled": False,
+        "bf16_persistent_block_output_count": 0,
         "bf16_persistent_block_output_store_count": 0,
         "bf16_persistent_block_output_restore_count": 0,
         "bf16_persistent_block_input_ln1_backward_requested": False,

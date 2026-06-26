@@ -13352,11 +13352,25 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS",
                               "NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS"}),
             true);
-    const bool bf16_persistent_block_outputs_enabled =
+    const bool bf16_persistent_block_outputs_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS",
                               "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUTS"}),
             false);
+    const std::int64_t bf16_persistent_block_output_count =
+        std::min<std::int64_t>(
+            persistent_block_output_count,
+            bf16_persistent_block_outputs_requested
+                ? env_nonnegative_i64_or(
+                      {"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT",
+                       "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT"},
+                      persistent_block_output_count)
+                : env_nonnegative_i64_or(
+                      {"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT",
+                       "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT"},
+                      0));
+    const bool bf16_persistent_block_outputs_enabled =
+        bf16_persistent_block_output_count > 0;
     const bool bf16_persistent_block_input_ln1_backward_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD",
@@ -13364,7 +13378,7 @@ int run_transformer_lm_training_json(
                               "NFN_TILE_CUDA_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD"}),
             false);
     const bool bf16_persistent_block_input_ln1_backward_enabled =
-        bf16_persistent_block_outputs_enabled &&
+        bf16_persistent_block_output_count >= persistent_block_output_count &&
         bf16_persistent_block_input_ln1_backward_requested &&
         layer_norm_stats_enabled &&
         fuse_ln_backward_residual_enabled &&
@@ -15098,7 +15112,7 @@ int run_transformer_lm_training_json(
     for (std::size_t i = 0; i < block_outputs.size(); ++i) {
         allocate(
             &block_outputs[i],
-            bf16_persistent_block_outputs_enabled ? 0 : activation_elements,
+            static_cast<std::int64_t>(i) < bf16_persistent_block_output_count ? 0 : activation_elements,
             "block" + std::to_string(i) + ".persistent_output");
     }
 
@@ -15188,7 +15202,7 @@ int run_transformer_lm_training_json(
         for (std::size_t i = 0; i < block_outputs_bf16.size(); ++i) {
             allocate_uint16(
                 &block_outputs_bf16[i],
-                bf16_persistent_block_outputs_enabled ? activation_elements : 0,
+                static_cast<std::int64_t>(i) < bf16_persistent_block_output_count ? activation_elements : 0,
                 "block" + std::to_string(i) + ".persistent_output_bf16");
         }
         allocate_uint16(
@@ -17998,11 +18012,17 @@ int run_transformer_lm_training_json(
     auto block_input_for = [&](std::size_t block_index) -> const float* {
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
+    auto bf16_persistent_block_output_enabled_for = [&](std::size_t stored_index) {
+        return static_cast<std::int64_t>(stored_index) < bf16_persistent_block_output_count;
+    };
     auto bf16_block_input_for = [&](std::size_t block_index) -> const std::uint16_t* {
         if (!bf16_persistent_block_outputs_enabled || block_index == 0) {
             return nullptr;
         }
         const std::size_t stored_index = block_index - 1;
+        if (!bf16_persistent_block_output_enabled_for(stored_index)) {
+            return nullptr;
+        }
         return stored_index < block_outputs_bf16.size() ? block_outputs_bf16[stored_index] : nullptr;
     };
     auto restore_bf16_block_input_for_backward = [&](std::size_t block_index) -> const float* {
@@ -18010,6 +18030,9 @@ int run_transformer_lm_training_json(
             return block_input_for(block_index);
         }
         const std::size_t stored_index = block_index - 1;
+        if (!bf16_persistent_block_output_enabled_for(stored_index)) {
+            return block_input_for(block_index);
+        }
         if (stored_index >= block_outputs_bf16.size() || block_outputs_bf16[stored_index] == nullptr) {
             error = "BF16 persistent block output is missing for backward";
             return block_output_restore;
@@ -20010,11 +20033,17 @@ int run_transformer_lm_training_json(
                     ? &stored_packed_attention_activations[i + 1]
                     : nullptr;
             std::uint16_t* direct_persistent_bf16_output =
-                preserve_block_outputs && i + 1 < blocks.size() && bf16_persistent_block_outputs_enabled &&
+                preserve_block_outputs && i + 1 < blocks.size() &&
+                        bf16_persistent_block_output_enabled_for(i) &&
                         bf16_projection_residual_enabled && tape.proj_out_bf16 != nullptr &&
                         block_outputs_bf16[i] != nullptr &&
                         linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
                     ? block_outputs_bf16[i]
+                    : nullptr;
+            float* direct_persistent_float_output =
+                preserve_block_outputs && i + 1 < blocks.size() &&
+                        !bf16_persistent_block_output_enabled_for(i)
+                    ? block_outputs[i]
                     : nullptr;
             forward_block(
                 blocks[i],
@@ -20027,9 +20056,7 @@ int run_transformer_lm_training_json(
                 fused_packed_attention_store,
                 fused_mlp_store,
                 fused_residual1_store,
-                preserve_block_outputs && i + 1 < blocks.size() && !bf16_persistent_block_outputs_enabled
-                    ? block_outputs[i]
-                    : nullptr,
+                direct_persistent_float_output,
                 direct_persistent_bf16_output,
                 ln1_precomputed[i] != 0,
                 preserve_block_outputs && i + 1 < blocks.size() ? &blocks[i + 1] : nullptr,
@@ -20037,7 +20064,7 @@ int run_transformer_lm_training_json(
                 next_packed_attention_store,
                 preserve_block_outputs && i + 1 < blocks.size() ? &ln1_precomputed[i + 1] : nullptr);
             if (preserve_block_outputs && i + 1 < blocks.size()) {
-                if (bf16_persistent_block_outputs_enabled) {
+                if (bf16_persistent_block_output_enabled_for(i)) {
                     if (error.empty() && direct_persistent_bf16_output != nullptr) {
                         bf16_persistent_block_output_store_count += 1;
                     } else if (error.empty()) {
@@ -20078,7 +20105,8 @@ int run_transformer_lm_training_json(
                 if (fused_mlp_store == nullptr) {
                     store_mlp_activations(i, tape);
                 }
-                block_input = bf16_persistent_block_outputs_enabled ? tape.residual2 : block_outputs[i];
+                block_input =
+                    bf16_persistent_block_output_enabled_for(i) ? tape.residual2 : block_outputs[i];
             } else {
                 block_input = tape.residual2;
             }
@@ -22773,6 +22801,8 @@ int run_transformer_lm_training_json(
         << mlp_fc_grad_out_float_bytes_elided << ",\n"
         << "  \"bf16_persistent_block_outputs_enabled\": "
         << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
+        << "  \"bf16_persistent_block_output_count\": "
+        << bf16_persistent_block_output_count << ",\n"
         << "  \"bf16_persistent_block_input_ln1_backward_requested\": "
         << (bf16_persistent_block_input_ln1_backward_requested ? "true" : "false") << ",\n"
         << "  \"bf16_persistent_block_input_ln1_backward_enabled\": "
@@ -22784,15 +22814,11 @@ int run_transformer_lm_training_json(
         << "  \"bf16_persistent_block_input_ln1_backward_count\": "
         << bf16_persistent_block_input_ln1_backward_count << ",\n"
         << "  \"fp32_persistent_block_output_elements_elided\": "
-        << (bf16_persistent_block_outputs_enabled
-                ? persistent_block_output_count * activation_elements
-                : 0)
+        << (bf16_persistent_block_output_count * activation_elements)
         << ",\n"
         << "  \"fp32_persistent_block_output_bytes_elided\": "
-        << (bf16_persistent_block_outputs_enabled
-                ? persistent_block_output_count * activation_elements *
-                      static_cast<std::int64_t>(sizeof(float))
-                : 0)
+        << (bf16_persistent_block_output_count * activation_elements *
+            static_cast<std::int64_t>(sizeof(float)))
         << ",\n"
         << "  \"block_backward_mlp_proj_bf16_grad_out_reuse_enabled\": "
         << (reuse_mlp_proj_bf16_grad_out_enabled ? "true" : "false") << ",\n"
@@ -23849,15 +23875,21 @@ int run_transformer_lm_training_json(
         << "    \"forward_row_qkv_scratch_buffers_elided\": 3,\n"
         << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
         << "    \"persistent_block_output_write_strategy\": \""
-        << (bf16_persistent_block_outputs_enabled
-                ? (linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
-                       ? "scratch-residual2-output-plus-fused-bf16-persistent-store"
-                       : "scratch-residual2-output-plus-bf16-persistent-store")
-                : "direct-residual2-output")
+        << (bf16_persistent_block_output_count == 0
+                ? "direct-residual2-output"
+                : (bf16_persistent_block_output_count >= persistent_block_output_count
+                       ? (linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
+                              ? "scratch-residual2-output-plus-fused-bf16-persistent-store"
+                              : "scratch-residual2-output-plus-bf16-persistent-store")
+                       : (linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
+                              ? "mixed-fp32-direct-output-plus-fused-bf16-persistent-store"
+                              : "mixed-fp32-direct-output-plus-bf16-persistent-store")))
         << "\",\n"
         << "    \"persistent_block_output_copy_elided_count\": " << direct_block_output_write_count << ",\n"
         << "    \"bf16_persistent_block_outputs_enabled\": "
         << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
+        << "    \"bf16_persistent_block_output_count\": "
+        << bf16_persistent_block_output_count << ",\n"
         << "    \"bf16_persistent_block_input_ln1_backward_requested\": "
         << (bf16_persistent_block_input_ln1_backward_requested ? "true" : "false") << ",\n"
         << "    \"bf16_persistent_block_input_ln1_backward_enabled\": "
@@ -23869,9 +23901,7 @@ int run_transformer_lm_training_json(
         << "    \"bf16_persistent_block_input_ln1_backward_count\": "
         << bf16_persistent_block_input_ln1_backward_count << ",\n"
         << "    \"fp32_persistent_block_output_elements_elided\": "
-        << (bf16_persistent_block_outputs_enabled
-                ? persistent_block_output_count * activation_elements
-                : 0)
+        << (bf16_persistent_block_output_count * activation_elements)
         << ",\n"
         << "    \"mlp_residual_next_ln1_fusion_enabled\": "
         << (fuse_mlp_residual_next_ln1_enabled ? "true" : "false") << ",\n"

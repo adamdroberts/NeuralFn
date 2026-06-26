@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT` and the paired
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_persistent_block_outputs6`
+  diagnostic. The all-BF16 boolean still means "all persistent inter-block
+  outputs"; the new count knob lets the native dense GPT trainer store only the
+  first `N` persistent block outputs as BF16 while leaving the rest on the
+  default FP32 direct-output path. Runtime JSON now reports
+  `bf16_persistent_block_output_count` at the top level and under
+  `block_state_layout`, and mixed partial routes report
+  `mixed-fp32-direct-output-plus-fused-bf16-persistent-store` when the fused
+  side-store ABI is available.
+
+  Migration note: no default changed. The count defaults to `0`, and the
+  direct-LN1 BF16 persistent-output sub-diagnostic only enables when every
+  persistent output is BF16.
+
+  Verification: ran the focused source-contract test, `git diff --check`,
+  rebuilt the SM120 native artifacts, dry-ran the new profile expansion, and
+  ran a 3-step, 2-sample stage-timed paired GPU benchmark on the dedicated RTX
+  5090. The profile is marked rejected: it improved setup wall time to
+  `0.981054x` and float-arena materialization to `0.950760x`, but regressed
+  train-loop wall time to `1.006527x`, steady-state CUDA-event step time to
+  `1.005357x`, block backward to `1.001062x`, and MLP projection backward to
+  `1.007163x`.
+
 - SM120 paired benchmark dry-run plans now print `baseline_env`,
   `candidate_env`, and `reference_env` when the resolved commands have
   environment overrides. This makes candidate profile expansion auditable before
