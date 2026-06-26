@@ -1549,7 +1549,9 @@ ops ABI, and `tools/bench_lm_head_backward_candidate.sh` includes
 `true_fused_launch_count` in each variant JSON payload. This counter is separate
 from the sequence-wrapper and CUDA Graph counters, so a strict true-fused
 candidate must prove that the cooperative kernel actually launched instead of
-passing only on capability strings.
+passing only on capability strings. Strict LM-head benchmark profiles now fail
+when `candidate_true_fused_capability=true` but
+`candidate.true_fused_launch_count` remains zero.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

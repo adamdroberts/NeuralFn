@@ -366,6 +366,10 @@ if not data.get("candidate_true_fused_capability", False):
     if data.get("candidate_cuda_graph_wrapper_only", False):
         raise SystemExit("candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight; candidate_true_fused_capability is false" + suffix)
     raise SystemExit("candidate_true_fused_capability is false" + suffix)
+candidate = data.get("candidate", {})
+true_fused_launch_count = int(candidate.get("true_fused_launch_count", 0) or 0)
+if true_fused_launch_count <= 0:
+    raise SystemExit("candidate_true_fused_capability is true but candidate.true_fused_launch_count is zero")
 ' "${JSON_OUT}"
     ;;
 esac

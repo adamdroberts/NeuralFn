@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_lm_head_backward_candidate.sh` now gates strict true-fused
+  LM-head profiles on the new candidate `true_fused_launch_count` field. A run
+  with `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` can no longer pass solely
+  because `candidate_true_fused_capability=true`; the candidate variant must
+  also report at least one strict cooperative true-fused kernel launch.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  the focused LM-head wrapper source-contract pytest; reran the strict
+  true-fused LM-head smoke benchmark, which passed the new gate with candidate
+  `true_fused_launch_count: 1`; ran `git diff --check`.
+
 - Added explicit strict true-fused LM-head launch telemetry. The Tile ops ABI
   now exports `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`,
   the true-fused cooperative launcher increments it separately from the
