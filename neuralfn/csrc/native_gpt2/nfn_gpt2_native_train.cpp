@@ -4192,6 +4192,17 @@ bool print_tile_plan(
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
                                          kDefaultStoredPackedAttentionBlocks))
             : 0;
+    const std::string stored_packed_attention_block_placement_raw =
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT",
+                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT"});
+    const std::string stored_packed_attention_block_placement =
+        stored_packed_attention_block_placement_raw == "tail" ? "tail" : "head";
+    const std::int64_t stored_packed_attention_block_start =
+        stored_packed_attention_block_count <= 0
+            ? 0
+            : (stored_packed_attention_block_placement == "tail"
+                   ? std::max<std::int64_t>(0, cfg.num_layers - stored_packed_attention_block_count)
+                   : 0);
     const std::int64_t stored_packed_attention_bf16_elements =
         stored_packed_attention_block_count * tokens * geometry.model_dim * 4;
     const std::int64_t stored_packed_attention_bf16_bytes =
@@ -4739,6 +4750,9 @@ bool print_tile_plan(
         << (stored_packed_attention_block_count > 0 ? "packed-qkv-o-bf16-forward-store-direct-backward" : "disabled")
         << "\",\n"
         << "  \"stored_packed_attention_activation_blocks\": " << stored_packed_attention_block_count << ",\n"
+        << "  \"stored_packed_attention_block_placement\": \""
+        << json_escape(stored_packed_attention_block_placement) << "\",\n"
+        << "  \"stored_packed_attention_block_start\": " << stored_packed_attention_block_start << ",\n"
         << "  \"stored_packed_attention_bf16_elements\": " << stored_packed_attention_bf16_elements << ",\n"
         << "  \"stored_packed_attention_bf16_bytes\": " << stored_packed_attention_bf16_bytes << ",\n"
         << "  \"stored_packed_attention_ln1_stats_enabled\": "
@@ -14177,6 +14191,17 @@ int run_transformer_lm_training_json(
                                           "NFN_NATIVE_GPT2_STORE_MLP_BLOCKS"},
                                          kDefaultStoredMlpBlocks))
             : 0;
+    const std::string stored_mlp_activation_block_placement_raw =
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT",
+                          "NFN_NATIVE_GPT2_STORE_MLP_BLOCK_PLACEMENT"});
+    const std::string stored_mlp_activation_block_placement =
+        stored_mlp_activation_block_placement_raw == "tail" ? "tail" : "head";
+    const std::int64_t stored_mlp_activation_block_start =
+        stored_mlp_activation_block_count <= 0
+            ? 0
+            : (stored_mlp_activation_block_placement == "tail"
+                   ? std::max<std::int64_t>(0, trained_layers - stored_mlp_activation_block_count)
+                   : 0);
     const std::int64_t stored_mlp_activation_elements_per_block = activation_elements + hidden_elements * 2;
     const std::int64_t stored_mlp_activation_elements =
         stored_mlp_activation_block_count * stored_mlp_activation_elements_per_block;
@@ -14202,7 +14227,7 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_FLOAT_STATS_ARENA"}),
             true);
     std::vector<StoredMlpActivations> stored_mlp_activations(
-        static_cast<std::size_t>(stored_mlp_activation_block_count));
+        static_cast<std::size_t>(stored_mlp_activation_block_count > 0 ? trained_layers : 0));
     std::uint16_t* stored_mlp_activation_arena = nullptr;
     float* stored_mlp_norm_stats_arena = nullptr;
     std::int64_t stored_mlp_activation_arena_elements = 0;
@@ -14278,6 +14303,17 @@ int run_transformer_lm_training_json(
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
                                          kDefaultStoredPackedAttentionBlocks))
             : 0;
+    const std::string stored_packed_attention_block_placement_raw =
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT",
+                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT"});
+    const std::string stored_packed_attention_block_placement =
+        stored_packed_attention_block_placement_raw == "tail" ? "tail" : "head";
+    const std::int64_t stored_packed_attention_block_start =
+        stored_packed_attention_block_count <= 0
+            ? 0
+            : (stored_packed_attention_block_placement == "tail"
+                   ? std::max<std::int64_t>(0, trained_layers - stored_packed_attention_block_count)
+                   : 0);
     const std::int64_t stored_packed_attention_bf16_elements_per_block =
         qkv_activation_elements + activation_elements;
     const std::int64_t stored_packed_attention_bf16_elements =
@@ -14289,7 +14325,7 @@ int run_transformer_lm_training_json(
             ? stored_packed_attention_block_count * stored_packed_attention_lse_elements_per_block
             : 0;
     std::vector<StoredPackedAttentionActivations> stored_packed_attention_activations(
-        static_cast<std::size_t>(stored_packed_attention_block_count));
+        static_cast<std::size_t>(stored_packed_attention_block_count > 0 ? trained_layers : 0));
     std::uint16_t* stored_packed_attention_bf16_arena = nullptr;
     std::int64_t stored_packed_attention_bf16_arena_elements = 0;
     std::int64_t stored_packed_attention_bf16_arena_bytes = 0;
@@ -14517,7 +14553,13 @@ int run_transformer_lm_training_json(
         for (std::int64_t i = 0; i < stored_mlp_activation_block_count; ++i) {
             const std::int64_t base = i * stored_mlp_activation_elements_per_block;
             const std::int64_t stats_base = i * rows * 2;
-            StoredMlpActivations& stored = stored_mlp_activations[static_cast<std::size_t>(i)];
+            const std::int64_t block_index = stored_mlp_activation_block_start + i;
+            if (block_index < 0 ||
+                block_index >= static_cast<std::int64_t>(stored_mlp_activations.size())) {
+                error = "stored MLP activation block placement is out of range";
+                return;
+            }
+            StoredMlpActivations& stored = stored_mlp_activations[static_cast<std::size_t>(block_index)];
             stored.ln2_out = stored_mlp_activation_arena + base;
             stored.fc_out = stored_mlp_activation_arena + base + activation_elements;
             stored.act = stored_mlp_activation_arena + base + activation_elements + hidden_elements;
@@ -14632,8 +14674,14 @@ int run_transformer_lm_training_json(
 
         for (std::int64_t i = 0; i < stored_packed_attention_block_count; ++i) {
             const std::int64_t base = i * stored_packed_attention_bf16_elements_per_block;
+            const std::int64_t block_index = stored_packed_attention_block_start + i;
+            if (block_index < 0 ||
+                block_index >= static_cast<std::int64_t>(stored_packed_attention_activations.size())) {
+                error = "stored packed-attention block placement is out of range";
+                return;
+            }
             StoredPackedAttentionActivations& stored =
-                stored_packed_attention_activations[static_cast<std::size_t>(i)];
+                stored_packed_attention_activations[static_cast<std::size_t>(block_index)];
             stored.qkv = stored_packed_attention_bf16_arena + base;
             stored.o = stored_packed_attention_bf16_arena + base + qkv_activation_elements;
             if (stored_packed_attention_lse_arena != nullptr) {
@@ -14668,8 +14716,14 @@ int run_transformer_lm_training_json(
         stored_packed_attention_ln1_stats_arena_bytes = static_cast<std::int64_t>(stats_bytes);
 
         for (std::int64_t i = 0; i < stored_packed_attention_ln1_stats_block_count; ++i) {
+            const std::int64_t block_index = stored_packed_attention_block_start + i;
+            if (block_index < 0 ||
+                block_index >= static_cast<std::int64_t>(stored_packed_attention_activations.size())) {
+                error = "stored packed-attention LN1 stats block placement is out of range";
+                return;
+            }
             StoredPackedAttentionActivations& stored =
-                stored_packed_attention_activations[static_cast<std::size_t>(i)];
+                stored_packed_attention_activations[static_cast<std::size_t>(block_index)];
             const std::int64_t stats_base = i * rows * 2;
             stored.ln1_mean = stored_packed_attention_ln1_stats_arena + stats_base;
             stored.ln1_rstd = stored_packed_attention_ln1_stats_arena + stats_base + rows;
@@ -14701,8 +14755,14 @@ int run_transformer_lm_training_json(
         stored_packed_attention_ln1_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
 
         for (std::int64_t i = 0; i < stored_packed_attention_ln1_bf16_block_count; ++i) {
+            const std::int64_t block_index = stored_packed_attention_block_start + i;
+            if (block_index < 0 ||
+                block_index >= static_cast<std::int64_t>(stored_packed_attention_activations.size())) {
+                error = "stored packed-attention LN1 BF16 block placement is out of range";
+                return;
+            }
             StoredPackedAttentionActivations& stored =
-                stored_packed_attention_activations[static_cast<std::size_t>(i)];
+                stored_packed_attention_activations[static_cast<std::size_t>(block_index)];
             stored.ln1_out_bf16 =
                 stored_packed_attention_ln1_bf16_arena + i * activation_elements;
         }
@@ -18072,7 +18132,8 @@ int run_transformer_lm_training_json(
         return block_output_restore;
     };
     auto store_mlp_activations = [&](std::size_t block_index, TransformerBlockActivations& tape) {
-        if (block_index >= stored_mlp_activations.size()) {
+        if (block_index >= stored_mlp_activations.size() ||
+            stored_mlp_activations[block_index].ln2_out == nullptr) {
             return;
         }
         StoredMlpActivations& stored = stored_mlp_activations[block_index];
@@ -18109,6 +18170,21 @@ int run_transformer_lm_training_json(
                 "block" + std::to_string(block_index) + ".attention_activation_store.tk_bf16");
             if (error.empty()) stored_attention_store_kernel_launches += 1;
         }
+    };
+    auto stored_mlp_activation_for = [&](std::size_t block_index) -> StoredMlpActivations* {
+        if (block_index >= stored_mlp_activations.size() ||
+            stored_mlp_activations[block_index].ln2_out == nullptr) {
+            return nullptr;
+        }
+        return &stored_mlp_activations[block_index];
+    };
+    auto stored_packed_attention_for = [&](std::size_t block_index) -> StoredPackedAttentionActivations* {
+        if (block_index >= stored_packed_attention_activations.size() ||
+            stored_packed_attention_activations[block_index].qkv == nullptr ||
+            stored_packed_attention_activations[block_index].o == nullptr) {
+            return nullptr;
+        }
+        return &stored_packed_attention_activations[block_index];
     };
     auto forward_block = [&](TransformerBlockParams& block,
                              TransformerBlockActivations& tape,
@@ -20033,16 +20109,14 @@ int run_transformer_lm_training_json(
 	        float* final_block_output = x;
 	        std::fill(ln1_precomputed.begin(), ln1_precomputed.end(), 0);
 	        for (std::size_t i = 0; i < blocks.size(); ++i) {
-	            TransformerBlockActivations& tape =
-	                block_tapes[full_activation_tape_enabled ? i : 0];
+            TransformerBlockActivations& tape =
+                block_tapes[full_activation_tape_enabled ? i : 0];
             StoredMlpActivations* fused_mlp_store =
-                preserve_block_outputs && i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
+                preserve_block_outputs ? stored_mlp_activation_for(i) : nullptr;
             StoredAttentionActivations* fused_attention_store =
                 preserve_block_outputs && i < stored_attention_activations.size() ? &stored_attention_activations[i] : nullptr;
             StoredPackedAttentionActivations* fused_packed_attention_store =
-                preserve_block_outputs && i < stored_packed_attention_activations.size()
-                    ? &stored_packed_attention_activations[i]
-                    : nullptr;
+                preserve_block_outputs ? stored_packed_attention_for(i) : nullptr;
 	            std::uint16_t* fused_residual1_store =
 	                preserve_block_outputs && fuse_residual1_store_enabled && i < stored_residual1_activations.size()
 	                    ? stored_residual1_activations[i]
@@ -20052,9 +20126,7 @@ int run_transformer_lm_training_json(
                     ? &block_tapes[full_activation_tape_enabled ? i + 1 : 0]
                     : nullptr;
             StoredPackedAttentionActivations* next_packed_attention_store =
-                preserve_block_outputs && i + 1 < stored_packed_attention_activations.size()
-                    ? &stored_packed_attention_activations[i + 1]
-                    : nullptr;
+                preserve_block_outputs ? stored_packed_attention_for(i + 1) : nullptr;
             std::uint16_t* direct_persistent_bf16_output =
                 preserve_block_outputs && i + 1 < blocks.size() &&
                         bf16_persistent_block_output_enabled_for(i) &&
@@ -20278,11 +20350,11 @@ int run_transformer_lm_training_json(
             const std::uint16_t* stored_residual1_bf16 =
                 i < stored_residual1_activations.size() ? stored_residual1_activations[i] : nullptr;
             const StoredMlpActivations* stored_mlp =
-                i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
+                stored_mlp_activation_for(i);
             const StoredAttentionActivations* stored_attention =
                 i < stored_attention_activations.size() ? &stored_attention_activations[i] : nullptr;
             const StoredPackedAttentionActivations* stored_packed_attention =
-                i < stored_packed_attention_activations.size() ? &stored_packed_attention_activations[i] : nullptr;
+                stored_packed_attention_for(i);
             const bool needs_recompute =
                 !full_activation_tape_enabled && reverse_index != blocks.size();
             const std::uint16_t* block_input_bf16_candidate = bf16_block_input_for(i);
@@ -20310,11 +20382,11 @@ int run_transformer_lm_training_json(
                         !use_stored_mlp_activations,
                         "block" + std::to_string(i) + ".recompute_saved_attention");
                     if (error.empty()) stored_attention_restore_kernel_launches += 1;
-                } else if (i < stored_packed_attention_activations.size()) {
+                } else if (stored_packed_attention != nullptr) {
                     recompute_block_from_saved_packed_attention(
                         blocks[i],
                         tape,
-                        stored_packed_attention_activations[i],
+                        *stored_packed_attention,
                         stored_residual1_bf16,
                         block_input,
                         !use_stored_mlp_activations,
@@ -23473,6 +23545,9 @@ int run_transformer_lm_training_json(
                 : "disabled")
         << "\",\n"
         << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
+        << "  \"stored_mlp_activation_block_placement\": \""
+        << json_escape(stored_mlp_activation_block_placement) << "\",\n"
+        << "  \"stored_mlp_activation_block_start\": " << stored_mlp_activation_block_start << ",\n"
         << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"
         << "  \"stored_mlp_activation_bytes\": " << stored_mlp_activation_arena_bytes << ",\n"
         << "  \"stored_mlp_layer_norm_stats_elements\": " << stored_mlp_norm_stats_elements << ",\n"
@@ -23533,6 +23608,9 @@ int run_transformer_lm_training_json(
         << (stored_packed_attention_block_count > 0 ? "packed-qkv-o-bf16-forward-store-direct-backward" : "disabled")
         << "\",\n"
         << "  \"stored_packed_attention_activation_blocks\": " << stored_packed_attention_block_count << ",\n"
+        << "  \"stored_packed_attention_block_placement\": \""
+        << json_escape(stored_packed_attention_block_placement) << "\",\n"
+        << "  \"stored_packed_attention_block_start\": " << stored_packed_attention_block_start << ",\n"
         << "  \"stored_packed_attention_bf16_elements\": " << stored_packed_attention_bf16_arena_elements << ",\n"
         << "  \"stored_packed_attention_bf16_bytes\": " << stored_packed_attention_bf16_arena_bytes << ",\n"
         << "  \"stored_packed_attention_ln1_stats_enabled\": "
@@ -23946,6 +24024,12 @@ int run_transformer_lm_training_json(
         << "    \"validation_persistent_block_outputs\": 0,\n"
         << "    \"validation_block_output_copies_elided\": true,\n"
         << "    \"backward_recompute_blocks\": " << backward_recompute_block_count << ",\n"
+        << "    \"stored_mlp_activation_block_placement\": \""
+        << json_escape(stored_mlp_activation_block_placement) << "\",\n"
+        << "    \"stored_mlp_activation_block_start\": " << stored_mlp_activation_block_start << ",\n"
+        << "    \"stored_packed_attention_block_placement\": \""
+        << json_escape(stored_packed_attention_block_placement) << "\",\n"
+        << "    \"stored_packed_attention_block_start\": " << stored_packed_attention_block_start << ",\n"
         << "    \"final_block_backward_recompute_elided\": true,\n"
         << "    \"backward_recompute_mlp_fc_gelu_elided\": "
         << (stored_mlp_activation_block_count > 0 ? "true" : "false") << ",\n"

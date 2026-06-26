@@ -580,6 +580,17 @@ baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12` and candidate `=6`;
 it is also rejected by default because the 2-step paired training gate regressed
 train-loop wall time, steady-state CUDA-event time, block backward, and
 attention dprep timing despite reducing setup wall time. The diagnostic
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks6_tail` compares
+`NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6` with head placement against the same count
+with `NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail`; the matching
+`store_packed_attention_blocks6_tail` profile does the same for
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT`. Native JSON reports
+the placement and resolved start offsets as
+`stored_mlp_activation_block_placement`,
+`stored_mlp_activation_block_start`,
+`stored_packed_attention_block_placement`, and
+`stored_packed_attention_block_start`. These are diagnostics only until a
+same-script training gate proves the tail placement faster. The diagnostic
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` forces baseline
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` and candidate `=0`; it is
 rejected before normal CUDA launch because the CUDA 13.3 dedicated RTX 5090

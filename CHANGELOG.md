@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added SM120 native GPT stored-activation placement diagnostics for reduced
+  cache counts. The trainer now accepts
+  `NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=head|tail` and
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=head|tail`, reports
+  the resolved placement/start offsets in native JSON, and maps stored MLP and
+  packed-attention caches by actual transformer block so tail placement does
+  not pass empty cache slots through the forward or backward recompute paths.
+  The candidate wrapper exposes rejected comparison profiles
+  `store_mlp_blocks6_tail` and `store_packed_attention_blocks6_tail`, each
+  comparing six stored blocks at default head placement against six stored
+  blocks at tail placement in the same script.
+
+  Migration note: no default native training path changed. Full stored-cache
+  coverage still uses the default head placement with start offset `0`; the
+  tail profiles are measurement-only until a GPU gate proves them faster.
+
+  Verification: ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles -q`,
+  `git diff --check`, rebuilt `build/nfn_gpt_native_train_linked`, dry-ran
+  both new wrapper profiles with `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`, ran a
+  startup-only tail-placement native JSON check, and ran a one-step
+  tail-placement native training smoke that completed with
+  `stored_mlp_activation_block_start=6`,
+  `stored_packed_attention_block_start=6`, and nonzero store/restore counters.
+
 - Fixed the SM120 allocator benchmark profiles `combined_device_arena` and
   `cuda_malloc_async` so they actually run as startup-only gates. Both profiles
   now force `STARTUP_ONLY=1`, `STEPS=0`, and disable the route-change gate,

@@ -2993,6 +2993,19 @@ dedicated RTX 5090 startup-only gate rejected the concurrent profile as a
 default: mean setup wall was a noisy `0.987871x`, while median setup wall
 regressed to `1.003922x` and uint16 arena allocation regressed to `2.664592x`
 mean. The same dense GPT
+stored-activation diagnostics also support head/tail placement probes. Set
+`NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail` with a reduced
+`NFN_NATIVE_GPT_STORE_MLP_BLOCKS` count, or set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=tail` with
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`, to store later transformer
+blocks instead of the default early blocks. Runtime JSON reports
+`stored_mlp_activation_block_placement`,
+`stored_mlp_activation_block_start`,
+`stored_packed_attention_block_placement`, and
+`stored_packed_attention_block_start`. The SM120 wrapper profiles
+`store_mlp_blocks6_tail` and `store_packed_attention_blocks6_tail` compare tail
+placement against the same six-block head placement and are diagnostics only
+until same-script training gates prove a win.
 transformer-LM arenas now default to split float and BF16/uint16 device arenas
 (`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`); runtime JSON reports
 `float_allocation_strategy: "single-arena"` and

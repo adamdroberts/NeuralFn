@@ -172,6 +172,13 @@ coverage remains the default. The matching
 is also rejected: cutting packed-attention stored blocks from 12 to 6 saved
 some setup time but regressed train-loop wall time, steady-state CUDA-event
 time, block backward, and attention dprep timing. The
+`store_mlp_blocks6_tail` and `store_packed_attention_blocks6_tail` diagnostics
+compare the same six stored blocks at `head` versus `tail` placement with
+`NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT` and
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT`; they report
+`stored_mlp_activation_block_start` and
+`stored_packed_attention_block_start` in native JSON and remain unpromoted
+until the same-script training gate beats the head layout. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` diagnostic is rejected
 even earlier because disabling residual1 activation storage failed the paired
 native run with cuBLASLt status 14; keep stored residual1 activations enabled

@@ -2568,7 +2568,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",
         "uint16_arena_first": "NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1",
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
+        "store_mlp_blocks6_tail": "NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
+        "store_packed_attention_blocks6_tail": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=tail",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
         "full_activation_tape": "NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
@@ -2590,9 +2592,14 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "mixed-fp32-direct-output-plus-fused-bf16-persistent-store" in (
         root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
     ).read_text(encoding="utf-8")
-    assert "bf16_persistent_block_output_count" in (
+    gpt2_source = (
         root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
     ).read_text(encoding="utf-8")
+    assert "bf16_persistent_block_output_count" in gpt2_source
+    assert "stored_mlp_activation_block_placement" in gpt2_source
+    assert "stored_packed_attention_block_placement" in gpt2_source
+    assert "stored_mlp_activation_for" in gpt2_source
+    assert "stored_packed_attention_for" in gpt2_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert "kept 512 as the default" in bench_source
     assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source
@@ -4913,6 +4920,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
     assert tile_payload["stored_packed_attention_activation_blocks"] == 12
+    assert tile_payload["stored_packed_attention_block_placement"] == "head"
+    assert tile_payload["stored_packed_attention_block_start"] == 0
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] == (
         tile_payload["stored_packed_attention_bf16_elements"] * 2
@@ -6333,6 +6342,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_attention_backward_consumer_strategy"] == "disabled"
     assert train_transformer_payload["packed_attention_activation_storage_strategy"] == "disabled"
     assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 0
+    assert train_transformer_payload["stored_packed_attention_block_placement"] == "head"
+    assert train_transformer_payload["stored_packed_attention_block_start"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_elements"] == 0
@@ -6533,6 +6544,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "validation_persistent_block_outputs": 0,
         "validation_block_output_copies_elided": True,
         "backward_recompute_blocks": 11,
+        "stored_mlp_activation_block_placement": "head",
+        "stored_mlp_activation_block_start": 0,
+        "stored_packed_attention_block_placement": "head",
+        "stored_packed_attention_block_start": 0,
         "final_block_backward_recompute_elided": True,
         "backward_recompute_mlp_fc_gelu_elided": True,
                 "backward_recompute_attention_qkv_sdpa_elided": False,
