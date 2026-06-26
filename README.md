@@ -2440,8 +2440,17 @@ The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-
 
 Tiny native GPT diagnostic runs with `seq_len < 16` use the split-QKV row-vector attention fallback even when the default packed-QKV SM120 TK route is enabled. Normal training shapes such as the workstation default `64 x 1024` keep the packed path, while one-step CUDA smokes such as `--batch-size 1 --train-seq-len 2 --train-batch-tokens 2` avoid launching the packed attention kernel without a valid packed scratch allocation.
 
+`tools/build_train_gpt_sm120_cli.sh` builds `build/nfn_train_gpt_sm120`, a
+compiled no-Python SM120 launcher with the same defaults as
+`tools/train_gpt_sm120.sh`. Use it for the lowest-overhead workstation path:
+`build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
+`tools/build_native_gpt2_all.sh` builds this launcher alongside the linked GPT
+trainer, and `tools/check_native_no_torch_deps.py` dry-runs the compiled GPT,
+GPT3, and custom-graph variants so they cannot drift back into Python or Torch
+startup.
+
 `tools/train_gpt_sm120.sh` now exposes the same native dense-GPT selectors as
-the compiled CLI: `--base-model` / `--model-family`,
+the compiled launcher: `--base-model` / `--model-family`,
 `--template-name` / `--template` / `--preset`, and `--graph-file` / `--graph`.
 Selecting `gpt3` through the model or template selector defaults this no-Python
 helper to `--train-seq-len 2048 --batch-size 32` unless those flags are explicit,

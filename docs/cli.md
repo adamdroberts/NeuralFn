@@ -1003,6 +1003,14 @@ Runtime JSON now emits `checkpoint_export_enabled` beside the older
 `final_checkpoint_export_enabled` alias; benchmark and CI automation should use
 the shorter field because it matches native plan JSON.
 
+For no-Bash SM120 workstation runs, build the compiled launcher with
+`bash tools/build_train_gpt_sm120_cli.sh` and run
+`build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
+`tools/build_native_gpt2_all.sh` also builds it. The launcher mirrors
+`tools/train_gpt_sm120.sh`, prefers the linked native GPT trainer, injects
+`--tile-ops-lib linked` when appropriate, preserves the GPT/GPT3/custom-graph
+selector defaults, and execs the CUDA Tile trainer without Python startup.
+
 Native dense GPT validation defaults to 20 validation batches per periodic
 evaluation. Use `--eval-batches N` or `--eval-batch-size N` to shrink validation
 work for smoke runs without changing the `--eval-every-steps` cadence.

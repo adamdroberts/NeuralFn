@@ -33,6 +33,10 @@ Real training tensors must not pass through graph editor node objects.
   validation/sample/checkpoint defaults. This does not close the measured
   kernel-throughput parity gap, but it removes remaining wrapper startup
   overhead from the workstation path used for apples-to-apples SM120 runs.
+- [x] Add a compiled SM120 dense GPT launcher. `tools/build_train_gpt_sm120_cli.sh`
+  builds `build/nfn_train_gpt_sm120`, and `tools/build_native_gpt2_all.sh`
+  includes it so workstation GPT runs can use the same defaults without Bash or
+  Python startup before execing the native CUDA Tile trainer.
 - [x] Compile graph topology into a static execution plan before training.
 - [x] Make `CompiledTorchGraph.forward()` use the precompiled plan instead of walking `NeuronGraph.nodes` and `NeuronGraph._incoming()` per batch.
 - [x] Add regression coverage proving forward still works after graph edge traversal is made unavailable post-compilation.

@@ -8,6 +8,7 @@ NATIVE_TRAIN_BINDING_OUT="${NFN_NATIVE_TRAIN_BINDING_OUT:-}"
 LAUNCHER_OUT="${NFN_NATIVE_GPT2_LAUNCHER_OUT:-}"
 GPT_CLI_OUT="${NFN_NATIVE_GPT_CLI_OUT:-}"
 GPT_LINKED_CLI_OUT="${NFN_NATIVE_GPT_LINKED_CLI_OUT:-}"
+SM120_CLI_OUT="${NFN_NATIVE_SM120_CLI_OUT:-}"
 CLI_OUT="${NFN_NATIVE_GPT2_CLI_OUT:-}"
 NATIVE_TRAIN_OUT="${NFN_NATIVE_TRAIN_CLI_OUT:-}"
 MISSING_TRAINERS_OUT_DIR="${NFN_NATIVE_MISSING_TRAINERS_OUT_DIR:-}"
@@ -53,6 +54,12 @@ if [[ -n "${GPT_LINKED_CLI_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_gpt_cli_linked.sh" "${GPT_LINKED_CLI_OUT}"
 else
   bash "${ROOT_DIR}/tools/build_native_gpt_cli_linked.sh"
+fi
+
+if [[ -n "${SM120_CLI_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_train_gpt_sm120_cli.sh" "${SM120_CLI_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_train_gpt_sm120_cli.sh"
 fi
 
 if [[ -n "${CLI_OUT}" ]]; then

@@ -316,6 +316,14 @@ honors `--eval-batch-size` as the active validation forward batch size, bounded
 by the training batch arena, and keeps small validation batches on the BF16
 public-vocab LM-head loss path instead of the older float logits workspace.
 
+For workstation SM120 runs that should avoid both Python and Bash startup before
+the native exec boundary, build `build/nfn_train_gpt_sm120` with
+`bash tools/build_train_gpt_sm120_cli.sh`. The launcher mirrors
+`tools/train_gpt_sm120.sh`, prefers `build/nfn_gpt_native_train_linked`, injects
+`--tile-ops-lib linked` for that binary, supports `--base-model`,
+`--template-name`, and `--graph-file`, and is included in
+`tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker.
+
 The compiled dense GPT trainer accepts native layer-evolution cadence flags:
 `--layer-evo` / `--native-cuda-layer-evo`, `--evo-layer-index`,
 `--evo-layer-interval`, `--evo-layer-population`, and

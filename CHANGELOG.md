@@ -1250,6 +1250,15 @@ Future updates should append new entries here rather than replacing older notes.
   cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_sm120_gpt_helper_calls_native_cpp_directly
   -q`.
 
+- Added `tools/build_train_gpt_sm120_cli.sh` and the compiled
+  `build/nfn_train_gpt_sm120` launcher. The launcher mirrors
+  `tools/train_gpt_sm120.sh`, prefers `nfn_gpt_native_train_linked`, injects
+  `--tile-ops-lib linked` for the linked binary, preserves GPT/GPT3/custom-graph
+  selectors, and execs the native CUDA Tile trainer without Python or Bash
+  wrapper startup. `tools/build_native_gpt2_all.sh` now builds it, and
+  `tools/check_native_no_torch_deps.py` treats it as an optional native artifact
+  with direct dry-run coverage.
+
 - Corrected the `lm_head_graph_prewarm` SM120 candidate profile to measure the
   real graph-only default-vs-opt-out path. The trainer already defaults cuBLAS
   handle and BF16 workspace prewarm on, so the profile no longer weakens the

@@ -22,6 +22,7 @@ REQUIRED_DEFAULT_ARTIFACTS = (
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_native_train"),
+    Path("build/nfn_train_gpt_sm120"),
     Path("build/nfn_gpt_native_train_linked"),
     Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_gpt2_evo_native_train"),
@@ -54,6 +55,10 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
         Path("tools/build_native_train_tile_ops.sh"),
+    ),
+    Path("build/nfn_train_gpt_sm120"): (
+        Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
+        Path("tools/build_train_gpt_sm120_cli.sh"),
     ),
     Path("build/nfn_gpt2_native_train"): (
         Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
@@ -721,6 +726,42 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         (
             "bash",
             "tools/train_gpt_sm120.sh",
+            "--template-name",
+            "gpt2_moa",
+            "--graph-file",
+            "/tmp/native-compatible-gpt-graph.json",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_sm120_compiled_dry_run",
+        (
+            "build/nfn_train_gpt_sm120",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_sm120_compiled_gpt3_dry_run",
+        (
+            "build/nfn_train_gpt_sm120",
+            "--base-model",
+            "gpt3",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_sm120_compiled_custom_graph_dry_run",
+        (
+            "build/nfn_train_gpt_sm120",
             "--template-name",
             "gpt2_moa",
             "--graph-file",

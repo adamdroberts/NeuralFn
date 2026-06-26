@@ -236,6 +236,26 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
         "train_gpt_sm120_custom_graph_dry_run"
     ]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--batch-size 64" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--train-seq-len 1024" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["passed"] is True
+    assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert "--batch-size 32" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_compiled_custom_graph_dry_run"]["passed"] is True
+    assert "--template-name gpt2_moa" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
+    assert "--native-cuda-activation moa" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
+    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -320,6 +340,7 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert all(path in artifacts for path in present_optional)
     assert all(path.relative_to(root) in artifacts for path in present_optional_globs)
     assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_train_gpt_sm120") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/linear_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
@@ -740,8 +761,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "linked_build_path" in gpt2_evo_source
     assert "GPT_LINKED_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
+    assert "SM120_CLI_OUT" in build_all
+    assert "build_train_gpt_sm120_cli.sh" in build_all
     assert build_all.index("build_native_train_tile_ops.sh") < build_all.index(
         "build_native_gpt_cli_linked.sh"
+    )
+    assert build_all.index("build_native_gpt_cli_linked.sh") < build_all.index(
+        "build_train_gpt_sm120_cli.sh"
     )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
     assert "NFN_NATIVE_REBUILD_BINDINGS" in rebuild_sm120
