@@ -590,6 +590,12 @@ Full-loop native GPT JSON reports the same evidence as
 `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats that field as a hot route counter for
 same-script native-vs-native and native-vs-llm.kittens candidate gates.
+The current strict cooperative body is limited to smoke-sized shapes by
+default. Production GPT shapes return `cudaErrorNotSupported` unless an unsafe
+diagnostic run sets
+`NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`, or
+`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`.
 For QKV first-use diagnostics,
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup GEMM to the first `N` rows.

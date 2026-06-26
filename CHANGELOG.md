@@ -17,6 +17,20 @@ Future updates should append new entries here rather than replacing older notes.
 
   Verification: ran the focused native LM-head source-contract pytest, rebuilt
   the linked native GPT CLI, reran the strict true-fused LM-head smoke benchmark
+  on the dedicated RTX 5090, ran a guarded vocab-4097 strict probe that failed
+  fast with CUDA status `801` (`cudaErrorNotSupported`), and ran
+  `git diff --check`.
+
+- Guarded the current strict true-fused LM-head cooperative body as
+  smoke-shape-only by default. The raw Tile CUDA launcher now returns
+  `cudaErrorNotSupported` for production GPT row/vocab/hidden shapes unless
+  `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
+  `NFN_NATIVE_GPT2_` / `NFN_TILE_CUDA_` alias) is set for an unsafe diagnostic
+  run. This keeps full-loop strict gates from benchmarking the tiny proof kernel
+  before a production-shaped fused LM-head body exists.
+
+  Verification: ran the focused native LM-head source-contract pytest, rebuilt
+  the linked native GPT CLI, reran the strict true-fused LM-head smoke benchmark
   on the dedicated RTX 5090, and ran `git diff --check`.
 
 - Added a row-count bisection knob for the rejected TK QKV first-use prewarm

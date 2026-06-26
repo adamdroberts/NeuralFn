@@ -111,6 +111,13 @@ Real training tensors must not pass through graph editor node objects.
     exits, unsupported cooperative launch devices, occupancy failures, and
     rejected prelaunch attempts no longer count as observed true-fused kernel
     launches.
+  - 2026-06-26 guarded the current strict cooperative body as smoke-shape-only
+    by default. Production GPT row/vocab/hidden shapes now return CUDA
+    not-supported unless
+    `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
+    GPT2/Tile alias) is set for an unsafe diagnostic run. This keeps full-loop
+    strict gates from spending time in the tiny proof kernel before the real
+    production fused LM-head body exists.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts

@@ -57,7 +57,7 @@ void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits
     std::int64_t,
     float,
     cudaStream_t);
-void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+cudaError_t launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
     std::uint16_t*,
     const std::uint16_t*,
     float*,
@@ -6226,7 +6226,8 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
         return static_cast<int>(cudaErrorInvalidValue);
     }
     if (lm_head_true_fused_cooperative_enabled()) {
-        neuralfn::tile_cuda::launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+        const cudaError_t status =
+            neuralfn::tile_cuda::launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
             logits_bf16,
             targets_u16,
             row_losses,
@@ -6242,7 +6243,7 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
             dweight_beta,
             no_loss,
             as_stream(cuda_stream));
-        return launch_status();
+        return status == cudaSuccess ? launch_status() : static_cast<int>(status);
     }
     const LmHeadBackwardGraphKey key{
         logits_bf16,

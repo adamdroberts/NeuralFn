@@ -1566,6 +1566,11 @@ only on capability strings. Strict LM-head benchmark profiles now fail when
 reports the same evidence as `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats it as a hot route counter for
 same-script candidate gates.
+The current strict cooperative body is intentionally smoke-shape-only. Full GPT
+row/vocab/hidden shapes return CUDA not-supported unless
+`NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
+`NFN_NATIVE_GPT2_` / `NFN_TILE_CUDA_` alias) is set for a deliberate unsafe
+diagnostic run.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

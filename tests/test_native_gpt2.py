@@ -1842,10 +1842,16 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert "cooperative_streams.dhidden_done" in tile_ops_source
     assert "cooperative_streams.dweight_done" in tile_ops_source
-    assert "launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16" in tile_ops_source
+    assert "cudaError_t launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16" in tile_ops_source
+    assert "return status == cudaSuccess ? launch_status() : static_cast<int>(status);" in tile_ops_source
     kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
         encoding="utf-8"
     )
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in kernels_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in kernels_source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in kernels_source
+    assert "lm_head_true_fused_cooperative_allow_production_enabled" in kernels_source
+    assert "return cudaErrorNotSupported;" in kernels_source
     assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in kernels_source
     assert "cg::this_grid()" in kernels_source
     assert "g_lm_head_classifier_true_fused_launch_count" in kernels_source

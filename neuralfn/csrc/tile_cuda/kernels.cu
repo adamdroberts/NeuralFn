@@ -481,6 +481,23 @@ bool lm_head_ce_no_loss_llmk_style_specialized_enabled() {
   return value;
 }
 
+bool lm_head_true_fused_cooperative_allow_production_enabled() {
+  static const bool value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION");
+    }
+    return raw != nullptr &&
+           (std::strcmp(raw, "1") == 0 || std::strcmp(raw, "true") == 0 ||
+            std::strcmp(raw, "TRUE") == 0 || std::strcmp(raw, "on") == 0 ||
+            std::strcmp(raw, "ON") == 0);
+  }();
+  return value;
+}
+
 bool lm_head_ce_loss_bins_default_specialized_enabled() {
   static const bool value = []() {
     const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED");
@@ -19627,7 +19644,7 @@ void launch_lm_head_classifier_backward_prob_only_ce_target_correction_bf16_bits
       lm_head_ce_reverse_rows_enabled());
 }
 
-void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
+cudaError_t launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
     std::uint16_t* logits,
     const std::uint16_t* targets,
     float* row_losses,
@@ -19648,18 +19665,23 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
   g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
   g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
   if (rows <= 0 || hidden_dim <= 0 || vocab <= 0 || row_stride < vocab) {
-    return;
+    return cudaErrorInvalidValue;
+  }
+  const bool production_shape =
+      rows > 4096 || hidden_dim > 1024 || vocab > 4096 || row_stride > 4096;
+  if (production_shape && !lm_head_true_fused_cooperative_allow_production_enabled()) {
+    return cudaErrorNotSupported;
   }
 
   cudaDeviceProp props{};
   int device = 0;
   cudaError_t status = cudaGetDevice(&device);
   if (status != cudaSuccess) {
-    return;
+    return status;
   }
   status = cudaGetDeviceProperties(&props, device);
   if (status != cudaSuccess || props.cooperativeLaunch == 0) {
-    return;
+    return status == cudaSuccess ? cudaErrorNotSupported : status;
   }
 
   const int threads = cross_entropy_bf16_threads_per_row();
@@ -19670,7 +19692,7 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
       threads,
       0);
   if (status != cudaSuccess || active_blocks_per_sm <= 0) {
-    return;
+    return status == cudaSuccess ? cudaErrorNotSupported : status;
   }
   const std::int64_t work_items = std::max(rows, std::max(rows * hidden_dim, vocab * hidden_dim));
   const int wanted_blocks = static_cast<int>(std::min<std::int64_t>(
@@ -19707,6 +19729,7 @@ void launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16(
   if (status == cudaSuccess && cudaPeekAtLastError() == cudaSuccess) {
     g_lm_head_classifier_true_fused_launch_count.fetch_add(1, std::memory_order_relaxed);
   }
+  return status;
 }
 
 void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(
