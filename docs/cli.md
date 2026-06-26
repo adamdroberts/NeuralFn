@@ -1153,6 +1153,10 @@ GPT row/vocab/hidden shapes return CUDA not-supported unless
 `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 `NFN_NATIVE_GPT2_` / `NFN_TILE_CUDA_` alias) is set for an unsafe diagnostic
 run.
+The same strict body requires the CE row-thread setting to remain at 1024,
+because its dHidden/dWeight section is a fixed 32x32 shared-memory tile; smaller
+`NFN_*_CE_BF16_THREADS` settings make the capability probe return false and keep
+the diagnostic CUDA Graph wrapper selected.
 The same ABI also exposes graph-body node counts for the diagnostic wrapper:
 one CE/dlogits node, one dHidden node, and one dWeight node per replay. Native
 GPT runtime JSON reports `lm_head_fused_graph_body_*_count_per_replay` and

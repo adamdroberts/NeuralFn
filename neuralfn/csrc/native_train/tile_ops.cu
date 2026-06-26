@@ -1945,9 +1945,14 @@ bool lm_head_graph_prewarm_thread_cache_enabled() {
 }
 
 bool lm_head_true_fused_cooperative_enabled() {
-    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
-           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
-           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE");
+    const bool requested =
+        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE");
+    if (!requested) {
+        return false;
+    }
+    return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() == 1024;
 }
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};

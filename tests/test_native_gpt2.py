@@ -1914,7 +1914,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         1,
     )[0]
     assert "if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {\n      const float target_logit" in true_fused_kernel_body
-    assert "constexpr int kMatTile = 32;" in true_fused_kernel_body
+    assert "constexpr int kMatTile = kLmHeadTrueFusedMatTile;" in true_fused_kernel_body
+    assert "constexpr int kLmHeadTrueFusedMatTile = 32;" in kernels_source
+    assert "kLmHeadTrueFusedRequiredThreads" in kernels_source
+    assert (
+        "if (threads != kLmHeadTrueFusedRequiredThreads) {\n"
+        "    return cudaErrorNotSupported;"
+    ) in kernels_source
     assert "__shared__ float tile_a[kMatTile][kMatTile];" in true_fused_kernel_body
     assert "__shared__ float tile_b[kMatTile][kMatTile];" in true_fused_kernel_body
     assert "hidden_tiles = hidden_row_tiles * hidden_col_tiles" in true_fused_kernel_body
@@ -1937,6 +1943,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "    return lm_head_true_fused_cooperative_enabled() ? 1 : 0;\n"
         "}"
     ) in tile_ops_source
+    assert (
+        "return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() == 1024;"
+        in tile_ops_source
+    )
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
         "    if (lm_head_true_fused_cooperative_enabled()) {\n"

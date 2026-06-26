@@ -186,6 +186,9 @@ std::int64_t finish_linear_shape_timing(LinearShapeTiming* timing);
 void discard_linear_shape_timing(LinearShapeTiming* timing);
 #endif
 std::atomic<bool> g_attention_forward_row_launch_disabled{false};
+constexpr int kLmHeadTrueFusedMatTile = 32;
+constexpr int kLmHeadTrueFusedRequiredThreads =
+    kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile;
 
 std::int64_t layer_norm_backward_affine_row_chunk_size() {
   static const std::int64_t value = []() {
@@ -12787,7 +12790,7 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
 
   grid.sync();
 
-  constexpr int kMatTile = 32;
+  constexpr int kMatTile = kLmHeadTrueFusedMatTile;
   __shared__ float tile_a[kMatTile][kMatTile];
   __shared__ float tile_b[kMatTile][kMatTile];
   const int lane = static_cast<int>(threadIdx.x);
@@ -19731,6 +19734,9 @@ cudaError_t launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_
   }
 
   const int threads = cross_entropy_bf16_threads_per_row();
+  if (threads != kLmHeadTrueFusedRequiredThreads) {
+    return cudaErrorNotSupported;
+  }
   int active_blocks_per_sm = 0;
   status = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &active_blocks_per_sm,

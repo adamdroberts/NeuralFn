@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the diagnostic strict true-fused LM-head cooperative route so it no
+  longer advertises or launches the 32x32 tiled dHidden/dWeight body when the CE
+  row-thread knob has been tuned below 1024. The exported
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  capability now requires the true-fused selector and
+  `token_cross_entropy_bf16_threads_per_row() == 1024`, and the CUDA launcher
+  returns `cudaErrorNotSupported` before cooperative launch if the thread count
+  does not match the tile body. This keeps CE-thread benchmark profiles on the
+  diagnostic CUDA Graph wrapper instead of letting a malformed strict tiled
+  body run.
+
+  Migration note: this only affects explicit diagnostic runs that combine
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` with
+  `NFN_TILE_CUDA_CE_BF16_THREADS` / `NFN_NATIVE_GPT*_CE_BF16_THREADS` values
+  below 1024. Use the default 1024 CE threads for strict true-fused LM-head
+  experiments.
+
+  Verification: ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel
+  -q`, `git diff --check`, and `bash tools/build_native_train_tile_ops.sh`.
+  CUDA preflight with
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1
+  NFN_TILE_CUDA_CE_BF16_THREADS=512` kept
+  `lm_head_cooperative_backward_fused_kernel_capability_available: false` and
+  `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`;
+  the same preflight with the default 1024 CE threads reported capability true
+  and `strict-true-fused-tile-kernel`.
+
 - Added the promoted `linear_bias_threads_512` route to the default SM120
   native GPT candidate sweep. `tools/sweep_native_gpt_sm120_candidates.sh` now
   runs that default-vs-legacy proof alongside the QKV ordering, LM-head graph,

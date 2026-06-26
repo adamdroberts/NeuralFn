@@ -2648,6 +2648,11 @@ semantic capability and the ABI-declared route class,
 true-fused path sets that field, while the current parity path reports
 `lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
 route remains unavailable until its capability probe returns nonzero.
+That capability also requires the CE row-thread setting to resolve to 1024,
+because the diagnostic cooperative body uses a fixed 32x32 shared-memory tile;
+setting `NFN_TILE_CUDA_CE_BF16_THREADS`, `NFN_NATIVE_GPT_CE_BF16_THREADS`, or
+`NFN_NATIVE_GPT2_CE_BF16_THREADS` to a smaller value keeps the ABI on the
+diagnostic graph-wrapper path.
 Production-sized GPT shapes are protected by a second kernel-side guard:
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 matching `NFN_NATIVE_GPT*_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION`
