@@ -3410,22 +3410,37 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         and candidate_reference_gates.get("enabled") is True
         and candidate_reference_gates.get("passed") is False
     )
+    strict_true_fused_but_slow = strict_true_fused and candidate_reference_gate_failed
     reason = (
-        "candidate already reports strict true-fused Tile LM-head backward"
-        if strict_true_fused
+        "candidate reports strict true-fused Tile LM-head backward but failed candidate/reference parity gates"
+        if strict_true_fused_but_slow
         else (
-            "candidate is still the diagnostic CUDA Graph wrapper, so parity work must "
-            "replace the wrapper body with a bounded true-fused Tile kernel"
-            if graph_wrapper_active
+            "candidate already reports strict true-fused Tile LM-head backward"
+            if strict_true_fused
             else (
-                "candidate strict fused symbol is present but capability is false"
-                if true_fused_capability is False
+                "candidate is still the diagnostic CUDA Graph wrapper, so parity work must "
+                "replace the wrapper body with a bounded true-fused Tile kernel"
+                if graph_wrapper_active
                 else (
-                    "candidate reports strict true-fused capability but no true-fused launches"
-                    if strict_true_fused_unlaunched
-                    else "candidate true-fused LM-head capability was not observed"
+                    "candidate strict fused symbol is present but capability is false"
+                    if true_fused_capability is False
+                    else (
+                        "candidate reports strict true-fused capability but no true-fused launches"
+                        if strict_true_fused_unlaunched
+                        else "candidate true-fused LM-head capability was not observed"
+                    )
                 )
             )
+        )
+    )
+    required = required or strict_true_fused_but_slow
+    status = (
+        "strict-true-fused-slow"
+        if strict_true_fused_but_slow
+        else (
+            "strict-true-fused-tile-kernel"
+            if strict_true_fused
+            else status
         )
     )
     return {

@@ -2647,6 +2647,10 @@ that forced investigation mode from promotion readiness with
 `candidate_true_fused_forced_production_debug`; production-sized trainer chunks
 continue to report `candidate_true_fused_production_ready: false` until the
 strict single-kernel route beats the paired LM-head and full-loop gates.
+The paired kernel speed gate mirrors that rule: when
+`--require-native-lm-head-true-fused` is active, a strict launch that fails the
+candidate/reference metric gates reports `strict-true-fused-slow` and still
+fails the promotion gate.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

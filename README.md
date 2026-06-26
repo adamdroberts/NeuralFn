@@ -288,6 +288,9 @@ candidate/reference gate failed, and the required next ABI:
 returning true and `strict-true-fused-tile-kernel` as the path class.
 Pass `--require-native-lm-head-true-fused` to make the paired benchmark fail
 specifically on that condition even if ordinary timing gates are not enabled.
+When the strict kernel launches but fails candidate/reference gates, the target
+status is `strict-true-fused-slow`; this also fails the strict gate so a scalar
+single-kernel launch cannot satisfy the promotion contract.
 `tools/bench_native_gpt_sm120_parity.sh` forwards that gate by default whenever
 strict parity enforcement is enabled; set
 `NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=0` only for measurement-only
@@ -453,7 +456,9 @@ For full-loop production-shape checks, use
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, and the paired wrapper's
 `--require-native-lm-head-true-fused` gate so the opt-in strict body is measured
 against the current full GPT loop and the llm.kittens reference before any
-default promotion. `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` includes
+default promotion. The gate now treats `strict-true-fused-slow` as failing, so
+the route must launch and pass the same-script reference gates before promotion.
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` includes
 `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, so the two required env gates can
 be audited without launching GPU work.

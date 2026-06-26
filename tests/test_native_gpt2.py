@@ -327,6 +327,7 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
 
     artifacts = module.default_artifacts()
@@ -357,6 +358,7 @@ def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: P
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
 
     artifact = tmp_path / "build" / "nfn_gpt_native_train"
@@ -2101,6 +2103,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
     assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool
     assert "lm_head_dweight_strided_vocab_gemm_count" in speed_tool
+    assert "strict_true_fused_but_slow" in speed_tool
+    assert "strict-true-fused-slow" in speed_tool
+    assert "failed candidate/reference parity gates" in speed_tool
 
 
 def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None:
@@ -2278,6 +2283,49 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert 'if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then' in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper
+
+
+def test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel() -> None:
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "paired_kernel_speed_for_test",
+        root / "tools" / "paired_kernel_speed.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    target = module.summarize_lm_head_true_fused_target(
+        {
+            "candidate_native_metrics": {
+                "lm_head_classifier_true_fused_launch_count": {"mean": 16.0},
+            },
+            "candidate_native_metric_values": {
+                "lm_head_classifier_backward_path_class": [
+                    "strict-true-fused-tile-kernel"
+                ],
+                "lm_head_cooperative_backward_fused_kernel_capability_available": [
+                    "true"
+                ],
+                "lm_head_cooperative_backward_fused_kernel_symbol_available": [
+                    "true"
+                ],
+            },
+            "candidate_reference_metric_ratio_gates": {
+                "enabled": True,
+                "passed": False,
+            },
+        }
+    )
+    assert target["required"] is True
+    assert target["status"] == "strict-true-fused-slow"
+    assert "failed candidate/reference parity gates" in target["reason"]
+
+    gate = module.evaluate_lm_head_true_fused_gate(required=True, target=target)
+    assert gate["passed"] is False
+    assert gate["status"] == "strict-true-fused-slow"
 
 
 def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes() -> None:

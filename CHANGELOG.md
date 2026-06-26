@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The paired SM120 benchmark gate for `--require-native-lm-head-true-fused` now
+  fails strict single-kernel candidates that launch successfully but miss the
+  candidate/reference parity gates. Those runs report
+  `strict-true-fused-slow`, keeping the promotion contract aligned with real
+  full-loop performance rather than symbol/counter presence alone.
+
+  Verification: reran the focused native GPT source-contract test and a paired
+  dry-run plan, then ran `git diff --check`.
+
 - Focused LM-head backward benchmark JSON now distinguishes forced
   production-shape true-fused investigations from promotion readiness. The
   trainer-sized strict single-kernel profile reports
