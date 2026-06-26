@@ -99,6 +99,13 @@ Real training tensors must not pass through graph editor node objects.
   `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED` /
   `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED` aliases for LM-head-specific
   bisections.
+  - 2026-06-26 tightened this evidence path with an explicit strict launch
+    counter. The Tile ops ABI now exports
+    `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`, focused
+    LM-head benchmark JSON reports per-variant `true_fused_launch_count`, native
+    GPT full-loop JSON reports `lm_head_classifier_true_fused_launch_count`, and
+    the paired speed gate treats zero observed full-loop true-fused launches as
+    a failure even when capability/path metadata says strict true fused.
 - [x] Add shape-scoped BGRADB first-write diagnostics for transformer block
   dWeight+bias kernels. The global `bgrad_first_write_direct` route stays
   rejected, but Tile-CUDA now accepts
@@ -501,6 +508,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   loss+dlogits over each row chunk; the remaining parity work is to replace its
   internals with a cooperative classifier plus LM-head dHidden/dWeight kernel
   without reintroducing full resident logits.
+  - 2026-06-26 proved the current tiny strict cooperative kernel in the focused
+    smoke path with `true_fused_launch_count=1` and sequence-wrapper/CUDA Graph
+    counters at zero, then wired the same launch counter into native GPT
+    full-loop route tracking. This closes the evidence gap only; the production
+    parity item remains a bounded full-shape fused classifier/dHidden/dWeight
+    kernel.
   - 2026-06-22 added a default-off strict parity guard for this route:
     `nfn_gpt_native_train --require-cooperative-lm-head-backward` and
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
