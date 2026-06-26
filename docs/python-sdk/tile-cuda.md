@@ -2623,6 +2623,18 @@ semantic capability and the ABI-declared route class,
 true-fused path sets that field, while the current parity path reports
 `lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
 route remains unavailable until its capability probe returns nonzero.
+Production-sized GPT shapes are protected by a second kernel-side guard:
+`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
+matching `NFN_NATIVE_GPT*_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION`
+alias) must be set in addition to the true-fused selector before the cooperative
+single-kernel body will launch above the smoke-test shape limits. The rejected
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative` profile now
+sets both env flags and keeps `--require-native-lm-head-true-fused` enabled, so
+full-loop candidate runs fail if they silently fall back to the diagnostic graph
+wrapper instead of measuring the production true-fused body. Dry-run plans for
+that profile include `candidate_true_fused_cooperative_env` and
+`candidate_true_fused_production_env` metadata, which makes the production gate
+auditable before any GPU work starts.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

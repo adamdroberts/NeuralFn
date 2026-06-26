@@ -2035,11 +2035,17 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1" in bench_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in bench_source
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1" in bench_source
+    assert "candidate_true_fused_cooperative_env=NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in bench_source
+    assert (
+        "candidate_true_fused_production_env="
+        "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1"
+    ) in bench_source
     assert "Production-shape full-GPT strict true-fused LM-head profile" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
-    assert "post-reinstall graph-only rerun" in bench_source
+    assert "post-MLP-FC-rollback rerun" in bench_source
     assert "0.985915x train_loop_wall_ms_per_step" in bench_source
     assert "0.999199x steady-state CUDA-event timing" in bench_source
     assert "0.957549x stage.lm_head_backward.total_ms" in bench_source

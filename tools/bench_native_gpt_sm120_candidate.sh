@@ -943,10 +943,10 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_true_fused_cooperative"|"lm-head-true-fused-cooperative"|"lm_head_true_fused"|"lm-head-true-fused")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Production-shape full-GPT strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 and --require-native-lm-head-true-fused so the paired wrapper measures the cooperative single-kernel CE+dHidden+dWeight route against the current graph-wrapper default and llm.kittens. Keep rejected until this full-loop gate proves train-loop and stage parity."
+    REJECTED_CANDIDATE_REASON="Production-shape full-GPT strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1, NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1, and --require-native-lm-head-true-fused so the paired wrapper measures the cooperative single-kernel CE+dHidden+dWeight route against the current graph-wrapper default and llm.kittens. Keep rejected until this full-loop gate proves train-loop and stage parity."
     CANDIDATE_NOTE="Runs the trainer-sized full GPT loop with the opt-in strict true-fused cooperative LM-head body instead of the diagnostic CUDA Graph wrapper; this is the promotion gate for replacing the wrapper in default training."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=0 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000}"
     ;;
@@ -1568,6 +1568,12 @@ if [[ -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ]]; then
 fi
 if [[ -n "$CANDIDATE_NOTE" ]]; then
   paired_args+=(--metadata "candidate_note=$CANDIDATE_NOTE")
+fi
+if [[ "$CANDIDATE_ENV_RAW" == *"NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1"* ]]; then
+  paired_args+=(--metadata "candidate_true_fused_cooperative_env=NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1")
+fi
+if [[ "$CANDIDATE_ENV_RAW" == *"NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1"* ]]; then
+  paired_args+=(--metadata "candidate_true_fused_production_env=NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1")
 fi
 if [[ "$DEFAULT_VS_LEGACY_PROFILE" == "1" ]]; then
   paired_args+=(--metadata "candidate_gate_scope=default-vs-legacy")

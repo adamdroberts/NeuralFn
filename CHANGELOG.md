@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The rejected-by-default SM120 native candidate profile
+  `lm_head_true_fused_cooperative` now sets
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` alongside
+  the true-fused selector. The kernel still keeps production-sized GPT shapes
+  behind an explicit opt-in guard, but the named full-loop promotion profile now
+  actually measures the production cooperative single-kernel CE+dHidden+dWeight
+  body instead of tripping the production-shape guard and falling back to the
+  diagnostic LM-head wrapper path. Dry-run plans for that profile now also emit
+  `candidate_true_fused_cooperative_env` and
+  `candidate_true_fused_production_env` metadata so the required env gates are
+  visible without launching GPU work.
+
+  Verification: ran focused native GPT source-contract pytest coverage for the
+  SM120 profile wiring, checked the dry-run profile expansion, checked shell
+  syntax for the SM120 candidate wrapper, and ran `git diff --check`.
+
 - The compiled no-Bash SM120 launcher `nfn_train_gpt_sm120` now honors
   `NFN_SM120_NATIVE_*` env controls, with `NFN_SM120_*` fallbacks, for cadence,
   batch shape, optimizer, schedule, checkpoint, sampling, and train-loss
