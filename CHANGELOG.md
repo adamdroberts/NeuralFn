@@ -91,23 +91,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Tightened the SM120 `lm_head_true_fused_cooperative` benchmark profile
   metadata after a post-CUDA-reinstall strict probe. The profile remains
-  rejected and now records that the current strict body is a scalar diagnostic:
-  it changed the route to `strict-true-fused-tile-kernel` and launched the
-  true-fused kernel 16 times, but regressed train-loop wall time to `7.217785x`,
-  LM-head backward to `30.473055x`, and the cooperative LM-head section to
-  `43.503750x` versus the default CUDA Graph wrapper.
+  rejected and now records both the original scalar full-loop rejection and the
+  current tiled diagnostic status: the full-loop probe changed the route to
+  `strict-true-fused-tile-kernel` and launched the true-fused kernel 16 times,
+  but regressed train-loop wall time to `7.217785x`, LM-head backward to
+  `30.473055x`, and the cooperative LM-head section to `43.503750x` versus the
+  default CUDA Graph wrapper. The later 32x32 tiled diagnostic body still failed
+  the focused trainer-chunk gate at `7.046530x` versus the default wrapper.
 
   Migration note: no default training path changed. The default remains the
-  prewarmed CUDA Graph LM-head wrapper; the scalar strict body must stay
-  opt-in/rejected until a tiled production CE+dHidden+dWeight replacement passes
-  full-loop and reference gates.
+  prewarmed CUDA Graph LM-head wrapper; the strict true-fused body must stay
+  opt-in/rejected until it passes full-loop and reference gates.
 
   Verification: ran the strict profile with
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative`,
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, one step, one sample,
   and stage timing on the dedicated RTX 5090. The route-change gate passed
   because the true-fused launch count moved from 0 to 16, but timing gates
-  failed as expected.
+  failed as expected. The metadata correction was verified with
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  -q`, `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative bash
+  tools/bench_native_gpt_sm120_candidate.sh`, and `git diff --check`.
 
 - `tools/paired_kernel_speed.py` now writes direct per-sample native metric
   ratio maps under each `paired_samples[]` row:
