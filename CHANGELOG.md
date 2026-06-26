@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The strict true-fused cooperative LM-head kernel now skips the target-logit
+  load when running no-loss trainer chunks. This removes an unused global load
+  from the production no-loss candidate path while preserving row-loss behavior
+  for loss-recording runs.
+
+  Verification: built `libnfn_native_train_tile_ops` from the changed CUDA
+  source, reran the focused native GPT source-contract test, ran the tiny
+  true-fused cooperative LM-head smoke against the freshly built library on the
+  RTX 5090, and ran `git diff --check`.
+
 - Focused LM-head backward benchmark JSON now reports
   `candidate_true_fused_production_shape`,
   `candidate_true_fused_allow_production_env`, and

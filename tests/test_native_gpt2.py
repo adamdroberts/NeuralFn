@@ -1895,6 +1895,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "return cudaErrorNotSupported;" in kernels_source
     assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in kernels_source
     assert "cg::this_grid()" in kernels_source
+    true_fused_kernel_body = kernels_source.split(
+        "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel",
+        1,
+    )[1].split(
+        "__global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel",
+        1,
+    )[0]
+    assert "if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {\n      const float target_logit" in true_fused_kernel_body
     assert "g_lm_head_classifier_true_fused_launch_count" in kernels_source
     assert "lm_head_classifier_true_fused_launch_count()" in kernels_source
     assert "g_lm_head_classifier_true_fused_launch_count.fetch_add" in kernels_source

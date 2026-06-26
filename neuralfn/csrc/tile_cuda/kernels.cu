@@ -12744,9 +12744,9 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
     float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, false);
     const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
     const std::uint16_t target = targets[row];
-    const float target_logit = bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
 
     if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {
+      const float target_logit = bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
       row_losses[row] = logf(row_denom) + row_max - target_logit;
     }
 
