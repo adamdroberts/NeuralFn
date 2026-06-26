@@ -4985,6 +4985,7 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert target["symbol_available"] is True
     assert target["true_fused_capability"] is False
     assert target["graph_wrapper_active"] is True
+    assert target["true_fused_launch_mean"] is None
     assert target["graph_replay_mean"] == 1.0
     assert target["graph_body_nodes_per_replay_mean"] == 3.0
     assert target["candidate_reference_gate_failed"] is True
@@ -5056,6 +5057,77 @@ def test_paired_kernel_speed_tool_can_require_lm_head_true_fused_target() -> Non
     assert gate["status"] == "diagnostic-cuda-graph-wrapper"
     assert "true_fused_capability=False" in gate["failure_reason"]
     assert "native_lm_head_true_fused_gate: passed=false" in proc.stdout
+    assert "native LM-head true-fused gate failed" in proc.stderr
+
+
+def test_paired_kernel_speed_tool_requires_observed_lm_head_true_fused_launches() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    run_dir = Path(tempfile.mkdtemp())
+    output_path = run_dir / "paired-lm-head-unlaunched.json"
+    baseline_profile = run_dir / "baseline-profile.json"
+    candidate_profile = run_dir / "candidate-profile.json"
+    baseline_payload = {
+        "steps_completed": 1,
+        "timing": {"train_loop_wall_ms": 10.0},
+        "lm_head_cooperative_backward_fused_kernel_symbol_available": True,
+        "lm_head_cooperative_backward_fused_kernel_capability_available": False,
+        "lm_head_cooperative_backward_fused_kernel_abi_path_class": (
+            "diagnostic-cuda-graph-wrapper"
+        ),
+        "lm_head_classifier_backward_path_class": "diagnostic-cuda-graph-wrapper",
+        "lm_head_classifier_true_fused_launch_count": 0,
+    }
+    candidate_payload = {
+        "steps_completed": 1,
+        "timing": {"train_loop_wall_ms": 10.0},
+        "lm_head_cooperative_backward_fused_kernel_symbol_available": True,
+        "lm_head_cooperative_backward_fused_kernel_capability_available": True,
+        "lm_head_cooperative_backward_fused_kernel_abi_path_class": (
+            "strict-true-fused-tile-kernel"
+        ),
+        "lm_head_classifier_backward_path_class": "strict-true-fused-tile-kernel",
+        "lm_head_classifier_true_fused_launch_count": 0,
+    }
+    baseline_profile.write_text(json.dumps(baseline_payload), encoding="utf-8")
+    candidate_profile.write_text(json.dumps(candidate_payload), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\" --profile-json {baseline_profile}",
+            "--candidate",
+            f"{sys.executable} -c \"print('candidate-ok')\" --profile-json {candidate_profile}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-lm-head-true-fused",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    target = payload["native_lm_head_true_fused_target"]
+    gate = payload["native_lm_head_true_fused_gate"]
+    assert target["status"] == "strict-true-fused-unlaunched"
+    assert target["true_fused_capability"] is True
+    assert target["true_fused_launch_mean"] == 0.0
+    assert gate["enabled"] is True
+    assert gate["passed"] is False
+    assert gate["status"] == "strict-true-fused-unlaunched"
+    assert "true_fused_launch_mean=0.0" in gate["failure_reason"]
     assert "native LM-head true-fused gate failed" in proc.stderr
 
 

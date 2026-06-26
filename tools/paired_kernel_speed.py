@@ -3365,15 +3365,34 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
     graph_wrapper_active = path_class.startswith("diagnostic-cuda-graph-wrapper") or (
         not path_class and abi_path_class.startswith("diagnostic-cuda-graph-wrapper")
     )
+    true_fused_launch_mean = _metric_mean(
+        metrics,
+        "lm_head_classifier_true_fused_launch_count",
+    )
     strict_true_fused = (
         true_fused_capability is True
         and path_class == "strict-true-fused-tile-kernel"
+        and true_fused_launch_mean is not None
+        and true_fused_launch_mean > 0.0
     )
-    required = graph_wrapper_active or true_fused_capability is False
+    strict_true_fused_unlaunched = (
+        true_fused_capability is True
+        and path_class == "strict-true-fused-tile-kernel"
+        and (true_fused_launch_mean is None or true_fused_launch_mean <= 0.0)
+    )
+    required = (
+        graph_wrapper_active
+        or true_fused_capability is False
+        or strict_true_fused_unlaunched
+    )
     status = (
         "strict-true-fused-tile-kernel"
         if strict_true_fused
-        else path_class or abi_path_class or "unknown"
+        else (
+            "strict-true-fused-unlaunched"
+            if strict_true_fused_unlaunched
+            else path_class or abi_path_class or "unknown"
+        )
     )
     candidate_reference_gates = payload.get("candidate_reference_metric_ratio_gates")
     candidate_reference_gate_failed = (
@@ -3391,7 +3410,11 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
             else (
                 "candidate strict fused symbol is present but capability is false"
                 if true_fused_capability is False
-                else "candidate true-fused LM-head capability was not observed"
+                else (
+                    "candidate reports strict true-fused capability but no true-fused launches"
+                    if strict_true_fused_unlaunched
+                    else "candidate true-fused LM-head capability was not observed"
+                )
             )
         )
     )
@@ -3403,6 +3426,7 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "true_fused_capability": true_fused_capability,
         "symbol_available": symbol_available,
         "graph_wrapper_active": graph_wrapper_active,
+        "true_fused_launch_mean": true_fused_launch_mean,
         "graph_replay_mean": _metric_mean(metrics, "lm_head_fused_graph_replay_count"),
         "graph_replay_success_mean": _metric_mean(
             metrics,
@@ -3448,7 +3472,8 @@ def evaluate_lm_head_true_fused_gate(
         failure_reason = (
             "candidate native LM-head backward is not strict true-fused Tile "
             f"(status={status}, path_class={target.get('path_class', '')}, "
-            f"true_fused_capability={target.get('true_fused_capability')})"
+            f"true_fused_capability={target.get('true_fused_capability')}, "
+            f"true_fused_launch_mean={target.get('true_fused_launch_mean')})"
         )
     elif required and status == "unobserved":
         passed = False
@@ -3479,6 +3504,7 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
         "    "
         f"symbol_available={target.get('symbol_available')} "
         f"true_fused_capability={target.get('true_fused_capability')} "
+        f"true_fused_launch_mean={target.get('true_fused_launch_mean')} "
         f"graph_wrapper_active={str(target.get('graph_wrapper_active', False)).lower()}"
     )
     graph_fragments: list[str] = []
