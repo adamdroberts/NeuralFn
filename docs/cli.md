@@ -1990,6 +1990,13 @@ train-loop wall to `1.012086x`, LM-head backward to `1.051608x`, and LM-head
 CE to `1.430612x` versus the 1024-thread default. Real reruns require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion stays
 available without the opt-in.
+`lm_head_ce_exp2` expands to `NFN_NATIVE_GPT_CE_BF16_EXP2=1` for the BF16
+CE+dlogits `exp2f(x * log2(e))` path. It is rejected by default: the CUDA
+13.3.33 dedicated RTX 5090 3-step, 2-sample rerun moved the no-loss classifier
+from `no-loss-default-specialized-dlogits-vec8-loads-scalar-stores` to the
+generic exp2 path and regressed train-loop wall to `1.019757x`, steady-state
+CUDA-event wall to `1.022252x`, LM-head backward to `1.097477x`, and LM-head
+cooperative time to `1.140828x`.
 `lm_head_ce_vec8_io` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
 the normal no-loss LM-head classifier path. It keeps the default vec8 BF16

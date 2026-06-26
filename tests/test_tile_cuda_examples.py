@@ -1350,6 +1350,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "stage.block_forward.mlp_fc_gelu.total_ms to 1.000722x" in text
     assert "ce_bf16_threads_512" in text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
+    assert "lm_head_ce_exp2" in text
+    assert "NFN_NATIVE_GPT_CE_BF16_EXP2=1" in text
+    assert "1.140828x LM-head cooperative time" in text
     assert "lm_head_ce_vec8_normal_store" in text
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1" in text
     assert "stage.lm_head_backward.total_ms to 1.009078x" in text
@@ -2519,6 +2522,56 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert ce_threads_rejected.returncode == 2
     assert "ce_bf16_threads_512 is a rejected SM120 candidate" in ce_threads_rejected.stderr
     assert "stage.lm_head_backward.ce.total_ms to 1.430612x" in ce_threads_rejected.stderr
+
+    ce_exp2_output_path = tmp_path / "candidate-ce-exp2-dry-run.json"
+    ce_exp2_env = os.environ.copy()
+    ce_exp2_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_exp2",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ce_exp2_output_path),
+        }
+    )
+
+    ce_exp2_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_exp2_env,
+    )
+
+    assert ce_exp2_dry_run.returncode == 0, ce_exp2_dry_run.stderr
+    ce_exp2_payload = json.loads(ce_exp2_output_path.read_text(encoding="utf-8"))
+    assert ce_exp2_payload["candidate_env"]["NFN_NATIVE_GPT_CE_BF16_EXP2"] == "1"
+    assert ce_exp2_payload["metric_ratio_gates"]["enabled"] is False
+
+    ce_exp2_rejected_env = os.environ.copy()
+    ce_exp2_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_exp2",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-ce-exp2-rejected.json"),
+        }
+    )
+
+    ce_exp2_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_exp2_rejected_env,
+    )
+
+    assert ce_exp2_rejected.returncode == 2
+    assert "lm_head_ce_exp2 is a rejected SM120 candidate" in ce_exp2_rejected.stderr
+    assert "1.097477x LM-head backward" in ce_exp2_rejected.stderr
 
     ce_vec8_output_path = tmp_path / "candidate-ce-vec8-dry-run.json"
     ce_vec8_env = os.environ.copy()

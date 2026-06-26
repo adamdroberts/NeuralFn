@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named rejected SM120 paired benchmark profile for the BF16 LM-head CE
+  exp2 path. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_exp2` now expands to
+  `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, dry-runs without the rejected-profile opt-in,
+  and rejects real launches by default with the CUDA 13.3.33 dedicated RTX 5090
+  evidence. The rerun showed that enabling exp2 moved the no-loss classifier
+  from the specialized CE kernel to the generic exp2 path and regressed
+  train-loop wall, steady-state CUDA-event timing, LM-head backward, and
+  LM-head cooperative time.
+
+  Migration note: no trainer default changed. Use this profile only for
+  explicit CE math bisection, or implement a specialized exp2 CE kernel before
+  reconsidering the route.
+
+  Verification: ran the same-script GPU candidate with
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_CE_BF16_EXP2=1'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_INCLUDE_LLMK_REFERENCE=1`; the metric gates failed at
+  `1.019757x` train-loop wall, `1.022252x` steady-state CUDA-event wall,
+  `1.097477x` LM-head backward, and `1.140828x` LM-head cooperative time.
+
 - Hardened the diagnostic strict true-fused LM-head cooperative route so it no
   longer advertises or launches the 32x32 tiled dHidden/dWeight body when the CE
   row-thread knob has been tuned below 1024. The exported
