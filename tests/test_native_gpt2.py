@@ -2541,6 +2541,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_no_loss_vec8_normal_store_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "bf16_persistent_block_outputs6": "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT=6",
+        "bf16_persistent_block_outputs_last6": "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT=tail",
         "lm_head_row_chunk_65536": "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
@@ -6493,6 +6494,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_bytes_elided"] == 2 * 1 * 3072 * 4
     assert train_transformer_payload["bf16_persistent_block_outputs_enabled"] is False
     assert train_transformer_payload["bf16_persistent_block_output_count"] == 0
+    assert train_transformer_payload["bf16_persistent_block_output_placement"] == "head"
+    assert train_transformer_payload["bf16_persistent_block_output_start"] == 0
     assert train_transformer_payload["bf16_persistent_block_output_store_count"] == 0
     assert train_transformer_payload["bf16_persistent_block_output_restore_count"] == 0
     assert train_transformer_payload["fp32_persistent_block_output_elements_elided"] == 0
@@ -6509,6 +6512,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "persistent_block_output_copy_elided_count": 0,
         "bf16_persistent_block_outputs_enabled": False,
         "bf16_persistent_block_output_count": 0,
+        "bf16_persistent_block_output_placement": "head",
+        "bf16_persistent_block_output_start": 0,
         "bf16_persistent_block_output_store_count": 0,
         "bf16_persistent_block_output_restore_count": 0,
         "bf16_persistent_block_input_ln1_backward_requested": False,

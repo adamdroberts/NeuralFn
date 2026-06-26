@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT=head|tail`
+  and `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_persistent_block_outputs_last6`.
+  Partial BF16 persistent-output diagnostics now report
+  `bf16_persistent_block_output_placement` and
+  `bf16_persistent_block_output_start` in the top-level native JSON and under
+  `block_state_layout`, so benchmark runs can prove whether the selected BF16
+  range covered the first or last inter-block outputs.
+
+  Migration note: no default changed. Partial persistent-output placement
+  defaults to `head`, matching the previous count-only diagnostic behavior.
+
+  Verification: ran the focused source-contract test, `git diff --check`,
+  rebuilt the SM120 native artifacts, dry-ran the new tail-placement profile,
+  and ran a 3-step, 2-sample stage-timed paired GPU benchmark on the dedicated
+  RTX 5090. The profile is marked rejected: the candidate JSON proved
+  `bf16_persistent_block_output_start: 5`, store/restore counts of `144`, and
+  the mixed fused persistent-store strategy, but it regressed setup wall time to
+  `1.004559x`, train-loop wall time to `1.007922x`, steady-state CUDA-event
+  step time to `1.007089x`, block backward to `1.001975x`, and MLP projection
+  backward to `1.004262x`.
+
 - Added `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT` and the paired
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_persistent_block_outputs6`
   diagnostic. The all-BF16 boolean still means "all persistent inter-block

@@ -13369,6 +13369,19 @@ int run_transformer_lm_training_json(
                       {"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT",
                        "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT"},
                       0));
+    const std::string bf16_persistent_block_output_placement_raw =
+        normalize_env_mode(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT",
+                              "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT"}));
+    const std::string bf16_persistent_block_output_placement =
+        bf16_persistent_block_output_placement_raw == "tail" ? "tail" : "head";
+    const std::int64_t bf16_persistent_block_output_start =
+        bf16_persistent_block_output_count <= 0
+            ? 0
+            : (bf16_persistent_block_output_placement == "tail"
+                   ? std::max<std::int64_t>(
+                         0, persistent_block_output_count - bf16_persistent_block_output_count)
+                   : 0);
     const bool bf16_persistent_block_outputs_enabled =
         bf16_persistent_block_output_count > 0;
     const bool bf16_persistent_block_input_ln1_backward_requested =
@@ -15112,7 +15125,11 @@ int run_transformer_lm_training_json(
     for (std::size_t i = 0; i < block_outputs.size(); ++i) {
         allocate(
             &block_outputs[i],
-            static_cast<std::int64_t>(i) < bf16_persistent_block_output_count ? 0 : activation_elements,
+            static_cast<std::int64_t>(i) >= bf16_persistent_block_output_start &&
+                    static_cast<std::int64_t>(i) <
+                        bf16_persistent_block_output_start + bf16_persistent_block_output_count
+                ? 0
+                : activation_elements,
             "block" + std::to_string(i) + ".persistent_output");
     }
 
@@ -15202,7 +15219,11 @@ int run_transformer_lm_training_json(
         for (std::size_t i = 0; i < block_outputs_bf16.size(); ++i) {
             allocate_uint16(
                 &block_outputs_bf16[i],
-                static_cast<std::int64_t>(i) < bf16_persistent_block_output_count ? activation_elements : 0,
+                static_cast<std::int64_t>(i) >= bf16_persistent_block_output_start &&
+                        static_cast<std::int64_t>(i) <
+                            bf16_persistent_block_output_start + bf16_persistent_block_output_count
+                    ? activation_elements
+                    : 0,
                 "block" + std::to_string(i) + ".persistent_output_bf16");
         }
         allocate_uint16(
@@ -18013,7 +18034,9 @@ int run_transformer_lm_training_json(
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
     auto bf16_persistent_block_output_enabled_for = [&](std::size_t stored_index) {
-        return static_cast<std::int64_t>(stored_index) < bf16_persistent_block_output_count;
+        const std::int64_t index = static_cast<std::int64_t>(stored_index);
+        return index >= bf16_persistent_block_output_start &&
+               index < bf16_persistent_block_output_start + bf16_persistent_block_output_count;
     };
     auto bf16_block_input_for = [&](std::size_t block_index) -> const std::uint16_t* {
         if (!bf16_persistent_block_outputs_enabled || block_index == 0) {
@@ -22803,6 +22826,10 @@ int run_transformer_lm_training_json(
         << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
         << "  \"bf16_persistent_block_output_count\": "
         << bf16_persistent_block_output_count << ",\n"
+        << "  \"bf16_persistent_block_output_placement\": \""
+        << json_escape(bf16_persistent_block_output_placement) << "\",\n"
+        << "  \"bf16_persistent_block_output_start\": "
+        << bf16_persistent_block_output_start << ",\n"
         << "  \"bf16_persistent_block_input_ln1_backward_requested\": "
         << (bf16_persistent_block_input_ln1_backward_requested ? "true" : "false") << ",\n"
         << "  \"bf16_persistent_block_input_ln1_backward_enabled\": "
@@ -23890,6 +23917,10 @@ int run_transformer_lm_training_json(
         << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
         << "    \"bf16_persistent_block_output_count\": "
         << bf16_persistent_block_output_count << ",\n"
+        << "    \"bf16_persistent_block_output_placement\": \""
+        << json_escape(bf16_persistent_block_output_placement) << "\",\n"
+        << "    \"bf16_persistent_block_output_start\": "
+        << bf16_persistent_block_output_start << ",\n"
         << "    \"bf16_persistent_block_input_ln1_backward_requested\": "
         << (bf16_persistent_block_input_ln1_backward_requested ? "true" : "false") << ",\n"
         << "    \"bf16_persistent_block_input_ln1_backward_enabled\": "
