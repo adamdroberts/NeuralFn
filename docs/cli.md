@@ -1365,6 +1365,11 @@ sequencing kernels or replaying a captured CUDA Graph.
 selects the 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` selects the same shape and
 turns on the true-fused requirement by default,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused` selects the same
+production shape, exports the strict true-fused cooperative selector, and
+defaults the candidate/current-wrapper, candidate/reference, and
+candidate/cuBLASLt-reference ratio limits to `1.000`; keep it rejected until
+those gates pass,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
 chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the same chunk with

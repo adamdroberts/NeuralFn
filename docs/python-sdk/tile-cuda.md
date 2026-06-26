@@ -2107,7 +2107,12 @@ defaults the true-fused requirement on,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused` selects that production
 shape and exports `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` plus
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` for a
-rejected-by-default focused true-fused candidate measurement. The resulting
+rejected-by-default focused true-fused candidate measurement. It also defaults
+`NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000`, and
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so the wrapper exits
+nonzero until the strict candidate reaches current-wrapper and same-process
+reference parity. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a

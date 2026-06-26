@@ -430,7 +430,12 @@ symbol (`1.000186x`). Use
 `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1` to opt into
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` and
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` for a focused
-production-shape true-fused candidate measurement. Focused benchmark JSON
+production-shape true-fused candidate measurement. That rejected profile now
+defaults `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000`, and
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so intentional runs
+fail until the strict candidate reaches current-wrapper and same-process
+reference parity. Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_forced_production_debug`; it only reports

@@ -2226,6 +2226,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in wrapper
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION" in wrapper
     assert "Production-shape focused strict true-fused LM-head profile" in wrapper
+    assert "DEFAULT_MAX_RATIO=1.000" in wrapper
+    assert "DEFAULT_MAX_REFERENCE_RATIO=1.000" in wrapper
+    assert "DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000" in wrapper
+    assert "candidate/current-wrapper and candidate/reference parity" in wrapper
+    assert 'MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-${DEFAULT_MAX_RATIO:-}}"' in wrapper
+    assert 'MAX_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO:-${DEFAULT_MAX_REFERENCE_RATIO:-}}"' in wrapper
+    assert 'MAX_CUBLASLT_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO:-${DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO:-}}"' in wrapper
     assert "DRY_RUN_ENV_PREFIX" in wrapper
     assert "HIDDEN_DIM=8" in wrapper
     assert "VOCAB=16" in wrapper

@@ -260,6 +260,18 @@ Future updates should append new entries here rather than replacing older notes.
   true-fused cooperative LM-head smoke against the freshly built library on the
   RTX 5090, and ran `git diff --check`.
 
+- The rejected `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused` wrapper
+  now defaults its candidate/current-wrapper, candidate/reference, and
+  candidate/cuBLASLt-reference ratio gates to `1.000`. Intentional runs with
+  `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1` therefore exit nonzero until
+  the production-shape strict single-kernel LM-head body proves parity, instead
+  of producing a successful diagnostic run for a slower scalar Tile candidate.
+
+  Verification: reran the focused native GPT source-contract test, reran the
+  production-shape true-fused LM-head microbench on the RTX 5090 and confirmed
+  it now fails on the default parity gate while writing JSON evidence, and ran
+  `git diff --check`.
+
 - Focused LM-head backward benchmark JSON now reports
   `candidate_true_fused_production_shape`,
   `candidate_true_fused_allow_production_env`, and
