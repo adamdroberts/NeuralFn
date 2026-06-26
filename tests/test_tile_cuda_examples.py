@@ -508,7 +508,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert '"lm_head_true_fused_cooperative"|"lm-head-true-fused-cooperative"' in text
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in text
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1" in text
-    assert "Production-shape full-GPT strict true-fused LM-head profile" in text
+    assert "Runs the trainer-sized full GPT loop with the opt-in strict true-fused cooperative LM-head body" in text
     assert "--require-native-lm-head-true-fused" in text
     assert "Unsupported NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED value" in text
     assert "NFN_SM120_PARITY_STEPS" in text

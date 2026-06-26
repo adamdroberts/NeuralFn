@@ -6713,6 +6713,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "token_weight_bf16_adamw_refresh_fusion_enabled": True,
             "token_weight_padded_init_fusion_enabled": False,
             "token_weight_padding_zero_launches_elided": 0,
+            "token_weight_bf16_padding_memset_count": 0,
             "token_weight_bf16_initial_refresh_elided": False,
             "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
