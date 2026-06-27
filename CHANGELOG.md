@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a promoted-route contract check to the CUDA 13.3 SM120 health gate.
+  When `NFN_SM120_CUDA13_RUN_BENCH=1`, `tools/validate_sm120_cuda13.sh` now
+  parses the paired benchmark JSON and fails if dense GPT training no longer
+  reports the expected fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
+  dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
+  telemetry, and fused padded token-weight initialization routes. Set
+  `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for intentional drift
+  diagnostics.
+
+  Verification: ran the focused source-contract test for the validator, then
+  ran `tools/validate_sm120_cuda13.sh` with pytest disabled and
+  `NFN_SM120_CUDA13_RUN_BENCH=1` / one benchmark step on the dedicated RTX
+  5090. The new contract parser passed against the emitted
+  `/tmp/nfn_sm120_cuda13_contract_check.json`.
+
 - Made dense GPT LM-head CUDA Graph prewarm dedup pointer-aware. The Tile
   runtime graph cache keys include the logit, target, row-loss, hidden,
   LM-head weight, hidden-gradient, and weight-gradient buffer pointers, so the

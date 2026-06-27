@@ -123,6 +123,13 @@ diagnostics rather than defaults: the strict cooperative true-fused smoke is a
 real single-kernel path but was `8.985042x` slower at trainer chunk size, and
 the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
 trainer to `1.076611x` train-loop wall time.
+When `NFN_SM120_CUDA13_RUN_BENCH=1` is enabled, the health gate also parses the
+paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
+contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
+dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
+telemetry, and fused padded token-weight initialization. Set
+`NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
+want benchmark output even if a default route has drifted.
 The 2026-06-27 post-reinstall 10-step no-stage refresh kept that conclusion:
 `llmk_sm120_reference_flags` rebuilt but missed promotion at `1.004713x`
 current-native train-loop wall time and `1.001757x` candidate-over-llm.kittens
@@ -3743,7 +3750,10 @@ symbols, launches the Tile fill smoke, runs the cached TinyStories
 transformer-LM smoke, and then runs `python -m pytest tests/test_native_gpt2.py
 -q`. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` for a fast CUDA-only pass, or
 `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
-benchmark JSON at `/tmp/nfn_sm120_cuda13_baseline.json`.
+benchmark JSON at `/tmp/nfn_sm120_cuda13_baseline.json`. Bench-enabled
+validation fails when the emitted JSON no longer reports the promoted CUDA Tile
+dense-GPT route contract; set `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only
+when intentionally collecting a drifted diagnostic run.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

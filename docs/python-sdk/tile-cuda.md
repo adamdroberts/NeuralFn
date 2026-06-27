@@ -2291,6 +2291,20 @@ transformer-LM smoke, and runs the focused native pytest suite. Set
 `NFN_SM120_CUDA13_RUN_PYTEST=0` for CUDA-only validation or
 `NFN_SM120_CUDA13_RUN_BENCH=1` to append a short same-script native baseline
 benchmark.
+When the benchmark leg is enabled, `validate_sm120_cuda13.sh` also checks the
+emitted paired benchmark JSON for the promoted dense-GPT route contract:
+`optimizer_tile_strategy: "tile-size-1024-sumsq-scale-adamw"`,
+`lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`, a
+promoted specialized BF16/u16 `lm_head_ce_kernel_strategy`, successful
+`lm_head_fused_graph_prewarm_success_count`, pointer-aware
+`lm_head_fused_graph_prewarm_duplicate_skip_count` telemetry,
+`block_backward_input_linear_strategy: "tk-sm120-bf16-dinput"`,
+`block_backward_weight_linear_strategy:
+"shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate"`, and
+`token_weight_init_strategy:
+"device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"`. Set
+`NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
+drifted diagnostic benchmark.
 The parity wrapper does not expand named native candidate profiles. If
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE`,
 `NFN_SM120_PARITY_CANDIDATE_PROFILE`, or `NFN_SM120_PARITY_PROFILE` is set, it

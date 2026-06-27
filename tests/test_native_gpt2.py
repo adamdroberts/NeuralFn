@@ -660,9 +660,27 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "tests/test_native_gpt2.py -q" in source
     assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
     assert "NFN_SM120_CUDA13_RUN_BENCH" in source
+    assert "NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT" in source
     assert "bench_native_gpt_sm120_candidate.sh" in source
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
     assert "NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES" in source
+    assert "candidate_native_metric_values" in source
+    assert "candidate_native_metrics" in source
+    assert "optimizer_tile_strategy" in source
+    assert "tile-size-1024-sumsq-scale-adamw" in source
+    assert "lm_head_classifier_backward_path_class" in source
+    assert "diagnostic-cuda-graph-wrapper" in source
+    assert "lm_head_ce_kernel_strategy" in source
+    assert "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores" in source
+    assert "lm_head_fused_graph_prewarm_success_count" in source
+    assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
+    assert "block_backward_input_linear_strategy" in source
+    assert "tk-sm120-bf16-dinput" in source
+    assert "block_backward_weight_linear_strategy" in source
+    assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source
+    assert "token_weight_init_strategy" in source
+    assert "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero" in source
+    assert "SM120 CUDA 13.3 benchmark contract passed" in source
     assert "CUDA 13.3 SM120 validation passed." in source
 
 
