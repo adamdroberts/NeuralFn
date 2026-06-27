@@ -1858,10 +1858,14 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_dedup_enabled` and
 `lm_head_fused_graph_prewarm_duplicate_skip_count`. Graph prewarm is enabled by
 default for real training and captures each unique LM-head graph key once,
-deduplicating equal-sized row chunks while still preserving separate no-loss and
-active train-loss graph keys, including the loss-bin variant when configured.
-This keeps the first logged train-loss step from lazily capturing a separate
-LM-head backward graph without recapturing an identical beta-one chunk. Set
+deduplicating only when the chunk pointers, row shape, dWeight beta, and
+cooperative flags match the Tile runtime CUDA Graph cache key. Equal-sized
+row chunks with different logit, target, hidden, or gradient buffer pointers
+are still prewarmed separately, while separate no-loss and active train-loss
+graph keys, including the loss-bin variant when configured, remain distinct.
+This keeps the first logged train-loss step and later LM-head row chunks from
+lazily capturing separate LM-head backward graphs without recapturing a true
+duplicate chunk. Set
 `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
 per-chunk prewarm loop. The
@@ -1888,8 +1892,12 @@ prewarm opt-out. Route proof moved graph capture attempts from `3` to `0` and
 graph cache hits from `45` to `48`. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
-capture path for bisection. The remaining implementation target is still a true
-fused LM-head classifier-backward Tile kernel. When graph prewarm
+capture path for bisection. A later CUDA 13.3 dedicated RTX 5090 3-step
+stage-timed parity sample with pointer-aware dedup moved runtime LM-head graph
+capture attempts from `1` to `0`, prewarm successes from `2` to `3`, duplicate
+skips from `1` to `0`, and cache hits to `48`; the same sample was still about
+`1.011718x` slower than llm.kittens, so the remaining implementation target is
+still a true fused LM-head classifier-backward Tile kernel. When graph prewarm
 eliminates runtime LM-head graph capture,
 trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and

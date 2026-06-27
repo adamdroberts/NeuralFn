@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made dense GPT LM-head CUDA Graph prewarm dedup pointer-aware. The Tile
+  runtime graph cache keys include the logit, target, row-loss, hidden,
+  LM-head weight, hidden-gradient, and weight-gradient buffer pointers, so the
+  native trainer now treats equal-shaped row chunks with different buffers as
+  distinct prewarm keys instead of skipping the second chunk as a duplicate.
+  This removes the remaining runtime graph capture in multi-chunk LM-head
+  schedules while keeping true duplicate prewarm calls deduplicated.
+
+  Verification: rebuilt the linked native GPT trainer, ran
+  `python -m pytest tests/test_native_gpt2.py -k lm_head -q`, and reran a
+  3-step stage-timed same-script parity sample on the dedicated RTX 5090.
+  The sample moved `lm_head_fused_graph_capture_attempt_count` from `1` to `0`,
+  prewarm successes from `2` to `3`, duplicate skips from `1` to `0`, and cache
+  hits to `48`. Throughput remained about `1.011718x` slower than llm.kittens,
+  so the remaining parity target is still the true fused LM-head
+  classifier-backward Tile kernel body.
+
 - Corrected the SM120 parity benchmark docs to match the current wrapper
   behavior: `tools/bench_native_gpt_sm120_parity.sh` compares llm.kittens
   against `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when that

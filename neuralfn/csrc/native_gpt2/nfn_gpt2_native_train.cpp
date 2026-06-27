@@ -20762,6 +20762,13 @@ int run_transformer_lm_training_json(
         }
         run_setup_timed("lm_head_fused_graph.prewarm", [&]() {
             struct LmHeadGraphPrewarmKey {
+                std::uint16_t* logits_bf16 = nullptr;
+                const std::uint16_t* targets_u16 = nullptr;
+                float* row_losses = nullptr;
+                const std::uint16_t* hidden_bf16 = nullptr;
+                const std::uint16_t* token_weight_bf16 = nullptr;
+                float* grad_hidden = nullptr;
+                float* grad_weight = nullptr;
                 std::int64_t rows = 0;
                 std::int64_t vocab = 0;
                 std::int64_t row_stride = 0;
@@ -20771,7 +20778,14 @@ int run_transformer_lm_training_json(
             std::vector<LmHeadGraphPrewarmKey> prewarmed_keys;
             auto already_prewarmed = [&](const LmHeadGraphPrewarmKey& key) {
                 for (const LmHeadGraphPrewarmKey& existing : prewarmed_keys) {
-                    if (existing.rows == key.rows &&
+                    if (existing.logits_bf16 == key.logits_bf16 &&
+                        existing.targets_u16 == key.targets_u16 &&
+                        existing.row_losses == key.row_losses &&
+                        existing.hidden_bf16 == key.hidden_bf16 &&
+                        existing.token_weight_bf16 == key.token_weight_bf16 &&
+                        existing.grad_hidden == key.grad_hidden &&
+                        existing.grad_weight == key.grad_weight &&
+                        existing.rows == key.rows &&
                         existing.vocab == key.vocab &&
                         existing.row_stride == key.row_stride &&
                         existing.dweight_beta == key.dweight_beta &&
@@ -20862,6 +20876,13 @@ int run_transformer_lm_training_json(
                     const int cooperative_flags = prewarm_flags[flag_index];
                     for (int beta_index = 0; beta_index < beta_count && error.empty(); ++beta_index) {
                         const LmHeadGraphPrewarmKey key{
+                            bf16_logit_chunk,
+                            target_chunk_u16,
+                            row_max,
+                            hidden_bf16_chunk,
+                            token_weight_bf16,
+                            grad_hidden_chunk,
+                            accum_grad_token_weight,
                             row_count,
                             kVocab,
                             kPaddedVocab,

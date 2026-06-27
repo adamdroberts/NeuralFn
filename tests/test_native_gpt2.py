@@ -2099,6 +2099,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_prewarm_last_error_code" in source
     assert "lm_head_fused_graph_prewarm_cache_entry_count" in source
     assert "struct LmHeadGraphPrewarmKey" in source
+    assert "std::uint16_t* logits_bf16 = nullptr;" in source
+    assert "existing.logits_bf16 == key.logits_bf16" in source
+    assert "existing.grad_hidden == key.grad_hidden" in source
+    assert "bf16_logit_chunk," in source
+    assert "grad_hidden_chunk," in source
     assert "already_prewarmed(key)" in source
     assert "prewarm_row_loss_reduction_available" in source
     assert "prewarm_loss_bin_reduction_available" in source

@@ -1290,7 +1290,10 @@ the full-row setup cost.
 LM-head graph prewarm is enabled by default for real native GPT training.
 It warms both the no-loss graph key and the active train-loss graph key,
 including loss-bin flags when that route is configured, so the first logged
-train-loss step does not pay a separate lazy graph capture.
+train-loss step does not pay a separate lazy graph capture. The prewarm dedup
+key is pointer-aware and matches the Tile runtime CUDA Graph cache key: chunks
+with different logit, target, hidden, row-loss, or gradient buffers are captured
+separately even when their row shape is the same.
 Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are
@@ -1306,7 +1309,12 @@ LM-head backward, block backward, and MLP projection backward. The current CUDA
 train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
 LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection
 backward `0.992403x`. Route proof moved graph capture attempts from `3` to `0`
-and graph cache hits from `45` to `48`.
+and graph cache hits from `45` to `48`. A later pointer-aware dedup validation
+on the dedicated RTX 5090 moved runtime LM-head graph capture attempts from
+`1` to `0`, prewarm successes from `2` to `3`, duplicate skips from `1` to `0`,
+and cache hits to `48`; throughput was still about `1.011718x` slower than
+llm.kittens, so the remaining parity target is the true fused LM-head kernel
+body rather than lazy graph capture.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
