@@ -8543,8 +8543,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
     ]
-    assert "gpt2_token_weight_init_bf16_pattern4(bucket)" in padded_token_init_kernel
-    assert "gpt2_token_weight_init_bf16_pattern1(bucket)" in padded_token_init_kernel
+    assert "const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket)" in padded_token_init_kernel
+    assert "bf16_bits_from_float(pattern.x)" in padded_token_init_kernel
+    assert "shadow_bf16_bits[tail] = bf16_bits_from_float(value)" in padded_token_init_kernel
     assert "bf16_bits_from_float(value0)" not in padded_token_init_kernel
     assert "adamw_float_update_bf16_shadow_offsets" in gpt2_source_text
     assert "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow" in gpt2_source_text

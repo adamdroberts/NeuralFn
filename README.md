@@ -2222,11 +2222,12 @@ startup-only rerun left total setup flat (`0.996873x`) but regressed token
 initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
 `token_weight_padded_init` reproduces the fused padded-vocab initializer behind
 `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. That kernel now writes public
-vocab BF16 shadow rows through the same precomputed deterministic pattern path
-used by the BF16-pattern probe and still zeroes padded rows in the same launch,
-but the CUDA 13.3.33 dedicated RTX 5090 5-sample startup-only gate kept it
-default-off after `setup_wall_ms` regressed to `1.010956x` and
-`setup.token_weight_init.total_ms` regressed to `1.009406x`.
+vocab BF16 shadow rows through the same conversion-based vector4 path as the
+default initializer and still zeroes padded rows in the same launch. It remains
+default-off until a fresh paired GPU gate proves the conversion-based padded
+body beats the default path; the older precomputed-pattern padded body regressed
+`setup_wall_ms` to `1.010956x` and `setup.token_weight_init.total_ms` to
+`1.009406x`.
 `combined_device_arena` is also rejected by default: the CUDA 13.3.33
 startup-only 5-sample recheck regressed setup wall time to `1.031475x`,
 `setup.uint16_arena_materialize.total_ms` to `2.339592x`, and

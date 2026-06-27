@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the opt-in fused padded token-weight initializer to write public-vocab
+  BF16 shadow rows through the conversion-based vector4 body used by the current
+  default initializer, while still zeroing padded vocab rows in the same launch.
+  The `token_weight_padded_init` SM120 candidate profile remains rejected until
+  a fresh paired GPU gate proves the new padded body beats the default path.
+
+  Migration note: no trainer default changed. This only changes behavior when
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` is explicitly set or when
+  the `token_weight_padded_init` benchmark profile is run.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and ran `git diff --check`.
+  Attempted the paired RTX 5090 startup gate with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init`, but the GPU
+  escalation was rejected by the approval system usage limit before the
+  benchmark could start.
+
 - Refreshed the documented `linked_startup` SM120 startup evidence after the
   CUDA 13.3.33 workstation rebuild. The linked native GPT binary remains the
   preferred SDK, CLI, and `nfn train` startup path, but the current 2026-06-26

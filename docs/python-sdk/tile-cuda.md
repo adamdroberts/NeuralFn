@@ -2756,11 +2756,12 @@ post-kernel-change revalidation.
 `token_weight_padded_init` compares the current conversion-based vector4
 BF16-shadow initializer against
 `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. The padded kernel now writes
-public-vocab BF16 shadow rows through the precomputed deterministic pattern path
-and zeros padded rows in the same launch, but it remains rejected by default:
-the CUDA 13.3.33 dedicated RTX 5090 2026-06-25 5-sample startup-only gate
-regressed `setup_wall_ms` to `1.010956x` and
-`setup.token_weight_init.total_ms` to `1.009406x`.
+public-vocab BF16 shadow rows through the same conversion-based vector4 path as
+the default initializer and zeros padded rows in the same launch. It remains
+rejected until a fresh paired GPU gate proves the conversion-based padded body
+beats the default path; the older precomputed-pattern padded body regressed
+`setup_wall_ms` to `1.010956x` and `setup.token_weight_init.total_ms` to
+`1.009406x`.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
 object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or

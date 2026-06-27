@@ -7460,10 +7460,13 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_k
     }
     if (idx + 3 < public_n) {
       const int bucket = static_cast<int>(idx) & 15;
-      reinterpret_cast<float4*>(values)[idx / 4] =
-          gpt2_token_weight_init_float_pattern4(bucket);
-      reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] =
-          gpt2_token_weight_init_bf16_pattern4(bucket);
+      const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket);
+      reinterpret_cast<float4*>(values)[idx / 4] = pattern;
+      reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] = make_ushort4(
+          bf16_bits_from_float(pattern.x),
+          bf16_bits_from_float(pattern.y),
+          bf16_bits_from_float(pattern.z),
+          bf16_bits_from_float(pattern.w));
       return;
     }
   }
@@ -7472,7 +7475,7 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_k
       const int bucket = static_cast<int>(tail) & 15;
       const float value = static_cast<float>(bucket - 8) * 0.01f;
       values[tail] = value;
-      shadow_bf16_bits[tail] = gpt2_token_weight_init_bf16_pattern1(bucket);
+      shadow_bf16_bits[tail] = bf16_bits_from_float(value);
     } else {
       values[tail] = 0.0f;
       shadow_bf16_bits[tail] = 0;
