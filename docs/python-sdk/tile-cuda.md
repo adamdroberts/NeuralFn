@@ -2155,9 +2155,9 @@ JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a
 diagnostic forced-production measurement from a promotable kernel. The wrapper
 also records `gpu_load_context.before` and `gpu_load_context.after` in the
-JSON with the selected GPU, utilization, memory, and compute-process count so
-candidate-vs-baseline LM-head evidence carries the external-load context from
-the same script that ran both kernels.
+saved JSON and final stdout with the selected GPU, utilization, memory, and
+compute-process count so candidate-vs-baseline LM-head evidence carries the
+external-load context from the same script that ran both kernels.
 selected strict symbol from a production-ready true-fused launch contract,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` selects the same
 optimizer no-loss trainer chunk while comparing against the explicit

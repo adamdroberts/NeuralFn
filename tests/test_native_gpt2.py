@@ -1251,6 +1251,7 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     assert '"compute_process_count"' in lm_head_bench_script
     assert "GPU_LOAD_BEFORE" in lm_head_bench_script
     assert "GPU_LOAD_AFTER" in lm_head_bench_script
+    assert "BENCH_STDOUT" in lm_head_bench_script
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:

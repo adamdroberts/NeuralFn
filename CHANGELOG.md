@@ -6,21 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-- Extended `tools/bench_lm_head_backward_candidate.sh` so its JSON output now
-  includes `gpu_load_context.before` and `gpu_load_context.after` around the
-  same-script baseline/candidate LM-head backward comparison. Each snapshot
-  records the selected GPU, `CUDA_VISIBLE_DEVICES`, utilization, memory, and
-  compute-process count when `nvidia-smi` is available, so future LM-head
-  candidate evidence can rule out external GPU load without a separate probe.
+- Extended `tools/bench_lm_head_backward_candidate.sh` so its saved JSON and
+  final stdout now include `gpu_load_context.before` and
+  `gpu_load_context.after` around the same-script baseline/candidate LM-head
+  backward comparison. Each snapshot records the selected GPU,
+  `CUDA_VISIBLE_DEVICES`, utilization, memory, and compute-process count when
+  `nvidia-smi` is available, so future LM-head candidate evidence can rule out
+  external GPU load without a separate probe.
 
   Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`, ran
   `NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash tools/bench_lm_head_backward_candidate.sh`,
   ran the focused native pytest slice
   `python -m pytest tests/test_native_gpt2.py -q -k "lm_head_last_dweight_overlap_candidate or no_torch"`
   (`6 passed`), and ran a one-iteration tiny LM-head CUDA smoke on the
-  dedicated GPU. The smoke JSON file reported `gpu_load_context.before` and
-  `gpu_load_context.after` with `available=true`, selected GPU `0`, and zero
-  compute processes before and after.
+  dedicated GPU. The smoke saved JSON and stdout both reported
+  `gpu_load_context.before` and `gpu_load_context.after` with
+  `available=true`, selected GPU `0`, and zero compute processes before and
+  after.
 
 - Added a repair mode to the no-Torch native dependency gate:
   `python tools/check_native_no_torch_deps.py --rebuild-stale` now rebuilds

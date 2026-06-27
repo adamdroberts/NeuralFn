@@ -482,10 +482,17 @@ print(
 }
 
 GPU_LOAD_BEFORE="$(snapshot_selected_gpu_load_json before)"
+BENCH_STDOUT="$(mktemp "${TMPDIR:-/tmp}/nfn_lm_head_backward_stdout.XXXXXX")"
 BENCH_STATUS=0
-"${BENCH_BIN}" "${BENCH_ARGS[@]}" || BENCH_STATUS=$?
+"${BENCH_BIN}" "${BENCH_ARGS[@]}" >"${BENCH_STDOUT}" || BENCH_STATUS=$?
 GPU_LOAD_AFTER="$(snapshot_selected_gpu_load_json after)"
 merge_gpu_load_context_json "${GPU_LOAD_BEFORE}" "${GPU_LOAD_AFTER}"
+if [[ -f "${JSON_OUT}" ]]; then
+  python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_text(), end="")' "${JSON_OUT}"
+elif [[ -s "${BENCH_STDOUT}" ]]; then
+  python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_text(), end="")' "${BENCH_STDOUT}"
+fi
+rm -f "${BENCH_STDOUT}"
 if [[ "${BENCH_STATUS}" != "0" ]]; then
   case "${REQUIRE_TRUE_FUSED,,}" in
     1|true|yes|on)
