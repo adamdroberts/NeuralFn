@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Registered the diagnostic TK Tile-ops sidecar with the native no-Torch stale
+  artifact rebuilder. `tools/check_native_no_torch_deps.py --rebuild-stale`
+  now rebuilds `build/libnfn_native_train_tile_ops_tk.so` with
+  `tools/build_native_train_tile_ops.sh
+  build/libnfn_native_train_tile_ops_tk.so` instead of failing with `no rebuild
+  command is registered for this artifact` after CUDA/source changes.
+
+  Verification: reproduced the full verifier failure after rebuilding the stale
+  GPT native CLIs, then added the rebuild mapping and regression assertion.
+
 - **Breaking changes:** changed the unified native SDK device default from a
   hard CUDA ordinal to the workstation dedicated-GPU selector.
   `NativeTrainRunConfig.cuda_visible_devices` now defaults to `"dedicated"`,

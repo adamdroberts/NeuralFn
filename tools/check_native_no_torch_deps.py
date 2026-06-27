@@ -108,6 +108,11 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_gpt2_native_train"): ("bash", "tools/build_native_gpt2_cli.sh"),
     Path("build/nfn_native_train"): ("bash", "tools/build_native_train_cli.sh"),
     Path("build/libnfn_native_train_tile_ops.so"): ("bash", "tools/build_native_train_tile_ops.sh"),
+    Path("build/libnfn_native_train_tile_ops_tk.so"): (
+        "bash",
+        "tools/build_native_train_tile_ops.sh",
+        "build/libnfn_native_train_tile_ops_tk.so",
+    ),
     Path("neuralfn/_native_gpt"): ("bash", "tools/build_native_gpt_binding.sh"),
     Path("neuralfn/_native_gpt2"): ("bash", "tools/build_native_gpt2_binding.sh"),
     Path("neuralfn/_native_train"): ("bash", "tools/build_native_train_binding.sh"),

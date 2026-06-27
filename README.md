@@ -57,7 +57,10 @@ frontend, and the missing-template native stubs against the current CUDA
 toolkit. It also refreshes
 `build/libnfn_native_train_tile_ops_tk.so`, `build/linear_backward_bench`, and
 `build/lm_head_backward_bench`, so `tools/check_native_no_torch_deps.py` does
-not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. Set
+not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. The
+no-Torch verifier's `--rebuild-stale` mode can also refresh the TK sidecar
+directly with `tools/build_native_train_tile_ops.sh
+build/libnfn_native_train_tile_ops_tk.so` when only that artifact is stale. Set
 `NFN_NATIVE_REBUILD_BINDINGS=0` only when intentionally rebuilding raw trainer
 binaries without touching the importable SDK extensions. The full native build script rebuilds
 `libnfn_native_train_tile_ops.so` before `nfn_gpt_native_train_linked`, so the

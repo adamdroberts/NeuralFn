@@ -349,6 +349,14 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/linear_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/lm_head_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert module.artifact_rebuild_command(
+        root / "build" / "libnfn_native_train_tile_ops_tk.so",
+        root,
+    ) == (
+        "bash",
+        "tools/build_native_train_tile_ops.sh",
+        "build/libnfn_native_train_tile_ops_tk.so",
+    )
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
