@@ -1308,8 +1308,11 @@ dWeight+bias. After the LM-head prepack default change, a 2-step, 2-sample
 rerun still regressed train-loop wall to `1.019797x`; the wrapper now requires
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional reruns.
 The named `lm_head_concurrent_dhidden_dweight` profile expands to
-`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` for repeatable LM-head
-dHidden/dWeight side-stream bisections. Stage-timed runs report the combined
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0
+NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` for repeatable LM-head
+dHidden/dWeight side-stream bisections against the older serial path. The
+cooperative override is required because the default LM-head CUDA Graph route
+intentionally masks these serial-schedule probes. Stage-timed runs report the combined
 `stage.lm_head_backward.dhidden_dweight_concurrent.total_ms` bucket for
 candidate-side inspection; the wrapper gates train-loop and total LM-head
 timing because the serial baseline emits split dHidden and dWeight substages.
@@ -1910,9 +1913,12 @@ row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
 dlogits. A CUDA 13.3 dedicated-RTX-5090 same-script wrapper run briefly measured
 `0.996095x` train-loop wall time over two samples, but the required 3-sample
 confirmation regressed train-loop wall time to `1.002871x` and train tokens/sec
-to `0.997262x`, so the default remains CE -> dHidden -> dWeight. Use
+to `0.997262x`, so the default remains the cooperative CUDA Graph LM-head route.
+Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` to rerun it
-through the same-script paired wrapper and route-change gate.
+through the same-script paired wrapper and route-change gate; the profile sets
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on the candidate so the serial
+ordering switch is not masked by the default cooperative path.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
 candidate for same-script benchmarking. It doubles the bounded BF16 logit
 scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
@@ -2798,7 +2804,7 @@ Dense GPT native transformer training fuses token embedding, absolute position e
 
 Dense GPT native train-loss sampling copies the scalar LM-head loss back with a blocking device-to-host `cudaMemcpy` and does not issue an extra full-device `cudaDeviceSynchronize` first. Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC=1` or `NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC=1` only to reproduce the previous sync-before-copy path for paired diagnostics. Runtime JSON reports `lm_head_loss_copy_device_synchronize_enabled` and `lm_head_loss_copy_ordering`. Transformer validation uses the training batch size as its effective validation batch so validation loss stays on the tested full-row LM-head CE shape; JSON reports `validation.requested_eval_batch_size` and effective `validation.eval_batch_size`.
 
-`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` is an opt-in dense GPT LM-head backward scheduling candidate. After the BF16 CE kernel overwrites a row chunk with dlogits, the trainer records a CUDA event, launches LM-head dHidden and dWeight consumers on two non-blocking CUDA streams, and synchronizes both streams before the next row chunk reuses the workspace. The default remains the serial dHidden-then-dWeight schedule because the latest CUDA 13.3 dedicated RTX 5090 3-sample same-script confirmation measured the two-stream route slower (`1.002970x` train-loop wall time, `0.997039x` tokens/sec). Runtime JSON reports `lm_head_concurrent_dhidden_dweight_requested`, `lm_head_concurrent_dhidden_dweight_available`, `lm_head_concurrent_dhidden_dweight_enabled`, and `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports `lm_head_backward.dhidden_dweight_concurrent` when the candidate path runs.
+`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` is an opt-in dense GPT LM-head backward scheduling candidate. After the BF16 CE kernel overwrites a row chunk with dlogits, the trainer records a CUDA event, launches LM-head dHidden and dWeight consumers on two non-blocking CUDA streams, and synchronizes both streams before the next row chunk reuses the workspace. The candidate only activates when cooperative LM-head backward is disabled, so the paired wrapper sets `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on candidate runs. The default remains the cooperative CUDA Graph LM-head route because the latest CUDA 13.3 dedicated RTX 5090 3-sample same-script confirmation measured the two-stream route slower (`1.002970x` train-loop wall time, `0.997039x` tokens/sec). Runtime JSON reports `lm_head_concurrent_dhidden_dweight_requested`, `lm_head_concurrent_dhidden_dweight_available`, `lm_head_concurrent_dhidden_dweight_enabled`, and `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports `lm_head_backward.dhidden_dweight_concurrent` when the candidate path runs.
 
 `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` is an opt-in packed-attention profiling switch. It makes the attention projection dInput GEMM write BF16 grad-out bits directly and feeds those bits into the packed attention backward bridge. Runtime JSON reports `attention_backward_bf16_grad_out_handoff_enabled`, `attention_backward_grad_out_dtype`, BF16 scratch sizes, and the updated QKV bridge strategy. Leave it disabled for normal training: the CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-512-bias-default 3-step, 2-sample recheck improved steady-state CUDA-event timing to `0.997577x` and attention to-QKV to `0.978000x`, but regressed `train_loop_wall_ms_per_step` to `1.002882x`, tokens/sec to `0.997149x`, block backward to `1.005784x`, MLP FC dWeight+bias to `1.062723x`, and attention projection backward to `1.025902x`.
 

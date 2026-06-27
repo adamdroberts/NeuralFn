@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the SM120 paired benchmark profiles for legacy LM-head serial
+  scheduling probes. `lm_head_concurrent_dhidden_dweight`,
+  `lm_head_dweight_before_dhidden`, and `lm_head_pipeline_chunks` now force
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on the candidate command so
+  the requested serial schedule can actually activate instead of being masked
+  by the default cooperative CUDA Graph LM-head route.
+
+  Verification: reran the previously rejected `lm_head_dweight_before_dhidden`
+  and `lm_head_concurrent_dhidden_dweight` profiles on the dedicated RTX 5090
+  and confirmed the old expansion did not produce a real route/strategy change;
+  after the fix, a one-step `lm_head_concurrent_dhidden_dweight` probe reported
+  route/strategy changes and correctly failed promotion because LM-head backward
+  regressed to `1.122365x` and train-loop wall to `1.028781x`. Reran the
+  focused native tests.
+
 - Deduplicated default native dense-GPT LM-head CUDA Graph prewarm keys. The
   prewarm path now captures each unique `(rows, vocab, stride, beta, flags)`
   graph key once, so equal-sized LM-head row chunks do not recapture identical

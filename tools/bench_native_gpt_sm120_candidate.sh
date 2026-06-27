@@ -897,18 +897,18 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_concurrent_dhidden_dweight"|"lm-head-concurrent-dhidden-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-sample same-script confirmation activated the two-stream LM-head dHidden/dWeight schedule but regressed train_loop_wall_ms_per_step to 1.002970x and train tokens/sec to 0.997039x, so the serial dHidden-then-dWeight route remains the default."
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-sample same-script confirmation activated the two-stream LM-head dHidden/dWeight schedule with cooperative LM-head backward disabled on the candidate, but regressed train_loop_wall_ms_per_step to 1.002970x and train tokens/sec to 0.997039x, so the cooperative CUDA Graph LM-head route remains the default."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1"
     ;;
   "lm_head_dweight_before_dhidden"|"lm-head-dweight-before-dhidden")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-sample same-script confirmation activated the LM-head serial dWeight-before-dHidden schedule but regressed train_loop_wall_ms_per_step to 1.002871x and train tokens/sec to 0.997262x, so the serial dHidden-then-dWeight route remains the default."
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-sample same-script confirmation activated the LM-head serial dWeight-before-dHidden schedule with cooperative LM-head backward disabled on the candidate, but regressed train_loop_wall_ms_per_step to 1.002871x and train tokens/sec to 0.997262x, so the cooperative CUDA Graph LM-head route remains the default."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1"
     ;;
   "lm_head_pipeline_chunks"|"lm-head-pipeline-chunks")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 short 3-step, 2-sample stage-timed rerun activated the double-buffered LM-head pipeline schedule but the candidate command timed out after 300 seconds, so this side-stream pipeline remains rejected until the cross-stream ownership model is redesigned or replaced by a true fused/cooperative LM-head kernel."
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 short 3-step, 2-sample stage-timed rerun activated the double-buffered LM-head pipeline schedule with cooperative LM-head backward disabled on the candidate, but the candidate command timed out after 300 seconds, so this side-stream pipeline remains rejected until the cross-stream ownership model is redesigned or replaced by a true fused/cooperative LM-head kernel."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0 NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1"
     ;;
   "lm_head_overlap_last_dweight"|"lm-head-overlap-last-dweight"|"lm_head_last_dweight_overlap"|"lm-head-last-dweight-overlap")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
