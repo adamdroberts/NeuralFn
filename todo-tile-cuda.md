@@ -37,6 +37,14 @@ Real training tensors must not pass through graph editor node objects.
   builds `build/nfn_train_gpt_sm120`, and `tools/build_native_gpt2_all.sh`
   includes it so workstation GPT runs can use the same defaults without Bash or
   Python startup before execing the native CUDA Tile trainer.
+- [x] Add a generic compiled dense GPT launcher. `tools/build_train_gpt_cli.sh`
+  builds `build/nfn_train_gpt`, `tools/build_native_gpt2_all.sh` and
+  `tools/rebuild_native_sm120.sh` include it, and
+  `tools/install_native_gpt2_commands.sh` links `nfn-train-gpt` /
+  `nfn-gpt-train`. It keeps the same no-Python/no-Bash native handoff while
+  honoring `NFN_NATIVE_GPT_*` GPT/GPT2/GPT3/NanoGPT/template/custom-graph
+  selector, shape, validation, sampling, checkpoint, optimizer, train-loss, and
+  device defaults before the older SM120 aliases.
 - [x] Compile graph topology into a static execution plan before training.
 - [x] Make `CompiledTorchGraph.forward()` use the precompiled plan instead of walking `NeuronGraph.nodes` and `NeuronGraph._incoming()` per batch.
 - [x] Add regression coverage proving forward still works after graph edge traversal is made unavailable post-compilation.

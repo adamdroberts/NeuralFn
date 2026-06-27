@@ -22,6 +22,7 @@ REQUIRED_DEFAULT_ARTIFACTS = (
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_native_train"),
+    Path("build/nfn_train_gpt"),
     Path("build/nfn_train_gpt_sm120"),
     Path("build/nfn_gpt_native_train_linked"),
     Path("build/nfn_gpt2_native_train"),
@@ -59,6 +60,10 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
     Path("build/nfn_train_gpt_sm120"): (
         Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
         Path("tools/build_train_gpt_sm120_cli.sh"),
+    ),
+    Path("build/nfn_train_gpt"): (
+        Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
+        Path("tools/build_train_gpt_cli.sh"),
     ),
     Path("build/nfn_gpt2_native_train"): (
         Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
@@ -104,6 +109,7 @@ NATIVE_BINDING_SOURCE_DEPENDENCIES = {
 ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_gpt_native_train"): ("bash", "tools/build_native_gpt_cli.sh"),
     Path("build/nfn_gpt_native_train_linked"): ("bash", "tools/build_native_gpt_cli_linked.sh"),
+    Path("build/nfn_train_gpt"): ("bash", "tools/build_train_gpt_cli.sh"),
     Path("build/nfn_train_gpt_sm120"): ("bash", "tools/build_train_gpt_sm120_cli.sh"),
     Path("build/nfn_gpt2_native_train"): ("bash", "tools/build_native_gpt2_cli.sh"),
     Path("build/nfn_native_train"): ("bash", "tools/build_native_train_cli.sh"),
@@ -757,6 +763,34 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--no-checkpoint",
         ),
         {},
+    ),
+    (
+        "train_gpt_compiled_dry_run",
+        (
+            "build/nfn_train_gpt",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {
+            "NFN_NATIVE_GPT_MODEL_FAMILY": "gpt",
+            "NFN_NATIVE_GPT_TEMPLATE_NAME": "gpt",
+        },
+    ),
+    (
+        "train_gpt_compiled_generic_env_dry_run",
+        (
+            "build/nfn_train_gpt",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {
+            "NFN_NATIVE_GPT_MODEL_FAMILY": "gpt3",
+            "NFN_NATIVE_GPT_TEMPLATE_NAME": "gpt3",
+            "NFN_NATIVE_GPT_BATCH_SIZE": "32",
+            "NFN_NATIVE_GPT_TRAIN_SEQ_LEN": "2048",
+        },
     ),
     (
         "train_gpt_sm120_compiled_dry_run",
@@ -1462,36 +1496,80 @@ def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -
     startup_budget_seconds = max(0.0, float(max_entrypoint_seconds))
     base_env = os.environ.copy()
     base_env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    for name, command, extra_env in DEFAULT_SHELL_ENTRYPOINTS:
-        env = base_env.copy()
-        env.update(extra_env)
-        started = time.perf_counter()
-        proc = subprocess.run(
-            list(command),
-            cwd=repo_root,
-            env=env,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        elapsed_seconds = time.perf_counter() - started
-        startup_within_budget = (
-            True if startup_budget_seconds <= 0.0 else elapsed_seconds <= startup_budget_seconds
-        )
-        entries.append(
-            {
-                "name": name,
-                "command": list(command),
-                "returncode": proc.returncode,
-                "passed": proc.returncode == 0 and startup_within_budget,
-                "elapsed_seconds": elapsed_seconds,
-                "startup_budget_seconds": startup_budget_seconds,
-                "startup_within_budget": startup_within_budget,
-                "stdout": proc.stdout.strip(),
-                "stderr": proc.stderr.strip(),
-            }
-        )
+    launcher_builders = {
+        "build/nfn_train_gpt": "tools/build_train_gpt_cli.sh",
+        "build/nfn_train_gpt_sm120": "tools/build_train_gpt_sm120_cli.sh",
+    }
+    with tempfile.TemporaryDirectory(prefix="nfn-native-shell-entrypoints-") as tmp:
+        temp_root = Path(tmp)
+        for name, command, extra_env in DEFAULT_SHELL_ENTRYPOINTS:
+            env = base_env.copy()
+            env.update(extra_env)
+            run_command = list(command)
+            build_started: float | None = None
+            build_elapsed = 0.0
+            first = run_command[0] if run_command else ""
+            builder = launcher_builders.get(first)
+            if builder is not None and not (repo_root / first).exists():
+                temp_binary = temp_root / Path(first).name
+                build_started = time.perf_counter()
+                build_proc = subprocess.run(
+                    ["bash", builder, str(temp_binary)],
+                    cwd=repo_root,
+                    env=env,
+                    check=False,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                build_elapsed = time.perf_counter() - build_started
+                if build_proc.returncode != 0:
+                    entries.append(
+                        {
+                            "name": name,
+                            "command": run_command,
+                            "returncode": build_proc.returncode,
+                            "passed": False,
+                            "elapsed_seconds": build_elapsed,
+                            "startup_budget_seconds": startup_budget_seconds,
+                            "startup_within_budget": False,
+                            "stdout": build_proc.stdout.strip(),
+                            "stderr": build_proc.stderr.strip(),
+                            "preflight": "build_missing_launcher",
+                            "preflight_command": ["bash", builder, str(temp_binary)],
+                        }
+                    )
+                    continue
+                run_command[0] = str(temp_binary)
+            started = time.perf_counter()
+            proc = subprocess.run(
+                run_command,
+                cwd=repo_root,
+                env=env,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            elapsed_seconds = time.perf_counter() - started
+            startup_within_budget = (
+                True if startup_budget_seconds <= 0.0 else elapsed_seconds <= startup_budget_seconds
+            )
+            entries.append(
+                {
+                    "name": name,
+                    "command": run_command,
+                    "returncode": proc.returncode,
+                    "passed": proc.returncode == 0 and startup_within_budget,
+                    "elapsed_seconds": elapsed_seconds,
+                    "startup_budget_seconds": startup_budget_seconds,
+                    "startup_within_budget": startup_within_budget,
+                    "stdout": proc.stdout.strip(),
+                    "stderr": proc.stderr.strip(),
+                    "preflight": "build_missing_launcher" if build_started is not None else None,
+                    "preflight_elapsed_seconds": build_elapsed,
+                }
+            )
     return entries
 
 

@@ -117,7 +117,7 @@ std::string select_display_disabled_cuda_device() {
 
 std::string resolve_cuda_visible_devices_default() {
     std::string requested = env_first(
-        {"NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "NFN_SM120_CUDA_VISIBLE_DEVICES"},
+        {"NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES", "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "NFN_SM120_CUDA_VISIBLE_DEVICES"},
         "dedicated");
     std::string normalized = lower(trim(requested));
     if (normalized.empty() || normalized == "none" || normalized == "off") {
@@ -162,11 +162,11 @@ std::string value_after_equals(const std::string& arg) {
 
 [[noreturn]] void usage() {
     std::cout
-        << "Usage: nfn_train_gpt_sm120 [options] [-- extra native args]\n\n"
-        << "Compiled SM120 dense GPT training helper. It calls nfn_gpt_native_train\n"
-        << "directly with the same core defaults as tools/train_gpt_sm120.sh.\n\n"
+        << "Usage: nfn_train_gpt [options] [-- extra native args]\n\n"
+        << "Compiled dense GPT training helper. It calls nfn_gpt_native_train\n"
+        << "directly with CUDA Tile defaults matching tools/train_gpt_sm120.sh.\n\n"
         << "Default cadence, shape, and optimizer values can be overridden with\n"
-        << "NFN_SM120_NATIVE_* or NFN_SM120_* environment variables before launch.\n\n"
+        << "NFN_NATIVE_GPT_*, NFN_SM120_NATIVE_*, or NFN_SM120_* environment variables before launch.\n\n"
         << "Options:\n"
         << "  --activation NAME\n"
         << "  --moa-interval N\n"
@@ -198,41 +198,47 @@ int main(int argc, char** argv) {
     setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
     setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
-    std::string activation = env_or("NFN_SM120_ACTIVATION", "gelu");
-    std::string moa_interval = env_or("NFN_SM120_MOA_INTERVAL", "50");
-    std::string output_dir = env_or("NFN_SM120_OUTPUT_DIR", (root / "artifacts" / "gpt_sm120").string());
-    std::string dataset_alias = env_or("NFN_SM120_DATASET_ALIAS");
-    std::string model_family = env_or("NFN_SM120_MODEL_FAMILY", "gpt");
-    std::string template_name = env_or("NFN_SM120_TEMPLATE_NAME", "gpt");
-    std::string graph_file = env_or("NFN_SM120_GRAPH_FILE");
-    std::string train_seq_len = env_first({"NFN_SM120_NATIVE_TRAIN_SEQ_LEN", "NFN_SM120_TRAIN_SEQ_LEN"}, "1024");
-    std::string batch_size = env_first({"NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE"}, "64");
+    std::string activation = env_first({"NFN_NATIVE_GPT_ACTIVATION", "NFN_SM120_ACTIVATION"}, "gelu");
+    std::string moa_interval = env_first({"NFN_NATIVE_GPT_MOA_INTERVAL", "NFN_SM120_MOA_INTERVAL"}, "50");
+    std::string output_dir =
+        env_first({"NFN_NATIVE_GPT_OUTPUT_DIR", "NFN_SM120_OUTPUT_DIR"}, (root / "artifacts" / "gpt_sm120").string());
+    std::string dataset_alias = env_first({"NFN_NATIVE_GPT_DATASET_ALIAS", "NFN_SM120_DATASET_ALIAS"});
+    std::string model_family = env_first({"NFN_NATIVE_GPT_MODEL_FAMILY", "NFN_SM120_MODEL_FAMILY"}, "gpt");
+    std::string template_name = env_first({"NFN_NATIVE_GPT_TEMPLATE_NAME", "NFN_SM120_TEMPLATE_NAME"}, "gpt");
+    std::string graph_file = env_first({"NFN_NATIVE_GPT_GRAPH_FILE", "NFN_SM120_GRAPH_FILE"});
+    std::string train_seq_len =
+        env_first({"NFN_NATIVE_GPT_TRAIN_SEQ_LEN", "NFN_SM120_NATIVE_TRAIN_SEQ_LEN", "NFN_SM120_TRAIN_SEQ_LEN"}, "1024");
+    std::string batch_size =
+        env_first({"NFN_NATIVE_GPT_BATCH_SIZE", "NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE"}, "64");
     std::string eval_every_steps =
-        env_first({"NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "250");
-    std::string eval_batches = env_first({"NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES"}, "20");
+        env_first({"NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "250");
+    std::string eval_batches =
+        env_first({"NFN_NATIVE_GPT_EVAL_BATCHES", "NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES"}, "20");
     std::string sample_every =
-        env_first({"NFN_SM120_NATIVE_SAMPLE_EVERY", "NFN_SM120_SAMPLE_EVERY"}, "20000");
+        env_first({"NFN_NATIVE_GPT_SAMPLE_EVERY", "NFN_SM120_NATIVE_SAMPLE_EVERY", "NFN_SM120_SAMPLE_EVERY"}, "20000");
     std::string generate_tokens =
-        env_first({"NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS"}, "144");
+        env_first({"NFN_NATIVE_GPT_GENERATE_TOKENS", "NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS"}, "144");
     std::string checkpoint_every =
-        env_first({"NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY"}, "200");
+        env_first({"NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY"}, "200");
     std::string train_batch_tokens =
-        env_first({"NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS"}, "524288");
+        env_first({"NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS", "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS"}, "524288");
     std::string learning_rate =
-        env_first({"NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE"}, "0.0006");
+        env_first({"NFN_NATIVE_GPT_LEARNING_RATE", "NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE"}, "0.0006");
     std::string final_lr_fraction =
-        env_first({"NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION"}, "0.0");
+        env_first({"NFN_NATIVE_GPT_FINAL_LR_FRACTION", "NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION"}, "0.0");
     std::string weight_decay =
-        env_first({"NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY"}, "0.1");
+        env_first({"NFN_NATIVE_GPT_WEIGHT_DECAY", "NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY"}, "0.1");
     std::string warmup_steps =
-        env_first({"NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "60");
-    std::string max_steps = env_first({"NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
+        env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "60");
+    std::string max_steps =
+        env_first({"NFN_NATIVE_GPT_MAX_STEPS", "NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
     std::string train_loss_every_steps =
-        env_first({"NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS"});
+        env_first({"NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS"});
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
     bool template_explicit = false;
-    bool activation_explicit = std::getenv("NFN_SM120_ACTIVATION") != nullptr;
+    bool activation_explicit =
+        std::getenv("NFN_NATIVE_GPT_ACTIVATION") != nullptr || std::getenv("NFN_SM120_ACTIVATION") != nullptr;
     std::vector<std::string> extra_args;
 
     for (int i = 1; i < argc; ++i) {

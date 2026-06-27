@@ -52,9 +52,9 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `build/libnfn_native_train_tile_ops.so`, the SDK C++ bindings
 (`neuralfn._native_gpt`, `neuralfn._native_gpt2`, and
 `neuralfn._native_train`), the compiled GPT/native training frontends, the
-SM120 no-Bash launcher (`build/nfn_train_gpt_sm120`), the GPT-2 compatibility
-frontend, and the missing-template native stubs against the current CUDA
-toolkit. It also refreshes
+generic and SM120 no-Bash launchers (`build/nfn_train_gpt` and
+`build/nfn_train_gpt_sm120`), the GPT-2 compatibility frontend, and the
+missing-template native stubs against the current CUDA toolkit. It also refreshes
 `build/libnfn_native_train_tile_ops_tk.so`, `build/linear_backward_bench`, and
 `build/lm_head_backward_bench`, so `tools/check_native_no_torch_deps.py` does
 not fail later on stale SDK binding, benchmark, or TK-candidate artifacts. The
@@ -2677,17 +2677,23 @@ The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-
 
 Tiny native GPT diagnostic runs with `seq_len < 16` use the split-QKV row-vector attention fallback even when the default packed-QKV SM120 TK route is enabled. Normal training shapes such as the workstation default `64 x 1024` keep the packed path, while one-step CUDA smokes such as `--batch-size 1 --train-seq-len 2 --train-batch-tokens 2` avoid launching the packed attention kernel without a valid packed scratch allocation.
 
-`tools/build_train_gpt_sm120_cli.sh` builds `build/nfn_train_gpt_sm120`, a
-compiled no-Python SM120 launcher with the same defaults as
-`tools/train_gpt_sm120.sh`. Use it for the lowest-overhead workstation path:
+`tools/build_train_gpt_cli.sh` builds `build/nfn_train_gpt`, a generic compiled
+no-Python launcher for the CUDA Tile dense GPT trainer. It accepts the same GPT,
+GPT-2, GPT-3, NanoGPT, template, and custom-graph selectors as the SM120 helper,
+and generic `NFN_NATIVE_GPT_*` environment aliases override shape/cadence
+defaults before the older SM120-specific aliases. `tools/build_train_gpt_sm120_cli.sh`
+still builds `build/nfn_train_gpt_sm120` as the workstation-labelled alias with
+the same defaults. Use either for the lowest-overhead workstation path:
+`build/nfn_train_gpt --base-model gpt --dataset-alias PATH_OR_ALIAS` or
 `build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
 `tools/train_gpt_sm120.sh` now defaults to that compiled launcher when
 `build/nfn_train_gpt_sm120` or `NFN_NATIVE_SM120_CLI` is executable, so the
 shell path does not re-parse the SM120 defaults before the native handoff. Set
 `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser for
 diagnostics. When `CUDA_VISIBLE_DEVICES` is unset, both the compiled launcher
-and the shell fallback resolve `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES` /
-`NFN_SM120_CUDA_VISIBLE_DEVICES`, defaulting to `dedicated`: they prefer a
+and the shell fallback resolve `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
+`NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES`,
+defaulting to `dedicated`: they prefer a
 display-disabled NVIDIA GPU from `nvidia-smi` and fall back to ordinal `0` only
 when that query is unavailable. Set `CUDA_VISIBLE_DEVICES` explicitly to pin a
 different device.
@@ -2878,9 +2884,11 @@ linked dense-GPT CLI for installed `nfn-gpt-native`,
 `nfn-gpt-native-train`, `nfn-gpt2-native`, and `nfn-gpt2-native-train`
 symlinks when the linked binary exists. Set `NFN_NATIVE_GPT_CLI` for an
 explicit command override, or `NFN_NATIVE_GPT_LINKED_CLI` when the linked
-binary lives outside `build/`. The installer also links the compiled SM120
-launcher as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
-`NFN_NATIVE_SM120_CLI` when the launcher lives outside `build/`.
+binary lives outside `build/`. The installer also links the generic compiled
+GPT launcher as `nfn-train-gpt` and `nfn-gpt-train`, plus the compiled
+SM120-labelled alias as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
+`NFN_NATIVE_GPT_TRAIN_CLI` or `NFN_NATIVE_SM120_CLI` when those launchers live
+outside `build/`.
 
 The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
 LM-head loss-bin profiles so the old and new commands both execute the logged

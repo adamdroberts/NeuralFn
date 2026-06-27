@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added a generic compiled no-Bash dense-GPT launcher alongside the
+  SM120-labelled wrapper. `tools/build_train_gpt_cli.sh` now builds
+  `build/nfn_train_gpt`, `tools/build_native_gpt2_all.sh` and
+  `tools/rebuild_native_sm120.sh` rebuild it with the rest of the native
+  artifacts, and `tools/install_native_gpt2_commands.sh` links it as
+  `nfn-train-gpt` / `nfn-gpt-train`. The launcher uses the same native CUDA
+  Tile trainer handoff as the SM120 helper, but accepts generic
+  `NFN_NATIVE_GPT_*` env defaults for GPT/GPT2/GPT3/NanoGPT/template/custom
+  graph selection, shape, validation, sampling, checkpoint, optimizer,
+  train-loss, output, dataset, and dedicated-GPU selection before falling back
+  to the older SM120 aliases. Verification: ran shell syntax checks for the
+  native build/install scripts, built `build/nfn_train_gpt`, ran the focused
+  native GPT pytest slice covering no-Torch entrypoints, source contracts,
+  launcher env defaults, and install symlinks, ran `git diff --check`, and ran
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json
+  --max-entrypoint-seconds 0` with `build/nfn_train_gpt` present.
+
 - Bench: added a rejected-by-default 4x4 strict true-fused LM-head bisection
   path. Tile CUDA now accepts `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4`
   when rebuilding the diagnostic strict classifier-backward body, and the BF16

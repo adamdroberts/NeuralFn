@@ -41,6 +41,7 @@ NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS:--DLLMK_SM12
 
 bash "${ROOT_DIR}/tools/build_native_gpt_cli.sh" "${OUT_DIR}/nfn_gpt_native_train"
 bash "${ROOT_DIR}/tools/build_native_gpt_cli_linked.sh" "${OUT_DIR}/nfn_gpt_native_train_linked"
+bash "${ROOT_DIR}/tools/build_train_gpt_cli.sh" "${OUT_DIR}/nfn_train_gpt"
 bash "${ROOT_DIR}/tools/build_train_gpt_sm120_cli.sh" "${OUT_DIR}/nfn_train_gpt_sm120"
 bash "${ROOT_DIR}/tools/build_native_gpt2_cli.sh" "${OUT_DIR}/nfn_gpt2_native_train"
 bash "${ROOT_DIR}/tools/build_native_train_cli.sh" "${OUT_DIR}/nfn_native_train"

@@ -332,23 +332,25 @@ honors `--eval-batch-size` as the active validation forward batch size, bounded
 by the training batch arena, and keeps small validation batches on the BF16
 public-vocab LM-head loss path instead of the older float logits workspace.
 
-For workstation SM120 runs that should avoid both Python and Bash startup before
-the native exec boundary, build `build/nfn_train_gpt_sm120` with
-`bash tools/build_train_gpt_sm120_cli.sh`. `tools/install_native_gpt2_commands.sh`
-links it as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
-`NFN_NATIVE_SM120_CLI` when installing a launcher from a non-default path. The
-launcher mirrors
-`tools/train_gpt_sm120.sh`, and the shell helper now execs that compiled
-launcher by default when it is present. Set
-`NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser. The
-compiled launcher prefers `build/nfn_gpt_native_train_linked`, injects
-`--tile-ops-lib linked` for that binary, supports `--base-model`,
+For workstation runs that should avoid both Python and Bash startup before the
+native exec boundary, build `build/nfn_train_gpt` with
+`bash tools/build_train_gpt_cli.sh`. The SM120-labelled alias remains available
+as `build/nfn_train_gpt_sm120` from `bash tools/build_train_gpt_sm120_cli.sh`.
+`tools/install_native_gpt2_commands.sh` links the generic launcher as
+`nfn-train-gpt` and `nfn-gpt-train`, and links the SM120 alias as
+`nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
+`NFN_NATIVE_GPT_TRAIN_CLI` or `NFN_NATIVE_SM120_CLI` when installing a launcher
+from a non-default path. The launcher mirrors `tools/train_gpt_sm120.sh`, and
+the shell helper now execs the SM120 compiled launcher by default when it is
+present. Set `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older
+Bash parser. The compiled launcher prefers `build/nfn_gpt_native_train_linked`,
+injects `--tile-ops-lib linked` for that binary, supports `--base-model`,
 `--template-name`, and `--graph-file`, and is included in
 `tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker. The
-compiled launcher also honors `NFN_SM120_NATIVE_*` cadence, shape, optimizer,
-sample/checkpoint, and train-loss env controls with `NFN_SM120_*` fallbacks, so
-benchmark profiles can use the no-Bash entrypoint without losing the wrapper's
-runtime knobs.
+generic launcher honors `NFN_NATIVE_GPT_*` cadence, shape, optimizer,
+sample/checkpoint, train-loss, and device env controls before the
+`NFN_SM120_NATIVE_*` and `NFN_SM120_*` fallbacks, so benchmark profiles can use
+the no-Bash entrypoint without losing the wrapper's runtime knobs.
 
 The compiled dense GPT trainer accepts native layer-evolution cadence flags:
 `--layer-evo` / `--native-cuda-layer-evo`, `--evo-layer-index`,

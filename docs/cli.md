@@ -1023,18 +1023,20 @@ Runtime JSON now emits `checkpoint_export_enabled` beside the older
 `final_checkpoint_export_enabled` alias; benchmark and CI automation should use
 the shorter field because it matches native plan JSON.
 
-For no-Bash SM120 workstation runs, build the compiled launcher with
-`bash tools/build_train_gpt_sm120_cli.sh` and run
-`build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
-`tools/build_native_gpt2_all.sh` also builds it. The launcher mirrors
-`tools/train_gpt_sm120.sh`, prefers the linked native GPT trainer, injects
-`--tile-ops-lib linked` when appropriate, preserves the GPT/GPT3/custom-graph
-selector defaults, and execs the CUDA Tile trainer without Python startup. It
-honors `NFN_SM120_NATIVE_*` env controls for cadence, shape, optimizer,
-sampling, checkpointing, and train-loss defaults, with `NFN_SM120_*` fallbacks,
-before appending extra CLI flags. When `CUDA_VISIBLE_DEVICES` is unset, the
-compiled launcher and shell fallback resolve
-`NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES` / `NFN_SM120_CUDA_VISIBLE_DEVICES`,
+For no-Bash workstation runs, build the generic compiled launcher with
+`bash tools/build_train_gpt_cli.sh` and run
+`build/nfn_train_gpt --base-model gpt --dataset-alias PATH_OR_ALIAS`.
+`tools/build_train_gpt_sm120_cli.sh` still builds the SM120-labelled alias
+`build/nfn_train_gpt_sm120`, and `tools/build_native_gpt2_all.sh` builds both.
+The launcher mirrors `tools/train_gpt_sm120.sh`, prefers the linked native GPT
+trainer, injects `--tile-ops-lib linked` when appropriate, preserves the
+GPT/GPT2/GPT3/NanoGPT/template/custom-graph selector defaults, and execs the
+CUDA Tile trainer without Python startup. It honors `NFN_NATIVE_GPT_*` env
+controls for cadence, shape, optimizer, sampling, checkpointing, train-loss,
+and device defaults before the older `NFN_SM120_NATIVE_*` and `NFN_SM120_*`
+fallbacks. When `CUDA_VISIBLE_DEVICES` is unset, the compiled launcher and
+shell fallback resolve `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
+`NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES`,
 defaulting to `dedicated`: they select a display-disabled NVIDIA GPU from
 `nvidia-smi` when available and otherwise fall back to ordinal `0`.
 
@@ -1550,13 +1552,14 @@ replace the Tile ops `.so` at runtime.
 `tools/install_native_gpt2_commands.sh` uses the same startup-oriented default
 for installed command symlinks: `nfn-gpt-native`, `nfn-gpt-native-train`,
 `nfn-gpt2-native`, and `nfn-gpt2-native-train` point at the linked dense-GPT
-CLI when it exists. It also links the compiled SM120 launcher as
+CLI when it exists. It also links the generic compiled launcher as
+`nfn-train-gpt` and `nfn-gpt-train`, plus the SM120-labelled alias as
 `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`, so an installed workstation
-can launch the llm.kittens-shaped dense GPT defaults without Python or Bash.
-`NFN_NATIVE_GPT_CLI` remains an explicit override,
-`NFN_NATIVE_GPT_LINKED_CLI` points the installer at a linked binary outside
-`build/`, and `NFN_NATIVE_SM120_CLI` points it at a compiled SM120 launcher
-outside `build/`.
+can launch dense GPT defaults without Python or Bash. `NFN_NATIVE_GPT_CLI`
+remains an explicit trainer override, `NFN_NATIVE_GPT_LINKED_CLI` points the
+installer at a linked binary outside `build/`, `NFN_NATIVE_GPT_TRAIN_CLI`
+points it at a generic compiled launcher outside `build/`, and
+`NFN_NATIVE_SM120_CLI` points it at a compiled SM120 launcher outside `build/`.
 
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,

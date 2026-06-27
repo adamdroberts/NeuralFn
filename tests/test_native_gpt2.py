@@ -259,6 +259,14 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
     ]["stdout"]
+    assert shell_entrypoints["train_gpt_compiled_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints["train_gpt_compiled_dry_run"]["stdout"]
+    assert "--template-name gpt" in shell_entrypoints["train_gpt_compiled_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["passed"] is True
+    assert "--model-family gpt3" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
+    assert "--template-name gpt3" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
+    assert "--batch-size 32" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
+    assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -798,6 +806,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
         root / "neuralfn" / "csrc" / "native_train" / "gpt2_evo_native_train.cpp"
     ).read_text(encoding="utf-8")
     build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
+    train_gpt_build = (root / "tools" / "build_train_gpt_cli.sh").read_text(encoding="utf-8")
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
     train_sm120 = (root / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
     train_sm120_cpp = (
@@ -870,22 +879,40 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "resolve_cuda_visible_devices_default" in train_sm120_cpp
     assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES" in train_sm120_cpp
     assert "NFN_SM120_CUDA_VISIBLE_DEVICES" in train_sm120_cpp
+    assert "NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES" in train_sm120_cpp
+    assert "NFN_NATIVE_GPT_MODEL_FAMILY" in train_sm120_cpp
+    assert "NFN_NATIVE_GPT_TEMPLATE_NAME" in train_sm120_cpp
+    assert "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS" in train_sm120_cpp
     assert 'setenv_default_if_empty("CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_default())' in train_sm120_cpp
     assert "build/nfn_gpt_native_train_linked" in train_sm120
     assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
     assert "build_native_gpt_cli_linked.sh" in train_sm120
     assert "GPT_LINKED_CLI_OUT" in build_all
+    assert "GPT_TRAIN_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
+    assert "build_train_gpt_cli.sh" in build_all
     assert "SM120_CLI_OUT" in build_all
     assert "build_train_gpt_sm120_cli.sh" in build_all
+    assert "nfn_train_gpt" in train_gpt_build
+    assert "train_gpt_sm120.cpp" in train_gpt_build
     assert build_all.index("build_native_train_tile_ops.sh") < build_all.index(
         "build_native_gpt_cli_linked.sh"
     )
     assert build_all.index("build_native_gpt_cli_linked.sh") < build_all.index(
+        "build_train_gpt_cli.sh"
+    )
+    assert build_all.index("build_train_gpt_cli.sh") < build_all.index(
         "build_train_gpt_sm120_cli.sh"
     )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
+    assert "build_train_gpt_cli.sh" in rebuild_sm120
     assert "build_train_gpt_sm120_cli.sh" in rebuild_sm120
+    assert rebuild_sm120.index("build_native_gpt_cli_linked.sh") < rebuild_sm120.index(
+        "build_train_gpt_cli.sh"
+    )
+    assert rebuild_sm120.index("build_train_gpt_cli.sh") < rebuild_sm120.index(
+        "build_train_gpt_sm120_cli.sh"
+    )
     assert rebuild_sm120.index("build_native_gpt_cli_linked.sh") < rebuild_sm120.index(
         "build_train_gpt_sm120_cli.sh"
     )
@@ -918,6 +945,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "source_newer_than_out" in linked_build
     assert '! source_newer_than_out "${TILE_OPS_LIB}"' in linked_build
     assert 'Path("tools/build_native_train_tile_ops.sh")' in no_torch_verifier
+    assert 'Path("build/nfn_train_gpt")' in no_torch_verifier
+    assert '"tools/build_train_gpt_cli.sh"' in no_torch_verifier
     assert '-pthread -ldl -o "${OUT}"' in linked_build
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert "NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT" in parity_bench
@@ -3527,6 +3556,7 @@ def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(
     monkeypatch.setenv("NFN_NATIVE_GPT2_BINDING", "0")
     monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", str(tmp_path / "missing-native-cli"))
     launcher = tmp_path / "nfn_gpt2_tile_train"
+    generic_sm120_launcher = tmp_path / "nfn_train_gpt"
     launcher.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     launcher.chmod(0o755)
     monkeypatch.setenv("NFN_NATIVE_GPT2_LAUNCHER", str(launcher))
@@ -4279,6 +4309,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         pytest.skip("c++ compiler not available")
     root = Path(__file__).resolve().parents[1]
     sm120_launcher = tmp_path / "nfn_train_gpt_sm120"
+    generic_launcher = tmp_path / "nfn_train_gpt"
     build = subprocess.run(
         ["bash", str(root / "tools" / "build_train_gpt_sm120_cli.sh"), str(sm120_launcher)],
         cwd=root,
@@ -4288,6 +4319,15 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         check=False,
     )
     assert build.returncode == 0, build.stderr
+    generic_build = subprocess.run(
+        ["bash", str(root / "tools" / "build_train_gpt_cli.sh"), str(generic_launcher)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert generic_build.returncode == 0, generic_build.stderr
 
     fake_native = tmp_path / "nfn_gpt_native_train"
     observed = tmp_path / "native-argv.txt"
@@ -4360,6 +4400,37 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
+
+    generic_observed = tmp_path / "generic-native-argv.txt"
+    generic_env = env.copy()
+    generic_env.update(
+        {
+            "NFN_TEST_NATIVE_GPT_ARGV": str(generic_observed),
+            "NFN_NATIVE_GPT_MODEL_FAMILY": "gpt3",
+            "NFN_NATIVE_GPT_TEMPLATE_NAME": "gpt3",
+            "NFN_NATIVE_GPT_BATCH_SIZE": "32",
+            "NFN_NATIVE_GPT_TRAIN_SEQ_LEN": "2048",
+            "NFN_NATIVE_GPT_EVAL_EVERY_STEPS": "1000",
+            "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS": "524288",
+        }
+    )
+    generic_proc = subprocess.run(
+        [str(generic_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=generic_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert generic_proc.returncode == 0, generic_proc.stderr
+    generic_args = generic_observed.read_text(encoding="utf-8").splitlines()
+    assert generic_args[generic_args.index("--model-family") + 1] == "gpt3"
+    assert generic_args[generic_args.index("--template-name") + 1] == "gpt3"
+    assert generic_args[generic_args.index("--batch-size") + 1] == "32"
+    assert generic_args[generic_args.index("--train-seq-len") + 1] == "2048"
+    assert generic_args[generic_args.index("--eval-every-steps") + 1] == "1000"
+    assert generic_args[generic_args.index("--train-batch-tokens") + 1] == "524288"
 
 
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
@@ -11454,6 +11525,15 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert build_launcher.returncode == 0, build_launcher.stderr
     sm120_launcher = tmp_path / "nfn_train_gpt_sm120"
+    build_generic_sm120_launcher = subprocess.run(
+        ["bash", str(root / "tools" / "build_train_gpt_cli.sh"), str(generic_sm120_launcher)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build_generic_sm120_launcher.returncode == 0, build_generic_sm120_launcher.stderr
     build_sm120_launcher = subprocess.run(
         ["bash", str(root / "tools" / "build_train_gpt_sm120_cli.sh"), str(sm120_launcher)],
         cwd=root,
@@ -11482,6 +11562,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     env["NFN_NATIVE_GPT2_CLI"] = str(compat_native_cli)
     env["NFN_NATIVE_TRAIN_CLI"] = str(native_train_cli)
     env["NFN_NATIVE_GPT2_LAUNCHER"] = str(launcher)
+    env["NFN_NATIVE_GPT_TRAIN_CLI"] = str(generic_sm120_launcher)
     env["NFN_NATIVE_SM120_CLI"] = str(sm120_launcher)
     env["NFN_NATIVE_MISSING_TRAINERS_DIR"] = str(missing_dir)
     install = subprocess.run(
@@ -11502,6 +11583,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     linked_gpt2_compat = bin_dir / "nfn-gpt2-native-compat"
     linked_unified = bin_dir / "nfn-native-train"
     linked_launcher = bin_dir / "nfn-gpt2-tile-launcher"
+    linked_gpt_launcher = bin_dir / "nfn-train-gpt"
+    linked_gpt_launcher_alias = bin_dir / "nfn-gpt-train"
     linked_sm120 = bin_dir / "nfn-train-gpt-sm120"
     linked_sm120_alias = bin_dir / "nfn-gpt-sm120-train"
     linked_nanogpt_underscore = bin_dir / "nfn_nanogpt_native_train"
@@ -11513,6 +11596,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt2_compat.is_symlink()
     assert linked_unified.is_symlink()
     assert linked_launcher.is_symlink()
+    assert linked_gpt_launcher.is_symlink()
+    assert linked_gpt_launcher_alias.is_symlink()
     assert linked_sm120.is_symlink()
     assert linked_sm120_alias.is_symlink()
     assert linked_nanogpt_underscore.is_symlink()
@@ -11524,6 +11609,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
     assert linked_launcher.resolve() == launcher
+    assert linked_gpt_launcher.resolve() == generic_sm120_launcher
+    assert linked_gpt_launcher_alias.resolve() == generic_sm120_launcher
     assert linked_sm120.resolve() == sm120_launcher
     assert linked_sm120_alias.resolve() == sm120_launcher
     assert linked_nanogpt_underscore.resolve() == missing_dir / "nfn_nanogpt_native_train"
@@ -11557,7 +11644,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert sm120_help.returncode == 0, sm120_help.stderr
-    assert "Compiled SM120 dense GPT training helper" in sm120_help.stdout
+    assert "Compiled dense GPT training helper" in sm120_help.stdout
 
     nanogpt_help = subprocess.run(
         [str(linked_nanogpt), "--help"],
