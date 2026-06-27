@@ -342,16 +342,17 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N"
     ;;
   "tk_qkv_forward_prewarm"|"tk-qkv-forward-prewarm"|"qkv_forward_tk_prewarm"|"qkv-forward-tk-prewarm")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 rerun after CUDA reinstall, 3-step, 1-sample stage-timed gate with the train-sm120 -g 144 cadence proved the route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and improved NeuralFn train-loop wall to 0.976642x plus forward-QKV first-step avg to 0.360843x, but rejected default promotion because setup_wall_ms regressed to 1.204975x and strict llm.kittens reference gates still failed at 1.006631x train-loop wall, 1.008535x first-step CUDA-event timing, 1.005693x steady-state CUDA-event timing, and 0.993379x tokens/sec. This moves first-use QKV work from train loop to setup instead of improving long-run steady throughput."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-step, 3-sample no-stage-timing rerun promoted the full-shape TK QKV first-use prewarm as the default because it improved current NeuralFn train_loop_wall_ms_per_step to 0.981250x, first-step CUDA-event timing to 0.945699x, train_tokens_per_second to 1.019109x, and total_wall_ms to 0.999956x while moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1. Setup regressed to 1.252423x and strict llm.kittens reference gates from the matching reference run still narrowly failed at 1.000567x train-loop wall, 1.001159x steady-state CUDA-event timing, and 0.999507x tokens/sec, so this is an incremental default-on first-use improvement, not final train-sm120 parity."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"
-    MAX_CANDIDATE_RATIO_RAW+=" stage.block_forward.attention.qkv.first_step_avg_ms=1.000"
+    MAX_CANDIDATE_RATIO_RAW+=" train_loop_wall_ms_per_step=1.000"
     ;;
   "tk_qkv_forward_prewarm_1row"|"tk-qkv-forward-prewarm-1row"|"qkv_forward_tk_prewarm_1row"|"qkv-forward-tk-prewarm-1row")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 rerun after CUDA reinstall, 3-step, 1-sample stage-timed gate proved the one-row route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and setting effective_rows to 1. It improved NeuralFn train-loop wall to 0.975482x and forward-QKV first-step avg to 0.364558x, but setup regressed to 1.249672x and strict llm.kittens reference gates still failed at 1.007550x train-loop wall, 1.009389x first-step CUDA-event timing, 1.006644x steady-state CUDA-event timing, and 0.992498x tokens/sec. It remains worse than full-shape QKV prewarm on setup and steady-state timing."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 rerun after CUDA reinstall, 3-step, 1-sample stage-timed gate proved the one-row route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and setting effective_rows to 1. It improved NeuralFn train-loop wall to 0.982667x and first-step timing to 0.947703x versus current native, but setup regressed to 1.299643x and strict llm.kittens reference gates still failed at 1.006140x train-loop wall, 1.005587x steady-state timing, and 0.993939x tokens/sec. It remains worse than the promoted full-shape default on setup and reference parity."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"

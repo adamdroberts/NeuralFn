@@ -1146,6 +1146,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD" in gpt_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS" in gpt_source
     assert "setup.tk_qkv_forward_prewarm" in gpt_source
+    assert (
+        '"NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD"}),\n'
+        "            true)"
+    ) in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in gpt_source

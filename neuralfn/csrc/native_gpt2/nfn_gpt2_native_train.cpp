@@ -10422,7 +10422,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD",
                               "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD",
                               "NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD"}),
-            false);
+            true);
     std::int64_t linear_tk_qkv_first_use_prewarm_requested_rows =
         env_nonnegative_i64_or(
             {"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS",

@@ -620,18 +620,19 @@ diagnostic run sets
 `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`,
 `NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`, or
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`.
-For QKV first-use diagnostics,
-`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional
-`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup GEMM to the first `N` rows.
-Native GPT JSON reports `linear_tk_qkv_first_use_prewarm_requested_rows` and
-`linear_tk_qkv_first_use_prewarm_effective_rows`, and the
-`tk_qkv_forward_prewarm_1row` SM120 profile uses this as a rejected-by-default
-bisection route. The first same-script RTX 5090 gate proved the one-row route
-but kept it rejected because setup and total wall time regressed and the
-candidate still missed llm.kittens reference gates. A CUDA 13.3.33 rerun after
-the WSL CUDA reinstall kept both full-shape and one-row prewarm rejected: both
-improved first-step QKV timing, but setup regressed to `1.204975x` and
-`1.249672x` respectively, and both still missed train-sm120 reference gates.
+The native GPT trainer enables TK forward-QKV first-use prewarm by default.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` compares that
+default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. The
+2026-06-27 CUDA 13.3.33 dedicated RTX 5090 rerun improved NeuralFn first-step
+and 3-step wall timing versus current native, but still narrowly missed
+llm.kittens `train-sm120.sh` reference throughput, so it is a default-on
+incremental route rather than final parity. Set
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only to reproduce the older path.
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the setup GEMM to the first
+`N` rows. Native GPT JSON reports
+`linear_tk_qkv_first_use_prewarm_requested_rows` and
+`linear_tk_qkv_first_use_prewarm_effective_rows`, and the rejected
+`tk_qkv_forward_prewarm_1row` SM120 profile uses this as a bisection route.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

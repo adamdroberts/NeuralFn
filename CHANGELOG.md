@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted TK forward-QKV first-use prewarm as the default native GPT route.
+  The native trainer now defaults `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD` on
+  and keeps `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` as the
+  default-vs-legacy proof against `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0`.
+
+  Migration note: set `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only when
+  intentionally reproducing the older no-prewarm path. This is an incremental
+  first-use improvement, not full `train-sm120.sh` parity; the latest gate still
+  shows a small steady-state/reference gap and a setup-wall tradeoff.
+
+  Verification: ran the CUDA 13.3.33 dedicated RTX 5090 same-script 3-step,
+  3-sample no-stage-timing gate with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm`. Current native
+  improved to `0.981250x` `train_loop_wall_ms_per_step`, `0.945699x`
+  first-step CUDA-event timing, `1.019109x` tokens/sec, and `0.999956x`
+  `total_wall_ms`; setup regressed to `1.252423x`, and llm.kittens reference
+  gates still narrowly failed at `1.000567x` train-loop wall, `1.001159x`
+  steady-state CUDA-event timing, and `0.999507x` tokens/sec.
+
 - Hardened `tools/paired_kernel_speed.py` dedicated-GPU preflight for WSL/NVML
   stale compute-app rows. Rows reported by `nvidia-smi --query-compute-apps`
   as `process_name=[Not Found]` with `used_memory=[N/A]` are ignored only when
