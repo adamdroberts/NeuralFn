@@ -352,8 +352,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "tk_qkv_forward_prewarm_1row"|"tk-qkv-forward-prewarm-1row"|"qkv_forward_tk_prewarm_1row"|"qkv-forward-tk-prewarm-1row")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 rerun after CUDA reinstall, 3-step, 1-sample stage-timed gate proved the one-row route by moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1 and setting effective_rows to 1. It improved NeuralFn train-loop wall to 0.982667x and first-step timing to 0.947703x versus current native, but setup regressed to 1.299643x and strict llm.kittens reference gates still failed at 1.006140x train-loop wall, 1.005587x steady-state timing, and 0.993939x tokens/sec. It remains worse than the promoted full-shape default on setup and reference parity."
-    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 corrected current-default comparison kept the one-row TK QKV first-use prewarm rejected. Versus the promoted full-shape prewarm default, NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1 regressed train_loop_wall_ms_per_step to 1.001366x, steady-state CUDA-event timing to 1.000877x, tokens/sec to 0.998636x, and stage.block_forward.attention.qkv.first_step_avg_ms to 1.075029x; setup was noise-flat at 1.006929x mean / 0.998029x median. Strict llm.kittens reference gates also failed at 1.006153x train-loop wall, 1.006227x steady-state timing, and 0.993913x tokens/sec."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"
     MAX_CANDIDATE_RATIO_RAW+=" stage.block_forward.attention.qkv.first_step_avg_ms=1.000"

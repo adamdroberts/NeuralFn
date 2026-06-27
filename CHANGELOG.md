@@ -757,6 +757,22 @@ Future updates should append new entries here rather than replacing older notes.
   the linked native GPT CLI, reran the strict true-fused LM-head smoke benchmark
   on the dedicated RTX 5090, and ran `git diff --check`.
 
+- Refreshed the rejected one-row TK QKV first-use prewarm evidence against the
+  current promoted full-shape prewarm default. The one-row route remains a
+  diagnostic only: the corrected CUDA 13.3.33 dedicated RTX 5090 3-step,
+  3-sample stage-timed gate measured `1.001366x` train-loop wall,
+  `1.000877x` steady-state CUDA-event timing, `0.998636x` tokens/sec, and
+  `1.075029x` forward-QKV first-step timing versus the default. Strict
+  llm.kittens reference gates also failed at `1.006153x` train-loop wall,
+  `1.006227x` steady-state timing, and `0.993913x` tokens/sec.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1'
+  NFN_SM120_NATIVE_STAGE_TIMING=1 NFN_SM120_NATIVE_STEPS=3
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_INCLUDE_LLMK_REFERENCE=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090; the
+  metric and reference gates failed as expected, so the profile stays rejected.
+
 - Added a row-count bisection knob for the rejected TK QKV first-use prewarm
   diagnostic. `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` /
   `NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the optional setup

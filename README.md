@@ -1023,10 +1023,13 @@ first `N` rows and reports
 `linear_tk_qkv_first_use_prewarm_effective_rows` in native GPT JSON. The
 `tk_qkv_forward_prewarm_1row` profile uses this to test whether a tiny setup
 launch can pay TK first-use overhead without the full-row setup regression; it
-remains rejected. The latest CUDA 13.3.33 dedicated RTX 5090 rerun proved the
-one-row route and improved first-step timing, but setup regressed to
-`1.299643x` and the candidate still lost to llm.kittens on train-loop wall,
-steady-state timing, and tokens/sec.
+remains rejected. The corrected 2026-06-27 CUDA 13.3.33 dedicated RTX 5090
+current-default comparison showed `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1`
+regressed train-loop wall to `1.001366x`, steady-state CUDA-event timing to
+`1.000877x`, tokens/sec to `0.998636x`, and forward-QKV first-step timing to
+`1.075029x` versus the promoted full-shape prewarm default. The strict
+llm.kittens reference gates still failed at `1.006153x` train-loop wall,
+`1.006227x` steady-state timing, and `0.993913x` tokens/sec.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.
