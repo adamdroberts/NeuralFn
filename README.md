@@ -2351,27 +2351,34 @@ apart before each measured command, configurable through
 `..._RETRY_INTERVAL_SECONDS` aliases.
 Measured parity runs are gating runs by default: `NFN_SM120_PARITY_ENFORCE_GATE`
 defaults to `1`, so the wrapper exits nonzero unless NeuralFn stays at or below
-llm.kittens for `train_loop_wall_ms_per_step=1.000` and, while CUDA-event loop
-timing is enabled, `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`.
+llm.kittens for `train_loop_wall_ms_per_step=1.000`. CUDA-event loop timing is
+off by default for this native-vs-llm.kittens parity path so the measured
+NeuralFn command matches normal training mode; set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` when a diagnostic run also needs
+`train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`.
 This prevents a candidate from passing strict llm.kittens parity only by
 improving first-step/setup timing. Set `NFN_SM120_PARITY_ENFORCE_GATE=0` (or
 `NFN_SM120_ENFORCE_PARITY_GATE=0`) only for diagnostic measurement-only reruns.
 You can also provide explicit whitespace separated gates through
 `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`.
-Dry-run plans stay ungated.
+Dry-run plans stay ungated. Strict single-kernel LM-head replacement is also an
+opt-in diagnostic gate for parity runs: set
+`NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1` only when checking the
+future production true-fused classifier-backward path. The default parity run
+accepts the current optimized CUDA Graph LM-head wrapper as native Tile/C++
+training evidence and still enforces the no-Torch/no-graph-editor runtime
+contract.
 The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes
 `--train-loss-every-steps 0` to the NeuralFn side unless
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
-`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. The NeuralFn side receives
-`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` by default so parity JSON includes
-`train_loop_cuda_event_wall_ms_per_step`,
+`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. Set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` when parity JSON should include
+NeuralFn CUDA-event fields such as `train_loop_cuda_event_wall_ms_per_step`,
 `train_loop_cuda_event_first_step_wall_ms_per_step`, and
-`train_loop_cuda_event_steady_state_wall_ms_per_step` alongside the host wall
-and token/sec gate fields. Set `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0`
-when you need to remove the candidate-only CUDA-event timing record from a
-tight same-script timing run.
+`train_loop_cuda_event_steady_state_wall_ms_per_step`; leave it unset for
+actual training-mode wall-time parity.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
 append extra `KEY=VALUE` pairs to the NeuralFn candidate command without
 affecting the llm.kittens baseline; for example,

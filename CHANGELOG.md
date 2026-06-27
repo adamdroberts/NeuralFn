@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the SM120 llm.kittens parity wrapper defaults to measure actual
+  native training mode. `tools/bench_native_gpt_sm120_parity.sh` now leaves
+  NeuralFn train-loop CUDA-event timing off unless
+  `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` (or the native/generic alias) is
+  set, and strict LM-head true-fused enforcement is opt-in through
+  `NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1`. The default parity
+  gate still enforces wall-time parity plus the native runtime contract
+  (`graph_editor_tensor_flow=false`, `torch_required=false`) while accepting
+  the current optimized CUDA Graph LM-head wrapper; use the true-fused gate only
+  for the future production single-kernel classifier-backward path.
+
+  Verification: reran corrected parity measurements on the dedicated RTX 5090.
+  With stage timing enabled, NeuralFn measured `1.008277x` train-loop wall and
+  `1.008308x` steady-state CUDA-event time versus llm.kittens. With stage
+  timing disabled but train-loop CUDA-event timing still enabled, the gap fell
+  to `1.003839x` wall and `1.004268x` steady-state. With both NeuralFn-only
+  timing paths disabled, actual wall-time parity measured `1.003006x` while the
+  no-Torch/no-graph-editor runtime contract still passed. Also reran the
+  rejected `llmk_sm120_reference_flags` candidate after the CUDA reinstall and
+  kept it rejected at `1.000461x` versus current NeuralFn and `1.004722x`
+  versus the llm.kittens reference.
+
 - Aligned `tools/bench_native_gpt_sm120_parity.sh` with the native SM120
   benchmark command surface. The llm.kittens parity wrapper now accepts
   `NFN_SM120_NATIVE_*` aliases for shared controls such as steps, samples,

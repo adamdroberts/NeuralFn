@@ -2274,21 +2274,29 @@ raw-C++ default periodic train-loss accumulation path; set
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
 `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` to opt back into timed train-loss logging.
 The parity wrapper does not expand named native candidate profiles. If
-`NFN_SM120_PARITY_CANDIDATE_PROFILE` or `NFN_SM120_PARITY_PROFILE` is set, it
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE`,
+`NFN_SM120_PARITY_CANDIDATE_PROFILE`, or `NFN_SM120_PARITY_PROFILE` is set, it
 fails before launching GPU work; use `NFN_SM120_PARITY_CANDIDATE_ENV` for
 explicit NeuralFn-vs-llm.kittens env changes, or run
 `tools/bench_native_gpt_sm120_candidate.sh` with
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE` for named native-vs-native route
 bisection.
-The wrapper enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn
-candidate by default so native JSON includes `train_loop_cuda_event_wall_ms`,
+The wrapper measures actual training-mode wall time by default and leaves
+`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING` unset on the NeuralFn candidate. Set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` when a diagnostic parity run needs
+native JSON fields such as `train_loop_cuda_event_wall_ms`,
 `train_loop_cuda_event_wall_ms_per_step`,
 `train_loop_cuda_event_first_step_wall_ms`,
 `train_loop_cuda_event_first_step_wall_ms_per_step`,
 `train_loop_cuda_event_steady_state_wall_ms`, and
-`train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`. Set
-`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` only for timing-only reruns without
-candidate-side event records.
+`train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`; with event
+timing enabled, the automatic parity gate also checks steady-state CUDA-event
+time. Strict LM-head single-kernel replacement is likewise opt-in for parity:
+set `NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1` only when validating
+the future true-fused classifier-backward path. Default parity runs still
+enforce the native runtime contract (`graph_editor_tensor_flow=false` and
+`torch_required=false`) while accepting the current optimized CUDA Graph
+LM-head wrapper.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
 append candidate-only `KEY=VALUE` overrides to the NeuralFn side of the parity
 comparison. This is useful for one-off route checks such as
