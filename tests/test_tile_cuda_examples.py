@@ -1411,6 +1411,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1" in text
     assert "stage.block_forward.attention.qkv.first_step_avg_ms=1.000" in text
     assert "train_loop_cuda_event_first_step_wall_ms_per_step=1.000" in text
+    assert "startup_plus_first_step_wall_ms=1.000" in text
     assert "mlp_fc_forward_bf16_fallback_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N" in text
     assert "stage.block_forward.mlp_fc_gelu.total_ms to 1.000722x" in text

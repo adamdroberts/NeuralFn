@@ -111,7 +111,9 @@ The paired benchmark also reports `startup_plus_first_step_wall_ms`,
 `startup_plus_train_loop_wall_ms` for native runs with setup timing. Use those
 metrics when testing startup shortcuts: a route that reduces `setup_wall_ms`
 but increases the first optimizer step should fail the combined metric instead
-of hiding the cost shift.
+of hiding the cost shift. The built-in `fast_startup_full` and
+`tk_qkv_forward_prewarm` profiles gate `startup_plus_first_step_wall_ms=1.000`
+by default.
 The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
 profile passes candidate-over-llm.kittens gates, but it does not beat the

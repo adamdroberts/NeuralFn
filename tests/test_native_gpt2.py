@@ -2443,6 +2443,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     ) in bench_source
     assert "setup_wall_ms to 0.655522x" in bench_source
     assert "train_loop_wall_ms_per_step regressed to 1.017654x" in bench_source
+    assert "startup_plus_first_step_wall_ms=1.000" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source

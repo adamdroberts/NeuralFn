@@ -1401,7 +1401,9 @@ For startup bisection, the paired tool derives
 `startup_plus_train_loop_wall_ms` from native JSON when `setup_wall_ms` and
 train-loop timing are present. Gate those fields for candidates that skip setup
 prewarms or initialization work so a lower `setup_wall_ms` cannot pass by
-moving the cost into the first optimizer step.
+moving the cost into the first optimizer step. The `fast_startup_full` and
+`tk_qkv_forward_prewarm` profiles include
+`startup_plus_first_step_wall_ms=1.000` in their default gate list.
 The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and

@@ -237,7 +237,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_NOTE="Runs real optimizer steps with NFN_NATIVE_GPT_FAST_STARTUP=1 instead of startup-only mode. This shows whether skipped setup prewarms simply move work into the first training step."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FAST_STARTUP=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FAST_STARTUP=1"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.005 train_loop_cuda_event_steady_state_wall_ms_per_step=1.005 setup_wall_ms=0.800}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.005 train_loop_cuda_event_steady_state_wall_ms_per_step=1.005 setup_wall_ms=0.800 startup_plus_first_step_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.995}"
     ;;
   "lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768")
@@ -376,6 +376,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_first_step_wall_ms_per_step=1.000"
     MAX_CANDIDATE_RATIO_RAW+=" train_loop_wall_ms_per_step=1.000"
+    MAX_CANDIDATE_RATIO_RAW+=" startup_plus_first_step_wall_ms=1.000"
     ;;
   "tk_qkv_forward_prewarm_1row"|"tk-qkv-forward-prewarm-1row"|"qkv_forward_tk_prewarm_1row"|"qkv-forward-tk-prewarm-1row")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
