@@ -2153,6 +2153,14 @@ prewarm are skipped unless `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` or
 back on. Runtime JSON reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`.
 
+`fast_startup_full` is the matching rejected full-training probe. It runs real
+optimizer steps with `NFN_NATIVE_GPT_FAST_STARTUP=1` to check whether skipped
+setup prewarms only move work into the first training step. The CUDA 13.3.33
+dedicated RTX 5090 5-step, 2-sample gate improved setup wall time to
+`0.655522x`, but rejected default promotion because train-loop wall regressed
+to `1.017654x`, first-step CUDA-event time to `1.086326x`, tokens/sec to
+`0.982655x`, and candidate-over-llm.kittens train-loop wall to `1.010462x`.
+
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
 `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,

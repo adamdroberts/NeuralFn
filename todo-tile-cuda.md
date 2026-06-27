@@ -2719,3 +2719,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     prewarms on. The dedicated RTX 5090 3-sample startup-only gate passed at
     `0.736103x` setup wall and proved the strategy-value change in the saved
     paired JSON.
+  - 2026-06-27 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup_full` to
+    keep fast-startup default decisions honest. The 5-step, 2-sample dedicated
+    RTX 5090 full-training probe improved setup wall time to `0.655522x`, but
+    first-step work moved into the training loop: train-loop wall regressed to
+    `1.017654x`, first-step CUDA-event time to `1.086326x`, tokens/sec to
+    `0.982655x`, and candidate-over-llm.kittens train-loop wall to
+    `1.010462x`. Keep `NFN_NATIVE_GPT_FAST_STARTUP=1` for
+    startup-only/preflight workflows unless longer runs prove the first-step
+    cost is amortized.

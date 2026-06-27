@@ -143,6 +143,12 @@ reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
 to compare the startup-only tradeoff in the same selected-GPU window.
+Fast startup remains a startup/preflight policy, not the default full-training
+policy. The `fast_startup_full` probe ran real optimizer steps with
+`NFN_NATIVE_GPT_FAST_STARTUP=1` and improved setup wall time to `0.655522x`,
+but rejected default promotion because train-loop wall regressed to
+`1.017654x`, first-step CUDA-event time to `1.086326x`, tokens/sec to
+`0.982655x`, and candidate-over-llm.kittens train-loop wall to `1.010462x`.
 When `NFN_SM120_CUDA13_RUN_BENCH=1` is enabled, the health gate also parses the
 paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
 contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB

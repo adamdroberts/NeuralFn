@@ -21,6 +21,16 @@ Future updates should append new entries here rather than replacing older notes.
   with a true production fused Tile kernel rather than undoing accepted default
   routes.
 
+- Bench: added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup_full` as a
+  rejected full-training probe for `NFN_NATIVE_GPT_FAST_STARTUP=1`. The
+  existing `fast_startup` profile remains startup-only; the new profile runs
+  real optimizer steps to test whether skipped prewarm work is just shifted
+  into the first step. On the dedicated RTX 5090 with 5 steps and 2 measured
+  samples, the candidate improved setup wall time to `0.655522x`, but rejected
+  default promotion because train-loop wall regressed to `1.017654x`,
+  first-step CUDA-event time to `1.086326x`, tokens/sec to `0.982655x`, and
+  candidate-over-llm.kittens train-loop wall to `1.010462x`.
+
 - Native GPT: added a fused dGELU dInput shape-disable gate and an SM120
   bisection profile for the MLP projection backward path. The Tile CUDA kernels
   now honor `NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE` /
