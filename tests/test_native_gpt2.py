@@ -641,6 +641,27 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
 
+def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "validate_sm120_cuda13.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-dedicated" in source
+    assert "--check-tile-ops" in source
+    assert "--smoke-tile-ops" in source
+    assert "--smoke-transformer-lm-step" in source
+    assert "--tinystories" in source
+    assert "tests/test_native_gpt2.py -q" in source
+    assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
+    assert "NFN_SM120_CUDA13_RUN_BENCH" in source
+    assert "bench_native_gpt_sm120_candidate.sh" in source
+    assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
+    assert "NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES" in source
+    assert "CUDA 13.3 SM120 validation passed." in source
+
+
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     source = (
         Path(__file__).resolve().parents[1]

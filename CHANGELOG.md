@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `tools/validate_sm120_cuda13.sh` as the repeatable SM120 CUDA 13.3
+  health gate after WSL driver/toolkit changes. The script defaults to the
+  dedicated display-disabled NVIDIA GPU, runs the native Tile symbol check, the
+  Tile CUDA fill smoke, the cached TinyStories transformer-LM smoke, and the
+  focused native pytest suite; `NFN_SM120_CUDA13_RUN_BENCH=1` appends the short
+  same-script native baseline benchmark for throughput context.
+
+  Verification: ran the native Tile symbol preflight, Tile CUDA fill smoke,
+  cached TinyStories transformer-LM smoke, a short same-script native baseline
+  benchmark on the dedicated RTX 5090, and `python -m pytest
+  tests/test_native_gpt2.py -q` (`98 passed, 2 skipped`).
+
 - Updated the no-Python SM120 GPT launcher device default. When
   `CUDA_VISIBLE_DEVICES` is unset, `build/nfn_train_gpt_sm120` and the
   `tools/train_gpt_sm120.sh` shell fallback now resolve

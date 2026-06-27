@@ -2174,6 +2174,13 @@ native-runnable dense presets, and `remaining_validation` tracks the current
 work to close the measured SM120 throughput gap. Use
 `tools/bench_native_gpt_sm120_parity.sh` for same-script RTX 5090 comparisons
 against `llm.kittens/train-sm120.sh`.
+After a CUDA toolkit or WSL driver reinstall, run
+`bash tools/validate_sm120_cuda13.sh` for the SM120 health gate. It uses the
+dedicated-GPU selector, validates the native Tile library, launches the Tile
+fill and cached TinyStories transformer-LM smokes, and runs
+`tests/test_native_gpt2.py`. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the
+pytest pass or `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script
+native baseline benchmark.
 
 For startup profiling, pass `--startup-only` to `nfn_gpt_native_train` or
 through the native wrapper/SDK config. The compiled frontend still resolves

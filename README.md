@@ -3713,6 +3713,13 @@ stale native artifacts with their mapped `tools/build_*.sh` scripts before the
 same no-Torch dependency/import gate continues. Keep
 `--skip-stale-artifacts` for deliberate dependency-only audits, not training
 readiness.
+For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
+It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
+symbols, launches the Tile fill smoke, runs the cached TinyStories
+transformer-LM smoke, and then runs `python -m pytest tests/test_native_gpt2.py
+-q`. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` for a fast CUDA-only pass, or
+`NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
+benchmark JSON at `/tmp/nfn_sm120_cuda13_baseline.json`.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

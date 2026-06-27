@@ -2277,6 +2277,14 @@ short parity runs measure the training loop rather than the compiled trainer's
 raw-C++ default periodic train-loss accumulation path; set
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
 `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` to opt back into timed train-loss logging.
+After a CUDA toolkit or WSL driver reinstall, run
+`bash tools/validate_sm120_cuda13.sh` before longer SDK or CLI training runs.
+That health gate selects the dedicated GPU by default, validates the native Tile
+library, launches the Tile fill smoke, runs the cached TinyStories
+transformer-LM smoke, and runs the focused native pytest suite. Set
+`NFN_SM120_CUDA13_RUN_PYTEST=0` for CUDA-only validation or
+`NFN_SM120_CUDA13_RUN_BENCH=1` to append a short same-script native baseline
+benchmark.
 The parity wrapper does not expand named native candidate profiles. If
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE`,
 `NFN_SM120_PARITY_CANDIDATE_PROFILE`, or `NFN_SM120_PARITY_PROFILE` is set, it
