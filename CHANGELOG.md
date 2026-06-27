@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CLI/native inference: direct `python cli/scripts/infer_gpt2.py
+  --native-checkpoint ... --prompt-tokens ...` now uses the SDK
+  `run_native_gpt_checkpoint_sampler(..., runner="auto")` path instead of
+  rebuilding its own Python `subprocess.run()` call. The compatibility script
+  now shares the binding-first C++ capture route used by `nfn infer`, while
+  preserving the compiled CLI fallback, stdout/stderr replay, generated-token
+  rendering, and no-Torch import boundary. Verification: focused native
+  inference tests, the native no-Torch dependency verifier, and
+  `git diff --check`.
+
 - Python SDK/native GPT binding: `run_gpt_capture`, `run_gpt2_capture`, and
   `run_infer` now capture child stderr separately from stdout through the C++
   binding path. SDK-native checkpoint sampling and inference diagnostics can now

@@ -2639,7 +2639,9 @@ either module, running `python cli/scripts/infer_gpt.py --help`, or resolving
 `--evo` / `--megakernel` defaults does not import Torch,
 `server.dataset_manager`, or NumPy. Graph-backed `.pt` / `.json` generation
 imports the runtime only after parsing; native `.bin` checkpoint prompts
-dispatch to the compiled `nfn_gpt_native_train --sample-checkpoint` path.
+call the SDK `run_native_gpt_checkpoint_sampler()` helper, which prefers the
+C++ capture binding and falls back to the compiled
+`nfn_gpt_native_train --sample-checkpoint` path when needed.
 The canonical wrapper preserves its own argparse program name, so
 `python cli/scripts/infer_gpt.py --help` prints `usage: infer_gpt.py`; the
 compatibility `infer_gpt2.py` name is reserved for direct compatibility-script

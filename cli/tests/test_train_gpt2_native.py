@@ -2888,6 +2888,17 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
                 self.assertIn("NUMPY_LOADED False", proc.stdout)
 
+    def test_infer_gpt2_native_checkpoint_sampler_uses_sdk_runner(self) -> None:
+        source = (NEURALFN_ROOT / "cli" / "scripts" / "infer_gpt2.py").read_text(encoding="utf-8")
+        function_body = source.split("def run_native_checkpoint_token_sampler", 1)[1].split(
+            "\ndef render_native_checkpoint_sampler_text", 1
+        )[0]
+
+        self.assertIn("run_native_gpt_checkpoint_sampler", function_body)
+        self.assertIn('runner="auto"', function_body)
+        self.assertNotIn("subprocess.run", function_body)
+        self.assertNotIn("native_gpt_checkpoint_sampler_env", function_body)
+
     def test_infer_gpt_native_checkpoint_info_does_not_import_torch(self) -> None:
         for module_name in ("infer_gpt", "infer_gpt2"):
             script_name = f"{module_name}.py"

@@ -2629,16 +2629,18 @@ path is inactive.
 
 Top-level native checkpoint token-id inference now dispatches directly from
 `nfn infer --native-checkpoint PATH --prompt-tokens IDS` or
-`nfn infer --checkpoint PATH --prompt-tokens IDS` to the compiled
-`nfn_gpt_native_train --sample-checkpoint` frontend. The master CLI calls
+`nfn infer --checkpoint PATH --prompt-tokens IDS` through
 `run_native_gpt_checkpoint_sampler()`, so it prefers the built C++ capture
-binding when available and falls back to the compiled CLI only when the binding
-is absent. This path runs before `infer_gpt`, graph-backed inference, Torch,
+binding when available and falls back to the compiled
+`nfn_gpt_native_train --sample-checkpoint` frontend only when the binding is
+absent. The direct `cli/scripts/infer_gpt.py` / `infer_gpt2.py` native
+checkpoint path uses that same SDK runner helper. This path runs before
+graph-backed inference, Torch,
 NumPy, tiktoken, or dataset-manager imports. Native `.bin` inference is
 token-id only by default; pass `--prompt-tokens` for the no-tokenizer path. Set
 `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` only when you intentionally want the
 wrapper to import `tiktoken` and encode a raw text `--prompt` before launching
-the same compiled sampler. Native checkpoint sampling now uses the same
+the same native sampler. Native checkpoint sampling now uses the same
 `cuda_visible_devices="dedicated"` default as native training helpers, resolving
 to a display-disabled CUDA GPU when `CUDA_VISIBLE_DEVICES` is unset.
 The canonical `python cli/scripts/infer_gpt.py --help` wrapper now preserves

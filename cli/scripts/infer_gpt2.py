@@ -184,21 +184,18 @@ def native_checkpoint_token_sampler_argv(args: argparse.Namespace, checkpoint: s
 
 def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
     try:
-        command = native_checkpoint_token_sampler_argv(args, checkpoint)
+        from neuralfn.native_gpt import run_native_gpt_checkpoint_sampler
+
+        result = run_native_gpt_checkpoint_sampler(
+            checkpoint,
+            prompt_tokens=native_checkpoint_prompt_tokens(args),
+            max_new_tokens=int(getattr(args, "max_new_tokens", 64)),
+            encoding_name=str(getattr(args, "raw_text_encoding_override", "") or "gpt2"),
+            runner="auto",
+        )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    from neuralfn.native_gpt import native_gpt_checkpoint_sampler_env
-
-    try:
-        result = subprocess.run(
-            command,
-            env=native_gpt_checkpoint_sampler_env(),
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
     except FileNotFoundError:
         print(
             "Native GPT prompt-token inference needs the compiled nfn_gpt_native_train binary. "
