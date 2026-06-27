@@ -10458,6 +10458,8 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_dhidden_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_dweight_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_ce_bf16_threads_per_row = 0;
+    std::int64_t lm_head_true_fused_mat_tile = 0;
+    std::int64_t lm_head_true_fused_required_threads = 0;
     // Resolved by the Tile-CUDA ABI from NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS,
     // NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS, or the NFN_TILE_CUDA_* alias.
     std::int64_t lm_head_prob_only_target_correction_threads = 0;
@@ -11445,6 +11447,8 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_cublaslt_plan_cache_count_fn = nullptr;
     TrainerLinearCublasLtPlanCacheEntryFn trainer_linear_cublaslt_plan_cache_entry_fn = nullptr;
     TrainerLinearStatsCountFn token_cross_entropy_bf16_threads_per_row_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_true_fused_mat_tile_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_true_fused_required_threads_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_prob_only_target_correction_threads_fn = nullptr;
     TrainerLinearStatsResetFn lm_head_classifier_stats_reset = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_chunk_launch_count_fn = nullptr;
@@ -12053,6 +12057,14 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearStatsCountFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_bf16_threads_per_row");
+                lm_head_true_fused_mat_tile_fn =
+                    load_symbol<TrainerLinearStatsCountFn>(
+                        tile_handle,
+                        "nfn_native_tile_lm_head_true_fused_mat_tile");
+                lm_head_true_fused_required_threads_fn =
+                    load_symbol<TrainerLinearStatsCountFn>(
+                        tile_handle,
+                        "nfn_native_tile_lm_head_true_fused_required_threads");
                 lm_head_prob_only_target_correction_threads_fn =
                     load_symbol<TrainerLinearStatsCountFn>(
                         tile_handle,
@@ -21651,6 +21663,12 @@ int run_transformer_lm_training_json(
     if (token_cross_entropy_bf16_threads_per_row_fn != nullptr) {
         lm_head_ce_bf16_threads_per_row = token_cross_entropy_bf16_threads_per_row_fn();
     }
+    if (lm_head_true_fused_mat_tile_fn != nullptr) {
+        lm_head_true_fused_mat_tile = lm_head_true_fused_mat_tile_fn();
+    }
+    if (lm_head_true_fused_required_threads_fn != nullptr) {
+        lm_head_true_fused_required_threads = lm_head_true_fused_required_threads_fn();
+    }
     if (lm_head_prob_only_target_correction_threads_fn != nullptr) {
         lm_head_prob_only_target_correction_threads = lm_head_prob_only_target_correction_threads_fn();
     }
@@ -22518,6 +22536,10 @@ int run_transformer_lm_training_json(
         << (lm_head_ce_bf16_exp2_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_bf16_threads_per_row\": "
         << lm_head_ce_bf16_threads_per_row << ",\n"
+        << "  \"lm_head_true_fused_mat_tile\": "
+        << lm_head_true_fused_mat_tile << ",\n"
+        << "  \"lm_head_true_fused_required_threads\": "
+        << lm_head_true_fused_required_threads << ",\n"
         << "  \"lm_head_prob_only_target_correction_threads\": "
         << lm_head_prob_only_target_correction_threads << ",\n"
         << "  \"lm_head_ce_bf16_vec_loads_enabled\": "

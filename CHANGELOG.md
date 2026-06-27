@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exposed the loaded strict true-fused LM-head Tile geometry in native GPT
+  runtime JSON. The dense GPT trainer now loads
+  `nfn_native_tile_lm_head_true_fused_mat_tile` and
+  `nfn_native_tile_lm_head_true_fused_required_threads` from the Tile ops
+  library and reports `lm_head_true_fused_mat_tile` /
+  `lm_head_true_fused_required_threads` beside
+  `lm_head_ce_bf16_threads_per_row`. This lets rejected full-loop profiles such
+  as `lm_head_true_fused_tile16` and `lm_head_true_fused_tile8` prove the actual
+  compile-time body used by the loaded candidate library.
+
+  Verification: added source-level regression coverage for the two loaded
+  symbols and runtime JSON keys. Rebuilt stale native GPT binaries with
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json`, then ran the
+  linked native GPT startup-only path on the dedicated RTX 5090 and confirmed
+  runtime JSON reported `lm_head_true_fused_mat_tile: 32` and
+  `lm_head_true_fused_required_threads: 1024`.
+
 - Added rejected strict true-fused LM-head tile-size bisection profiles. The
   Tile CUDA strict fused classifier-backward body can now be rebuilt with
   `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16` or `8`, and the cooperative
