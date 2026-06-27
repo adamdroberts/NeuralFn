@@ -913,8 +913,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.uint16_arena_materialize.total_ms regressed to 1.075542x mean / 1.032256x median" in candidate_bench
     assert "token_weight_padded_init" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
-    assert "setup_wall_ms to 1.010956x" in candidate_bench
-    assert "setup.token_weight_init.total_ms to 1.009406x" in candidate_bench
+    assert "setup_wall_ms at 0.976762x" in candidate_bench
+    assert "setup.token_weight_init.total_ms at 0.961152x" in candidate_bench
+    assert "DEFAULT_VS_LEGACY_PROFILE=1" in candidate_bench
+    assert "setup.token_weight_init.total_ms=1.000" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
     assert "setup_wall_ms to 1.009714x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.035894x" in candidate_bench

@@ -2856,12 +2856,47 @@ def _compute_process_count(snapshot: dict[str, object], gpu_uuid: str = "") -> i
     if not isinstance(processes, list):
         return 0
     if not gpu_uuid:
-        return len(processes)
+        return sum(1 for process in processes if not _is_stale_compute_process_row(process))
     count = 0
     for process in processes:
-        if isinstance(process, dict) and str(process.get("gpu_uuid", "")).strip() == gpu_uuid:
+        if (
+            isinstance(process, dict)
+            and str(process.get("gpu_uuid", "")).strip() == gpu_uuid
+            and not _is_stale_compute_process_row(process)
+        ):
             count += 1
     return count
+
+
+def _pid_exists(pid_text: object) -> bool:
+    try:
+        pid = int(str(pid_text).strip())
+    except (TypeError, ValueError):
+        return True
+    if pid <= 0:
+        return True
+    proc_root = Path("/proc")
+    if proc_root.exists() and not (proc_root / str(pid)).exists():
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _is_stale_compute_process_row(process: object) -> bool:
+    if not isinstance(process, dict):
+        return False
+    process_name = str(process.get("process_name", "")).strip().lower()
+    used_memory = str(process.get("used_memory_mib", "")).strip().lower()
+    if process_name not in {"[not found]", "not found"}:
+        return False
+    if used_memory not in {"[n/a]", "n/a", ""}:
+        return False
+    return not _pid_exists(process.get("pid"))
 
 
 def _compute_processes_for_gpu(snapshot: dict[str, object], gpu_uuid: str) -> list[dict[str, str]]:
@@ -2870,7 +2905,11 @@ def _compute_processes_for_gpu(snapshot: dict[str, object], gpu_uuid: str) -> li
         return []
     matched: list[dict[str, str]] = []
     for process in processes:
-        if isinstance(process, dict) and str(process.get("gpu_uuid", "")).strip() == gpu_uuid:
+        if (
+            isinstance(process, dict)
+            and str(process.get("gpu_uuid", "")).strip() == gpu_uuid
+            and not _is_stale_compute_process_row(process)
+        ):
             matched.append({str(key): str(value) for key, value in process.items()})
     return matched
 
@@ -3693,6 +3732,8 @@ def resolve_cuda_visible_devices(
     if isinstance(processes, list):
         for process in processes:
             if not isinstance(process, dict):
+                continue
+            if _is_stale_compute_process_row(process):
                 continue
             uuid = process.get("gpu_uuid")
             if isinstance(uuid, str) and uuid.strip():

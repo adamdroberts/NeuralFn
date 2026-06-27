@@ -157,19 +157,16 @@ The compiled runtime reports token-weight startup routes with
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
 `token_weight_padding_zero_launches_elided`. On the default initializer path,
-known-zero BF16 padding rows are zeroed with `cudaMemsetAsync` when available
-instead of a float-to-BF16 conversion kernel; JSON reports
-`token_weight_bf16_padding_memset_count`. The padded-vocab fused BF16-shadow
-initializer is diagnostic-only and default-off; set
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only for paired startup
-bisection after rebuilding the trainer-facing Tile ops library. The padded
-kernel writes public-vocab BF16 shadow rows from the same conversion-based
-vector4 path as the default initializer and still zeros padded rows in the same
-launch. It remains rejected until a fresh paired GPU gate proves the
-conversion-based padded body beats the default path; the older
-precomputed-pattern padded body measured `1.010956x` `setup_wall_ms` and
-`1.009406x` `setup.token_weight_init.total_ms` versus the conversion-based
-vector4 BF16-shadow writer. The
+known-zero BF16 padding rows are zeroed in the same fused padded-vocab
+initializer launch; JSON reports `token_weight_bf16_padding_memset_count` as
+`0` on that default route. Set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired startup
+bisection against the older separate padding-zero/default vector4 path after
+rebuilding the trainer-facing Tile ops library. The padded kernel writes
+public-vocab BF16 shadow rows from the same conversion-based vector4 path as the
+default initializer and still zeros padded rows in the same launch. The CUDA
+13.3.33 dedicated RTX 5090 startup-only gate promoted it at `0.976762x`
+`setup_wall_ms` and `0.961152x` `setup.token_weight_init.total_ms`. The
 `token_weight_vector4_strided` paired profile forces baseline
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, so
 the benchmark JSON has a visible strategy-value route change for the hidden
@@ -1620,6 +1617,11 @@ measured command. Use
 dedicated WSL/NVML runs where the selected GPU has no compute processes but the
 utilization counter remains stuck high after retries; active compute processes
 still fail immediately, and the allowance is recorded in text and JSON output.
+The idle-process guard also filters stale WSL/NVML compute-app rows that report
+`process_name=[Not Found]` and `used_memory=[N/A]` after their host PID has
+already exited. Those rows no longer prevent dedicated-GPU runs from starting,
+but any named or still-live compute process continues to fail the guard before
+warmup.
 The native candidate wrapper enables that allowance by default through
 `NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`; set it to `0`
 for strict utilization gating. It also enables the trainer CUDA version

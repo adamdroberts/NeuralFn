@@ -6329,6 +6329,27 @@ def test_paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid
     }
     module.require_idle_selected_gpu(idle_snapshot, "0", phase="unit test")
 
+    stale_snapshot = {
+        **idle_snapshot,
+        "compute_processes": [
+            *idle_snapshot["compute_processes"],
+            {
+                "gpu_uuid": "GPU-compute",
+                "pid": "999999",
+                "process_name": "[Not Found]",
+                "used_memory_mib": "[N/A]",
+            },
+        ],
+    }
+    original_pid_exists = module._pid_exists
+    module._pid_exists = lambda pid: False
+    try:
+        module.require_idle_selected_gpu(stale_snapshot, "0", phase="unit test")
+        resolved = module.resolve_cuda_visible_devices("dedicated", stale_snapshot)
+        assert resolved["resolved"] == "0"
+    finally:
+        module._pid_exists = original_pid_exists
+
     busy_snapshot = {
         **idle_snapshot,
         "compute_processes": [

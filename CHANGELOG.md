@@ -6,22 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-- Changed the opt-in fused padded token-weight initializer to write public-vocab
-  BF16 shadow rows through the conversion-based vector4 body used by the current
-  default initializer, while still zeroing padded vocab rows in the same launch.
-  The `token_weight_padded_init` SM120 candidate profile remains rejected until
-  a fresh paired GPU gate proves the new padded body beats the default path.
+- Hardened `tools/paired_kernel_speed.py` dedicated-GPU preflight for WSL/NVML
+  stale compute-app rows. Rows reported by `nvidia-smi --query-compute-apps`
+  as `process_name=[Not Found]` with `used_memory=[N/A]` are ignored only when
+  their host PID no longer exists, so zombie NVML rows no longer block
+  same-script RTX 5090 benchmark gates. Named or live compute processes still
+  fail the idle guard before warmup.
 
-  Migration note: no trainer default changed. This only changes behavior when
-  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` is explicitly set or when
-  the `token_weight_padded_init` benchmark profile is run.
+  Migration note: no benchmark command changes are required. This only affects
+  stale NVML rows after a native process exits; active external GPU load remains
+  rejected.
+
+  Verification: added unit coverage for stale compute-app rows in
+  `tests/test_tile_cuda_examples.py`.
+
+- Promoted the fused padded token-weight initializer for native GPT startup and
+  changed it to write public-vocab BF16 shadow rows through the conversion-based
+  vector4 body used by the current default initializer, while still zeroing
+  padded vocab rows in the same launch. The route now defaults on, and the
+  `token_weight_padded_init` SM120 candidate profile is a default-vs-legacy
+  proof against `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`.
+
+  Migration note: set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only
+  when intentionally reproducing the older separate padding-zero/default
+  vector4 startup path.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` with
-  `bash tools/build_native_train_tile_ops.sh` and ran `git diff --check`.
-  Attempted the paired RTX 5090 startup gate with
-  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init`, but the GPU
-  escalation was rejected by the approval system usage limit before the
-  benchmark could start.
+  `bash tools/build_native_train_tile_ops.sh`, ran the focused source/profile
+  tests, and ran the CUDA 13.3.33 dedicated RTX 5090 startup-only gate with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init
+  NFN_SM120_NATIVE_STARTUP_ONLY=1`. The route passed at `0.976762x`
+  `setup_wall_ms` and `0.961152x` `setup.token_weight_init.total_ms`. A full
+  10-step run still failed the existing llm.kittens throughput reference gates,
+  so this entry does not claim full parity.
 
 - Refreshed the documented `linked_startup` SM120 startup evidence after the
   CUDA 13.3.33 workstation rebuild. The linked native GPT binary remains the

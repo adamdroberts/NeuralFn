@@ -1039,10 +1039,12 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1"
     ;;
   "token_weight_padded_init"|"token-weight-padded-init"|"token_weight_padded_zero"|"token-weight-padded-zero")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Historical CUDA 13.3.33 dedicated RTX 5090 2026-06-25 5-sample startup-only gate selected the fused padded token-weight initializer, but the then-current precomputed-pattern BF16 shadow body regressed setup_wall_ms to 1.010956x and setup.token_weight_init.total_ms to 1.009406x. The kernel now uses the conversion-based vector4 BF16-shadow body for public rows; keep this profile rejected until a fresh paired GPU gate proves it beats the default conversion-based vector4 path."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 startup-only 3-sample gate promoted the conversion-based fused padded token-weight initializer as the default after measuring setup_wall_ms at 0.976762x and setup.token_weight_init.total_ms at 0.961152x versus the older separate padding-zero/default vector4 path. The full 10-step reference run still failed llm.kittens throughput gates, so this profile remains a startup default-vs-legacy proof rather than a throughput parity claim."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=1.000 setup.token_weight_init.total_ms=1.000}"
     ;;
   "token_weight_fast_int32"|"token-weight-fast-int32"|"token_weight_no_vector4"|"token-weight-no-vector4")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

@@ -61,16 +61,16 @@ bash tools/build_native_train_tile_ops.sh
 The raw ABI includes an opt-in dense GPT token-weight startup route,
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
 which initializes the public vocabulary rows and zeroes the padded vocabulary
-tail plus BF16 shadow in one launch. The native trainer leaves this route
-default-off because the CUDA 13.3 dedicated RTX 5090 startup-only retest
-rejected it at `1.011381x` setup wall time versus the current vector4
-BF16-shadow initializer, despite a noise-equivalent `0.995702x` token-init
-sub-bucket. Enable it only for paired bisection with
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. Runtime JSON reports
+tail plus BF16 shadow in one launch. The native trainer now enables this route
+by default because the CUDA 13.3.33 dedicated RTX 5090 startup-only gate
+measured `0.976762x` setup wall time and `0.961152x` token-weight init time
+versus the older separate padding-zero/default vector4 path. Set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired bisection.
+Runtime JSON reports
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
-`token_weight_padding_zero_launches_elided`. On the default initializer path,
+`token_weight_padding_zero_launches_elided`. On the legacy initializer path,
 known-zero BF16 padding rows use direct `cudaMemsetAsync` when that runtime
 symbol is available, and runtime JSON reports
 `token_weight_bf16_padding_memset_count`.
@@ -2725,6 +2725,10 @@ matching native GPT token-initializer env flags and are intended for paired
 baseline/candidate envs for default-on switches; for example,
 `token_weight_vector4_strided` compares
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` against candidate `=1`.
+Dedicated-GPU benchmark preflight ignores stale WSL/NVML compute-app rows only
+when they are reported as `[Not Found]`/`[N/A]` and the host PID no longer
+exists; live or named compute processes still fail the idle guard before
+warmup.
 Native JSON reports `token_weight_vector4_strided_init_requested` and labels
 the selected path as
 `device-vector4-strided-power2-deterministic[-fused-bf16-shadow]`, so the
@@ -2753,15 +2757,16 @@ It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 2026-06-25
 `1.001840x` median, and `1.048989x` max. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
 post-kernel-change revalidation.
-`token_weight_padded_init` compares the current conversion-based vector4
-BF16-shadow initializer against
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. The padded kernel now writes
+`token_weight_padded_init` compares the default conversion-based fused padded
+BF16-shadow initializer against the legacy
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` path. The padded kernel writes
 public-vocab BF16 shadow rows through the same conversion-based vector4 path as
-the default initializer and zeros padded rows in the same launch. It remains
-rejected until a fresh paired GPU gate proves the conversion-based padded body
-beats the default path; the older precomputed-pattern padded body regressed
-`setup_wall_ms` to `1.010956x` and `setup.token_weight_init.total_ms` to
-`1.009406x`.
+the default initializer and zeros padded rows in the same launch. The CUDA
+13.3.33 dedicated RTX 5090 startup-only gate promoted it at `0.976762x`
+`setup_wall_ms` and `0.961152x` `setup.token_weight_init.total_ms`; the full
+10-step reference run still failed the existing llm.kittens throughput gates,
+so this is a startup default-vs-legacy proof rather than a throughput parity
+claim.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
 object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or
