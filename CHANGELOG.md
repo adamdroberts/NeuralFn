@@ -11,11 +11,13 @@ Future updates should append new entries here rather than replacing older notes.
   `NativeTrainRunConfig.cuda_visible_devices` now defaults to `"dedicated"`,
   and generic `run_native_train(...)` / `exec_native_train(...)` subprocess
   fallback resolves that selector to a CUDA-visible ordinal when the caller has
-  not supplied a non-empty environment value. Before this change the generic
-  SDK default was `"0"` / `CUDA_VISIBLE_DEVICES=0`. Callers that intentionally
-  pin GPU 0 should pass `cuda_visible_devices="0"` or export
-  `CUDA_VISIBLE_DEVICES=0`; leaving it unset now follows the same
-  display-disabled dedicated compute-GPU policy used by the SM120 launchers.
+  not supplied a non-empty environment value. The canonical
+  `cli/scripts/train_gpt.py` compiled-CLI handoff uses the same resolver.
+  Before this change the generic SDK default was `"0"` /
+  `CUDA_VISIBLE_DEVICES=0`. Callers that intentionally pin GPU 0 should pass
+  `cuda_visible_devices="0"` or export `CUDA_VISIBLE_DEVICES=0`; leaving it
+  unset now follows the same display-disabled dedicated compute-GPU policy used
+  by the SM120 launchers.
 
   Verification: ran focused native-train SDK tests including the alias resolver,
   Python byte compilation, and `git diff --check`.

@@ -827,6 +827,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
+    assert "resolve_cuda_visible_devices_value" in train_gpt_source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in train_gpt_source
     assert "DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED" in native_train_sdk_source
     assert "nfn_gpt_native_train_linked" in native_train_sdk_source
     assert "nfn_gpt_native_train_linked" in nfn_source

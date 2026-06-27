@@ -330,6 +330,8 @@ Canonical docs:
   `CUDA_DEVICE_MAX_CONNECTIONS=1` plus `CUDA_MODULE_LOADING=LAZY` only when
   unset; user-pinned environment values still win, and pass
   `cuda_visible_devices="0"` only when the old hard ordinal is intentional.
+  The canonical `cli/scripts/train_gpt.py` compiled-CLI handoff uses the same
+  selector before launching native CUDA.
 - The default runner is `compiled-cli`. Use `--eval-every-steps 1000` for
   per-1000-step validation loss, native command/config inspection flags for
   debugging, and `NFN_NATIVE_*_CLI` environment overrides for installed native

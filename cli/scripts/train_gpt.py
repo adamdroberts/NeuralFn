@@ -18,6 +18,8 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
+from neuralfn.native_cuda_device import resolve_cuda_visible_devices_value
+
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 _DEFAULT_EVAL_BATCHES = "20"
@@ -414,7 +416,7 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     if command is None:
         return None
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in _NATIVE_METADATA_ACTION_FLAGS):
