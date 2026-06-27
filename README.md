@@ -1870,8 +1870,10 @@ duplicate chunk. Set
 `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
 per-chunk prewarm loop. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` paired profile
-compares that legacy loop against the default deduped key path and gates on
-overall setup wall time plus reduced graph-prewarm work. The default
+compares that legacy loop against the default pointer-aware dedup key path and
+gates on overall setup wall time, runtime graph capture attempts, and prewarm
+work. Equal-sized row chunks with different buffers are intentionally distinct
+keys. The default
 intentionally leaves per-thread replay-cache
 priming off because the same-script RTX 5090 gate showed that adding those
 first-use thread-cache hits did not improve training throughput. The diagnostic

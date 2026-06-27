@@ -979,11 +979,11 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
     ;;
   "lm_head_graph_prewarm_dedup"|"lm-head-graph-prewarm-dedup"|"lm_head_graph_dedup"|"lm-head-graph-dedup")
-    CANDIDATE_NOTE="Compares the legacy LM-head graph-prewarm loop, which calls the same beta-one graph prewarm once per equal-sized row chunk, against the default deduped prewarm key path. The route proof must move duplicate skips above zero and reduce prewarm attempts without regressing setup."
+    CANDIDATE_NOTE="Compares the legacy LM-head graph-prewarm loop against the default pointer-aware dedup key path. The route proof must keep runtime graph capture at zero and avoid more prewarm work than the legacy loop without regressing setup; equal-sized row chunks with different buffers are intentionally distinct keys."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=1"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=1.000 lm_head_fused_graph_prewarm_success_count=1.000}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=1.000 lm_head_fused_graph_prewarm_success_count=1.000 lm_head_fused_graph_capture_attempt_count=1.000}"
     ;;
   "lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"|"lm_head_graph_prime_thread_cache"|"lm-head-graph-prime-thread-cache")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

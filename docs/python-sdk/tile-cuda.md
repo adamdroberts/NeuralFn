@@ -194,15 +194,18 @@ ABI is also available for diagnostics. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_cache_entry_count`. Native GPT training also
 reports `lm_head_fused_graph_prewarm_dedup_enabled` and
 `lm_head_fused_graph_prewarm_duplicate_skip_count`. LM-head graph prewarm is
-enabled by default and captures each unique graph key once, deduplicating
-equal-sized row chunks while still preserving separate no-loss and active
-train-loss graph keys, including the loss-bin variant when that route is
-configured. Set `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
+enabled by default and captures each unique graph key once, deduplicating only
+when the chunk pointers, row shape, dWeight beta, and cooperative flags match
+the Tile runtime CUDA Graph cache key. Equal-sized row chunks with different
+logit, target, hidden, or gradient buffers are intentionally distinct graph
+keys, while separate no-loss and active train-loss graph keys, including the
+loss-bin variant when that route is configured, remain distinct. Set
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
 per-chunk prewarm loop. The paired SM120 profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` compares that
-legacy loop against the default deduped key path and gates on setup wall time
-plus reduced graph-prewarm work. The default was rechecked after the
+legacy loop against the default pointer-aware dedup key path and gates on setup
+wall time, runtime graph capture attempts, and prewarm work. The default was rechecked after the
 CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback graph-only rerun passed same-script
 gates: train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
 LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection

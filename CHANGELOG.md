@@ -23,6 +23,15 @@ Future updates should append new entries here rather than replacing older notes.
   so the remaining parity target is still the true fused LM-head
   classifier-backward Tile kernel body.
 
+- Updated the `lm_head_graph_prewarm_dedup` SM120 candidate profile to match
+  pointer-aware LM-head graph keys. The profile no longer expects equal-sized
+  row chunks with different buffers to become duplicate skips; it now gates the
+  default route on setup time, no extra prewarm work, and no runtime graph
+  capture attempts.
+
+  Verification: ran the focused native GPT source-contract test covering the
+  candidate profile text.
+
 - Corrected the SM120 parity benchmark docs to match the current wrapper
   behavior: `tools/bench_native_gpt_sm120_parity.sh` compares llm.kittens
   against `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when that
