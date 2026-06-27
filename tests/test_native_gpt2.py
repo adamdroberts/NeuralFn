@@ -624,7 +624,7 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
         / "native_training_guard.py"
     ).read_text(encoding="utf-8")
 
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
@@ -636,7 +636,7 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
         / "nfn.py"
     ).read_text(encoding="utf-8")
 
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
@@ -4051,7 +4051,7 @@ def test_native_train_run_config_and_subprocess_runner(
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:4] == ["--base-model", "nanogpt", "--tinystories", "--dry-run"]
     env_lines = env_output.read_text(encoding="utf-8").splitlines()
-    assert "CUDA_VISIBLE_DEVICES=0" in env_lines
+    assert "CUDA_VISIBLE_DEVICES=dedicated" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
@@ -4280,7 +4280,7 @@ def test_exec_native_train_replaces_process_with_compiled_cli(
     assert observed["argv"] == [str(cli), "--base-model", "gpt", "--tinystories", "--dry-run"]
     env = observed["env"]
     assert isinstance(env, dict)
-    assert env["CUDA_VISIBLE_DEVICES"] == "0"
+    assert env["CUDA_VISIBLE_DEVICES"] == "dedicated"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
 

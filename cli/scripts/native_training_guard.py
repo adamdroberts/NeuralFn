@@ -222,7 +222,7 @@ def reject_torch_training_by_default(
     default_args = list(native_default_args or ())
     command = _family_forwarded_args(family_command, default_args) if family_command else _forwarded_args(family, default_args)
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     if (

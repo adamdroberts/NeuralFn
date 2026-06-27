@@ -111,6 +111,9 @@ launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
 uses `posix_spawnp()` instead of `fork()` and defaults
 `CUDA_MODULE_LOADING=LAZY` when the caller has not set it. Set the corresponding
 environment variable yourself when you need a different CUDA device routing.
+The unified `NativeTrainRunConfig` default is `cuda_visible_devices="dedicated"`,
+matching the workstation SM120 launchers; pass `cuda_visible_devices="0"` when
+you intentionally need the old hard ordinal.
 Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
 `"compiled-cli"` through `run_native_gpt_checkpoint_sampler()` /
 `run_native_gpt2_checkpoint_sampler()`. When a rebuilt GPT binding exposes
@@ -267,10 +270,13 @@ helper appends that flag once, accepts either existing CLI spelling without
 duplicating it, and raises for non-dense families such as `llama`. Current builds
 still fail the guard because the LM-head path is a diagnostic CUDA Graph wrapper
 rather than a true fused classifier/dHidden/dWeight Tile kernel.
-The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
+The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=dedicated` and
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
-environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the
-environment to target another CUDA GPU. Use `exec_native_train(config)` when a
+environment variables; set `NativeTrainRunConfig.cuda_visible_devices` to an
+explicit ordinal such as `"0"` or set the environment to target another CUDA
+GPU. This is a breaking default change from the earlier hard
+`CUDA_VISIBLE_DEVICES=0` generic native SDK fallback. Use
+`exec_native_train(config)` when a
 generic SDK launcher should `execvpe` the selected compiled native trainer and
 remove the Python parent process entirely; keep `run_native_train(...)` when you
 need the C++ binding route or a returned exit code.

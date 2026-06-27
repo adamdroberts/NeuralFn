@@ -325,9 +325,10 @@ Canonical docs:
   expose `resolve_command` / `resolve_native_train_command`; rebuild with
   `bash tools/build_native_train_binding.sh` before expecting `runner="auto"`
   to prefer the in-process binding.
-  Generic native subprocess fallback defaults `CUDA_VISIBLE_DEVICES=0`,
+  Generic native subprocess fallback defaults `CUDA_VISIBLE_DEVICES=dedicated`,
   `CUDA_DEVICE_MAX_CONNECTIONS=1`, and `CUDA_MODULE_LOADING=LAZY` only when
-  unset; user-pinned environment values still win.
+  unset; user-pinned environment values still win, and pass
+  `cuda_visible_devices="0"` only when the old hard ordinal is intentional.
 - The default runner is `compiled-cli`. Use `--eval-every-steps 1000` for
   per-1000-step validation loss, native command/config inspection flags for
   debugging, and `NFN_NATIVE_*_CLI` environment overrides for installed native
