@@ -106,14 +106,14 @@ compiled-CLI handoff directly from a dataset alias/path, leaving shard metadata
 inspection to the C++ resolver. When that alias-only config is passed through
 the C++ binding, the binding executes `compiled_cli_argv` instead of the raw external-trainer argv so SDK `runner="auto"` keeps the no-Python shard resolver path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
 inspect/check or run the NeuralFn-owned raw Tile GPT plan. Native GPT configs
-default `cuda_visible_devices="0"` and `cuda_device_max_connections="1"` before
-launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
-uses `posix_spawnp()` instead of `fork()` and defaults
-`CUDA_MODULE_LOADING=LAZY` when the caller has not set it. Set the corresponding
-environment variable yourself when you need a different CUDA device routing.
-The unified `NativeTrainRunConfig` default is `cuda_visible_devices="dedicated"`,
-matching the workstation SM120 launchers; pass `cuda_visible_devices="0"` when
-you intentionally need the old hard ordinal.
+and native checkpoint sampling default `cuda_visible_devices="dedicated"` and
+`cuda_device_max_connections="1"` before launching subprocess, launcher,
+compiled-CLI, or binding runs; the C++ binding uses `posix_spawnp()` instead of
+`fork()` and defaults `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
+The `dedicated` selector resolves through `nvidia-smi` to a display-disabled
+CUDA GPU and falls back to the first visible NVIDIA GPU if the query is
+unavailable. Pass `cuda_visible_devices="0"` or set `CUDA_VISIBLE_DEVICES`
+when you intentionally need the old hard ordinal.
 Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
 `"compiled-cli"` through `run_native_gpt_checkpoint_sampler()` /
 `run_native_gpt2_checkpoint_sampler()`. When a rebuilt GPT binding exposes

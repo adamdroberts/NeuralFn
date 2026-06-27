@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Breaking changes: native GPT compatibility SDK helpers and native checkpoint
+  sampling now default `cuda_visible_devices="dedicated"` instead of the hard
+  ordinal `"0"`. This aligns `NativeGptRunConfig`, `NativeGpt2RunConfig`,
+  `run_native_gpt_checkpoint_sampler()`, `nfn infer --checkpoint model_*.bin`,
+  and the compiled-CLI/subprocess fallback with the workstation SM120 native
+  trainer default. Callers that intentionally require GPU 0 should pass
+  `cuda_visible_devices="0"` or set `CUDA_VISIBLE_DEVICES=0`.
+
+- CLI: refreshed native `.bin` inference docs to describe the current compiled
+  sampler route. `nfn infer --checkpoint model_*.bin --prompt-tokens ...` and
+  `python cli/scripts/infer_gpt.py --native-checkpoint ... --prompt-tokens ...`
+  dispatch to `nfn_gpt_native_train --sample-checkpoint` before graph-backed
+  inference, Torch, tokenizers, NumPy, or dataset managers are imported. Raw
+  text `--prompt` remains opt-in through
+  `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1`.
+
 - Bench: refreshed the current no-stage NeuralFn-vs-llm.kittens SM120 parity
   gate after the dGELU route-bisection work. On the dedicated RTX 5090 with 5
   steps, 3 measured samples, 1 warmup sample, stage timing disabled, and zero

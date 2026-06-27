@@ -3171,6 +3171,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
             root = Path({str(NEURALFN_ROOT)!r})
             sys.path.insert(0, str(root))
+            from neuralfn.native_cuda_device import resolve_cuda_visible_devices_value
             from neuralfn.native_gpt2 import native_gpt2_parameter_count
 
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -3213,6 +3214,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     exit_code = 0
                 print("TORCH_LOADED", "torch" in sys.modules)
                 print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+                print("EXPECTED_NATIVE_CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))
                 raise SystemExit(exit_code)
             """
         )
@@ -3233,7 +3235,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NATIVE_CLI_ARGV --sample-checkpoint", proc.stdout)
         self.assertIn("--prompt-tokens 1,2,3", proc.stdout)
         self.assertIn("--max-new-tokens 7", proc.stdout)
-        self.assertIn("NATIVE_CLI_CUDA_VISIBLE_DEVICES 0", proc.stdout)
+        expected_cuda = next(
+            line.split(" ", 1)[1]
+            for line in proc.stdout.splitlines()
+            if line.startswith("EXPECTED_NATIVE_CUDA_VISIBLE_DEVICES ")
+        )
+        self.assertIn(f"NATIVE_CLI_CUDA_VISIBLE_DEVICES {expected_cuda}", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 

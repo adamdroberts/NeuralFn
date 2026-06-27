@@ -2619,7 +2619,9 @@ NumPy, tiktoken, or dataset-manager imports. Native `.bin` inference is
 token-id only by default; pass `--prompt-tokens` for the no-tokenizer path. Set
 `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` only when you intentionally want the
 wrapper to import `tiktoken` and encode a raw text `--prompt` before launching
-the same compiled sampler.
+the same compiled sampler. Native checkpoint sampling now uses the same
+`cuda_visible_devices="dedicated"` default as native training helpers, resolving
+to a display-disabled CUDA GPU when `CUDA_VISIBLE_DEVICES` is unset.
 The canonical `python cli/scripts/infer_gpt.py --help` wrapper now preserves
 its own program name in argparse output (`usage: infer_gpt.py`) instead of
 leaking the compatibility `infer_gpt2.py` script name; native checkpoint

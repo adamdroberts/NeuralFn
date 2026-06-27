@@ -10,6 +10,8 @@ import subprocess
 import struct
 from typing import Any
 
+from .native_cuda_device import resolve_cuda_visible_devices_value
+
 
 DEFAULT_NATIVE_GPT2_EXECUTABLE = "nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
@@ -125,7 +127,7 @@ class NativeGpt2RunConfig:
     recompute: int = 0
     zero_stage: int = 1
     resume: int = 0
-    cuda_visible_devices: str = "0"
+    cuda_visible_devices: str = "dedicated"
     cuda_device_max_connections: str = "1"
     dataset_alias: str | None = None
     template_name: str = "gpt"
@@ -306,6 +308,11 @@ class NativeGpt2RunConfig:
             "compiled_cli_argv": self.compiled_cli_argv(),
             "compiled_cli_command": self.compiled_cli_command(),
         }
+
+    def launch_dict(self) -> dict[str, Any]:
+        payload = self.to_dict()
+        payload["cuda_visible_devices"] = resolve_cuda_visible_devices_value(self.cuda_visible_devices)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -639,14 +646,14 @@ def native_gpt2_checkpoint_sampler_argv(
 
 def native_gpt2_checkpoint_sampler_env(
     *,
-    cuda_visible_devices: str = "0",
+    cuda_visible_devices: str = "dedicated",
     cuda_device_max_connections: str = "1",
 ) -> dict[str, str]:
     """Return environment defaults for native GPT checkpoint sampling."""
 
     env = os.environ.copy()
     if str(cuda_visible_devices or "").strip():
-        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", str(cuda_visible_devices))
+        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(cuda_visible_devices))
     if str(cuda_device_max_connections or "").strip():
         _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(cuda_device_max_connections))
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
@@ -687,7 +694,7 @@ def run_native_gpt2_checkpoint_sampler(
     max_new_tokens: int = 64,
     cli: str | None = None,
     encoding_name: str = "gpt2",
-    cuda_visible_devices: str = "0",
+    cuda_visible_devices: str = "dedicated",
     cuda_device_max_connections: str = "1",
     runner: str = "auto",
 ) -> subprocess.CompletedProcess[str]:
@@ -715,7 +722,7 @@ def run_native_gpt2_checkpoint_sampler(
             if callable(capture_runner):
                 payload = {
                     "compiled_cli_argv": command,
-                    "cuda_visible_devices": str(cuda_visible_devices),
+                    "cuda_visible_devices": resolve_cuda_visible_devices_value(cuda_visible_devices),
                     "cuda_device_max_connections": str(cuda_device_max_connections),
                 }
                 result = capture_runner(payload)
@@ -1193,7 +1200,7 @@ def resolve_native_gpt2_binding_command(config: NativeGpt2RunConfig) -> list[str
     """Return the argv that the compiled native GPT binding will spawn."""
 
     _module_name, _runner, resolver = _load_native_gpt2_binding()
-    return [str(item) for item in resolver(config.to_dict())]
+    return [str(item) for item in resolver(config.launch_dict())]
 
 
 def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int:
@@ -1202,7 +1209,7 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
         if not status.available:
             raise RuntimeError(f"Native GPT binding requested but unavailable: {status.reason}")
         _module_name, binding_runner, _resolver = _load_native_gpt2_binding()
-        return int(binding_runner(config.to_dict()))
+        return int(binding_runner(config.launch_dict()))
     if status.resolved == "compiled-cli":
         if not status.available:
             raise RuntimeError(f"Native GPT compiled CLI requested but unavailable: {status.reason}")
@@ -1242,7 +1249,7 @@ def exec_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "compiled-cli
 def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:
     env = os.environ.copy()
     if str(config.cuda_visible_devices or "").strip():
-        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", str(config.cuda_visible_devices))
+        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(config.cuda_visible_devices))
     if str(config.cuda_device_max_connections or "").strip():
         _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")

@@ -537,6 +537,9 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
     assert env["CUDA_VISIBLE_DEVICES"] == "2"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
+    monkeypatch.setattr(native_gpt2_module, "resolve_cuda_visible_devices_value", lambda value: "7")
+    default_env = native_gpt2_checkpoint_sampler_env()
+    assert default_env["CUDA_VISIBLE_DEVICES"] == "7"
     rendered = render_native_gpt2_checkpoint_sampler_text('{"generated_tokens": [1, 2, 3]}')
     assert "Generated token ids: [1, 2, 3]" in rendered
 
@@ -3547,6 +3550,7 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
         SimpleNamespace(run_gpt2=fake_run, resolve_native_gpt2_command=fake_resolve),
     )
     monkeypatch.setattr(native_gpt2_module, "NATIVE_GPT2_BINDING_MODULES", ("neuralfn_native_gpt2",))
+    monkeypatch.setattr(native_gpt2_module, "resolve_cuda_visible_devices_value", lambda value: "7")
     cfg = NativeGpt2RunConfig(
         executable="train_gpt2cu",
         train_data="train.bin",
@@ -3570,7 +3574,7 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
     assert native_gpt2_runner_status("auto").resolved == "binding"
     assert run_native_gpt2(cfg, runner="binding") == 17
     assert calls[0]["train_data"] == "train.bin"
-    assert calls[0]["cuda_visible_devices"] == "0"
+    assert calls[0]["cuda_visible_devices"] == "7"
     assert calls[0]["cuda_device_max_connections"] == "1"
 
 

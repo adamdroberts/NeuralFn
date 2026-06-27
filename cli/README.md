@@ -544,9 +544,22 @@ python scripts/infer_gpt2.py --native-checkpoint ~/NeuralFn/artifacts/gpt2/model
 ```
 
 That path reports the native header shape, precision, expected size, and marker
-state. Prompt generation from native `.bin` checkpoints still needs a dedicated
-native GPT-2 inference executable; do not pass them to the graph-backed `.pt`
-loader.
+state. Prompt generation from native `.bin` checkpoints is token-id native by
+default:
+
+```bash
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256 --max-new-tokens 64
+python scripts/infer_gpt.py --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
+```
+
+The wrapper dispatches to `nfn_gpt_native_train --sample-checkpoint` before
+graph-backed inference, Torch, NumPy, tokenizers, or dataset managers are
+imported. Raw text `--prompt` is intentionally disabled on the native path
+unless `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` is set; pass
+`--prompt-tokens` to keep inference tokenizer-free. Native checkpoint sampling
+uses the same dedicated display-disabled CUDA GPU selector as native training
+when `CUDA_VISIBLE_DEVICES` is unset; set `CUDA_VISIBLE_DEVICES` or pass an
+explicit SDK `cuda_visible_devices` value to pin another device.
 
 Graphless sampling also enables a small repeat guard by default: it blocks the
 fourth repeated n-gram and a fourth consecutive copy of the same token. Tune
