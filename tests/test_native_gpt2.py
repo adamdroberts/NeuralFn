@@ -2118,8 +2118,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_true_fused_required_threads" in source
     assert "lm_head_true_fused_mat_tile_fn" in source
     assert "lm_head_true_fused_required_threads_fn" in source
-    assert '"lm_head_true_fused_mat_tile"' in source
-    assert '"lm_head_true_fused_required_threads"' in source
+    assert '\\"lm_head_true_fused_mat_tile\\"' in source
+    assert '\\"lm_head_true_fused_required_threads\\"' in source
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
         "    if (lm_head_true_fused_cooperative_enabled()) {\n"
