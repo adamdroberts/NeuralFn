@@ -342,7 +342,8 @@ visible in the same script output as the kernel parity failure.
 `native_lm_head_true_fused_target` JSON block and text section when the
 candidate native profile reports the diagnostic CUDA Graph wrapper or a false
 strict true-fused capability. That block records the wrapper path class, strict
-symbol and capability booleans, graph replay/body-node means, whether a
+symbol and capability booleans, graph replay/body-node means, amortized graph
+capture/upload/prewarm successes per replay, fallback rate, whether a
 candidate/reference gate failed, and the reference-aligned next work:
 matching the llm.kittens fused CE/dlogits classifier scope while optimizing the
 separate logits, dHidden, and dWeight stages under the same-script gates. The

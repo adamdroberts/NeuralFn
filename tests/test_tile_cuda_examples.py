@@ -5100,6 +5100,9 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
             "diagnostic-cuda-graph-wrapper"
         ),
         "lm_head_classifier_backward_path_class": "diagnostic-cuda-graph-wrapper",
+        "lm_head_fused_graph_capture_success_count": 1,
+        "lm_head_fused_graph_upload_success_count": 1,
+        "lm_head_fused_graph_prewarm_success_count": 1,
         "lm_head_fused_graph_replay_count": 1,
         "lm_head_fused_graph_replay_success_count": 1,
         "lm_head_fused_graph_fallback_count": 0,
@@ -5165,7 +5168,13 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert target["graph_wrapper_active"] is True
     assert target["true_fused_launch_mean"] is None
     assert target["graph_replay_mean"] == 1.0
+    assert target["graph_replay_success_rate"] == 1.0
+    assert target["graph_fallback_per_replay_mean"] == 0.0
+    assert target["graph_capture_success_per_replay_mean"] == 1.0
+    assert target["graph_upload_success_per_replay_mean"] == 1.0
+    assert target["graph_prewarm_success_per_replay_mean"] == 1.0
     assert target["graph_body_nodes_per_replay_mean"] == 3.0
+    assert target["graph_body_total_node_replays_mean"] == 3.0
     assert target["candidate_reference_gate_failed"] is True
     assert (
         target["reference_classifier_fusion_scope"]

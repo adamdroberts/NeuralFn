@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: extended `tools/paired_kernel_speed.py`'s
+  `native_lm_head_true_fused_target` summary with derived LM-head CUDA Graph
+  health metrics: replay success rate, fallback/capture/upload/prewarm
+  successes per replay, and total graph-body node replays. This keeps future
+  CUDA Tile candidates honest about whether a change moves work into graph
+  capture/setup or improves replay-body work. Verification: focused paired
+  speed/native GPT source tests and `git diff --check`.
+
 - Native guard: extended `tools/check_native_no_torch_deps.py` stale-artifact
   mapping to cover `nfn_native_train`, the GPT2-evo delegate, NanoGPT native
   preflight binary, and placeholder LLaMA/MixLLaMA/JEPA/semantic-router/DeepSeek

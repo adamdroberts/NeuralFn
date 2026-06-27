@@ -2486,7 +2486,13 @@ single-kernel LM-head target is still open: the same JSON reports
 `graph_body_nodes_per_replay_mean: 3`, and `true_fused_capability: false`, so
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still needs
 a bounded true-fused Tile body before `--require-native-lm-head-true-fused`
-can become a production gate.
+can become a production gate. The paired speed summary also reports
+`graph_replay_success_rate`, `graph_fallback_per_replay_mean`,
+`graph_capture_success_per_replay_mean`,
+`graph_upload_success_per_replay_mean`,
+`graph_prewarm_success_per_replay_mean`, and
+`graph_body_total_node_replays_mean` so a CUDA Tile candidate can distinguish
+setup/capture movement from replay-body work in the same JSON block.
 The historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
 is rejected by default for real candidate-wrapper launches after the CUDA
 13.3 dedicated RTX 5090 confirmation changed the route but missed strict train-loop,

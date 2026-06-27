@@ -2435,12 +2435,17 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
+    assert "graph_replay_success_rate" in speed_tool
+    assert "graph_capture_success_per_replay_mean" in speed_tool
+    assert "graph_upload_success_per_replay_mean" in speed_tool
+    assert "graph_prewarm_success_per_replay_mean" in speed_tool
     assert "lm_head_fused_graph_upload_success_count" in speed_tool
     assert "lm_head_fused_graph_upload_failure_count" in speed_tool
     assert "lm_head_fused_graph_thread_cache_hit_count" in speed_tool
     assert "lm_head_classifier_true_fused_launch_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
     assert "lm_head_fused_graph_body_node_count_per_replay" in speed_tool
+    assert "graph_body_total_node_replays_mean" in speed_tool
     assert "lm_head_fused_graph_body_ce_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_body_dhidden_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_body_dweight_node_replay_total" in speed_tool

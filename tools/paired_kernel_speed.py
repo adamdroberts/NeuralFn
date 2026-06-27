@@ -3433,6 +3433,12 @@ def _metric_mean(metrics: dict[str, object], key: str) -> float | None:
     return None
 
 
+def _safe_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator == 0.0:
+        return None
+    return numerator / denominator
+
+
 def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str, object]:
     metrics = payload.get("candidate_native_metrics")
     values = payload.get("candidate_native_metric_values")
@@ -3491,6 +3497,38 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         and candidate_reference_gates.get("passed") is False
     )
     strict_true_fused_but_slow = strict_true_fused and candidate_reference_gate_failed
+    graph_replay_mean = _metric_mean(metrics, "lm_head_fused_graph_replay_count")
+    graph_replay_success_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_replay_success_count",
+    )
+    graph_fallback_mean = _metric_mean(metrics, "lm_head_fused_graph_fallback_count")
+    graph_capture_success_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_capture_success_count",
+    )
+    graph_upload_success_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_upload_success_count",
+    )
+    graph_prewarm_success_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_prewarm_success_count",
+    )
+    graph_body_nodes_per_replay_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_body_node_count_per_replay",
+    )
+    graph_body_total_node_replays_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_body_node_replay_total",
+    )
+    if graph_body_total_node_replays_mean is None and (
+        graph_replay_mean is not None and graph_body_nodes_per_replay_mean is not None
+    ):
+        graph_body_total_node_replays_mean = (
+            graph_replay_mean * graph_body_nodes_per_replay_mean
+        )
     reason = (
         "candidate reports strict true-fused Tile LM-head backward but failed candidate/reference parity gates"
         if strict_true_fused_but_slow
@@ -3533,16 +3571,34 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "symbol_available": symbol_available,
         "graph_wrapper_active": graph_wrapper_active,
         "true_fused_launch_mean": true_fused_launch_mean,
-        "graph_replay_mean": _metric_mean(metrics, "lm_head_fused_graph_replay_count"),
-        "graph_replay_success_mean": _metric_mean(
-            metrics,
-            "lm_head_fused_graph_replay_success_count",
+        "graph_replay_mean": graph_replay_mean,
+        "graph_replay_success_mean": graph_replay_success_mean,
+        "graph_replay_success_rate": _safe_ratio(
+            graph_replay_success_mean,
+            graph_replay_mean,
         ),
-        "graph_fallback_mean": _metric_mean(metrics, "lm_head_fused_graph_fallback_count"),
-        "graph_body_nodes_per_replay_mean": _metric_mean(
-            metrics,
-            "lm_head_fused_graph_body_node_count_per_replay",
+        "graph_fallback_mean": graph_fallback_mean,
+        "graph_fallback_per_replay_mean": _safe_ratio(
+            graph_fallback_mean,
+            graph_replay_mean,
         ),
+        "graph_capture_success_mean": graph_capture_success_mean,
+        "graph_capture_success_per_replay_mean": _safe_ratio(
+            graph_capture_success_mean,
+            graph_replay_mean,
+        ),
+        "graph_upload_success_mean": graph_upload_success_mean,
+        "graph_upload_success_per_replay_mean": _safe_ratio(
+            graph_upload_success_mean,
+            graph_replay_mean,
+        ),
+        "graph_prewarm_success_mean": graph_prewarm_success_mean,
+        "graph_prewarm_success_per_replay_mean": _safe_ratio(
+            graph_prewarm_success_mean,
+            graph_replay_mean,
+        ),
+        "graph_body_nodes_per_replay_mean": graph_body_nodes_per_replay_mean,
+        "graph_body_total_node_replays_mean": graph_body_total_node_replays_mean,
         "graph_body_ce_nodes_per_replay_mean": _metric_mean(
             metrics,
             "lm_head_fused_graph_body_ce_node_count_per_replay",
@@ -3672,8 +3728,14 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
     for key in (
         "graph_replay_mean",
         "graph_replay_success_mean",
+        "graph_replay_success_rate",
         "graph_fallback_mean",
+        "graph_fallback_per_replay_mean",
+        "graph_capture_success_per_replay_mean",
+        "graph_upload_success_per_replay_mean",
+        "graph_prewarm_success_per_replay_mean",
         "graph_body_nodes_per_replay_mean",
+        "graph_body_total_node_replays_mean",
         "graph_body_ce_nodes_per_replay_mean",
         "graph_body_dhidden_nodes_per_replay_mean",
         "graph_body_dweight_nodes_per_replay_mean",
