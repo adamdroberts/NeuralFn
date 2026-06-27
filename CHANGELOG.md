@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the CUDA 13.3.33 dedicated RTX 5090 validation and parity evidence
+  after the latest WSL toolkit reinstall. `tools/validate_sm120_cuda13.sh`
+  passed on the linked native trainer with Tile-op symbol checks, Tile CUDA
+  fill smoke, cached TinyStories transformer-LM smoke, and
+  `tests/test_native_gpt2.py` (`100 passed`, `1 skipped`). The paired
+  llm.kittens checks now show the default linked native path at parity rather
+  than the older slower status: a 3-step, one-sample stage-timed run measured
+  NeuralFn at `2450.513 ms/step` versus llm.kittens at `2445.303 ms/step`
+  (`1.002131x`), and a 5-step, 3-sample run without stage timing measured
+  NeuralFn at `2469.107 ms/step` and `212339` tokens/sec versus llm.kittens at
+  `2485.735 ms/step` and `210605` tokens/sec (`0.993312x` train-loop wall
+  time, `1.008248x` tokens/sec). The runtime contract still reports
+  `graph_editor_tensor_flow=false` and `torch_required=false`.
+
+  Verification: ran
+  `CUDA_VISIBLE_DEVICES= NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES=dedicated NFN_SM120_CUDA13_RUN_BENCH=0 bash tools/validate_sm120_cuda13.sh`,
+  then ran the two paired parity checks above and stored their JSON at
+  `/tmp/nfn_current_parity_3step_1sample.json` and
+  `/tmp/nfn_current_parity_5step_3sample.json`. No runtime defaults changed:
+  the LM-head classifier backward path still reports
+  `diagnostic-cuda-graph-wrapper`, `graph_body_nodes_per_replay_mean=3`, and
+  `true_fused_capability=false`, so the strict true-fused LM-head Tile kernel
+  remains the next single-kernel target.
+
 - Added a promoted-route contract check to the CUDA 13.3 SM120 health gate.
   When `NFN_SM120_CUDA13_RUN_BENCH=1`, `tools/validate_sm120_cuda13.sh` now
   parses the paired benchmark JSON and fails if dense GPT training no longer

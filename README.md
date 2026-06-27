@@ -87,11 +87,17 @@ green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass.
-The post-reinstall paired llm.kittens parity check on the display-disabled RTX
-5090 used 3 optimizer steps, one interleaved sample, and stage timing with the
-selected GPU idle before and after the run. It measured llm.kittens at
-`213188.666667` tokens/sec and NeuralFn native GPT at `208073` tokens/sec,
-or `1.023900x` NeuralFn train-loop wall time versus the llm.kittens step log.
+The current post-reinstall paired llm.kittens parity checks on the
+display-disabled RTX 5090 keep the selected GPU idle before and after each
+sample. A stage-timed 3-step, one-sample check measured NeuralFn at
+`2450.513 ms/step` versus llm.kittens at `2445.303 ms/step`
+(`1.002131x`). A stronger 5-step, 3-sample check without stage timing measured
+NeuralFn at `2469.107 ms/step` and `212339` tokens/sec versus llm.kittens at
+`2485.735 ms/step` and `210605` tokens/sec (`0.993312x` train-loop wall time,
+`1.008248x` tokens/sec). The same JSON still reports the LM-head classifier
+backward path as `diagnostic-cuda-graph-wrapper` with
+`true_fused_capability=false`, so strict true-fused LM-head work remains
+separate from current throughput parity.
 The same CUDA 13.3.33 recheck left both `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` rejected: the former missed train-loop,
 steady-state, LM-head, and MLP-projection gates, while the latter improved
@@ -219,21 +225,17 @@ tokens/sec versus scratch recompute while changing
 `full-forward-tape-bf16-stored-packed-attention-and-mlp-direct-backward`.
 Interrupting a paired benchmark with Ctrl-C now
 terminates the active child process group and exits with a concise interruption
-message instead of printing a Python traceback. The
-current CUDA 13.3.33 rebuilt 5-step, 3-sample parity refresh on the dedicated
-RTX 5090 measured NeuralFn at `2525.500 ms/step` versus llm.kittens at
-`2465.055 ms/step` (`1.024520x` train-loop wall time, `0.975643x`
-tokens/sec) with no compute processes on the selected GPU. The same run
-measured the NeuralFn steady-state CUDA-event slice slower at `1.014749x`, and
-the first-step CUDA-event slice slower at `1.061982x`. Native setup was
-`634.259 ms`, dominated by float arena materialization (`265.065 ms`), token
-weight initialization (`158.416 ms`), uint16 arena materialization
-(`124.713 ms`), and cuBLASLt plan prewarm (`74.021 ms`). The remaining parity
-gap is native kernel throughput in block backward, model forward, and LM-head
-internals plus first-step prewarm effects, not Torch, Python, graph-editor
-execution, or external GPU load. The rebuilt JSON confirmed the selected GPU
-was idle before and after every sample and reported the promoted default route
-with `block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
+message instead of printing a Python traceback. The current CUDA 13.3.33
+5-step, 3-sample parity refresh on the dedicated RTX 5090 measured NeuralFn
+faster than the llm.kittens step log (`0.993312x` train-loop wall time and
+`1.008248x` tokens/sec) with no compute processes on the selected GPU. The
+remaining strict target is the LM-head classifier backward body: the JSON still
+reports `diagnostic-cuda-graph-wrapper`, `graph_body_nodes_per_replay=3`, and
+`true_fused_capability=false`, so a bounded true-fused Tile kernel must replace
+the wrapper before the strict single-kernel gate can pass. The rebuilt JSON
+confirmed the selected GPU was idle before and after every sample and reported
+the promoted default route with
+`block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
 `block_backward_qkv_dinput_before_dweight_count=480`.
 The diagnostic `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_corrections`
 profile is available for reproducing the probability-only LM-head CE route. It

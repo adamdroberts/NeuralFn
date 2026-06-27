@@ -2460,7 +2460,22 @@ out at 360s while the safe 32768-row baseline completed. The promoted 49152-row
 LM-head chunk route is no longer the default: the 2026-06-24 confirmation
 regressed train-loop wall to `1.012983x` and block backward to `1.025087x`
 versus 32768 rows. The 16384-row candidate regressed at `1.008471x`. The
-historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
+current dedicated RTX 5090 parity refresh after the CUDA 13.3.33 reinstall
+shows the default linked native path is now within measurement noise or ahead
+of the llm.kittens step log. A 3-step, one-sample stage-timed run measured
+NeuralFn at `2450.513 ms/step` versus llm.kittens at `2445.303 ms/step`
+(`1.002131x`). A stronger 5-step, 3-sample run without stage timing measured
+NeuralFn at `2469.107 ms/step` and `212339` tokens/sec versus llm.kittens at
+`2485.735 ms/step` and `210605` tokens/sec (`0.993312x` train-loop wall time,
+`1.008248x` tokens/sec). Both runs kept
+`graph_editor_tensor_flow=false` and `torch_required=false`. The strict
+single-kernel LM-head target is still open: the same JSON reports
+`lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,
+`graph_body_nodes_per_replay_mean: 3`, and `true_fused_capability: false`, so
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still needs
+a bounded true-fused Tile body before `--require-native-lm-head-true-fused`
+can become a production gate.
+The historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
 is rejected by default for real candidate-wrapper launches after the CUDA
 13.3 dedicated RTX 5090 confirmation changed the route but missed strict train-loop,
 steady-state, LM-head, block-backward, and MLP-projection gates. Use
