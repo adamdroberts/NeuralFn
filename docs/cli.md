@@ -583,7 +583,11 @@ route-change gate and printed summaries. The diagnostic
 `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12` and candidate `=6`; it is rejected by
 default because the CUDA 13.3 dedicated RTX 5090 startup-only win came from
 dropping stored MLP activations and the full training gate regressed
-steady-state throughput and MLP projection time. The diagnostic
+steady-state throughput and MLP projection time. The `store_mlp_blocks3` and
+`store_mlp_blocks9` profiles rerun the same 12-block baseline against `=3` and
+`=9`; both are rejected because the setup wall-time improvement is smaller
+than the hot-loop regressions in train-loop wall time, steady-state CUDA-event
+step time, tokens/sec, block backward, and MLP projection backward. The diagnostic
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_blocks6` forces
 baseline `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12` and candidate `=6`;
 it is also rejected by default because the 2-step paired training gate regressed

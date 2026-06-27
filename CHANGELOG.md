@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: the SM120 native candidate wrapper now has explicit rejected
+  `store_mlp_blocks3` and `store_mlp_blocks9` profiles in addition to the older
+  `store_mlp_blocks6` probe. They compare the default 12 stored MLP activation
+  blocks against 3 or 9 stored blocks with the same graph-editor-free,
+  Torch-free runtime contract gates. The 2026-06-27 dedicated RTX 5090 probes
+  improved setup wall time to `0.908060x` and `0.975999x` respectively, but
+  rejected default promotion because train-loop wall time regressed to
+  `1.278677x` / `1.084793x`, steady-state CUDA-event step time to `1.277148x`
+  / `1.082810x`, tokens/sec to `0.782060x` / `0.921834x`, block backward to
+  `1.217694x` / `1.073931x`, and MLP projection backward to `1.458270x` /
+  `1.155027x`. Verification: focused native GPT candidate-wrapper source test
+  and `git diff --check`.
+
 - Native GPT kernels: promoted the no-loss LM-head CE vec8 normal-store
   specialized CUDA Tile kernel to the default for optimizer-step CE+dlogits.
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0` now

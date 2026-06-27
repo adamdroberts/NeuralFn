@@ -3227,9 +3227,13 @@ blocks instead of the default early blocks. Runtime JSON reports
 `stored_mlp_activation_block_start`,
 `stored_packed_attention_block_placement`, and
 `stored_packed_attention_block_start`. The SM120 wrapper profiles
-`store_mlp_blocks6_tail` and `store_packed_attention_blocks6_tail` compare tail
-placement against the same six-block head placement and are diagnostics only
-until same-script training gates prove a win.
+`store_mlp_blocks3`, `store_mlp_blocks6`, and `store_mlp_blocks9` compare
+reduced MLP activation storage against the default 12-block route; all three
+are rejected until same-script training gates prove that the setup win no
+longer comes with hot-loop regressions. `store_mlp_blocks6_tail` and
+`store_packed_attention_blocks6_tail` compare tail placement against the same
+six-block head placement and are diagnostics only until same-script training
+gates prove a win.
 transformer-LM arenas now default to split float and BF16/uint16 device arenas
 (`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`); runtime JSON reports
 `float_allocation_strategy: "single-arena"` and
