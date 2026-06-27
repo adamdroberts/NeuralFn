@@ -680,6 +680,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
+    - 2026-06-27 wired strict SM120 true-fused LM-head full-loop candidate
+      profiles through the focused `tools/bench_lm_head_backward_candidate.sh`
+      preflight. `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto` selects the
+      matching trainer-chunk profile, and the SM120 `*_GAP_MS` aliases forward
+      to the focused absolute-gap gates so a known-slow strict body fails before
+      the expensive llm.kittens/native paired run.
     - 2026-06-27 extended `build/lm_head_backward_bench` JSON with
       `candidate_reference_gap`: absolute candidate-minus-reference timings for
       generic and cuBLASLt reference component paths plus the current
