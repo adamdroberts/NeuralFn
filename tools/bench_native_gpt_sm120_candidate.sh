@@ -514,11 +514,14 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
     ;;
   "lm_head_ce_no_loss_vec8_normal_store_specialized"|"lm-head-ce-no-loss-vec8-normal-store-specialized"|"ce_bf16_no_loss_vec8_normal_store_specialized"|"ce-bf16-no-loss-vec8-normal-store-specialized")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate selected the new no-loss CE vec8 normal-store specialized kernel and changed lm_head_ce_kernel_strategy to no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores, but rejected default promotion because steady-state CUDA-event timing regressed to 1.001139x; the CUDA Graph LM-head wrapper hides a separate CE stage submetric, so rerun only after replacing the wrapper or adding finer graph-body timing."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    DEFAULT_VS_LEGACY_PROFILE=1
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-step, 2-sample stage-timed rerun promoted the no-loss CE vec8 normal-store specialized kernel as the default. It changed lm_head_ce_kernel_strategy to no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores and measured train_loop_wall_ms_per_step=0.999856x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.999483x, stage.lm_head_backward.total_ms=0.999986x, train_tokens_per_second=1.000147x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.999042x, and candidate-over-llm.kittens train_tokens_per_second=1.001246x. Promoted-default reruns stayed inside a 0.1% same-script jitter band: one measured train_loop_wall_ms_per_step=0.999826x, steady-state CUDA-event step time=0.999545x, train_tokens_per_second=1.000173x, and LM-head total=1.000553x; another measured train_loop_wall_ms_per_step=1.000254x, steady-state CUDA-event step time=1.000304x, train_tokens_per_second=0.999745x, LM-head total=1.000629x, and candidate-over-llm.kittens train_loop_wall_ms_per_step=0.999702x. This default-vs-legacy profile therefore gates full-loop and graph-wrapper LM-head ratios at 0.1% instead of exact zero-jitter. The CUDA Graph LM-head wrapper does not emit stage.lm_head_backward.ce.total_ms."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.001 train_loop_cuda_event_steady_state_wall_ms_per_step=1.001 stage.lm_head_backward.total_ms=1.001}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.999}"
     ;;
   "lm_head_ce_llmk_style_specialized"|"lm-head-ce-llmk-style-specialized"|"ce_bf16_llmk_style_specialized"|"ce-bf16-llmk-style-specialized")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

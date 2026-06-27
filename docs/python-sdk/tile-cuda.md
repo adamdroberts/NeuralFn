@@ -534,6 +534,24 @@ RTX 5090 rerun measured `0.975099x` train-loop wall, `0.976966x` steady-state
 CUDA-event wall, `1.025547x` tokens/sec, and `0.911191x` LM-head backward
 versus the older generic no-loss CE+dlogits path with the wrapper-compatible
 gate.
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` is now the
+default no-loss CE specialization layered on top of that route. It keeps the
+same 1024-thread, vec8-load classifier shape but writes BF16 dlogits with
+aligned vec8 normal stores and reports
+`lm_head_ce_kernel_strategy:
+"no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`. Set
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0` only for
+scalar-store rollback diagnostics, or use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`
+for the default-vs-legacy same-script gate. The CUDA 13.3.33 dedicated RTX 5090
+3-step, 2-sample rerun measured `0.999856x` native train-loop wall,
+`0.999483x` steady-state CUDA-event wall, `0.999986x` LM-head backward,
+`1.000147x` tokens/sec, `0.999042x` candidate-over-llm.kittens train-loop wall,
+and `1.001246x` candidate-over-llm.kittens tokens/sec. Repeated
+promoted-default runs stayed inside a `0.1%` same-script jitter band, so the
+profile gates full-loop, tokens/sec, and CUDA Graph wrapper aggregate LM-head
+ratios at `0.1%` instead of requiring the standalone graph-internal CE substage
+metric that the wrapper does not emit.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and

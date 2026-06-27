@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT kernels: promoted the no-loss LM-head CE vec8 normal-store
+  specialized CUDA Tile kernel to the default for optimizer-step CE+dlogits.
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0` now
+  reproduces the older scalar-store specialized route, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`
+  is an accepted default-vs-legacy gate. The CUDA 13.3.33 dedicated RTX 5090
+  rerun measured `0.999856x` native train-loop wall, `0.999483x` steady-state
+  CUDA-event wall, `0.999986x` LM-head backward, `1.000147x` tokens/sec,
+  `0.999042x` candidate-over-llm.kittens train-loop wall, and `1.001246x`
+  candidate-over-llm.kittens tokens/sec. Promoted-default reruns stayed inside
+  a `0.1%` same-script jitter band: one measured `0.999826x` train-loop wall,
+  `0.999545x` steady-state CUDA-event wall, `1.000173x` tokens/sec, and
+  `1.000553x` LM-head aggregate; another measured `1.000254x` train-loop wall,
+  `1.000304x` steady-state CUDA-event wall, `0.999745x` tokens/sec,
+  `1.000629x` LM-head aggregate, and `0.999702x`
+  candidate-over-llm.kittens train-loop wall. The accepted profile therefore
+  uses a tight `0.1%` default-vs-legacy gate for full-loop, tokens/sec, and
+  graph-wrapper LM-head aggregate ratios instead of requiring the missing
+  graph-internal CE substage. Verification: rebuilt Tile ops and the linked
+  native GPT CLI, reran the accepted same-script profile, focused native GPT
+  source tests, the no-Torch verifier, and `git diff --check`.
+
 - Bench: the canonical `tools/bench_native_gpt_sm120_parity.sh` llm.kittens
   comparison now defaults to an explicit `1.003` workstation parity band for
   train-loop wall time and CUDA-event steady-state time instead of an exact

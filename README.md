@@ -3621,20 +3621,26 @@ dedicated RTX 5090 rerun measured the default-specialized route at `0.975099x`
 train-loop wall, `0.976966x` steady-state CUDA-event wall, `1.025547x`
 tokens/sec, and `0.911191x` LM-head backward versus the older generic no-loss
 CE+dlogits kernel.
-`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` is a
-separate opt-in CUDA Tile kernel candidate for the same no-loss CE+dlogits path.
-It keeps vec8 BF16 loads but writes aligned vec8 BF16 gradients with normal
-stores instead of scalar stores, and reports
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` is now the
+default CUDA Tile kernel for the same no-loss CE+dlogits path. It keeps vec8
+BF16 loads but writes aligned vec8 BF16 gradients with normal stores instead of
+scalar stores, and reports
 `lm_head_ce_kernel_strategy:
 "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`. The matching
 same-script profile is
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`.
-It is rejected by default: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
-stage-timed gate selected the new kernel but regressed steady-state CUDA-event
-timing to `1.001139x`; rerun it only with
-`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` when investigating
-LM-head CE store strategies after the CUDA Graph wrapper is replaced or gains
-finer graph-body timing.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`,
+which compares the default against
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0`.
+Set that env var to `0` only for scalar-store rollback diagnostics. A CUDA
+13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed rerun measured
+`0.999856x` native train-loop wall, `0.999483x` steady-state CUDA-event wall,
+`0.999986x` LM-head backward, `1.000147x` tokens/sec,
+`0.999042x` candidate-over-llm.kittens train-loop wall, and `1.001246x`
+candidate-over-llm.kittens tokens/sec. Repeated promoted-default runs stayed
+inside a `0.1%` same-script jitter band, so the profile gates full-loop,
+tokens/sec, and CUDA Graph wrapper aggregate LM-head ratios at `0.1%` instead
+of requiring a standalone graph-internal CE substage metric that the wrapper
+does not emit.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,

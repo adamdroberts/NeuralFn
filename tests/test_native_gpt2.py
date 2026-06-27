@@ -9559,6 +9559,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in kernels_text
     assert "lm_head_ce_no_loss_vec8_normal_store_specialized_enabled" in kernels_text
+    no_loss_normal_store_body = kernels_text.split(
+        "bool lm_head_ce_no_loss_vec8_normal_store_specialized_enabled()", 1
+    )[1].split("bool lm_head_ce_llmk_style_specialized_enabled()", 1)[0]
+    assert "if (raw == nullptr) {\n      return true;\n    }" in no_loss_normal_store_body
     assert "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in kernels_text
     assert "lm_head_prob_only_target_correction_threads()" in kernels_text
     prob_only_thread_body = kernels_text.split(
@@ -9596,6 +9600,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED" in gpt2_source_text
     assert "lm_head_ce_no_loss_vec8_normal_store_specialized_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED" in gpt2_source_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED",\n'
+        '                              "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED",\n'
+        '                              "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED"}),\n'
+        "            true);"
+    ) in gpt2_source_text
     assert "lm_head_ce_no_loss_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bins_default_specialized_enabled" in gpt2_source_text

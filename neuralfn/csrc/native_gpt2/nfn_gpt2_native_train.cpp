@@ -12968,7 +12968,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED",
                               "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED",
                               "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED"}),
-            false);
+            true);
     const bool lm_head_ce_no_loss_vec8_normal_store_specialized_enabled =
         lm_head_ce_no_loss_vec8_normal_store_specialized_requested &&
         lm_head_ce_bf16_vec_loads_enabled &&

@@ -2026,6 +2026,23 @@ it at `1.020535x` train-loop wall, `1.026691x` steady-state CUDA-event wall,
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`; it is also rejected because its
 `0.999055x` CE bucket was outweighed by `1.009078x` total LM-head backward and
 `1.024165x` LM-head logits.
+`lm_head_ce_no_loss_vec8_normal_store_specialized` is the accepted
+default-vs-legacy profile for the no-loss optimizer-step CE specialization. The
+baseline forces
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0`; the
+candidate uses the default normal-store specialized kernel and reports
+`lm_head_ce_kernel_strategy:
+"no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`. Set that env var
+to `0` only when comparing against the older scalar-store specialized route.
+The CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample rerun measured
+`0.999856x` native train-loop wall, `0.999483x` steady-state CUDA-event wall,
+`0.999986x` LM-head backward, `1.000147x` tokens/sec,
+`0.999042x` candidate-over-llm.kittens train-loop wall, and `1.001246x`
+candidate-over-llm.kittens tokens/sec. Repeated promoted-default runs stayed
+inside a `0.1%` same-script jitter band, so the profile gates full-loop,
+tokens/sec, and CUDA Graph wrapper aggregate LM-head ratios at `0.1%` instead
+of requiring the standalone graph-internal CE substage metric that the wrapper
+does not emit.
 `lm_head_ce_default_specialized` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`. It selects a default-shape
 row-loss CE kernel only when the current dense GPT CE defaults are otherwise
