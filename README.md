@@ -678,6 +678,16 @@ reproduction. The CUDA 13.3.33 dedicated RTX 5090 7-sample startup gate rejected
 it: `arena_materialize_order` changed to `uint16-then-float`, but setup wall
 regressed to `1.013035x` mean / `1.010524x` median, uint16 arena materialization
 regressed to `2.369884x`, and token-weight init regressed to `1.135714x`.
+Host descriptor-vector pre-reservation is also diagnostic-only behind
+`NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1`. Runtime JSON reports
+`host_descriptor_reserve_enabled` and `host_descriptor_reserve_count`, and the
+paired wrapper exposes
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=host_descriptor_reserve` to compare it
+against the default push-only descriptor setup. CUDA 13.3.33 dedicated RTX 5090
+startup-only reruns rejected it as a default: one 3-sample run improved setup
+wall to `0.980086x`, but the immediate rerun regressed setup wall to
+`1.016598x`, so the profile stays opt-in and requires
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real launches.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern,
 including the final dlogit write pass when scalar stores are selected; set

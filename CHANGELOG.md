@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a rejected SM120 startup candidate profile for host descriptor-vector
+  pre-reservation. The native dense GPT trainer can now opt into
+  `NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1` and reports
+  `host_descriptor_reserve_enabled` / `host_descriptor_reserve_count` in runtime
+  JSON, but the default remains the legacy push-only descriptor setup because
+  paired startup measurements were not robust: one 3-sample dedicated RTX 5090
+  run improved setup wall to `0.980086x`, while the immediate rerun regressed
+  setup wall to `1.016598x`. The
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=host_descriptor_reserve` profile is
+  therefore rejected unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
+  Verification: rebuilt native GPT artifacts with
+  `python tools/check_native_no_torch_deps.py --rebuild-stale --json`, ran the
+  paired startup profile twice on the dedicated GPU, and kept the second JSON at
+  `/tmp/nfn_host_descriptor_reserve_startup.json`.
+
 - Refreshed the rejected SM120 `lm_head_true_fused_cooperative` profile after
   the CUDA Toolkit 13.3 WSL reinstall. A dedicated RTX 5090 one-step
   stage-timed rerun still proved the strict route

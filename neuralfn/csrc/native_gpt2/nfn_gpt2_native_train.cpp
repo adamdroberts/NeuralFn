@@ -15692,10 +15692,60 @@ int run_transformer_lm_training_json(
     ParameterFillDescriptorHost parameter_fill_host;
     Bf16ParameterFillDescriptorHost bf16_parameter_fill_host;
     Bf16ShadowDescriptorHost block_weight_bf16_host;
+    const bool host_descriptor_reserve_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE",
+                              "NFN_NATIVE_GPT2_HOST_DESCRIPTOR_RESERVE"}),
+            false);
+    std::int64_t host_descriptor_reserve_count = 0;
+    auto reserve_vector = [&](auto& values, std::size_t count) {
+        if (!host_descriptor_reserve_enabled || count == 0) {
+            return;
+        }
+        values.reserve(count);
+        host_descriptor_reserve_count += 1;
+    };
+    auto reserve_adamw_host = [&](AdamWDescriptorHost& host, std::size_t count) {
+        reserve_vector(host.params, count);
+        reserve_vector(host.grads, count);
+        reserve_vector(host.avgs, count);
+        reserve_vector(host.avg_sqs, count);
+        reserve_vector(host.elements, count);
+        reserve_vector(host.partial_offsets, count);
+        reserve_vector(host.bf16_shadow_offsets, count);
+        reserve_vector(host.decays, count);
+    };
+    auto reserve_bf16_param_host = [&](AdamWBf16ParamDescriptorHost& host, std::size_t count) {
+        reserve_vector(host.params, count);
+        reserve_vector(host.grads, count);
+        reserve_vector(host.avgs, count);
+        reserve_vector(host.avg_sqs, count);
+        reserve_vector(host.elements, count);
+        reserve_vector(host.partial_offsets, count);
+        reserve_vector(host.decays, count);
+    };
+    auto reserve_bf16_param_bf16_grad_host =
+        [&](AdamWBf16ParamBf16GradDescriptorHost& host, std::size_t count) {
+        reserve_vector(host.params, count);
+        reserve_vector(host.grads, count);
+        reserve_vector(host.avgs, count);
+        reserve_vector(host.avg_sqs, count);
+        reserve_vector(host.elements, count);
+        reserve_vector(host.partial_offsets, count);
+        reserve_vector(host.decays, count);
+    };
     auto build_adamw_descriptors = [&]() {
         if (!error.empty()) {
             return;
         }
+        const std::size_t adamw_expected_descriptor_count =
+            static_cast<std::size_t>(4 + trained_layers * 12);
+        reserve_adamw_host(adamw_host, adamw_expected_descriptor_count);
+        reserve_adamw_host(adamw_float_update_host, adamw_expected_descriptor_count);
+        reserve_bf16_param_host(adamw_bf16_param_host, adamw_expected_descriptor_count);
+        reserve_bf16_param_bf16_grad_host(
+            adamw_bf16_param_bf16_grad_host,
+            adamw_expected_descriptor_count);
         std::int64_t partial_offset = 0;
         auto add = [&](float* param,
                        float* grad,
@@ -15864,6 +15914,7 @@ int run_transformer_lm_training_json(
         if (!error.empty() || spans.empty()) {
             return;
         }
+        reserve_vector(ranges, spans.size());
         std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) {
             return a.begin < b.begin;
         });
@@ -15907,7 +15958,7 @@ int run_transformer_lm_training_json(
             return;
         }
         std::vector<std::pair<float*, std::int64_t>> buffers;
-        buffers.reserve(adamw_host.elements.size() * 2);
+        reserve_vector(buffers, adamw_host.elements.size() * 2);
         for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
             buffers.push_back({adamw_host.avgs[i], adamw_host.elements[i]});
             buffers.push_back({adamw_host.avg_sqs[i], adamw_host.elements[i]});
@@ -15933,7 +15984,9 @@ int run_transformer_lm_training_json(
                 error = "split gradient zero range descriptor size mismatch";
                 return;
             }
-            buffers.reserve(adamw_float_update_host.elements.size() + adamw_bf16_param_host.elements.size());
+            reserve_vector(
+                buffers,
+                adamw_float_update_host.elements.size() + adamw_bf16_param_host.elements.size());
             for (std::size_t i = 0; i < adamw_float_update_host.elements.size(); ++i) {
                 buffers.push_back({adamw_float_update_host.grads[i], adamw_float_update_host.elements[i]});
             }
@@ -15941,7 +15994,7 @@ int run_transformer_lm_training_json(
                 buffers.push_back({adamw_bf16_param_host.grads[i], adamw_bf16_param_host.elements[i]});
             }
         } else {
-            buffers.reserve(adamw_host.elements.size());
+            reserve_vector(buffers, adamw_host.elements.size());
             for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
                 buffers.push_back({adamw_host.grads[i], adamw_host.elements[i]});
             }
@@ -15955,6 +16008,24 @@ int run_transformer_lm_training_json(
         if (!error.empty()) {
             return;
         }
+        reserve_vector(
+            parameter_fill_host.ptrs,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_parameter_fill_buffer_count, 0)));
+        reserve_vector(
+            parameter_fill_host.elements,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_parameter_fill_buffer_count, 0)));
+        reserve_vector(
+            parameter_fill_host.values,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_parameter_fill_buffer_count, 0)));
+        reserve_vector(
+            bf16_parameter_fill_host.ptrs,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_bf16_parameter_fill_buffer_count, 0)));
+        reserve_vector(
+            bf16_parameter_fill_host.elements,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_bf16_parameter_fill_buffer_count, 0)));
+        reserve_vector(
+            bf16_parameter_fill_host.values,
+            static_cast<std::size_t>(std::max<std::int64_t>(nonzero_bf16_parameter_fill_buffer_count, 0)));
         auto add = [&](float* ptr, std::int64_t elements, float value, const std::string& name) {
             if (!error.empty()) {
                 return;
@@ -16053,6 +16124,11 @@ int run_transformer_lm_training_json(
             error = "block BF16 weight arena was not allocated";
             return;
         }
+        const std::size_t block_bf16_descriptor_expected_count =
+            static_cast<std::size_t>(std::max<std::int64_t>(trained_layers, 0) * 4);
+        reserve_vector(block_weight_bf16_host.sources, block_bf16_descriptor_expected_count);
+        reserve_vector(block_weight_bf16_host.elements, block_bf16_descriptor_expected_count);
+        reserve_vector(block_weight_bf16_host.offsets, block_bf16_descriptor_expected_count);
         std::int64_t offset = 0;
         auto add = [&](const float* source, std::int64_t elements, const std::string& name) {
             if (!error.empty()) {
@@ -16104,6 +16180,7 @@ int run_transformer_lm_training_json(
         };
         constexpr std::size_t kDescriptorArenaAlignmentBytes = 16;
         std::vector<DescriptorArenaRequest> requests;
+        reserve_vector(requests, bf16_block_weight_param_update_enabled ? 40 : 19);
         auto align_descriptor_offset = [](std::size_t value) {
             return ((value + kDescriptorArenaAlignmentBytes - 1) / kDescriptorArenaAlignmentBytes) *
                    kDescriptorArenaAlignmentBytes;
@@ -22276,6 +22353,10 @@ int run_transformer_lm_training_json(
         << "    \"setup_timing_accounted_ms\": " << setup_timing_accounted_ms << ",\n"
         << "    \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
         << "    \"setup_timing_record_count\": " << setup_timing_records.size() << ",\n"
+        << "    \"host_descriptor_reserve_enabled\": "
+        << (host_descriptor_reserve_enabled ? "true" : "false") << ",\n"
+        << "    \"host_descriptor_reserve_count\": "
+        << host_descriptor_reserve_count << ",\n"
         << setup_cuda_timing_json.str()
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
         << "    \"train_loop_cuda_event_timing_requested\": "

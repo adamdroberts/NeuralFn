@@ -1017,6 +1017,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms at 0.976989x" in candidate_bench
     assert "DEFAULT_VS_LEGACY_PROFILE=1" in candidate_bench
     assert "setup.token_weight_init.total_ms=1.000" in candidate_bench
+    assert "host_descriptor_reserve" in candidate_bench
+    assert "NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1" in candidate_bench
+    assert "setup_wall_ms to 1.016598x" in candidate_bench
+    assert "keep it diagnostic-only" in candidate_bench
+    assert "host_descriptor_reserve_enabled" in source
+    assert "host_descriptor_reserve_count" in source
+    assert "NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE" in source
+    assert "false);" in source[source.index("NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE") :]
     assert "token_weight_fast_int32" in candidate_bench
     assert "setup_wall_ms regressed to 1.014148x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 0.960426x" in candidate_bench
