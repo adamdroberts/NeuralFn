@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reduced LM-head CUDA Graph replay profiler overhead in the native Tile ops
+  runtime by moving replay/cache/fallback hot-path increments to current-thread
+  local counters. Exported profiler count functions still include those local
+  values for the native single-thread trainer, while cold capture/upload
+  counters remain atomic and reset semantics remain unchanged.
+
+  Verification: rebuilt the Tile ops shared library and reran the focused
+  native GPT source-contract test to assert the local replay counters and reset
+  wiring. A dedicated RTX 5090 paired 10-step, 2-sample run comparing the
+  existing dynamic Tile ops library against the local-counter candidate passed
+  the runtime contract with no graph-editor tensor flow and no Torch
+  requirement; it measured `1.001317x` train-loop wall time and `1.001335x`
+  steady-state CUDA-event timing, so this is a profiler semantics cleanup rather
+  than a throughput parity fix.
+
 - Fixed LM-head CUDA Graph profiler reset semantics in the native Tile ops
   runtime: `reset_lm_head_cooperative_sequence_stats()` now clears graph-upload
   success/failure counters along with capture/cache/replay counters. Profile

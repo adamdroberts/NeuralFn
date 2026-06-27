@@ -2024,6 +2024,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_fused_graph_upload_failure_count" in tile_ops_header
     assert "g_lm_head_fused_graph_upload_success_count.store(0, std::memory_order_relaxed)" in tile_ops_source
     assert "g_lm_head_fused_graph_upload_failure_count.store(0, std::memory_order_relaxed)" in tile_ops_source
+    assert "struct LmHeadGraphLocalStats" in tile_ops_source
+    assert "thread_local LmHeadGraphLocalStats stats" in tile_ops_source
+    assert "reset_lm_head_graph_local_stats()" in tile_ops_source
+    assert "LmHeadGraphLocalStats& stats = lm_head_graph_local_stats()" in tile_ops_source
+    assert "stats.replay_count += 1" in tile_ops_source
+    assert "stats.replay_success_count += 1" in tile_ops_source
+    assert "lm_head_graph_local_stats().fallback_count += 1" in tile_ops_source
     assert "nfn_native_tile_lm_head_fused_graph_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_entry_count" in tile_ops_header
@@ -2093,7 +2100,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         1,
     )[0]
     assert "g_lm_head_cooperative_sequence_launch_count.fetch_add" not in strict_fused_body
-    assert "g_lm_head_fused_graph_fallback_count.fetch_add" in strict_fused_body
+    assert "g_lm_head_fused_graph_fallback_count.fetch_add" not in strict_fused_body
+    assert "lm_head_graph_local_stats().fallback_count += 1" in strict_fused_body
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL" in tile_ops_source
     assert "diagnostic-cuda-graph-wrapper-serial-body" in tile_ops_source
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
