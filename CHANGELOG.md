@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned `tools/bench_native_gpt_sm120_parity.sh` with the native SM120
+  benchmark command surface. The llm.kittens parity wrapper now accepts
+  `NFN_SM120_NATIVE_*` aliases for shared controls such as steps, samples,
+  warmup, selected GPU policy, JSON output, native profile sidecar directory,
+  train-loop/setup/attention timing toggles, and candidate env injection. It
+  also rejects native candidate profile aliases instead of silently ignoring
+  them in a native-vs-llm.kittens comparison.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_parity.sh` and a dry
+  plan with `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`,
+  `NFN_SM120_NATIVE_STEPS=7`, `NFN_SM120_NATIVE_SAMPLES=2`,
+  `NFN_SM120_NATIVE_WARMUP=1`, `NFN_SM120_NATIVE_STAGE_TIMING=1`,
+  `NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_parity_alias_dry_run.json`, and
+  `NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_parity_alias_profiles`; the emitted
+  plan resolved `samples=2`, `warmup=1`, `-x 7`, and the requested profile
+  sidecar directory.
+
 - Corrected the SM120 paired benchmark profiles for legacy LM-head serial
   scheduling probes. `lm_head_concurrent_dhidden_dweight`,
   `lm_head_dweight_before_dhidden`, and `lm_head_pipeline_chunks` now force

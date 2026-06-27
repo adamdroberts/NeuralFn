@@ -758,10 +758,16 @@ Both SM120 benchmark wrappers accept generic `NFN_SM120_*` fallbacks for shared
 controls such as steps, samples, warmup, GPU selection, profile directory, and
 JSON output. Wrapper-specific aliases still take precedence, so
 `NFN_SM120_NATIVE_STEPS` or `NFN_SM120_PARITY_STEPS` override
-`NFN_SM120_STEPS` when both are present. The native candidate wrapper also
-accepts explicit `NFN_SM120_NATIVE_CANDIDATE_*` common-shape aliases between
-the canonical native names and the short `NFN_SM120_CANDIDATE_*` names; for
-example, `NFN_SM120_NATIVE_CANDIDATE_STEPS=5`,
+`NFN_SM120_STEPS` when both are present. The llm.kittens parity wrapper accepts
+the same canonical `NFN_SM120_NATIVE_*` shape/output/timing aliases as the
+native candidate wrapper, including `NFN_SM120_NATIVE_SAMPLES`,
+`NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_JSON_OUT`,
+`NFN_SM120_NATIVE_PROFILE_DIR`, and `NFN_SM120_NATIVE_STAGE_TIMING`, so parity
+evidence and native-vs-native bisection can be rerun with one command surface.
+The native candidate wrapper also accepts explicit
+`NFN_SM120_NATIVE_CANDIDATE_*` common-shape aliases between the canonical native
+names and the short `NFN_SM120_CANDIDATE_*` names; for example,
+`NFN_SM120_NATIVE_CANDIDATE_STEPS=5`,
 `NFN_SM120_NATIVE_CANDIDATE_SAMPLES=1`,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, and
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` now affect the paired

@@ -2196,8 +2196,12 @@ canonical native names and the short `NFN_SM120_CANDIDATE_*` aliases, so
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` affect the paired workload
 instead of being ignored. Generic `NFN_SM120_*` aliases are accepted as
 lowest-priority fallbacks for shared shape/output controls, while
-native-specific names still win over candidate and parity aliases. Set candidate-only
-CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
+native-specific names still win over candidate and parity aliases. The
+llm.kittens parity wrapper accepts the same `NFN_SM120_NATIVE_*` controls for
+steps, samples, warmup, GPU selection, JSON output, profile sidecars, and timing
+toggles, so parity reruns use the same command surface as native-vs-native
+candidate bisection. Set candidate-only CLI flags with
+`NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short
 `NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or
 `NFN_SM120_COMMON_EXTRA_ARGS` only when both commands must receive the same
