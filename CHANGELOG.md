@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native guard: extended `tools/check_native_no_torch_deps.py` stale-artifact
+  mapping to cover `nfn_native_train`, the GPT2-evo delegate, NanoGPT native
+  preflight binary, and placeholder LLaMA/MixLLaMA/JEPA/semantic-router/DeepSeek
+  native binaries. These optional compiled entrypoints now fail the artifact
+  scan when their C++ sources or build scripts are newer than the binary, and
+  `--rebuild-stale` routes them through the registered build script.
+  Verification: focused native dependency tests and no-Torch artifact scan.
+
 - Native guard: added focused test coverage proving the no-Torch dependency
   verifier exercises the universal dense GPT route, including GPT3 custom-graph
   `nfn train` handoff, SM120 GPT3 launcher defaults, and generic SDK public

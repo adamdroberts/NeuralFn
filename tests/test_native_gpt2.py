@@ -375,6 +375,14 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
         root / "build" / "lm_head_backward_bench",
         root,
     ) == ("bash", "tools/build_lm_head_backward_bench.sh")
+    assert module.artifact_rebuild_command(
+        root / "build" / "nfn_gpt2_evo_native_train",
+        root,
+    ) == ("bash", "tools/build_native_missing_trainers.sh")
+    assert module.artifact_rebuild_command(
+        root / "build" / "nfn_nanogpt_native_train",
+        root,
+    ) == ("bash", "tools/build_native_missing_trainers.sh")
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
@@ -404,6 +412,37 @@ def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: P
     assert stale_sources
     assert stale_sources[0]["source"] == "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"
     assert stale_sources[0]["exists"] is True
+
+
+def test_native_no_torch_dependency_verifier_maps_optional_family_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    evo_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_gpt2_evo_native_train",
+        root,
+    )
+    nano_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_nanogpt_native_train",
+        root,
+    )
+    llama_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_llama_native_train",
+        root,
+    )
+
+    assert Path("neuralfn/csrc/native_train/gpt2_evo_native_train.cpp") in evo_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in evo_dependencies
+    assert Path("neuralfn/csrc/native_train/nanogpt_native_train.cpp") in nano_dependencies
+    assert Path("neuralfn/csrc/native_train/token_shards.cpp") in nano_dependencies
+    assert Path("neuralfn/csrc/native_train/missing_native_train.cpp") in llama_dependencies
+    assert Path("tools/build_native_missing_trainers.sh") in llama_dependencies
 
 
 def test_native_no_torch_dependency_verifier_maps_sdk_bindings() -> None:

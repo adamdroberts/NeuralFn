@@ -2979,6 +2979,11 @@ inspection path through `resolve_native_gpt_binding_command(config)` and
 `resolve_native_gpt2_binding_command(config)`, backed by `resolve_command` /
 `resolve_native_gpt_command` / `resolve_native_gpt2_command` in the C++
 extension.
+The full artifact scan also checks stale-source mappings for the optional
+per-family binaries built by `tools/build_native_missing_trainers.sh`, including
+the GPT2-evo delegate, NanoGPT native preflight, and placeholder
+LLaMA/MixLLaMA/JEPA/semantic-router/DeepSeek trainers. Use `--rebuild-stale`
+after changing those C++ sources or the shared missing-trainer build script.
 `NativeTrainRunConfig.strict_native_command` defaults to `True`, and the Python
 SDK plus generic C++ binding reject Python/shell launchers (`python`, `bash`,
 `*.py`, `*.sh`) on the native training path. Set
