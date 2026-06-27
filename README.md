@@ -1680,16 +1680,20 @@ kernel.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
 adds a diagnostic no-loss CE/dlogits kernel that mirrors the llm.kittens SM120
 classifier store policy for the current no-loss optimizer-step path: vec8 BF16
-loads plus streaming vec8 stores, with runtime JSON reporting
+loads plus streaming vec8 stores. It expands to
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps
+`--train-loss-every-steps 0`. Runtime JSON reports
 `lm_head_ce_no_loss_llmk_style_specialized_requested`,
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep it
-diagnostic-only. The current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
-same-script recheck proved the route but rejected it because train-loop wall
-regressed to `1.009040x`, `stage.lm_head_backward.total_ms` to `1.001085x`,
-`stage.lm_head_backward.ce.total_ms` to `1.001185x`, and
-`stage.block_backward.total_ms` to `1.018917x`.
+diagnostic-only. The CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step,
+2-sample rerun after rebuilding the native selector proved the route but failed
+the strict default-vs-legacy gate at `1.000256x` train-loop wall and
+`0.999750x` train tokens/sec. A separate parity rerun with the route active
+still failed full-trainer parity at `1.002592x` train-loop wall and `1.002692x`
+steady-state event time, so the next required work remains the true fused
+classifier/dHidden/dWeight Tile kernel.
 Dense GPT training now requests the non-strict cooperative LM-head backward
 route by default. On current CUDA 13.3 RTX 5090 builds this selects the
 diagnostic CUDA Graph/wrapper path when the strict callable symbol is present:

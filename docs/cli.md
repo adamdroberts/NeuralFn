@@ -1104,10 +1104,13 @@ adds a no-loss classifier-store diagnostic for the paired wrapper. It expands
 to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`, keeps
 `--train-loss-every-steps 0`, and reports
 `lm_head_ce_kernel_strategy:
-no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores` when active. The
-current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck rejected it at
-`1.009040x` train-loop wall, `1.001085x` LM-head backward, `1.001185x`
-LM-head CE, and `1.018917x` block backward.
+no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores` when active. Keep
+this route rejected: the CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step,
+2-sample rerun after rebuilding the native selector failed the strict
+default-vs-legacy gate at `1.000256x` train-loop wall and `0.999750x` train
+tokens/sec. A separate parity rerun with the route active still failed
+full-trainer parity at `1.002592x` train-loop wall and `1.002692x`
+steady-state event time.
 Dense GPT training requests the non-strict cooperative LM-head backward route by
 default. On current CUDA 13.3 RTX 5090 builds that route uses the cached CUDA
 Graph wrapper when the strict callable symbol is present, while still reporting

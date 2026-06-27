@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: rechecked and kept rejected the no-loss llm.kittens-style
+  LM-head CE/dlogits store route. The
+  `lm_head_ce_no_loss_llmk_style_specialized` profile remains diagnostic-only
+  and opt-in through `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`.
+  Verification: rebuilt the Tile ops library and linked trainer after the CUDA
+  13.3.33 reinstall, reran the dedicated RTX 5090 5-step, 2-sample
+  default-vs-legacy gate, and confirmed the route was active but failed strict
+  promotion at `1.000256x` train-loop wall and `0.999750x` train tokens/sec. A
+  separate llm.kittens parity rerun with the route active still failed
+  full-trainer parity at `1.002592x` train-loop wall and `1.002692x`
+  steady-state event time, so the next required kernel remains the true fused
+  classifier/dHidden/dWeight Tile kernel.
+
 - Python SDK: exposed the generic compiled GPT launcher on the native training
   path. `neuralfn.native_train.build_native_gpt_launcher_run_config()` builds a
   strict `NativeTrainRunConfig` for `build/nfn_train_gpt`,

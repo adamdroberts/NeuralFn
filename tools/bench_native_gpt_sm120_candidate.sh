@@ -501,7 +501,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_ce_no_loss_llmk_style_specialized"|"lm-head-ce-no-loss-llmk-style-specialized"|"ce_bf16_no_loss_llmk_style_specialized"|"ce-bf16-no-loss-llmk-style-specialized")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed recheck proved the no-loss llm.kittens-style CE route but regressed train_loop_wall_ms_per_step to 1.009040x, stage.lm_head_backward.total_ms to 1.001085x, stage.lm_head_backward.ce.total_ms to 1.001185x, and stage.block_backward.total_ms to 1.018917x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step, 2-sample same-script rerun after rebuilding the native selector proved the no-loss llm.kittens-style CE route but failed the strict default-vs-legacy gate: train_loop_wall_ms_per_step=1.000256x and train_tokens_per_second=0.999750x. A separate llm.kittens parity rerun with the route active still failed full-trainer parity at train_loop_wall_ms_per_step=1.002592x and train_loop_cuda_event_steady_state_wall_ms_per_step=1.002692x, so keep it diagnostic-only until the true fused classifier/dHidden/dWeight Tile kernel lands."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"

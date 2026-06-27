@@ -2341,7 +2341,18 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
 - [x] Hardened SM120 candidate acceptance so measured candidate changes must also produce a tracked route/strategy/linear-shape/cuBLASLt-plan change. `tools/paired_kernel_speed.py --require-native-route-change` now fails timing-only candidates with no implementation attribution, and `tools/bench_native_gpt_sm120_candidate.sh` enables that gate automatically for real measured candidate changes.
 - [x] Removed the artificial row-loss CE fallback from the diagnostic LM-head cooperative sequence wrapper. Optimizer-only cooperative steps now pass a no-loss flag through the raw Tile ABI and reuse the default BF16/u16 no-loss CE+dlogits kernel before sequencing dHidden and dWeight; loss-recording paths still use row-loss or loss-bin collection. This keeps `lm_head_cooperative_backward` measurable without changing validation semantics, but it does not promote the route. The linked trainer one-step RTX 5090 rerun confirmed `lm_head_classifier_ce_no_loss_enabled: true` for the candidate and still rejected it at `1.117578x` train-loop wall and `1.294010x` LM-head backward.
 - [x] Rejected the existing LM-head cooperative ABI wrapper as a parity fix. The latest CUDA 13.3 dedicated RTX 5090 one-step same-script probe of `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` now proves the diagnostic sequence-wrapper route is active (`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, strategy changed to `diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity`), but still rejects it at `1.007071x` train-loop wall, `1.000602x` `stage.lm_head_backward.total_ms`, `1.001183x` `stage.block_backward.total_ms`, and `1.002039x` `stage.block_backward.mlp_proj.total_ms`. This confirms the current wrapper sequences existing CE/dHidden/dWeight kernels and is not the fused/cooperative classifier-backward kernel needed for parity.
-- [x] Added and rejected the no-loss llm.kittens-style CE+dlogits store route. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized` now expands to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`, runs a dedicated BF16/u16 no-loss CE kernel with vec8 loads and streaming vec8 stores, and reports `no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`; the current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck proved the strategy change but rejected it at `1.009040x` train-loop wall, `1.001085x` LM-head backward, `1.001185x` LM-head CE, and `1.018917x` block backward. Keep it diagnostic-only; this does not replace the needed fused classifier/dHidden/dWeight kernel.
+- [x] Rechecked and kept rejected the no-loss llm.kittens-style CE+dlogits store
+  route. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
+  expands to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`, runs
+  the BF16/u16 vec8-load plus streaming-vec8-store kernel, and reports
+  `no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. The CUDA
+  13.3.33 dedicated RTX 5090 2026-06-27 5-step, 2-sample rerun after rebuilding
+  the native selector proved the route but failed the strict default-vs-legacy
+  gate at `1.000256x` train-loop wall and `0.999750x` train tokens/sec. A
+  separate parity rerun with the route active still failed full-trainer parity
+  at `1.002592x` train-loop wall and `1.002692x` steady-state event time. Keep
+  it diagnostic-only; this does not replace the needed fused
+  classifier/dHidden/dWeight kernel.
 - [x] Revisited CUDA 13.3 smoke failures after the WSL toolkit reinstall. The
   rebuilt Tile ops library and dense GPT CLI pass symbol checks, and
   unsandboxed `nvidia-smi` sees the dedicated RTX 5090 with CUDA UMD 13.3 and
