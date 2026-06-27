@@ -217,6 +217,20 @@ Real training tensors must not pass through graph editor node objects.
   Graph wrapper with `true_fused_capability=false`, so the next material work
   remains a reference-aligned fused CE/dlogits path plus faster separate logits,
   dHidden, and dWeight stages.
+- [x] Reject reduced MLP activation storage as a default startup-memory route.
+  The 2026-06-27 dedicated RTX 5090 3-step, 2-sample, stage-timed probes for
+  `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=3` and `=9` reduced stored MLP activation
+  bytes to `0.25x` and `0.75x` respectively, but both failed hot-loop gates by
+  forcing recompute work through slower GEMM routes. The 3-block probe improved
+  setup wall to `0.908060x` while regressing train-loop wall to `1.278677x`,
+  steady-state CUDA-event step time to `1.277148x`, tokens/sec to `0.782060x`,
+  block backward to `1.217694x`, and MLP projection backward to `1.458270x`.
+  The 9-block probe improved setup wall only to `0.975999x` while regressing
+  train-loop wall to `1.084793x`, steady-state CUDA-event step time to
+  `1.082810x`, tokens/sec to `0.921834x`, block backward to `1.073931x`, and
+  MLP projection backward to `1.155027x`. Keep the default at all 12 stored
+  MLP blocks until a replacement avoids the BF16 pack/cache miss and cuBLASLt
+  recompute penalty.
 - [x] Revisit the broad native test surface after the CUDA Toolkit reinstall.
   `tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with all
   tracked native binaries and bindings unstale, and
