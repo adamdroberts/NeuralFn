@@ -2033,9 +2033,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_upload_failure_count" in source
     assert "lm_head_fused_graph_thread_cache_hit_count" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
+    assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
+    assert "lm_head_fused_graph_prewarm_dedup_enabled" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP" in source
     assert "lm_head_fused_graph_prewarm_failure_count" in source
     assert "lm_head_fused_graph_prewarm_last_error_code" in source
     assert "lm_head_fused_graph_prewarm_cache_entry_count" in source
+    assert "struct LmHeadGraphPrewarmKey" in source
+    assert "already_prewarmed(key)" in source
     assert "prewarm_row_loss_reduction_available" in source
     assert "prewarm_loss_bin_reduction_available" in source
     assert "const int prewarm_flags[] = {kLmHeadCooperativeFlagNoLoss, prewarm_loss_flags};" in source
@@ -2093,6 +2099,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert '"lm_head_graph_prewarm"|"lm-head-graph-prewarm"' in bench_source
+    assert '"lm_head_graph_prewarm_dedup"|"lm-head-graph-prewarm-dedup"' in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=1" in bench_source
+    assert "lm_head_fused_graph_prewarm_success_count=1.000" in bench_source
     assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert "lm_head_fused_graph_upload_success_count from 3 to 0" in bench_source
@@ -2158,6 +2168,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_body_dweight_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in speed_tool
     assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool
     assert "lm_head_dweight_strided_vocab_gemm_count" in speed_tool
     assert "strict_true_fused_but_slow" in speed_tool

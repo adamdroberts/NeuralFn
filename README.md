@@ -1834,11 +1834,21 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. Graph prewarm is enabled by
-default for real training and now captures both the no-loss graph key and the
-active train-loss graph key, including the loss-bin variant when configured, so
-the first logged train-loss step does not lazily capture a separate LM-head
-backward graph. The default intentionally leaves per-thread replay-cache
+`lm_head_fused_graph_prewarm_cache_entry_count`. The same JSON now also reports
+`lm_head_fused_graph_prewarm_dedup_enabled` and
+`lm_head_fused_graph_prewarm_duplicate_skip_count`. Graph prewarm is enabled by
+default for real training and captures each unique LM-head graph key once,
+deduplicating equal-sized row chunks while still preserving separate no-loss and
+active train-loss graph keys, including the loss-bin variant when configured.
+This keeps the first logged train-loss step from lazily capturing a separate
+LM-head backward graph without recapturing an identical beta-one chunk. Set
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
+per-chunk prewarm loop. The
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` paired profile
+compares that legacy loop against the default deduped key path and gates on
+overall setup wall time plus reduced graph-prewarm work. The default
+intentionally leaves per-thread replay-cache
 priming off because the same-script RTX 5090 gate showed that adding those
 first-use thread-cache hits did not improve training throughput. The diagnostic
 profile

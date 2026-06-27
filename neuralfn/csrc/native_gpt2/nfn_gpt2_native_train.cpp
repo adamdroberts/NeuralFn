@@ -10494,6 +10494,7 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_fused_graph_fallback_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_attempt_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_success_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_duplicate_skip_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_failure_count = 0;
     int lm_head_fused_graph_prewarm_last_error_code = 0;
     std::int64_t lm_head_fused_graph_prewarm_cache_hit_count = 0;
@@ -13205,6 +13206,12 @@ int run_transformer_lm_training_json(
     const bool lm_head_cooperative_backward_graph_prewarm_enabled =
         lm_head_cooperative_backward_graph_prewarm_requested &&
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;
+    const bool lm_head_fused_graph_prewarm_dedup_enabled =
+        lm_head_cooperative_backward_graph_prewarm_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP",
+                              "NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP"}),
+            true);
     const bool lm_head_cooperative_backward_sequence_wrapper_enabled =
         lm_head_cooperative_backward_requested &&
         !lm_head_cooperative_cublaslt_requested &&
@@ -20754,6 +20761,26 @@ int run_transformer_lm_training_json(
             return;
         }
         run_setup_timed("lm_head_fused_graph.prewarm", [&]() {
+            struct LmHeadGraphPrewarmKey {
+                std::int64_t rows = 0;
+                std::int64_t vocab = 0;
+                std::int64_t row_stride = 0;
+                float dweight_beta = 0.0f;
+                int cooperative_flags = 0;
+            };
+            std::vector<LmHeadGraphPrewarmKey> prewarmed_keys;
+            auto already_prewarmed = [&](const LmHeadGraphPrewarmKey& key) {
+                for (const LmHeadGraphPrewarmKey& existing : prewarmed_keys) {
+                    if (existing.rows == key.rows &&
+                        existing.vocab == key.vocab &&
+                        existing.row_stride == key.row_stride &&
+                        existing.dweight_beta == key.dweight_beta &&
+                        existing.cooperative_flags == key.cooperative_flags) {
+                        return true;
+                    }
+                }
+                return false;
+            };
             constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
             constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
             constexpr int kLmHeadCooperativeLossBinCountShift = 8;
@@ -20834,6 +20861,18 @@ int run_transformer_lm_training_json(
                      ++flag_index) {
                     const int cooperative_flags = prewarm_flags[flag_index];
                     for (int beta_index = 0; beta_index < beta_count && error.empty(); ++beta_index) {
+                        const LmHeadGraphPrewarmKey key{
+                            row_count,
+                            kVocab,
+                            kPaddedVocab,
+                            beta_values[beta_index],
+                            cooperative_flags,
+                        };
+                        if (lm_head_fused_graph_prewarm_dedup_enabled &&
+                            already_prewarmed(key)) {
+                            lm_head_fused_graph_prewarm_duplicate_skip_count += 1;
+                            continue;
+                        }
                         if ((cooperative_flags & kLmHeadCooperativeFlagLossBins) != 0) {
                             run(fill(row_max, prewarm_loss_bin_count, 0.0f, nullptr),
                                 "lm_head.fused_graph.prewarm_loss_bins.zero");
@@ -20865,6 +20904,7 @@ int run_transformer_lm_training_json(
                             lm_head_fused_graph_prewarm_last_error_code = status;
                             break;
                         } else {
+                            prewarmed_keys.push_back(key);
                             lm_head_fused_graph_prewarm_success_count += 1;
                             lm_head_fused_graph_prewarm_last_rows = row_count;
                             lm_head_fused_graph_prewarm_last_vocab = kVocab;
@@ -22657,6 +22697,8 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_graph_prewarm_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_graph_prewarm_enabled\": "
         << (lm_head_cooperative_backward_graph_prewarm_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_dedup_enabled\": "
+        << (lm_head_fused_graph_prewarm_dedup_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
         << (lm_head_cooperative_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_classifier_backward_path_class\": \""
@@ -22768,6 +22810,8 @@ int run_transformer_lm_training_json(
         << lm_head_fused_graph_prewarm_attempt_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_success_count\": "
         << lm_head_fused_graph_prewarm_success_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_duplicate_skip_count\": "
+        << lm_head_fused_graph_prewarm_duplicate_skip_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_failure_count\": "
         << lm_head_fused_graph_prewarm_failure_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_last_error_code\": "

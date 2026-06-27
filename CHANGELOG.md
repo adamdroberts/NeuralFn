@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Deduplicated default native dense-GPT LM-head CUDA Graph prewarm keys. The
+  prewarm path now captures each unique `(rows, vocab, stride, beta, flags)`
+  graph key once, so equal-sized LM-head row chunks do not recapture identical
+  beta-one graph bodies during startup. Runtime JSON reports
+  `lm_head_fused_graph_prewarm_dedup_enabled` and
+  `lm_head_fused_graph_prewarm_duplicate_skip_count`; set
+  `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
+  `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
+  per-chunk prewarm loop. Added the
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` paired
+  benchmark profile and taught paired JSON extraction to include the duplicate
+  skip counter.
+
+  Verification: rebuilt `build/nfn_gpt_native_train_linked`, ran the focused
+  native no-Torch pytest slice, dry-ran the new candidate profile, and ran the
+  same-script RTX 5090 benchmark with selected-GPU locking. The passing run
+  reported setup wall `0.980165x` and
+  `lm_head_fused_graph_prewarm_success_count` `0.666667x` versus the legacy
+  prewarm loop, with zero selected-GPU compute processes before and after.
+
 - Changed `tools/train_gpt_sm120.sh` to prefer the compiled no-Bash SM120
   launcher by default. When `build/nfn_train_gpt_sm120` or
   `NFN_NATIVE_SM120_CLI` is executable, the shell helper now immediately execs

@@ -621,6 +621,10 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_fused_graph_prewarm_success_count",),
     ),
     (
+        "lm_head_fused_graph_prewarm_duplicate_skip_count",
+        ("lm_head_fused_graph_prewarm_duplicate_skip_count",),
+    ),
+    (
         "lm_head_fused_graph_prewarm_failure_count",
         ("lm_head_fused_graph_prewarm_failure_count",),
     ),
@@ -1210,6 +1214,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_fused_graph_fallback_count",
     "lm_head_fused_graph_prewarm_attempt_count",
     "lm_head_fused_graph_prewarm_success_count",
+    "lm_head_fused_graph_prewarm_duplicate_skip_count",
     "lm_head_fused_graph_prewarm_failure_count",
     "lm_head_fused_graph_prewarm_last_error_code",
     "lm_head_fused_graph_prewarm_cache_hit_count",
