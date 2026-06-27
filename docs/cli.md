@@ -2149,9 +2149,11 @@ diagnostic route against the sequence-wrapper diagnostic route by setting
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` on the baseline command and
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` on the candidate command.
 It is rejected for real launches unless
-`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; the 5-step
-confirmation kept the cached graph route as the default despite a shorter
-sequence-wrapper probe passing.
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; the 2026-06-28
+CUDA 13.3.33 dedicated RTX 5090 stage-timed rerun kept the cached graph route
+as the default after the sequence wrapper regressed train-loop wall to
+`1.012109x`, steady-state CUDA-event timing to `1.005261x`, LM-head backward to
+`1.050922x`, and cooperative LM-head body time to `1.073406x`.
 `lm_head_cooperative_backward_required` adds the same environment flag plus
 `--require-cooperative-lm-head-backward`. Use the non-required profile for
 same-script wrapper-symbol timing, and the required profile for preflight

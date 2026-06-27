@@ -2407,6 +2407,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_backward_preflight_profile=" in bench_source
     assert "run_lm_head_backward_preflight" in bench_source
     assert "tools/bench_lm_head_backward_candidate.sh" in bench_source
+    assert "lm_head_cooperative_sequence_wrapper" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 1.012109x" in bench_source
+    assert "stage.lm_head_backward.cooperative.total_ms regressed to 1.073406x" in bench_source
+    assert "true fused/reference-aligned classifier-backward path" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=16" in bench_source

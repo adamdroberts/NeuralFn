@@ -21,6 +21,9 @@ Future updates should append new entries here rather than replacing older notes.
   cooperative LM-head body time to `1.073406x`. Verification: both
   GPU-visible paired wrapper reruns on the dedicated display-disabled RTX 5090,
   focused wrapper source test, no-Torch verifier, and `git diff --check`.
+  The rejected `lm_head_cooperative_sequence_wrapper` profile message and CLI /
+  SDK docs now surface those refreshed ratios directly, so intentional reruns no
+  longer print the older 2026-06-24 confirmation text.
 
 - Bench: `tools/bench_native_gpt_sm120_candidate.sh` now accepts
   `NFN_SM120_NATIVE_DRY_RUN=1` as a convenience alias for the existing

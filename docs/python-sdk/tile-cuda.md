@@ -2752,7 +2752,11 @@ The historical sequence-wrapper candidate route now requires
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
 sets both variables. That keeps paired diagnostics able to compare the older
 wrapper against the current parity route while preventing graph/sequence knobs
-from silently replacing the strict default.
+from silently replacing the strict default. The 2026-06-28 CUDA 13.3.33
+dedicated RTX 5090 rerun kept the sequence wrapper rejected at `1.012109x`
+train-loop wall, `1.005261x` steady-state CUDA-event timing, `1.050922x`
+LM-head backward, and `1.073406x` cooperative LM-head body time versus the
+cached graph route.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
 is the current no-loss classifier-store diagnostic. It expands to
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps
