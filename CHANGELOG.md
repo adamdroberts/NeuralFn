@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `tools/train_gpt_sm120.sh` to prefer the compiled no-Bash SM120
+  launcher by default. When `build/nfn_train_gpt_sm120` or
+  `NFN_NATIVE_SM120_CLI` is executable, the shell helper now immediately execs
+  it with the original arguments instead of parsing SM120 defaults in Bash
+  first. Set `NFN_SM120_USE_COMPILED_LAUNCHER=0` to reproduce the older shell
+  parser for diagnostics.
+
+  Verification: rebuilt `build/nfn_train_gpt_sm120`, dry-ran the shell helper
+  and compiled launcher command paths, and reran the focused native no-Torch
+  checker slice. This is a startup-path cleanup only; no kernel default was
+  promoted.
+
 - Extended `tools/bench_lm_head_backward_candidate.sh` so its saved JSON and
   final stdout now include `gpu_load_context.before` and
   `gpu_load_context.after` around the same-script baseline/candidate LM-head

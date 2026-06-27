@@ -3,6 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLM_KITTENS_TINYSTORIES_DIR="${NFN_LLM_KITTENS_TINYSTORIES_DIR:-/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories}"
+COMPILED_SM120_LAUNCHER="${NFN_NATIVE_SM120_CLI:-${ROOT_DIR}/build/nfn_train_gpt_sm120}"
+USE_COMPILED_SM120_LAUNCHER="${NFN_SM120_USE_COMPILED_LAUNCHER:-1}"
+
+case "${USE_COMPILED_SM120_LAUNCHER,,}" in
+  ""|"1"|"true"|"yes"|"on")
+    if [[ -x "${COMPILED_SM120_LAUNCHER}" ]]; then
+      exec "${COMPILED_SM120_LAUNCHER}" "$@"
+    fi
+    ;;
+  "0"|"false"|"no"|"off")
+    ;;
+  *)
+    echo "Invalid NFN_SM120_USE_COMPILED_LAUNCHER='${USE_COMPILED_SM120_LAUNCHER}'" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "${ROOT_DIR}/build/nfn_gpt_native_train_linked" ]]; then
   NATIVE_GPT_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
@@ -35,9 +51,11 @@ usage() {
   cat <<'USAGE'
 Usage: tools/train_gpt_sm120.sh [options] [-- extra native args]
 
-Zero-Python SM120 dense GPT training helper. It prefers
-build/nfn_gpt_native_train_linked, falls back to build/nfn_gpt_native_train, and
-uses the same core defaults as llm.kittens/train-sm120.sh:
+Zero-Python SM120 dense GPT training helper. By default this shell shim execs
+build/nfn_train_gpt_sm120 when available. Set NFN_SM120_USE_COMPILED_LAUNCHER=0
+to use the legacy shell parser, which prefers build/nfn_gpt_native_train_linked,
+falls back to build/nfn_gpt_native_train, and uses the same core defaults as
+llm.kittens/train-sm120.sh:
   eval=250 sample=20000 generate=144 batch=64 seq=1024 tokens/step=524288
   weight_decay=0.1 lr=0.0006 final_lr_fraction=0 warmup=60 checkpoint=200
   max_steps=20000 activation=gelu CUDA_DEVICE_MAX_CONNECTIONS=1

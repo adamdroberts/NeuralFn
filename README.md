@@ -2545,6 +2545,11 @@ Tiny native GPT diagnostic runs with `seq_len < 16` use the split-QKV row-vector
 compiled no-Python SM120 launcher with the same defaults as
 `tools/train_gpt_sm120.sh`. Use it for the lowest-overhead workstation path:
 `build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
+`tools/train_gpt_sm120.sh` now defaults to that compiled launcher when
+`build/nfn_train_gpt_sm120` or `NFN_NATIVE_SM120_CLI` is executable, so the
+shell path does not re-parse the SM120 defaults before the native handoff. Set
+`NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser for
+diagnostics.
 `tools/build_native_gpt2_all.sh` builds this launcher alongside the linked GPT
 trainer, and `tools/check_native_no_torch_deps.py` dry-runs the compiled GPT,
 GPT3, and custom-graph variants so they cannot drift back into Python or Torch

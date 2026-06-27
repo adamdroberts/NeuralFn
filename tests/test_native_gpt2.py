@@ -765,6 +765,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in gpt2_evo_source
     assert "linked_build_path" in gpt2_evo_source
     assert "NATIVE_GPT_TRAIN_BIN" in train_sm120
+    assert "COMPILED_SM120_LAUNCHER" in train_sm120
+    assert "NFN_NATIVE_SM120_CLI" in train_sm120
+    assert "NFN_SM120_USE_COMPILED_LAUNCHER" in train_sm120
+    assert 'exec "${COMPILED_SM120_LAUNCHER}" "$@"' in train_sm120
     assert "build/nfn_gpt_native_train_linked" in train_sm120
     assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
     assert "build_native_gpt_cli_linked.sh" in train_sm120

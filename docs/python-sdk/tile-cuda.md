@@ -325,7 +325,10 @@ the native exec boundary, build `build/nfn_train_gpt_sm120` with
 links it as `nfn-train-gpt-sm120` and `nfn-gpt-sm120-train`; set
 `NFN_NATIVE_SM120_CLI` when installing a launcher from a non-default path. The
 launcher mirrors
-`tools/train_gpt_sm120.sh`, prefers `build/nfn_gpt_native_train_linked`, injects
+`tools/train_gpt_sm120.sh`, and the shell helper now execs that compiled
+launcher by default when it is present. Set
+`NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser. The
+compiled launcher prefers `build/nfn_gpt_native_train_linked`, injects
 `--tile-ops-lib linked` for that binary, supports `--base-model`,
 `--template-name`, and `--graph-file`, and is included in
 `tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker. The
