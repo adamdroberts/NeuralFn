@@ -93,16 +93,16 @@ CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 gates, GPT template preset suite, and native no-Torch guard all pass.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
-sample. A fresh stage-timed 3-step, one-sample check on 2026-06-28 measured
-NeuralFn at `2449.057 ms/step` and `214078` tokens/sec versus llm.kittens at
-`2435.380 ms/step` and `215355` tokens/sec (`1.005616x` train-loop wall time,
-`0.994070x` tokens/sec). Treat this as a diagnostic attribution run: stage
-timing is useful for hot buckets, but it adds measurement overhead and should
-not override the stronger no-stage training-loop comparison. A stronger 5-step,
-3-sample check without stage timing measured NeuralFn at `2469.107 ms/step` and
-`212339` tokens/sec versus llm.kittens at `2485.735 ms/step` and `210605`
-tokens/sec (`0.993312x` train-loop wall time, `1.008248x` tokens/sec). The same
-JSON still reports the LM-head classifier
+sample. A fresh 2026-06-28 3-step, 3-sample check without stage timing measured
+NeuralFn at `2446.557 ms/step` and `214297` tokens/sec versus llm.kittens at
+`2447.491 ms/step` and `214252` tokens/sec (`0.999639x` mean train-loop wall
+time, `0.999637x` mean steady-state CUDA-event timing, `1.000228x` tokens/sec;
+median gates were `0.998426x` and `0.997491x`). Treat stage-timed parity as an
+attribution run: the same-day 3-step, one-sample stage-timed diagnostic
+measured `1.011556x` train-loop wall and `1.010723x` steady-state timing while
+changing no hot route counters. Stage timing is useful for bucket selection,
+but it should not override the stronger no-stage training-loop comparison. The
+same JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.

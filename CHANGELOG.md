@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the post-CUDA-13.3 llm.kittens parity evidence on the
+  display-disabled RTX 5090. The 2026-06-28 3-step, 3-sample no-stage run
+  passed the default parity gate with NeuralFn at `2446.557 ms/step` and
+  `214297` tokens/sec versus llm.kittens at `2447.491 ms/step` and `214252`
+  tokens/sec (`0.999639x` mean train-loop wall, `0.999637x` mean steady-state
+  CUDA-event timing, `1.000228x` tokens/sec; median gates were `0.998426x` and
+  `0.997491x`). A same-day 3-step, one-sample stage-timed diagnostic measured
+  `1.011556x` train-loop wall and `1.010723x` steady-state timing while
+  changing no hot route counters, so docs now call stage timing attribution-only
+  and keep no-stage multi-sample timing as the training-throughput signal.
+  Runtime contract checks stayed clean with `graph_editor_tensor_flow=false` and
+  `torch_required=false`. Verification: GPU-visible paired parity wrapper on
+  the dedicated RTX 5090.
+
 - Native GPT: `--startup-only` now skips throughput-only setup prewarms by
   default while normal training keeps them enabled. The TK QKV first-use prewarm
   no longer runs for setup-only/preflight probes unless
