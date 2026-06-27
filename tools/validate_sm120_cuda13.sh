@@ -3,8 +3,22 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-/home/adam/miniconda3/envs/NeuralFn/bin/python}"
-TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-${ROOT_DIR}/build/nfn_gpt_native_train}"
-TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
+LINKED_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
+DYNAMIC_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train"
+if [[ -n "${NFN_NATIVE_GPT_TRAIN_BIN:-}" ]]; then
+  TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN}"
+elif [[ -x "${LINKED_TRAIN_BIN}" ]]; then
+  TRAIN_BIN="${LINKED_TRAIN_BIN}"
+else
+  TRAIN_BIN="${DYNAMIC_TRAIN_BIN}"
+fi
+if [[ -n "${NFN_NATIVE_TILE_OPS_LIB:-}" ]]; then
+  TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB}"
+elif [[ "$(basename "${TRAIN_BIN}")" == "nfn_gpt_native_train_linked" ]]; then
+  TILE_OPS_LIB="linked"
+else
+  TILE_OPS_LIB="${ROOT_DIR}/build/libnfn_native_train_tile_ops.so"
+fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
@@ -21,7 +35,7 @@ if [[ ! -x "${TRAIN_BIN}" ]]; then
   exit 2
 fi
 
-if [[ ! -f "${TILE_OPS_LIB}" ]]; then
+if [[ "${TILE_OPS_LIB}" != "linked" && ! -f "${TILE_OPS_LIB}" ]]; then
   echo "Missing Tile ops library: ${TILE_OPS_LIB}" >&2
   echo "Build it with: bash tools/rebuild_native_sm120.sh" >&2
   exit 2

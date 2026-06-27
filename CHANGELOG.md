@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `tools/validate_sm120_cuda13.sh` to prefer
+  `build/nfn_gpt_native_train_linked` with `--tile-ops-lib linked` when the
+  linked trainer exists. The CUDA 13 post-install health gate now validates the
+  same no-`dlopen` startup path used by normal SM120 GPT training, while
+  `NFN_NATIVE_GPT_TRAIN_BIN` and `NFN_NATIVE_TILE_OPS_LIB` still select the
+  dynamic Tile library path for explicit diagnostics.
+
+  Verification: ran `bash -n tools/validate_sm120_cuda13.sh`, the focused
+  native source-contract test for the validator, and the CUDA 13 smoke gate with
+  pytest and benchmark disabled on the dedicated GPU.
+
 - Added `tools/validate_sm120_cuda13.sh` as the repeatable SM120 CUDA 13.3
   health gate after WSL driver/toolkit changes. The script defaults to the
   dedicated display-disabled NVIDIA GPU, runs the native Tile symbol check, the

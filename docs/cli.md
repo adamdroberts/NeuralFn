@@ -2176,11 +2176,16 @@ work to close the measured SM120 throughput gap. Use
 against `llm.kittens/train-sm120.sh`.
 After a CUDA toolkit or WSL driver reinstall, run
 `bash tools/validate_sm120_cuda13.sh` for the SM120 health gate. It uses the
-dedicated-GPU selector, validates the native Tile library, launches the Tile
-fill and cached TinyStories transformer-LM smokes, and runs
-`tests/test_native_gpt2.py`. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the
-pytest pass or `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script
-native baseline benchmark.
+dedicated-GPU selector and, by default, validates
+`build/nfn_gpt_native_train_linked` with `--tile-ops-lib linked` when that
+binary exists. This keeps the post-install health gate on the same no-`dlopen`
+startup path used by normal SM120 GPT training. Override
+`NFN_NATIVE_GPT_TRAIN_BIN` or `NFN_NATIVE_TILE_OPS_LIB` only when intentionally
+checking the dynamic Tile library route. The gate launches the Tile fill and
+cached TinyStories transformer-LM smokes, and runs `tests/test_native_gpt2.py`.
+Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the pytest pass or
+`NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
+benchmark.
 
 For startup profiling, pass `--startup-only` to `nfn_gpt_native_train` or
 through the native wrapper/SDK config. The compiled frontend still resolves

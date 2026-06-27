@@ -649,6 +649,10 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     ).read_text(encoding="utf-8")
 
     assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-dedicated" in source
+    assert 'LINKED_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train_linked"' in source
+    assert 'elif [[ -x "${LINKED_TRAIN_BIN}" ]]; then' in source
+    assert 'TILE_OPS_LIB="linked"' in source
+    assert '"${TILE_OPS_LIB}" != "linked" && ! -f "${TILE_OPS_LIB}"' in source
     assert "--check-tile-ops" in source
     assert "--smoke-tile-ops" in source
     assert "--smoke-transformer-lm-step" in source

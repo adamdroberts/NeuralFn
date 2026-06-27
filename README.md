@@ -113,7 +113,12 @@ dedicated RTX 5090 startup-only recheck on 2026-06-26 measured
 versus the dynamic Tile-ops baseline with zero compute processes before each
 paired sample, and a direct dry run prints
 `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked` without importing
-Torch or the Python dataset manager. The current LM-head alternatives are still
+Torch or the Python dataset manager. The CUDA 13.3 SM120 health gate also
+prefers `build/nfn_gpt_native_train_linked` and `--tile-ops-lib linked` when
+that binary exists, so post-install validation exercises the same startup path
+as normal workstation training; set `NFN_NATIVE_GPT_TRAIN_BIN` or
+`NFN_NATIVE_TILE_OPS_LIB` only when intentionally checking the dynamic-loader
+route. The current LM-head alternatives are still
 diagnostics rather than defaults: the strict cooperative true-fused smoke is a
 real single-kernel path but was `8.985042x` slower at trainer chunk size, and
 the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
