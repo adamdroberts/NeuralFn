@@ -309,8 +309,9 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T"
     ;;
   "layernorm_affine_row_chunk_128"|"layernorm-affine-row-chunk-128"|"ln_affine_row_chunk_128"|"ln-affine-row-chunk-128")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 two-pass 5-step, 3-sample stage-timed confirmation changed the LayerNorm affine row chunk from 256 to 128 and improved train-loop wall to 0.993514x plus block backward to 0.989279x in the second pass, but rejected default promotion because LM-head backward regressed to 1.000479x and MLP projection backward to 1.002281x."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 current-default 5-step, 3-sample stage-timed rerun kept the 128-row LayerNorm affine reducer as the default because it improved train_loop_wall_ms_per_step to 0.998906x, steady-state CUDA-event timing to 0.999138x, train_tokens_per_second to 1.001101x, final-norm backward to 0.993427x, block backward to 0.997165x, LN2 residual backward to 0.992676x, and LN1 residual backward to 0.915224x while moving block_state_layout.layer_norm_backward_affine_row_chunk_size from 256 to 128. LM-head backward was noise-flat at 1.000764x mean / 1.000017x median, so this profile is now a default-vs-legacy proof rather than a rejected candidate."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
     ;;

@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench/docs: promoted `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128`
+  from stale rejected-profile metadata to an accepted default-vs-legacy
+  benchmark against the historical 256-row LayerNorm affine reducer. The native
+  trainer already defaulted to 128 rows; this change removes the misleading
+  rejected-profile guard and aligns README/CLI/SDK docs with the runtime
+  default. Verification: reran the CUDA 13.3.33 dedicated RTX 5090 5-step,
+  3-sample stage-timed native-vs-native gate with zero compute processes before
+  and after samples. The 128-row route measured `0.998906x`
+  `train_loop_wall_ms_per_step`, `0.999138x`
+  `train_loop_cuda_event_steady_state_wall_ms_per_step`, `1.001101x`
+  `train_tokens_per_second`, `0.997165x` block backward, `0.992676x` LN2
+  residual backward, `0.915224x` LN1 residual backward, and LM-head backward
+  noise-flat at `1.000764x` mean / `1.000017x` median while moving
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
+  `128`.
+
 - Bench: corrected the SM120 parity wrapper's failure diagnostic to point at
   the llm.kittens reference-aligned fused CE/dlogits plus separate logits,
   dHidden, and dWeight stages. The diagnostic still reports the strict

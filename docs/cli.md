@@ -1013,7 +1013,11 @@ of the promoted packed-QKV backward schedule; set
 `NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
 `NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to run paired chunk-size
-experiments without rebuilding. JSON reports
+experiments without rebuilding. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128`
+is the accepted default-vs-legacy benchmark against the historical 256-row
+route; the 2026-06-27 CUDA 13.3.33 RTX 5090 rerun measured `0.998906x`
+train-loop wall, `0.999138x` steady-state CUDA-event timing, and `1.001101x`
+tokens/sec. JSON reports
 `block_state_layout.layer_norm_backward_affine_strategy:
 "auto-chunked-atomic-accumulate"`.
 
