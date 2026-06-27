@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the current no-stage NeuralFn-vs-llm.kittens SM120 parity
+  gate after the dGELU route-bisection work. On the dedicated RTX 5090 with 5
+  steps, 3 measured samples, 1 warmup sample, stage timing disabled, and zero
+  compute processes on the selected GPU before/after samples, the current
+  native GPT path measured `0.995097x` candidate-over-llm.kittens train-loop
+  wall time, `0.995827x` steady-state CUDA-event wall time, and `1.005236x`
+  tokens/sec. Runtime contract checks still reported
+  `graph_editor_tensor_flow: false` and `torch_required: false`. This confirms
+  the normal no-stage training loop is currently at or ahead of the
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` reference on this
+  workstation; remaining parity work should target startup policy, diagnostic
+  stage-timing overhead, and replacing the LM-head diagnostic CUDA Graph wrapper
+  with a true production fused Tile kernel rather than undoing accepted default
+  routes.
+
 - Native GPT: added a fused dGELU dInput shape-disable gate and an SM120
   bisection profile for the MLP projection backward path. The Tile CUDA kernels
   now honor `NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE` /

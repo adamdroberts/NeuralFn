@@ -1316,6 +1316,15 @@ a rejected route-bisection profile, not a promoted training default. The CUDA
 13.3 dedicated RTX 5090 check proved route movement by dropping
 `linear_tk_dgelu_dinput_gemm_count` from `288` to `0`, but regressed
 train-loop wall to `1.013580x` and MLP projection dInput to `1.207964x`.
+The current normal no-stage parity check now measures at or ahead of the
+llm.kittens SM120 reference on this workstation. A 5-step, 3-sample,
+1-warmup-sample dedicated RTX 5090 run with stage timing disabled measured
+`0.995097x` candidate-over-llm.kittens train-loop wall time, `0.995827x`
+steady-state CUDA-event wall time, and `1.005236x` tokens/sec, while preserving
+`graph_editor_tensor_flow: false` and `torch_required: false`. Stage-timed
+diagnostic runs can still show hot buckets and overhead; use those to target
+specific kernels, not to conclude that the no-stage training loop is behind the
+reference.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to rebuild
 a temporary candidate Tile ops library with the documented llm.kittens SM120
 reference macro bundle, including `LLMK_SM120_USE_CUBLASLT_GEMM`,
