@@ -204,6 +204,19 @@ Real training tensors must not pass through graph editor node objects.
   `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and
   `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
   `128`; the selected RTX 5090 had no compute processes before samples.
+- [x] Refresh canonical llm.kittens parity after promoting the no-loss LM-head
+  CE vec8 normal-store specialized kernel. The 2026-06-27 dedicated RTX 5090
+  5-step, 2-sample, 1-warmup, stage-timed same-script gate passed the explicit
+  `1.003` workstation parity band: median train-loop wall was `1.001834x`,
+  median steady-state CUDA-event wall was `1.002183x`, and runtime contract
+  checks still reported `graph_editor_tensor_flow=false` and
+  `torch_required=false`. Runtime JSON confirmed the default
+  `lm_head_ce_kernel_strategy:
+  no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores`. The remaining
+  parity blocker is unchanged: LM-head backward is still the diagnostic CUDA
+  Graph wrapper with `true_fused_capability=false`, so the next material work
+  remains a reference-aligned fused CE/dlogits path plus faster separate logits,
+  dHidden, and dWeight stages.
 - [x] Revisit the broad native test surface after the CUDA Toolkit reinstall.
   `tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with all
   tracked native binaries and bindings unstale, and
