@@ -410,9 +410,14 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1"
     ;;
   "lm_head_ce_no_loss_default_specialized"|"lm-head-ce-no-loss-default-specialized"|"ce_bf16_no_loss_default_specialized"|"ce-bf16-no-loss-default-specialized")
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample rerun confirmed the default no-loss CE specialization against the older generic no-loss CE+dlogits route: train_loop_wall_ms_per_step=0.977958x, train_tokens_per_second=1.022549x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.996300x, and candidate-over-llm.kittens train_tokens_per_second=1.003608x."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
     SKIP_LM_HEAD_CE_STAGE_GATE=1
     ;;
   "lm_head_prob_only_corrections"|"lm-head-prob-only-corrections"|"lm_head_ce_prob_only_corrections"|"lm-head-ce-prob-only-corrections")

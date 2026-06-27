@@ -3441,9 +3441,13 @@ keeps `--train-loss-every-steps 0`, and reports
 "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"`. Set
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` only to compare
 against the older generic no-loss CE+dlogits kernel.
-The wrapper treats that default-route profile as an LM-head candidate for strict
-stage-timed gates; it still records whole-loop and block-stage ratios, but does
-not reject the default-specialized CE route for unrelated block-stage variance
+The wrapper treats that default-route profile as an accepted default-vs-legacy
+gate. A CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample rerun
+measured `0.977958x` train-loop wall, `1.022549x` tokens/sec,
+`0.996300x` candidate-over-llm.kittens train-loop wall, and `1.003608x`
+candidate-over-llm.kittens tokens/sec. Stage-timed diagnostics still record
+whole-loop and block-stage ratios, but do not reject the default-specialized CE
+route for unrelated block-stage variance
 or for the missing standalone CE sub-stage metric while the LM-head path is
 reported as a diagnostic CUDA Graph wrapper. A 2026-06-26 CUDA 13.3.33
 dedicated RTX 5090 rerun measured the default-specialized route at `0.975099x`

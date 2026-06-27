@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
+  as an accepted default-vs-legacy SM120 benchmark profile. The runtime default
+  was already `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`; the
+  wrapper now labels that profile accordingly and gates train-loop wall time
+  plus tokens/sec when comparing against
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`.
+
+  Verification: reran the profile on the dedicated RTX 5090 in actual-training
+  mode with `NFN_SM120_NATIVE_STEPS=5`, `NFN_SM120_NATIVE_SAMPLES=2`, stage
+  timing disabled, train-loop CUDA-event timing disabled, and the llm.kittens
+  reference included. The route changed from
+  `no-loss-dlogits-vec8-loads-scalar-stores` to
+  `no-loss-default-specialized-dlogits-vec8-loads-scalar-stores`, passed at
+  `0.977958x` current NeuralFn train-loop wall time, `1.022549x` current
+  NeuralFn tokens/sec, `0.996300x` llm.kittens reference train-loop wall time,
+  and `1.003608x` llm.kittens reference tokens/sec.
+
 - Promoted the dense GPT BF16 attention grad-out handoff to the default native
   training route. `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT` and the GPT-2
   fallback alias now default to enabled when packed-QKV attention and BF16 QKV
