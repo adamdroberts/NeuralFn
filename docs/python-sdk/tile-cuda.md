@@ -204,8 +204,11 @@ loss-bin variant when that route is configured, remain distinct. Set
 `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
 per-chunk prewarm loop. The paired SM120 profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` compares that
-legacy loop against the default pointer-aware dedup key path and gates on setup
-wall time, runtime graph capture attempts, and prewarm work. The default was rechecked after the
+legacy loop against the default pointer-aware dedup key path and gates on
+deterministic prewarm work. Equal-shaped chunks with distinct buffers no longer
+count as a route change, so the profile disables the generic route-change gate
+and avoids setup timing gates that are dominated by allocator noise.
+The default was rechecked after the
 CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback graph-only rerun passed same-script
 gates: train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
 LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection

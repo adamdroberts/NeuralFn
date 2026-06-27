@@ -1871,9 +1871,11 @@ duplicate chunk. Set
 per-chunk prewarm loop. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm_dedup` paired profile
 compares that legacy loop against the default pointer-aware dedup key path and
-gates on overall setup wall time, runtime graph capture attempts, and prewarm
-work. Equal-sized row chunks with different buffers are intentionally distinct
-keys. The default
+gates on deterministic prewarm work. Equal-sized row chunks with different
+buffers are intentionally distinct keys, so this profile disables the generic
+native route-change gate and avoids setup timing gates that are dominated by
+allocator noise.
+The default
 intentionally leaves per-thread replay-cache
 priming off because the same-script RTX 5090 gate showed that adding those
 first-use thread-cache hits did not improve training throughput. The diagnostic

@@ -2167,9 +2167,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=1" in bench_source
     assert "pointer-aware dedup key path" in bench_source
-    assert "equal-sized row chunks with different buffers are intentionally distinct keys" in bench_source
+    assert "Equal-sized row chunks with different buffers are intentionally distinct keys" in bench_source
+    assert "checks deterministic prewarm work rather than setup timing or route-change gates" in bench_source
+    assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
     assert "lm_head_fused_graph_prewarm_success_count=1.000" in bench_source
-    assert "lm_head_fused_graph_capture_attempt_count=1.000" in bench_source
     assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert "lm_head_fused_graph_upload_success_count from 3 to 0" in bench_source

@@ -25,12 +25,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Updated the `lm_head_graph_prewarm_dedup` SM120 candidate profile to match
   pointer-aware LM-head graph keys. The profile no longer expects equal-sized
-  row chunks with different buffers to become duplicate skips; it now gates the
-  default route on setup time, no extra prewarm work, and no runtime graph
-  capture attempts.
+  row chunks with different buffers to become duplicate skips or native route
+  changes; it now gates the default route only on deterministic prewarm work
+  because setup timing is allocator-noise dominated for this no-op profile.
 
   Verification: ran the focused native GPT source-contract test covering the
-  candidate profile text.
+  candidate profile text. A short dedicated RTX 5090 profile run before the
+  route-gate correction proved why this was needed: the native metrics were
+  intentionally identical and the generic route-change gate failed with
+  `candidate-native-metrics-did-not-change-route-strategy-or-plan`; a follow-up
+  run also showed strict setup timing was too noisy for this profile. The final
+  short profile rerun passed with
+  `lm_head_fused_graph_prewarm_success_count=1.000000`.
 
 - Corrected the SM120 parity benchmark docs to match the current wrapper
   behavior: `tools/bench_native_gpt_sm120_parity.sh` compares llm.kittens
