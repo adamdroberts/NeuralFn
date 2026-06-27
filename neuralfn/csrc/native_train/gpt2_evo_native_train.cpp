@@ -19,6 +19,17 @@
 
 namespace {
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const char* value) {
+    if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
+        setenv(name, value, 1);
+    }
+}
+
 struct Gpt2EvoPlan {
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
     std::string output = "artifacts/gpt2_evo.bin";
@@ -1100,9 +1111,7 @@ int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
     bool print_plan = false;
     bool dry_run = false;
     bool print_delegate_command = false;

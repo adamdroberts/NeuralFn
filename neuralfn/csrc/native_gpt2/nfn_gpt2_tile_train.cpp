@@ -15,6 +15,17 @@
 
 namespace {
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const char* value) {
+    if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
+        setenv(name, value, 1);
+    }
+}
+
 std::string shell_quote(const std::string& value) {
     if (value.empty()) {
         return "''";
@@ -99,15 +110,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
-        setenv("CUDA_VISIBLE_DEVICES", "0", 0);
-    }
-    if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
-        setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
-    }
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+    setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
     std::vector<std::string> command;
     command.push_back(target);

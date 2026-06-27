@@ -36,6 +36,17 @@ namespace fs = std::filesystem;
 
 namespace {
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const char* value) {
+    if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
+        setenv(name, value, 1);
+    }
+}
+
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
@@ -25370,15 +25381,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
-        setenv("CUDA_VISIBLE_DEVICES", "0", 0);
-    }
-    if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
-        setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
-    }
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+    setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
     ScopedStdoutRedirect stdout_redirect;
     if (!cfg.json_out_path.empty()) {

@@ -20,6 +20,14 @@ std::string env_or(const char* name, std::string fallback = {}) {
     return value != nullptr && value[0] != '\0' ? std::string(value) : std::move(fallback);
 }
 
+void setenv_default_if_empty(const char* name, const std::string& value) {
+    const char* current = std::getenv(name);
+    if (value.empty() || (current != nullptr && current[0] != '\0')) {
+        return;
+    }
+    setenv(name, value.c_str(), 1);
+}
+
 std::string env_first(std::initializer_list<const char*> names, std::string fallback = {}) {
     for (const char* name : names) {
         const char* value = std::getenv(name);
@@ -110,8 +118,9 @@ int main(int argc, char** argv) {
         native_bin = executable(linked) ? linked.string() : (root / "build" / "nfn_gpt_native_train").string();
     }
 
-    setenv("CUDA_DEVICE_MAX_CONNECTIONS", env_or("CUDA_DEVICE_MAX_CONNECTIONS", "1").c_str(), 0);
-    setenv("CUDA_MODULE_LOADING", env_or("CUDA_MODULE_LOADING", "LAZY").c_str(), 0);
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+    setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
     std::string activation = env_or("NFN_SM120_ACTIVATION", "gelu");
     std::string moa_interval = env_or("NFN_SM120_MOA_INTERVAL", "50");

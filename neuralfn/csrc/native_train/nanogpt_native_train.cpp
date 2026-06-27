@@ -14,6 +14,17 @@
 
 namespace {
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const char* value) {
+    if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
+        setenv(name, value, 1);
+    }
+}
+
 struct NanoGptPlan {
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
     std::string output = "artifacts/nanogpt.bin";
@@ -6413,9 +6424,7 @@ int main(int argc, char** argv) {
     bool dry_run = false;
     NanoGptPlan plan = parse_args(argc, argv, &print_plan, &dry_run);
     validate_plan(plan);
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
     if (plan.smoke_tile_ops) {
         return print_tile_ops_smoke_json(plan, argv[0]);
     }

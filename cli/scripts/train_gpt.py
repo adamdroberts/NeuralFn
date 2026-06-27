@@ -414,9 +414,9 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     if command is None:
         return None
     env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
-    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in _NATIVE_METADATA_ACTION_FLAGS):
         print(shlex.join(command))
         return 0
@@ -430,6 +430,11 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
         return int(subprocess.run(command, env=env, check=False).returncode)
     os.execvpe(command[0], command, env)
     return 127
+
+
+def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:
+    if value and not str(env.get(key, "")).strip():
+        env[key] = value
 
 
 if __name__ == "__main__":

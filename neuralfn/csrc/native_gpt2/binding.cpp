@@ -191,25 +191,30 @@ int run_exec_and_wait(const std::vector<std::string>& command) {
     return 126;
 }
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const std::string& value) {
+    if (!value.empty() && env_is_empty(name)) {
+        setenv(name, value.c_str(), 1);
+    }
+}
+
 bool apply_cuda_env_from_config(PyObject* config) {
     std::string visible_devices;
     if (!optional_string_from_config(config, "cuda_visible_devices", &visible_devices)) {
         return false;
     }
-    if (!visible_devices.empty() && std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
-        setenv("CUDA_VISIBLE_DEVICES", visible_devices.c_str(), 0);
-    }
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", visible_devices);
 
     std::string max_connections;
     if (!optional_string_from_config(config, "cuda_device_max_connections", &max_connections)) {
         return false;
     }
-    if (!max_connections.empty() && std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
-        setenv("CUDA_DEVICE_MAX_CONNECTIONS", max_connections.c_str(), 0);
-    }
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", max_connections);
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
     return true;
 }
 

@@ -624,9 +624,9 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
         / "native_training_guard.py"
     ).read_text(encoding="utf-8")
 
-    assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source
-    assert 'env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
-    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
 
 def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
@@ -636,9 +636,9 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
         / "nfn.py"
     ).read_text(encoding="utf-8")
 
-    assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source
-    assert 'env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
-    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
+    assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
 
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
@@ -1669,7 +1669,7 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert '"status": "external-fast-path"' not in native_cli_source
     assert "build_command(const Config& cfg" not in native_cli_source
     assert "os.execvpe(command[0], command, _compiled_cli_env(config))" in train_gpt_native_source
-    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
+    assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
     assert (
         'if runner_status.resolved == "compiled-cli":\n'
         "        return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)"
@@ -3733,7 +3733,7 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
     assert "posix_spawn_file_actions_adddup2" in source
     assert '"run_gpt_capture"' in source
     assert '"run_infer"' in source
-    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
+    assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
     assert "fork()" not in source
 
 
@@ -3743,7 +3743,7 @@ def test_native_train_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> N
 
     assert "#include <spawn.h>" in source
     assert "posix_spawnp(&pid" in source
-    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
+    assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
     assert "fork()" not in source
 
 
@@ -4042,9 +4042,12 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
 
     fake_native = tmp_path / "nfn_gpt_native_train"
     observed = tmp_path / "native-argv.txt"
+    observed_env = tmp_path / "native-env.txt"
     fake_native.write_text(
         "#!/usr/bin/env bash\n"
-        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n",
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n"
+        "printf 'CUDA_VISIBLE_DEVICES=%s\\nCUDA_DEVICE_MAX_CONNECTIONS=%s\\nCUDA_MODULE_LOADING=%s\\n' "
+        "\"$CUDA_VISIBLE_DEVICES\" \"$CUDA_DEVICE_MAX_CONNECTIONS\" \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_GPT_ENV\"\n",
         encoding="utf-8",
     )
     fake_native.chmod(0o755)
@@ -4053,6 +4056,10 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         {
             "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
             "NFN_TEST_NATIVE_GPT_ARGV": str(observed),
+            "NFN_TEST_NATIVE_GPT_ENV": str(observed_env),
+            "CUDA_VISIBLE_DEVICES": "",
+            "CUDA_DEVICE_MAX_CONNECTIONS": "",
+            "CUDA_MODULE_LOADING": "",
             "NFN_SM120_NATIVE_EVAL_EVERY_STEPS": "1000",
             "NFN_SM120_NATIVE_EVAL_BATCHES": "7",
             "NFN_SM120_NATIVE_SAMPLE_EVERY": "0",
@@ -4100,6 +4107,10 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     for flag, value in expected_pairs.items():
         assert args[args.index(flag) + 1] == value
     assert "--train-transformer-lm" in args
+    env_lines = observed_env.read_text(encoding="utf-8").splitlines()
+    assert "CUDA_VISIBLE_DEVICES=0" in env_lines
+    assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
+    assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
 
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
@@ -4152,7 +4163,7 @@ def test_exec_native_train_replaces_process_with_compiled_cli(
     assert observed["argv"] == [str(cli), "--base-model", "gpt", "--tinystories", "--dry-run"]
     env = observed["env"]
     assert isinstance(env, dict)
-    assert env["CUDA_VISIBLE_DEVICES"] == ""
+    assert env["CUDA_VISIBLE_DEVICES"] == "0"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
 
@@ -9679,10 +9690,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "std::optional<neuralfn::native_train::SequentialTokenBatchSampler> val_sampler" in gpt2_source_text
     assert "const bool validation_sampler_constructed = val_sampler.has_value();" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
-    assert 'std::getenv("CUDA_VISIBLE_DEVICES")' in gpt2_source_text
-    assert 'setenv("CUDA_VISIBLE_DEVICES", "0", 0)' in gpt2_source_text
-    assert 'std::getenv("CUDA_DEVICE_MAX_CONNECTIONS")' in gpt2_source_text
-    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in gpt2_source_text
+    assert 'setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0")' in gpt2_source_text
+    assert 'setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in gpt2_source_text
+    assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in gpt2_source_text
     assert '\\"cuda_module_loading\\"' in gpt2_source_text
     assert "--no-checkpoint" in gpt2_source_text
     assert "--native-cuda-no-checkpoint" in gpt2_source_text

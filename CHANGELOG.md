@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Normalized empty CUDA environment values across native training launch paths.
+  The GPT SDK helpers, generic native SDK helper, direct `train_gpt.py` and
+  `train_gpt_native.py` compiled-CLI paths, guarded legacy training scripts,
+  C++ SDK bindings, unified native dispatcher, GPT launcher, SM120 launcher,
+  GPT dense trainer, GPT-2-evo delegate, and NanoGPT native target now treat
+  empty `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_MAX_CONNECTIONS`, and
+  `CUDA_MODULE_LOADING` as unset before applying workstation defaults. This
+  keeps accidental exported empty values from disabling the dedicated RTX 5090
+  route (`0`), single-connection scheduling (`1`), or lazy module loading
+  (`LAZY`). Non-empty caller-provided values are still preserved.
+
+  Verification: ran Python py_compile on the edited native launcher modules;
+  ran the focused native GPT pytest slice (`7 passed`); rebuilt
+  `nfn_native_train`, `nfn_gpt_native_train`, `nfn_gpt2_tile_train`, the SM120
+  launcher, `nfn_gpt2_evo_native_train`, `nfn_nanogpt_native_train`, and the
+  missing-family native binaries. The rebuild completed with only the existing
+  NanoGPT unused-function warning.
+
 - Made native GPT true-fused LM-head route selection shape-aware. The trainer
   now mirrors the strict cooperative kernel's production-shape guard before
   enabling the monolithic LM-head path and reports

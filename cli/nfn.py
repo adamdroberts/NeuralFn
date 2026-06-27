@@ -840,9 +840,9 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         and _resolve_direct_native_train_family_cli(model) is not None
     )
     env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
-    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     native_execution_flags = {
         "--print-plan",
         "--list-templates",
@@ -871,6 +871,11 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         return int(proc.returncode)
     os.execvpe(command[0], command, env)
     return 127
+
+
+def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:
+    if value and not str(env.get(key, "")).strip():
+        env[key] = value
 
 
 def _append_value_arg(out: list[str], flag: str, value: str) -> None:

@@ -190,6 +190,11 @@ def _family_forwarded_args(command: str, native_default_args: list[str]) -> list
     return [command, *defaults, *args]
 
 
+def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:
+    if value and not str(env.get(key, "")).strip():
+        env[key] = value
+
+
 def reject_torch_training_by_default(
     script_name: str,
     *,
@@ -217,9 +222,9 @@ def reject_torch_training_by_default(
     default_args = list(native_default_args or ())
     command = _family_forwarded_args(family_command, default_args) if family_command else _forwarded_args(family, default_args)
     env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
-    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     if (
         "--dry-run" in command
         and "--print-command" in command

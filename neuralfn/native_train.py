@@ -383,10 +383,15 @@ def resolve_native_train_binding_command(config: NativeTrainRunConfig) -> list[s
 
 def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
-    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
+
+
+def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:
+    if str(value or "").strip() and not str(env.get(key, "")).strip():
+        env[key] = str(value)
 
 
 def _native_train_command_available(argv: Sequence[str]) -> bool:

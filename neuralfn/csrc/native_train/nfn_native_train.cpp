@@ -21,6 +21,17 @@ namespace fs = std::filesystem;
 
 namespace {
 
+bool env_is_empty(const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr || value[0] == '\0';
+}
+
+void setenv_default_if_empty(const char* name, const char* value) {
+    if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
+        setenv(name, value, 1);
+    }
+}
+
 struct ModelEntry {
     std::string_view name;
     std::string_view status;
@@ -778,15 +789,9 @@ int main(int argc, char** argv) {
                 ? gpt_cli
                 : resolve_native_target_cli(argv[0], *model_entry);
         if (!target_cli.empty()) {
-            if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
-                setenv("CUDA_VISIBLE_DEVICES", "0", 0);
-            }
-            if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
-                setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
-            }
-            if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-                setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-            }
+            setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+            setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+            setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
             std::vector<std::string> command;
             command.push_back(target_cli);
             if (dense_gpt) {
@@ -862,15 +867,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
-        setenv("CUDA_VISIBLE_DEVICES", "0", 0);
-    }
-    if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
-        setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
-    }
-    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
-        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
-    }
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+    setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
     std::vector<std::string> command;
     command.push_back(gpt_cli);
