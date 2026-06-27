@@ -2014,7 +2014,11 @@ aligned `cudaMalloc` and reports
 `transformer_device_arena_pointer_assign_wall_ms`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. The CUDA 13.3 dedicated RTX 5090
+`transformer_device_arena_uint16_byte_offset`. Dense GPT native runtime JSON
+also reports `float_arena_allocated_bytes`, `uint16_arena_allocated_bytes`,
+`transformer_arena_allocated_bytes`, `activation_storage_bytes`, and
+`lm_head_bf16_logit_bytes`; the paired benchmark helper flattens those values
+into native metric summaries for startup and storage comparisons. The CUDA 13.3 dedicated RTX 5090
 3-step rerun rejected the combined arena at `1.004991x` train-loop wall time
 and `0.995098x` tokens/sec, and a startup-only rerun rejected it at `1.063067x`
 setup wall time.

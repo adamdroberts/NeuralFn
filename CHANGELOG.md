@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added root allocation-pressure telemetry for SM120 startup and
+  storage work. Dense GPT runtime JSON now reports
+  `float_arena_allocated_bytes`, `uint16_arena_allocated_bytes`,
+  `transformer_arena_allocated_bytes`, `activation_storage_bytes`, and
+  `lm_head_bf16_logit_bytes`, and `tools/paired_kernel_speed.py` flattens those
+  fields into `native_hot_summary` / native metric ratios. This does not change
+  the default training route; it makes the remaining startup gap measurable by
+  bytes as well as noisy host-side allocation timing. Verification: focused
+  native GPT source tests, native linked trainer rebuild, startup-only JSON
+  smoke, no-Torch verifier, and `git diff --check`.
+
 - Bench: refreshed the current RTX 5090 evidence for two tempting but
   non-promotable SM120 parity profiles. `llmk_sm120_reference_flags` now records
   the 2026-06-28 3-step/2-sample stage-timed rerun: it passed

@@ -899,7 +899,12 @@ keeps the current SM120 parity decision fields together: host train-loop wall,
 CUDA-event total/first-step/steady-state timing, tokens/sec, setup wall, the
 hot setup buckets (`float_arena_materialize`, `uint16_arena_materialize`,
 `token_weight_init`, `cublaslt_plan_prewarm`), and the largest stage-timed
-forward/backward buckets. The full text summary still prints the LM-head
+forward/backward buckets. It also prints aggregate allocation-pressure metrics
+from native JSON, including `float_arena_allocated_bytes`,
+`uint16_arena_allocated_bytes`, `transformer_arena_allocated_bytes`,
+`activation_storage_bytes`, and `lm_head_bf16_logit_bytes`, so startup
+candidates can be judged against the real memory footprint as well as noisy
+host-side `cudaMalloc` timing. The full text summary still prints the LM-head
 backward substages (`logits`, `ce`, `dhidden`, `dweight`,
 optional `dhidden_dweight_concurrent`) plus block-backward substages such as
 `mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias` so parity runs can
@@ -1471,7 +1476,11 @@ the large native `cudaMalloc` arenas. Each arena stats object includes both the
 short `requested_elements` / `allocated_elements` / `requested_bytes` /
 `allocated_bytes` names and the explicit `total_requested_elements` /
 `total_allocated_elements` / `total_requested_bytes` / `total_allocated_bytes`
-aliases for benchmark tooling that reads nested arena totals directly.
+aliases for benchmark tooling that reads nested arena totals directly. The
+root JSON also exposes `float_arena_allocated_bytes`,
+`uint16_arena_allocated_bytes`, `transformer_arena_allocated_bytes`,
+`activation_storage_bytes`, and `lm_head_bf16_logit_bytes` for same-script
+ratio gates and startup-memory comparisons.
 The paired helper also detects those native JSON-output flags in child commands
 and reads the sidecar file when stdout is empty, so stage-timed native runs can
 keep stdout small without losing metric summaries or paired ratios.

@@ -22422,6 +22422,21 @@ int run_transformer_lm_training_json(
     const bool linear_tk_sm120_approx_dgelu_tanh_enabled =
         trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn != nullptr &&
         trainer_linear_tk_sm120_approx_dgelu_tanh_enabled_fn() != 0;
+    const std::int64_t float_arena_allocated_bytes =
+        float_arena_allocated_elements * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t uint16_arena_allocated_bytes =
+        uint16_arena_allocated_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t transformer_arena_allocated_bytes =
+        float_arena_allocated_bytes + uint16_arena_allocated_bytes;
+    const std::int64_t activation_storage_bytes =
+        stored_mlp_activation_arena_bytes +
+        stored_residual1_activation_arena_bytes +
+        stored_attention_bf16_arena_bytes +
+        stored_attention_lse_arena_bytes +
+        stored_packed_attention_bf16_arena_bytes +
+        stored_packed_attention_ln1_stats_arena_bytes +
+        stored_packed_attention_ln1_bf16_arena_bytes +
+        stored_packed_attention_lse_arena_bytes;
 
     std::cout
         << "{\n"
@@ -24105,6 +24120,7 @@ int run_transformer_lm_training_json(
         << "  \"float_allocation_request_count\": " << float_arena_requests.size() << ",\n"
         << "  \"float_arena_requested_elements\": " << float_arena_requested_elements << ",\n"
         << "  \"float_arena_allocated_elements\": " << float_arena_allocated_elements << ",\n"
+        << "  \"float_arena_allocated_bytes\": " << float_arena_allocated_bytes << ",\n"
         << "  \"uint16_allocation_strategy\": \""
         << (combined_transformer_device_arena_enabled
                 ? "combined-transformer-device-arena"
@@ -24115,6 +24131,10 @@ int run_transformer_lm_training_json(
         << "  \"uint16_allocation_request_count\": " << uint16_arena_requests.size() << ",\n"
         << "  \"uint16_arena_requested_elements\": " << uint16_arena_requested_elements << ",\n"
         << "  \"uint16_arena_allocated_elements\": " << uint16_arena_allocated_elements << ",\n"
+        << "  \"uint16_arena_allocated_bytes\": " << uint16_arena_allocated_bytes << ",\n"
+        << "  \"transformer_arena_allocated_bytes\": " << transformer_arena_allocated_bytes << ",\n"
+        << "  \"activation_storage_bytes\": " << activation_storage_bytes << ",\n"
+        << "  \"lm_head_bf16_logit_bytes\": " << lm_head_bf16_logit_bytes << ",\n"
         << "  \"uint16_arena_cuda_malloc_count\": " << uint16_arena_cuda_malloc_count << ",\n"
         << "  \"uint16_arena_cuda_malloc_wall_ms\": " << uint16_arena_cuda_malloc_wall_ms << ",\n"
         << "  \"uint16_arena_pointer_assign_wall_ms\": " << uint16_arena_pointer_assign_wall_ms << ",\n"
