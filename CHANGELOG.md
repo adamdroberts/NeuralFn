@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the SM120 llm.kittens parity wrapper so native train-loop CUDA-event
+  timing is enabled by default on the NeuralFn candidate command. The parity
+  wrapper now matches the candidate-wrapper/test contract: strict parity runs
+  can gate `train_loop_cuda_event_steady_state_wall_ms_per_step` without relying
+  on shell-prefix environment overrides.
+
+  Verification: before the fix, a dedicated RTX 5090 10-step, 3-sample parity
+  rerun with `NFN_SM120_NATIVE_PROFILE_DIR=none` failed at
+  `1.000882x` mean train-loop wall time and reported zero-valued NeuralFn
+  candidate CUDA-event metrics because no candidate env override reached the
+  wrapped command. The native runtime contract still passed
+  (`graph_editor_tensor_flow=false`, `torch_required=false`), and the remaining
+  kernel target stayed the diagnostic LM-head CUDA Graph wrapper with
+  `true_fused_capability=false`, `graph_replay_mean=160`, and
+  `graph_body_nodes_per_replay=3`.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128` as an accepted
   SM120 default-vs-legacy profile with current-code evidence after the BF16
   attention grad-out and no-loss CE default promotions. The runtime default was

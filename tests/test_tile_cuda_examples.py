@@ -401,9 +401,15 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--max-selected-gpu-utilization-pct" in text
     assert "--selected-gpu-utilization-retries" in text
     assert "--selected-gpu-utilization-retry-interval-seconds" in text
-    assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES:-3' in text
-    assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS:-0.25' in text
-    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-dedicated}}"' in text
+    assert "NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES" in text
+    assert "NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES" in text
+    assert "NFN_SM120_CUDA_VISIBLE_DEVICES" in text
     assert "TinyStories_train.bin" in text
     assert "TinyStories_val.bin" in text
     assert "-b 64" in text
@@ -1182,6 +1188,7 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     assert payload["selected_gpu_utilization_retries"] == 3
     assert payload["selected_gpu_utilization_retry_interval_seconds"] == 0.25
     assert payload["metric_ratio_gates"]["enabled"] is False
+    assert payload["candidate_env"]["NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING"] == "1"
     assert payload["candidate_env"]["NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS"] == "0"
     assert payload["baseline_command"][payload["baseline_command"].index("-af") + 1] == "sd-prelu"
     assert (

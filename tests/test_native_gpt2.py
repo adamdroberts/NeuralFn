@@ -828,14 +828,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
-    assert 'TRAIN_LOOP_EVENT_TIMING="${NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING:-${NFN_SM120_TRAIN_LOOP_EVENT_TIMING:-1}}"' in parity_bench
-    assert 'ENFORCE_GATE="${NFN_SM120_PARITY_ENFORCE_GATE:-${NFN_SM120_ENFORCE_PARITY_GATE:-1}}"' in parity_bench
+    assert "TRAIN_LOOP_EVENT_TIMING=\"$(env_or_alias3 NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING NFN_SM120_TRAIN_LOOP_EVENT_TIMING 1)\"" in parity_bench
+    assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
-    assert 'CANDIDATE_PROFILE_RAW="${NFN_SM120_PARITY_CANDIDATE_PROFILE:-${NFN_SM120_PARITY_PROFILE:-}}"' in parity_bench
-    assert "NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench
+    assert "CANDIDATE_PROFILE_RAW=\"$(env_or_alias4 NFN_SM120_NATIVE_CANDIDATE_PROFILE NFN_SM120_NATIVE_PARITY_PROFILE NFN_SM120_PARITY_CANDIDATE_PROFILE NFN_SM120_PARITY_PROFILE \"\")\"" in parity_bench
+    assert "NFN_SM120_NATIVE_CANDIDATE_PROFILE/NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench
     assert (
-        'ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE="${NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE:-${NFN_SM120_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE:-1}}"'
+        "ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=\"$(env_or_alias3 NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE NFN_SM120_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE 1)\""
         in parity_bench
     )
     assert "--allow-stale-selected-gpu-utilization-without-compute-processes" in parity_bench
@@ -912,24 +912,23 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "steady-state CUDA-event timing to 1.005839x" in candidate_bench
     assert "candidate-over-llm.kittens wall to 1.018312x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
-    assert "setup.token_weight_init.total_ms to 1.122857x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.025016x" in candidate_bench
     assert "token_weight_bf16_pattern" in candidate_bench
-    assert "setup_wall_ms stayed flat at 0.998033x mean / 1.015865x median" in candidate_bench
-    assert "setup.token_weight_init.total_ms stayed flat only on mean at 0.998156x" in candidate_bench
-    assert "regressing to 1.022682x median" in candidate_bench
-    assert "setup.uint16_arena_materialize.total_ms regressed to 1.075542x mean / 1.032256x median" in candidate_bench
+    assert "setup_wall_ms regressed to 1.005840x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.015463x" in candidate_bench
+    assert "setup.uint16_arena_materialize.total_ms stayed noise-flat at 0.998215x" in candidate_bench
     assert "token_weight_padded_init" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
-    assert "setup_wall_ms at 0.976762x" in candidate_bench
-    assert "setup.token_weight_init.total_ms at 0.961152x" in candidate_bench
+    assert "setup_wall_ms at 0.988862x" in candidate_bench
+    assert "setup.token_weight_init.total_ms at 0.976989x" in candidate_bench
     assert "DEFAULT_VS_LEGACY_PROFILE=1" in candidate_bench
     assert "setup.token_weight_init.total_ms=1.000" in candidate_bench
     assert "token_weight_fast_int32" in candidate_bench
-    assert "setup_wall_ms to 1.009714x" in candidate_bench
-    assert "setup.token_weight_init.total_ms to 1.035894x" in candidate_bench
+    assert "setup_wall_ms regressed to 1.014148x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 0.960426x" in candidate_bench
     assert "token_weight_two_pass_bf16" in candidate_bench
-    assert "setup_wall_ms flat at 0.996873x" in candidate_bench
-    assert "setup.token_weight_init.total_ms to 1.017739x" in candidate_bench
+    assert "setup_wall_ms regressed to 1.005287x" in candidate_bench
+    assert "setup.token_weight_init.total_ms to 1.005229x" in candidate_bench
     assert "mlp_fc_dinput_before_dweight" in candidate_bench
     assert "block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288" in candidate_bench
     assert "post-reinstall recheck proved the route" in candidate_bench
@@ -4962,7 +4961,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_direct_bf16_qkv_grad_scratch_enabled"] is True
     assert tile_payload["attention_backward_direct_bf16_qkv_grad_scratch_elements"] == 64 * 1024 * 768 * 3
     assert tile_payload["attention_backward_qkv_bridge_strategy"] == (
-        "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
+        "tk-sm120-packed-qkv-bf16-grad-out-direct-bf16-qkv-handoff"
     )
     assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert tile_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4

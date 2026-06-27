@@ -1281,11 +1281,18 @@ The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or
 `NFN_SM120_STAGE_TIMING=1` to add `--native-stage-timing` and capture
-`timing.stage_timing` from the NeuralFn side. After the CUDA 13.3 reinstall and
-SM120 native rebuild, the dedicated idle RTX 5090 3-step parity gate completed
-cleanly and measured NeuralFn at about `208k` tokens/sec versus llm.kittens at
-about `216k` tokens/sec, leaving the remaining work as kernel-throughput
-closing rather than CUDA setup or graph/Torch startup.
+`timing.stage_timing` from the NeuralFn side. The parity wrapper now also
+defaults `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn candidate
+command whenever strict parity is enforced, so same-script llm.kittens runs
+gate both host train-loop wall time and the native CUDA-event steady-state step
+time. Set `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0`,
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0`, or
+`NFN_SM120_TRAIN_LOOP_EVENT_TIMING=0` only for a measurement-only rerun that
+does not need native CUDA-event records. After the CUDA 13.3 reinstall and SM120
+native rebuild, the dedicated idle RTX 5090 3-step parity gate completed cleanly
+and measured NeuralFn at about `208k` tokens/sec versus llm.kittens at about
+`216k` tokens/sec, leaving the remaining work as kernel-throughput closing
+rather than CUDA setup or graph/Torch startup.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` is now a
 fast-fail no-op profile. The SM120 paired wrapper already applies
 `CUDA_DEVICE_MAX_CONNECTIONS=1` to both baseline and candidate commands,
