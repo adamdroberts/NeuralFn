@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the no-Python SM120 GPT launcher device default. When
+  `CUDA_VISIBLE_DEVICES` is unset, `build/nfn_train_gpt_sm120` and the
+  `tools/train_gpt_sm120.sh` shell fallback now resolve
+  `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES` / `NFN_SM120_CUDA_VISIBLE_DEVICES`,
+  defaulting to `dedicated`: they choose a display-disabled NVIDIA GPU from
+  `nvidia-smi` and fall back to ordinal `0` only when that query is unavailable.
+  This keeps workstation runs on the dedicated RTX 5090 after moving display
+  output to a different GPU, without adding Python startup.
+
+  Migration notes: set `CUDA_VISIBLE_DEVICES` explicitly to preserve a fixed
+  device, or set `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES=0` for the old hard
+  ordinal behavior.
+
+  Verification: rebuilt the compiled SM120 launcher, ran its dry-run path, ran
+  the shell fallback dry-run, and extended the native source-contract coverage
+  for the dedicated-GPU resolver.
+
 - Hardened `tools/bench_lm_head_backward_candidate.sh` for focused kernel speed
   probes. The wrapper now takes a per-selected-GPU `flock` and, by default,
   refuses to launch when `nvidia-smi` reports active compute processes or

@@ -712,6 +712,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
     train_sm120 = (root / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
+    train_sm120_cpp = (
+        root / "neuralfn" / "csrc" / "native_train" / "train_gpt_sm120.cpp"
+    ).read_text(encoding="utf-8")
     tile_ops_build = (root / "tools" / "build_native_train_tile_ops.sh").read_text(
         encoding="utf-8"
     )
@@ -769,6 +772,15 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_SM120_CLI" in train_sm120
     assert "NFN_SM120_USE_COMPILED_LAUNCHER" in train_sm120
     assert 'exec "${COMPILED_SM120_LAUNCHER}" "$@"' in train_sm120
+    assert "select_auto_cuda_device" in train_sm120
+    assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES" in train_sm120
+    assert "NFN_SM120_CUDA_VISIBLE_DEVICES" in train_sm120
+    assert "display_active,utilization.gpu" in train_sm120
+    assert "select_display_disabled_cuda_device" in train_sm120_cpp
+    assert "resolve_cuda_visible_devices_default" in train_sm120_cpp
+    assert "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES" in train_sm120_cpp
+    assert "NFN_SM120_CUDA_VISIBLE_DEVICES" in train_sm120_cpp
+    assert 'setenv_default_if_empty("CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_default())' in train_sm120_cpp
     assert "build/nfn_gpt_native_train_linked" in train_sm120
     assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
     assert "build_native_gpt_cli_linked.sh" in train_sm120

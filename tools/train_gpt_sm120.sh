@@ -29,6 +29,50 @@ fi
 export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
 export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 
+select_auto_cuda_device() {
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    printf '%s\n' "0"
+    return
+  fi
+  local query_output
+  if ! query_output="$(nvidia-smi --query-gpu=index,display_active,utilization.gpu --format=csv,noheader,nounits 2>/dev/null)"; then
+    printf '%s\n' "0"
+    return
+  fi
+  printf '%s\n' "${query_output}" | awk -F, '
+      {
+        idx=$1; display=$2; util=$3;
+        gsub(/^[ \t]+|[ \t]+$/, "", idx);
+        gsub(/^[ \t]+|[ \t]+$/, "", display);
+        gsub(/^[ \t]+|[ \t]+$/, "", util);
+        if (first == "") first = idx;
+        if (display == "Disabled" && (best == "" || util + 0 < best_util + 0)) {
+          best = idx;
+          best_util = util;
+        }
+      }
+      END {
+        if (best != "") print best;
+        else if (first != "") print first;
+        else print "0";
+      }
+    '
+}
+
+if [[ -z "${CUDA_VISIBLE_DEVICES-}" ]]; then
+  CUDA_VISIBLE_DEVICES_DEFAULT="${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-dedicated}}"
+  case "${CUDA_VISIBLE_DEVICES_DEFAULT,,}" in
+    ""|"none"|"off")
+      ;;
+    "auto"|"dedicated"|"dedicated-auto")
+      export CUDA_VISIBLE_DEVICES="$(select_auto_cuda_device)"
+      ;;
+    *)
+      export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES_DEFAULT}"
+      ;;
+  esac
+fi
+
 ACTIVATION="${NFN_SM120_ACTIVATION:-gelu}"
 MOA_INTERVAL="${NFN_SM120_MOA_INTERVAL:-50}"
 OUTPUT_DIR="${NFN_SM120_OUTPUT_DIR:-${ROOT_DIR}/artifacts/gpt_sm120}"

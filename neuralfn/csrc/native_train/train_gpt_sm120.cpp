@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -51,6 +52,81 @@ bool executable(const fs::path& path) {
         return false;
     }
     return access(path.c_str(), X_OK) == 0;
+}
+
+std::string trim(std::string value) {
+    const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    });
+    const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    }).base();
+    if (begin >= end) {
+        return {};
+    }
+    return std::string(begin, end);
+}
+
+std::string select_display_disabled_cuda_device() {
+    FILE* pipe = popen(
+        "nvidia-smi --query-gpu=index,display_active,utilization.gpu --format=csv,noheader,nounits 2>/dev/null",
+        "r");
+    if (pipe == nullptr) {
+        return "0";
+    }
+    char buffer[256];
+    std::string first_index;
+    std::string best_index;
+    int best_util = 0;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        std::string line(buffer);
+        const std::size_t first_comma = line.find(',');
+        const std::size_t second_comma = first_comma == std::string::npos ? std::string::npos : line.find(',', first_comma + 1);
+        if (first_comma == std::string::npos || second_comma == std::string::npos) {
+            continue;
+        }
+        std::string index = trim(line.substr(0, first_comma));
+        std::string display = trim(line.substr(first_comma + 1, second_comma - first_comma - 1));
+        std::string util_text = trim(line.substr(second_comma + 1));
+        if (index.empty()) {
+            continue;
+        }
+        if (first_index.empty()) {
+            first_index = index;
+        }
+        int util = 0;
+        try {
+            util = std::stoi(util_text);
+        } catch (...) {
+            util = 0;
+        }
+        if (display == "Disabled" && (best_index.empty() || util < best_util)) {
+            best_index = index;
+            best_util = util;
+        }
+    }
+    const int status = pclose(pipe);
+    if (status != 0 && first_index.empty() && best_index.empty()) {
+        return "0";
+    }
+    if (!best_index.empty()) {
+        return best_index;
+    }
+    return first_index.empty() ? "0" : first_index;
+}
+
+std::string resolve_cuda_visible_devices_default() {
+    std::string requested = env_first(
+        {"NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "NFN_SM120_CUDA_VISIBLE_DEVICES"},
+        "dedicated");
+    std::string normalized = lower(trim(requested));
+    if (normalized.empty() || normalized == "none" || normalized == "off") {
+        return {};
+    }
+    if (normalized == "auto" || normalized == "dedicated" || normalized == "dedicated-auto") {
+        return select_display_disabled_cuda_device();
+    }
+    return requested;
 }
 
 fs::path repo_root_from_argv0(const char* argv0) {
@@ -118,7 +194,7 @@ int main(int argc, char** argv) {
         native_bin = executable(linked) ? linked.string() : (root / "build" / "nfn_gpt_native_train").string();
     }
 
-    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_default());
     setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
     setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 
