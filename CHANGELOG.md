@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Python SDK/native GPT binding: `run_gpt_capture`, `run_gpt2_capture`, and
+  `run_infer` now capture child stderr separately from stdout through the C++
+  binding path. SDK-native checkpoint sampling and inference diagnostics can now
+  surface CUDA runtime, missing-symbol, and compiled trainer errors without
+  falling back to Python `subprocess.run()`. Rebuild old local
+  `neuralfn._native_gpt` / `neuralfn._native_gpt2` extensions to get the new
+  stderr field behavior. Verification: rebuilt the compatibility native GPT
+  binding, ran the focused binding tests, native dependency tests, and
+  `git diff --check`.
+
 - Bench: extended `tools/paired_kernel_speed.py`'s
   `native_lm_head_true_fused_target` summary with derived LM-head CUDA Graph
   health metrics: replay success rate, fallback/capture/upload/prewarm

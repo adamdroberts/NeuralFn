@@ -2998,7 +2998,8 @@ training should resolve to a compiled native trainer or the unified C++
 frontend.
 Rebuilt GPT bindings also expose `run_gpt_capture`, `run_gpt2_capture`, and
 `run_infer`, which run a compiled native command through the C++ binding while
-returning captured stdout for SDK-native checkpoint sampling.
+returning captured stdout and stderr for SDK-native checkpoint sampling and
+native inference diagnostics.
 For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
 `neuralfn.native_train` SDK resolver now chooses
 `build/nfn_gpt_native_train_linked` before `build/nfn_gpt_native_train` when no

@@ -119,7 +119,9 @@ Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
 `run_native_gpt2_checkpoint_sampler()`. When a rebuilt GPT binding exposes
 `run_gpt_capture` / `run_gpt2_capture` / `run_infer`, the SDK uses that C++
 captured-output path for native `.bin` inference before falling back to Python
-`subprocess.run()`.
+`subprocess.run()`. Rebuilt capture bindings return both `stdout` and `stderr`
+in the result dict, so CUDA runtime and native inference failures remain visible
+without leaving the compiled binding path.
 Use `exec_native_gpt(config)` or the compatibility `exec_native_gpt2(config)`
 when an SDK launcher should replace the current Python process with the
 compiled CLI or launcher instead of waiting for a subprocess return code from

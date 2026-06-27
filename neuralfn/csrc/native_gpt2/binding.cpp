@@ -1,5 +1,6 @@
 #include <Python.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,7 @@
 #error "neuralfn._native_gpt/_native_gpt2 currently targets POSIX fork/exec environments."
 #else
 #include <spawn.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -218,9 +220,76 @@ bool apply_cuda_env_from_config(PyObject* config) {
     return true;
 }
 
-bool run_exec_capture_stdout(const std::vector<std::string>& command, int* return_code, std::string* stdout_text) {
+bool drain_child_output_pipes(int stdout_fd, int stderr_fd, std::string* stdout_text, std::string* stderr_text) {
+    stdout_text->clear();
+    stderr_text->clear();
+    bool stdout_open = stdout_fd >= 0;
+    bool stderr_open = stderr_fd >= 0;
+    char buffer[8192];
+    while (stdout_open || stderr_open) {
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        int max_fd = -1;
+        if (stdout_open) {
+            FD_SET(stdout_fd, &read_fds);
+            max_fd = std::max(max_fd, stdout_fd);
+        }
+        if (stderr_open) {
+            FD_SET(stderr_fd, &read_fds);
+            max_fd = std::max(max_fd, stderr_fd);
+        }
+        const int ready = select(max_fd + 1, &read_fds, nullptr, nullptr, nullptr);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            PyErr_Format(PyExc_OSError, "select on child output pipes failed: %s", std::strerror(errno));
+            return false;
+        }
+        auto drain_one = [&](int fd, bool* open, std::string* text, const char* label) -> bool {
+            if (!*open || !FD_ISSET(fd, &read_fds)) {
+                return true;
+            }
+            const ssize_t count = read(fd, buffer, sizeof(buffer));
+            if (count > 0) {
+                text->append(buffer, static_cast<std::size_t>(count));
+                return true;
+            }
+            if (count == 0) {
+                close(fd);
+                *open = false;
+                return true;
+            }
+            if (errno == EINTR) {
+                return true;
+            }
+            PyErr_Format(PyExc_OSError, "read %s pipe failed: %s", label, std::strerror(errno));
+            return false;
+        };
+        if (!drain_one(stdout_fd, &stdout_open, stdout_text, "stdout")) {
+            return false;
+        }
+        if (!drain_one(stderr_fd, &stderr_open, stderr_text, "stderr")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool run_exec_capture_output(
+    const std::vector<std::string>& command,
+    int* return_code,
+    std::string* stdout_text,
+    std::string* stderr_text) {
     int stdout_pipe[2] = {-1, -1};
     if (pipe(stdout_pipe) != 0) {
+        PyErr_Format(PyExc_OSError, "pipe failed: %s", std::strerror(errno));
+        return false;
+    }
+    int stderr_pipe[2] = {-1, -1};
+    if (pipe(stderr_pipe) != 0) {
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
         PyErr_Format(PyExc_OSError, "pipe failed: %s", std::strerror(errno));
         return false;
     }
@@ -230,20 +299,33 @@ bool run_exec_capture_stdout(const std::vector<std::string>& command, int* retur
     if (action_status != 0) {
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
         PyErr_Format(PyExc_OSError, "posix_spawn_file_actions_init failed: %s", std::strerror(action_status));
         return false;
     }
     action_status = posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
+    if (action_status == 0) {
+        action_status = posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
+    }
     if (action_status == 0) {
         action_status = posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
     }
     if (action_status == 0) {
         action_status = posix_spawn_file_actions_addclose(&actions, stdout_pipe[1]);
     }
+    if (action_status == 0) {
+        action_status = posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
+    }
+    if (action_status == 0) {
+        action_status = posix_spawn_file_actions_addclose(&actions, stderr_pipe[1]);
+    }
     if (action_status != 0) {
         posix_spawn_file_actions_destroy(&actions);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
         PyErr_Format(PyExc_OSError, "posix_spawn_file_actions setup failed: %s", std::strerror(action_status));
         return false;
     }
@@ -259,31 +341,17 @@ bool run_exec_capture_stdout(const std::vector<std::string>& command, int* retur
     const int spawn_status = posix_spawnp(&pid, command[0].c_str(), &actions, nullptr, exec_args.data(), environ);
     posix_spawn_file_actions_destroy(&actions);
     close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
     if (spawn_status != 0) {
         close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
         PyErr_Format(PyExc_OSError, "posix_spawnp failed for %s: %s", command[0].c_str(), std::strerror(spawn_status));
         return false;
     }
 
-    stdout_text->clear();
-    char buffer[8192];
-    for (;;) {
-        const ssize_t count = read(stdout_pipe[0], buffer, sizeof(buffer));
-        if (count > 0) {
-            stdout_text->append(buffer, static_cast<std::size_t>(count));
-            continue;
-        }
-        if (count == 0) {
-            break;
-        }
-        if (errno == EINTR) {
-            continue;
-        }
-        close(stdout_pipe[0]);
-        PyErr_Format(PyExc_OSError, "read stdout pipe failed: %s", std::strerror(errno));
+    if (!drain_child_output_pipes(stdout_pipe[0], stderr_pipe[0], stdout_text, stderr_text)) {
         return false;
     }
-    close(stdout_pipe[0]);
 
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
@@ -353,7 +421,8 @@ PyObject* run_gpt_capture(PyObject*, PyObject* args) {
 
     int return_code = 0;
     std::string stdout_text;
-    if (!run_exec_capture_stdout(command, &return_code, &stdout_text)) {
+    std::string stderr_text;
+    if (!run_exec_capture_output(command, &return_code, &stdout_text, &stderr_text)) {
         return nullptr;
     }
     PyObject* stdout_obj = PyUnicode_FromStringAndSize(
@@ -362,8 +431,23 @@ PyObject* run_gpt_capture(PyObject*, PyObject* args) {
     if (stdout_obj == nullptr) {
         return nullptr;
     }
-    PyObject* result = Py_BuildValue("{s:i,s:O,s:s}", "returncode", return_code, "stdout", stdout_obj, "stderr", "");
+    PyObject* stderr_obj = PyUnicode_FromStringAndSize(
+        stderr_text.c_str(),
+        static_cast<Py_ssize_t>(stderr_text.size()));
+    if (stderr_obj == nullptr) {
+        Py_DECREF(stdout_obj);
+        return nullptr;
+    }
+    PyObject* result = Py_BuildValue(
+        "{s:i,s:O,s:O}",
+        "returncode",
+        return_code,
+        "stdout",
+        stdout_obj,
+        "stderr",
+        stderr_obj);
     Py_DECREF(stdout_obj);
+    Py_DECREF(stderr_obj);
     return result;
 }
 

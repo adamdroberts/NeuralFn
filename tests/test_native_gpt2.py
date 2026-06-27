@@ -3996,8 +3996,20 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     assert status.binding_module == "neuralfn._native_gpt2"
     assert run_native_gpt2(cfg, runner="auto") == 0
     binding_module = importlib.import_module("neuralfn._native_gpt2")
-    captured = binding_module.run_gpt2_capture({"compiled_cli_argv": ["/bin/echo", "native-sampler-ok"]})
-    assert captured == {"returncode": 0, "stdout": "native-sampler-ok\n", "stderr": ""}
+    captured = binding_module.run_gpt2_capture(
+        {
+            "compiled_cli_argv": [
+                sys.executable,
+                "-c",
+                "import sys; print('native-sampler-ok'); print('native-stderr-ok', file=sys.stderr)",
+            ]
+        }
+    )
+    assert captured == {
+        "returncode": 0,
+        "stdout": "native-sampler-ok\n",
+        "stderr": "native-stderr-ok\n",
+    }
 
 
 def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
@@ -4059,9 +4071,13 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
     source = (root / "neuralfn" / "csrc" / "native_gpt2" / "binding.cpp").read_text(encoding="utf-8")
 
     assert "#include <spawn.h>" in source
+    assert "#include <sys/select.h>" in source
     assert "posix_spawnp(&pid" in source
     assert "pipe(stdout_pipe)" in source
+    assert "pipe(stderr_pipe)" in source
+    assert "drain_child_output_pipes" in source
     assert "posix_spawn_file_actions_adddup2" in source
+    assert "STDERR_FILENO" in source
     assert '"run_gpt_capture"' in source
     assert '"run_infer"' in source
     assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
