@@ -411,16 +411,20 @@ Real training tensors must not pass through graph editor node objects.
     promotion because train-loop wall regressed to `1.003958x`, steady-state
     CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
     tokens/sec to `0.996059x`. Keep the route default-off and diagnostic-only.
-  - 2026-06-25 added and rejected the opt-in
+  - 2026-06-27 promoted the former
     `lm_head_ce_no_loss_vec8_normal_store_specialized` CUDA Tile kernel
-    candidate. It selected the new no-loss CE+dlogits path and changed
-    `lm_head_ce_kernel_strategy` from
-    `no-loss-default-specialized-dlogits-vec8-loads-scalar-stores` to
-    `no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores`, but the
-    3-step, 2-sample stage-timed same-script gate missed strict promotion at
-    `1.001139x` steady-state CUDA-event timing. Keep it rejected unless the
-    CUDA Graph LM-head wrapper is replaced or exposes a separate CE body timing
-    gate.
+    candidate as the default no-loss CE+dlogits route. The default now reports
+    `lm_head_ce_kernel_strategy:
+    no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores`; set
+    `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0` to
+    compare against the older scalar-store specialized route. The accepted
+    default-vs-legacy profile gates train-loop wall, steady-state CUDA-event
+    wall, graph-wrapper LM-head aggregate time, and tokens/sec inside a tight
+    `0.1%` same-script band because the CUDA Graph LM-head wrapper does not
+    emit a standalone CE body substage. The dedicated RTX 5090 rerun passed
+    with route strategy changes, `1.000131x` train-loop wall, `0.999777x`
+    steady-state CUDA-event wall, `1.000699x` LM-head aggregate, and
+    `0.999870x` tokens/sec.
   - 2026-06-25 catalogued
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off` as
     the rejected direct CE+dHidden+dWeight fallback. The 10-step llm.kittens
