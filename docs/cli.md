@@ -2358,17 +2358,19 @@ forward pass and by the BF16-bits dWeight accumulator for that projection, so
 the packed route does not unpack `O` to float32 before the projection.
 Set `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to force the older packed
 attention backward path that expands `dQKV` to float32 before QKV dWeight/dInput.
-Set `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` only for profiling the BF16
-attention-projection dInput handoff candidate: it makes the attention projection
-dInput GEMM write BF16 grad-out bits and feeds those bits into packed attention
-backward. Runtime JSON reports
+Dense GPT native training enables the BF16 attention-projection dInput handoff
+by default: the attention projection dInput GEMM writes BF16 grad-out bits and
+feeds those bits into packed attention backward. Set
+`NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0` or
+`NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT=0` only to reproduce the older direct
+float32 scratch route. Runtime JSON reports
 `attention_backward_bf16_grad_out_handoff_enabled`,
 `attention_backward_grad_out_dtype`, BF16 grad-out scratch sizes, and the
-updated `attention_backward_qkv_bridge_strategy`. Keep it off for normal
-training: the CUDA 13.3 dedicated RTX 5090 five-sample rerun improved attention
-backward to `0.978526x`, attention to-QKV to `0.978487x`, and attention dprep
-to `0.806016x`, but regressed `train_loop_wall_ms_per_step` to `1.004546x`,
-tokens/sec to `0.995499x`, and block backward to `1.010026x`.
+updated `attention_backward_qkv_bridge_strategy`. The CUDA 13.3 dedicated RTX
+5090 actual-training 5-step, 2-sample promotion gate measured the route at
+`0.999028x` current NeuralFn train-loop wall time, `1.000975x` current NeuralFn
+tokens/sec, `0.998462x` llm.kittens reference train-loop wall time, and `1.001921x`
+llm.kittens reference tokens/sec.
 Set `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0` to force the older split bridge for
 profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 `packed_qkv_attention_bf16_bytes`,

@@ -1285,6 +1285,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "bf16_attention_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
+    assert "DEFAULT_VS_LEGACY_PROFILE=1" in text
+    assert "0.999028x current NeuralFn train-loop wall" in text
+    assert "1.001921x llm.kittens reference tokens/sec" in text
     assert "1.005344x" in text
     assert "1.044177x attention backward" in text
     assert "1.010632x" in text
@@ -1858,8 +1861,49 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         rejected_lm_prepack_off_run.stderr
     )
 
+    bf16_attention_grad_out_output_path = tmp_path / "candidate-bf16-attention-grad-out-dry-run.json"
+    bf16_attention_grad_out_env = os.environ.copy()
+    bf16_attention_grad_out_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "bf16_attention_grad_out",
+            "NFN_SM120_NATIVE_JSON_OUT": str(bf16_attention_grad_out_output_path),
+        }
+    )
+
+    bf16_attention_grad_out_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=bf16_attention_grad_out_env,
+    )
+
+    assert bf16_attention_grad_out_dry_run.returncode == 0, bf16_attention_grad_out_dry_run.stderr
+    bf16_attention_grad_out_payload = json.loads(
+        bf16_attention_grad_out_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        bf16_attention_grad_out_payload["baseline_env"][
+            "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT"
+        ]
+        == "0"
+    )
+    assert (
+        bf16_attention_grad_out_payload["candidate_env"][
+            "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT"
+        ]
+        == "1"
+    )
+    assert (
+        bf16_attention_grad_out_payload["metadata"]["candidate_profile"]
+        == "bf16_attention_grad_out"
+    )
+
     rejected_attention_profiles = (
-        "bf16_attention_grad_out",
         "bf16_attention_dprep_grad_out",
         "packed_attention_bwd_batch_32",
         "packed_attention_bwd_batch_128",

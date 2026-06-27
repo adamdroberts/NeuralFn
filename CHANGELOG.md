@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense GPT BF16 attention grad-out handoff to the default native
+  training route. `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT` and the GPT-2
+  fallback alias now default to enabled when packed-QKV attention and BF16 QKV
+  gradient handoff are active. Set
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0` or
+  `NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT=0` only to reproduce the older
+  direct float32 scratch route. The
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_attention_grad_out` paired wrapper
+  is now an accepted default-vs-legacy profile and gates train-loop wall time
+  plus tokens/sec instead of requiring the rejected-candidate override.
+
+  Verification: reran the profile on the dedicated RTX 5090 after the CUDA
+  reinstall in actual-training mode with `NFN_SM120_NATIVE_STEPS=5`,
+  `NFN_SM120_NATIVE_SAMPLES=2`, stage timing disabled, train-loop CUDA-event
+  timing disabled, and the llm.kittens reference included. The candidate route
+  changed from
+  `tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff`
+  to
+  `tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff`,
+  moved `block_backward_dinput_cublaslt_gemm_count` from `1440` to `960`, moved
+  `block_backward_dinput_bf16_gemm_count` from `480` to `960`, and passed at
+  `0.999028x` current NeuralFn train-loop wall time, `1.000975x` current
+  NeuralFn tokens/sec, `0.998462x` llm.kittens reference train-loop wall time,
+  and `1.001921x` llm.kittens reference tokens/sec.
+
 - Changed the SM120 llm.kittens parity wrapper defaults to measure actual
   native training mode. `tools/bench_native_gpt_sm120_parity.sh` now leaves
   NeuralFn train-loop CUDA-event timing off unless

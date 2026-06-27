@@ -1000,7 +1000,7 @@ def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
     assert "cfg.json_out_path" in source
 
 
-def test_native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handoff() -> None:
+def test_native_gpt_transformer_lm_defaults_to_bf16_attention_grad_out_handoff() -> None:
     root = Path(__file__).resolve().parents[1]
     gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
@@ -1017,7 +1017,7 @@ def test_native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handof
 
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT" in gpt_source
     assert "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT" in gpt_source
-    assert 'NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),\n            false)' in gpt_source
+    assert 'NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),\n            true)' in gpt_source
     assert "attention_backward_bf16_grad_out_handoff_enabled" in gpt_source
     assert "attention_backward_grad_out_dtype" in gpt_source
     assert "attention_backward_bf16_grad_out_scratch_elements" in gpt_source

@@ -3031,19 +3031,21 @@ dWeight path. The trainer ABI also exports
 `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32`,
 and
 `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32`
-for the opt-in BF16 attention grad-out handoff experiment. Set
-`NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` only for paired profiling: attention
-projection dInput writes BF16 grad-out bits directly, and packed attention
-backward consumes those bits before writing BF16 `dQKV`. Runtime JSON reports
+for the default BF16 attention grad-out handoff. Attention projection dInput
+writes BF16 grad-out bits directly, and packed attention backward consumes
+those bits before writing BF16 `dQKV`. Set
+`NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0` or
+`NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT=0` only to reproduce the older direct
+float32 scratch route. Runtime JSON reports
 `attention_backward_bf16_grad_out_handoff_enabled`,
 `attention_backward_grad_out_dtype`,
 `attention_backward_bf16_grad_out_scratch_elements`,
 `attention_backward_bf16_grad_out_scratch_bytes`, and the updated
-`attention_backward_qkv_bridge_strategy`. The path remains default-off because
-the CUDA 13.3 dedicated RTX 5090 five-sample rerun improved attention backward
-to `0.978526x`, attention to-QKV to `0.978487x`, and attention dprep to
-`0.806016x`, but regressed `train_loop_wall_ms_per_step` to `1.004546x`,
-tokens/sec to `0.995499x`, and block backward to `1.010026x`. A Tile ops
+`attention_backward_qkv_bridge_strategy`. The CUDA 13.3 dedicated RTX 5090
+actual-training 5-step, 2-sample promotion gate measured the route at
+`0.999028x` current NeuralFn train-loop wall time, `1.000975x` current NeuralFn
+tokens/sec, `0.998462x` llm.kittens reference train-loop wall time, and `1.001921x`
+llm.kittens reference tokens/sec. A Tile ops
 library built with
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ` now compiles through a
 dedicated packed-QKV candidate wrapper that uses float dQ scratch and re-packs

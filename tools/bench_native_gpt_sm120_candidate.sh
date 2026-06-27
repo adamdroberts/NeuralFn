@@ -602,10 +602,12 @@ case "${CANDIDATE_PROFILE,,}" in
     AUTO_ATTENTION_SECTION_TIMING=1
     ;;
   "bf16_attention_grad_out"|"bf16-attention-grad-out"|"attention_bf16_grad_out"|"attention-bf16-grad-out")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 post-512-bias-default 3-step, 2-sample stage-timed recheck kept the BF16 attention grad-out handoff rejected: the route improved steady-state CUDA-event timing to 0.997577x and attention to-QKV to 0.978000x, but regressed train_loop_wall_ms_per_step to 1.002882x, train_tokens_per_second to 0.997149x, stage.block_backward.total_ms to 1.005784x, stage.block_backward.mlp_fc.dweight_bias.total_ms to 1.062723x, and stage.block_backward.attn_proj.total_ms to 1.025902x."
+    DEFAULT_VS_LEGACY_PROFILE=1
+    CANDIDATE_NOTE="Compares the promoted default BF16 attention grad-out handoff against the legacy direct float32 scratch route. CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample promotion gate measured the promoted route at 0.999028x current NeuralFn train-loop wall, 1.000975x current NeuralFn tokens/sec, 0.998462x llm.kittens reference train-loop wall, and 1.001921x llm.kittens reference tokens/sec."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
   "bf16_attention_dprep_grad_out"|"bf16-attention-dprep-grad-out"|"attention_bf16_dprep_grad_out"|"attention-bf16-dprep-grad-out")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

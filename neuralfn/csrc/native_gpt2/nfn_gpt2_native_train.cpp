@@ -4119,7 +4119,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
                               "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
-            false);
+            true);
     const bool ln1_bf16_qkv_forward_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -12568,7 +12568,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
                               "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
-            false);
+            true);
     const bool bf16_attention_dprep_grad_out_enabled =
         packed_qkv_attention_enabled &&
         bf16_qkv_grad_handoff_enabled &&
