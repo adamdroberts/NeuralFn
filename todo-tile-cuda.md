@@ -176,6 +176,21 @@ Real training tensors must not pass through graph editor node objects.
   still rejected a real `1.006174x` steady-state event regression while passing
   train-loop wall (`0.984400x`) and block backward (`0.966664x`), so the gate is
   not masking material steady-state regressions.
+- [x] Revalidate the promoted QKV default-vs-legacy route after the CUDA
+  Toolkit reinstall. The 2026-06-27 dedicated RTX 5090 5-step, 2-sample,
+  no-warmup, stage-timed same-script gate kept `qkv_dinput_ln128` accepted:
+  train-loop wall was `0.998609x` versus the older
+  256-row/QKV-dWeight-first baseline, block backward was `0.996347x`, and
+  candidate-over-llm.kittens train-loop wall was `0.999448x`. Route proof moved
+  `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
+  `128`; the selected RTX 5090 had no compute processes before samples.
+- [x] Revisit the broad native test surface after the CUDA Toolkit reinstall.
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with all
+  tracked native binaries and bindings unstale, and
+  `python -m pytest tests/test_native_gpt2.py -q` passed with `100 passed, 2
+  skipped` after correcting the strict LM-head source-contract assertion to
+  match escaped C++ JSON string literals.
 - [x] Refresh the native-vs-llm.kittens parity measurement after the CUDA WSL
   reinstall and dedicated RTX 5090 setup. The 2026-06-24 CUDA 13.3.33
   3-step/1-sample same-script run measured NeuralFn at `2512.313 ms/step`
