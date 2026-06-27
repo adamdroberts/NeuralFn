@@ -467,6 +467,15 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_ARG\"" in text
     assert '"${profile_args[@]}"' in text
     assert '"${paired_args[@]}"' in text
+    assert (
+        "reference-aligned target is fused CE/dlogits with separate logits, dHidden, and dWeight"
+        in text
+    )
+    assert "strict true-fused single-kernel path remains an experimental gate" in text
+    assert (
+        "optimize the fused CE/dlogits plus separate logits, dHidden,"
+        in text
+    )
 
 
 def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> None:

@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: corrected the SM120 parity wrapper's failure diagnostic to point at
+  the llm.kittens reference-aligned fused CE/dlogits plus separate logits,
+  dHidden, and dWeight stages. The diagnostic still reports the strict
+  true-fused symbol as an experimental gate, but no longer says that wrapper
+  replay cannot close parity without promoting a monolithic strict kernel.
+  Verification: focused parity-wrapper pytest slice, shell syntax check, and
+  `git diff --check`.
+
 - Docs: corrected the current LM-head classifier strategy examples to use the
   promoted 32,768-row default chunk, 3.30GB BF16 chunk workspace, and 2x
   resident-logit reduction reported by native plan JSON. Older 8,192-row text

@@ -481,7 +481,8 @@ if gates.get("passed") is False:
         captures = metric_mean("lm_head_fused_graph_capture_success_count")
         print("NeuralFn SM120 parity diagnostic:")
         print("  Native Tile training is active, but LM-head backward is still the diagnostic CUDA Graph wrapper.")
-        print("  The strict true-fused LM-head Tile kernel capability is false, so wrapper replay cannot close final llm.kittens parity.")
+        print("  The reference-aligned target is fused CE/dlogits with separate logits, dHidden, and dWeight matmul stages.")
+        print("  The strict true-fused single-kernel path remains an experimental gate, not the llm.kittens parity baseline.")
         if wall_ratio is not None:
             print(f"  train_loop_wall_ms_per_step ratio: {wall_ratio:.6f}")
         if steady_ratio is not None:
@@ -492,9 +493,9 @@ if gates.get("passed") is False:
                 f"replay_mean={replays if replays is not None else 'n/a'}, "
                 f"capture_success_mean={captures if captures is not None else 'n/a'}"
             )
-        print("  Next implementation target: replace nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16")
-        print("  with a real CUDA Tile fused classifier-backward kernel and make")
-        print("  nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() return 1 only then.")
+        print("  Next implementation target: optimize the fused CE/dlogits plus separate logits, dHidden,")
+        print("  and dWeight stages under same-script candidate/reference gates before promoting strict")
+        print("  nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16 experiments.")
         print_profile_summary()
 PY
 fi
