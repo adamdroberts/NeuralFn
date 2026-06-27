@@ -680,6 +680,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
+    - 2026-06-27 extended `build/lm_head_backward_bench` JSON with
+      `candidate_reference_gap`: absolute candidate-minus-reference timings for
+      generic and cuBLASLt reference component paths plus the current
+      bottleneck component names. The benchmark still rejects placeholder
+      wrappers, but the next Tile kernel iteration can now identify the
+      remaining gap from one same-process run without manual subtraction.
     - 2026-06-27 exposed the generic compiled GPT launcher through the Python
       SDK native-train path. `build_native_gpt_launcher_run_config()` resolves
       `NFN_NATIVE_GPT_TRAIN_CLI`, `build/nfn_train_gpt`, or installed

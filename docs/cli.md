@@ -1432,7 +1432,10 @@ dHidden, and dWeight timings for the current raw Tile ABI. The strict result
 also reports `candidate_sequence_wrapper_only` and
 `candidate_cuda_graph_wrapper_only`, plus the compact `candidate_path_class`
 label, so a failed true-fused gate names whether the candidate is still
-sequencing kernels or replaying a captured CUDA Graph.
+sequencing kernels or replaying a captured CUDA Graph. The same JSON includes
+`candidate_reference_gap`, which reports absolute candidate-minus-reference
+milliseconds for generic and cuBLASLt component references and names the
+current `reference_bottleneck_component`.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
 selects the 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` selects the same shape and

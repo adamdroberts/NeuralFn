@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `build/lm_head_backward_bench` now emits a
+  `candidate_reference_gap` JSON object alongside the existing LM-head
+  component ratios. It reports candidate-minus-reference milliseconds for the
+  generic and cuBLASLt component references, plus the slowest reference
+  component names and timings, so CUDA Tile LM-head candidates can be compared
+  against the old and candidate kernels in one same-process script without
+  manual subtraction. Verification: focused native GPT benchmark source test,
+  rebuilt the LM-head benchmark, ran the dry-run wrapper, the no-Torch verifier,
+  and `git diff --check`.
+
 - Native checkpoint inference: `nfn_gpt_native_train --sample-checkpoint`,
   `run_native_gpt_checkpoint_sampler()`, `run_native_gpt2_checkpoint_sampler()`,
   `nfn infer`, and the direct GPT inference wrappers now honor

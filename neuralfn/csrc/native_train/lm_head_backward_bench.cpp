@@ -721,6 +721,32 @@ std::string render_json(
         reference_components.dweight_ms_per_iter > 0.0
             ? candidate.ms_per_iter / reference_components.dweight_ms_per_iter
             : 0.0;
+    struct BottleneckComponent {
+        const char* name;
+        double ms_per_iter;
+    };
+    auto reference_bottleneck = [](const ComponentResult& components) {
+        BottleneckComponent result{"ce", components.ce_ms_per_iter};
+        if (components.dhidden_ms_per_iter > result.ms_per_iter) {
+            result = {"dhidden", components.dhidden_ms_per_iter};
+        }
+        if (components.dweight_ms_per_iter > result.ms_per_iter) {
+            result = {"dweight", components.dweight_ms_per_iter};
+        }
+        return result;
+    };
+    const BottleneckComponent reference_slowest_component =
+        reference_bottleneck(reference_components);
+    const BottleneckComponent reference_cublaslt_slowest_component =
+        reference_bottleneck(reference_cublaslt_components);
+    const double candidate_minus_reference_summed_ms_per_iter =
+        candidate.ms_per_iter - reference_components.summed_ms_per_iter;
+    const double candidate_minus_reference_with_logits_ms_per_iter =
+        candidate.ms_per_iter - reference_components.summed_with_logits_ms_per_iter;
+    const double candidate_minus_cublaslt_reference_summed_ms_per_iter =
+        candidate.ms_per_iter - reference_cublaslt_components.summed_ms_per_iter;
+    const double candidate_minus_cublaslt_reference_with_logits_ms_per_iter =
+        candidate.ms_per_iter - reference_cublaslt_components.summed_with_logits_ms_per_iter;
     auto variant_json = [](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
@@ -796,6 +822,23 @@ std::string render_json(
         << std::fixed << std::setprecision(6) << candidate_dhidden_component_ratio << ","
         << "\"candidate_to_reference_dweight_ms_per_iter_ratio\": "
         << std::fixed << std::setprecision(6) << candidate_dweight_component_ratio
+        << "},\n"
+        << "  \"candidate_reference_gap\": {"
+        << "\"candidate_minus_reference_summed_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << candidate_minus_reference_summed_ms_per_iter << ","
+        << "\"candidate_minus_reference_summed_with_logits_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << candidate_minus_reference_with_logits_ms_per_iter << ","
+        << "\"candidate_minus_reference_cublaslt_summed_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << candidate_minus_cublaslt_reference_summed_ms_per_iter << ","
+        << "\"candidate_minus_reference_cublaslt_summed_with_logits_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << candidate_minus_cublaslt_reference_with_logits_ms_per_iter << ","
+        << "\"reference_bottleneck_component\":\"" << reference_slowest_component.name << "\","
+        << "\"reference_bottleneck_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << reference_slowest_component.ms_per_iter << ","
+        << "\"reference_cublaslt_bottleneck_component\":\""
+        << reference_cublaslt_slowest_component.name << "\","
+        << "\"reference_cublaslt_bottleneck_ms_per_iter\":"
+        << std::fixed << std::setprecision(6) << reference_cublaslt_slowest_component.ms_per_iter
         << "},\n"
         << "  \"reference_components\": {"
         << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.logits_ms_per_iter << ","

@@ -2225,7 +2225,11 @@ JSON also includes
 `reference_components` with separate logits, CE, dHidden, dWeight, summed
 backward, and summed logits+backward timings for the current raw Tile ABI, which
 is the fastest way to see which part of a new LM-head classifier-backward
-candidate actually moved. These reference component timings use the configured
+candidate actually moved. It also reports `candidate_reference_gap`, including
+absolute candidate-minus-reference milliseconds for generic and cuBLASLt
+reference paths plus the `reference_bottleneck_component`, so same-script
+candidate evidence shows the remaining gap without manual subtraction. These
+reference component timings use the configured
 warmup count too, reported as `reference_component_warmup`, so they do not
 silently include first-use CUDA/cuBLAS/TK setup. The wrapper defaults
 `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring a

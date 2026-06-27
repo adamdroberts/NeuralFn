@@ -441,6 +441,10 @@ ratios against CE, dHidden, and dWeight component timings, names the strict
 experimental body as `row-chunked-ce-dhidden-dweight-single-tile-kernel` with
 the required symbol and capability flag, and separately reports the
 reference-aligned body as `fused-ce-dlogits-separate-classifier-matmuls`. This
+makes the same microbench JSON report `candidate_reference_gap` with absolute
+candidate-minus-reference milliseconds for generic and cuBLASLt reference
+paths, plus the current `reference_bottleneck_component`, so the next kernel
+candidate can be judged without manually subtracting component timings, and it
 makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
 CUDA Graph wrappers, and a future real fused kernel. Strict wrapper failures

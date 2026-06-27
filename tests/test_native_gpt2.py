@@ -2523,6 +2523,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_to_reference_ce_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_dhidden_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_dweight_ms_per_iter_ratio" in bench_source
+    assert "candidate_reference_gap" in bench_source
+    assert "candidate_minus_reference_summed_ms_per_iter" in bench_source
+    assert "candidate_minus_reference_summed_with_logits_ms_per_iter" in bench_source
+    assert "candidate_minus_reference_cublaslt_summed_ms_per_iter" in bench_source
+    assert "candidate_minus_reference_cublaslt_summed_with_logits_ms_per_iter" in bench_source
+    assert "reference_bottleneck_component" in bench_source
+    assert "reference_cublaslt_bottleneck_component" in bench_source
     assert "graph_replay_success_count > 0" in bench_source
     assert "ce_launch_count > 0" in bench_source
     assert "dhidden_launch_count > 0" in bench_source
