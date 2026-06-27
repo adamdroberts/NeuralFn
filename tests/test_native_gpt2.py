@@ -2241,10 +2241,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "candidate_true_fused_production_env="
         "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1"
     ) in bench_source
-    assert "original scalar diagnostic body" in bench_source
-    assert "current strict body is a tiled diagnostic kernel" in bench_source
-    assert "7.046530x versus the default wrapper" in bench_source
-    assert "stage.lm_head_backward.total_ms to 30.473055x" in bench_source
+    assert "post-toolkit-reinstall 1-step stage-timed rerun" in bench_source
+    assert "current 32x32 tiled diagnostic body" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 5.991992x" in bench_source
+    assert "stage.lm_head_backward.total_ms regressed to 22.660619x" in bench_source
     assert "must remain rejected until it passes the promotion gate" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source

@@ -509,14 +509,13 @@ For full-loop production-shape checks, use
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, and the paired wrapper's
 `--require-native-lm-head-true-fused` gate so the opt-in strict body is measured
 against the current full GPT loop and the llm.kittens reference before any
-default promotion. The original full-loop probe measured a scalar diagnostic
-body and regressed train-loop wall time to `7.217785x`, LM-head backward to
-`30.473055x`, and the cooperative LM-head section to `43.503750x` versus the
-default CUDA Graph wrapper. The current strict body is now a 32x32 tiled
-diagnostic kernel, but the focused trainer-chunk gate still rejects it at
-`31.384819x` versus the default wrapper and `22.078654x` versus the
-same-process component reference. Keep this profile rejected until the strict
-body passes the same full-loop and reference gates. The gate now treats
+default promotion. The current strict body is a 32x32 tiled diagnostic kernel,
+but the 2026-06-27 post-toolkit-reinstall full-loop check still rejects it:
+train-loop wall time regressed to `5.991992x`, token throughput fell to
+`0.166890x`, LM-head backward regressed to `22.660619x`, and the cooperative
+LM-head section regressed to `32.243288x` versus the default CUDA Graph wrapper.
+Keep this profile rejected until the strict body passes the same full-loop and
+reference gates. The gate now treats
 `strict-true-fused-slow` as failing, so the route must launch and pass the
 same-script reference gates before promotion.
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` includes

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected SM120 `lm_head_true_fused_cooperative` profile after
+  the CUDA Toolkit 13.3 WSL reinstall. A dedicated RTX 5090 one-step
+  stage-timed rerun still proved the strict route
+  (`strict-true-fused-tile-kernel`, `lm_head_classifier_true_fused_launch_count`
+  from 0 to 16), but rejected the current 32x32 tiled diagnostic body because
+  train-loop wall time regressed to `5.991992x`, token throughput dropped to
+  `0.166890x`, LM-head backward regressed to `22.660619x`, and the cooperative
+  LM-head section regressed to `32.243288x` versus the default CUDA Graph
+  wrapper. The profile remains rejected until the strict body passes the
+  full-loop/reference gates.
+
+  Verification: ran the paired benchmark with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`,
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative`, one
+  step, one sample, and stage timing on the dedicated GPU. The run failed the
+  metric ratio gate as expected and wrote
+  `/tmp/nfn_lm_head_true_fused_1step_after_cuda133.json`.
+
 - Registered the diagnostic TK Tile-ops sidecar with the native no-Torch stale
   artifact rebuilder. `tools/check_native_no_torch_deps.py --rebuild-stale`
   now rebuilds `build/libnfn_native_train_tile_ops_tk.so` with
