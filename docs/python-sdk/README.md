@@ -235,6 +235,10 @@ generic `nfn_native_train` dispatcher and spawn the linked
 `nfn_gpt_native_train_linked` binary when it exists, falling back to
 `nfn_gpt_native_train` only when no linked binary or `NFN_NATIVE_GPT_CLI`
 override is available.
+Use `build_native_gpt_launcher_run_config()` when an SDK caller should spawn the
+generic compiled GPT launcher (`build/nfn_train_gpt`, `NFN_NATIVE_GPT_TRAIN_CLI`,
+or installed `nfn-train-gpt` / `nfn-gpt-train`) through the same validated
+native command path instead of the family-specific frontend.
 `nano_gpt` and `nano-gpt` canonicalize to `nanogpt` before direct dispatch. Other
 compiled family targets also bypass the generic dispatcher when available:
 `gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and

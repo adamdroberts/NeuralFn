@@ -680,6 +680,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
+    - 2026-06-27 exposed the generic compiled GPT launcher through the Python
+      SDK native-train path. `build_native_gpt_launcher_run_config()` resolves
+      `NFN_NATIVE_GPT_TRAIN_CLI`, `build/nfn_train_gpt`, or installed
+      `nfn-train-gpt` / `nfn-gpt-train` into a strict native command config, so
+      SDK callers can spawn the generic compiled GPT trainer without Python
+      launchers or graph-editor tensor flow while the remaining LM-head true
+      fused kernel work continues.
     - 2026-06-23 fixed the diagnostic sequence wrapper to preserve the
       optimizer-only no-loss classifier path. The native trainer now passes a
       cooperative no-loss flag when `record_loss` is false, and the raw Tile ABI

@@ -57,11 +57,13 @@ from neuralfn.native_gpt2 import (
 )
 from neuralfn.native_train import (
     NativeTrainRunnerStatus,
+    build_native_gpt_launcher_run_config,
     build_native_sm120_gpt_run_config,
     build_native_train_run_config,
     exec_native_train,
     native_train_model_registry,
     native_train_runner_status,
+    resolve_native_gpt_launcher_train_cli,
     resolve_native_sm120_train_cli,
     resolve_native_train_binding_command,
     resolve_native_train_cli,
@@ -4298,6 +4300,72 @@ def test_native_sm120_gpt_run_config_rejects_non_gpt_family_and_python_launcher(
         "gpt",
         ["--dry-run"],
         native_sm120_cli=sys.executable,
+    )
+
+    with pytest.raises(ValueError, match="compiled C\\+\\+ command"):
+        cfg.argv()
+
+
+def test_native_gpt_launcher_run_config_uses_generic_compiled_launcher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generic_cli = tmp_path / "nfn_train_gpt"
+    generic_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
+        "exit 46\n",
+        encoding="utf-8",
+    )
+    generic_cli.chmod(0o755)
+    output = tmp_path / "gpt-train-args.txt"
+    monkeypatch.setenv("NFN_NATIVE_GPT_TRAIN_CLI", str(generic_cli))
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
+
+    cfg = build_native_gpt_launcher_run_config("gpt3", ["--tinystories", "--dry-run"])
+
+    assert resolve_native_gpt_launcher_train_cli() == str(generic_cli)
+    assert cfg.argv() == [str(generic_cli), "--base-model", "gpt3", "--tinystories", "--dry-run"]
+    assert cfg.to_dict()["model_family"] == "gpt3"
+    assert run_native_train(cfg, runner="compiled-cli") == 46
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "--base-model",
+        "gpt3",
+        "--tinystories",
+        "--dry-run",
+    ]
+
+
+def test_native_gpt_launcher_run_config_runs_when_global_status_probe_misses_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generic_cli = tmp_path / "nfn_train_gpt"
+    generic_cli.write_text("#!/usr/bin/env bash\nexit 45\n", encoding="utf-8")
+    generic_cli.chmod(0o755)
+    missing_global_cli = tmp_path / "missing-nfn-native-train"
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setattr(
+        native_train_module,
+        "resolve_available_native_train_cli_for_status",
+        lambda: missing_global_cli,
+    )
+
+    cfg = build_native_gpt_launcher_run_config("gpt", ["--dry-run"], native_gpt_launcher_cli=str(generic_cli))
+
+    assert native_train_runner_status("compiled-cli").available is False
+    assert run_native_train(cfg, runner="compiled-cli") == 45
+
+
+def test_native_gpt_launcher_run_config_rejects_non_gpt_family_and_python_launcher() -> None:
+    with pytest.raises(ValueError, match="dense GPT"):
+        build_native_gpt_launcher_run_config("llama", ["--dry-run"])
+
+    cfg = build_native_gpt_launcher_run_config(
+        "gpt",
+        ["--dry-run"],
+        native_gpt_launcher_cli=sys.executable,
     )
 
     with pytest.raises(ValueError, match="compiled C\\+\\+ command"):

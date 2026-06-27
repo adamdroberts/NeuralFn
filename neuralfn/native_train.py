@@ -17,7 +17,9 @@ from .native_cuda_device import resolve_cuda_visible_devices_value
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
 DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
+DEFAULT_NATIVE_GPT_LAUNCHER_CLI = "build/nfn_train_gpt"
 DEFAULT_NATIVE_SM120_TRAIN_CLI = "build/nfn_train_gpt_sm120"
+NATIVE_GPT_LAUNCHER_COMMANDS = ("nfn-train-gpt", "nfn-gpt-train", "nfn_train_gpt")
 NATIVE_SM120_TRAIN_COMMANDS = ("nfn-train-gpt-sm120", "nfn-gpt-sm120-train", "nfn_train_gpt_sm120")
 DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt"})
 NATIVE_TRAIN_FAMILY_TARGETS = {
@@ -161,6 +163,24 @@ def resolve_native_sm120_train_cli(value: str | None = None) -> str:
     return str(build_cli)
 
 
+def resolve_native_gpt_launcher_train_cli(value: str | None = None) -> str:
+    requested = str(value or "").strip()
+    if requested:
+        return requested
+    env_value = str(os.environ.get("NFN_NATIVE_GPT_TRAIN_CLI", "")).strip()
+    if env_value:
+        return env_value
+    repo_root = Path(__file__).resolve().parents[1]
+    build_cli = repo_root / DEFAULT_NATIVE_GPT_LAUNCHER_CLI
+    if build_cli.exists():
+        return str(build_cli)
+    for command in NATIVE_GPT_LAUNCHER_COMMANDS:
+        resolved = shutil.which(command)
+        if resolved:
+            return resolved
+    return str(build_cli)
+
+
 def validate_strict_native_train_command(argv: Sequence[str], *, strict: bool = True) -> list[str]:
     """Reject Python/shell launcher commands on the native training SDK path."""
 
@@ -231,6 +251,9 @@ def resolve_available_native_train_cli_for_status() -> Path:
         family_cli = resolve_native_train_family_cli(family)
         if family_cli:
             return Path(family_cli)
+    gpt_launcher_cli = resolve_native_gpt_launcher_train_cli()
+    if Path(gpt_launcher_cli).exists():
+        return Path(gpt_launcher_cli)
     sm120_cli = resolve_native_sm120_train_cli()
     if Path(sm120_cli).exists():
         return Path(sm120_cli)
@@ -271,6 +294,28 @@ def build_native_sm120_gpt_run_config(
         model_family=normalized_family,
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=resolve_native_sm120_train_cli(native_sm120_cli),
+        require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        strict_native_command=bool(strict_native_command),
+    )
+
+
+def build_native_gpt_launcher_run_config(
+    model_family: str = "gpt",
+    args: Sequence[str] | None = None,
+    *,
+    native_gpt_launcher_cli: str | None = None,
+    require_cooperative_lm_head_backward: bool = False,
+    strict_native_command: bool = True,
+) -> NativeTrainRunConfig:
+    """Return a dense GPT config that launches the generic compiled GPT helper directly."""
+
+    normalized_family = normalize_native_model_family(model_family)
+    if normalized_family not in DENSE_GPT_MODEL_FAMILIES:
+        raise ValueError("generic GPT launcher supports only dense GPT model families")
+    return NativeTrainRunConfig(
+        model_family=normalized_family,
+        args=tuple(str(arg) for arg in (args or ())),
+        native_train_cli=resolve_native_gpt_launcher_train_cli(native_gpt_launcher_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         strict_native_command=bool(strict_native_command),
     )

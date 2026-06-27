@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Python SDK: exposed the generic compiled GPT launcher on the native training
+  path. `neuralfn.native_train.build_native_gpt_launcher_run_config()` builds a
+  strict `NativeTrainRunConfig` for `build/nfn_train_gpt`,
+  `NFN_NATIVE_GPT_TRAIN_CLI`, or installed `nfn-train-gpt` / `nfn-gpt-train`,
+  and `resolve_native_gpt_launcher_train_cli()` is now exported through
+  `neuralfn`. The native train status probe prefers the generic compiled GPT
+  launcher when present while still allowing explicit configs to run even when
+  that global probe misses the launcher. Verification: ran the focused native
+  GPT launcher/SM120 SDK pytest slice, Python bytecode compilation for the
+  touched SDK modules, and `git diff --check`.
+
 - Native GPT: added a generic compiled no-Bash dense-GPT launcher alongside the
   SM120-labelled wrapper. `tools/build_train_gpt_cli.sh` now builds
   `build/nfn_train_gpt`, `tools/build_native_gpt2_all.sh` and
