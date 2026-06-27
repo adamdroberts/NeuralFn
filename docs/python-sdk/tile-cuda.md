@@ -784,6 +784,8 @@ For candidate-only native CLI flags, use
 baseline and candidate. Run with `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` or
 `NFN_SM120_CANDIDATE_DRY_RUN_PLAN=1` first when testing shape flags so the
 printed commands prove the candidate flag did not leak into the baseline.
+`NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1`.
 Both SM120 benchmark wrappers accept generic `NFN_SM120_*` fallbacks for shared
 controls such as steps, samples, warmup, GPU selection, profile directory, and
 JSON output. Wrapper-specific aliases still take precedence, so

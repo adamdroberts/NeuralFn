@@ -2330,8 +2330,9 @@ candidate bisection. Set candidate-only CLI flags with
 `NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or
 `NFN_SM120_COMMON_EXTRA_ARGS` only when both commands must receive the same
 argument. Set
-`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
-CUDA device policy, and alternating sample order without launching the GPU jobs.
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` (or the shorter
+`NFN_SM120_NATIVE_DRY_RUN=1` alias) to emit the resolved paired commands,
+selected CUDA device policy, and alternating sample order without launching the GPU jobs.
 Measured NeuralFn native candidates must also prove the runtime contract in
 their JSON: `tools/paired_kernel_speed.py` fails the run if the candidate omits
 or changes `graph_editor_tensor_flow=false` or `torch_required=false`, so SM120
@@ -3490,7 +3491,7 @@ automatically when `kernels.cu`, `tile_ops.cu`, or `tile_ops.h` is newer than
 the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
-`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
 The llm.kittens parity wrapper `tools/bench_native_gpt_sm120_parity.sh` uses the
 same linked NeuralFn default: it compares `train_gpt2cu` against
 `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when the linked

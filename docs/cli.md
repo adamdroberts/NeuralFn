@@ -1987,6 +1987,7 @@ force the baseline to `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate t
 older separate dInput plus GELU-backward path versus the fused TK route.
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` skips temporary Tile-op compilation for these
 build-flag profiles and only records the resolved candidate library path/env.
+`NFN_SM120_NATIVE_DRY_RUN=1` is accepted as the shorter native-candidate alias.
 For fused dGELU fallback bisection, use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dgelu_fallback`. It sets
 `NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N`, leaving

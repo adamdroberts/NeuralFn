@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/bench_native_gpt_sm120_candidate.sh` now accepts
+  `NFN_SM120_NATIVE_DRY_RUN=1` as a convenience alias for the existing
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` plan-only mode. This keeps quick candidate
+  wrapper checks from accidentally launching CUDA when using the shorter native
+  benchmark naming style. Verification: focused Tile CUDA wrapper alias tests,
+  source-contract test, wrapper dry-run expansion, and `git diff --check`.
+
 - Bench: the SM120 native candidate wrapper now has explicit rejected
   `store_mlp_blocks3` and `store_mlp_blocks9` profiles in addition to the older
   `store_mlp_blocks6` probe. They compare the default 12 stored MLP activation
