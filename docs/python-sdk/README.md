@@ -116,7 +116,10 @@ unavailable. Pass `cuda_visible_devices="0"` or set `CUDA_VISIBLE_DEVICES`
 when you intentionally need the old hard ordinal.
 Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
 `"compiled-cli"` through `run_native_gpt_checkpoint_sampler()` /
-`run_native_gpt2_checkpoint_sampler()`. When a rebuilt GPT binding exposes
+`run_native_gpt2_checkpoint_sampler()`, plus `temperature`, `top_k`,
+`repetition_penalty`, and `seed` generation controls that are forwarded to the
+compiled sampler. Use `temperature=0` or `top_k=1` for deterministic greedy
+argmax output. When a rebuilt GPT binding exposes
 `run_gpt_capture` / `run_gpt2_capture` / `run_infer`, the SDK uses that C++
 captured-output path for native `.bin` inference before falling back to Python
 `subprocess.run()`. Rebuilt capture bindings return both `stdout` and `stderr`

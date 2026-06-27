@@ -190,6 +190,10 @@ def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: st
             checkpoint,
             prompt_tokens=native_checkpoint_prompt_tokens(args),
             max_new_tokens=int(getattr(args, "max_new_tokens", 64)),
+            temperature=float(getattr(args, "temperature", 0.8)),
+            top_k=int(getattr(args, "top_k", 32)),
+            repetition_penalty=float(getattr(args, "repetition_penalty", 1.0)),
+            seed=int(getattr(args, "seed", 1337)),
             encoding_name=str(getattr(args, "raw_text_encoding_override", "") or "gpt2"),
             runner="auto",
         )

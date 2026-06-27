@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native checkpoint inference: `nfn_gpt_native_train --sample-checkpoint`,
+  `run_native_gpt_checkpoint_sampler()`, `run_native_gpt2_checkpoint_sampler()`,
+  `nfn infer`, and the direct GPT inference wrappers now honor
+  `temperature`, `top_k`, `repetition_penalty`, and `seed` for native `.bin`
+  generation instead of silently running greedy-only decoding. The compiled
+  sampler reports the selected sampling policy in JSON; `temperature <= 0` or
+  `top_k == 1` keeps deterministic greedy argmax behavior. Verification:
+  rebuilt the native GPT CLI, ran focused native sampler tests, native
+  dependency tests, the no-Torch verifier, and `git diff --check`.
+
 - CLI/native inference: direct `python cli/scripts/infer_gpt2.py
   --native-checkpoint ... --prompt-tokens ...` now uses the SDK
   `run_native_gpt_checkpoint_sampler(..., runner="auto")` path instead of

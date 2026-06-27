@@ -1087,7 +1087,9 @@ Use `--prompt-tokens` for the no-tokenizer path; text `--prompt` inference may
 still import tiktoken locally to encode GPT-2 prompt text before calling the
 same native sampler only when `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` is set.
 Without that explicit opt-in, native `.bin` checkpoint inference rejects raw
-text prompts before importing tokenizer packages.
+text prompts before importing tokenizer packages. Native checkpoint sampling
+honors `--temperature`, `--top-k`, `--repetition-penalty`, and `--seed`; use
+`--temperature 0` or `--top-k 1` for deterministic greedy argmax generation.
 
 Plan and runtime JSON also include `native_geometry_contract`. The compiled dense GPT loop reports `name: "native-dense-gpt-transformer"` and `shape_source: "selected_dense_gpt_geometry"` for preset selection or `"custom_graph_template_spec"` for compatible custom graph metadata. The contract records the selected dense model width, head count, head dim, GELU 4x MLP, absolute positions, LayerNorm, public vocab 50,257, padded vocab 50,304, sequence length, and layer count. `template_geometry_dynamic` is true whenever the selected runtime geometry differs from the GPT-2 default, such as `gpt3` context or `nanogpt` width/layer count; `custom_graph_geometry_dynamic` is true when an existing graph file exposes compatible GPT `template_spec` metadata. The same object includes `selected_template_geometry` and `geometry_matches_compiled_loop`, so selecting `nanogpt` records and uses its 320-wide/5-head/5-layer dense GPT geometry.
 
@@ -2641,7 +2643,9 @@ either module, running `python cli/scripts/infer_gpt.py --help`, or resolving
 imports the runtime only after parsing; native `.bin` checkpoint prompts
 call the SDK `run_native_gpt_checkpoint_sampler()` helper, which prefers the
 C++ capture binding and falls back to the compiled
-`nfn_gpt_native_train --sample-checkpoint` path when needed.
+`nfn_gpt_native_train --sample-checkpoint` path when needed. The wrapper
+forwards `--temperature`, `--top-k`, `--repetition-penalty`, and `--seed` to
+the native sampler instead of silently using greedy-only generation.
 The canonical wrapper preserves its own argparse program name, so
 `python cli/scripts/infer_gpt.py --help` prints `usage: infer_gpt.py`; the
 compatibility `infer_gpt2.py` name is reserved for direct compatibility-script

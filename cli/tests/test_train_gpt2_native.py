@@ -2896,6 +2896,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertIn("run_native_gpt_checkpoint_sampler", function_body)
         self.assertIn('runner="auto"', function_body)
+        self.assertIn("temperature=", function_body)
+        self.assertIn("top_k=", function_body)
+        self.assertIn("repetition_penalty=", function_body)
+        self.assertIn("seed=", function_body)
         self.assertNotIn("subprocess.run", function_body)
         self.assertNotIn("native_gpt_checkpoint_sampler_env", function_body)
 

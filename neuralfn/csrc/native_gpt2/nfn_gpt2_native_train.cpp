@@ -17,6 +17,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <random>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -159,6 +160,10 @@ struct Config {
     bool sample_checkpoint = false;
     std::string sample_prompt_tokens;
     int sample_max_new_tokens = 64;
+    float sample_temperature = 0.8f;
+    int sample_top_k = 32;
+    float sample_repetition_penalty = 1.0f;
+    int sample_seed = 1337;
     bool checkpoint_logits_smoke = false;
     bool checkpoint_qkv_smoke = false;
     bool checkpoint_attention_smoke = false;
@@ -511,6 +516,10 @@ void print_usage(const char* program) {
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Run autoregressive CUDA Tile checkpoint forwards and return generated token ids for prompt-token input\n"
+        << "  --temperature VALUE               Native checkpoint sampler temperature; <=0 uses greedy argmax (default 0.8)\n"
+        << "  --top-k K                         Native checkpoint sampler top-k; <=0 samples from full vocab (default 32)\n"
+        << "  --repetition-penalty VALUE        Native checkpoint sampler repetition penalty; 1 disables it (default 1)\n"
+        << "  --seed N                          Native checkpoint sampler seed (default 1337)\n"
         << "  --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
@@ -2272,6 +2281,14 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         std::cerr << "--max-new-tokens must be non-negative\n";
         return 2;
     }
+    if (run_sampler && !std::isfinite(cfg.sample_temperature)) {
+        std::cerr << "--temperature must be finite\n";
+        return 2;
+    }
+    if (run_sampler && (!std::isfinite(cfg.sample_repetition_penalty) || cfg.sample_repetition_penalty <= 0.0f)) {
+        std::cerr << "--repetition-penalty must be finite and positive\n";
+        return 2;
+    }
 
     std::ifstream in(checkpoint_path, std::ios::binary);
     if (!in) {
@@ -2682,6 +2699,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     std::vector<DeviceCheckpointBlockWeights> all_layer_weights;
     std::vector<std::int64_t> working_tokens = prompt_tokens;
     std::vector<std::int64_t> generated_tokens;
+    std::mt19937 sample_rng(static_cast<std::mt19937::result_type>(cfg.sample_seed));
     if (run_sampler && cfg.sample_max_new_tokens > 0) {
         generated_tokens.reserve(static_cast<std::size_t>(cfg.sample_max_new_tokens));
         working_tokens.reserve(prompt_tokens.size() + static_cast<std::size_t>(cfg.sample_max_new_tokens));
@@ -2888,6 +2906,16 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         }
     };
     std::vector<float> host_logits(static_cast<std::size_t>(run_final_logits ? padded_vocab_size : 0), 0.0f);
+    auto apply_repetition_penalty = [&](float logit, std::int64_t token_id) {
+        if (!run_sampler || cfg.sample_repetition_penalty == 1.0f) {
+            return logit;
+        }
+        const bool seen = std::find(working_tokens.begin(), working_tokens.end(), token_id) != working_tokens.end();
+        if (!seen) {
+            return logit;
+        }
+        return logit > 0.0f ? (logit / cfg.sample_repetition_penalty) : (logit * cfg.sample_repetition_penalty);
+    };
     auto copy_logits_and_select_top = [&]() {
         if (!run_final_logits || !error.empty()) {
             return;
@@ -2901,10 +2929,13 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         if (!error.empty()) {
             return;
         }
+        std::vector<std::pair<float, std::int64_t>> candidates;
+        candidates.reserve(static_cast<std::size_t>(vocab_size));
         top_token = 0;
-        top_logit = host_logits.empty() ? 0.0f : host_logits[0];
-        for (std::int64_t i = 1; i < vocab_size; ++i) {
-            const float value = host_logits[static_cast<std::size_t>(i)];
+        top_logit = host_logits.empty() ? 0.0f : apply_repetition_penalty(host_logits[0], 0);
+        for (std::int64_t i = 0; i < vocab_size; ++i) {
+            const float raw_value = host_logits[static_cast<std::size_t>(i)];
+            const float value = apply_repetition_penalty(raw_value, i);
             if (!std::isfinite(value)) {
                 error = "checkpoint block logits smoke produced non-finite logits sample";
                 break;
@@ -2916,7 +2947,39 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
             if (i < 32) {
                 max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
             }
+            if (run_sampler && cfg.sample_temperature > 0.0f) {
+                candidates.emplace_back(value, i);
+            }
         }
+        if (!run_sampler || cfg.sample_temperature <= 0.0f || cfg.sample_top_k == 1 || !error.empty()) {
+            return;
+        }
+        const std::size_t k = cfg.sample_top_k <= 0
+            ? static_cast<std::size_t>(vocab_size)
+            : std::min<std::size_t>(static_cast<std::size_t>(cfg.sample_top_k), static_cast<std::size_t>(vocab_size));
+        std::partial_sort(
+            candidates.begin(),
+            candidates.begin() + static_cast<std::ptrdiff_t>(k),
+            candidates.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+        const float max_candidate = candidates.front().first;
+        std::vector<double> weights;
+        weights.reserve(k);
+        double total_weight = 0.0;
+        for (std::size_t i = 0; i < k; ++i) {
+            const double shifted = static_cast<double>(candidates[i].first - max_candidate) /
+                static_cast<double>(cfg.sample_temperature);
+            const double weight = std::exp(std::max(-80.0, shifted));
+            weights.push_back(weight);
+            total_weight += weight;
+        }
+        if (!(total_weight > 0.0) || !std::isfinite(total_weight)) {
+            return;
+        }
+        std::discrete_distribution<std::size_t> dist(weights.begin(), weights.end());
+        const std::size_t selected = dist(sample_rng);
+        top_token = candidates[selected].second;
+        top_logit = candidates[selected].first;
     };
     auto run_checkpoint_forward = [&]() {
         rows = static_cast<std::int64_t>(working_tokens.size());
@@ -3159,6 +3222,11 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"prompt_token_count\": " << prompt_tokens.size() << ",\n"
         << "  \"sequence_token_count\": " << working_tokens.size() << ",\n"
         << "  \"max_new_tokens\": " << (run_sampler ? cfg.sample_max_new_tokens : 0) << ",\n"
+        << "  \"sampling_strategy\": \"" << (run_sampler && cfg.sample_temperature > 0.0f && cfg.sample_top_k != 1 ? "top-k-temperature" : "greedy-argmax") << "\",\n"
+        << "  \"temperature\": " << (run_sampler ? cfg.sample_temperature : 0.0f) << ",\n"
+        << "  \"top_k\": " << (run_sampler ? cfg.sample_top_k : 0) << ",\n"
+        << "  \"repetition_penalty\": " << (run_sampler ? cfg.sample_repetition_penalty : 1.0f) << ",\n"
+        << "  \"seed\": " << (run_sampler ? cfg.sample_seed : 0) << ",\n"
         << "  \"generated_token_count\": " << (run_sampler && passed ? generated_tokens.size() : 0) << ",\n"
         << "  \"vocab_size\": " << vocab_size << ",\n"
         << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
@@ -25240,6 +25308,23 @@ int main(int argc, char** argv) {
             cfg.sample_max_new_tokens = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--max-new-tokens=", 0) == 0) {
             cfg.sample_max_new_tokens = parse_int(value_after_equals("--max-new-tokens="), "--max-new-tokens");
+        } else if (arg == "--temperature") {
+            cfg.sample_temperature = static_cast<float>(parse_double(require_value(argc, argv, &i, arg), arg));
+        } else if (arg.rfind("--temperature=", 0) == 0) {
+            cfg.sample_temperature = static_cast<float>(parse_double(value_after_equals("--temperature="), "--temperature"));
+        } else if (arg == "--top-k") {
+            cfg.sample_top_k = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--top-k=", 0) == 0) {
+            cfg.sample_top_k = parse_int(value_after_equals("--top-k="), "--top-k");
+        } else if (arg == "--repetition-penalty") {
+            cfg.sample_repetition_penalty = static_cast<float>(parse_double(require_value(argc, argv, &i, arg), arg));
+        } else if (arg.rfind("--repetition-penalty=", 0) == 0) {
+            cfg.sample_repetition_penalty = static_cast<float>(
+                parse_double(value_after_equals("--repetition-penalty="), "--repetition-penalty"));
+        } else if (arg == "--seed") {
+            cfg.sample_seed = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--seed=", 0) == 0) {
+            cfg.sample_seed = parse_int(value_after_equals("--seed="), "--seed");
         } else if (arg == "--checkpoint-logits-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_logits_smoke = true;

@@ -624,6 +624,10 @@ def native_gpt2_checkpoint_sampler_argv(
     prompt: str = "",
     prompt_tokens: str = "",
     max_new_tokens: int = 64,
+    temperature: float = 0.8,
+    top_k: int = 32,
+    repetition_penalty: float = 1.0,
+    seed: int = 1337,
     cli: str | None = None,
     encoding_name: str = "gpt2",
 ) -> list[str]:
@@ -641,6 +645,14 @@ def native_gpt2_checkpoint_sampler_argv(
         ),
         "--max-new-tokens",
         str(int(max_new_tokens)),
+        "--temperature",
+        str(float(temperature)),
+        "--top-k",
+        str(int(top_k)),
+        "--repetition-penalty",
+        str(float(repetition_penalty)),
+        "--seed",
+        str(int(seed)),
     ]
 
 
@@ -692,6 +704,10 @@ def run_native_gpt2_checkpoint_sampler(
     prompt: str = "",
     prompt_tokens: str = "",
     max_new_tokens: int = 64,
+    temperature: float = 0.8,
+    top_k: int = 32,
+    repetition_penalty: float = 1.0,
+    seed: int = 1337,
     cli: str | None = None,
     encoding_name: str = "gpt2",
     cuda_visible_devices: str = "dedicated",
@@ -705,6 +721,10 @@ def run_native_gpt2_checkpoint_sampler(
         prompt=prompt,
         prompt_tokens=prompt_tokens,
         max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        repetition_penalty=repetition_penalty,
+        seed=seed,
         cli=cli,
         encoding_name=encoding_name,
     )

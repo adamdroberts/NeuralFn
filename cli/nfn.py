@@ -414,6 +414,16 @@ def _native_prompt_tokens(tokens: list[str]) -> str:
     )
 
 
+def _arg_int_value(tokens: list[str], flag: str, default: int) -> int:
+    value = _arg_value(tokens, flag)
+    return default if value is None else int(value)
+
+
+def _arg_float_value(tokens: list[str], flag: str, default: float) -> float:
+    value = _arg_value(tokens, flag)
+    return default if value is None else float(value)
+
+
 def _run_lightweight_native_gpt_sampler(tokens: list[str], checkpoint: str) -> int:
     try:
         from neuralfn.native_gpt import run_native_gpt_checkpoint_sampler
@@ -421,7 +431,11 @@ def _run_lightweight_native_gpt_sampler(tokens: list[str], checkpoint: str) -> i
         result = run_native_gpt_checkpoint_sampler(
             checkpoint,
             prompt_tokens=_native_prompt_tokens(tokens),
-            max_new_tokens=int(_arg_value(tokens, "--max-new-tokens") or 64),
+            max_new_tokens=_arg_int_value(tokens, "--max-new-tokens", 64),
+            temperature=_arg_float_value(tokens, "--temperature", 0.8),
+            top_k=_arg_int_value(tokens, "--top-k", 32),
+            repetition_penalty=_arg_float_value(tokens, "--repetition-penalty", 1.0),
+            seed=_arg_int_value(tokens, "--seed", 1337),
         )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

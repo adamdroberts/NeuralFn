@@ -571,6 +571,10 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
         checkpoint,
         prompt_tokens="1,2,3",
         max_new_tokens=7,
+        temperature=0.7,
+        top_k=12,
+        repetition_penalty=1.1,
+        seed=42,
     )
 
     assert argv == [
@@ -581,6 +585,14 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
         "1,2,3",
         "--max-new-tokens",
         "7",
+        "--temperature",
+        "0.7",
+        "--top-k",
+        "12",
+        "--repetition-penalty",
+        "1.1",
+        "--seed",
+        "42",
     ]
     env = native_gpt2_checkpoint_sampler_env(cuda_visible_devices="2")
     assert env["CUDA_VISIBLE_DEVICES"] == "2"
@@ -598,6 +610,10 @@ def test_nfn_native_checkpoint_sampler_uses_sdk_binding_helper() -> None:
     function_body = source.rsplit("def _run_lightweight_native_gpt_sampler(", 1)[1].split("\ndef ", 1)[0]
 
     assert "run_native_gpt_checkpoint_sampler" in function_body
+    assert "temperature=" in function_body
+    assert "top_k=" in function_body
+    assert "repetition_penalty=" in function_body
+    assert "seed=" in function_body
     assert "native_gpt_checkpoint_sampler_argv" not in function_body
     assert "subprocess.run" not in function_body
 
@@ -4913,6 +4929,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--native-info --native-checkpoint PATH" in help_proc.stdout
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--temperature VALUE" in help_proc.stdout
+    assert "--top-k K" in help_proc.stdout
+    assert "--repetition-penalty VALUE" in help_proc.stdout
+    assert "--seed N" in help_proc.stdout
     assert "--checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
@@ -7517,6 +7537,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "1,2,3",
             "--max-new-tokens",
             "4",
+            "--temperature",
+            "0.7",
+            "--top-k",
+            "8",
+            "--repetition-penalty",
+            "1.1",
+            "--seed",
+            "42",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -7532,6 +7560,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert sample_plan_payload["prompt_token_count"] == 3
     assert sample_plan_payload["sequence_token_count"] in {3, 7}
     assert sample_plan_payload["max_new_tokens"] == 4
+    assert sample_plan_payload["sampling_strategy"] == "top-k-temperature"
+    assert sample_plan_payload["temperature"] == pytest.approx(0.7)
+    assert sample_plan_payload["top_k"] == 8
+    assert sample_plan_payload["repetition_penalty"] == pytest.approx(1.1)
+    assert sample_plan_payload["seed"] == 42
     assert sample_plan_payload["blocks_executed"] == 12
     assert sample_plan_payload["transformer_blocks_executed"] is True
     assert sample_plan_payload["final_logits_executed"] is True
