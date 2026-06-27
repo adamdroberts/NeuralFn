@@ -1089,13 +1089,16 @@ Plan and runtime JSON also include `native_geometry_contract`. The compiled dens
 
 Plan and runtime JSON also include `lm_head_classifier_strategy_contract` for
 SM120 parity work. It compares the llm.kittens-style full resident BF16
-classifier logits buffer with NeuralFn's row-chunked BF16 logits/dlogits
-contract, including full/chunk rows, BF16 and FP32-equivalent byte counts,
-resident-logit reduction ratio, in-place dlogit storage, and the benchmark
-target (`tools/paired_kernel_speed.py` stage `lm_head_backward.total_ms` plus
-overall train-loop wall time). At the default `64 x 1024` shape, this reports
-65,536 reference rows versus an 8,192-row NeuralFn chunk and an 8x resident
-logit reduction. `tools/paired_kernel_speed.py` extracts the contract's
+classifier logits buffer and fused CE/dlogits scope with NeuralFn's row-chunked
+BF16 logits/dlogits contract, including full/chunk rows, BF16 and
+FP32-equivalent byte counts, resident-logit reduction ratio, in-place dlogit
+storage, and the benchmark target (`tools/paired_kernel_speed.py` stage
+`lm_head_backward.total_ms` plus overall train-loop wall time). At the default
+`64 x 1024` shape, this reports 65,536 reference rows versus an 8,192-row
+NeuralFn chunk and an 8x resident logit reduction. The reference-aligned next
+work is to match fused CE/dlogits and optimize the separate logits, dHidden,
+and dWeight stages; the strict true-fused single-kernel path remains an opt-in
+experimental gate. `tools/paired_kernel_speed.py` extracts the contract's
 full/chunk BF16 byte counts, chunk rows/count, and reduction ratio into native
 metric summaries so candidate-vs-baseline reports show whether a classifier
 kernel experiment changed memory contract or only changed timing.

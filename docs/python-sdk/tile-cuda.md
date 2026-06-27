@@ -2771,8 +2771,11 @@ nonzero from the llm.kittens-parity probe. Runtime JSON reports
 semantic capability and the ABI-declared route class,
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 true-fused path sets that field, while the current parity path reports
-`lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
-route remains unavailable until its capability probe returns nonzero.
+`lm_head_llmk_classifier_matmul_parity_available: true`. The llm.kittens
+reference-aligned classifier scope is fused CE/dlogits with separate logits,
+dHidden, and dWeight matmul stages; the strict true-fused route is an
+experimental promotion gate and remains unavailable until its capability probe
+returns nonzero.
 That capability also requires the CE row-thread setting to resolve to the
 compiled tile body's required thread count: 1024 for the default 32x32 body,
 256 for the 16x16 candidate body, 64 for the 8x8 candidate body, and 16 for the

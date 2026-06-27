@@ -5155,6 +5155,22 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert target["graph_body_nodes_per_replay_mean"] == 3.0
     assert target["candidate_reference_gate_failed"] is True
     assert (
+        target["reference_classifier_fusion_scope"]
+        == "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+    )
+    assert (
+        target["reference_alignment_target"]
+        == "match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
+    )
+    assert (
+        target["next_reference_aligned_path_class"]
+        == "fused-ce-dlogits-separate-classifier-matmuls"
+    )
+    assert (
+        "optimize the separate logits, dHidden, and dWeight stages"
+        in target["next_reference_aligned_work"]
+    )
+    assert (
         target["next_symbol"]
         == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
     )
@@ -5163,8 +5179,11 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
         == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
     )
     assert target["next_required_path_class"] == "strict-true-fused-tile-kernel"
+    assert target["strict_true_fused_gate_scope"] == "experimental-strict-single-kernel-gate"
     assert "native_lm_head_true_fused_target:" in proc.stdout
     assert "true_fused_capability=False" in proc.stdout
+    assert "path_class=fused-ce-dlogits-separate-classifier-matmuls" in proc.stdout
+    assert "strict gate:" in proc.stdout
     assert "path_class=strict-true-fused-tile-kernel" in proc.stdout
     assert "candidate reference metric ratio gate failed" in proc.stderr
 

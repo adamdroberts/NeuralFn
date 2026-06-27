@@ -1089,8 +1089,10 @@ std::string lm_head_classifier_strategy_contract_json(
             : 0.0;
     std::ostringstream out;
     out << "{"
-        << "\"reference_strategy\":\"llm.kittens-full-resident-logits-fused-classifier\","
-        << "\"native_strategy\":\"row-chunked-bf16-logits-public-vocab-lm-head-classifier-tile-abi\","
+        << "\"reference_strategy\":\"llm.kittens-full-resident-logits-fused-ce-dlogits-separate-classifier-matmuls\","
+        << "\"native_strategy\":\"row-chunked-bf16-logits-public-vocab-fused-ce-dlogits-separate-classifier-matmuls-tile-abi\","
+        << "\"reference_classifier_fusion_scope\":\"ce-dlogits-only-logits-dhidden-dweight-remain-separate\","
+        << "\"native_classifier_fusion_scope\":\"ce-dlogits-only-logits-dhidden-dweight-remain-separate\","
         << "\"reference_full_logit_rows\":" << rows << ","
         << "\"native_logit_chunk_rows\":" << chunk_rows << ","
         << "\"native_logit_chunk_count\":" << chunk_count << ","
@@ -1106,7 +1108,9 @@ std::string lm_head_classifier_strategy_contract_json(
         << "\"graph_editor_tensor_flow\":false,"
         << "\"torch_required\":false,"
         << "\"same_script_benchmark_target\":\"tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms\","
-        << "\"required_kernel_next_step\":\"keep-diagnostic-graph-wrapper-separate-and-only-promote-true-fused-kernel-when-measured\""
+        << "\"reference_alignment_target\":\"match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages\","
+        << "\"strict_true_fused_experimental_path\":\"strict-true-fused-tile-kernel\","
+        << "\"required_kernel_next_step\":\"match-reference-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages\""
         << "}";
     return out.str();
 }

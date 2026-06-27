@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench/native GPT: corrected the SM120 LM-head parity contract to match the
+  llm.kittens reference schedule. Native plan/runtime JSON now identifies the
+  reference classifier scope as fused CE/dlogits with separate logits, dHidden,
+  and dWeight matmul stages, and `tools/paired_kernel_speed.py` prints that
+  reference-aligned next work separately from the opt-in strict
+  `strict-true-fused-tile-kernel` experimental gate. No default trainer path was
+  promoted or removed; the change prevents benchmark output from implying that
+  a monolithic CE+dHidden+dWeight kernel is required to match llm.kittens before
+  the separate-stage path is optimized. Verification: focused native GPT and
+  Tile CUDA benchmark tests, Python bytecode compilation for the paired speed
+  tool, benchmark wrapper shell syntax checks, and `git diff --check`.
+
 - Native GPT CLI: preserved dense GPT family selectors through direct compiled
   handoff instead of collapsing wrapper selections to `gpt`. `train_gpt2.py`
   now injects `--model-family gpt2` by default before crossing into the linked

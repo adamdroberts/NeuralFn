@@ -3498,8 +3498,9 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
             "candidate already reports strict true-fused Tile LM-head backward"
             if strict_true_fused
             else (
-                "candidate is still the diagnostic CUDA Graph wrapper, so parity work must "
-                "replace the wrapper body with a bounded true-fused Tile kernel"
+                "candidate is still the diagnostic CUDA Graph wrapper; reference-aligned parity "
+                "work should match llm.kittens fused CE/dlogits and optimize the separate "
+                "logits, dHidden, and dWeight stages before promoting strict true-fused experiments"
                 if graph_wrapper_active
                 else (
                     "candidate strict fused symbol is present but capability is false"
@@ -3555,11 +3556,25 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
             "lm_head_fused_graph_body_dweight_node_count_per_replay",
         ),
         "candidate_reference_gate_failed": candidate_reference_gate_failed,
+        "reference_classifier_fusion_scope": (
+            "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+        ),
+        "reference_alignment_target": (
+            "match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
+        ),
+        "next_reference_aligned_path_class": (
+            "fused-ce-dlogits-separate-classifier-matmuls"
+        ),
+        "next_reference_aligned_work": (
+            "match llm.kittens fused CE/dlogits and optimize the separate logits, "
+            "dHidden, and dWeight stages under same-script candidate/reference gates"
+        ),
         "next_symbol": "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16",
         "next_capability_symbol": (
             "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
         ),
         "next_required_path_class": "strict-true-fused-tile-kernel",
+        "strict_true_fused_gate_scope": "experimental-strict-single-kernel-gate",
         "reason": reason,
     }
 
@@ -3670,6 +3685,11 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
         print("    " + " ".join(graph_fragments))
     print(
         "    next: "
+        f"reference_alignment={target.get('reference_alignment_target', '')} "
+        f"path_class={target.get('next_reference_aligned_path_class', '')}"
+    )
+    print(
+        "    strict gate: "
         f"{target.get('next_symbol', '')} with "
         f"{target.get('next_capability_symbol', '')} returning true and "
         f"path_class={target.get('next_required_path_class', '')}"

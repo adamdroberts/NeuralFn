@@ -4952,8 +4952,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "unsupported_geometry_next_step": "add-native-non-dense-variant-and-non-gpt-vocab-training-plans",
     }
     assert default_payload["lm_head_classifier_strategy_contract"] == {
-        "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
-        "native_strategy": "row-chunked-bf16-logits-public-vocab-lm-head-classifier-tile-abi",
+        "reference_strategy": (
+            "llm.kittens-full-resident-logits-fused-ce-dlogits-separate-classifier-matmuls"
+        ),
+        "native_strategy": (
+            "row-chunked-bf16-logits-public-vocab-fused-ce-dlogits-separate-classifier-matmuls-tile-abi"
+        ),
+        "reference_classifier_fusion_scope": (
+            "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+        ),
+        "native_classifier_fusion_scope": (
+            "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+        ),
         "reference_full_logit_rows": 64 * 1024,
         "native_logit_chunk_rows": 32768,
         "native_logit_chunk_count": 2,
@@ -4971,8 +4981,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
+        "reference_alignment_target": (
+            "match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
+        ),
+        "strict_true_fused_experimental_path": "strict-true-fused-tile-kernel",
         "required_kernel_next_step": (
-            "keep-diagnostic-graph-wrapper-separate-and-only-promote-true-fused-kernel-when-measured"
+            "match-reference-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
         ),
     }
     assert default_payload["selected_graph_native_runnable"] is True
@@ -6483,8 +6497,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_weight_init_elements"] == 50257 * 768
     assert train_transformer_payload["token_weight_padding_elements"] == (50304 - 50257) * 768
     assert train_transformer_payload["lm_head_classifier_strategy_contract"] == {
-        "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
-        "native_strategy": "row-chunked-bf16-logits-public-vocab-lm-head-classifier-tile-abi",
+        "reference_strategy": (
+            "llm.kittens-full-resident-logits-fused-ce-dlogits-separate-classifier-matmuls"
+        ),
+        "native_strategy": (
+            "row-chunked-bf16-logits-public-vocab-fused-ce-dlogits-separate-classifier-matmuls-tile-abi"
+        ),
+        "reference_classifier_fusion_scope": (
+            "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+        ),
+        "native_classifier_fusion_scope": (
+            "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+        ),
         "reference_full_logit_rows": 2,
         "native_logit_chunk_rows": 2,
         "native_logit_chunk_count": 1,
@@ -6502,8 +6526,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
+        "reference_alignment_target": (
+            "match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
+        ),
+        "strict_true_fused_experimental_path": "strict-true-fused-tile-kernel",
         "required_kernel_next_step": (
-            "keep-diagnostic-graph-wrapper-separate-and-only-promote-true-fused-kernel-when-measured"
+            "match-reference-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages"
         ),
     }
     assert train_transformer_payload["model_dim"] == 768

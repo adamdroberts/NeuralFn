@@ -343,7 +343,10 @@ visible in the same script output as the kernel parity failure.
 candidate native profile reports the diagnostic CUDA Graph wrapper or a false
 strict true-fused capability. That block records the wrapper path class, strict
 symbol and capability booleans, graph replay/body-node means, whether a
-candidate/reference gate failed, and the required next ABI:
+candidate/reference gate failed, and the reference-aligned next work:
+matching the llm.kittens fused CE/dlogits classifier scope while optimizing the
+separate logits, dHidden, and dWeight stages under the same-script gates. The
+strict experimental gate still records the ABI:
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` with
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 returning true and `strict-true-fused-tile-kernel` as the path class.
@@ -1640,14 +1643,16 @@ instead of routing tensors through Torch or editor graph nodes.
 Native dense-GPT plan and runtime JSON now include
 `lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity
 tradeoff explicit. The llm.kittens reference keeps full resident BF16 logits for
-all microbatch rows before `fused_classifier`, while NeuralFn keeps only the
-row-chunked BF16 logits/dlogits buffer and overwrites logits in-place during CE
-backward. At the default `64 x 1024` shape the contract reports 65,536 full
-logit rows versus the 8,192-row NeuralFn chunk, 6.59GB of reference-style BF16
-logits versus 825.8MB resident NeuralFn BF16 logits, and an 8x resident-logit
-reduction. Use this object with `tools/paired_kernel_speed.py` stage metrics
-when evaluating a fused classifier/LM-head-backward kernel or a memory-gated
-full-logit candidate. The paired benchmark helper extracts and prints the
+all microbatch rows and fuses CE/dlogits; logits, dHidden, and dWeight remain
+separate classifier matmul stages. NeuralFn keeps only the row-chunked BF16
+logits/dlogits buffer and overwrites logits in-place during CE backward. At the
+default `64 x 1024` shape the contract reports 65,536 full logit rows versus
+the 8,192-row NeuralFn chunk, 6.59GB of reference-style BF16 logits versus
+825.8MB resident NeuralFn BF16 logits, and an 8x resident-logit reduction. Use
+this object with `tools/paired_kernel_speed.py` stage metrics when evaluating a
+reference-aligned fused CE/dlogits classifier route, the separate
+logits/dHidden/dWeight stages, or an opt-in strict single-kernel candidate. The
+paired benchmark helper extracts and prints the
 contract's full/chunk BF16 byte counts, chunk rows/count, and resident-logit
 reduction ratio alongside LM-head stage timing.
 `tools/bench_native_gpt_sm120_candidate.sh` includes the llm.kittens
