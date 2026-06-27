@@ -1890,15 +1890,14 @@ forces the baseline to `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and the
 candidate to `1`, then rejects the route unless train-loop wall,
 steady-state CUDA-event timing, block backward, and LM-head backward all pass.
 `qkv_dinput_ln128` reproduces the promoted default against the older
-256-row/QKV-dWeight-first route. The CUDA 13.3 dedicated RTX 5090 3-step,
-2-sample stage-timed gate improved train-loop wall to `0.989784x`,
-steady-state CUDA-event timing to `0.995384x`, train throughput to
-`1.010326x`, and total block backward to `0.986375x`, while still missing tiny
-strict adjacent-stage gates at `stage.lm_head_backward.total_ms=1.000256x` and
-`stage.block_backward.qkv.total_ms=1.000779x`.
-As a promoted default-vs-legacy regression check, it now keeps strict
-train-loop and block-backward gates while allowing steady-state CUDA-event
-timing up to `1.002x`, matching the LM-head graph-prewarm default gate.
+256-row/QKV-dWeight-first route. The CUDA 13.3.33 dedicated RTX 5090
+2026-06-27 current-code 5-step, 2-sample same-script rerun kept it accepted at
+`0.998106x` train-loop wall time, `1.001904x` train throughput, `0.998347x`
+candidate-over-llm.kittens train-loop wall time, and `1.001415x`
+candidate-over-llm.kittens throughput. Route proof moved
+`block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and
+`block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
+`128`.
 `qkv_dinput_ln64` combines the QKV dInput-before-dWeight route with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` for a reproducible
 same-script check of the closest current block-backward near-miss. It remains

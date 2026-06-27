@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128` as an accepted
+  SM120 default-vs-legacy profile with current-code evidence after the BF16
+  attention grad-out and no-loss CE default promotions. The runtime default was
+  already active; this refresh updates the wrapper metadata and docs only.
+
+  Verification: reran the profile on the dedicated RTX 5090 with
+  `NFN_SM120_NATIVE_STEPS=5`, `NFN_SM120_NATIVE_SAMPLES=2`,
+  `NFN_SM120_NATIVE_WARMUP=0`, stage timing disabled, train-loop CUDA-event
+  timing disabled, and the llm.kittens reference included. The current default
+  measured `0.998106x` train-loop wall time and `1.001904x` tokens/sec versus
+  the old 256-row/QKV-dWeight-first baseline, plus `0.998347x` train-loop wall
+  time and `1.001415x` tokens/sec versus llm.kittens. Route proof moved
+  `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
+  `128`.
+
 - Refreshed the SM120 startup candidate-profile registry with fresh CUDA 13.3.33
   dedicated RTX 5090 evidence for the arena allocator and token-weight
   initialization probes. The rerun keeps the current defaults unchanged:

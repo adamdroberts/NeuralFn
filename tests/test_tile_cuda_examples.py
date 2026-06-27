@@ -1507,12 +1507,14 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1" in text
     assert "The route is default only as part of the later qkv_dinput_ln128 combined default" in text
     assert "qkv_dinput_ln128" in text
-    assert "train_loop_wall_ms_per_step to 0.989784x" in text
-    assert "stage.block_backward.total_ms to 0.986375x" in text
+    assert "train_loop_wall_ms_per_step=0.998106x" in text
+    assert "candidate-over-llm.kittens train_loop_wall_ms_per_step=0.998347x" in text
+    assert "block_backward_qkv_dinput_before_dweight_count from 0 to 480" in text
+    assert "block_state_layout.layer_norm_backward_affine_row_chunk_size from 256 to 128" in text
     assert "candidate_note=$CANDIDATE_NOTE" in text
     assert "PROMOTED_QKV_LN128_PROFILE=1" in text
     assert 'MIN_CANDIDATE_RATIO_RAW="train_tokens_per_second=1.000"' in text
-    assert "versus the old 256-row/QKV-dWeight-first route" in text
+    assert "kept the combined QKV dInput-before-dWeight plus 128-row LayerNorm affine route as the default" in text
     rejected_promoted_qkv_marker = (
         'REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"\n'
         '    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 '

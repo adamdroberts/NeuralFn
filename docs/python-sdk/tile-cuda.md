@@ -2583,10 +2583,14 @@ serial QKV ordering against the historical dWeight-first route by setting
 the candidate side. Stage-timed runs gate `stage.block_backward.qkv.total_ms`,
 and runtime JSON proves the route with
 `block_backward_qkv_dinput_before_dweight_count`. `qkv_dinput_ln128` reproduces
-the promoted default against the older 256-row/QKV-dWeight-first route; the
-CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate improved train-loop wall to
-`0.989784x`, steady-state CUDA-event timing to `0.995384x`, train throughput to
-`1.010326x`, and total block backward to `0.986375x`.
+the promoted default against the older 256-row/QKV-dWeight-first route. The
+CUDA 13.3.33 dedicated RTX 5090 2026-06-27 current-code 5-step, 2-sample
+same-script rerun kept it accepted at `0.998106x` train-loop wall time,
+`1.001904x` train throughput, `0.998347x` candidate-over-llm.kittens
+train-loop wall time, and `1.001415x` candidate-over-llm.kittens throughput;
+route proof moved `block_backward_qkv_dinput_before_dweight_count` from `0` to
+`480` and `block_state_layout.layer_norm_backward_affine_row_chunk_size` from
+`256` to `128`.
 `qkv_dinput_ln64` combines that QKV order switch with
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64`; it is also rejected by
 default after a 5-step, 3-sample same-script confirmation improved

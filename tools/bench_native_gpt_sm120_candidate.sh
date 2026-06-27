@@ -692,9 +692,10 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "qkv_dinput_ln128"|"qkv-dinput-ln128"|"qkv_dinput_before_dweight_ln128"|"qkv-dinput-before-dweight-ln128"|"qkv_order_ln128"|"qkv-order-ln128")
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     PROMOTED_QKV_LN128_PROFILE=1
     DEFAULT_VS_LEGACY_PROFILE=1
-    CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x versus the old 256-row/QKV-dWeight-first route."
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 current-code 5-step, 2-sample same-script rerun kept the combined QKV dInput-before-dWeight plus 128-row LayerNorm affine route as the default: train_loop_wall_ms_per_step=0.998106x, train_tokens_per_second=1.001904x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.998347x, and candidate-over-llm.kittens train_tokens_per_second=1.001415x. Route proof moved block_backward_qkv_dinput_before_dweight_count from 0 to 480 and block_state_layout.layer_norm_backward_affine_row_chunk_size from 256 to 128."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.block_backward.total_ms=1.000}"
