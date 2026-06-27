@@ -21,6 +21,13 @@ Future updates should append new entries here rather than replacing older notes.
   kernel target stayed the diagnostic LM-head CUDA Graph wrapper with
   `true_fused_capability=false`, `graph_replay_mean=160`, and
   `graph_body_nodes_per_replay=3`.
+  After the fix, the same wrapper dry-run reports
+  `candidate_env: {"NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1"}` by default,
+  and a 10-step, 2-sample dedicated RTX 5090 parity rerun populated NeuralFn
+  CUDA-event metrics. That rerun still failed true parity at `1.002345x`
+  host train-loop wall time and `1.002528x` steady-state CUDA-event timing,
+  confirming that the next throughput target remains the LM-head diagnostic
+  CUDA Graph wrapper rather than benchmark instrumentation.
 
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128` as an accepted
   SM120 default-vs-legacy profile with current-code evidence after the BF16
