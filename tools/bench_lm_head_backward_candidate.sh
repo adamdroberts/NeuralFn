@@ -107,6 +107,27 @@ case "${PROFILE}" in
       FORCE_REBUILD_TILE_OPS=1
     fi
     ;;
+  trainer-chunk-true-fused-tile4|trainer_chunk_true_fused_tile4|true-fused-trainer-chunk-tile4|true_fused_trainer_chunk_tile4)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    DEFAULT_MAX_RATIO=1.000
+    DEFAULT_MAX_REFERENCE_RATIO=1.000
+    DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile4 profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4, forces CE threads to 16, and measures the cooperative single-kernel CE+dHidden+dWeight body. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    export NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:+${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS} }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    export NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-16}"
+    if [[ -z "${NFN_NATIVE_TILE_OPS_LIB+x}" ]]; then
+      TILE_OPS_LIB="${TMPDIR:-/tmp}/nfn_lm_head_backward_tile_ops_true_fused_tile4.so"
+      FORCE_REBUILD_TILE_OPS=1
+    fi
+    ;;
   true-fused-cooperative-smoke|true_fused_cooperative_smoke|strict-true-fused-smoke|strict_true_fused_smoke)
     DEFAULT_ROWS=4
     DEFAULT_ITERATIONS=1

@@ -132,6 +132,17 @@ Real training tensors must not pass through graph editor node objects.
   `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED` /
   `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED` aliases for LM-head-specific
   bisections.
+  - 2026-06-27 added the rejected-by-default 4x4 strict true-fused LM-head
+    diagnostic profile. Tile CUDA now accepts
+    `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4`, the CE row-thread selector
+    accepts `16`, and `trainer-chunk-true-fused-tile4` /
+    `lm_head_true_fused_tile4` measure the matching body with strict route
+    gates. The CUDA 13.3.33 dedicated RTX 5090 one-step full-loop gate proved
+    true-fused launches moved `0 -> 16`, but rejected promotion at `30.645660x`
+    train-loop wall time, `0.032631x` tokens/sec, `129.582841x` LM-head
+    backward time, and `186.457823x` cooperative LM-head time versus the CUDA
+    Graph wrapper. This is benchmark coverage only; the diagnostic single-kernel
+    body remains unusable for training-speed parity.
   - 2026-06-26 tightened this evidence path with an explicit strict launch
     counter. The Tile ops ABI now exports
     `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`, focused

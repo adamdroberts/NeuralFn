@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: added a rejected-by-default 4x4 strict true-fused LM-head bisection
+  path. Tile CUDA now accepts `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4`
+  when rebuilding the diagnostic strict classifier-backward body, and the BF16
+  CE row-thread selector accepts `16` so the true-fused capability probe can
+  match the 4x4 body's required thread count. New profiles
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile4` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile4` build/run that
+  route with strict true-fused route gates. No default trainer path changed; the
+  profile stays rejected. A CUDA 13.3.33 dedicated RTX 5090 one-step full-loop
+  gate proved the route by moving `lm_head_classifier_true_fused_launch_count`
+  from `0` to `16` and selecting `strict-true-fused-tile-kernel`, but rejected
+  it at `30.645660x` train-loop wall time, `0.032631x` train tokens/sec,
+  `129.582841x` LM-head backward time, and `186.457823x` LM-head cooperative
+  time versus the CUDA Graph wrapper. JSON was written to
+  `/tmp/nfn_lm_head_true_fused_tile4_1step_20260627.json`.
+  Verification: ran shell syntax checks for both benchmark wrappers, dry-run
+  expansions for the focused and full-loop tile4 profiles, the focused
+  `tests/test_native_gpt2.py` source-contract slice, Tile CUDA
+  registry/coverage/example tests, `git diff --check`, and the dedicated-GPU
+  one-step rejection gate.
+
 - Breaking changes: native GPT compatibility SDK helpers and native checkpoint
   sampling now default `cuda_visible_devices="dedicated"` instead of the hard
   ordinal `"0"`. This aligns `NativeGptRunConfig`, `NativeGpt2RunConfig`,

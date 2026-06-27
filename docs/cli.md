@@ -1276,6 +1276,12 @@ Full-loop native GPT JSON also reports
 `tools/paired_kernel_speed.py` treats it as a hot route counter. Strict
 true-fused full-GPT candidate profiles therefore have to move that launch count
 instead of relying only on ABI path-class metadata.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16`,
+`lm_head_true_fused_tile8`, and `lm_head_true_fused_tile4` rebuild the
+candidate Tile ops library with 16x16, 8x8, or 4x4 strict diagnostic LM-head
+bodies and force the matching CE row-thread counts of 256, 64, or 16. All three
+remain rejected by default until same-script gates beat the CUDA Graph wrapper
+and llm.kittens reference paths.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` to compare the
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. Set

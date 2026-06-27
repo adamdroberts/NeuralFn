@@ -2769,11 +2769,12 @@ semantic capability and the ABI-declared route class,
 true-fused path sets that field, while the current parity path reports
 `lm_head_llmk_classifier_matmul_parity_available: true`. The strict true-fused
 route remains unavailable until its capability probe returns nonzero.
-That capability also requires the CE row-thread setting to resolve to 1024,
-because the diagnostic cooperative body uses a fixed 32x32 shared-memory tile;
-setting `NFN_TILE_CUDA_CE_BF16_THREADS`, `NFN_NATIVE_GPT_CE_BF16_THREADS`, or
-`NFN_NATIVE_GPT2_CE_BF16_THREADS` to a smaller value keeps the ABI on the
-diagnostic graph-wrapper path.
+That capability also requires the CE row-thread setting to resolve to the
+compiled tile body's required thread count: 1024 for the default 32x32 body,
+256 for the 16x16 candidate body, 64 for the 8x8 candidate body, and 16 for the
+4x4 candidate body. Mismatched `NFN_TILE_CUDA_CE_BF16_THREADS`,
+`NFN_NATIVE_GPT_CE_BF16_THREADS`, or `NFN_NATIVE_GPT2_CE_BF16_THREADS` values
+keep the ABI on the diagnostic graph-wrapper path.
 Production-sized GPT shapes are protected by a second kernel-side guard:
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 matching `NFN_NATIVE_GPT*_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION`
@@ -2783,7 +2784,13 @@ single-kernel body will launch above the smoke-test shape limits. The rejected
 sets both env flags and keeps `--require-native-lm-head-true-fused` enabled, so
 full-loop candidate runs fail if they silently fall back to the diagnostic graph
 wrapper instead of measuring the production true-fused body. Dry-run plans for
-that profile include `candidate_true_fused_cooperative_env` and
+the tile-size profiles (`lm_head_true_fused_tile16`, `lm_head_true_fused_tile8`,
+and `lm_head_true_fused_tile4`) show the matching compile-time tile and CE
+thread settings. The 2026-06-27 dedicated RTX 5090 tile4 full-loop gate proved
+the strict route (`lm_head_classifier_true_fused_launch_count` `0 -> 16`) but
+kept it rejected at `30.645660x` train-loop wall time and `129.582841x` LM-head
+backward time versus the CUDA Graph wrapper.
+Dry-run plans for these strict profiles include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
 auditable before any GPU work starts. Focused LM-head benchmark JSON separates
 that forced investigation mode from promotion readiness with
