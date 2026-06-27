@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the accepted `qkv_dinput_ln128` default-vs-legacy gate after
+  the CUDA Toolkit reinstall. On the dedicated RTX 5090 with 5 steps, 2
+  samples, no warmup, stage timing enabled, and the llm.kittens reference
+  included, the current default measured `0.998609x` train-loop wall,
+  `1.001400x` train throughput, `0.996347x` block backward, `0.999448x`
+  candidate-over-llm.kittens train-loop wall, and `1.000204x`
+  candidate-over-llm.kittens throughput while moving
+  `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to
+  `128`.
+
 - Bench: `tools/paired_kernel_speed.py` now treats
   `linear_tk_qkv_first_use_prewarm_requested_rows` and
   `linear_tk_qkv_first_use_prewarm_effective_rows` as native strategy values,
