@@ -2369,9 +2369,14 @@ sampler.
 Measured runs default to a strict
 `train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
 exits nonzero when NeuralFn is slower than the llm.kittens reference on the
-comparable train-loop metric. Use `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` or
+comparable train-loop metric. Multi-sample parity runs evaluate the default
+gates on the paired median ratio to resist one-sample reference/candidate
+outliers; single-sample runs keep the paired speed tool's unqualified mean
+behavior. Use `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` or
 `NFN_SM120_MAX_CANDIDATE_RATIO` only when intentionally running a diagnostic
-sweep with different pass criteria; dry-run plans remain ungated.
+sweep with different pass criteria, and prefix a gate with `mean:`, `median:`,
+`min:`, or `max:` when the statistic should be explicit; dry-run plans remain
+ungated.
 Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` or
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to write the resolved paired command plan,
 CUDA selection, profile settings, and alternating sample order without

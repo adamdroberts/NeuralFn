@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: changed the default enforced llm.kittens parity gate in
+  `tools/bench_native_gpt_sm120_parity.sh` to use stat-qualified median ratios
+  when `NFN_SM120_PARITY_SAMPLES` / `NFN_SM120_NATIVE_SAMPLES` is greater than
+  one. Single-sample runs still use the paired speed tool's unqualified mean
+  behavior, and explicit `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
+  `NFN_SM120_MAX_CANDIDATE_RATIO` values are forwarded unchanged, so callers
+  can still request `mean:`, `median:`, `min:`, or `max:` gates. This keeps the
+  same `1.000` parity threshold but prevents one fast or slow paired sample
+  from failing a multi-sample same-script run when the median comparison passes.
+  Verification: the CUDA 13.3.33 dedicated RTX 5090 20-step, 3-sample parity
+  rerun exited zero with `metric_ratio_gates: passed=true`, using median ratios
+  of `0.998653x` train-loop wall, `0.999100x` steady-state CUDA-event time, and
+  `1.001483x` tokens/sec while the mean wall/event ratios still reflected one
+  faster llm.kittens sample.
+
 - Bench/docs: promoted `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128`
   from stale rejected-profile metadata to an accepted default-vs-legacy
   benchmark against the historical 256-row LayerNorm affine reducer. The native

@@ -93,10 +93,14 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
     *)
       case "${ENFORCE_GATE,,}" in
         "1"|"true"|"yes"|"on")
-          MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+          gate_stat_prefix=""
+          if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -gt 1 ]]; then
+            gate_stat_prefix="median:"
+          fi
+          MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=1.000"
           case "${TRAIN_LOOP_EVENT_TIMING,,}" in
             "1"|"true"|"yes"|"on")
-              MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
+              MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
               ;;
           esac
           ;;

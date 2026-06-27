@@ -1357,6 +1357,12 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+When `NFN_SM120_PARITY_ENFORCE_GATE=1`, the default pass criteria gate
+`train_loop_wall_ms_per_step=1.000`; multi-sample runs gate the paired median,
+while single-sample runs keep the paired speed tool's unqualified mean
+behavior. Set `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` with an explicit
+`mean:`, `median:`, `min:`, or `max:` prefix only when a diagnostic run needs a
+different statistic.
 The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and

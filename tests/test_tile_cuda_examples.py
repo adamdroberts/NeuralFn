@@ -438,10 +438,14 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1")' in text
     assert "Unsupported NFN_SM120_PARITY_ATTENTION_SECTION_TIMING value" in text
-    assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
+    assert 'gate_stat_prefix="median:"' in text
+    assert (
+        'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}'
+        'train_loop_wall_ms_per_step=1.000"'
+    ) in text
     assert (
         'MAX_CANDIDATE_RATIO_RAW+=" '
-        'train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"'
+        '${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"'
     ) in text
     assert 'case "${ENFORCE_GATE,,}"' in text
     assert "--max-candidate-ratio" in text
