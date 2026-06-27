@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added explicit fast-startup mode for native dense GPT training.
+  `NFN_NATIVE_GPT_FAST_STARTUP=1` (with compatibility aliases
+  `NFN_NATIVE_GPT2_FAST_STARTUP=1` and `NFN_TILE_CUDA_FAST_STARTUP=1`) now
+  flips setup-prewarm defaults so TK QKV first-use prewarm and LM-head CUDA
+  Graph prewarm are skipped unless their explicit prewarm env vars force them
+  back on. Default long-training behavior is unchanged. Runtime JSON now
+  reports `native_fast_startup_requested` and
+  `native_fast_startup_prewarm_policy`, and the SM120 candidate wrapper has a
+  `fast_startup` startup-only profile for same-window measurement.
+
+  Verification: rebuilt stale native C++ artifacts with the no-Torch verifier,
+  then ran `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup` on the dedicated
+  RTX 5090. The 3-sample startup-only gate passed with setup wall at
+  `0.736103x` candidate/baseline, zero compute processes before/after samples,
+  `native_fast_startup_requested: true`, and the strategy policy changing from
+  `throughput-prewarm-defaults` to `skip-setup-throughput-prewarms-by-default`.
+
 - Bench: refreshed the accepted `qkv_dinput_ln128` default-vs-legacy gate after
   the CUDA Toolkit reinstall. On the dedicated RTX 5090 with 5 steps, 2
   samples, no warmup, stage timing enabled, and the llm.kittens reference

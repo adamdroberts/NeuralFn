@@ -1270,9 +1270,14 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD" in gpt_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS" in gpt_source
     assert "setup.tk_qkv_forward_prewarm" in gpt_source
+    assert "NFN_NATIVE_GPT_FAST_STARTUP" in gpt_source
+    assert "NFN_NATIVE_GPT2_FAST_STARTUP" in gpt_source
+    assert "NFN_TILE_CUDA_FAST_STARTUP" in gpt_source
+    assert "native_fast_startup_requested" in gpt_source
+    assert "native_fast_startup_prewarm_policy" in gpt_source
     assert (
-        '"NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD"}),\n'
-        "            true)"
+        'linear_tk_qkv_first_use_prewarm_env,\n'
+        "            native_fast_startup_prewarm_default)"
     ) in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
@@ -1288,6 +1293,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "setup.cublaslt_plan_prewarm" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_layout_supported" in speed_tool
+    assert '"native_fast_startup_requested"' in speed_tool
+    assert '"native_fast_startup_prewarm_policy"' in speed_tool
     assert "linear_cublaslt_grouped_matmul_probe_requested" in speed_tool
     assert "linear_cublaslt_grouped_matmul_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_matmul_supported" in speed_tool
@@ -1913,9 +1920,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
+    assert "native_fast_startup_prewarm_default" in source
     assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
-        "            true)"
+        "            native_fast_startup_prewarm_default)"
     ) in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT" in source
@@ -2302,6 +2310,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "train_loop_wall_ms_per_step regressed to 5.991992x" in bench_source
     assert "stage.lm_head_backward.total_ms regressed to 22.660619x" in bench_source
     assert "must remain rejected until it passes the promotion gate" in bench_source
+    assert '"fast_startup"|"fast-startup"|"native_fast_startup"|"native-fast-startup"' in bench_source
+    assert "NFN_NATIVE_GPT_FAST_STARTUP=1" in bench_source
+    assert "NFN_NATIVE_GPT_FAST_STARTUP=0" in bench_source
+    assert "setup_wall_ms=0.850" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source

@@ -133,6 +133,16 @@ diagnostics rather than defaults: the strict cooperative true-fused smoke is a
 real single-kernel path but was `8.985042x` slower at trainer chunk size, and
 the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
 trainer to `1.076611x` train-loop wall time.
+For smoke tests and low-latency startup checks, set
+`NFN_NATIVE_GPT_FAST_STARTUP=1` (or the compatibility aliases
+`NFN_NATIVE_GPT2_FAST_STARTUP=1` / `NFN_TILE_CUDA_FAST_STARTUP=1`). This keeps
+the long-training default route unchanged, but flips the default setup-prewarm
+policy so the TK QKV first-use prewarm and LM-head CUDA Graph prewarm are
+skipped unless their explicit prewarm env vars force them back on. Native JSON
+reports `native_fast_startup_requested` and
+`native_fast_startup_prewarm_policy`; use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
+to compare the startup-only tradeoff in the same selected-GPU window.
 When `NFN_SM120_CUDA13_RUN_BENCH=1` is enabled, the health gate also parses the
 paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
 contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB

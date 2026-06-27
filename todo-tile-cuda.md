@@ -2683,3 +2683,16 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     Do not promote these profiles; the remaining implementation work is the
     production true-fused LM-head classifier-backward Tile kernel replacing the
     current three-node diagnostic CUDA Graph wrapper.
+  - 2026-06-27 added an explicit native dense-GPT fast-startup mode instead of
+    changing the long-training defaults. `NFN_NATIVE_GPT_FAST_STARTUP=1`
+    (aliases: `NFN_NATIVE_GPT2_FAST_STARTUP=1`,
+    `NFN_TILE_CUDA_FAST_STARTUP=1`) flips the setup-prewarm defaults so TK QKV
+    first-use prewarm and LM-head CUDA Graph prewarm are skipped unless their
+    explicit prewarm env vars force them back on. Runtime JSON reports
+    `native_fast_startup_requested` and `native_fast_startup_prewarm_policy`;
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup` compares the startup-only
+    tradeoff in the same selected-GPU harness. Keep this opt-in for smoke tests
+    and low-latency startup checks; the default training path keeps throughput
+    prewarms on. The dedicated RTX 5090 3-sample startup-only gate passed at
+    `0.736103x` setup wall and proved the strategy-value change in the saved
+    paired JSON.

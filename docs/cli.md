@@ -2134,6 +2134,16 @@ startup-only recheck measured the linked candidate at `0.898449x`
 `0.902683x` mean `setup_wall_ms`; the paired benchmark now records the expected
 `tile_ops_library` and `tile_ops_dlopen_binding_strategy` strategy-value
 changes for linked-vs-dynamic startup comparisons.
+`fast_startup` (aliases: `fast-startup`, `native_fast_startup`) compares
+normal native GPT setup against `NFN_NATIVE_GPT_FAST_STARTUP=1`. The profile
+sets startup-only mode, zero steps, no warmup, disables the llm.kittens
+reference, disables route-change gating, and gates only setup wall time by
+default. Fast startup does not change the long-training default; it changes the
+default prewarm policy so TK QKV first-use prewarm and LM-head CUDA Graph
+prewarm are skipped unless `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` or
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` explicitly force them
+back on. Runtime JSON reports `native_fast_startup_requested` and
+`native_fast_startup_prewarm_policy`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
