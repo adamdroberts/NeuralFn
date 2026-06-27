@@ -1649,8 +1649,8 @@ all microbatch rows and fuses CE/dlogits; logits, dHidden, and dWeight remain
 separate classifier matmul stages. NeuralFn keeps only the row-chunked BF16
 logits/dlogits buffer and overwrites logits in-place during CE backward. At the
 default `64 x 1024` shape the contract reports 65,536 full logit rows versus
-the 8,192-row NeuralFn chunk, 6.59GB of reference-style BF16 logits versus
-825.8MB resident NeuralFn BF16 logits, and an 8x resident-logit reduction. Use
+the 32,768-row NeuralFn chunk, 6.59GB of reference-style BF16 logits versus
+3.30GB resident NeuralFn BF16 logits, and a 2x resident-logit reduction. Use
 this object with `tools/paired_kernel_speed.py` stage metrics when evaluating a
 reference-aligned fused CE/dlogits classifier route, the separate
 logits/dHidden/dWeight stages, or an opt-in strict single-kernel candidate. The
@@ -2021,7 +2021,7 @@ through the same-script paired wrapper and route-change gate; the profile sets
 ordering switch is not masked by the default cooperative path.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
 candidate for same-script benchmarking. It doubles the bounded BF16 logit
-scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
+scratch from one 32,768-row chunk to two chunks, computes logits/CE on the
 default stream, queues dHidden plus ordered dWeight on side streams while
 the next chunk starts, and uses per-slot CUDA completion events before reusing
 either BF16 logit buffer. Runtime JSON reports

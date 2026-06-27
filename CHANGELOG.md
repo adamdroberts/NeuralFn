@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Docs: corrected the current LM-head classifier strategy examples to use the
+  promoted 32,768-row default chunk, 3.30GB BF16 chunk workspace, and 2x
+  resident-logit reduction reported by native plan JSON. Older 8,192-row text
+  remains only where it describes historical/rejected low-memory bisection
+  profiles. Verification: compared against
+  `build/nfn_gpt_native_train_linked --print-plan ...` output and ran `git diff
+  --check`.
+
 - Bench: separated the focused LM-head backward benchmark's strict experimental
   true-fused requirement from the llm.kittens reference-aligned optimization
   target. `build/lm_head_backward_bench` JSON now reports

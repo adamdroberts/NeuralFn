@@ -1094,8 +1094,8 @@ BF16 logits/dlogits contract, including full/chunk rows, BF16 and
 FP32-equivalent byte counts, resident-logit reduction ratio, in-place dlogit
 storage, and the benchmark target (`tools/paired_kernel_speed.py` stage
 `lm_head_backward.total_ms` plus overall train-loop wall time). At the default
-`64 x 1024` shape, this reports 65,536 reference rows versus an 8,192-row
-NeuralFn chunk and an 8x resident logit reduction. The reference-aligned next
+`64 x 1024` shape, this reports 65,536 reference rows versus a 32,768-row
+NeuralFn chunk and a 2x resident logit reduction. The reference-aligned next
 work is to match fused CE/dlogits and optimize the separate logits, dHidden,
 and dWeight stages; the strict true-fused single-kernel path remains an opt-in
 experimental gate. `tools/paired_kernel_speed.py` extracts the contract's
