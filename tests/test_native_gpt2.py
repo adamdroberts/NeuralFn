@@ -1220,6 +1220,9 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     candidate_script = (root / "tools/bench_native_gpt_sm120_candidate.sh").read_text(
         encoding="utf-8"
     )
+    lm_head_bench_script = (root / "tools/bench_lm_head_backward_candidate.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT" in source
     assert "lm_head_overlap_last_dweight_requested" in source
@@ -1242,6 +1245,12 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     assert "lm_head_overlap_last_dweight_queue_count" in speed_tool
     assert "lm_head_overlap_last_dweight_sync_count" in speed_tool
     assert "lm_head_side_stream_count" in speed_tool
+    assert "snapshot_selected_gpu_load_json" in lm_head_bench_script
+    assert "merge_gpu_load_context_json" in lm_head_bench_script
+    assert '"gpu_load_context"' in lm_head_bench_script
+    assert '"compute_process_count"' in lm_head_bench_script
+    assert "GPU_LOAD_BEFORE" in lm_head_bench_script
+    assert "GPU_LOAD_AFTER" in lm_head_bench_script
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:

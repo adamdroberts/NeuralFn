@@ -201,6 +201,125 @@ case "${CUDA_DEVICE_RAW,,}" in
     ;;
 esac
 
+snapshot_selected_gpu_load_json() {
+  local phase="$1"
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    NFN_GPU_PHASE="${phase}" \
+    NFN_GPU_VISIBLE="${CUDA_VISIBLE_DEVICES-}" \
+    NFN_GPU_DEVICE="${CUDA_DEVICE}" \
+    python -c 'import json, os
+print(json.dumps({
+    "phase": os.environ["NFN_GPU_PHASE"],
+    "available": False,
+    "reason": "nvidia-smi-not-found",
+    "cuda_visible_devices": os.environ.get("NFN_GPU_VISIBLE", ""),
+    "cuda_device": os.environ.get("NFN_GPU_DEVICE", ""),
+}, sort_keys=True))
+'
+    return 0
+  fi
+  local selected_gpu="${CUDA_VISIBLE_DEVICES:-${CUDA_DEVICE}}"
+  selected_gpu="${selected_gpu%%,*}"
+  if [[ -z "${selected_gpu}" ]]; then
+    selected_gpu="${CUDA_DEVICE}"
+  fi
+  local gpu_query=""
+  local gpu_status=0
+  if gpu_query="$(nvidia-smi -i "${selected_gpu}" --query-gpu=index,name,uuid,display_active,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)"; then
+    :
+  else
+    gpu_status=$?
+  fi
+  local compute_query=""
+  local compute_status=0
+  if compute_query="$(nvidia-smi -i "${selected_gpu}" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null)"; then
+    :
+  else
+    compute_status=$?
+  fi
+  NFN_GPU_PHASE="${phase}" \
+  NFN_GPU_VISIBLE="${CUDA_VISIBLE_DEVICES-}" \
+  NFN_GPU_DEVICE="${CUDA_DEVICE}" \
+  NFN_GPU_SELECTED="${selected_gpu}" \
+  NFN_GPU_QUERY="${gpu_query}" \
+  NFN_GPU_QUERY_STATUS="${gpu_status}" \
+  NFN_GPU_COMPUTE="${compute_query}" \
+  NFN_GPU_COMPUTE_STATUS="${compute_status}" \
+  python -c 'import json, os
+
+def parse_gpu(row):
+    parts = [part.strip() for part in row.split(",", 6)]
+    if len(parts) < 7:
+        return {}
+    index, name, uuid, display_active, utilization, memory_used, memory_total = parts
+    def as_int(value):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return {
+        "index": index,
+        "name": name,
+        "uuid": uuid,
+        "display_active": display_active,
+        "utilization_gpu_pct": as_int(utilization),
+        "memory_used_mib": as_int(memory_used),
+        "memory_total_mib": as_int(memory_total),
+    }
+
+compute_rows = []
+for row in os.environ.get("NFN_GPU_COMPUTE", "").splitlines():
+    parts = [part.strip() for part in row.split(",", 2)]
+    if len(parts) == 3:
+        pid, process_name, used_memory = parts
+        try:
+            used_memory_mib = int(used_memory)
+        except ValueError:
+            used_memory_mib = None
+        compute_rows.append({
+            "pid": pid,
+            "process_name": process_name,
+            "used_memory_mib": used_memory_mib,
+        })
+
+gpu_status = int(os.environ.get("NFN_GPU_QUERY_STATUS", "0") or 0)
+compute_status = int(os.environ.get("NFN_GPU_COMPUTE_STATUS", "0") or 0)
+print(json.dumps({
+    "phase": os.environ["NFN_GPU_PHASE"],
+    "available": gpu_status == 0,
+    "cuda_visible_devices": os.environ.get("NFN_GPU_VISIBLE", ""),
+    "cuda_device": os.environ.get("NFN_GPU_DEVICE", ""),
+    "selected_gpu": os.environ.get("NFN_GPU_SELECTED", ""),
+    "gpu_query_status": gpu_status,
+    "compute_query_status": compute_status,
+    "gpu": parse_gpu(os.environ.get("NFN_GPU_QUERY", "").splitlines()[0] if os.environ.get("NFN_GPU_QUERY", "").splitlines() else ""),
+    "compute_processes": compute_rows,
+    "compute_process_count": len(compute_rows),
+}, sort_keys=True))
+'
+}
+
+merge_gpu_load_context_json() {
+  local before_json="$1"
+  local after_json="$2"
+  if [[ ! -f "${JSON_OUT}" ]]; then
+    return 0
+  fi
+  python - "${JSON_OUT}" "${before_json}" "${after_json}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["gpu_load_context"] = {
+    "before": json.loads(sys.argv[2]),
+    "after": json.loads(sys.argv[3]),
+}
+path.write_text(json.dumps(data, indent=2, sort_keys=False) + "\n")
+PY
+}
+
 case "${NO_LOSS,,}" in
   1|true|yes|on)
     NO_LOSS_ARG=(--no-loss)
@@ -362,10 +481,12 @@ print(
 ' "${JSON_OUT}"
 }
 
-if "${BENCH_BIN}" "${BENCH_ARGS[@]}"; then
-  :
-else
-  BENCH_STATUS=$?
+GPU_LOAD_BEFORE="$(snapshot_selected_gpu_load_json before)"
+BENCH_STATUS=0
+"${BENCH_BIN}" "${BENCH_ARGS[@]}" || BENCH_STATUS=$?
+GPU_LOAD_AFTER="$(snapshot_selected_gpu_load_json after)"
+merge_gpu_load_context_json "${GPU_LOAD_BEFORE}" "${GPU_LOAD_AFTER}"
+if [[ "${BENCH_STATUS}" != "0" ]]; then
   case "${REQUIRE_TRUE_FUSED,,}" in
     1|true|yes|on)
       emit_true_fused_requirement_message
