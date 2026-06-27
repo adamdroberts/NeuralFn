@@ -2961,6 +2961,9 @@ The same verifier now covers dense GPT `nfn train` dispatch with an explicit
 `--template-name` and with a custom `--graph-file`, so universal GPT trainer
 selection cannot regress into the graph-backed Python runtime while only the
 architecture selector changes.
+The focused dependency tests assert those entries directly, including GPT3
+custom-graph dispatch, SM120 GPT3 launcher defaults, and generic SDK public
+exports under the same import blocker.
 It also covers legacy graph-backed family inference/eval help paths, including
 `infer_llama_fast.py`, `infer_llama_megakernel.py`, `infer_mixllama_fast.py`,
 `infer_nanogpt.py`, `infer_semantic_router_moe.py`, and

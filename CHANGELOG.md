@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native guard: added focused test coverage proving the no-Torch dependency
+  verifier exercises the universal dense GPT route, including GPT3 custom-graph
+  `nfn train` handoff, SM120 GPT3 launcher defaults, and generic SDK public
+  exports under the Torch/NumPy/tokenizer/dataset-manager import blocker.
+  Rebuilt stale dynamic `build/nfn_gpt_native_train` and compatibility
+  `build/nfn_gpt2_native_train` fallback binaries with the verifier's
+  `--rebuild-stale` path after the CUDA 13.3 reinstall. Verification:
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json` passed,
+  then `python tools/check_native_no_torch_deps.py --skip-python-entrypoints
+  --rebuild-stale --json` passed with no stale sources remaining.
+
 - Bench: changed the default enforced llm.kittens parity gate in
   `tools/bench_native_gpt_sm120_parity.sh` to use stat-qualified median ratios
   when `NFN_SM120_PARITY_SAMPLES` / `NFN_SM120_NATIVE_SAMPLES` is greater than

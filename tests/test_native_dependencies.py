@@ -155,3 +155,48 @@ def test_no_torch_verifier_covers_console_train_fast_path() -> None:
     assert "--train-transformer-lm" in str(console_entry["stdout"])
     assert "--backend" in str(console_entry["stdout"])
     assert "tile-cuda" in str(console_entry["stdout"])
+
+
+def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "tools/check_native_no_torch_deps.py",
+            "--skip-artifacts",
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    import json
+
+    report = json.loads(proc.stdout)
+    python_entries = {
+        str(entry["name"]): entry
+        for entry in report["python_entrypoints"]
+    }
+    shell_entries = {
+        str(entry["name"]): entry
+        for entry in report["shell_entrypoints"]
+    }
+
+    custom_graph_entry = python_entries["nfn_train_gpt_custom_graph_command"]
+    assert custom_graph_entry["passed"] is True
+    assert "--model-family gpt3" in str(custom_graph_entry["stdout"])
+    assert "--graph-file" in str(custom_graph_entry["stdout"])
+    assert "--backend tile-cuda" in str(custom_graph_entry["stdout"])
+
+    sdk_entry = python_entries["native_sdk_public_exports"]
+    assert sdk_entry["passed"] is True
+    assert "native-sdk-public-exports-ok" in str(sdk_entry["stdout"])
+
+    sm120_gpt3_entry = shell_entries["train_gpt_sm120_gpt3_dry_run"]
+    assert sm120_gpt3_entry["passed"] is True
+    assert "--model-family gpt3" in str(sm120_gpt3_entry["stdout"])
+    assert "--template-name gpt3" in str(sm120_gpt3_entry["stdout"])
+    assert "--train-seq-len 2048" in str(sm120_gpt3_entry["stdout"])
