@@ -93,12 +93,16 @@ CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 gates, GPT template preset suite, and native no-Torch guard all pass.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
-sample. A stage-timed 3-step, one-sample check measured NeuralFn at
-`2450.513 ms/step` versus llm.kittens at `2445.303 ms/step`
-(`1.002131x`). A stronger 5-step, 3-sample check without stage timing measured
-NeuralFn at `2469.107 ms/step` and `212339` tokens/sec versus llm.kittens at
-`2485.735 ms/step` and `210605` tokens/sec (`0.993312x` train-loop wall time,
-`1.008248x` tokens/sec). The same JSON still reports the LM-head classifier
+sample. A fresh stage-timed 3-step, one-sample check on 2026-06-28 measured
+NeuralFn at `2449.057 ms/step` and `214078` tokens/sec versus llm.kittens at
+`2435.380 ms/step` and `215355` tokens/sec (`1.005616x` train-loop wall time,
+`0.994070x` tokens/sec). Treat this as a diagnostic attribution run: stage
+timing is useful for hot buckets, but it adds measurement overhead and should
+not override the stronger no-stage training-loop comparison. A stronger 5-step,
+3-sample check without stage timing measured NeuralFn at `2469.107 ms/step` and
+`212339` tokens/sec versus llm.kittens at `2485.735 ms/step` and `210605`
+tokens/sec (`0.993312x` train-loop wall time, `1.008248x` tokens/sec). The same
+JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
@@ -1362,9 +1366,12 @@ llm.kittens SM120 reference on this workstation. A 5-step, 3-sample,
 `0.995097x` candidate-over-llm.kittens train-loop wall time, `0.995827x`
 steady-state CUDA-event wall time, and `1.005236x` tokens/sec, while preserving
 `graph_editor_tensor_flow: false` and `torch_required: false`. Stage-timed
-diagnostic runs can still show hot buckets and overhead; use those to target
-specific kernels, not to conclude that the no-stage training loop is behind the
-reference.
+diagnostic runs can still show hot buckets and overhead; the 2026-06-28
+3-step/one-sample stage-timed rerun measured `1.005616x` train-loop wall,
+`1.006316x` steady-state CUDA-event timing, and `0.994070x` tokens/sec versus
+llm.kittens while changing no hot route counters. Use those stage-timed runs to
+target specific kernels, not to conclude that the no-stage training loop is
+behind the reference.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to rebuild
 a temporary candidate Tile ops library with the documented llm.kittens SM120
 reference macro bundle, including `LLMK_SM120_USE_CUBLASLT_GEMM`,

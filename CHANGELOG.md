@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the current stage-timed llm.kittens parity evidence after
+  rebuilding the native GPT binaries. The 2026-06-28 dedicated RTX 5090
+  3-step/one-sample stage-timed rerun measured NeuralFn at `1.005616x`
+  train-loop wall, `1.006316x` steady-state CUDA-event timing, and `0.994070x`
+  tokens/sec versus the llm.kittens reference while changing no hot route
+  counters. README and CLI docs now call this an attribution-only diagnostic
+  and keep the no-stage multi-sample run as the default training-loop parity
+  signal. Verification: GPU-visible paired wrapper rerun on the
+  display-disabled RTX 5090 and `git diff --check`.
+
 - Native GPT: added root allocation-pressure telemetry for SM120 startup and
   storage work. Dense GPT runtime JSON now reports
   `float_arena_allocated_bytes`, `uint16_arena_allocated_bytes`,

@@ -1382,6 +1382,13 @@ single-sample runs keep the paired speed tool's unqualified mean behavior. Set
 `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO`, when an exact no-slower-than-reference
 diagnostic run is required. Explicit candidate ratios can use `mean:`,
 `median:`, `min:`, or `max:` prefixes.
+Stage-timed parity runs are attribution diagnostics and can read behind the
+normal training loop: the 2026-06-28 dedicated RTX 5090 3-step/one-sample
+stage-timed rerun measured NeuralFn at `1.005616x` train-loop wall,
+`1.006316x` steady-state CUDA-event timing, and `0.994070x` tokens/sec versus
+llm.kittens while changing no hot route counters. Use that mode to choose the
+next kernel target, then confirm with a no-stage multi-sample run before
+changing defaults.
 The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
