@@ -2105,6 +2105,8 @@ void reset_lm_head_cooperative_sequence_stats() {
     g_lm_head_cooperative_sequence_loss_bin_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_capture_attempt_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_capture_success_count.store(0, std::memory_order_relaxed);
+    g_lm_head_fused_graph_upload_success_count.store(0, std::memory_order_relaxed);
+    g_lm_head_fused_graph_upload_failure_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_cache_hit_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_thread_cache_hit_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_replay_count.store(0, std::memory_order_relaxed);

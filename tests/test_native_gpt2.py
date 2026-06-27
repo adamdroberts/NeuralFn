@@ -2022,6 +2022,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_fused_graph_capture_success_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_upload_success_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_upload_failure_count" in tile_ops_header
+    assert "g_lm_head_fused_graph_upload_success_count.store(0, std::memory_order_relaxed)" in tile_ops_source
+    assert "g_lm_head_fused_graph_upload_failure_count.store(0, std::memory_order_relaxed)" in tile_ops_source
     assert "nfn_native_tile_lm_head_fused_graph_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_thread_cache_hit_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_cache_entry_count" in tile_ops_header

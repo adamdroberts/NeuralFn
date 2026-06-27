@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed LM-head CUDA Graph profiler reset semantics in the native Tile ops
+  runtime: `reset_lm_head_cooperative_sequence_stats()` now clears graph-upload
+  success/failure counters along with capture/cache/replay counters. Profile
+  summaries after prewarm/reset no longer carry stale upload counts from an
+  earlier capture window.
+
+  Verification: extended the native GPT source-contract test to assert the
+  upload counters are reset, and reran the focused test slice.
+
 - Fixed the SM120 llm.kittens parity wrapper so native train-loop CUDA-event
   timing is enabled by default on the NeuralFn candidate command. The parity
   wrapper now matches the candidate-wrapper/test contract: strict parity runs
