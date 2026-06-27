@@ -1085,6 +1085,9 @@ NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_cuda_event_wall_ms",
     "train_loop_cuda_event_first_step_wall_ms",
     "train_loop_cuda_event_steady_state_wall_ms",
+    "startup_plus_first_step_wall_ms",
+    "startup_plus_steady_state_step_wall_ms",
+    "startup_plus_train_loop_wall_ms",
     "steps_completed",
     "train_tokens_per_second",
     "llm_kittens_bf16_mfu_pct",
@@ -1347,6 +1350,9 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "train_loop_cuda_event_wall_ms_per_step",
     "train_loop_cuda_event_first_step_wall_ms_per_step",
     "train_loop_cuda_event_steady_state_wall_ms_per_step",
+    "startup_plus_first_step_wall_ms",
+    "startup_plus_steady_state_step_wall_ms",
+    "startup_plus_train_loop_wall_ms",
     "train_tokens_per_second",
     "setup_wall_ms",
     "setup.float_uint16_arena_materialize_concurrent.total_ms",
@@ -1733,6 +1739,26 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
         and float(steps_completed) > 0.0
     ):
         metrics["train_loop_wall_ms_per_step"] = float(train_loop_ms) / float(steps_completed)
+    setup_wall_ms = metrics.get("setup_wall_ms")
+    first_step_wall_ms = metrics.get("train_loop_cuda_event_first_step_wall_ms")
+    train_loop_wall_ms_per_step = metrics.get("train_loop_wall_ms_per_step")
+    steady_state_wall_ms_per_step = metrics.get("train_loop_cuda_event_steady_state_wall_ms_per_step")
+    if isinstance(setup_wall_ms, (int, float)) and not isinstance(setup_wall_ms, bool):
+        setup_wall = float(setup_wall_ms)
+        if isinstance(first_step_wall_ms, (int, float)) and not isinstance(first_step_wall_ms, bool):
+            metrics["startup_plus_first_step_wall_ms"] = setup_wall + float(first_step_wall_ms)
+        elif (
+            isinstance(train_loop_wall_ms_per_step, (int, float))
+            and not isinstance(train_loop_wall_ms_per_step, bool)
+        ):
+            metrics["startup_plus_first_step_wall_ms"] = setup_wall + float(train_loop_wall_ms_per_step)
+        if (
+            isinstance(steady_state_wall_ms_per_step, (int, float))
+            and not isinstance(steady_state_wall_ms_per_step, bool)
+        ):
+            metrics["startup_plus_steady_state_step_wall_ms"] = setup_wall + float(steady_state_wall_ms_per_step)
+        if isinstance(train_loop_ms, (int, float)) and not isinstance(train_loop_ms, bool):
+            metrics["startup_plus_train_loop_wall_ms"] = setup_wall + float(train_loop_ms)
     timing = payload.get("timing")
     if isinstance(timing, dict):
         setup_timing = timing.get("setup_timing")

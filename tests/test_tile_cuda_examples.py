@@ -4947,6 +4947,7 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "candidate:" in proc.stdout
     assert "candidate_over_baseline:" in proc.stdout
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step" in proc.stdout
+    assert "startup_plus_first_step_wall_ms" in proc.stdout
     assert "setup.float_arena_materialize.total_ms" in proc.stdout
     assert "setup.cublaslt_plan_prewarm.total_ms" in proc.stdout
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms" in proc.stdout
@@ -5732,6 +5733,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     "train_loop_cuda_event_steady_state_wall_ms": 12.0,
                     "train_loop_cuda_event_steady_state_wall_ms_per_step": 4.0,
                     "train_loop_cuda_event_timing_enabled": True,
+                    "setup_wall_ms": 2.0,
                     "train_tokens_per_second": 123.0,
                     "stage_timing": [
                         {"name": "block_backward", "total_ms": 9.0, "avg_ms": 3.0, "count": 3}
@@ -5851,6 +5853,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 12.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 4.0
     assert metrics["train_loop_cuda_event_timing_enabled"] is True
+    assert metrics["setup_wall_ms"] == 2.0
+    assert metrics["startup_plus_first_step_wall_ms"] == 8.0
+    assert metrics["startup_plus_steady_state_step_wall_ms"] == 6.0
+    assert metrics["startup_plus_train_loop_wall_ms"] == 22.0
     assert metrics["train_tokens_per_second"] == 123.0
     assert metrics["linear_tk_gemm_count"] == 8
     assert metrics["linear_cublaslt_gemm_count"] == 11

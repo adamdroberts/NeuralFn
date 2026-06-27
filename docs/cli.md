@@ -1396,6 +1396,12 @@ stage-timed rerun measured NeuralFn at `1.011556x` train-loop wall,
 llm.kittens while changing no hot route counters. Use that mode to choose the
 next kernel target, then confirm with a no-stage multi-sample run before
 changing defaults.
+For startup bisection, the paired tool derives
+`startup_plus_first_step_wall_ms`, `startup_plus_steady_state_step_wall_ms`, and
+`startup_plus_train_loop_wall_ms` from native JSON when `setup_wall_ms` and
+train-loop timing are present. Gate those fields for candidates that skip setup
+prewarms or initialization work so a lower `setup_wall_ms` cannot pass by
+moving the cost into the first optimizer step.
 The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and

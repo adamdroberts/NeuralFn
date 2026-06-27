@@ -2439,6 +2439,12 @@ knobs are present but tracked counters, strategy values, and linear-shape plan
 metadata are unchanged, the text output warns that timing-only improvements
 should be treated as noise until a route, strategy, or separate kernel-level
 attribution confirms the candidate.
+For startup bisections, native metric extraction also derives
+`startup_plus_first_step_wall_ms`, `startup_plus_steady_state_step_wall_ms`, and
+`startup_plus_train_loop_wall_ms` whenever `setup_wall_ms` and the matching
+train-loop timing fields are present. Use these fields as same-script gates
+when a candidate skips prewarms or setup initialization, because they expose
+cost shifted from setup into the first optimizer step.
 Use `--require-native-route-change` to make that condition a hard failure. The
 SM120 candidate wrapper enables the gate automatically for measured candidate
 changes, and `NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE=0` disables it only for

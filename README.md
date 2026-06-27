@@ -106,6 +106,12 @@ same JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
+The paired benchmark also reports `startup_plus_first_step_wall_ms`,
+`startup_plus_steady_state_step_wall_ms`, and
+`startup_plus_train_loop_wall_ms` for native runs with setup timing. Use those
+metrics when testing startup shortcuts: a route that reduces `setup_wall_ms`
+but increases the first optimizer step should fail the combined metric instead
+of hiding the cost shift.
 The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
 profile passes candidate-over-llm.kittens gates, but it does not beat the

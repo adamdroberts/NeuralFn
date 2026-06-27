@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/paired_kernel_speed.py` now derives
+  `startup_plus_first_step_wall_ms`, `startup_plus_steady_state_step_wall_ms`,
+  and `startup_plus_train_loop_wall_ms` from native JSON when setup and
+  train-loop timing are present. These fields make startup candidates gateable
+  when they reduce `setup_wall_ms` by deferring work into the first optimizer
+  step; the hot summary prints them alongside train-loop and setup metrics.
+  Verification: focused paired-kernel-speed tests and `git diff --check`.
+
 - Bench: refreshed the post-CUDA-13.3 llm.kittens parity evidence on the
   display-disabled RTX 5090. The 2026-06-28 3-step, 3-sample no-stage run
   passed the default parity gate with NeuralFn at `2446.557 ms/step` and
