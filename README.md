@@ -118,6 +118,14 @@ diagnostics rather than defaults: the strict cooperative true-fused smoke is a
 real single-kernel path but was `8.985042x` slower at trainer chunk size, and
 the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
 trainer to `1.076611x` train-loop wall time.
+The 2026-06-27 post-reinstall 10-step no-stage refresh kept that conclusion:
+`llmk_sm120_reference_flags` rebuilt but missed promotion at `1.004713x`
+current-native train-loop wall time and `1.001757x` candidate-over-llm.kittens
+wall time, plain parity still failed at `1.006483x`, and `cublaslt_min_waves`
+regressed to `1.010224x`. The runtime contract stayed native-only
+(`graph_editor_tensor_flow=false`, `torch_required=false`), so the next useful
+slice remains a production true-fused LM-head classifier-backward Tile kernel,
+not another flag-only reroute.
 Dense GPT native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
 default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row

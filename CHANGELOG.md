@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the remaining SM120 native GPT parity candidates after the CUDA
+  Toolkit 13.3 WSL reinstall on the dedicated RTX 5090. No runtime default was
+  promoted: `llmk_sm120_reference_flags` rebuilt successfully but regressed the
+  current native path to `1.004713x` train-loop wall time and remained
+  `1.001757x` slower than the llm.kittens reference; a plain 10-step parity
+  run still failed at `1.006483x` train-loop wall time with zero compute
+  processes before/after the sample; and `cublaslt_min_waves` regressed native
+  to `1.010224x` train-loop wall time. The native runtime contract still
+  passed (`graph_editor_tensor_flow=false`, `torch_required=false`), and the
+  failing diagnostic continued to identify the LM-head backward path as the
+  three-node diagnostic CUDA Graph wrapper rather than a true fused Tile
+  classifier-backward kernel.
+
+  Verification: ran the 10-step no-stage-timing paired candidate checks for
+  `llmk_sm120_reference_flags` and `cublaslt_min_waves`, plus the 10-step
+  no-stage-timing llm.kittens parity wrapper, all on `CUDA_VISIBLE_DEVICES=0`
+  with selected-GPU locking and idle checks enabled.
+
 - Normalized empty CUDA environment values across native training launch paths.
   The GPT SDK helpers, generic native SDK helper, direct `train_gpt.py` and
   `train_gpt_native.py` compiled-CLI paths, guarded legacy training scripts,

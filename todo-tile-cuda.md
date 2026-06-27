@@ -2655,3 +2655,16 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `stage.lm_head_backward.total_ms=1.050532x` versus the default cooperative
     CUDA Graph wrapper. Keep the next implementation target on a true fused
     LM-head body or block-backward kernel, not side-stream scheduling.
+  - 2026-06-27 post-CUDA-reinstall 10-step recheck on the dedicated
+    display-disabled RTX 5090 left the current native route unchanged and
+    narrowed the open target. `llmk_sm120_reference_flags` rebuilt with its
+    macro bundle but regressed current native train-loop wall to `1.004713x`
+    and stayed `1.001757x` slower than the llm.kittens reference. Plain
+    no-stage parity still failed at `1.006483x` train-loop wall and
+    `0.992972x` tokens/sec versus llm.kittens. `cublaslt_min_waves` also
+    failed, regressing native train-loop wall to `1.010224x`. All runs selected
+    GPU 0, observed no compute processes before/after, and passed the native
+    runtime contract (`graph_editor_tensor_flow=false`, `torch_required=false`).
+    Do not promote these profiles; the remaining implementation work is the
+    production true-fused LM-head classifier-backward Tile kernel replacing the
+    current three-node diagnostic CUDA Graph wrapper.
