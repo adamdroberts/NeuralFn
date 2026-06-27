@@ -524,8 +524,13 @@ an idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it to
 `auto` to allow fallback to the lowest-utilization NVIDIA GPU, or set it or
 `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. If
 `nvidia-smi` is unavailable or blocked in dedicated mode, the wrapper fails
-before launching so benchmark results do not silently include display-GPU load. A matching
-lower-level linear-backward harness is available as
+before launching so benchmark results do not silently include display-GPU load.
+The LM-head wrapper also takes a per-selected-GPU `flock` by default and aborts
+when the selected GPU has active compute processes or sustained utilization
+above `NFN_LM_HEAD_BACKWARD_MAX_SELECTED_GPU_UTILIZATION_PCT` (default `15`);
+set `NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU=0` or
+`NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK=0` only for intentional diagnostics. A
+matching lower-level linear-backward harness is available as
 `bash tools/bench_linear_backward_candidate.sh`. It builds
 `build/linear_backward_bench`, loads `libnfn_native_train_tile_ops.so`, and
 compares baseline versus candidate C ABI symbols for the strided BF16 dInput or

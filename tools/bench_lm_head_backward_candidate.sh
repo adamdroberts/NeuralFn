@@ -10,6 +10,13 @@ VOCAB="${NFN_LM_HEAD_BACKWARD_VOCAB:-50257}"
 ROW_STRIDE="${NFN_LM_HEAD_BACKWARD_ROW_STRIDE:-50304}"
 CUDA_VISIBLE_DEVICES_VALUE="${NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-dedicated}}"
 CUDA_DEVICE_RAW="${NFN_LM_HEAD_BACKWARD_CUDA_DEVICE:-auto}"
+REQUIRE_IDLE_SELECTED_GPU="${NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU:-1}"
+MAX_SELECTED_GPU_UTILIZATION_PCT="${NFN_LM_HEAD_BACKWARD_MAX_SELECTED_GPU_UTILIZATION_PCT:-15}"
+SELECTED_GPU_UTILIZATION_RETRIES="${NFN_LM_HEAD_BACKWARD_SELECTED_GPU_UTILIZATION_RETRIES:-3}"
+SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS="${NFN_LM_HEAD_BACKWARD_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS:-0.25}"
+ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE="${NFN_LM_HEAD_BACKWARD_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE:-1}"
+GPU_BENCHMARK_LOCK="${NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK:-1}"
+GPU_BENCHMARK_LOCK_TIMEOUT_SECONDS="${NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK_TIMEOUT_SECONDS:-0}"
 BASELINE_SYMBOL_OVERRIDE="${NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL:-}"
 CANDIDATE_SYMBOL_OVERRIDE="${NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL:-}"
 PROFILE="${NFN_LM_HEAD_BACKWARD_PROFILE:-smoke}"
@@ -320,6 +327,126 @@ path.write_text(json.dumps(data, indent=2, sort_keys=False) + "\n")
 PY
 }
 
+selected_gpu_for_benchmark_lock() {
+  local selected_gpu="${CUDA_VISIBLE_DEVICES:-${CUDA_DEVICE}}"
+  selected_gpu="${selected_gpu%%,*}"
+  if [[ -z "${selected_gpu}" ]]; then
+    selected_gpu="${CUDA_DEVICE}"
+  fi
+  printf '%s\n' "${selected_gpu}"
+}
+
+acquire_gpu_benchmark_lock() {
+  case "${GPU_BENCHMARK_LOCK,,}" in
+    1|true|yes|on)
+      ;;
+    0|false|no|off|"")
+      return 0
+      ;;
+    *)
+      echo "Invalid NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK='${GPU_BENCHMARK_LOCK}'" >&2
+      exit 2
+      ;;
+  esac
+  if ! command -v flock >/dev/null 2>&1; then
+    echo "flock is required when NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK=1" >&2
+    exit 2
+  fi
+  local selected_gpu
+  selected_gpu="$(selected_gpu_for_benchmark_lock)"
+  local safe_gpu="${selected_gpu//[^A-Za-z0-9_.-]/_}"
+  local lock_path="${TMPDIR:-/tmp}/nfn_lm_head_backward_gpu_${safe_gpu}.lock"
+  exec 9>"${lock_path}"
+  if [[ "${GPU_BENCHMARK_LOCK_TIMEOUT_SECONDS}" == "0" ]]; then
+    if ! flock -n 9; then
+      echo "LM-head benchmark GPU lock is already held: ${lock_path}" >&2
+      exit 75
+    fi
+  else
+    if ! flock -w "${GPU_BENCHMARK_LOCK_TIMEOUT_SECONDS}" 9; then
+      echo "Timed out waiting for LM-head benchmark GPU lock: ${lock_path}" >&2
+      exit 75
+    fi
+  fi
+}
+
+validate_selected_gpu_idle_snapshot() {
+  local snapshot_json="$1"
+  local final_attempt="$2"
+  NFN_GPU_SNAPSHOT="${snapshot_json}" \
+  NFN_GPU_MAX_UTIL="${MAX_SELECTED_GPU_UTILIZATION_PCT}" \
+  NFN_GPU_ALLOW_STALE="${ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE}" \
+  NFN_GPU_FINAL_ATTEMPT="${final_attempt}" \
+  python - <<'PY'
+import json
+import os
+import sys
+
+snapshot = json.loads(os.environ["NFN_GPU_SNAPSHOT"])
+max_util = float(os.environ["NFN_GPU_MAX_UTIL"])
+allow_stale = os.environ["NFN_GPU_ALLOW_STALE"].lower() in {"1", "true", "yes", "on"}
+final_attempt = os.environ["NFN_GPU_FINAL_ATTEMPT"].lower() in {"1", "true", "yes", "on"}
+compute_count = int(snapshot.get("compute_process_count", 0) or 0)
+gpu = snapshot.get("gpu") or {}
+util = gpu.get("utilization_gpu_pct")
+selected = snapshot.get("selected_gpu") or snapshot.get("cuda_visible_devices") or snapshot.get("cuda_device")
+if compute_count > 0:
+    print(f"selected GPU {selected} has {compute_count} active compute process(es)", file=sys.stderr)
+    raise SystemExit(2)
+if max_util < 0:
+    raise SystemExit(0)
+if util is None:
+    if final_attempt and not allow_stale:
+        print(f"selected GPU {selected} utilization is unavailable", file=sys.stderr)
+        raise SystemExit(2)
+    raise SystemExit(0 if final_attempt else 1)
+if float(util) <= max_util:
+    raise SystemExit(0)
+if final_attempt and allow_stale:
+    print(
+        f"selected GPU {selected} still reports {util}% utilization but has no compute processes; allowing stale NVML sample",
+        file=sys.stderr,
+    )
+    raise SystemExit(0)
+print(f"selected GPU {selected} utilization {util}% exceeds limit {max_util}%", file=sys.stderr)
+raise SystemExit(1)
+PY
+}
+
+require_selected_gpu_idle() {
+  case "${REQUIRE_IDLE_SELECTED_GPU,,}" in
+    1|true|yes|on)
+      ;;
+    0|false|no|off|"")
+      return 0
+      ;;
+    *)
+      echo "Invalid NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU='${REQUIRE_IDLE_SELECTED_GPU}'" >&2
+      exit 2
+      ;;
+  esac
+  local retries="${SELECTED_GPU_UTILIZATION_RETRIES}"
+  local attempt=0
+  while :; do
+    local snapshot
+    snapshot="$(snapshot_selected_gpu_load_json before)"
+    local final_attempt=0
+    if [[ "${attempt}" -ge "${retries}" ]]; then
+      final_attempt=1
+    fi
+    if validate_selected_gpu_idle_snapshot "${snapshot}" "${final_attempt}"; then
+      GPU_LOAD_BEFORE="${snapshot}"
+      return 0
+    fi
+    local status=$?
+    if [[ "${status}" != "1" || "${final_attempt}" == "1" ]]; then
+      exit "${status}"
+    fi
+    sleep "${SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS}"
+    attempt=$((attempt + 1))
+  done
+}
+
 case "${NO_LOSS,,}" in
   1|true|yes|on)
     NO_LOSS_ARG=(--no-loss)
@@ -481,7 +608,12 @@ print(
 ' "${JSON_OUT}"
 }
 
-GPU_LOAD_BEFORE="$(snapshot_selected_gpu_load_json before)"
+acquire_gpu_benchmark_lock
+GPU_LOAD_BEFORE=""
+require_selected_gpu_idle
+if [[ -z "${GPU_LOAD_BEFORE}" ]]; then
+  GPU_LOAD_BEFORE="$(snapshot_selected_gpu_load_json before)"
+fi
 BENCH_STDOUT="$(mktemp "${TMPDIR:-/tmp}/nfn_lm_head_backward_stdout.XXXXXX")"
 BENCH_STATUS=0
 "${BENCH_BIN}" "${BENCH_ARGS[@]}" >"${BENCH_STDOUT}" || BENCH_STATUS=$?

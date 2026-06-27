@@ -1253,6 +1253,13 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     assert "lm_head_side_stream_count" in speed_tool
     assert "snapshot_selected_gpu_load_json" in lm_head_bench_script
     assert "merge_gpu_load_context_json" in lm_head_bench_script
+    assert "NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU" in lm_head_bench_script
+    assert "NFN_LM_HEAD_BACKWARD_MAX_SELECTED_GPU_UTILIZATION_PCT" in lm_head_bench_script
+    assert "NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK" in lm_head_bench_script
+    assert "nfn_lm_head_backward_gpu_${safe_gpu}.lock" in lm_head_bench_script
+    assert "validate_selected_gpu_idle_snapshot" in lm_head_bench_script
+    assert "require_selected_gpu_idle" in lm_head_bench_script
+    assert "selected GPU {selected} has {compute_count} active compute process(es)" in lm_head_bench_script
     assert '"gpu_load_context"' in lm_head_bench_script
     assert '"compute_process_count"' in lm_head_bench_script
     assert "GPU_LOAD_BEFORE" in lm_head_bench_script

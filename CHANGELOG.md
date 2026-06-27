@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened `tools/bench_lm_head_backward_candidate.sh` for focused kernel speed
+  probes. The wrapper now takes a per-selected-GPU `flock` and, by default,
+  refuses to launch when `nvidia-smi` reports active compute processes or
+  sustained selected-GPU utilization above the configured limit. This matches
+  the SM120 paired benchmark workflow more closely, so LM-head candidate-vs-old
+  microbenchmarks do not silently include unrelated GPU load.
+
+  Migration notes: set `NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU=0` to
+  skip the idle guard, `NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK=0` to skip the
+  lock, or tune
+  `NFN_LM_HEAD_BACKWARD_MAX_SELECTED_GPU_UTILIZATION_PCT`,
+  `NFN_LM_HEAD_BACKWARD_SELECTED_GPU_UTILIZATION_RETRIES`, and
+  `NFN_LM_HEAD_BACKWARD_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE` for
+  intentional diagnostics on WSL/NVML.
+
+  Verification: extended the native GPT source-contract coverage for the
+  LM-head wrapper lock and idle-guard controls, ran the focused test slice,
+  `bash -n tools/bench_lm_head_backward_candidate.sh`, a dry-run command, and
+  `NFN_LM_HEAD_BACKWARD_PROFILE=true-fused-cooperative-smoke` on the dedicated
+  RTX 5090. The smoke JSON reported zero selected-GPU compute processes before
+  and after the benchmark.
+
 - Reduced LM-head CUDA Graph replay profiler overhead in the native Tile ops
   runtime by moving replay/cache/fallback hot-path increments to current-thread
   local counters. Exported profiler count functions still include those local
