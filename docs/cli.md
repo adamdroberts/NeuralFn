@@ -1437,7 +1437,12 @@ sequencing kernels or replaying a captured CUDA Graph. The same JSON includes
 milliseconds for generic and cuBLASLt component references and names the
 current `reference_bottleneck_component`. Ratio-gate failures append that gap
 summary to the error message, so failed strict/candidate runs show the
-remaining component gap without reopening the saved JSON.
+remaining component gap without reopening the saved JSON. Use
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS`, or
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS` to gate on
+absolute candidate-minus-reference milliseconds instead of only ratios.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
 selects the 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` selects the same shape and

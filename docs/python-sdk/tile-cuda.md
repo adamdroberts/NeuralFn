@@ -2229,7 +2229,12 @@ candidate actually moved. It also reports `candidate_reference_gap`, including
 absolute candidate-minus-reference milliseconds for generic and cuBLASLt
 reference paths plus the `reference_bottleneck_component`, so same-script
 candidate evidence shows the remaining gap without manual subtraction. Wrapper
-ratio-gate failures append the same gap summary to the error message. These
+ratio-gate failures append the same gap summary to the error message. The
+wrapper can also gate directly on absolute gap milliseconds with
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS`, and
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS`. These
 reference component timings use the configured
 warmup count too, reported as `reference_component_warmup`, so they do not
 silently include first-use CUDA/cuBLAS/TK setup. The wrapper defaults

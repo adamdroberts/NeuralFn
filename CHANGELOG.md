@@ -13,9 +13,11 @@ Future updates should append new entries here rather than replacing older notes.
   component names and timings, so CUDA Tile LM-head candidates can be compared
   against the old and candidate kernels in one same-process script without
   manual subtraction. The `tools/bench_lm_head_backward_candidate.sh` ratio
-  gates also append that gap summary to failure messages. Verification:
-  focused native GPT benchmark source test, rebuilt the LM-head benchmark, ran
-  the dry-run wrapper, the no-Torch verifier, and `git diff --check`.
+  gates also append that gap summary to failure messages, and the wrapper now
+  accepts `NFN_LM_HEAD_BACKWARD_MAX_*_GAP_MS` limits for absolute
+  candidate-minus-reference gating. Verification: focused native GPT benchmark
+  source test, rebuilt the LM-head benchmark, ran the dry-run wrapper, the
+  no-Torch verifier, and `git diff --check`.
 
 - Native checkpoint inference: `nfn_gpt_native_train --sample-checkpoint`,
   `run_native_gpt_checkpoint_sampler()`, `run_native_gpt2_checkpoint_sampler()`,

@@ -2630,7 +2630,12 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_RATIO" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS" in wrapper
     assert "check_json_ratio" in wrapper
+    assert "check_json_gap" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
     assert "REQUIRE_TRUE_FUSED_ARG=(--require-true-fused-candidate)" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST" in wrapper

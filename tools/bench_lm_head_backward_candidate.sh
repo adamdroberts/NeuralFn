@@ -203,6 +203,10 @@ MAX_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO:-${DEFAULT_MAX_R
 MAX_REFERENCE_WITH_LOGITS_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_RATIO:-}"
 MAX_CUBLASLT_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO:-${DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO:-}}"
 MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO:-}"
+MAX_REFERENCE_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS:-}"
+MAX_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS:-}"
+MAX_CUBLASLT_REFERENCE_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS:-}"
+MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
@@ -769,6 +773,31 @@ if ratio > limit:
 ' "${JSON_OUT}" "${key}" "${limit}"
 }
 
+check_json_gap() {
+  local key="$1"
+  local limit="$2"
+  if [[ -z "${limit}" ]]; then
+    return 0
+  fi
+  python -c 'import json, pathlib, sys
+path, key, limit_raw = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.loads(pathlib.Path(path).read_text())
+gap = data.get("candidate_reference_gap") or {}
+value = float(gap[key])
+limit = float(limit_raw)
+if value > limit:
+    reference_component = gap.get("reference_bottleneck_component", "unknown")
+    reference_ms = float(gap.get("reference_bottleneck_ms_per_iter", 0.0) or 0.0)
+    cublaslt_component = gap.get("reference_cublaslt_bottleneck_component", "unknown")
+    cublaslt_ms = float(gap.get("reference_cublaslt_bottleneck_ms_per_iter", 0.0) or 0.0)
+    raise SystemExit(
+        f"{key} {value:.6f} ms exceeds limit {limit:.6f} ms; "
+        f"reference_bottleneck_component={reference_component}:{reference_ms:.6f}ms; "
+        f"reference_cublaslt_bottleneck_component={cublaslt_component}:{cublaslt_ms:.6f}ms"
+    )
+' "${JSON_OUT}" "${key}" "${limit}"
+}
+
 check_json_ratio \
   "candidate_to_baseline_ms_per_iter_ratio" \
   "${MAX_RATIO}"
@@ -784,3 +813,15 @@ check_json_ratio \
 check_json_ratio \
   "candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio" \
   "${MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO}"
+check_json_gap \
+  "candidate_minus_reference_summed_ms_per_iter" \
+  "${MAX_REFERENCE_GAP_MS}"
+check_json_gap \
+  "candidate_minus_reference_summed_with_logits_ms_per_iter" \
+  "${MAX_REFERENCE_WITH_LOGITS_GAP_MS}"
+check_json_gap \
+  "candidate_minus_reference_cublaslt_summed_ms_per_iter" \
+  "${MAX_CUBLASLT_REFERENCE_GAP_MS}"
+check_json_gap \
+  "candidate_minus_reference_cublaslt_summed_with_logits_ms_per_iter" \
+  "${MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS}"

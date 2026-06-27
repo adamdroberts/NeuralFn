@@ -454,7 +454,12 @@ a failed `trainer-chunk-strict` run or direct
 the exact symbol, capability flag, path class, and kernel body still needed
 before promotion. Wrapper ratio-gate failures also append the
 `candidate_reference_gap` summary, including the slowest reference component,
-to the error message. The bench resets
+to the error message. Set `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS`,
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS`, or
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS` when an
+absolute candidate-minus-reference millisecond limit is more useful than a
+ratio gate for small component timings. The bench resets
 Tile-CUDA LM-head counters after warmup and before timed iterations, so warmup
 graph capture/fallback launches do not contaminate the timed classification.
 CUDA 13.3 retesting can
