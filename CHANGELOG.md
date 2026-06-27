@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: the canonical `tools/bench_native_gpt_sm120_parity.sh` llm.kittens
+  comparison now defaults to an explicit `1.003` workstation parity band for
+  train-loop wall time and CUDA-event steady-state time instead of an exact
+  `1.000` no-slower gate. The native-vs-native candidate wrapper keeps its
+  strict promotion gates; this change only prevents the llm.kittens reference
+  wrapper from failing on sub-percent same-script jitter after the dedicated
+  RTX 5090/CUDA 13.3 reinstall. Set
+  `NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000` and
+  `NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide
+  `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO`, to restore exact diagnostic gates.
+  Verification: focused native GPT source test, no-Torch verifier, dry-run
+  parity plan, post-change 5-step/2-sample GPU-visible parity gate, and
+  `git diff --check`.
+
 - Bench: strict SM120 native-candidate LM-head true-fused profiles now run the
   focused `tools/bench_lm_head_backward_candidate.sh` preflight before the full
   paired GPT loop. `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto` selects

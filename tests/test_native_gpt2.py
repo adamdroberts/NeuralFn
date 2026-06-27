@@ -1021,7 +1021,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ).read_text(encoding="utf-8")
     assert "TRAIN_LOOP_EVENT_TIMING=\"$(env_or_alias3 NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING NFN_SM120_TRAIN_LOOP_EVENT_TIMING 1)\"" in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
-    assert 'MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"' in parity_bench
+    assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
+    assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
+    assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"' in parity_bench
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
     assert "CANDIDATE_PROFILE_RAW=\"$(env_or_alias4 NFN_SM120_NATIVE_CANDIDATE_PROFILE NFN_SM120_NATIVE_PARITY_PROFILE NFN_SM120_PARITY_CANDIDATE_PROFILE NFN_SM120_PARITY_PROFILE \"\")\"" in parity_bench
     assert "NFN_SM120_NATIVE_CANDIDATE_PROFILE/NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench

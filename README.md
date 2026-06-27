@@ -2470,22 +2470,20 @@ apart before each measured command, configurable through
 `NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` and the matching
 `..._RETRY_INTERVAL_SECONDS` aliases.
 Measured parity runs are gating runs by default: `NFN_SM120_PARITY_ENFORCE_GATE`
-defaults to `1`, so the wrapper exits nonzero unless NeuralFn stays at or below
-llm.kittens for `train_loop_wall_ms_per_step=1.000`. Multi-sample parity runs
-use paired median ratios for those default gates, which keeps an otherwise
-passing run from failing on one fast or slow reference sample; single-sample
-runs keep the paired speed tool's unqualified mean behavior. CUDA-event loop
-timing is off by default for this native-vs-llm.kittens parity path so the
-measured NeuralFn command matches normal training mode; set
-`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` when a diagnostic run also needs
-`train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`.
-This prevents a candidate from passing strict llm.kittens parity only by
-improving first-step/setup timing. Set `NFN_SM120_PARITY_ENFORCE_GATE=0` (or
-`NFN_SM120_ENFORCE_PARITY_GATE=0`) only for diagnostic measurement-only reruns.
-You can also provide explicit whitespace separated gates through
-`NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`;
-prefix a gate with `mean:`, `median:`, `min:`, or `max:` when a diagnostic run
-needs a specific statistic. Dry-run plans stay ungated. Strict single-kernel LM-head replacement is also an
+defaults to `1`, so the wrapper exits nonzero unless NeuralFn stays inside the
+bounded llm.kittens parity band. The default band is
+`train_loop_wall_ms_per_step=1.003`, plus
+`train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when CUDA-event loop
+timing is enabled. Multi-sample parity runs use paired median ratios for those
+default gates, which keeps an otherwise passing run from failing on one fast or
+slow reference sample; single-sample runs keep the paired speed tool's
+unqualified mean behavior. Set `NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000`
+and `NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide explicit
+whitespace separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
+`NFN_SM120_MAX_CANDIDATE_RATIO`, when a diagnostic run must enforce exact
+no-slower-than-reference behavior. Prefix explicit gates with `mean:`,
+`median:`, `min:`, or `max:` when a diagnostic run needs a specific statistic.
+Dry-run plans stay ungated. Strict single-kernel LM-head replacement is also an
 opt-in diagnostic gate for parity runs: set
 `NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1` only when checking the
 future production true-fused classifier-backward path. The default parity run

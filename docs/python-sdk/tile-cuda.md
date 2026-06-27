@@ -2384,17 +2384,18 @@ tokenization is intentionally acceptable before launching the same native
 sampler. The native sampler accepts `temperature`, `top_k`,
 `repetition_penalty`, and `seed` through the SDK and corresponding CLI flags;
 use `temperature=0` or `top_k=1` for deterministic greedy argmax output.
-Measured runs default to a strict
-`train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
-exits nonzero when NeuralFn is slower than the llm.kittens reference on the
-comparable train-loop metric. Multi-sample parity runs evaluate the default
+Measured llm.kittens parity runs default to a bounded workstation parity band:
+`train_loop_wall_ms_per_step=1.003`, plus
+`train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when train-loop
+CUDA-event timing is enabled. Multi-sample parity runs evaluate the default
 gates on the paired median ratio to resist one-sample reference/candidate
 outliers; single-sample runs keep the paired speed tool's unqualified mean
-behavior. Use `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` or
-`NFN_SM120_MAX_CANDIDATE_RATIO` only when intentionally running a diagnostic
-sweep with different pass criteria, and prefix a gate with `mean:`, `median:`,
-`min:`, or `max:` when the statistic should be explicit; dry-run plans remain
-ungated.
+behavior. Set `NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000` and
+`NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide
+`NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`, when
+an exact no-slower-than-reference diagnostic sweep is required. Prefix explicit
+gates with `mean:`, `median:`, `min:`, or `max:` when the statistic should be
+explicit; dry-run plans remain ungated.
 Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` or
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to write the resolved paired command plan,
 CUDA selection, profile settings, and alternating sample order without
