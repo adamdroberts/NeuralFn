@@ -1065,7 +1065,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DEFAULT_TEMPLATE gpt", proc.stdout)
         self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
-        self.assertNotIn("gpt2", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
@@ -1234,7 +1233,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
-        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--model-family gpt2", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
@@ -1281,7 +1280,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
@@ -1328,7 +1327,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
         self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
         self.assertIn("--train-seq-len 4096", proc.stdout)
@@ -2011,7 +2010,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 str(root / "cli" / "nfn.py"),
                 "train",
                 "--base-model",
-                "nanogpt",
+                "nano_gpt",
                 "--tinystories",
                 "--max-steps",
                 "2",
@@ -2036,7 +2035,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(23, proc.returncode)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("--model-family", proc.stdout)
-        self.assertIn("gpt", proc.stdout)
+        self.assertIn("nanogpt", proc.stdout)
         self.assertIn("--template-name", proc.stdout)
         self.assertIn("nanogpt", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
@@ -2169,7 +2168,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
@@ -2614,8 +2613,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TinyStories_val.bin", content)
         self.assertIn('CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"', content)
         self.assertIn("--train-batch-tokens 524288", content)
-        self.assertIn("--batch-size 64", content)
-        self.assertIn("--train-seq-len 1024", content)
+        self.assertIn('BATCH_SIZE="${NFN_SM120_BATCH_SIZE:-64}"', content)
+        self.assertIn('--batch-size "${BATCH_SIZE}"', content)
+        self.assertIn('TRAIN_SEQ_LEN="${NFN_SM120_TRAIN_SEQ_LEN:-1024}"', content)
+        self.assertIn('--train-seq-len "${TRAIN_SEQ_LEN}"', content)
         self.assertIn("--learning-rate 0.0006", content)
         self.assertIn("--weight-decay 0.1", content)
         self.assertIn("--warmup-steps 60", content)

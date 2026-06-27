@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT CLI: preserved dense GPT family selectors through direct compiled
+  handoff instead of collapsing wrapper selections to `gpt`. `train_gpt2.py`
+  now injects `--model-family gpt2` by default before crossing into the linked
+  C++ trainer, top-level `nfn train --base-model gpt2/gpt3/nanogpt` forwards
+  the selected dense family label, and `train_gpt2_evo.py` sets up the repo
+  import path before its native guard so direct execution no longer requires
+  `PYTHONPATH`. Template and custom-graph selectors remain the architecture
+  source of truth. Verification: ran the full native GPT CLI pytest file
+  (`62 passed, 105 subtests`), direct no-Torch dry-run command inspection for
+  `train_gpt2.py --tinystories`, GPT3 dry-run command inspection showing the
+  2048-token default, Python bytecode compilation for touched CLI modules, and
+  `git diff --check`.
+
 - Native GPT: rechecked and kept rejected the no-loss llm.kittens-style
   LM-head CE/dlogits store route. The
   `lm_head_ce_no_loss_llmk_style_specialized` profile remains diagnostic-only

@@ -12,8 +12,20 @@ if SCRIPT_DIR_STR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR_STR)
 
 
+def _has_model_selector(argv: list[str]) -> bool:
+    return any(
+        arg in {"--model-family", "--base-model", "--model"}
+        or arg.startswith("--model-family=")
+        or arg.startswith("--base-model=")
+        or arg.startswith("--model=")
+        for arg in argv
+    )
+
+
 if __name__ == "__main__":
     sys.argv[0] = str(Path(__file__).resolve())
+    if not _has_model_selector(sys.argv[1:]):
+        sys.argv[1:1] = ["--model-family", "gpt2"]
     runpy.run_path(str(CANONICAL_SCRIPT), run_name="__main__")
 else:
     from train_gpt import *  # noqa: F401,F403

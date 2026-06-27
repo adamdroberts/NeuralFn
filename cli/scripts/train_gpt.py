@@ -103,12 +103,22 @@ def _native_template_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt").strip().lower().replace("-", "_")
 
 
+def _default_native_model_family() -> str:
+    invoked = Path(sys.argv[0]).stem.lower().replace("_", "-")
+    if invoked == "train-gpt2":
+        return "gpt2"
+    return "gpt"
+
+
 def _native_model_family(argv: list[str]) -> str:
-    return (_arg_value(argv, "--model-family", "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
+    return (
+        _arg_value(argv, "--model-family", "--base-model", "--model")
+        or _default_native_model_family()
+    ).strip().lower().replace("_", "-")
 
 
 def _canonical_dense_gpt_model_family(model: str) -> str:
-    return "gpt" if model in {"gpt", "gpt2", "gpt3", "nanogpt"} else model
+    return "nanogpt" if model in {"nano-gpt", "nano_gpt"} else model
 
 
 def _set_split_value(out: list[str], flag: str, value: str) -> None:

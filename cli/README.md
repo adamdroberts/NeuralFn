@@ -185,9 +185,9 @@ for shipped GPT templates plus the public `gpt`/`gpt3` aliases. The action
 exits before dataset or token-shard resolution and reports each selector's
 native support status.
 `--base-model gpt` is the canonical dense GPT surface. `gpt2` and `gpt3` route
-to the same C++ trainer and forward canonical `--model-family gpt`; `gpt3`
-defaults to a 2048-token context only when no template, graph, or
-`--train-seq-len` is explicit. The full `nfn train` parser, planner, and compatibility graph builder
+to the same C++ trainer while preserving their selected `--model-family`
+labels; `gpt3` defaults to a 2048-token context only when no template, graph,
+or `--train-seq-len` is explicit. The full `nfn train` parser, planner, and compatibility graph builder
 accept those same dense GPT aliases; when a graph-backed compatibility path is
 used, the alias is canonicalized to the GPT-compatible template builder and the
 template or graph still decides the architecture. Direct

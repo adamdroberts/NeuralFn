@@ -565,7 +565,7 @@ def _native_train_model(argv: list[str]) -> str:
 
 
 def _canonical_dense_gpt_model_family(model: str) -> str:
-    return "gpt" if _is_dense_gpt_native_model(model) else model
+    return "nanogpt" if model in {"nano-gpt", "nano_gpt"} else model
 
 
 def _native_gpt_cli_uses_linked_tile_ops(path: str) -> bool:
@@ -641,8 +641,9 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     if include_model:
         out.extend(["--base-model", model])
     elif dense_gpt:
-        out.extend(["--model-family", _canonical_dense_gpt_model_family(model)])
-        if model == "nanogpt" and not _explicit_arg(argv, "--template-name", "--template", "--preset", "--graph-file", "--graph"):
+        model_family = _canonical_dense_gpt_model_family(model)
+        out.extend(["--model-family", model_family])
+        if model_family == "nanogpt" and not _explicit_arg(argv, "--template-name", "--template", "--preset", "--graph-file", "--graph"):
             out.extend(["--template-name", "nanogpt"])
     if dense_gpt and not _has_native_train_action(argv):
         out.append("--train-transformer-lm")
