@@ -1323,7 +1323,9 @@ For the canonical RTX 5090 SM120 parity benchmark, run
 `tools/bench_native_gpt_sm120_parity.sh`. It compares the local
 `/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu` TinyStories command
 using the `train-sm120.sh` shape against
-`build/nfn_gpt_native_train --backend tile-cuda` through
+`build/nfn_gpt_native_train_linked --backend tile-cuda --tile-ops-lib linked`
+when the linked trainer exists, falling back to the dynamic
+`build/nfn_gpt_native_train` only when needed. The comparison runs through
 `tools/paired_kernel_speed.py`, with selected-GPU idle/process guards and JSON
 output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,

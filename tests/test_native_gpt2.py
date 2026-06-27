@@ -865,6 +865,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$NFN_NATIVE_GPT_TRAIN_BIN"' in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
+    assert "build/nfn_gpt_native_train_linked --backend tile-cuda --tile-ops-lib linked" in (
+        root / "docs" / "cli.md"
+    ).read_text(encoding="utf-8")
     assert "TRAIN_LOOP_EVENT_TIMING=\"$(env_or_alias3 NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING NFN_SM120_TRAIN_LOOP_EVENT_TIMING 1)\"" in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"' in parity_bench

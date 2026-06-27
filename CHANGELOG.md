@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the SM120 parity benchmark docs to match the current wrapper
+  behavior: `tools/bench_native_gpt_sm120_parity.sh` compares llm.kittens
+  against `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when that
+  binary exists, and falls back to the dynamic trainer only when needed. Added a
+  source-contract assertion so the CLI docs keep naming the linked parity path.
+
+  Verification: ran the focused native GPT source-contract test covering the
+  parity wrapper and docs.
+
 - Updated `tools/paired_kernel_speed.py` to treat `tile_ops_library` and
   `tile_ops_dlopen_binding_strategy` as native strategy metrics. The
   `linked_startup` SM120 profile now reports the expected dynamic Tile `.so`

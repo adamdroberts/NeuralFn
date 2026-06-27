@@ -3349,6 +3349,10 @@ the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+The llm.kittens parity wrapper `tools/bench_native_gpt_sm120_parity.sh` uses the
+same linked NeuralFn default: it compares `train_gpt2cu` against
+`build/nfn_gpt_native_train_linked --tile-ops-lib linked` when the linked
+trainer exists, and falls back to the dynamic trainer only when needed.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
 `linked_tile_ops`) to compare `build/nfn_gpt_native_train` against
 `build/nfn_gpt_native_train_linked` in the same paired wrapper. The profile
