@@ -1677,6 +1677,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Decode successful native GPT checkpoint sampler output in the lightweight wrapper, preserving compiled JSON while printing generated token IDs and GPT-2 text without Torch or graph-editor tensors.
 - [x] Add compiled C++ native GPT checkpoint inspection with `nfn_gpt_native_train --native-info --native-checkpoint PATH` / `--inspect-checkpoint PATH`, reporting shape, precision, DONE marker state, and file-size validation before CUDA, Torch, dataset, or graph-node setup.
 - [x] Route native GPT `.bin` checkpoint `--prompt-tokens` requests through compiled C++ with `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`, validating checkpoint shape, context, vocab bounds, token parsing, executing autoregressive CUDA Tile checkpoint forward passes, and returning generated token IDs without graph-editor tensor flow.
+  - 2026-06-27 aligned native checkpoint sampling and the GPT/GPT-2
+    compatibility SDK launch configs with the workstation native trainer's
+    `cuda_visible_devices="dedicated"` default. Binding payloads and subprocess
+    environments now resolve the selector through `nvidia-smi` before launching
+    compiled C++ so `nfn infer --checkpoint model_*.bin --prompt-tokens ...`
+    uses the display-disabled compute GPU by default while still honoring an
+    explicit `CUDA_VISIBLE_DEVICES` or `cuda_visible_devices="0"` override.
 - [x] Add native GPT checkpoint tensor-layout decode with `--checkpoint-layout`, deriving tensor shapes, payload offsets, file offsets, and bounded payload samples from the checkpoint header without CUDA, Torch, datasets, or graph-editor tensor flow.
 - [x] Add native GPT checkpoint payload load smoke with `--checkpoint-load-smoke`, moving a bounded bf16 checkpoint slice through CUDA memory and Tile bf16-to-float conversion without Torch, datasets, or graph-editor tensor flow.
 - [x] Extend checkpoint payload load smoke with `--checkpoint-load-tensor NAME`, selecting named tensors from the decoded layout before CUDA copy/Tile conversion so native inference can prove per-weight checkpoint loads without graph-editor tensors.
