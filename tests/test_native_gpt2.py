@@ -12,6 +12,7 @@ import struct
 from types import SimpleNamespace
 
 import neuralfn
+import neuralfn.native_cuda_device as native_cuda_device_module
 import neuralfn.native_train as native_train_module
 import neuralfn.native_gpt2 as native_gpt2_module
 import pytest
@@ -624,7 +625,8 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
         / "native_training_guard.py"
     ).read_text(encoding="utf-8")
 
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")' in source
+    assert "resolve_cuda_visible_devices_value" in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
@@ -636,9 +638,33 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
         / "nfn.py"
     ).read_text(encoding="utf-8")
 
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")' in source
+    assert "resolve_cuda_visible_devices_value" in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
+
+
+def test_native_cuda_device_resolves_dedicated_to_display_disabled_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(argv)
+        return SimpleNamespace(
+            stdout=(
+                "0, Enabled, 1\n"
+                "1, Disabled, 12\n"
+                "2, Disabled, 3\n"
+            )
+        )
+
+    monkeypatch.setattr(native_cuda_device_module.subprocess, "run", fake_run)
+
+    assert native_cuda_device_module.resolve_cuda_visible_devices_value("dedicated") == "2"
+    assert native_cuda_device_module.resolve_cuda_visible_devices_value("auto") == "2"
+    assert native_cuda_device_module.resolve_cuda_visible_devices_value("3") == "3"
+    assert calls
 
 
 def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
@@ -4039,6 +4065,7 @@ def test_native_train_run_config_and_subprocess_runner(
     monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
     monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
     monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ENV", str(env_output))
+    monkeypatch.setattr(native_train_module, "resolve_cuda_visible_devices_value", lambda value: "7")
     cfg = build_native_train_run_config("nano_gpt", ["--tinystories", "--dry-run"])
 
     assert resolve_native_train_cli() == str(cli)
@@ -4051,7 +4078,7 @@ def test_native_train_run_config_and_subprocess_runner(
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:4] == ["--base-model", "nanogpt", "--tinystories", "--dry-run"]
     env_lines = env_output.read_text(encoding="utf-8").splitlines()
-    assert "CUDA_VISIBLE_DEVICES=dedicated" in env_lines
+    assert "CUDA_VISIBLE_DEVICES=7" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
@@ -4261,6 +4288,7 @@ def test_exec_native_train_replaces_process_with_compiled_cli(
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     monkeypatch.delenv("CUDA_DEVICE_MAX_CONNECTIONS", raising=False)
     monkeypatch.delenv("CUDA_MODULE_LOADING", raising=False)
+    monkeypatch.setattr(native_train_module, "resolve_cuda_visible_devices_value", lambda value: "7")
     observed: dict[str, object] = {}
 
     def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
@@ -4280,7 +4308,7 @@ def test_exec_native_train_replaces_process_with_compiled_cli(
     assert observed["argv"] == [str(cli), "--base-model", "gpt", "--tinystories", "--dry-run"]
     env = observed["env"]
     assert isinstance(env, dict)
-    assert env["CUDA_VISIBLE_DEVICES"] == "dedicated"
+    assert env["CUDA_VISIBLE_DEVICES"] == "7"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
 

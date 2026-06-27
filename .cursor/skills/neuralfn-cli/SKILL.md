@@ -325,8 +325,9 @@ Canonical docs:
   expose `resolve_command` / `resolve_native_train_command`; rebuild with
   `bash tools/build_native_train_binding.sh` before expecting `runner="auto"`
   to prefer the in-process binding.
-  Generic native subprocess fallback defaults `CUDA_VISIBLE_DEVICES=dedicated`,
-  `CUDA_DEVICE_MAX_CONNECTIONS=1`, and `CUDA_MODULE_LOADING=LAZY` only when
+  Generic native subprocess fallback defaults to the `dedicated` device
+  selector, resolves it to a CUDA-visible ordinal, and sets
+  `CUDA_DEVICE_MAX_CONNECTIONS=1` plus `CUDA_MODULE_LOADING=LAZY` only when
   unset; user-pinned environment values still win, and pass
   `cuda_visible_devices="0"` only when the old hard ordinal is intentional.
 - The default runner is `compiled-cli`. Use `--eval-every-steps 1000` for

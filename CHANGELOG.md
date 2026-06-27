@@ -10,15 +10,15 @@ Future updates should append new entries here rather than replacing older notes.
   hard CUDA ordinal to the workstation dedicated-GPU selector.
   `NativeTrainRunConfig.cuda_visible_devices` now defaults to `"dedicated"`,
   and generic `run_native_train(...)` / `exec_native_train(...)` subprocess
-  fallback sets `CUDA_VISIBLE_DEVICES=dedicated` when the caller has not
-  supplied a non-empty environment value. Before this change the generic SDK
-  default was `"0"` / `CUDA_VISIBLE_DEVICES=0`. Callers that intentionally
+  fallback resolves that selector to a CUDA-visible ordinal when the caller has
+  not supplied a non-empty environment value. Before this change the generic
+  SDK default was `"0"` / `CUDA_VISIBLE_DEVICES=0`. Callers that intentionally
   pin GPU 0 should pass `cuda_visible_devices="0"` or export
   `CUDA_VISIBLE_DEVICES=0`; leaving it unset now follows the same
   display-disabled dedicated compute-GPU policy used by the SM120 launchers.
 
-  Verification: ran focused native-train SDK tests, Python byte compilation,
-  and `git diff --check`.
+  Verification: ran focused native-train SDK tests including the alias resolver,
+  Python byte compilation, and `git diff --check`.
 
 - Refreshed the CUDA 13.3.33 dedicated RTX 5090 validation and parity evidence
   after the latest WSL toolkit reinstall. `tools/validate_sm120_cuda13.sh`

@@ -17,6 +17,8 @@ for candidate in (SCRIPTS_DIR, ROOT.parent):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
+from neuralfn.native_cuda_device import resolve_cuda_visible_devices_value
+
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:
     for idx, arg in enumerate(argv):
@@ -840,7 +842,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         and _resolve_direct_native_train_family_cli(model) is not None
     )
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "dedicated")
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     native_execution_flags = {

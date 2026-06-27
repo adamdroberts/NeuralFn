@@ -270,11 +270,12 @@ helper appends that flag once, accepts either existing CLI spelling without
 duplicating it, and raises for non-dense families such as `llama`. Current builds
 still fail the guard because the LM-head path is a diagnostic CUDA Graph wrapper
 rather than a true fused classifier/dHidden/dWeight Tile kernel.
-The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=dedicated` and
-`CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
-environment variables; set `NativeTrainRunConfig.cuda_visible_devices` to an
-explicit ordinal such as `"0"` or set the environment to target another CUDA
-GPU. This is a breaking default change from the earlier hard
+The CLI subprocess fallback also defaults to the `dedicated` device selector,
+resolves it to a CUDA-visible ordinal, and sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
+only when the caller has not supplied those environment variables; set
+`NativeTrainRunConfig.cuda_visible_devices` to an explicit ordinal such as `"0"`
+or set the environment to target another CUDA GPU. This is a breaking default
+change from the earlier hard
 `CUDA_VISIBLE_DEVICES=0` generic native SDK fallback. Use
 `exec_native_train(config)` when a
 generic SDK launcher should `execvpe` the selected compiled native trainer and

@@ -11,6 +11,8 @@ import subprocess
 import sys
 from typing import Any, Sequence
 
+from .native_cuda_device import resolve_cuda_visible_devices_value
+
 
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
 DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
@@ -92,6 +94,11 @@ class NativeTrainRunConfig:
             "argv": self.argv(),
             "command": self.command(),
         }
+
+    def launch_dict(self) -> dict[str, Any]:
+        payload = self.to_dict()
+        payload["cuda_visible_devices"] = resolve_cuda_visible_devices_value(self.cuda_visible_devices)
+        return payload
 
     def _resolved_args(self, normalized_family: str) -> tuple[str, ...]:
         args = self.args
@@ -378,12 +385,12 @@ def resolve_native_train_binding_command(config: NativeTrainRunConfig) -> list[s
     """Return the argv that the compiled native-train binding will spawn."""
 
     _module_name, _runner, resolver = _load_native_train_binding()
-    return [str(item) for item in resolver(config.to_dict())]
+    return [str(item) for item in resolver(config.launch_dict())]
 
 
 def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]:
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(config.cuda_visible_devices))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
@@ -409,7 +416,7 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
         if not status.available:
             raise RuntimeError(f"Native train binding requested but unavailable: {status.reason}")
         _module_name, binding_runner, _resolver = _load_native_train_binding()
-        return int(binding_runner(config.to_dict()))
+        return int(binding_runner(config.launch_dict()))
     argv = config.argv()
     if not status.available and not _native_train_command_available(argv):
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
