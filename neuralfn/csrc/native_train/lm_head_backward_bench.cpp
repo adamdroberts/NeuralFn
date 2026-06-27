@@ -784,7 +784,11 @@ std::string render_json(
         << "  \"next_required_capability_symbol\": \"nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused\",\n"
         << "  \"next_required_path_class\": \"strict-true-fused-tile-kernel\",\n"
         << "  \"next_required_kernel_body\": \"row-chunked-ce-dhidden-dweight-single-tile-kernel\",\n"
-        << "  \"next_required_kernel_body_reason\": \"replace the diagnostic CUDA Graph replay or sequence wrapper with a bounded Tile-CUDA kernel body that co-schedules CE/dlogits, dHidden, and dWeight for the resident LM-head row chunk\",\n"
+        << "  \"next_required_kernel_body_reason\": \"strict experimental gate only: replace the diagnostic CUDA Graph replay or sequence wrapper with a bounded Tile-CUDA body before declaring strict true-fused capability\",\n"
+        << "  \"reference_classifier_fusion_scope\": \"ce-dlogits-only-logits-dhidden-dweight-remain-separate\",\n"
+        << "  \"reference_alignment_target\": \"match-fused-ce-dlogits-and-optimize-separate-logits-dhidden-dweight-stages\",\n"
+        << "  \"next_reference_aligned_kernel_body\": \"fused-ce-dlogits-separate-classifier-matmuls\",\n"
+        << "  \"next_reference_aligned_kernel_body_reason\": \"llm.kittens parity uses fused CE/dlogits with separate logits, dHidden, and dWeight matmul stages; optimize those stages under same-script gates before promoting strict single-kernel experiments\",\n"
         << "  \"candidate_component_gap\": {"
         << "\"candidate_to_reference_ce_ms_per_iter_ratio\": "
         << std::fixed << std::setprecision(6) << candidate_ce_component_ratio << ","
@@ -1026,7 +1030,9 @@ int main(int argc, char** argv) {
                 << "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused"
                 << ", next_required_path_class=strict-true-fused-tile-kernel"
                 << ", next_required_kernel_body="
-                << "row-chunked-ce-dhidden-dweight-single-tile-kernel\n";
+                << "row-chunked-ce-dhidden-dweight-single-tile-kernel"
+                << ", next_reference_aligned_kernel_body="
+                << "fused-ce-dlogits-separate-classifier-matmuls\n";
             if (!options.json_out.empty()) {
                 std::filesystem::path out_path(options.json_out);
                 if (!out_path.parent_path().empty()) {

@@ -2448,10 +2448,17 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "true_fused_replacement_required" in bench_source
     assert "next_required_kernel_body" in bench_source
     assert "row-chunked-ce-dhidden-dweight-single-tile-kernel" in bench_source
+    assert "strict experimental gate only" in bench_source
+    assert "reference_classifier_fusion_scope" in bench_source
+    assert "ce-dlogits-only-logits-dhidden-dweight-remain-separate" in bench_source
+    assert "reference_alignment_target" in bench_source
+    assert "next_reference_aligned_kernel_body" in bench_source
+    assert "fused-ce-dlogits-separate-classifier-matmuls" in bench_source
     assert "next_required_symbol=" in bench_source
     assert "next_required_capability_symbol=" in bench_source
     assert "next_required_path_class=strict-true-fused-tile-kernel" in bench_source
     assert "next_required_kernel_body=" in bench_source
+    assert "next_reference_aligned_kernel_body=" in bench_source
     assert "candidate_component_gap" in bench_source
     assert "candidate_to_reference_ce_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_dhidden_ms_per_iter_ratio" in bench_source

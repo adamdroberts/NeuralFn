@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: separated the focused LM-head backward benchmark's strict experimental
+  true-fused requirement from the llm.kittens reference-aligned optimization
+  target. `build/lm_head_backward_bench` JSON now reports
+  `reference_classifier_fusion_scope`, `reference_alignment_target`, and
+  `next_reference_aligned_kernel_body` alongside the existing
+  `next_required_*` strict-gate fields, so focused failures no longer imply
+  that llm.kittens parity requires a monolithic CE+dHidden+dWeight kernel.
+  Verification: rebuilt the focused LM-head benchmark, ran the focused source
+  contract pytest slice, direct dry-run output inspection, and `git diff
+  --check`.
+
 - Bench/native GPT: corrected the SM120 LM-head parity contract to match the
   llm.kittens reference schedule. Native plan/runtime JSON now identifies the
   reference classifier scope as fused CE/dlogits with separate logits, dHidden,

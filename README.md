@@ -436,9 +436,11 @@ CUDA/cuBLAS/TK setup. The same JSON also reports
 captured CE, dHidden, and dWeight work through a CUDA Graph. When the strict
 symbol is still not a real fused Tile kernel, the JSON sets
 `true_fused_replacement_required=true`, reports `candidate_component_gap`
-ratios against CE, dHidden, and dWeight component timings, and names the next
-required body as `row-chunked-ce-dhidden-dweight-single-tile-kernel` with the
-required symbol and capability flag. This makes
+ratios against CE, dHidden, and dWeight component timings, names the strict
+experimental body as `row-chunked-ce-dhidden-dweight-single-tile-kernel` with
+the required symbol and capability flag, and separately reports the
+reference-aligned body as `fused-ce-dlogits-separate-classifier-matmuls`. This
+makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
 CUDA Graph wrappers, and a future real fused kernel. Strict wrapper failures
 and direct compiled benchmark failures print those `next_required_*` fields, so
