@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the SM120 startup candidate-profile registry with fresh CUDA 13.3.33
+  dedicated RTX 5090 evidence for the arena allocator and token-weight
+  initialization probes. The rerun keeps the current defaults unchanged:
+  `cuda_malloc_async`, `uint16_arena_first`,
+  `token_weight_vector4_strided`, `token_weight_threaded`,
+  `token_weight_bf16_pattern`, `token_weight_fast_int32`, and
+  `token_weight_two_pass_bf16` remain rejected, while
+  `token_weight_padded_init` remains the accepted default-vs-legacy startup
+  proof.
+
+  Verification: reran the startup-only paired wrapper with
+  `NFN_SM120_NATIVE_SAMPLES=3`, `NFN_SM120_NATIVE_WARMUP=0`,
+  `NFN_SM120_NATIVE_PROFILE_DIR=none`, and the dedicated RTX 5090 selected.
+  Non-default probes regressed setup wall time; the default padded token-weight
+  initializer measured `0.988862x` setup wall time and `0.976989x`
+  token-weight initialization time versus the legacy path.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
   as an accepted default-vs-legacy SM120 benchmark profile. The runtime default
   was already `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`; the

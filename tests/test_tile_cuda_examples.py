@@ -1421,7 +1421,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1" in text
     assert "cuda_malloc_async" in text
     assert "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1" in text
-    assert "setup.uint16_arena_materialize.total_ms to 1.775565x" in text
+    assert "setup.uint16_arena_materialize.total_ms to 1.709907x" in text
     assert "bgrad_first_write_direct" in text
     assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1" in text
     assert "bgrad_first_write_direct_qkv_65536" in text
@@ -1467,7 +1467,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_bf16_pattern" in text
-    assert "setup.token_weight_init.total_ms to 1.003837x" in text
+    assert "setup.token_weight_init.total_ms to 1.006804x" in text
+    assert "setup.token_weight_init.total_ms to 1.025016x" in text
+    assert "setup.token_weight_init.total_ms to 1.015463x" in text
     assert "token_weight_fast_int32" in text
     assert "token_weight_two_pass_bf16" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text

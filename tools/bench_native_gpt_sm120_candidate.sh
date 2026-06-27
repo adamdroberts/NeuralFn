@@ -788,7 +788,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "cuda_malloc_async"|"cuda-malloc-async"|"async_device_allocator"|"async-device-allocator")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-sample startup-only rerun enabled cudaMallocAsync but regressed setup_wall_ms to 1.145549x and setup.uint16_arena_materialize.total_ms to 1.775565x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun enabled cudaMallocAsync and improved setup.token_weight_init.total_ms to 0.803693x, but rejected it because setup_wall_ms regressed to 1.126997x, setup.float_arena_materialize.total_ms to 1.175710x, and setup.uint16_arena_materialize.total_ms to 1.709907x."
     STARTUP_ONLY=1
     STEPS=0
     FORCE_DISABLE_ROUTE_CHANGE=1
@@ -806,7 +806,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "uint16_arena_first"|"uint16-arena-first"|"bf16_arena_first"|"bf16-arena-first")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 startup-only 7-sample gate changed arena_materialize_order from float-then-uint16 to uint16-then-float, but rejected default promotion because setup_wall_ms regressed to 1.013035x mean and 1.010524x median, uint16 arena materialization regressed to 2.369884x mean, and token-weight init regressed to 1.135714x mean."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun changed arena_materialize_order from float-then-uint16 to uint16-then-float, but rejected default promotion because setup_wall_ms regressed to 1.007289x, setup.uint16_arena_materialize.total_ms to 2.191721x, and setup.token_weight_init.total_ms to 1.057017x."
     STARTUP_ONLY=1
     STEPS=0
     FORCE_DISABLE_ROUTE_CHANGE=1
@@ -1036,25 +1036,25 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "token_weight_vector4_strided"|"token-weight-vector4-strided")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 5-sample startup-only gate regressed setup.token_weight_init.total_ms to 1.003837x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun requested the strided vector4 token-weight initializer, but rejected it because it did not change any tracked route, strategy, or plan and regressed setup_wall_ms to 1.012563x, setup.float_arena_materialize.total_ms to 1.022720x, setup.uint16_arena_materialize.total_ms to 1.017532x, and setup.token_weight_init.total_ms to 1.006804x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1"
     ;;
   "token_weight_threaded"|"token-weight-threaded")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-sample startup-only rerun improved setup_wall_ms to 0.978343x only through unrelated arena timing while regressing setup.token_weight_init.total_ms to 1.122857x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun changed token_weight_init_strategy to device-threaded-power2-deterministic-fused-bf16-shadow, but rejected it because setup_wall_ms regressed to 1.006278x, setup.uint16_arena_materialize.total_ms to 1.010660x, and setup.token_weight_init.total_ms to 1.025016x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1"
     ;;
   "token_weight_bf16_pattern"|"token-weight-bf16-pattern")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-sample startup-only rerun changed the strategy route, but setup_wall_ms stayed flat at 0.998033x mean / 1.015865x median, setup.token_weight_init.total_ms stayed flat only on mean at 0.998156x while regressing to 1.022682x median, and setup.uint16_arena_materialize.total_ms regressed to 1.075542x mean / 1.032256x median versus the conversion-based vector4 BF16-shadow writer. Rerun with NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1 after a real kernel change or stricter stable gate."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun changed token_weight_init_strategy to device-vector4-power2-deterministic-fused-bf16-pattern-shadow, but rejected it because setup_wall_ms regressed to 1.005840x and setup.token_weight_init.total_ms to 1.015463x; setup.uint16_arena_materialize.total_ms stayed noise-flat at 0.998215x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1"
     ;;
   "token_weight_padded_init"|"token-weight-padded-init"|"token_weight_padded_zero"|"token-weight-padded-zero")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 startup-only 3-sample gate promoted the conversion-based fused padded token-weight initializer as the default after measuring setup_wall_ms at 0.976762x and setup.token_weight_init.total_ms at 0.961152x versus the older separate padding-zero/default vector4 path. The full 10-step reference run still failed llm.kittens throughput gates, so this profile remains a startup default-vs-legacy proof rather than a throughput parity claim."
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 startup-only 3-sample rerun kept the conversion-based fused padded token-weight initializer as the default after measuring setup_wall_ms at 0.988862x and setup.token_weight_init.total_ms at 0.976989x versus the older separate padding-zero/default vector4 path. The full 10-step reference run still failed llm.kittens throughput gates, so this profile remains a startup default-vs-legacy proof rather than a throughput parity claim."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1"
@@ -1062,13 +1062,13 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "token_weight_fast_int32"|"token-weight-fast-int32"|"token_weight_no_vector4"|"token-weight-no-vector4")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-sample startup-only rerun regressed setup_wall_ms to 1.009714x and setup.token_weight_init.total_ms to 1.035894x versus the vector4 default."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun disabled the vector4 token-weight initializer and improved setup.token_weight_init.total_ms to 0.960426x, but rejected it because setup_wall_ms regressed to 1.014148x, setup.float_arena_materialize.total_ms to 1.012221x, and setup.uint16_arena_materialize.total_ms to 1.022183x versus the vector4 default."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0"
     ;;
   "token_weight_two_pass_bf16"|"token-weight-two-pass-bf16"|"token_weight_no_fused_bf16"|"token-weight-no-fused-bf16")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-sample startup-only rerun kept setup_wall_ms flat at 0.996873x but regressed setup.token_weight_init.total_ms to 1.017739x versus the fused BF16-shadow vector4 default."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun disabled the fused BF16-shadow token-weight initializer, but rejected it because setup_wall_ms regressed to 1.005287x, setup.float_arena_materialize.total_ms to 1.021698x, setup.uint16_arena_materialize.total_ms to 1.004536x, and setup.token_weight_init.total_ms to 1.005229x versus the fused BF16-shadow vector4 default."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=1"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0"
     ;;
