@@ -1938,6 +1938,14 @@ force the baseline to `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate t
 older separate dInput plus GELU-backward path versus the fused TK route.
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` skips temporary Tile-op compilation for these
 build-flag profiles and only records the resolved candidate library path/env.
+For fused dGELU fallback bisection, use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dgelu_fallback`. It sets
+`NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N`, leaving
+the GPT fused dGELU feature enabled while forcing the MLP projection backward
+dInput shape off the TK dGELU route. It is rejected by default: the dedicated
+RTX 5090 gate dropped `linear_tk_dgelu_dinput_gemm_count` from `288` to `0`,
+but train-loop wall regressed to `1.013580x` and MLP projection dInput regressed
+to `1.207964x`.
 `lm_head_classifier_ce_no_loss` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging

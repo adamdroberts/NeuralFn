@@ -1291,6 +1291,16 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `linear_tk_dgelu_dinput_gemm_count` as a dedicated route counter so future
     compile-time dGELU candidates must prove fused dInput+dGELU launches rather
     than relying on timing-only noise.
+  - 2026-06-27 added `NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE` /
+    `NFN_TILE_CUDA_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE` and
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dgelu_fallback` so the fused
+    GPT MLP projection dInput+dGELU route can be disabled by exact GEMM shape.
+    The dedicated RTX 5090 route gate passed by dropping
+    `linear_tk_dgelu_dinput_gemm_count` from `288` to `0`, but the candidate
+    regressed train-loop wall to `1.013580x`, block backward to `1.027454x`,
+    MLP projection total to `1.107897x`, and MLP projection dInput to
+    `1.207964x`. Keep it rejected/default-off; the fused TK dGELU route remains
+    the faster default.
   - Added guarded vec4 CUDA candidates for the multi-buffer `float32_to_bf16_bits_many` packer and stored-MLP activation pack/restore path, but keep them default-off. The CUDA 13.3 dedicated RTX 5090 two-sample paired run measured scalar faster than the vec4-default baseline (`0.994143x` candidate/default train-loop wall, `1.005941x` tokens/sec) and reported no tracked route-counter change. Use `NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4=1` or `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4=1` only for future same-script bisection.
   - 2026-06-20 CUDA 13.3.33 WSL revalidation: rebuilt every native CUDA trainer and reran the GPU-visible pytest gates on the dedicated RTX 5090. After reinstalling the latest WSL CUDA toolkit (`cuda-toolkit-13-3`), `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_native_gpt2.py tests/test_tile_cuda_examples.py tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs` passed `247` tests, `python -m pytest tests/test_template_presets.py -x -q` passed `26` tests, `python tools/check_native_no_torch_deps.py --skip-artifacts --json` reported `"passed": true`, and the full repository suite later passed with `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`. No CUDA correctness failure remains from the toolkit reinstall.
   - 2026-06-20 staged 10-step parity still shows performance work remaining rather than a failed test: llm.kittens measured `2447.451 ms/step` and NeuralFn measured `2564.590 ms/step`, or `1.047862x` train-loop wall time and `0.952442x` tokens/sec. The hottest measured buckets were `stage.block_backward.total_ms=12918.1` and `stage.lm_head_backward.total_ms=6298.63`, with LM-head split across logits (`2198.35`), CE (`670.532`), dHidden (`1731.16`), and dWeight (`1675.86`) over 10 steps.

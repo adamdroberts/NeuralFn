@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added a fused dGELU dInput shape-disable gate and an SM120
+  bisection profile for the MLP projection backward path. The Tile CUDA kernels
+  now honor `NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE` /
+  `NFN_TILE_CUDA_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dgelu_fallback` disables the
+  default `3072,65536,768,N,N` fused dGELU dInput shape so paired runs can prove
+  fallback route movement with `linear_tk_dgelu_dinput_gemm_count` instead of
+  timing noise. The profile is rejected by default; no default training route
+  changed.
+
+  Verification: source-level regression tests cover the new env gates and
+  candidate profile. The dedicated RTX 5090 3-step, 2-sample stage-timed gate
+  passed route detection by dropping `linear_tk_dgelu_dinput_gemm_count` from
+  `288` to `0`, but rejected promotion because train-loop wall regressed to
+  `1.013580x`, block backward to `1.027454x`, MLP projection total to
+  `1.107897x`, and MLP projection dInput to `1.207964x`.
+
 - Native GPT: added explicit fast-startup mode for native dense GPT training.
   `NFN_NATIVE_GPT_FAST_STARTUP=1` (with compatibility aliases
   `NFN_NATIVE_GPT2_FAST_STARTUP=1` and `NFN_TILE_CUDA_FAST_STARTUP=1`) now

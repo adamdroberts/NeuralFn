@@ -1308,6 +1308,14 @@ Runtime JSON reports
 `linear_tk_dgelu_dinput_gemm_count`, and the paired benchmark treats it as a
 route counter so compile-flag candidates cannot be accepted on timing noise
 when they do not change the fused dGELU route.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_dgelu_fallback` to disable
+only the fused TK dGELU dInput shape used by the GPT MLP projection backward
+path:
+`NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N`. This is
+a rejected route-bisection profile, not a promoted training default. The CUDA
+13.3 dedicated RTX 5090 check proved route movement by dropping
+`linear_tk_dgelu_dinput_gemm_count` from `288` to `0`, but regressed
+train-loop wall to `1.013580x` and MLP projection dInput to `1.207964x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to rebuild
 a temporary candidate Tile ops library with the documented llm.kittens SM120
 reference macro bundle, including `LLMK_SM120_USE_CUBLASLT_GEMM`,

@@ -2935,6 +2935,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "The tanh approximation variant is therefore historical/diagnostic-only" in bench_source
     assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in bench_source
     assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in bench_source
+    assert '"mlp_proj_dgelu_fallback"|"mlp-proj-dgelu-fallback"' in bench_source
+    assert "NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N" in bench_source
+    assert "linear_tk_dgelu_dinput_gemm_count dropping" in bench_source
+    assert "MLP projection dInput to 1.207964x" in bench_source
     assert '"tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")' in bench_source
     assert "stage.lm_head_backward.total_ms=1.001484x" in bench_source
     assert "stage.block_backward.mlp_proj.total_ms=1.001994x" in bench_source
@@ -9457,6 +9461,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE")' in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DISABLE_SHAPE")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE")' in kernels_text
+    assert "trainer_linear_tk_dgelu_dinput_shape_disabled" in kernels_text
+    assert 'std::getenv("NFN_TILE_CUDA_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE")' in kernels_text
+    assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DGELU_DINPUT_DISABLE_SHAPE")' in kernels_text
     assert "trainer_linear_tk_dinput_default_shape_enabled" in kernels_text
     assert "trainer_linear_tk_dinput_default_block_enabled" in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK")' in kernels_text
@@ -9467,6 +9474,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     )[1].split("\nbool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits", 1)[0]
     assert "!trainer_linear_tk_dinput_enabled() && !shape_enabled && !default_block_enabled" in tk_dinput_body
     assert "trainer_linear_tk_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB)" in tk_dinput_body
+    for dgelu_function_name in (
+        "bool tk_linear_backward_input_dgelu_bf16_bits_float32(",
+        "bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(",
+        "bool tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32(",
+    ):
+        dgelu_body = kernels_text.split(dgelu_function_name, 1)[1].split("\nbool ", 1)[0]
+        assert "trainer_linear_tk_dgelu_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB)" in dgelu_body
     assert "write_float_grad" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 128" in kernels_text
