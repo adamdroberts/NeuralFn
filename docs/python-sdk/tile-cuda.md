@@ -2191,7 +2191,12 @@ remains rejected by default. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a
-diagnostic forced-production measurement from a promotable kernel. The wrapper
+diagnostic forced-production measurement from a promotable kernel. The SM120
+native-candidate wrapper runs this focused benchmark automatically before
+strict true-fused LM-head full-loop profiles when
+`NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto`; the
+`NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_*_GAP_MS` aliases forward to the focused
+absolute-gap gates. The wrapper
 also records `gpu_load_context.before` and `gpu_load_context.after` in the
 saved JSON and final stdout with the selected GPU, utilization, memory, and
 compute-process count so candidate-vs-baseline LM-head evidence carries the

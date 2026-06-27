@@ -1454,6 +1454,10 @@ candidate/cuBLASLt-reference ratio limits to `1.000`; keep it rejected until
 those gates pass. Its current dHidden/dWeight body uses 32x32 shared-memory
 tiles inside the cooperative launch, but trainer-scale CUDA 13.3 RTX 5090
 evidence still fails the default parity gate,
+`NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto` makes the SM120
+native-candidate wrapper run the matching focused LM-head benchmark before
+full-loop strict true-fused profiles, and the `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_*_GAP_MS`
+aliases forward to its absolute gap gates,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
 chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the same chunk with

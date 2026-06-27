@@ -2395,6 +2395,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4" in bench_source
+    assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused\"" in bench_source
+    assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16\"" in bench_source
+    assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile8\"" in bench_source
+    assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile4\"" in bench_source
+    assert "NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT" in bench_source
+    assert "NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS" in bench_source
+    assert "lm_head_backward_preflight_profile=" in bench_source
+    assert "run_lm_head_backward_preflight" in bench_source
+    assert "tools/bench_lm_head_backward_candidate.sh" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=16" in bench_source

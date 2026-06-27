@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: strict SM120 native-candidate LM-head true-fused profiles now run the
+  focused `tools/bench_lm_head_backward_candidate.sh` preflight before the full
+  paired GPT loop. `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto` selects
+  the matching trainer-chunk focused profile, and
+  `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_*_GAP_MS` aliases forward to the
+  focused absolute-gap gates. This prevents a known-slow strict LM-head body
+  from reaching the expensive llm.kittens/native paired run unless it first
+  passes the same-process candidate-vs-current/component gate. Verification:
+  focused native GPT source test, dry-run plan, no-Torch verifier, and
+  `git diff --check`.
+
 - Bench: `build/lm_head_backward_bench` now emits a
   `candidate_reference_gap` JSON object alongside the existing LM-head
   component ratios. It reports candidate-minus-reference milliseconds for the

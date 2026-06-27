@@ -551,7 +551,15 @@ LM-head section regressed to `32.243288x` versus the default CUDA Graph wrapper.
 Keep this profile rejected until the strict body passes the same full-loop and
 reference gates. The gate now treats
 `strict-true-fused-slow` as failing, so the route must launch and pass the
-same-script reference gates before promotion.
+same-script reference gates before promotion. The native-candidate wrapper also
+preflights strict LM-head true-fused profiles through
+`tools/bench_lm_head_backward_candidate.sh` before launching the full paired
+GPT loop. Leave `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto` to select
+the matching trainer-chunk focused profile, set it to `0` only for intentional
+full-loop-only diagnostics, or set it to an explicit focused profile name. The
+SM120 `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_*_GAP_MS` aliases forward to the
+focused absolute-gap gates, so a strict candidate can fail on
+candidate-minus-reference milliseconds before the expensive llm.kittens run.
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` includes
 `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, so the two required env gates can
