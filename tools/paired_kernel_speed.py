@@ -1007,6 +1007,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "linear_cublaslt_grouped_matmul_supported",
     "linear_cublas_grouped_bf16_gemm_probe_requested",
     "linear_cublas_grouped_bf16_gemm_supported",
+    "linear_tk_qkv_first_use_prewarm_requested_rows",
+    "linear_tk_qkv_first_use_prewarm_effective_rows",
     "block_forward_linear_strategy",
     "block_backward_input_linear_strategy",
     "block_backward_weight_linear_strategy",

@@ -1307,6 +1307,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "native_runtime_contract_gate" in speed_tool
     assert "candidate native training must report graph_editor_tensor_flow=false" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_count" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_requested_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_success_count" in speed_tool
     assert "stored_packed_attention_lse_enabled" in speed_tool
@@ -2973,6 +2974,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 7" in bench_source
     assert "steady-state CUDA-event timing regressed to 1.000992x" in bench_source
     assert '"tk_sm120_super_m13"|"tk-sm120-super-m13"' in bench_source
+    assert '"tk_qkv_forward_prewarm_32768"|"tk-qkv-forward-prewarm-32768"' in bench_source
+    assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=32768" in bench_source
+    assert "setup_wall_ms to 0.961917x" in bench_source
+    assert "train_loop_wall_ms_per_step to 1.002107x" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in bench_source
     assert "block backward to 1.011813x" in bench_source

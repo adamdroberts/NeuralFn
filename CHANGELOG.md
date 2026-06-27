@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/paired_kernel_speed.py` now treats
+  `linear_tk_qkv_first_use_prewarm_requested_rows` and
+  `linear_tk_qkv_first_use_prewarm_effective_rows` as native strategy values,
+  so row-limited TK QKV first-use prewarm probes are reported as intentional
+  strategy changes instead of looking route-identical to the default. The SM120
+  candidate wrapper also adds rejected-by-default
+  `tk_qkv_forward_prewarm_32768`, capturing the CUDA 13.3.33 dedicated RTX 5090
+  2026-06-27 probe where setup improved to `0.961917x` but train-loop wall
+  regressed to `1.002107x`, steady-state CUDA-event timing to `1.002784x`, and
+  candidate-over-llm.kittens train-loop wall to `1.001097x`.
+
 - Exposed the loaded strict true-fused LM-head Tile geometry in native GPT
   runtime JSON. The dense GPT trainer now loads
   `nfn_native_tile_lm_head_true_fused_mat_tile` and
