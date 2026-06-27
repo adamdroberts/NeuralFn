@@ -945,6 +945,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "REQUIRE_NATIVE_ROUTE_CHANGE=0" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
     assert 'Path("build/linear_backward_bench")' in no_torch_verifier
+    assert "--rebuild-stale" in no_torch_verifier
+    assert "ARTIFACT_REBUILD_COMMANDS" in no_torch_verifier
+    assert '"tools/build_train_gpt_sm120_cli.sh"' in no_torch_verifier
+    assert '"tools/build_native_gpt2_cli.sh"' in no_torch_verifier
+    assert '"tools/build_native_gpt_binding.sh"' in no_torch_verifier
+    assert "def rebuild_stale_artifact" in no_torch_verifier
 
 
 def test_native_gpt_transformer_lm_smoke_uses_linked_tile_ops_loader() -> None:

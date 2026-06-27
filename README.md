@@ -3654,6 +3654,13 @@ are present:
 python tools/check_native_no_torch_deps.py
 ```
 
+After a CUDA toolkit reinstall or local C++/CUDA edit, run
+`python tools/check_native_no_torch_deps.py --rebuild-stale` to rebuild known
+stale native artifacts with their mapped `tools/build_*.sh` scripts before the
+same no-Torch dependency/import gate continues. Keep
+`--skip-stale-artifacts` for deliberate dependency-only audits, not training
+readiness.
+
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so
 `build_native_train_run_config()` and the generic `neuralfn._native_train`

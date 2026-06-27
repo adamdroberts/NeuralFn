@@ -101,6 +101,17 @@ NATIVE_BINDING_SOURCE_DEPENDENCIES = {
         Path("tools/build_native_train_binding.sh"),
     ),
 }
+ARTIFACT_REBUILD_COMMANDS = {
+    Path("build/nfn_gpt_native_train"): ("bash", "tools/build_native_gpt_cli.sh"),
+    Path("build/nfn_gpt_native_train_linked"): ("bash", "tools/build_native_gpt_cli_linked.sh"),
+    Path("build/nfn_train_gpt_sm120"): ("bash", "tools/build_train_gpt_sm120_cli.sh"),
+    Path("build/nfn_gpt2_native_train"): ("bash", "tools/build_native_gpt2_cli.sh"),
+    Path("build/nfn_native_train"): ("bash", "tools/build_native_train_cli.sh"),
+    Path("build/libnfn_native_train_tile_ops.so"): ("bash", "tools/build_native_train_tile_ops.sh"),
+    Path("neuralfn/_native_gpt"): ("bash", "tools/build_native_gpt_binding.sh"),
+    Path("neuralfn/_native_gpt2"): ("bash", "tools/build_native_gpt2_binding.sh"),
+    Path("neuralfn/_native_train"): ("bash", "tools/build_native_train_binding.sh"),
+}
 FORBIDDEN_LIBRARY_MARKERS = (
     "libtorch",
     "libtorch_cpu",
@@ -836,6 +847,14 @@ def parse_args() -> argparse.Namespace:
         help="Skip source-mtime freshness checks for native compiled artifacts.",
     )
     parser.add_argument(
+        "--rebuild-stale",
+        action="store_true",
+        help=(
+            "Rebuild stale known native artifacts with the matching tools/build_*.sh script "
+            "before running dependency and import checks."
+        ),
+    )
+    parser.add_argument(
         "--skip-python-entrypoints",
         action="store_true",
         help="Skip import-blocked checks for native Python entrypoints.",
@@ -879,6 +898,29 @@ def artifact_source_dependencies(path: Path, repo_root: Path) -> list[Path]:
     return dependencies
 
 
+def artifact_rebuild_command(path: Path, repo_root: Path) -> tuple[str, ...] | None:
+    try:
+        rel_path = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        rel_path = path
+    command = ARTIFACT_REBUILD_COMMANDS.get(rel_path)
+    if command is not None:
+        return command
+    name = path.name
+    for marker, marker_command in sorted(
+        (
+            ("_native_gpt2", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_gpt2")]),
+            ("_native_gpt", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_gpt")]),
+            ("_native_train", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_train")]),
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if name.startswith(marker):
+            return marker_command
+    return None
+
+
 def stale_artifact_sources(path: Path, repo_root: Path) -> list[dict[str, object]]:
     if not path.exists():
         return []
@@ -918,6 +960,35 @@ def ldd_output(path: Path) -> str:
         stderr=subprocess.STDOUT,
     )
     return proc.stdout
+
+
+def rebuild_stale_artifact(path: Path, repo_root: Path) -> dict[str, object]:
+    command = artifact_rebuild_command(path, repo_root)
+    if command is None:
+        return {
+            "available": False,
+            "command": [],
+            "returncode": None,
+            "stdout": "",
+            "stderr": "no rebuild command is registered for this artifact",
+        }
+    started = time.perf_counter()
+    proc = subprocess.run(
+        list(command),
+        cwd=repo_root,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return {
+        "available": True,
+        "command": list(command),
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "elapsed_seconds": time.perf_counter() - started,
+    }
 
 
 def _write_native_cli_stub(root: Path) -> Path:
@@ -1591,6 +1662,14 @@ def main() -> int:
             stale_sources = (
                 [] if args.skip_stale_artifacts else stale_artifact_sources(path, repo_root)
             )
+            rebuild_report: dict[str, object] | None = None
+            if stale_sources and args.rebuild_stale:
+                rebuild_report = rebuild_stale_artifact(path, repo_root)
+                if (
+                    bool(rebuild_report.get("available"))
+                    and rebuild_report.get("returncode") == 0
+                ):
+                    stale_sources = stale_artifact_sources(path, repo_root)
             entry: dict[str, object] = {
                 "artifact": str(path),
                 "exists": path.exists(),
@@ -1600,6 +1679,8 @@ def main() -> int:
                 ],
                 "stale_sources": stale_sources,
             }
+            if rebuild_report is not None:
+                entry["rebuild"] = rebuild_report
             if not path.exists():
                 entry["error"] = "missing"
                 failed = True
@@ -1669,6 +1750,14 @@ def main() -> int:
                     print(f"  {line}", file=sys.stderr)
             elif entry.get("stale_sources"):
                 print(f"{entry['artifact']}: stale native artifact", file=sys.stderr)
+                rebuild = entry.get("rebuild")
+                if isinstance(rebuild, dict):
+                    command = " ".join(str(part) for part in rebuild.get("command", []))
+                    print(f"  rebuild attempted: {command or 'unavailable'}", file=sys.stderr)
+                    if rebuild.get("returncode") is not None:
+                        print(f"  rebuild exit code: {rebuild['returncode']}", file=sys.stderr)
+                    if rebuild.get("stderr"):
+                        print(str(rebuild["stderr"]), file=sys.stderr)
                 for source in entry["stale_sources"]:
                     print(f"  source newer than artifact: {source['source']}", file=sys.stderr)
             else:

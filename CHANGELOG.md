@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a repair mode to the no-Torch native dependency gate:
+  `python tools/check_native_no_torch_deps.py --rebuild-stale` now rebuilds
+  known stale native artifacts with their mapped `tools/build_*.sh` scripts
+  before rerunning artifact freshness, `ldd`, fast-command, import-blocker, and
+  benchmark-wrapper checks. This keeps post-CUDA-reinstall or post-C++/CUDA-edit
+  validation from failing only because local untracked native binaries are older
+  than their sources.
+
+  Verification: ran `python -m py_compile tools/check_native_no_torch_deps.py`,
+  ran the focused native pytest slice
+  `python -m pytest tests/test_native_gpt2.py -q -k "linked_tile_ops_loader or no_torch"`
+  (`7 passed`), and ran
+  `python tools/check_native_no_torch_deps.py --rebuild-stale`; the gate passed
+  across native artifacts, SDK binding imports, fast commands, inference help
+  paths, and benchmark-wrapper dry-runs.
+
 - Rechecked the remaining SM120 native GPT parity candidates after the CUDA
   Toolkit 13.3 WSL reinstall on the dedicated RTX 5090. No runtime default was
   promoted: `llmk_sm120_reference_flags` rebuilt successfully but regressed the

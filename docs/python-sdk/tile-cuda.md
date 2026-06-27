@@ -2229,7 +2229,10 @@ shared libraries, standalone linear/LM-head microbenches, and
 `neuralfn._native_gpt*` / `neuralfn._native_train` SDK extensions, so CUDA Tile
 ABI edits do not accidentally run through stale local binaries. Use
 `--skip-stale-artifacts` only when you intentionally want the dependency/import
-audit without source-mtime enforcement.
+audit without source-mtime enforcement. Use `--rebuild-stale` after a CUDA
+toolkit reinstall or local C++/CUDA edit to rebuild known stale artifacts with
+their mapped `tools/build_*.sh` scripts before rerunning the dependency/import
+gate.
 
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with
