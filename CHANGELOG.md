@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made native GPT true-fused LM-head route selection shape-aware. The trainer
+  now mirrors the strict cooperative kernel's production-shape guard before
+  enabling the monolithic LM-head path and reports
+  `lm_head_cooperative_backward_fused_kernel_raw_capability_available`,
+  `lm_head_true_fused_cooperative_requested`,
+  `lm_head_true_fused_cooperative_production_shape`,
+  `lm_head_true_fused_cooperative_allow_production`, and
+  `lm_head_true_fused_cooperative_shape_allowed` in native JSON.
+
+  Migration note: setting `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1` on a
+  production GPT shape no longer routes through the strict symbol unless the
+  matching allow-production env is also set. Unsupported strict production
+  probes fall back to the sequence wrapper instead of failing with CUDA
+  not-supported.
+
+  Verification: the strict fused smoke profile passed with
+  `candidate_true_fused_capability=true` and `true_fused_launch_count=1`. The
+  production trainer-chunk rejected profile still failed as intended:
+  `candidate_to_baseline_ms_per_iter_ratio=31.384819` and
+  `candidate_to_reference_summed_ms_per_iter_ratio=22.078654`, so this change
+  only hardens routing and does not promote the diagnostic kernel.
+
 - Promoted TK forward-QKV first-use prewarm as the default native GPT route.
   The native trainer now defaults `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD` on
   and keeps `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` as the

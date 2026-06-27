@@ -13057,6 +13057,23 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT"}),
             false);
+    const bool lm_head_true_fused_cooperative_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE",
+                              "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE",
+                              "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE"}),
+            false);
+    const bool lm_head_true_fused_cooperative_allow_production =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION",
+                              "NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION",
+                              "NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION"}),
+            false);
+    const bool lm_head_true_fused_cooperative_production_shape =
+        lm_head_chunk_rows > 4096 || kDim > 1024 || kVocab > 4096 || kPaddedVocab > 4096;
+    const bool lm_head_true_fused_cooperative_shape_allowed =
+        !lm_head_true_fused_cooperative_production_shape ||
+        lm_head_true_fused_cooperative_allow_production;
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -13117,12 +13134,15 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_cooperative_cublaslt_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_fused_kernel_symbol_available =
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
-    const bool lm_head_cooperative_backward_fused_kernel_capability_available =
+    const bool lm_head_cooperative_backward_fused_kernel_raw_capability_available =
         lm_head_classifier_backward_true_fused_kernel_available;
+    const bool lm_head_cooperative_backward_fused_kernel_capability_available =
+        lm_head_cooperative_backward_fused_kernel_raw_capability_available &&
+        lm_head_true_fused_cooperative_shape_allowed;
     const bool lm_head_llmk_classifier_matmul_parity_available =
         lm_head_classifier_backward_llmk_parity_available;
     const bool lm_head_cooperative_backward_fused_kernel_available =
-        lm_head_classifier_backward_true_fused_kernel_available &&
+        lm_head_cooperative_backward_fused_kernel_capability_available &&
         lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const std::string lm_head_cooperative_backward_fused_kernel_abi_path_class =
         lm_head_classifier_backward_true_fused_path_class != nullptr &&
@@ -13153,6 +13173,7 @@ int run_transformer_lm_training_json(
         !lm_head_force_sequence_wrapper_diagnostic &&
         !cfg.require_cooperative_lm_head_backward &&
         !lm_head_cooperative_backward_kernel_enabled &&
+        !lm_head_true_fused_cooperative_requested &&
         lm_head_cooperative_backward_cuda_graph_available &&
         lm_head_bf16_logits_enabled &&
         lm_head_public_vocab_ce_enabled &&
@@ -22592,8 +22613,18 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_cublaslt_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_symbol_available\": "
         << (lm_head_cooperative_backward_fused_kernel_symbol_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_raw_capability_available\": "
+        << (lm_head_cooperative_backward_fused_kernel_raw_capability_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_capability_available\": "
         << (lm_head_cooperative_backward_fused_kernel_capability_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_true_fused_cooperative_requested\": "
+        << (lm_head_true_fused_cooperative_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_true_fused_cooperative_production_shape\": "
+        << (lm_head_true_fused_cooperative_production_shape ? "true" : "false") << ",\n"
+        << "  \"lm_head_true_fused_cooperative_allow_production\": "
+        << (lm_head_true_fused_cooperative_allow_production ? "true" : "false") << ",\n"
+        << "  \"lm_head_true_fused_cooperative_shape_allowed\": "
+        << (lm_head_true_fused_cooperative_shape_allowed ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
         << json_escape(lm_head_cooperative_backward_fused_kernel_abi_path_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "

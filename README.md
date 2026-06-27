@@ -439,9 +439,10 @@ defaults `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
 `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so intentional runs
 fail until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict body uses 32x32 shared-memory tiles for
-the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3 RTX
-5090 evidence still keeps it rejected (`7.046530x` slower than the current
-wrapper on a one-iteration trainer chunk). Focused benchmark JSON
+the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3.33
+RTX 5090 evidence still keeps it rejected (`31.384819x` slower than the current
+wrapper and `22.078654x` slower than the component reference on the trainer
+chunk). Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_forced_production_debug`; it only reports
@@ -488,11 +489,11 @@ body and regressed train-loop wall time to `7.217785x`, LM-head backward to
 `30.473055x`, and the cooperative LM-head section to `43.503750x` versus the
 default CUDA Graph wrapper. The current strict body is now a 32x32 tiled
 diagnostic kernel, but the focused trainer-chunk gate still rejects it at
-`7.046530x` versus the default wrapper. Keep this profile rejected until the
-strict body passes the same
-full-loop and reference gates. The gate now treats `strict-true-fused-slow` as
-failing, so the route must launch and pass the same-script reference gates before
-promotion.
+`31.384819x` versus the default wrapper and `22.078654x` versus the
+same-process component reference. Keep this profile rejected until the strict
+body passes the same full-loop and reference gates. The gate now treats
+`strict-true-fused-slow` as failing, so the route must launch and pass the
+same-script reference gates before promotion.
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` includes
 `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, so the two required env gates can
@@ -1651,7 +1652,16 @@ The current strict cooperative body is intentionally smoke-shape-only. Full GPT
 row/vocab/hidden shapes return CUDA not-supported unless
 `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 `NFN_NATIVE_GPT2_` / `NFN_TILE_CUDA_` alias) is set for a deliberate unsafe
-diagnostic run.
+diagnostic run. The native trainer mirrors that guard before route selection
+and reports `lm_head_cooperative_backward_fused_kernel_raw_capability_available`,
+`lm_head_true_fused_cooperative_requested`,
+`lm_head_true_fused_cooperative_production_shape`,
+`lm_head_true_fused_cooperative_allow_production`, and
+`lm_head_true_fused_cooperative_shape_allowed`. If the strict selector is set
+on a production GPT shape without the allow-production flag, the trainer leaves
+`lm_head_cooperative_backward_fused_kernel_capability_available=false`, avoids
+the CUDA Graph wrapper path that would call the strict symbol, and falls back to
+the sequence wrapper instead of failing with CUDA not-supported.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

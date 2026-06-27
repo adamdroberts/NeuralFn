@@ -619,7 +619,16 @@ default. Production GPT shapes return `cudaErrorNotSupported` unless an unsafe
 diagnostic run sets
 `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`,
 `NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`, or
-`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`.
+`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1`. The native
+GPT trainer mirrors that guard before route selection and reports
+`lm_head_cooperative_backward_fused_kernel_raw_capability_available`,
+`lm_head_true_fused_cooperative_requested`,
+`lm_head_true_fused_cooperative_production_shape`,
+`lm_head_true_fused_cooperative_allow_production`, and
+`lm_head_true_fused_cooperative_shape_allowed`. If the strict selector is set
+on a production GPT shape without the allow-production flag, capability stays
+false and the trainer falls back to the sequence wrapper instead of calling the
+strict symbol through the CUDA Graph wrapper path.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` compares that
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. The
@@ -2134,8 +2143,10 @@ rejected-by-default focused true-fused candidate measurement. It also defaults
 `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000`, so the wrapper exits
 nonzero until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict cooperative body uses 32x32 shared-memory
-tiles for dHidden and dWeight after the CE phase, but it is still slower than
-the CUDA graph wrapper at trainer scale and remains rejected by default. The resulting
+tiles for dHidden and dWeight after the CE phase, but the 2026-06-27 CUDA
+13.3.33 RTX 5090 trainer-chunk rerun is still `31.384819x` slower than the
+current wrapper and `22.078654x` slower than the component reference, so it
+remains rejected by default. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a

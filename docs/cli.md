@@ -1167,7 +1167,16 @@ The current strict cooperative body is smoke-shape-only by default. Production
 GPT row/vocab/hidden shapes return CUDA not-supported unless
 `NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 `NFN_NATIVE_GPT2_` / `NFN_TILE_CUDA_` alias) is set for an unsafe diagnostic
-run.
+run. The native trainer mirrors that guard before route selection and reports
+`lm_head_cooperative_backward_fused_kernel_raw_capability_available`,
+`lm_head_true_fused_cooperative_requested`,
+`lm_head_true_fused_cooperative_production_shape`,
+`lm_head_true_fused_cooperative_allow_production`, and
+`lm_head_true_fused_cooperative_shape_allowed`. If the strict selector is set
+on a production GPT shape without the allow-production flag, the trainer leaves
+`lm_head_cooperative_backward_fused_kernel_capability_available=false`, avoids
+the CUDA Graph wrapper path that would call the strict symbol, and falls back to
+the sequence wrapper.
 The same strict body requires the CE row-thread setting to remain at 1024,
 because its dHidden/dWeight section is a fixed 32x32 shared-memory tile; smaller
 `NFN_*_CE_BF16_THREADS` settings make the capability probe return false and keep

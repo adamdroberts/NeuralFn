@@ -1793,7 +1793,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_classifier_backward_true_fused_capability" in source
     assert "lm_head_classifier_backward_llmk_parity_capability" in source
     assert "lm_head_cooperative_backward_fused_kernel_symbol_available" in source
+    assert "lm_head_cooperative_backward_fused_kernel_raw_capability_available" in source
     assert "lm_head_cooperative_backward_fused_kernel_capability_available" in source
+    assert "lm_head_true_fused_cooperative_requested" in source
+    assert "lm_head_true_fused_cooperative_production_shape" in source
+    assert "lm_head_true_fused_cooperative_allow_production" in source
+    assert "lm_head_true_fused_cooperative_shape_allowed" in source
+    assert "!lm_head_true_fused_cooperative_requested &&" in source
     assert "lm_head_llmk_classifier_matmul_parity_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_available" in source
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
