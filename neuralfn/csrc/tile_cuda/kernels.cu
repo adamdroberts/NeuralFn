@@ -186,7 +186,15 @@ std::int64_t finish_linear_shape_timing(LinearShapeTiming* timing);
 void discard_linear_shape_timing(LinearShapeTiming* timing);
 #endif
 std::atomic<bool> g_attention_forward_row_launch_disabled{false};
-constexpr int kLmHeadTrueFusedMatTile = 32;
+#ifndef NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE
+#define NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE 32
+#endif
+static_assert(
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 8 ||
+        NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16 ||
+        NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 32,
+    "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE must be 8, 16, or 32");
+constexpr int kLmHeadTrueFusedMatTile = NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE;
 constexpr int kLmHeadTrueFusedRequiredThreads =
     kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile;
 
@@ -230,6 +238,7 @@ int cross_entropy_bf16_threads_per_row() {
       return 1024;
     }
     switch (parsed) {
+      case 64:
       case 128:
       case 256:
       case 512:
@@ -15233,6 +15242,14 @@ bool cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_floa
 
 std::int64_t token_cross_entropy_bf16_threads_per_row() {
   return static_cast<std::int64_t>(cross_entropy_bf16_threads_per_row());
+}
+
+std::int64_t lm_head_true_fused_mat_tile() {
+  return static_cast<std::int64_t>(kLmHeadTrueFusedMatTile);
+}
+
+std::int64_t lm_head_true_fused_required_threads() {
+  return static_cast<std::int64_t>(kLmHeadTrueFusedRequiredThreads);
 }
 
 std::int64_t lm_head_prob_only_target_correction_threads() {

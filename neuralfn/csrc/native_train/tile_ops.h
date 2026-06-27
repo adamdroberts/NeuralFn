@@ -27,6 +27,8 @@ std::int64_t nfn_native_tile_attention_tk_workspace_row_capacity();
 std::int64_t nfn_native_tile_token_cross_entropy_workspace_allocation_count();
 std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity();
 std::int64_t nfn_native_tile_token_cross_entropy_bf16_threads_per_row();
+std::int64_t nfn_native_tile_lm_head_true_fused_mat_tile();
+std::int64_t nfn_native_tile_lm_head_true_fused_required_threads();
 std::int64_t nfn_native_tile_lm_head_prob_only_target_correction_threads();
 void nfn_native_tile_lm_head_classifier_stats_reset();
 std::int64_t nfn_native_tile_lm_head_classifier_chunk_launch_count();

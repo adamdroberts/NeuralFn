@@ -32,6 +32,8 @@ std::int64_t attention_tk_workspace_row_capacity();
 std::int64_t token_cross_entropy_workspace_allocation_count();
 std::int64_t token_cross_entropy_workspace_row_capacity();
 std::int64_t token_cross_entropy_bf16_threads_per_row();
+std::int64_t lm_head_true_fused_mat_tile();
+std::int64_t lm_head_true_fused_required_threads();
 std::int64_t lm_head_prob_only_target_correction_threads();
 void reset_lm_head_classifier_chunk_stats();
 std::int64_t lm_head_classifier_chunk_launch_count();
@@ -1958,7 +1960,8 @@ bool lm_head_true_fused_cooperative_enabled() {
     if (!requested) {
         return false;
     }
-    return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() == 1024;
+    return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() ==
+           neuralfn::tile_cuda::lm_head_true_fused_required_threads();
 }
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
@@ -2520,6 +2523,14 @@ std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity() {
 
 std::int64_t nfn_native_tile_token_cross_entropy_bf16_threads_per_row() {
     return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row();
+}
+
+std::int64_t nfn_native_tile_lm_head_true_fused_mat_tile() {
+    return neuralfn::tile_cuda::lm_head_true_fused_mat_tile();
+}
+
+std::int64_t nfn_native_tile_lm_head_true_fused_required_threads() {
+    return neuralfn::tile_cuda::lm_head_true_fused_required_threads();
 }
 
 std::int64_t nfn_native_tile_lm_head_prob_only_target_correction_threads() {

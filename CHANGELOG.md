@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added rejected strict true-fused LM-head tile-size bisection profiles. The
+  Tile CUDA strict fused classifier-backward body can now be rebuilt with
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16` or `8`, and the cooperative
+  capability gate now requires the CE row-thread count to match the compiled
+  tile body instead of hard-coding 1024 threads. The raw Tile ABI also exposes
+  `nfn_native_tile_lm_head_true_fused_mat_tile` and
+  `nfn_native_tile_lm_head_true_fused_required_threads` for diagnostics.
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16` /
+  `trainer-chunk-true-fused-tile8` cover focused LM-head microbenchmarks, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16` /
+  `lm_head_true_fused_tile8` cover full native GPT loop checks. No default
+  training route changed; all new profiles remain rejected until they beat the
+  current CUDA Graph wrapper and reference gates. The focused LM-head profiles
+  build their tile-size candidate libraries under `/tmp` by default instead of
+  reusing or overwriting `build/libnfn_native_train_tile_ops.so`. The no-Torch verifier's
+  `--rebuild-stale` path now also knows how to rebuild
+  `build/linear_backward_bench` and `build/lm_head_backward_bench`, so Tile ABI
+  header changes do not leave stale benchmark binaries without a registered
+  repair command.
+
+  Verification: added source-level regression coverage for the tile macro,
+  CE-thread 64 support, ABI exports, both rejected benchmark profile names, and
+  the benchmark rebuild registrations. Rebuilt native no-Torch artifacts with
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json`; it refreshed
+  the benchmark binaries and passed. Dedicated RTX 5090 focused probes proved
+  both tile-size profiles reached `strict-true-fused-tile-kernel`, then rejected
+  tile16 at `6.187603x` candidate/baseline and `21.078761x`
+  candidate/reference-summed time, and tile8 at `8.412627x`
+  candidate/baseline and `26.425985x` candidate/reference-summed time. JSON was
+  written to `/tmp/nfn_lm_head_true_fused_tile16.json` and
+  `/tmp/nfn_lm_head_true_fused_tile8.json`.
+
 - Added a rejected SM120 startup candidate profile for host descriptor-vector
   pre-reservation. The native dense GPT trainer can now opt into
   `NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1` and reports

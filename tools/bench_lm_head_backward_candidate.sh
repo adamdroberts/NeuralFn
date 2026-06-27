@@ -24,6 +24,7 @@ DEFAULT_BASELINE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative
 DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
 REJECTED_PROFILE=""
 REJECTED_REASON=""
+FORCE_REBUILD_TILE_OPS=0
 
 case "${PROFILE}" in
   smoke)
@@ -63,6 +64,48 @@ case "${PROFILE}" in
     REJECTED_REASON="Production-shape focused strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 so the focused trainer-chunk microbench measures the cooperative single-kernel CE+dHidden+dWeight body. The profile defaults NFN_LM_HEAD_BACKWARD_MAX_RATIO, NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO, and NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO to 1.000; keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    ;;
+  trainer-chunk-true-fused-tile16|trainer_chunk_true_fused_tile16|true-fused-trainer-chunk-tile16|true_fused_trainer_chunk_tile16)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    DEFAULT_MAX_RATIO=1.000
+    DEFAULT_MAX_REFERENCE_RATIO=1.000
+    DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile16 profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16, forces CE threads to 256, and measures the cooperative single-kernel CE+dHidden+dWeight body. CUDA 13.3 dedicated RTX 5090 2026-06-27 one-iteration probe proved strict-true-fused-tile-kernel but rejected it at 6.187603x candidate/baseline and 21.078761x candidate/reference-summed time. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    export NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:+${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS} }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    export NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-256}"
+    if [[ -z "${NFN_NATIVE_TILE_OPS_LIB+x}" ]]; then
+      TILE_OPS_LIB="${TMPDIR:-/tmp}/nfn_lm_head_backward_tile_ops_true_fused_tile16.so"
+      FORCE_REBUILD_TILE_OPS=1
+    fi
+    ;;
+  trainer-chunk-true-fused-tile8|trainer_chunk_true_fused_tile8|true-fused-trainer-chunk-tile8|true_fused_trainer_chunk_tile8)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    DEFAULT_MAX_RATIO=1.000
+    DEFAULT_MAX_REFERENCE_RATIO=1.000
+    DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile8 profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8, forces CE threads to 64, and measures the cooperative single-kernel CE+dHidden+dWeight body. CUDA 13.3 dedicated RTX 5090 2026-06-27 one-iteration probe proved strict-true-fused-tile-kernel but rejected it at 8.412627x candidate/baseline and 26.425985x candidate/reference-summed time. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    export NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:+${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS} }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    export NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-64}"
+    if [[ -z "${NFN_NATIVE_TILE_OPS_LIB+x}" ]]; then
+      TILE_OPS_LIB="${TMPDIR:-/tmp}/nfn_lm_head_backward_tile_ops_true_fused_tile8.so"
+      FORCE_REBUILD_TILE_OPS=1
+    fi
     ;;
   true-fused-cooperative-smoke|true_fused_cooperative_smoke|strict-true-fused-smoke|strict_true_fused_smoke)
     DEFAULT_ROWS=4
@@ -121,7 +164,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-true-fused, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile8, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
@@ -514,7 +557,9 @@ case "${DRY_RUN,,}" in
     DRY_RUN_ENV_PREFIX=()
     for ENV_NAME in \
       NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE \
-      NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION; do
+      NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION \
+      NFN_TILE_CUDA_CE_BF16_THREADS \
+      NFN_TILE_CUDA_EXTRA_NVCC_FLAGS; do
       if [[ -n "${!ENV_NAME+x}" ]]; then
         DRY_RUN_ENV_PREFIX+=("${ENV_NAME}=${!ENV_NAME}")
       fi
@@ -565,7 +610,7 @@ TILE_OPS_DEPS=(
   "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"
   "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
 )
-REBUILD_TILE_OPS=0
+REBUILD_TILE_OPS="${FORCE_REBUILD_TILE_OPS}"
 if [[ ! -f "${TILE_OPS_LIB}" ]]; then
   REBUILD_TILE_OPS=1
 else

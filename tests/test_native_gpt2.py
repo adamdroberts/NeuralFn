@@ -357,6 +357,14 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
         "tools/build_native_train_tile_ops.sh",
         "build/libnfn_native_train_tile_ops_tk.so",
     )
+    assert module.artifact_rebuild_command(
+        root / "build" / "linear_backward_bench",
+        root,
+    ) == ("bash", "tools/build_linear_backward_bench.sh")
+    assert module.artifact_rebuild_command(
+        root / "build" / "lm_head_backward_bench",
+        root,
+    ) == ("bash", "tools/build_lm_head_backward_bench.sh")
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
@@ -1058,6 +1066,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert '"tools/build_train_gpt_sm120_cli.sh"' in no_torch_verifier
     assert '"tools/build_native_gpt2_cli.sh"' in no_torch_verifier
     assert '"tools/build_native_gpt_binding.sh"' in no_torch_verifier
+    assert '"tools/build_linear_backward_bench.sh"' in no_torch_verifier
+    assert '"tools/build_lm_head_backward_bench.sh"' in no_torch_verifier
     assert "def rebuild_stale_artifact" in no_torch_verifier
 
 
@@ -2058,8 +2068,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )[0]
     assert "if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {\n      const float target_logit" in true_fused_kernel_body
     assert "constexpr int kMatTile = kLmHeadTrueFusedMatTile;" in true_fused_kernel_body
-    assert "constexpr int kLmHeadTrueFusedMatTile = 32;" in kernels_source
+    assert "#ifndef NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE" in kernels_source
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 8" in kernels_source
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16" in kernels_source
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 32" in kernels_source
+    assert (
+        "constexpr int kLmHeadTrueFusedMatTile = "
+        "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE;"
+    ) in kernels_source
     assert "kLmHeadTrueFusedRequiredThreads" in kernels_source
+    assert "lm_head_true_fused_mat_tile()" in kernels_source
+    assert "lm_head_true_fused_required_threads()" in kernels_source
+    assert "case 64:" in kernels_source
     assert (
         "if (threads != kLmHeadTrueFusedRequiredThreads) {\n"
         "    return cudaErrorNotSupported;"
@@ -2087,9 +2107,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "}"
     ) in tile_ops_source
     assert (
-        "return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() == 1024;"
+        "return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() ==\n"
+        "           neuralfn::tile_cuda::lm_head_true_fused_required_threads();"
         in tile_ops_source
     )
+    assert "nfn_native_tile_lm_head_true_fused_mat_tile" in tile_ops_header
+    assert "nfn_native_tile_lm_head_true_fused_required_threads" in tile_ops_header
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
         "    if (lm_head_true_fused_cooperative_enabled()) {\n"
@@ -2112,6 +2135,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source
+    wrapper_source = (root / "tools" / "bench_lm_head_backward_candidate.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "trainer-chunk-true-fused-tile16" in wrapper_source
+    assert "trainer-chunk-true-fused-tile8" in wrapper_source
+    assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16" in wrapper_source
+    assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8" in wrapper_source
+    assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-256}"' in wrapper_source
+    assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-64}"' in wrapper_source
+    assert "nfn_lm_head_backward_tile_ops_true_fused_tile16.so" in wrapper_source
+    assert "nfn_lm_head_backward_tile_ops_true_fused_tile8.so" in wrapper_source
+    assert "FORCE_REBUILD_TILE_OPS=1" in wrapper_source
     bench_source = (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(
         encoding="utf-8"
     )
@@ -2239,11 +2274,17 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "1.001492x" in bench_source
     assert '"lm_head_graph_serial_body"|"lm-head-graph-serial-body"' in bench_source
     assert '"lm_head_true_fused_cooperative"|"lm-head-true-fused-cooperative"' in bench_source
+    assert '"lm_head_true_fused_tile16"|"lm-head-true-fused-tile16"' in bench_source
+    assert '"lm_head_true_fused_tile8"|"lm-head-true-fused-tile8"' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1" in bench_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in bench_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1" in bench_source
+    assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16" in bench_source
+    assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8" in bench_source
+    assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
+    assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
     assert "candidate_true_fused_cooperative_env=NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in bench_source
     assert (
         "candidate_true_fused_production_env="
