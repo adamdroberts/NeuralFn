@@ -452,7 +452,9 @@ and direct compiled benchmark failures print those `next_required_*` fields, so
 a failed `trainer-chunk-strict` run or direct
 `build/lm_head_backward_bench --require-true-fused-candidate` invocation names
 the exact symbol, capability flag, path class, and kernel body still needed
-before promotion. The bench resets
+before promotion. Wrapper ratio-gate failures also append the
+`candidate_reference_gap` summary, including the slowest reference component,
+to the error message. The bench resets
 Tile-CUDA LM-head counters after warmup and before timed iterations, so warmup
 graph capture/fallback launches do not contaminate the timed classification.
 CUDA 13.3 retesting can

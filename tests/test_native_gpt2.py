@@ -2646,6 +2646,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
     assert "candidate.true_fused_launch_count is zero" in wrapper
+    assert "candidate_reference_gap:" in wrapper
+    assert "candidate_minus_reference_summed_ms_per_iter" in wrapper
+    assert "reference_bottleneck_component" in wrapper
     assert "next_required_symbol" in wrapper
     assert "next_required_capability_symbol" in wrapper
     assert "next_required_path_class" in wrapper

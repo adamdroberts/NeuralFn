@@ -730,16 +730,6 @@ if true_fused_launch_count <= 0:
     ;;
 esac
 
-if [[ -n "${MAX_RATIO}" ]]; then
-  python -c 'import json, pathlib, sys
-data = json.loads(pathlib.Path(sys.argv[1]).read_text())
-ratio = float(data["candidate_to_baseline_ms_per_iter_ratio"])
-limit = float(sys.argv[2])
-if ratio > limit:
-    raise SystemExit(f"candidate_to_baseline_ms_per_iter_ratio {ratio:.6f} exceeds limit {limit:.6f}")
-' "${JSON_OUT}" "${MAX_RATIO}"
-fi
-
 check_json_ratio() {
   local key="$1"
   local limit="$2"
@@ -752,10 +742,36 @@ data = json.loads(pathlib.Path(path).read_text())
 ratio = float(data[key])
 limit = float(limit_raw)
 if ratio > limit:
-    raise SystemExit(f"{key} {ratio:.6f} exceeds limit {limit:.6f}")
+    gap = data.get("candidate_reference_gap") or {}
+    gap_parts = []
+    for gap_key in (
+        "candidate_minus_reference_summed_ms_per_iter",
+        "candidate_minus_reference_summed_with_logits_ms_per_iter",
+        "candidate_minus_reference_cublaslt_summed_ms_per_iter",
+        "candidate_minus_reference_cublaslt_summed_with_logits_ms_per_iter",
+    ):
+        if gap_key in gap:
+            try:
+                gap_parts.append(f"{gap_key}={float(gap[gap_key]):.6f}")
+            except (TypeError, ValueError):
+                gap_parts.append(f"{gap_key}={gap[gap_key]}")
+    for component_key, value_key in (
+        ("reference_bottleneck_component", "reference_bottleneck_ms_per_iter"),
+        ("reference_cublaslt_bottleneck_component", "reference_cublaslt_bottleneck_ms_per_iter"),
+    ):
+        if component_key in gap:
+            try:
+                gap_parts.append(f"{component_key}={gap[component_key]}:{float(gap.get(value_key, 0.0)):.6f}ms")
+            except (TypeError, ValueError):
+                gap_parts.append(f"{component_key}={gap[component_key]}")
+    suffix = "; candidate_reference_gap: " + "; ".join(gap_parts) if gap_parts else ""
+    raise SystemExit(f"{key} {ratio:.6f} exceeds limit {limit:.6f}{suffix}")
 ' "${JSON_OUT}" "${key}" "${limit}"
 }
 
+check_json_ratio \
+  "candidate_to_baseline_ms_per_iter_ratio" \
+  "${MAX_RATIO}"
 check_json_ratio \
   "candidate_to_reference_summed_ms_per_iter_ratio" \
   "${MAX_REFERENCE_RATIO}"

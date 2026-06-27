@@ -1435,7 +1435,9 @@ label, so a failed true-fused gate names whether the candidate is still
 sequencing kernels or replaying a captured CUDA Graph. The same JSON includes
 `candidate_reference_gap`, which reports absolute candidate-minus-reference
 milliseconds for generic and cuBLASLt component references and names the
-current `reference_bottleneck_component`.
+current `reference_bottleneck_component`. Ratio-gate failures append that gap
+summary to the error message, so failed strict/candidate runs show the
+remaining component gap without reopening the saved JSON.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
 selects the 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` selects the same shape and
