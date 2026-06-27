@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated `tools/paired_kernel_speed.py` to treat `tile_ops_library` and
+  `tile_ops_dlopen_binding_strategy` as native strategy metrics. The
+  `linked_startup` SM120 profile now reports the expected dynamic Tile `.so`
+  versus `RTLD_DEFAULT-linked` binding change instead of looking like a
+  timing-only run with no native strategy difference.
+
+  Verification: ran the focused paired-kernel-speed startup strategy test and a
+  3-sample dedicated RTX 5090 `linked_startup` rerun. The rerun measured
+  `0.902683x` mean `setup_wall_ms`, with zero selected-GPU compute processes
+  before and after each sample.
+
 - Changed `tools/validate_sm120_cuda13.sh` to prefer
   `build/nfn_gpt_native_train_linked` with `--tile-ops-lib linked` when the
   linked trainer exists. The CUDA 13 post-install health gate now validates the

@@ -4693,6 +4693,8 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     baseline_json = (
         "{"
         "\\\"steps_completed\\\": 0, "
+        "\\\"tile_ops_library\\\": \\\"build/libnfn_native_train_tile_ops.so\\\", "
+        "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_LAZY\\\", "
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\", "
         "\\\"device_cuda_malloc_async_requested\\\": false, "
         "\\\"device_cuda_malloc_async_enabled\\\": false, "
@@ -4707,6 +4709,12 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "}"
     )
     candidate_json = baseline_json.replace(
+        "\\\"tile_ops_library\\\": \\\"build/libnfn_native_train_tile_ops.so\\\"",
+        "\\\"tile_ops_library\\\": \\\"linked\\\"",
+    ).replace(
+        "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_LAZY\\\"",
+        "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_DEFAULT-linked\\\"",
+    ).replace(
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\"",
         "\\\"device_allocator_strategy\\\": \\\"cudaMallocAsync-null-stream\\\"",
     ).replace(
@@ -4747,6 +4755,13 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_native_metric_values"]["tile_ops_library"] == [
+        "build/libnfn_native_train_tile_ops.so"
+    ]
+    assert payload["candidate_native_metric_values"]["tile_ops_library"] == ["linked"]
+    assert payload["candidate_native_metric_values"]["tile_ops_dlopen_binding_strategy"] == [
+        "RTLD_DEFAULT-linked"
+    ]
     assert payload["baseline_native_metric_values"]["device_allocator_strategy"] == [
         "cudaMalloc"
     ]
@@ -4763,6 +4778,17 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "1"
     ]
     assert payload["candidate_native_metrics"]["token_weight_bf16_padding_memset_count"]["mean"] == 1.0
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["changed"]["tile_ops_library"] == {
+        "baseline_values": ["build/libnfn_native_train_tile_ops.so"],
+        "candidate_values": ["linked"],
+    }
+    assert strategy_changes["changed"]["tile_ops_dlopen_binding_strategy"] == {
+        "baseline_values": ["RTLD_LAZY"],
+        "candidate_values": ["RTLD_DEFAULT-linked"],
+    }
+    assert "tile_ops_library: linked" in proc.stdout
+    assert "tile_ops_dlopen_binding_strategy: RTLD_DEFAULT-linked" in proc.stdout
     assert "device_allocator_strategy: cudaMallocAsync-null-stream" in proc.stdout
     assert (
         "token_weight_init_strategy: "

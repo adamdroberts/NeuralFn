@@ -2120,8 +2120,10 @@ Tile-ops startup. Use `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 `build/`.
 On the CUDA 13.3.33 dedicated RTX 5090 workstation, a 2026-06-26 3-sample
 startup-only recheck measured the linked candidate at `0.898449x`
-`setup_wall_ms` and `0.898865x` `total_wall_ms`, with unchanged native route
-counters and strategy values.
+`setup_wall_ms` and `0.898865x` `total_wall_ms`. A 2026-06-27 rerun measured
+`0.902683x` mean `setup_wall_ms`; the paired benchmark now records the expected
+`tile_ops_library` and `tile_ops_dlopen_binding_strategy` strategy-value
+changes for linked-vs-dynamic startup comparisons.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

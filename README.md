@@ -3362,7 +3362,10 @@ with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 for the linked candidate, with zero compute processes before each paired sample.
 A CUDA 13.3.33 dedicated RTX 5090 recheck on 2026-06-26 with 3 measured samples
 and no warmup measured the linked candidate at `0.898449x` `setup_wall_ms` and
-`0.898865x` `total_wall_ms` with no route-counter or strategy-value changes.
+`0.898865x` `total_wall_ms`. A 2026-06-27 CUDA 13.3.33 rerun measured
+`0.902683x` mean `setup_wall_ms` and now reports the expected
+`tile_ops_library` / `tile_ops_dlopen_binding_strategy` strategy change from
+dynamic `.so` loading to `RTLD_DEFAULT-linked`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` measures the
 default-off cuBLAS handle prewarm route by pinning the baseline to
 `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and the candidate to
