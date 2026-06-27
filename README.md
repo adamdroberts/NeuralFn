@@ -102,12 +102,13 @@ NeuralFn at `2469.107 ms/step` and `212339` tokens/sec versus llm.kittens at
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
-The same CUDA 13.3.33 recheck left both `llmk_sm120_reference_flags` and
-`mlp_proj_dinput_before_dweight` rejected: the former missed train-loop,
-steady-state, LM-head, and MLP-projection gates, while the latter improved
-short-run wall time but regressed steady-state timing and MLP projection
-dInput attribution. Keep both as diagnostic profiles unless a later same-script
-gate passes all hot-stage and steady-state criteria.
+The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
+`mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
+profile passes candidate-over-llm.kittens gates, but it does not beat the
+current linked native baseline or change any hot route counters. The MLP
+projection dInput-before-dWeight route improved short-run wall time but
+regressed steady-state timing and MLP projection dInput attribution. Keep both
+off by default unless a later same-script gate proves a current-native win.
 The CUDA module-loading bisection is also pinned as a rejected diagnostic:
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` compares the default
 `CUDA_MODULE_LOADING=LAZY` wrapper route against `CUDA_MODULE_LOADING=EAGER`.
@@ -156,14 +157,13 @@ dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
 telemetry, and fused padded token-weight initialization. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
-The 2026-06-27 post-reinstall 10-step no-stage refresh kept that conclusion:
-`llmk_sm120_reference_flags` rebuilt but missed promotion at `1.004713x`
-current-native train-loop wall time and `1.001757x` candidate-over-llm.kittens
-wall time, plain parity still failed at `1.006483x`, and `cublaslt_min_waves`
-regressed to `1.010224x`. The runtime contract stayed native-only
-(`graph_editor_tensor_flow=false`, `torch_required=false`), so the next useful
-slice remains a production true-fused LM-head classifier-backward Tile kernel,
-not another flag-only reroute.
+The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
+the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
+gates, but was still flat/slightly slower versus the current linked native
+baseline and changed no hot route counters. The runtime contract stayed
+native-only (`graph_editor_tensor_flow=false`, `torch_required=false`), so the
+next useful slice remains a production true-fused/reference-aligned LM-head
+classifier-backward Tile kernel, not another flag-only reroute.
 Dense GPT native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
 default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row
@@ -1370,12 +1370,15 @@ reference macro bundle, including `LLMK_SM120_USE_CUBLASLT_GEMM`,
 enforcement because most of those values already match header defaults or
 NeuralFn's default build flags; it still uses the same paired timing gates, so
 do not promote it unless the generated-kernel candidate beats the current
-default in the same script. The CUDA 13.3.33 dedicated RTX 5090 post-rebuild
-5-step, 2-sample stage-timed gate changed no tracked route or strategy counters
-and rejected the reference bundle as a default: train-loop wall improved to
-`0.995837x`, tokens/sec to `1.004176x`, and block backward to `0.991665x`, but
-steady-state CUDA-event timing missed at `1.000937x` while MLP FC regressed to
-`1.006521x` and QKV regressed to `1.008280x`.
+default in the same script. The CUDA 13.3.33 dedicated RTX 5090 2026-06-28
+3-step, 2-sample, stage-timed rerun passed candidate-over-llm.kittens gates
+(`0.999113x` train-loop wall, `0.999168x` steady-state CUDA-event timing,
+`1.000646x` tokens/sec), but it remains rejected for default promotion because
+it changed no hot route counters or cuBLASLt plan-cache entries and was
+flat/slightly slower versus the current linked native baseline (`1.000196x`
+train-loop wall, `0.999805x` tokens/sec, `1.000278x` block backward). The
+default build already carries the material SM120 flags, so this is not the
+remaining parity lever.
 The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or

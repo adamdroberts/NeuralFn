@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the current RTX 5090 evidence for two tempting but
+  non-promotable SM120 parity profiles. `llmk_sm120_reference_flags` now records
+  the 2026-06-28 3-step/2-sample stage-timed rerun: it passed
+  candidate-over-llm.kittens gates at `0.999113x` train-loop wall,
+  `0.999168x` steady-state CUDA-event timing, and `1.000646x` tokens/sec, but
+  remains rejected for default promotion because it changed no hot route
+  counters or cuBLASLt plan-cache entries and was flat/slightly slower versus
+  the current linked native baseline (`1.000196x` wall, `0.999805x`
+  tokens/sec, `1.000278x` block backward). The direct
+  `lm_head_cooperative_sequence_wrapper` rerun is also pinned as rejected after
+  regressing train-loop wall to `1.012109x`, steady-state CUDA-event timing to
+  `1.005261x`, tokens/sec to `0.988038x`, LM-head backward to `1.050922x`, and
+  cooperative LM-head body time to `1.073406x`. Verification: both
+  GPU-visible paired wrapper reruns on the dedicated display-disabled RTX 5090,
+  focused wrapper source test, no-Torch verifier, and `git diff --check`.
+
 - Bench: `tools/bench_native_gpt_sm120_candidate.sh` now accepts
   `NFN_SM120_NATIVE_DRY_RUN=1` as a convenience alias for the existing
   `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` plan-only mode. This keeps quick candidate

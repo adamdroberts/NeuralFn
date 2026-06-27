@@ -2086,6 +2086,14 @@ diagnostic-only: the CUDA 13.3 dedicated RTX 5090 one-step same-script run
 improved LM-head backward to `0.705502x`, but regressed train-loop wall to
 `21.830567x` and block backward to `44.496727x` under the 6.59 GB resident-logit
 footprint.
+`lm_head_cooperative_sequence_wrapper` disables the default LM-head CUDA Graph
+replay and runs the direct cooperative sequence wrapper. It remains rejected:
+the CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample, stage-timed
+rerun regressed train-loop wall to `1.012109x`, steady-state CUDA-event timing
+to `1.005261x`, tokens/sec to `0.988038x`, LM-head backward to `1.050922x`,
+and cooperative LM-head body time to `1.073406x`. Keep the CUDA Graph wrapper
+default until the replacement is a true fused/reference-aligned
+classifier-backward path.
 `cublaslt_grouped_probe` expands to
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check

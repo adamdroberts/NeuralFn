@@ -231,6 +231,26 @@ Real training tensors must not pass through graph editor node objects.
   MLP projection backward to `1.155027x`. Keep the default at all 12 stored
   MLP blocks until a replacement avoids the BF16 pack/cache miss and cuBLASLt
   recompute penalty.
+- [x] Recheck compile-flag-only SM120 reference alignment before changing
+  defaults. The 2026-06-28 dedicated RTX 5090 3-step, 2-sample, stage-timed
+  `llmk_sm120_reference_flags` rerun rebuilt a temporary Tile ops library with
+  the documented llm.kittens SM120 macro bundle and passed
+  candidate-over-llm.kittens gates (`0.999113x` train-loop wall,
+  `0.999168x` steady-state CUDA-event step time, `1.000646x` tokens/sec).
+  It remains rejected for default promotion because it changed no hot route
+  counters or cuBLASLt plan-cache entries and was flat/slightly slower versus
+  the current linked native baseline (`1.000196x` train-loop wall,
+  `0.999805x` tokens/sec, `1.000278x` block backward). The default build
+  already carries the material SM120 flags; the next useful slice remains
+  real LM-head/backward kernel work, not another macro-bundle reroute.
+- [x] Recheck the direct LM-head cooperative sequence wrapper after the same
+  CUDA 13.3.33 refresh. The 2026-06-28 dedicated RTX 5090 3-step, 2-sample,
+  stage-timed rerun kept `lm_head_cooperative_sequence_wrapper` rejected:
+  disabling CUDA Graph replay for the sequence wrapper regressed train-loop
+  wall to `1.012109x`, steady-state CUDA-event step time to `1.005261x`,
+  tokens/sec to `0.988038x`, LM-head backward to `1.050922x`, and cooperative
+  LM-head body time to `1.073406x`. Keep the CUDA Graph wrapper default until
+  the replacement is a true fused/reference-aligned classifier-backward path.
 - [x] Revisit the broad native test surface after the CUDA Toolkit reinstall.
   `tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with all
   tracked native binaries and bindings unstale, and

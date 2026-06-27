@@ -3119,9 +3119,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "-DLLMK_SM120_DWEIGHT_SUPER_M=2" in bench_source
     assert "-DLLMK_SM120_FAST_DGELU=1" in bench_source
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in bench_source
-    assert "post-rebuild 5-step, 2-sample stage-timed gate" in bench_source
-    assert "train-loop wall to 0.995837x" in bench_source
-    assert "steady-state CUDA-event timing missed at 1.000937x" in bench_source
+    assert "2026-06-28 3-step, 2-sample, stage-timed rerun" in bench_source
+    assert "candidate-over-llm.kittens gates at train_loop_wall_ms_per_step=0.999113x" in bench_source
+    assert "no hot route counters" in bench_source
+    assert "no cuBLASLt plan-cache entries" in bench_source
+    assert "flat/slightly slower versus the current linked native baseline" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
     assert "Known profiles:" in bench_source
     assert "mlp_proj_concurrent_dinput_dweight" in bench_source
