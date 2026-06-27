@@ -2968,7 +2968,16 @@ and emit normal setup timing, but exit before optimizer steps or checkpoint
 export with `status: "native-transformer-lm-startup-ready"`. Native GPT SDK
 subprocess launchers set `CUDA_MODULE_LOADING=LAZY` by default when the caller
 has not already set that environment variable, and runtime JSON reports the
-resolved value as `cuda_module_loading`. Startup-only suppresses final
+resolved value as `cuda_module_loading`. Startup-only also skips throughput-only
+setup prewarms by default: the TK QKV first-use prewarm is off unless
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` forces the old route, and runtime JSON
+reports `native_fast_startup_prewarm_policy` as
+`startup-only-skip-throughput-prewarms-by-default`. Normal training keeps the
+throughput prewarms enabled by default. The 2026-06-28 dedicated RTX 5090
+3-sample A/B measured this startup-only default at `0.755407x` `setup_wall_ms`
+versus forced old QKV prewarm, with
+`linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0`.
+Startup-only suppresses final
 checkpoint export even when export was requested; plan/runtime JSON reports
 `checkpoint_export_enabled: false` and
 `checkpoint_export_startup_only_elided: true` for that case. Runtime JSON also

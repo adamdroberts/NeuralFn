@@ -148,6 +148,15 @@ reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
 to compare the startup-only tradeoff in the same selected-GPU window.
+Plain `--startup-only` now also skips throughput-only setup prewarms by
+default, while normal training still keeps them on. Pass
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` when a startup-only run must reproduce
+the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
+3-sample A/B measured the new startup-only default at `0.755407x`
+`setup_wall_ms` versus forced old QKV prewarm, with
+`linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0` and the
+runtime policy reporting
+`startup-only-skip-throughput-prewarms-by-default`.
 Fast startup remains a startup/preflight policy, not the default full-training
 policy. The `fast_startup_full` probe ran real optimizer steps with
 `NFN_NATIVE_GPT_FAST_STARTUP=1` and improved setup wall time to `0.655522x`,

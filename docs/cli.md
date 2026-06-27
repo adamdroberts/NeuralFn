@@ -2245,6 +2245,17 @@ prewarm are skipped unless `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` or
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` explicitly force them
 back on. Runtime JSON reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`.
+Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
+setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.
+Normal training keeps throughput prewarms enabled by default. Set
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` to reproduce the old startup-only QKV
+first-use prewarm route, or `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1`
+to force LM-head graph prewarm during startup-only diagnostics. Runtime JSON
+reports `native_fast_startup_prewarm_policy` as
+`startup-only-skip-throughput-prewarms-by-default` for this route. The
+2026-06-28 dedicated RTX 5090 3-sample A/B measured the new startup-only
+default at `0.755407x` `setup_wall_ms` versus forced old QKV prewarm, with
+`linear_tk_qkv_first_use_prewarm_success_count` changing from `1` to `0`.
 
 `fast_startup_full` is the matching rejected full-training probe. It runs real
 optimizer steps with `NFN_NATIVE_GPT_FAST_STARTUP=1` to check whether skipped

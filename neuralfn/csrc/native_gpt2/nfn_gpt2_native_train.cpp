@@ -10506,7 +10506,8 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_FAST_STARTUP",
                               "NFN_TILE_CUDA_FAST_STARTUP"}),
             false);
-    const bool native_fast_startup_prewarm_default = !native_fast_startup_requested;
+    const bool native_fast_startup_prewarm_default =
+        !native_fast_startup_requested && !cfg.startup_only;
     const std::string linear_tk_qkv_first_use_prewarm_env =
         env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD",
                           "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD",
@@ -23981,6 +23982,8 @@ int run_transformer_lm_training_json(
         << "  \"native_fast_startup_prewarm_policy\": \""
         << (native_fast_startup_requested
                 ? "skip-setup-throughput-prewarms-by-default"
+                : cfg.startup_only
+                ? "startup-only-skip-throughput-prewarms-by-default"
                 : "throughput-prewarm-defaults")
         << "\",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"

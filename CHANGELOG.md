@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: `--startup-only` now skips throughput-only setup prewarms by
+  default while normal training keeps them enabled. The TK QKV first-use prewarm
+  no longer runs for setup-only/preflight probes unless
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` explicitly forces the old route;
+  runtime JSON reports `native_fast_startup_prewarm_policy` as
+  `startup-only-skip-throughput-prewarms-by-default`. This keeps the training
+  throughput route intact but cuts startup-only latency: the 2026-06-28
+  dedicated RTX 5090 3-sample A/B measured `0.755407x` `setup_wall_ms` versus
+  forced old QKV prewarm, with
+  `linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0`.
+  Verification: focused native GPT source tests, linked/dynamic native binary
+  rebuilds, the no-Torch native dependency verifier, GPU-visible startup-only
+  paired benchmark on the display-disabled RTX 5090, and `git diff --check`.
+
 - Bench: refreshed the current stage-timed llm.kittens parity evidence after
   rebuilding the native GPT binaries. The 2026-06-28 dedicated RTX 5090
   3-step/one-sample stage-timed rerun measured NeuralFn at `1.005616x`

@@ -1045,11 +1045,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "uint16_arena_request_stats" in parity_bench
     assert "top_families" in parity_bench
     assert "total_allocated_bytes" in parity_bench
-    assert "float_arena_allocated_bytes" in speed_source
-    assert "uint16_arena_allocated_bytes" in speed_source
-    assert "transformer_arena_allocated_bytes" in speed_source
-    assert "activation_storage_bytes" in speed_source
-    assert "lm_head_bf16_logit_bytes" in speed_source
+    assert "float_arena_allocated_bytes" in paired_speed
+    assert "uint16_arena_allocated_bytes" in paired_speed
+    assert "transformer_arena_allocated_bytes" in paired_speed
+    assert "activation_storage_bytes" in paired_speed
+    assert "lm_head_bf16_logit_bytes" in paired_speed
     assert "nfn_gpt_native_train_linked" in candidate_bench
     assert "NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO" in candidate_bench
     assert "NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO" in candidate_bench
@@ -1372,6 +1372,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_TILE_CUDA_FAST_STARTUP" in gpt_source
     assert "native_fast_startup_requested" in gpt_source
     assert "native_fast_startup_prewarm_policy" in gpt_source
+    assert "!native_fast_startup_requested && !cfg.startup_only" in gpt_source
+    assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
         "            native_fast_startup_prewarm_default)"
@@ -2018,6 +2020,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
+    assert "!native_fast_startup_requested && !cfg.startup_only" in source
+    assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
         "            native_fast_startup_prewarm_default)"
