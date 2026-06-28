@@ -1585,6 +1585,14 @@ Leave the variables unset for the default build. The helper links the shared
 object with `-Bsymbolic`, so a candidate library loaded by a linked native
 trainer resolves its C ABI wrappers to its own C++ kernel implementations rather
 than the trainer's built-in default Tile symbols.
+The `token_weight_padded_bf16_pattern` startup candidate remains rejected after
+the post-CUDA-13.3 dedicated RTX 5090 3-step, 2-sample rerun. It changed only
+the token-weight initializer strategy and measured `0.971027x` setup wall plus
+`0.999856x` candidate-over-llm.kittens train-loop wall, but the target
+`setup.token_weight_init.total_ms` gate failed at `1.001098x` and
+candidate-over-reference first-step CUDA-event timing regressed to `1.000752x`.
+Do not promote it as a startup fix until the token-init and first-step gates
+both pass in the same script.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, and the NeuralFn side now receives

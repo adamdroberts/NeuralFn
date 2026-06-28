@@ -34,6 +34,24 @@ Future updates should append new entries here rather than replacing older notes.
   Tile fill smoke, NVFP4 pack smoke, TinyStories transformer-LM smoke, and
   `tests/test_native_gpt2.py` with `107 passed, 1 skipped in 418.17s`.
 
+- SM120 candidate workflow: refreshed the rejected evidence for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern` after
+  the CUDA 13.3 reinstall. The candidate still changes only
+  `token_weight_init_strategy`; the latest paired run keeps it rejected even
+  though process/setup metrics improved, because the intended token-init target
+  and first-step reference gates did not both pass.
+
+  Verification: `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_token_weight_padded_bf16_pattern_rerun.json
+  bash tools/bench_native_gpt_sm120_candidate.sh` failed the expected rejected
+  profile gate with `setup.token_weight_init.total_ms=1.001098x` and
+  candidate-over-reference first-step CUDA-event timing `1.000752x`, while
+  keeping the native runtime contract green and measuring
+  `candidate_over_reference train_loop_wall_ms_per_step=0.999856x`.
+
 - Native GPT benchmarking: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, a startup-only
   paired diagnostic that enables `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` for the
