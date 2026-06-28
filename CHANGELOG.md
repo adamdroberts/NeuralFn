@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer validation: refreshed the current default dense GPT
+  llm.kittens parity evidence after promoting the fused padded token-weight
+  initializer. Verification:
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=3
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_current_default_after_padded_init_20260628.json
+  bash tools/bench_native_gpt_sm120_parity.sh` passed on the dedicated RTX 5090
+  with median NeuralFn over llm.kittens train-loop `0.999041x`, median
+  steady-state CUDA-event `0.999342x`, median tokens/sec `1.001718x`, and the
+  native runtime contract green (`graph_editor_tensor_flow=false`,
+  `torch_required=false`, `optimized_kernel_contract_passed=true`,
+  `train_loss_host_d2h_count=0`). The refreshed profile reports
+  `setup_wall_ms` median `714.306 ms`, float arena materialization median
+  `181.658 ms`, uint16 arena materialization median `125.478 ms`, and
+  token-weight init median `151.345 ms`; the LM-head path is still the
+  diagnostic CUDA Graph wrapper with 120 replays over the three CE/dHidden/dWeight
+  graph-body nodes, so the remaining kernel work is still the strict true-fused
+  LM-head classifier-backward Tile path rather than another rejected route toggle.
+
 - Native trainer: promoted the fused padded-vocab token-weight initializer as
   the default for dense GPT Tile-CUDA training. The default C++ path now enables
   `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, which writes public-vocab

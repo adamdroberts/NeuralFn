@@ -3019,8 +3019,26 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     reference: `train_loop_wall_ms_per_step=1.000427x`,
     `train_loop_cuda_event_first_step_wall_ms_per_step=1.000846x`,
     `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000203x`, and
-    `train_tokens_per_second=0.999952x`. Keep the padded initializer opt-in;
-    this is startup noise reduction, not the remaining steady-state parity fix.
+    `train_tokens_per_second=0.999952x`. Superseded by the later 2026-06-28
+    5-step, 3-sample parity promotion that made the padded initializer default;
+    this earlier result remains useful only as evidence that startup-only wins
+    were not enough to promote the route before the full parity rerun.
+  - 2026-06-28 refreshed the current default after promoting fused padded
+    token-weight initialization. The canonical 5-step, 3-sample no-stage parity
+    wrapper selected the dedicated RTX 5090, observed zero selected-GPU compute
+    processes before each sample, and passed the runtime contract with
+    `graph_editor_tensor_flow=false`, `torch_required=false`,
+    `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`.
+    Median NeuralFn over llm.kittens was `0.999041x` train-loop wall,
+    `0.999342x` steady-state CUDA-event step time, and `1.001718x`
+    tokens/sec. The remaining setup split is now explicit:
+    `setup_wall_ms=714.306 ms` median, float arena materialization
+    `181.658 ms`, uint16 arena materialization `125.478 ms`, and token-weight
+    init `151.345 ms`. The LM-head path is still
+    `diagnostic-cuda-graph-wrapper` with 120 graph replays over the three
+    CE/dHidden/dWeight graph-body nodes, so the next implementation work remains
+    reducing real arena materialization or replacing that wrapper with a strict
+    true-fused Tile classifier-backward kernel.
   - 2026-06-27 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup_full` to
     keep fast-startup default decisions honest. The 5-step, 2-sample dedicated
     RTX 5090 full-training probe improved setup wall time to `0.655522x`, but

@@ -2386,6 +2386,19 @@ arena materialization time, and replacing the diagnostic CUDA Graph LM-head
 classifier wrapper with a strict true-fused Tile kernel. Use
 `tools/bench_native_gpt_sm120_parity.sh` for same-script RTX 5090 comparisons
 against `llm.kittens/train-sm120.sh`.
+
+The current post-padded-init default checkpoint uses the same wrapper with
+`NFN_SM120_PARITY_STEPS=5`, `NFN_SM120_PARITY_SAMPLES=3`, and
+`NFN_SM120_PARITY_WARMUP=1`. On the dedicated CUDA 13.3 RTX 5090 it measured
+median NeuralFn over llm.kittens train-loop `0.999041x`, steady-state CUDA-event
+`0.999342x`, and tokens/sec `1.001718x`, while the runtime contract stayed
+green (`graph_editor_tensor_flow=false`, `torch_required=false`,
+`optimized_kernel_contract_passed=true`, `train_loss_host_d2h_count=0`). Startup
+is still the open setup problem: median `setup_wall_ms` was `714.306 ms`, with
+float arena materialization `181.658 ms`, uint16 arena materialization
+`125.478 ms`, and token-weight initialization `151.345 ms`. The LM-head path
+still reports `diagnostic-cuda-graph-wrapper`, so true fused classifier-backward
+work remains separate from route-toggle benchmarking.
 After a CUDA toolkit or WSL driver reinstall, run
 `bash tools/validate_sm120_cuda13.sh` for the SM120 health gate. It uses the
 dedicated-GPU selector and, by default, validates

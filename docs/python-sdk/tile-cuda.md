@@ -2355,6 +2355,17 @@ kernel; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
 5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
 passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
 the reference `-d 524288` batch-token contract instead of relying on a default.
+
+The current CUDA 13.3 dedicated RTX 5090 checkpoint after padded token-weight
+initialization became default passed that gate at median NeuralFn over
+llm.kittens train-loop `0.999041x`, steady-state CUDA-event `0.999342x`, and
+tokens/sec `1.001718x`, with the native runtime contract green and no
+graph-editor/Torch data path. The same JSON shows the remaining setup cost:
+median `setup_wall_ms` `714.306 ms`, float arena materialization `181.658 ms`,
+uint16 arena materialization `125.478 ms`, and token-weight initialization
+`151.345 ms`. LM-head backward still reports `diagnostic-cuda-graph-wrapper`;
+SDK strict cooperative guards should therefore still be treated as future
+true-fused-kernel validation, not as a currently passing production route.
 It also passes `--train-loss-every-steps 0` to the NeuralFn side by default so
 short parity runs measure the training loop rather than the compiled trainer's
 raw-C++ default periodic train-loss accumulation path; set
