@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added a dense GPT CUDA Tile `--smoke-nvfp4-pack` preflight and
+  SDK/wrapper `smoke_nvfp4_pack` handoff. The compiled C++ trainer now loads
+  `nfn_native_tile_float32_to_nvfp4_packed` and
+  `nfn_native_tile_nvfp4_packed_to_float32`, launches them on a synthetic
+  block-size-16 CUDA activation tile before token-shard resolution, verifies
+  round-trip copyback plus nonzero block-scale bytes, and reports pass/fail
+  JSON. This is a kernel/storage preflight only; dense GPT full training still
+  reports `native_activation_packing_active: false` until projection and
+  attention FP4 GEMM routes consume packed activation buffers. Verification:
+  focused native GPT source/argv tests, native GPT C++ build/help smoke, CUDA
+  visible `--smoke-nvfp4-pack`, and `git diff --check`.
+
 - Bench: added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks11` profile. The CUDA
   13.3.33 dedicated RTX 5090 3-step, one-sample no-stage probe cut stored MLP

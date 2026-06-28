@@ -267,6 +267,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         kernel_backend=str(args.native_cuda_kernel_backend),
         tile_ops_lib=str(args.native_cuda_tile_ops_lib or ""),
         smoke_tile_ops=bool(args.native_cuda_smoke_tile_ops),
+        smoke_nvfp4_pack=bool(args.native_cuda_smoke_nvfp4_pack),
         smoke_optimizer_step=bool(args.native_cuda_smoke_optimizer_step),
         smoke_lm_step=bool(args.native_cuda_smoke_lm_step),
         smoke_attention_step=bool(args.native_cuda_smoke_attention_step),
@@ -419,6 +420,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip final trained checkpoint export for native benchmark/preflight runs.",
     )
     parser.add_argument("--native-cuda-smoke-tile-ops", "--smoke-tile-ops", action="store_true")
+    parser.add_argument("--native-cuda-smoke-nvfp4-pack", "--smoke-nvfp4-pack", action="store_true")
     parser.add_argument("--native-cuda-smoke-optimizer-step", "--smoke-optimizer-step", action="store_true")
     parser.add_argument("--native-cuda-smoke-lm-step", "--smoke-lm-step", action="store_true")
     parser.add_argument("--native-cuda-smoke-attention-step", "--smoke-attention-step", action="store_true")
@@ -580,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
             kernel_backend=str(args.native_cuda_kernel_backend),
             tile_ops_lib=str(args.native_cuda_tile_ops_lib or ""),
             smoke_tile_ops=bool(args.native_cuda_smoke_tile_ops),
+            smoke_nvfp4_pack=bool(args.native_cuda_smoke_nvfp4_pack),
             smoke_optimizer_step=bool(args.native_cuda_smoke_optimizer_step),
             smoke_lm_step=bool(args.native_cuda_smoke_lm_step),
             smoke_attention_step=bool(args.native_cuda_smoke_attention_step),
@@ -657,6 +660,7 @@ def main(argv: list[str] | None = None) -> int:
         or bool(args.native_cuda_list_templates)
         or bool(args.native_cuda_check_tile_ops)
         or bool(args.native_cuda_smoke_tile_ops)
+        or bool(args.native_cuda_smoke_nvfp4_pack)
         or bool(args.native_cuda_smoke_optimizer_step)
         or bool(args.native_cuda_smoke_lm_step)
         or bool(args.native_cuda_smoke_attention_step)
@@ -671,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
         if runner_status.resolved != "compiled-cli":
             print(
                 "--native-cuda-print-plan, --native-cuda-list-templates, --native-cuda-check-tile-ops, --native-cuda-smoke-tile-ops, "
-                "--native-cuda-smoke-optimizer-step, --native-cuda-smoke-lm-step, and "
+                "--native-cuda-smoke-nvfp4-pack, --native-cuda-smoke-optimizer-step, --native-cuda-smoke-lm-step, and "
                 "--native-cuda-smoke-attention-step, --native-cuda-smoke-mlp-step, and "
                 "--native-cuda-smoke-norm-residual-step, and "
                 "--native-cuda-smoke-transformer-block-step, and "

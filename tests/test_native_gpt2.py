@@ -765,6 +765,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert '"${TILE_OPS_LIB}" != "linked" && ! -f "${TILE_OPS_LIB}"' in source
     assert "--check-tile-ops" in source
     assert "--smoke-tile-ops" in source
+    assert "--smoke-nvfp4-pack" in source
     assert "--smoke-transformer-lm-step" in source
     assert "--tinystories" in source
     assert "tests/test_native_gpt2.py -q" in source
@@ -1552,6 +1553,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         kernel_backend="tile-cuda",
         tile_ops_lib="/opt/nfn/libnfn_native_train_tile_ops.so",
         smoke_tile_ops=True,
+        smoke_nvfp4_pack=True,
         smoke_optimizer_step=True,
         smoke_lm_step=True,
         smoke_attention_step=True,
@@ -1585,6 +1587,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--train-batch-tokens") + 1] == "524288"
     assert argv[argv.index("--tile-ops-lib") + 1] == "/opt/nfn/libnfn_native_train_tile_ops.so"
     assert "--smoke-tile-ops" in argv
+    assert "--smoke-nvfp4-pack" in argv
     assert "--smoke-optimizer-step" in argv
     assert "--smoke-lm-step" in argv
     assert "--smoke-attention-step" in argv
@@ -4982,6 +4985,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert help_proc.returncode == 0, help_proc.stderr
     assert "Native no-Python dense GPT trainer entrypoint" in help_proc.stdout
     assert "--smoke-tile-ops" in help_proc.stdout
+    assert "--smoke-nvfp4-pack" in help_proc.stdout
     assert "--smoke-optimizer-step" in help_proc.stdout
     assert "--smoke-lm-step" in help_proc.stdout
     assert "--smoke-attention-step" in help_proc.stdout
@@ -9209,6 +9213,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert '\\"workspace_allocation_strategy\\": \\"float-arena-plus-int64-device\\"' in gpt2_source_text
     assert "native_tile_cuda_activation_json" in gpt2_source_text
     assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in gpt2_source_text
+    assert "--smoke-nvfp4-pack" in gpt2_source_text
+    assert "--native-cuda-smoke-nvfp4-pack" in gpt2_source_text
+    assert "print_nvfp4_pack_smoke_json" in gpt2_source_text
+    assert "native_nvfp4_pack" in gpt2_source_text
+    assert "nonzero_scale_bytes" in gpt2_source_text
     assert '\\"effective_activation_dtype\\"' in gpt2_evo_source_text
     assert '\\"native_activation_packing_active\\"' in gpt2_evo_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
@@ -9248,6 +9257,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_bf16_bits_to_float32" in header_text
     assert "nfn_native_tile_float32_to_nvfp4_packed" in header_text
     assert "nfn_native_tile_nvfp4_packed_to_float32" in header_text
+    assert "nfn_native_tile_float32_to_nvfp4_packed" in gpt2_source_text
+    assert "nfn_native_tile_nvfp4_packed_to_float32" in gpt2_source_text
     assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in header_text
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text

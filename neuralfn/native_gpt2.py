@@ -105,6 +105,7 @@ class NativeGpt2RunConfig:
     kernel_backend: str = "tile-cuda"
     tile_ops_lib: str = ""
     smoke_tile_ops: bool = False
+    smoke_nvfp4_pack: bool = False
     smoke_optimizer_step: bool = False
     smoke_lm_step: bool = False
     smoke_attention_step: bool = False
@@ -257,6 +258,8 @@ class NativeGpt2RunConfig:
             args.extend(["--tile-ops-lib", "linked"])
         if self.smoke_tile_ops:
             args.append("--smoke-tile-ops")
+        if self.smoke_nvfp4_pack:
+            args.append("--smoke-nvfp4-pack")
         if self.smoke_optimizer_step:
             args.append("--smoke-optimizer-step")
         if self.smoke_lm_step:
@@ -904,6 +907,7 @@ def build_native_gpt2_run_config(
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",
     smoke_tile_ops: bool = False,
+    smoke_nvfp4_pack: bool = False,
     smoke_optimizer_step: bool = False,
     smoke_lm_step: bool = False,
     smoke_attention_step: bool = False,
@@ -970,6 +974,7 @@ def build_native_gpt2_run_config(
         kernel_backend=native_gpt2_kernel_backend(kernel_backend),
         tile_ops_lib=str(tile_ops_lib or ""),
         smoke_tile_ops=bool(smoke_tile_ops),
+        smoke_nvfp4_pack=bool(smoke_nvfp4_pack),
         smoke_optimizer_step=bool(smoke_optimizer_step),
         smoke_lm_step=bool(smoke_lm_step),
         smoke_attention_step=bool(smoke_attention_step),
@@ -1021,6 +1026,7 @@ def build_native_gpt2_compiled_cli_run_config(
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",
     smoke_tile_ops: bool = False,
+    smoke_nvfp4_pack: bool = False,
     smoke_optimizer_step: bool = False,
     smoke_lm_step: bool = False,
     smoke_attention_step: bool = False,
@@ -1082,6 +1088,7 @@ def build_native_gpt2_compiled_cli_run_config(
         kernel_backend=resolved_kernel_backend,
         tile_ops_lib=str(tile_ops_lib or ""),
         smoke_tile_ops=bool(smoke_tile_ops),
+        smoke_nvfp4_pack=bool(smoke_nvfp4_pack),
         smoke_optimizer_step=bool(smoke_optimizer_step),
         smoke_lm_step=bool(smoke_lm_step),
         smoke_attention_step=bool(smoke_attention_step),

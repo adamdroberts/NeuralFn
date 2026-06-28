@@ -57,6 +57,12 @@ run_step \
 run_step \
   "${TRAIN_BIN}" \
   --backend tile-cuda \
+  --smoke-nvfp4-pack \
+  --tile-ops-lib "${TILE_OPS_LIB}"
+
+run_step \
+  "${TRAIN_BIN}" \
+  --backend tile-cuda \
   --tinystories \
   --smoke-transformer-lm-step \
   --tile-ops-lib "${TILE_OPS_LIB}"

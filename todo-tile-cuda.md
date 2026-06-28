@@ -2353,6 +2353,7 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
 - [x] CPU and GPU parity tests with NVFP4 tolerances for projection-family and attention-family activations plus source-gradient preservation.
 - [x] NVFP4 saturation-boundary tests for packed projection inputs.
 - [ ] Wire dense GPT native training to real packed NVFP4 activation buffers and projection/attention FP4 GEMM routes. The current compiled dense GPT trainer preserves `--tile-cuda-activation-dtype nvfp4` as intent only and reports `native_activation_packing_active: false`; `--require-native-nvfp4-activation-packing` now fails fast until this native storage path is connected to the trainer.
+  - [x] Add the intermediate native C++ `--smoke-nvfp4-pack` preflight so the dense GPT binary itself can load and launch `nfn_native_tile_float32_to_nvfp4_packed` plus `nfn_native_tile_nvfp4_packed_to_float32` on a synthetic CUDA activation tile and report pass/fail JSON before datasets are opened. Full packed activation training remains unchecked above.
 
 ## CUDA 13.3 RTX 5090 parity status
 

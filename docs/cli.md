@@ -2385,6 +2385,10 @@ through `--native-cuda-require-native-nvfp4-activation-packing`,
 ops library now exports `nfn_native_tile_float32_to_nvfp4_packed` and
 `nfn_native_tile_nvfp4_packed_to_float32`; these are the pack/dequantize storage
 primitives that later dense GPT projection and attention routes should consume.
+Use `--smoke-nvfp4-pack --tile-ops-lib PATH` or
+`--native-cuda-smoke-nvfp4-pack` to launch those pack/unpack kernels from the
+dense GPT native C++ process over one synthetic block-size-16 CUDA activation
+tile and report pass/fail JSON without opening token shards.
 
 The no-Torch verifier also executes the guarded legacy training scripts with no
 native flags against stubbed native CLIs, and it imports the installed

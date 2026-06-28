@@ -134,6 +134,7 @@ struct Config {
     bool list_templates = false;
     bool check_tile_ops = false;
     bool smoke_tile_ops = false;
+    bool smoke_nvfp4_pack = false;
     bool smoke_optimizer_step = false;
     bool smoke_lm_step = false;
     bool smoke_attention_step = false;
@@ -497,6 +498,7 @@ void print_usage(const char* program) {
         << "  --tile-ops-lib PATH               libnfn_native_train_tile_ops.so path for --backend tile-cuda checks\n"
         << "  --check-tile-ops                  Verify raw NeuralFn Tile trainer ABI symbols and exit\n"
         << "  --smoke-tile-ops                  Launch nfn_native_tile_fill_float32 through CUDA runtime and verify copyback\n"
+        << "  --smoke-nvfp4-pack                Launch native NVFP4 pack/unpack storage kernels and verify copyback\n"
         << "  --smoke-optimizer-step            Run one AdamW update over the dense GPT registered parameter layout\n"
         << "  --smoke-lm-step                   Run a tiny tied-embedding dense GPT LM step through raw Tile kernels\n"
         << "  --smoke-attention-step            Run a tiny dense GPT attention stage through raw Tile kernels\n"
@@ -5168,6 +5170,270 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
         << "  \"elements\": " << kElements << ",\n"
         << "  \"expected_value\": " << kExpectedValue << ",\n"
         << "  \"max_abs_error\": " << max_abs_error << ",\n"
+        << "  \"passed\": " << (passed ? "true" : "false");
+    if (!error.empty()) {
+        std::cout << ",\n"
+                  << "  \"error\": \"" << json_escape(error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "}\n";
+
+    return passed ? 0 : 2;
+}
+
+int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
+    constexpr std::int64_t kElements = 16;
+    constexpr std::int64_t kPackedBytes = (kElements + 1) / 2;
+    constexpr std::int64_t kScaleBytes = 1;
+    constexpr float kTensorScale = 1.0f;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    const std::vector<float> expected = {
+        -3.0f, -2.0f, -1.5f, -1.0f,
+        -0.5f, 0.0f, 0.5f, 1.0f,
+        1.5f, 2.0f, 3.0f, -3.0f,
+        2.0f, -1.0f, 0.0f, 0.5f,
+    };
+
+    const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
+    bool tile_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool pack_kernel_loaded = false;
+    bool unpack_kernel_loaded = false;
+    bool passed = false;
+    double max_abs_error = 0.0;
+    int nonzero_scale_bytes = 0;
+    std::string error;
+
+    using PackFn = int (*)(const float*, std::uint8_t*, std::uint8_t*, float, std::int64_t, void*);
+    using UnpackFn = int (*)(const std::uint8_t*, const std::uint8_t*, float, float*, std::int64_t, void*);
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaMemsetFn = int (*)(void*, int, std::size_t);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
+    void* cuda_handle = nullptr;
+    PackFn pack = nullptr;
+    UnpackFn unpack = nullptr;
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaMemsetFn cuda_memset = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+
+    auto cuda_error = [&](int code, std::string_view context) {
+        std::ostringstream out;
+        out << context << " failed with CUDA error " << code;
+        if (cuda_get_error_string != nullptr) {
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
+        }
+        return out.str();
+    };
+
+    if (tile_handle == nullptr && !linked_tile_ops) {
+        error = dl_last_error("dlopen tile ops failed");
+    } else {
+        tile_loaded = true;
+        pack = load_symbol<PackFn>(tile_handle, "nfn_native_tile_float32_to_nvfp4_packed");
+        unpack = load_symbol<UnpackFn>(tile_handle, "nfn_native_tile_nvfp4_packed_to_float32");
+        pack_kernel_loaded = pack != nullptr;
+        unpack_kernel_loaded = unpack != nullptr;
+        if (pack == nullptr) {
+            error = dl_last_error("dlsym nfn_native_tile_float32_to_nvfp4_packed failed");
+        } else if (unpack == nullptr) {
+            error = dl_last_error("dlsym nfn_native_tile_nvfp4_packed_to_float32 failed");
+        }
+    }
+
+    if (error.empty()) {
+        std::string runtime_error;
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_lib_path = candidate;
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_runtime_loaded = true;
+                break;
+            }
+            runtime_error = dl_last_error("dlopen CUDA runtime failed");
+        }
+        if (cuda_handle == nullptr) {
+            error = runtime_error.empty() ? "could not load CUDA runtime" : runtime_error;
+        }
+    }
+
+    if (error.empty()) {
+        cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+        cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+        cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+        cuda_memset = load_symbol<CudaMemsetFn>(cuda_handle, "cudaMemset");
+        cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+        cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+        if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+            cuda_memset == nullptr || cuda_device_synchronize == nullptr) {
+            error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaMemset/cudaDeviceSynchronize";
+        }
+    }
+
+    float* device_values = nullptr;
+    float* device_roundtrip = nullptr;
+    std::uint8_t* device_packed = nullptr;
+    std::uint8_t* device_scales = nullptr;
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_values), sizeof(float) * kElements);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc source");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_roundtrip), sizeof(float) * kElements);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc roundtrip");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_packed), static_cast<std::size_t>(kPackedBytes));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc packed");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_scales), static_cast<std::size_t>(kScaleBytes));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc scales");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_memcpy(device_values, expected.data(), sizeof(float) * expected.size(), kCudaMemcpyHostToDevice);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy host-to-device source");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_memset(device_packed, 0, static_cast<std::size_t>(kPackedBytes));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemset packed");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_memset(device_scales, 0, static_cast<std::size_t>(kScaleBytes));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemset scales");
+        }
+    }
+    if (error.empty()) {
+        const int status = pack(device_values, device_packed, device_scales, kTensorScale, kElements, nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_float32_to_nvfp4_packed");
+        }
+    }
+    if (error.empty()) {
+        const int status = unpack(device_packed, device_scales, kTensorScale, device_roundtrip, kElements, nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_nvfp4_packed_to_float32");
+        }
+    }
+    if (error.empty()) {
+        const int status = cuda_device_synchronize();
+        if (status != 0) {
+            error = cuda_error(status, "cudaDeviceSynchronize");
+        }
+    }
+
+    std::vector<float> roundtrip(static_cast<std::size_t>(kElements), 0.0f);
+    std::vector<std::uint8_t> scales(static_cast<std::size_t>(kScaleBytes), 0);
+    if (error.empty()) {
+        const int status = cuda_memcpy(roundtrip.data(), device_roundtrip, sizeof(float) * roundtrip.size(), kCudaMemcpyDeviceToHost);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy device-to-host roundtrip");
+        }
+    }
+    if (error.empty()) {
+        const int status = cuda_memcpy(scales.data(), device_scales, scales.size(), kCudaMemcpyDeviceToHost);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy device-to-host scales");
+        }
+    }
+    if (error.empty()) {
+        for (std::size_t idx = 0; idx < roundtrip.size(); ++idx) {
+            const double abs_error = std::fabs(static_cast<double>(roundtrip[idx]) - static_cast<double>(expected[idx]));
+            if (abs_error > max_abs_error) {
+                max_abs_error = abs_error;
+            }
+        }
+        for (std::uint8_t value : scales) {
+            if (value != 0) {
+                ++nonzero_scale_bytes;
+            }
+        }
+        passed = max_abs_error <= 1e-6 && nonzero_scale_bytes == kScaleBytes;
+        if (!passed) {
+            std::ostringstream out;
+            out << "NVFP4 pack smoke failed: max_abs_error=" << max_abs_error
+                << ", nonzero_scale_bytes=" << nonzero_scale_bytes;
+            error = out.str();
+        }
+    }
+
+    if (device_values != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_values);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree source");
+        }
+    }
+    if (device_roundtrip != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_roundtrip);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree roundtrip");
+        }
+    }
+    if (device_packed != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_packed);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree packed");
+        }
+    }
+    if (device_scales != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_scales);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree scales");
+        }
+    }
+    if (cuda_handle != nullptr) {
+        dlclose(cuda_handle);
+    }
+    if (tile_handle != nullptr && !linked_tile_ops) {
+        dlclose(tile_handle);
+    }
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
+        << "  \"backend\": \"tile-cuda\",\n"
+        << "  \"smoke\": \"native_nvfp4_pack\",\n"
+        << "  \"token_shards_resolved\": false,\n"
+        << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"pack_kernel\": \"nfn_native_tile_float32_to_nvfp4_packed\",\n"
+        << "  \"unpack_kernel\": \"nfn_native_tile_nvfp4_packed_to_float32\",\n"
+        << "  \"pack_kernel_loaded\": " << (pack_kernel_loaded ? "true" : "false") << ",\n"
+        << "  \"unpack_kernel_loaded\": " << (unpack_kernel_loaded ? "true" : "false") << ",\n"
+        << "  \"elements\": " << kElements << ",\n"
+        << "  \"packed_bytes\": " << kPackedBytes << ",\n"
+        << "  \"scale_bytes\": " << kScaleBytes << ",\n"
+        << "  \"tensor_scale\": " << kTensorScale << ",\n"
+        << "  \"max_abs_error\": " << max_abs_error << ",\n"
+        << "  \"nonzero_scale_bytes\": " << nonzero_scale_bytes << ",\n"
         << "  \"passed\": " << (passed ? "true" : "false");
     if (!error.empty()) {
         std::cout << ",\n"
@@ -10713,6 +10979,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
         "nfn_native_tile_bf16_bits_to_float32",
+        "nfn_native_tile_float32_to_nvfp4_packed",
+        "nfn_native_tile_nvfp4_packed_to_float32",
         "nfn_native_tile_store_mlp_activations_bf16_float32",
         "nfn_native_tile_restore_mlp_activations_bf16_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32",
@@ -25255,6 +25523,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--smoke-tile-ops") {
             cfg.backend = "tile-cuda";
             cfg.smoke_tile_ops = true;
+        } else if (arg == "--smoke-nvfp4-pack" || arg == "--native-cuda-smoke-nvfp4-pack") {
+            cfg.backend = "tile-cuda";
+            cfg.smoke_nvfp4_pack = true;
         } else if (arg == "--smoke-optimizer-step") {
             cfg.backend = "tile-cuda";
             cfg.smoke_optimizer_step = true;
@@ -25693,6 +25964,9 @@ int main(int argc, char** argv) {
     if (cfg.backend == "tile-cuda") {
         if (cfg.smoke_tile_ops) {
             return print_tile_ops_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_nvfp4_pack) {
+            return print_nvfp4_pack_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_optimizer_step) {
             return print_optimizer_smoke_json(cfg, argv[0]);
