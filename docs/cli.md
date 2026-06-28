@@ -1781,6 +1781,11 @@ The paired route-change gate treats
 `block_backward_attn_proj_concurrent_dinput_dweight_count` as hot-route proof,
 so same-script runs can distinguish an actual alternate schedule from timing
 noise caused by external GPU load.
+For stricter checks, pass
+`tools/paired_kernel_speed.py --require-native-hot-route-counter NAME`; the
+SM120 candidate wrapper adds that automatically for the concurrent
+dInput/dWeight profiles so a profile cannot satisfy route proof via an
+unrelated strategy or adjacent counter.
 The cuBLASLt plan-cache bisection profile `cublaslt_plan_prewarm_off` compares
 the current full plan prewarm baseline against
 `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It stays rejected by default: the

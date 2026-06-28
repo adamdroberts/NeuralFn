@@ -1678,6 +1678,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--require-native-hot-route-counter",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "Fail after measurement unless NAME appears in the hot native route "
+            "counter changes. Repeat for profiles that must prove a specific "
+            "kernel schedule changed, not merely any strategy or adjacent route."
+        ),
+    )
+    parser.add_argument(
         "--require-native-lm-head-true-fused",
         action="store_true",
         help=(
@@ -2663,6 +2674,7 @@ def summarize_native_strategy_value_changes(
 def evaluate_native_route_change_gate(
     *,
     required: bool,
+    required_hot_route_counters: Sequence[str] = (),
     route_changes: dict[str, object],
     strategy_changes: dict[str, object],
     linear_shape_stats: dict[str, object],
@@ -2673,24 +2685,43 @@ def evaluate_native_route_change_gate(
     has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
     has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
     has_plan_cache_change = bool(cublaslt_plan_cache.get("has_plan_cache_change"))
-    passed = (
-        not required
+    required_counter_names = [str(name).strip() for name in required_hot_route_counters if str(name).strip()]
+    hot_changed = route_changes.get("hot_changed")
+    if not isinstance(hot_changed, dict):
+        hot_changed = {}
+    missing_required_counters = [
+        name for name in required_counter_names if name not in hot_changed
+    ]
+    route_change_required = bool(required or required_counter_names)
+    general_change_passed = (
+        not route_change_required
         or has_hot_route_counter_change
         or has_strategy_value_change
         or has_linear_shape_change
         or has_plan_cache_change
     )
+    specific_counters_passed = not missing_required_counters
+    passed = general_change_passed and specific_counters_passed
+    if passed:
+        failure_reason = ""
+    elif missing_required_counters:
+        failure_reason = (
+            "candidate-native-metrics-missing-required-hot-route-counter:"
+            + ",".join(missing_required_counters)
+        )
+    else:
+        failure_reason = "candidate-native-metrics-did-not-change-route-strategy-or-plan"
     return {
-        "enabled": bool(required),
+        "enabled": bool(route_change_required),
         "passed": bool(passed),
+        "required_hot_route_counters": required_counter_names,
+        "missing_required_hot_route_counters": missing_required_counters,
         "has_route_counter_change": bool(has_route_counter_change),
         "has_hot_route_counter_change": bool(has_hot_route_counter_change),
         "has_strategy_value_change": bool(has_strategy_value_change),
         "has_linear_shape_change": bool(has_linear_shape_change),
         "has_cublaslt_plan_cache_change": bool(has_plan_cache_change),
-        "failure_reason": ""
-        if passed
-        else "candidate-native-metrics-did-not-change-route-strategy-or-plan",
+        "failure_reason": failure_reason,
     }
 
 
@@ -4633,6 +4664,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     payload["native_runtime_contract_gate"] = evaluate_native_runtime_contract_gate(payload)
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
+        required_hot_route_counters=args.require_native_hot_route_counter,
         route_changes=native_route_counter_changes,
         strategy_changes=native_strategy_value_changes,
         linear_shape_stats=native_linear_shape_stats,
@@ -4955,6 +4987,12 @@ def print_text(payload: dict[str, object]) -> None:
             f"linear_shape={str(route_gate.get('has_linear_shape_change', False)).lower()} "
             f"cublaslt_plan_cache={str(route_gate.get('has_cublaslt_plan_cache_change', False)).lower()}"
         )
+        required_counters = route_gate.get("required_hot_route_counters")
+        if isinstance(required_counters, list) and required_counters:
+            print("    required_hot_route_counters: " + ", ".join(map(str, required_counters)))
+        missing_counters = route_gate.get("missing_required_hot_route_counters")
+        if isinstance(missing_counters, list) and missing_counters:
+            print("    missing_required_hot_route_counters: " + ", ".join(map(str, missing_counters)))
         failure_reason = route_gate.get("failure_reason")
         if failure_reason:
             print(f"    failure_reason: {failure_reason}")

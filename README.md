@@ -3636,6 +3636,11 @@ token-init stage ratio.
 The sweep `summary.tsv` includes explicit QKV/MLP-FC/attention-projection
 concurrent route deltas so external GPU load cannot hide whether a side-stream
 candidate actually launched the alternate kernel schedule.
+Use `tools/paired_kernel_speed.py --require-native-hot-route-counter NAME` when
+a candidate must prove one exact hot route counter changed. The SM120 wrapper
+sets this automatically for the QKV, MLP-projection, MLP-FC, and
+attention-projection concurrent dInput/dWeight profiles, so those profiles no
+longer pass route proof from an unrelated strategy or adjacent counter change.
 `mlp_fc_dinput_before_dweight` is a rejected diagnostic ordering gate; it
 forces the baseline to `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=0` and the
 candidate to `1`, then rejects the candidate unless every strict whole-loop,

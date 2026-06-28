@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT benchmarks: `tools/paired_kernel_speed.py` now supports
+  `--require-native-hot-route-counter NAME`, which fails a run unless the named
+  counter appears in the hot route-counter delta set. The SM120 candidate
+  wrapper now sets this stricter gate for the QKV, MLP-projection, MLP-FC, and
+  attention-projection concurrent dInput/dWeight profiles. This prevents a
+  side-stream profile from satisfying route proof via an unrelated strategy
+  toggle or adjacent counter. Verification: focused paired-speed gate tests,
+  wrapper source tests, shell syntax checks, dry-run profile expansion, and
+  `git diff --check`.
+
 - Native GPT benchmarks: dense GPT runtime JSON and paired-speed summaries now
   report explicit launch counters for the default-off block-backward concurrent
   schedules:

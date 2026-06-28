@@ -424,6 +424,11 @@ Real training tensors must not pass through graph editor node objects.
     now expose those deltas, so side-stream candidates must prove real kernel
     schedule changes inside the same script instead of relying on booleans or
     standalone timings.
+  - 2026-06-28 added `--require-native-hot-route-counter NAME` to the paired
+    speed tool and wired the SM120 side-stream profiles to require their exact
+    launch counter. This keeps future CUDA Tile experiments from passing route
+    proof because an unrelated strategy field changed while the intended hot
+    kernel schedule did not run.
   - 2026-06-25 added first-step versus steady-state stage aggregation to the
     native GPT CUDA-event timing JSON and paired benchmark extractor. The
     rebuilt linked trainer's 3-step TinyStories native-only diagnostic measured

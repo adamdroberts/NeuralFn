@@ -205,6 +205,7 @@ MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN
 MIN_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO "")"
 MAX_CANDIDATE_REFERENCE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_REFERENCE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_REFERENCE_RATIO "")"
 MIN_CANDIDATE_REFERENCE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MIN_CANDIDATE_REFERENCE_RATIO NFN_SM120_CANDIDATE_MIN_CANDIDATE_REFERENCE_RATIO "")"
+REQUIRED_HOT_ROUTE_COUNTERS_RAW="$(env_or_alias NFN_SM120_NATIVE_REQUIRE_HOT_ROUTE_COUNTERS NFN_SM120_CANDIDATE_REQUIRE_HOT_ROUTE_COUNTERS "")"
 USER_MAX_CANDIDATE_RATIO_RAW="$MAX_CANDIDATE_RATIO_RAW"
 USER_MIN_CANDIDATE_RATIO_RAW="$MIN_CANDIDATE_RATIO_RAW"
 USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW="$MAX_CANDIDATE_REFERENCE_RATIO_RAW"
@@ -972,27 +973,32 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.005526x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_qkv_concurrent_dinput_dweight_count"
     ;;
   "mlp_proj_concurrent_dinput_dweight"|"mlp-proj-concurrent-dinput-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate proved the route enabled and moved block_backward_mlp_proj_concurrent_dinput_dweight_count from 0 to 288, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.004101x, steady-state CUDA-event timing to 1.004144x, stage.lm_head_backward.total_ms to 1.000889x, stage.block_backward.total_ms to 1.009823x, and stage.block_backward.mlp_proj.total_ms to 1.025216x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_mlp_proj_concurrent_dinput_dweight_count"
     ;;
   "mlp_fc_concurrent_dinput_dweight"|"mlp-fc-concurrent-dinput-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 3-step, 1-sample stage-timed recheck proved the route changed by enabling block_backward_mlp_fc_concurrent_dinput_dweight and moving block_backward_mlp_fc_dinput_before_dweight_count from 288 to 0. It still remains rejected because stage.block_backward.mlp_fc.total_ms regressed to 1.025442x, stage.block_backward.total_ms to 1.005941x, stage.lm_head_backward.total_ms to 1.001738x, steady-state CUDA-event step time to 1.003685x, and candidate-over-llm.kittens train_loop_wall_ms_per_step stayed at 1.028729x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_mlp_fc_concurrent_dinput_dweight_count"
     ;;
   "attn_proj_concurrent_dinput_dweight"|"attn-proj-concurrent-dinput-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.002312x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_attn_proj_concurrent_dinput_dweight_count"
     ;;
   "attn_proj_first_step_concurrent_dinput_dweight"|"attn-proj-first-step-concurrent-dinput-dweight"|"attn_proj_first_step_concurrent"|"attn-proj-first-step-concurrent")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 5-step, 3-sample stage-timed gate proved the first-step route counter moved 0->96, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.002629x, steady-state CUDA event timing to 1.001028x, stage.lm_head_backward.total_ms to 1.000503x, stage.block_backward.total_ms to 1.006184x, and stage.block_backward.attn_proj.total_ms to 1.075065x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_FIRST_STEP_CONCURRENT_DINPUT_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_attn_proj_first_step_concurrent_dinput_dweight_count"
     ;;
   "lm_head_concurrent_dhidden_dweight"|"lm-head-concurrent-dhidden-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
@@ -1887,6 +1893,9 @@ for item in $MAX_CANDIDATE_REFERENCE_RATIO_RAW; do
 done
 for item in $MIN_CANDIDATE_REFERENCE_RATIO_RAW; do
   paired_args+=(--min-candidate-reference-ratio "$item")
+done
+for item in $REQUIRED_HOT_ROUTE_COUNTERS_RAW; do
+  paired_args+=(--require-native-hot-route-counter "$item")
 done
 case "${REQUIRE_NATIVE_ROUTE_CHANGE,,}" in
   "1"|"true"|"yes"|"on")

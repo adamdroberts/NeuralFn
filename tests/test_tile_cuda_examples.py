@@ -1625,10 +1625,14 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "*QKV_DINPUT_BEFORE_DWEIGHT*|*qkv_dinput_before_dweight*" in text
     assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
+    assert 'REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_qkv_concurrent_dinput_dweight_count"' in text
     assert "*BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT*|*block_mlp_fc_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_fc.total_ms=1.000"' in text
+    assert 'REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_mlp_fc_concurrent_dinput_dweight_count"' in text
     assert "*BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT*|*block_attn_proj_concurrent_dinput_dweight*|*attn_proj_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_proj.total_ms=1.000"' in text
+    assert 'REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_attn_proj_concurrent_dinput_dweight_count"' in text
+    assert "--require-native-hot-route-counter" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden_dweight_concurrent.total_ms=1.000"' not in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
@@ -4100,6 +4104,8 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert payload["native_route_change_gate"] == {
         "enabled": False,
         "passed": True,
+        "required_hot_route_counters": [],
+        "missing_required_hot_route_counters": [],
         "has_route_counter_change": False,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
@@ -4168,6 +4174,8 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
     assert payload["native_route_change_gate"] == {
         "enabled": True,
         "passed": False,
+        "required_hot_route_counters": [],
+        "missing_required_hot_route_counters": [],
         "has_route_counter_change": False,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
@@ -4181,6 +4189,76 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
         "native route change gate failed: candidate-native-metrics-did-not-change-route-strategy-or-plan"
         in proc.stderr
     )
+
+
+def test_paired_kernel_speed_tool_requires_named_hot_route_counter() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-named-route-gate.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 100, "
+        "\\\"linear_cublaslt_gemm_count\\\": 200"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.9}, "
+        "\\\"linear_tk_gemm_count\\\": 101, "
+        "\\\"linear_cublaslt_gemm_count\\\": 200"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-route-change",
+            "--require-native-hot-route-counter",
+            "block_backward_qkv_concurrent_dinput_dweight_count",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    gate = payload["native_route_change_gate"]
+    assert gate["enabled"] is True
+    assert gate["passed"] is False
+    assert gate["has_hot_route_counter_change"] is True
+    assert gate["required_hot_route_counters"] == [
+        "block_backward_qkv_concurrent_dinput_dweight_count"
+    ]
+    assert gate["missing_required_hot_route_counters"] == [
+        "block_backward_qkv_concurrent_dinput_dweight_count"
+    ]
+    assert gate["failure_reason"] == (
+        "candidate-native-metrics-missing-required-hot-route-counter:"
+        "block_backward_qkv_concurrent_dinput_dweight_count"
+    )
+    assert "missing_required_hot_route_counters: block_backward_qkv_concurrent_dinput_dweight_count" in proc.stdout
+    assert "native route change gate failed: candidate-native-metrics-missing-required-hot-route-counter:block_backward_qkv_concurrent_dinput_dweight_count" in proc.stderr
 
 
 def test_paired_kernel_speed_tool_rejects_setup_only_route_change_for_required_gate() -> None:
@@ -4249,6 +4327,8 @@ def test_paired_kernel_speed_tool_rejects_setup_only_route_change_for_required_g
     assert payload["native_route_change_gate"] == {
         "enabled": True,
         "passed": False,
+        "required_hot_route_counters": [],
+        "missing_required_hot_route_counters": [],
         "has_route_counter_change": True,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
