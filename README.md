@@ -843,10 +843,10 @@ allocator on both sides so the route still measures actual overlap. It reports
 `concurrent_arena_materialize_enabled`,
 `concurrent_arena_materialize_count`, plus
 `setup.float_uint16_arena_materialize_concurrent.total_ms` when selected. The
-CUDA 13.3 dedicated RTX 5090 startup-only gate rejected default promotion:
-mean setup wall was a noisy `0.987871x`, but median setup wall regressed to
-`1.003922x` and `uint16_arena_cuda_malloc_wall_ms` regressed to `2.664592x`
-mean.
+CUDA 13.3.33 dedicated RTX 5090 startup-only rerun after pageable token staging
+rejected default promotion: setup wall regressed to `1.007019x` mean /
+`1.005529x` median, and `uint16_arena_cuda_malloc_wall_ms` regressed to
+`2.570742x` mean / `2.568985x` median.
 `NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1` is a startup-only bisection switch for the
 same default split-arena path. It materializes the large BF16/uint16 arena before
 the float arena, leaves concurrent and combined-arena modes untouched, and

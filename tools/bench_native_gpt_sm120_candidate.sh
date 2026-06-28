@@ -924,7 +924,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "concurrent_arena_materialize"|"concurrent-arena-materialize"|"parallel_arena_materialize"|"parallel-arena-materialize")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-sample startup-only gate overlapped the float and uint16 arena cudaMalloc calls and moved concurrent_arena_materialize_count 0->1, but rejected default promotion because the setup_wall_ms median regressed to 1.003922x and uint16_arena_cuda_malloc_wall_ms regressed to 2.664592x mean despite a noisy 0.987871x mean setup wall."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 5-sample startup-only rerun after pageable token staging overlapped the float and uint16 arena cudaMalloc calls and moved concurrent_arena_materialize_count 0->1, but rejected default promotion because setup_wall_ms regressed to 1.007019x mean / 1.005529x median and uint16_arena_cuda_malloc_wall_ms regressed to 2.570742x mean / 2.568985x median."
     STARTUP_ONLY=1
     STEPS=0
     FORCE_DISABLE_ROUTE_CHANGE=1

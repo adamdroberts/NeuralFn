@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 startup evidence: refreshed the rejected split-arena concurrent
+  materialization profile after pageable token staging. The rerun still moved
+  `concurrent_arena_materialize_count` from `0` to `1`, but rejected default
+  promotion because setup wall regressed to `1.007019x` mean / `1.005529x`
+  median and `uint16_arena_cuda_malloc_wall_ms` regressed to `2.570742x` mean /
+  `2.568985x` median. The wrapper rejection text now points to the current CUDA
+  13.3.33 evidence. Verification:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1 NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_arena_materialize NFN_SM120_NATIVE_STEPS=0 NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_concurrent_arena_current_20260628.json bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - SM120 parity evidence: reran the canonical CUDA 13.3.33 dedicated RTX 5090
   NeuralFn-vs-llm.kittens gate after pageable token staging and startup
   cleanup. The 5-step, 3-sample no-stage run passed with NeuralFn at
@@ -4923,11 +4932,12 @@ Future updates should append new entries here rather than replacing older notes.
   `tools/paired_kernel_speed.py` includes the new setup bucket/counters in its
   native summaries. The SM120 wrapper profile
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_arena_materialize` is
-  intentionally rejected by default: the CUDA 13.3 dedicated RTX 5090
-  startup-only gate moved `concurrent_arena_materialize_count` from `0` to `1`,
-  but median setup wall regressed to `1.003922x` and
-  `uint16_arena_cuda_malloc_wall_ms` regressed to `2.664592x` mean despite a
-  noisy `0.987871x` mean setup wall.
+  intentionally rejected by default: the CUDA 13.3.33 dedicated RTX 5090
+  startup-only rerun after pageable token staging moved
+  `concurrent_arena_materialize_count` from `0` to `1`, but setup wall
+  regressed to `1.007019x` mean / `1.005529x` median and
+  `uint16_arena_cuda_malloc_wall_ms` regressed to `2.570742x` mean /
+  `2.568985x` median.
 
   Verification:
   `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
