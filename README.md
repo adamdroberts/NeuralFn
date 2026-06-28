@@ -204,8 +204,9 @@ contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
 dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
 telemetry, and the default vector4-strided BF16-shadow token-weight
 initialization. The fused padded token-weight initializer stays opt-in behind
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` until it passes full
-throughput gates. Set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`; the current full-training
+gate improved NeuralFn-vs-NeuralFn setup and train-loop timing but still failed
+the llm.kittens reference gate, so it is not a default. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
@@ -2489,12 +2490,14 @@ initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
 initializer against the default `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`
 path. The kernel writes public vocab BF16 shadow rows through the same
 conversion-based vector4 path and still zeroes padded rows in the same launch.
-The current CUDA 13.3.33 dedicated RTX 5090 startup-only gate proves the route,
-but keeps it opt-in until a full throughput run passes. The latest startup-only
-run measured `0.961154x` setup wall and `0.972885x`
-`setup.token_weight_init.total_ms`; a full 10-step reference run also failed
-the existing llm.kittens throughput gates, so this is a startup win rather than
-a throughput parity claim.
+The current CUDA 13.3.33 dedicated RTX 5090 full 3-step, 2-sample gate proves
+the route, but keeps it opt-in until a full throughput run passes. It improved
+NeuralFn-vs-NeuralFn train-loop wall to `0.999280x`, tokens/sec to `1.000728x`,
+setup wall to `0.978283x`, startup-plus-first-step to `0.994803x`, and
+startup-plus-train-loop to `0.997357x`, but candidate/reference llm.kittens
+gates failed at `1.000957x` train-loop wall, `1.001429x` steady-state
+CUDA-event step time, and `0.999070x` tokens/sec; token init itself regressed to
+`1.070588x` versus the default vector4 BF16-shadow route.
 `combined_device_arena` is also rejected by default: the CUDA 13.3.33
 startup-only 5-sample recheck regressed setup wall time to `1.031475x`,
 `setup.uint16_arena_materialize.total_ms` to `2.339592x`, and

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the `token_weight_padded_init` route after the SM120 launcher
+  moved to the dedicated GPU selector. The 2026-06-28 3-step, 2-sample full
+  training gate proved the Tile-CUDA route by moving
+  `token_weight_bf16_padding_memset_count` from `1` to `0` and improved
+  NeuralFn-vs-NeuralFn train-loop wall to `0.999280x`, tokens/sec to
+  `1.000728x`, setup wall to `0.978283x`, startup-plus-first-step to
+  `0.994803x`, and startup-plus-train-loop to `0.997357x`. It remains
+  default-off because the llm.kittens reference gate still failed at
+  `1.000957x` candidate/reference train-loop wall, `1.001429x` steady-state
+  CUDA-event step time, and `0.999070x` tokens/sec; token init itself also
+  regressed to `1.070588x` versus the default vector4 BF16-shadow route.
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_token_weight_padded_init_20260628.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Native launcher: SM120 dense GPT launchers now default unset
   `CUDA_VISIBLE_DEVICES` to the `dedicated` selector instead of hard-coding
   ordinal `0`. The compiled `build/nfn_train_gpt_sm120` /

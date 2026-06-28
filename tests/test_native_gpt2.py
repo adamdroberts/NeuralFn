@@ -1180,8 +1180,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "token_weight_padded_init" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
     assert "moving token_weight_bf16_padding_memset_count from 1 to 0" in candidate_bench
-    assert "setup_wall_ms at 0.961154x mean / 0.964534x median" in candidate_bench
-    assert "setup.token_weight_init.total_ms at 0.972885x mean / 0.976840x median" in candidate_bench
+    assert "train_loop_wall_ms_per_step to 0.999280x" in candidate_bench
+    assert "candidate/reference train_loop_wall_ms_per_step=1.000957x" in candidate_bench
     assert "Keep the route opt-in" in candidate_bench
     assert "host_descriptor_reserve" in candidate_bench
     assert "NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1" in candidate_bench
