@@ -9846,6 +9846,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cudaMemcpyAsync" in gpt2_source_text
     assert "cudaHostAlloc" in gpt2_source_text
     assert "cudaFreeHost" in gpt2_source_text
+    assert "CUDA runtime is missing cudaHostAlloc/cudaFreeHost for NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1" in gpt2_source_text
     assert "copy_async" in gpt2_source_text
     assert "resolve_symbolic_cuda_visible_devices()" in gpt2_source_text
     assert "resolve_symbolic_cuda_visible_devices()" in nanogpt_source_text

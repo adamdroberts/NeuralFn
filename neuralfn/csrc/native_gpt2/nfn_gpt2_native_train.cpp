@@ -13450,6 +13450,12 @@ int run_transformer_lm_training_json(
         }
     });
 
+    const bool pinned_token_host_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PINNED_TOKEN_HOST",
+                              "NFN_NATIVE_GPT2_PINNED_TOKEN_HOST"}),
+            false);
+
     run_setup_timed("setup.cuda_runtime_symbols", [&]() {
         if (error.empty()) {
             const auto cuda_runtime_symbol_load_start = Clock::now();
@@ -13479,9 +13485,11 @@ int run_transformer_lm_training_json(
             cuda_runtime_symbol_load_wall_ms =
                 elapsed_ms(cuda_runtime_symbol_load_start, Clock::now());
         if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
-            cuda_memcpy_async == nullptr || cuda_host_alloc == nullptr || cuda_free_host == nullptr ||
-            cuda_device_synchronize == nullptr) {
-            error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaMemcpyAsync/cudaHostAlloc/cudaFreeHost/cudaDeviceSynchronize";
+            cuda_memcpy_async == nullptr || cuda_device_synchronize == nullptr) {
+            error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaMemcpyAsync/cudaDeviceSynchronize";
+        } else if (pinned_token_host_enabled &&
+                   (cuda_host_alloc == nullptr || cuda_free_host == nullptr)) {
+            error = "CUDA runtime is missing cudaHostAlloc/cudaFreeHost for NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1";
         } else if (cuda_runtime_version_preflight_requested &&
                    (cuda_runtime_get_version == nullptr || cuda_driver_get_version == nullptr)) {
             error = "CUDA runtime is missing cudaRuntimeGetVersion/cudaDriverGetVersion";
@@ -14129,11 +14137,6 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
                               "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
             true);
-    const bool pinned_token_host_enabled =
-        env_flag_enabled_or_default(
-            env_or_empty_any({"NFN_NATIVE_GPT_PINNED_TOKEN_HOST",
-                              "NFN_NATIVE_GPT2_PINNED_TOKEN_HOST"}),
-            false);
     const bool lm_head_fused_loss_backward_enabled =
         lm_head_bf16_logits_enabled &&
         direct_u16_token_ids_enabled &&

@@ -680,6 +680,16 @@ bytes so only the float transformer arena moves to `cudaMallocAsync`; it also
 remains rejected because the latest same-script run regressed setup wall,
 float-arena materialization, steady-state CUDA-event step time, and tokens/sec
 against the current thresholded default.
+
+Dense GPT token host staging defaults to pageable memory for the compact
+uint16 token/target upload arena. The default path no longer requires
+`cudaHostAlloc` / `cudaFreeHost` during CUDA runtime preflight; those symbols
+are required only when `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` is set for legacy
+pinned-host bisection. Runtime JSON continues to report
+`token_id_host_staging`, `token_id_pinned_host_enabled`,
+`token_u16_pinned_arena_cuda_host_alloc_count`, and
+`token_u16_pageable_arena_malloc_count`.
+
 Set `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena
 startup profiling. It overlaps the float and uint16 arena `cudaMalloc` calls
 with host `std::thread` workers when the default split-arena `cudaMalloc` path

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT runtime setup: the dense GPT trainer now treats
+  `cudaHostAlloc` / `cudaFreeHost` as legacy pinned-token-staging symbols
+  instead of default-path requirements. The default pageable uint16
+  token/target upload arena still uses `malloc` plus the existing contiguous
+  `cudaMemcpyAsync` upload, while `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` now
+  gets the explicit missing-symbol error if the CUDA runtime lacks pinned host
+  allocation support. Verification: focused native GPT linked-loader coverage
+  and the full no-Torch handoff/dependency verifier.
+
 - Native GPT benchmarking: added rejected SM120 profiles
   `lm_head_row_chunk_24576` and `lm_head_row_chunk_30720` around the current
   28672-row LM-head default. The 24576-row probe kept three graph replays and

@@ -3428,7 +3428,17 @@ diagnostics. Runtime JSON reports `device_allocator_strategy`,
 `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`,
 `device_cuda_malloc_async_max_bytes`, async symbol availability,
 allocation/free counts, `device_cuda_malloc_async_fallback_count`, and
-`device_cuda_malloc_async_threshold_skip_count`. Set
+`device_cuda_malloc_async_threshold_skip_count`.
+
+Dense GPT token host staging defaults to pageable memory for the compact
+uint16 token/target upload arena. The default path does not require
+`cudaHostAlloc` / `cudaFreeHost` during CUDA runtime preflight; those symbols
+are required only when `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` is set for legacy
+pinned-host bisection. Runtime JSON reports `token_id_host_staging`,
+`token_id_pinned_host_enabled`, `token_u16_pinned_arena_cuda_host_alloc_count`,
+and `token_u16_pageable_arena_malloc_count`.
+
+Set
 `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena startup
 profiling. It overlaps the float and uint16 arena `cudaMalloc` calls with host
 `std::thread` workers when the default split-arena `cudaMalloc` path is active,
