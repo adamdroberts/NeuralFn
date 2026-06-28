@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: added a diagnostic padded token-weight BF16-pattern
+  initializer behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` /
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` and the
+  `token_weight_padded_bf16_pattern` same-script candidate profile. The default
+  remains the existing padded conversion route because the CUDA 13.3.33
+  dedicated RTX 5090 gate rejected promotion:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern
+  NFN_SM120_CANDIDATE_JSON_OUT=/tmp/nfn_token_weight_padded_bf16_pattern_20260628.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`. The run kept train-loop wall
+  inside the gate (`1.000141x`) and candidate-over-llm.kittens green
+  (`0.995285x`), but regressed `setup.token_weight_init.total_ms` to
+  `1.012279x` mean versus the default padded conversion path. The sandboxed
+  benchmark attempt failed before launch with CUDA error 35; unsandboxed
+  `nvidia-smi` confirmed the RTX 5090 on driver `610.43.02` / CUDA UMD `13.3`,
+  and the unsandboxed paired gate produced the rejection evidence.
+
 - Bench: marked the already-promoted SM120 default-vs-legacy profiles
   `linear_bias_threads_512`, `lm_head_loss_bins`, `bf16_attention_grad_out`,
   and `lm_head_graph_prewarm_dedup` as explicit accepted candidate profiles in

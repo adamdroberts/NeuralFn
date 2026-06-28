@@ -78,6 +78,11 @@ Runtime JSON reports
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
 `token_weight_padding_zero_launches_elided`. On the legacy initializer path,
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` is diagnostic-only: it
+stores precomputed BF16 shadow constants for public-vocab rows, but the CUDA
+13.3 RTX 5090 same-script gate rejected default promotion after
+`setup.token_weight_init.total_ms` regressed to `1.012279x` versus the default
+padded conversion path.
 known-zero BF16 padding rows use direct `cudaMemsetAsync` when that runtime
 symbol is available, and runtime JSON reports
 `token_weight_bf16_padding_memset_count`.

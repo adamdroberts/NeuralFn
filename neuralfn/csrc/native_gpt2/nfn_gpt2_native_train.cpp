@@ -13149,6 +13149,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT",
                               "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_PADDED_INIT"}),
             true);
+    const bool token_weight_padded_bf16_pattern_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_PADDED_BF16_PATTERN",
+                              "NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_BF16_PATTERN"}),
+            false);
     const bool fuse_token_weight_bf16_adamw_refresh_enabled =
         token_weight_bf16_shadow_enabled &&
         env_flag_enabled_or_default(
@@ -22822,8 +22828,12 @@ int run_transformer_lm_training_json(
     const std::string token_weight_init_strategy =
         token_weight_padded_init_fusion_enabled
             ? (token_weight_vector4_strided_init_requested
-                   ? "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"
-                   : "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero")
+                   ? (token_weight_padded_bf16_pattern_enabled
+                          ? "device-vector4-strided-power2-deterministic-fused-bf16-pattern-shadow-padded-zero"
+                          : "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero")
+                   : (token_weight_padded_bf16_pattern_enabled
+                          ? "device-vector4-power2-deterministic-fused-bf16-pattern-shadow-padded-zero"
+                          : "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"))
             : (legacy_mod17_token_weight_init_enabled
                    ? (token_weight_bf16_initial_refresh_elided
                           ? (token_weight_threaded_init_enabled
@@ -23064,6 +23074,8 @@ int run_transformer_lm_training_json(
         << (init_gpt2_token_weight_fast_with_bf16_shadow_padded != nullptr ? "true" : "false") << ",\n"
         << "  \"token_weight_padded_init_fusion_enabled\": "
         << (token_weight_padded_init_fusion_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_padded_bf16_pattern_enabled\": "
+        << (token_weight_padded_bf16_pattern_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_padding_zero_launches_elided\": "
         << token_weight_padding_zero_launches_elided << ",\n"
         << "  \"lm_head_classifier_strategy_contract\": "
@@ -24594,6 +24606,8 @@ int run_transformer_lm_training_json(
         << (init_gpt2_token_weight_fast_with_bf16_shadow_padded != nullptr ? "true" : "false") << ",\n"
         << "  \"token_weight_padded_init_fusion_enabled\": "
         << (token_weight_padded_init_fusion_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_padded_bf16_pattern_enabled\": "
+        << (token_weight_padded_bf16_pattern_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_padding_zero_launches_elided\": "
         << token_weight_padding_zero_launches_elided << ",\n"
         << "  \"token_weight_host_materialization\": false,\n"
@@ -25088,6 +25102,8 @@ int run_transformer_lm_training_json(
         << (fuse_token_weight_bf16_adamw_refresh_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_padded_init_fusion_enabled\": "
         << (token_weight_padded_init_fusion_enabled ? "true" : "false") << ",\n"
+        << "    \"token_weight_padded_bf16_pattern_enabled\": "
+        << (token_weight_padded_bf16_pattern_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_padding_zero_launches_elided\": "
         << token_weight_padding_zero_launches_elided << ",\n"
         << "    \"token_weight_bf16_initial_refresh_elided\": "
