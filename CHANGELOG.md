@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 benchmark tooling: `tools/paired_kernel_speed.py` now adds
+  `native_hot_stage_ratios.top_leaf_candidate_total_ms` and prints a matching
+  console section. The new view filters parent duration aggregates such as
+  `stage.block_backward.total_ms` and `setup_wall_ms` when deeper timed child
+  buckets exist, so candidate-vs-baseline runs point at the concrete leaf CUDA
+  Tile bucket to edit next while preserving the existing parent
+  `top_candidate_total_ms` summary for total-cost context.
+
 - SM120 parity evidence: refreshed the CUDA 13.3 dedicated RTX 5090 parity
   tracker after the latest no-stage and stage-timed same-script runs. The
   no-stage sample kept the native runtime contract clean

@@ -5081,6 +5081,20 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
         "stage.block_backward.total_ms"
     )
     assert hot_stage_ratios["top_candidate_total_ms"][0]["candidate_mean_ms"] == 3900.0
+    assert hot_stage_ratios["top_leaf_candidate_total_ms"][0]["metric"] == (
+        "stage.lm_head_backward.total_ms"
+    )
+    assert hot_stage_ratios["top_leaf_candidate_total_ms"][1]["metric"] == (
+        "stage.block_backward.mlp_proj.total_ms"
+    )
+    assert all(
+        row["metric"] != "stage.block_backward.total_ms"
+        for row in hot_stage_ratios["top_leaf_candidate_total_ms"]
+    )
+    assert all(
+        row["metric"] != "setup_wall_ms"
+        for row in hot_stage_ratios["top_leaf_candidate_total_ms"]
+    )
     assert hot_stage_ratios["top_regressions"][0]["metric"] == (
         "stage.block_backward.mlp_proj.total_ms"
     )
@@ -5108,6 +5122,7 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms" in proc.stdout
     assert "native_hot_stage_ratios:" in proc.stdout
     assert "top_candidate_total_ms:" in proc.stdout
+    assert "top_leaf_candidate_total_ms:" in proc.stdout
     assert "top_reference_gaps:" in proc.stdout
     assert "top_regressions:" in proc.stdout
     assert "candidate_over_baseline_mean=1.030928x" in proc.stdout

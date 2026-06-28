@@ -3763,6 +3763,11 @@ The remaining implementation work should therefore target the LM-head
 classifier-backward CUDA Graph wrapper replacement and block-backward kernels
 that dominate `native_hot_stage_ratios`, rather than moving more work into QKV
 prewarm.
+`native_hot_stage_ratios` now also includes `top_leaf_candidate_total_ms`,
+which removes parent aggregates such as `stage.block_backward.total_ms` and
+`setup_wall_ms` when deeper timed child buckets are available. Use that leaf
+view to choose the next CUDA Tile kernel to edit; keep the parent
+`top_candidate_total_ms` view for understanding total section cost.
 
 `tools/build_native_gpt_cli_linked.sh` relinks the native GPT trainer against
 `build/libnfn_native_train_tile_ops.so`. It now rebuilds that Tile ops library

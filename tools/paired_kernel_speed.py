@@ -3707,11 +3707,42 @@ def summarize_native_hot_stage_ratios(
                 row["candidate_over_reference_mean"] = reference_ratio
         rows.append(row)
 
+    row_bases: dict[str, str] = {}
+    for row in rows:
+        metric = row.get("metric")
+        if not isinstance(metric, str):
+            continue
+        if metric.endswith(".total_ms"):
+            row_bases[metric] = metric[: -len(".total_ms")]
+        elif metric == "setup_wall_ms":
+            row_bases[metric] = "setup"
+
+    def is_leaf_duration_row(row: dict[str, object]) -> bool:
+        metric = row.get("metric")
+        if not isinstance(metric, str):
+            return False
+        base = row_bases.get(metric)
+        if base is None:
+            return False
+        for other_metric, other_base in row_bases.items():
+            if other_metric == metric:
+                continue
+            if other_base.startswith(base + "."):
+                return False
+        return True
+
+    leaf_rows = [row for row in rows if is_leaf_duration_row(row)]
+
     return {
         "enabled": bool(rows),
         "limit": int(limit),
         "top_candidate_total_ms": sorted(
             rows,
+            key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
+            reverse=True,
+        )[:limit],
+        "top_leaf_candidate_total_ms": sorted(
+            leaf_rows,
             key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
             reverse=True,
         )[:limit],
@@ -3772,6 +3803,7 @@ def print_native_hot_stage_ratios(payload: dict[str, object]) -> None:
     print("  native_hot_stage_ratios:")
     for label in (
         "top_candidate_total_ms",
+        "top_leaf_candidate_total_ms",
         "top_reference_gaps",
         "top_regressions",
         "top_improvements",
