@@ -4110,7 +4110,9 @@ follow-up dedicated RTX 5090 llm.kittens parity run kept the native runtime
 contract green (`graph_editor_tensor_flow=false`, `torch_required=false`,
 `optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies)
 with median train-loop and steady-state CUDA-event ratios of `1.001715x` and
-`1.001653x`.
+`1.001653x`. The full `bash tools/validate_sm120_cuda13.sh` gate also passed
+on that setup, including Tile fill, NVFP4 pack, TinyStories transformer-LM
+smoke, and `tests/test_native_gpt2.py` (`107 passed, 1 skipped`).
 For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
 It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories

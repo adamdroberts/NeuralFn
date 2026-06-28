@@ -29,7 +29,10 @@ Future updates should append new entries here rather than replacing older notes.
   tools/bench_native_gpt_sm120_parity.sh`, which passed the default median
   gates at `1.001715x` train-loop wall and `1.001653x` steady-state CUDA-event
   timing, with `graph_editor_tensor_flow=false`, `torch_required=false`,
-  `optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies.
+  `optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies;
+  `bash tools/validate_sm120_cuda13.sh`, which passed the no-Torch JSON guard,
+  Tile fill smoke, NVFP4 pack smoke, TinyStories transformer-LM smoke, and
+  `tests/test_native_gpt2.py` with `107 passed, 1 skipped in 418.17s`.
 
 - Native GPT benchmarking: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, a startup-only
