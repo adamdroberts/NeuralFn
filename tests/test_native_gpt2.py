@@ -2678,7 +2678,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16",
         1,
     )[0]
-    for cooperative_body in (graph_body, sequence_body, legacy_sequence_body):
+    assert "cublaslt_graph_body_dhidden" in graph_body
+    assert "cublaslt_graph_body_dweight" in graph_body
+    assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in graph_body
+    assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in graph_body
+    for cooperative_body in (sequence_body, legacy_sequence_body):
         assert "launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32" not in cooperative_body
         assert (
             "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta"
@@ -2797,7 +2801,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
     assert (
-        "lm_head_dhidden_fast16bf_32768, lm_head_cooperative_cublaslt, lm_head_tk_dweight_28672, lm_head_tk_dweight_32768"
+        "lm_head_dhidden_fast16bf_32768, lm_head_cooperative_cublaslt, lm_head_graph_body_cublaslt, "
+        "lm_head_graph_body_cublaslt_dhidden, lm_head_graph_body_cublaslt_dweight, lm_head_tk_dweight_28672"
         in bench_source
     )
     assert "1.335573x stage.lm_head_backward.total_ms" in bench_source
@@ -2834,6 +2839,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_graph_body_cublaslt_dweight_launch_count" in speed_tool
     assert "lm_head_graph_body_tile_dhidden_fallback_count" in speed_tool
     assert "lm_head_graph_body_tile_dweight_fallback_count" in speed_tool
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN=1" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT=1" in bench_source
+    assert "lm_head_graph_body_cublaslt_dhidden_requested" in source
+    assert "lm_head_graph_body_cublaslt_dweight_requested" in source
+    assert "lm_head_graph_body_cublaslt_dhidden_enabled" in tile_ops_source
+    assert "lm_head_graph_body_cublaslt_dweight_enabled" in tile_ops_source
     assert "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in speed_tool

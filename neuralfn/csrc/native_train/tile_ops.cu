@@ -2020,6 +2020,24 @@ bool lm_head_graph_body_cublaslt_enabled() {
     return enabled;
 }
 
+bool lm_head_graph_body_cublaslt_dhidden_enabled() {
+    static const bool enabled =
+        lm_head_graph_body_cublaslt_enabled() ||
+        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN") ||
+        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN") ||
+        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN");
+    return enabled;
+}
+
+bool lm_head_graph_body_cublaslt_dweight_enabled() {
+    static const bool enabled =
+        lm_head_graph_body_cublaslt_enabled() ||
+        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT") ||
+        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT") ||
+        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT");
+    return enabled;
+}
+
 bool lm_head_true_fused_cooperative_enabled() {
     static const bool enabled = []() {
         const bool requested =
@@ -2273,14 +2291,15 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             stream);
     }
     const bool serial_graph_body = lm_head_graph_body_serial_enabled();
-    const bool cublaslt_graph_body = lm_head_graph_body_cublaslt_enabled();
+    const bool cublaslt_graph_body_dhidden = lm_head_graph_body_cublaslt_dhidden_enabled();
+    const bool cublaslt_graph_body_dweight = lm_head_graph_body_cublaslt_dweight_enabled();
     LmHeadCooperativeStreams& cooperative_streams = lm_head_cooperative_streams();
     if (!serial_graph_body && cooperative_streams.status == 0) {
         cudaEventRecord(cooperative_streams.ce_done, stream);
         cudaStreamWaitEvent(cooperative_streams.dhidden, cooperative_streams.ce_done, 0);
         cudaStreamWaitEvent(cooperative_streams.dweight, cooperative_streams.ce_done, 0);
         const bool cublaslt_dhidden_launched =
-            cublaslt_graph_body &&
+            cublaslt_graph_body_dhidden &&
             neuralfn::tile_cuda::cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
                 logits_bf16,
                 token_weight_bf16,
@@ -2304,7 +2323,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             g_lm_head_graph_body_cublaslt_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
         }
         const bool cublaslt_dweight_launched =
-            cublaslt_graph_body &&
+            cublaslt_graph_body_dweight &&
             neuralfn::tile_cuda::cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
                 hidden_bf16,
                 logits_bf16,
@@ -2336,7 +2355,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
         return;
     }
     const bool cublaslt_dhidden_launched =
-        cublaslt_graph_body &&
+        cublaslt_graph_body_dhidden &&
         neuralfn::tile_cuda::cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
             logits_bf16,
             token_weight_bf16,
@@ -2360,7 +2379,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
         g_lm_head_graph_body_cublaslt_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     }
     const bool cublaslt_dweight_launched =
-        cublaslt_graph_body &&
+        cublaslt_graph_body_dweight &&
         neuralfn::tile_cuda::cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
             hidden_bf16,
             logits_bf16,

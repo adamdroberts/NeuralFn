@@ -3185,3 +3185,14 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `1.010462x`. Keep `NFN_NATIVE_GPT_FAST_STARTUP=1` for
     startup-only/preflight workflows unless longer runs prove the first-step
     cost is amortized.
+  - 2026-06-28 split the rejected LM-head graph-body cuBLASLt bisection route
+    into dHidden-only and dWeight-only switches. Use
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt_dhidden`
+    or `lm_head_graph_body_cublaslt_dweight` to route only one graph-body GEMM
+    through the strided cuBLASLt path while leaving the other on the default
+    Tile launcher. Runtime JSON now reports
+    `lm_head_graph_body_cublaslt_dhidden_requested` and
+    `lm_head_graph_body_cublaslt_dweight_requested`, with the existing
+    cuBLASLt launch/fallback counters as route proof. These profiles remain
+    rejected until a same-script RTX 5090 gate proves one split beats the
+    default cached graph body.

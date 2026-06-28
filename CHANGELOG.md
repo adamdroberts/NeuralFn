@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: split the cached LM-head graph-body cuBLASLt
+  bisection route into independent dHidden and dWeight switches
+  (`NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN` and
+  `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT`) while preserving the
+  older all-on `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT` behavior. Runtime
+  JSON now reports the requested split booleans and the SM120 candidate wrapper
+  exposes `lm_head_graph_body_cublaslt_dhidden` and
+  `lm_head_graph_body_cublaslt_dweight` profiles, so the rejected all-on route
+  can be measured one GEMM at a time before any default is changed. Verified
+  with focused native GPT static coverage, native C++ rebuilds, the no-Torch
+  verifier, and a native startup smoke.
+
 - Native GPT LM-head diagnostics: full dense GPT runtime JSON now reports the
   strict true-fused LM-head section counters from the loaded Tile ops library:
   CE/dHidden/dWeight cycle totals, cooperative block counts, and cycles per

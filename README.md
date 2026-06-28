@@ -547,6 +547,15 @@ regressed train-loop wall time to `1.077251x`, steady-state CUDA-event step
 time to `1.083727x`, `stage.lm_head_backward.total_ms` to `1.335573x`, and
 `stage.lm_head_backward.cooperative.total_ms` to `1.477219x`.
 Those routes remain diagnostic-only.
+The cached LM-head graph-body cuBLASLt bisection can now isolate each GEMM with
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt_dhidden` or
+`lm_head_graph_body_cublaslt_dweight`, expanding to
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN=1` or
+`NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT=1`. Runtime JSON reports
+`lm_head_graph_body_cublaslt_dhidden_requested` and
+`lm_head_graph_body_cublaslt_dweight_requested` beside the existing launch and
+fallback counters, so same-script tests can separate the rejected all-on route
+into dHidden-only and dWeight-only evidence before any default is changed.
 Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds

@@ -14180,6 +14180,26 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT"}),
             false);
+    const bool lm_head_graph_body_cublaslt_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT",
+                              "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT",
+                              "NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT"}),
+            false);
+    const bool lm_head_graph_body_cublaslt_dhidden_requested =
+        lm_head_graph_body_cublaslt_requested ||
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN",
+                              "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN",
+                              "NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN"}),
+            false);
+    const bool lm_head_graph_body_cublaslt_dweight_requested =
+        lm_head_graph_body_cublaslt_requested ||
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT",
+                              "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT",
+                              "NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT"}),
+            false);
     const bool lm_head_true_fused_cooperative_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE",
@@ -24184,6 +24204,12 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_cublaslt_wrapper_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_cublaslt_wrapper_enabled\": "
         << (lm_head_cooperative_backward_cublaslt_wrapper_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_graph_body_cublaslt_requested\": "
+        << (lm_head_graph_body_cublaslt_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_graph_body_cublaslt_dhidden_requested\": "
+        << (lm_head_graph_body_cublaslt_dhidden_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_graph_body_cublaslt_dweight_requested\": "
+        << (lm_head_graph_body_cublaslt_dweight_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_symbol_available\": "
         << (lm_head_cooperative_backward_fused_kernel_symbol_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_raw_capability_available\": "
