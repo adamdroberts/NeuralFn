@@ -108,8 +108,10 @@ scripts when a builder is registered. Set
 the no-Torch gate has already passed. The 2026-06-28 no-Torch rerun after the
 CUDA toolkit refresh first failed because `build/nfn_gpt2_native_train` and
 `build/libnfn_native_train_tile_ops_tk.so` were stale, then passed with
-`--rebuild-stale` after rebuilding those two artifacts; the focused native GPT
-pytest suite now reports `111 passed, 2 skipped`.
+`--rebuild-stale` after rebuilding those two artifacts. The standalone focused
+native GPT pytest rerun reported `111 passed, 2 skipped`, and the full
+`tools/validate_sm120_cuda13.sh` gate passed with its pytest leg reporting
+`112 passed, 1 skipped`.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
 sample. A fresh 2026-06-28 5-step, 3-sample check without stage timing measured

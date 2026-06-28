@@ -74,9 +74,11 @@ Real training tensors must not pass through graph editor node objects.
   only for narrow CUDA-only bisections after the no-Torch gate already passed.
   The 2026-06-28 post-reinstall rerun first caught stale
   `build/nfn_gpt2_native_train` and `build/libnfn_native_train_tile_ops_tk.so`
-  artifacts, then passed after rebuilding them. The focused native GPT pytest
-  suite now reports `111 passed, 2 skipped`. The focused LM-head JSON still
-  reports `candidate_path_class: diagnostic-cuda-graph-wrapper`,
+  artifacts, then passed after rebuilding them. The standalone focused native
+  GPT pytest rerun reported `111 passed, 2 skipped`; the full
+  `tools/validate_sm120_cuda13.sh` gate passed and its pytest leg reported
+  `112 passed, 1 skipped`. The focused LM-head JSON still reports
+  `candidate_path_class: diagnostic-cuda-graph-wrapper`,
   `candidate_true_fused_capability: false`, and `true_fused_launch_count: 0`,
   so this is a clean CUDA 13.3 baseline, not strict LM-head completion.
 - [x] Prove the normal GPT wrapper crosses the compiled C++ boundary, not just
