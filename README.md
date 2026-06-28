@@ -654,9 +654,9 @@ defaults `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
 fail until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict body uses 32x32 shared-memory tiles for
 the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3.33
-RTX 5090 evidence at the current 28672-row trainer chunk still keeps it rejected
-(`6.155991x` slower than the current wrapper and `22.242162x` slower than the
-component reference). Focused benchmark JSON
+RTX 5090 post-reinstall evidence at the current 28672-row trainer chunk still
+keeps it rejected: `690.838257 ms`, `32.326054x` slower than the current wrapper
+and `22.231452x` slower than the component reference. Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_forced_production_debug`; it only reports

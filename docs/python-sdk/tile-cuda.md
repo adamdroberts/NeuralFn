@@ -2314,9 +2314,10 @@ rejected-by-default focused true-fused candidate measurement. It also defaults
 nonzero until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict cooperative body uses 32x32 shared-memory
 tiles for dHidden and dWeight after the CE phase, but the 2026-06-28 CUDA
-13.3.33 RTX 5090 trainer-chunk rerun at the current 28672-row chunk is still
-`6.155991x` slower than the current wrapper and `22.242162x` slower than the
-component reference, so it remains rejected by default. The resulting
+13.3.33 RTX 5090 post-reinstall trainer-chunk rerun at the current 28672-row
+chunk still took `690.838257 ms`: `32.326054x` slower than the current wrapper
+and `22.231452x` slower than the component reference, so it remains rejected by
+default. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a

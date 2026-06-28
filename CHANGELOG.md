@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: rechecked the strict true-fused LM-head candidate
+  after the CUDA reinstall on the dedicated RTX 5090. The trainer-chunk focused
+  run still proves `strict-true-fused-tile-kernel`, but the 32x32 body remains
+  rejected at `690.838257 ms`, `32.326054x` slower than the current CUDA Graph
+  wrapper and `22.231452x` slower than the CE+dHidden+dWeight component
+  reference. Verification: `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
+  NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=1
+  bash tools/bench_lm_head_backward_candidate.sh` on the dedicated RTX 5090.
+
 - Native GPT benchmarking: refreshed the throughput-prewarm evidence after the
   padded BF16 token-init default. `fast_startup_full` still remains rejected:
   setup improves to `0.669761x`, but train-loop wall regresses to `1.034057x`,
