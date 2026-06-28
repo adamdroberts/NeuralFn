@@ -8140,6 +8140,30 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--kernel-backend" not in high_level_aliases.stdout
     assert "--output " not in high_level_aliases.stdout
 
+    for catalog_flag in ("--list-templates", "--native-cuda-list-templates"):
+        catalog = subprocess.run(
+            [
+                str(unified),
+                "train",
+                "--base-model",
+                "gpt",
+                "--native-gpt-cli",
+                str(fake_gpt),
+                catalog_flag,
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert catalog.returncode == 0, catalog.stderr
+        assert "--model-family\ngpt" in catalog.stdout
+        assert "--list-templates" in catalog.stdout
+        assert "--native-cuda-list-templates" not in catalog.stdout
+        assert "--train-transformer-lm" not in catalog.stdout
+        assert "--dataset-alias" not in catalog.stdout
+        assert "TinyStories" not in catalog.stdout
+
     coverage = subprocess.run(
         [str(unified), "--list-models", "--json"],
         text=True,

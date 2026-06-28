@@ -266,6 +266,11 @@ bool has_native_train_action(const std::vector<std::string>& args) {
     return false;
 }
 
+bool has_template_catalog_action(const std::vector<std::string>& args) {
+    return has_forwarded_flag(args, "--list-templates") ||
+           has_forwarded_flag(args, "--native-cuda-list-templates");
+}
+
 void append_value_arg(std::vector<std::string>& args, std::string flag, std::string value) {
     args.push_back(std::move(flag));
     args.push_back(std::move(value));
@@ -769,6 +774,7 @@ int main(int argc, char** argv) {
     }
     if (
         dense_gpt &&
+        !has_template_catalog_action(forwarded) &&
         !has_any_forwarded_value_flag(forwarded, {"--dataset-alias", "--dataset-path"}) &&
         !has_forwarded_flag(forwarded, "--tinystories")
     ) {
