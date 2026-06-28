@@ -64,6 +64,12 @@ Real training tensors must not pass through graph editor node objects.
   candidates unless both are exactly `false`. This keeps benchmark promotion
   paths from accepting graph-editor tensor flow or Torch fallback while chasing
   kernel throughput parity.
+- [x] Make canonical llm.kittens parity runs median-based by default. After the
+  CUDA 13.3 WSL reinstall, one-sample runs could fail at sub-percent jitter
+  even with zero compute processes on the dedicated RTX 5090; the parity
+  wrapper now defaults to three measured samples plus one warmup sample so the
+  existing `median:` default gate is used unless a quick smoke explicitly sets
+  `NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0`.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
 - [x] Guard the Python SDK native-training boundary against accidental Python or
   shell launcher fallback. `NativeTrainRunConfig.strict_native_command` now

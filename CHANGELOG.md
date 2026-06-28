@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/bench_native_gpt_sm120_parity.sh` now defaults to three
+  measured samples and one warmup sample instead of a single measured sample.
+  This makes the canonical llm.kittens parity gate use the existing
+  stat-qualified median ratios by default, reducing one-sample jitter on the
+  dedicated RTX 5090 while preserving explicit one-sample smoke overrides with
+  `NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0`. Verification:
+  focused native GPT source test, dry-run parity plan, and `git diff --check`.
+
 - Native CLI startup: `nfn train`, `cli/scripts/train_gpt.py`, and
   `native_training_guard.py` now keep CUDA-visible-device alias resolution local
   to the script instead of importing `neuralfn.native_cuda_device` before

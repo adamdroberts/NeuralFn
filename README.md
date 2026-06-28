@@ -2548,12 +2548,14 @@ defaults to `1`, so the wrapper exits nonzero unless NeuralFn stays inside the
 bounded llm.kittens parity band. The default band is
 `train_loop_wall_ms_per_step=1.003`, plus
 `train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when CUDA-event loop
-timing is enabled. Multi-sample parity runs use paired median ratios for those
-default gates, which keeps an otherwise passing run from failing on one fast or
-slow reference sample; single-sample runs keep the paired speed tool's
-unqualified mean behavior. Set `NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000`
-and `NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide explicit
-whitespace separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
+timing is enabled. The canonical parity wrapper defaults to 10 steps, 3
+measured samples, and 1 warmup sample, so those default gates use paired median
+ratios and avoid failing on a single fast or slow reference sample. Set
+`NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0` only for quick smokes;
+single-sample runs keep the paired speed tool's unqualified mean behavior. Set
+`NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000` and
+`NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide explicit whitespace
+separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
 `NFN_SM120_MAX_CANDIDATE_RATIO`, when a diagnostic run must enforce exact
 no-slower-than-reference behavior. Prefix explicit gates with `mean:`,
 `median:`, `min:`, or `max:` when a diagnostic run needs a specific statistic.

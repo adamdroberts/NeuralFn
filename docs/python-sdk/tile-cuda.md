@@ -2417,10 +2417,12 @@ use `temperature=0` or `top_k=1` for deterministic greedy argmax output.
 Measured llm.kittens parity runs default to a bounded workstation parity band:
 `train_loop_wall_ms_per_step=1.003`, plus
 `train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when train-loop
-CUDA-event timing is enabled. Multi-sample parity runs evaluate the default
-gates on the paired median ratio to resist one-sample reference/candidate
-outliers; single-sample runs keep the paired speed tool's unqualified mean
-behavior. Set `NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000` and
+CUDA-event timing is enabled. The canonical wrapper defaults to 10 steps, 3
+measured samples, and 1 warmup sample, so the default gates use the paired
+median ratio to resist one-sample reference/candidate outliers. Set
+`NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0` only for quick smokes;
+single-sample runs keep the paired speed tool's unqualified mean behavior. Set
+`NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO=1.000` and
 `NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO=1.000`, or provide
 `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`, when
 an exact no-slower-than-reference diagnostic sweep is required. Prefix explicit
