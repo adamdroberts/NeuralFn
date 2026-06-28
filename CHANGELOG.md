@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT validation: after the CUDA 13.3 WSL reinstall, refreshed stale
+  `build/nfn_gpt2_native_train` and
+  `build/libnfn_native_train_tile_ops_tk.so` artifacts, confirmed the strict
+  no-Torch dependency/import guard, and reran the dedicated RTX 5090
+  llm.kittens parity gate. No product behavior changed; this records the
+  current validated workstation state and the remaining LM-head target, which
+  still reports `diagnostic-cuda-graph-wrapper` rather than a strict
+  true-fused Tile kernel.
+
+  Verification: `bash tools/build_native_gpt2_cli.sh
+  build/nfn_gpt2_native_train`; `bash tools/build_native_train_tile_ops.sh
+  build/libnfn_native_train_tile_ops_tk.so`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale`; and a live dedicated
+  RTX 5090 parity run with `NFN_SM120_PARITY_STEPS=3
+  NFN_SM120_PARITY_SAMPLES=2 NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_after_rebuild.json bash
+  tools/bench_native_gpt_sm120_parity.sh`, which passed the default median
+  gates at `1.001715x` train-loop wall and `1.001653x` steady-state CUDA-event
+  timing, with `graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies.
+
 - Native GPT benchmarking: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, a startup-only
   paired diagnostic that enables `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` for the

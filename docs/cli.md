@@ -1429,13 +1429,14 @@ single-sample runs keep the paired speed tool's unqualified mean behavior. Set
 `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO`, when an exact no-slower-than-reference
 diagnostic run is required. Explicit candidate ratios can use `mean:`,
 `median:`, `min:`, or `max:` prefixes.
-The 2026-06-28 dedicated RTX 5090 3-step, 3-sample no-stage refresh passed the
-default parity gate: NeuralFn measured `2446.557 ms/step` and `214297`
-tokens/sec versus llm.kittens at `2447.491 ms/step` and `214252` tokens/sec
-(`0.999639x` mean train-loop wall, `0.999637x` mean steady-state CUDA-event
-timing, `1.000228x` tokens/sec; median gates were `0.998426x` and
-`0.997491x`). That run kept the runtime contract clean with
-`graph_editor_tensor_flow=false` and `torch_required=false`.
+The post-CUDA-13.3 rebuild 2026-06-28 dedicated RTX 5090 3-step, 2-sample
+no-stage refresh passed the default parity gate: NeuralFn measured
+`2438.062 ms/step` and `215043` tokens/sec versus llm.kittens at
+`2433.930 ms/step` and `215431` tokens/sec. The paired median gates were
+`1.001715x` train-loop wall and `1.001653x` steady-state CUDA-event timing,
+within the default `1.003x` workstation band. That run kept the runtime
+contract clean with `graph_editor_tensor_flow=false`, `torch_required=false`,
+`optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies.
 Stage-timed parity runs are attribution diagnostics and can read behind the
 normal training loop: the 2026-06-28 dedicated RTX 5090 3-step/one-sample
 stage-timed rerun measured NeuralFn at `1.011556x` train-loop wall,

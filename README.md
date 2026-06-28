@@ -4101,6 +4101,16 @@ stale native artifacts with their mapped `tools/build_*.sh` scripts before the
 same no-Torch dependency/import gate continues. Keep
 `--skip-stale-artifacts` for deliberate dependency-only audits, not training
 readiness.
+On the 2026-06-28 CUDA 13.3 workstation recheck, stale
+`build/nfn_gpt2_native_train` and
+`build/libnfn_native_train_tile_ops_tk.so` artifacts were rebuilt with the
+targeted build scripts, then both `python tools/check_native_no_torch_deps.py`
+and `python tools/check_native_no_torch_deps.py --rebuild-stale` passed. The
+follow-up dedicated RTX 5090 llm.kittens parity run kept the native runtime
+contract green (`graph_editor_tensor_flow=false`, `torch_required=false`,
+`optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies)
+with median train-loop and steady-state CUDA-event ratios of `1.001715x` and
+`1.001653x`.
 For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
 It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
