@@ -4019,6 +4019,9 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
     values = payload.get("candidate_native_metric_values")
     if not isinstance(values, dict):
         values = {}
+    metrics = payload.get("candidate_native_metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
     observed_contract = any(
         key in values
         for key in (
@@ -4026,7 +4029,7 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             "torch_required",
             "optimized_kernel_contract_passed",
         )
-    )
+    ) or "train_loss_host_d2h_count" in metrics
     enabled = candidate_is_native or observed_contract
     results: list[dict[str, object]] = []
     if enabled:
@@ -4046,6 +4049,24 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                     "passed": passed,
                 }
             )
+        train_loss_host_d2h_mean = _metric_mean(metrics, "train_loss_host_d2h_count")
+        results.append(
+            {
+                "metric": "train_loss_host_d2h_count",
+                "expected": ["0"],
+                "observed": (
+                    [str(int(train_loss_host_d2h_mean))]
+                    if train_loss_host_d2h_mean is not None
+                    and train_loss_host_d2h_mean.is_integer()
+                    else (
+                        [str(train_loss_host_d2h_mean)]
+                        if train_loss_host_d2h_mean is not None
+                        else []
+                    )
+                ),
+                "passed": train_loss_host_d2h_mean == 0.0,
+            }
+        )
     failed = [item for item in results if item.get("passed") is False]
     return {
         "enabled": enabled,
@@ -4055,7 +4076,8 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             ""
             if not failed
             else "candidate native training must report graph_editor_tensor_flow=false "
-            "and torch_required=false and optimized_kernel_contract_passed=true"
+            "and torch_required=false and optimized_kernel_contract_passed=true "
+            "and train_loss_host_d2h_count=0"
         ),
     }
 
@@ -4151,8 +4173,14 @@ def print_native_runtime_contract_gate(payload: dict[str, object]) -> None:
             if isinstance(observed, list)
             else ""
         )
+        expected = result.get("expected")
+        expected_text = (
+            ",".join(str(item) for item in expected)
+            if isinstance(expected, list)
+            else str(expected or "")
+        )
         print(
-            f"    {result.get('metric', '')}: expected=false "
+            f"    {result.get('metric', '')}: expected={expected_text or 'missing'} "
             f"observed={observed_text or 'missing'} "
             f"passed={str(result.get('passed') is True).lower()}"
         )

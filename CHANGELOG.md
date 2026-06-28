@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/paired_kernel_speed.py` now includes
+  `train_loss_host_d2h_count=0` in the native runtime contract gate, alongside
+  `graph_editor_tensor_flow=false`, `torch_required=false`, and
+  `optimized_kernel_contract_passed=true`. SM120 native candidate benchmarks now
+  fail if the timed training path copies train loss back to the host, keeping
+  loss logging/eval work out of CUDA Tile kernel promotion measurements.
+  Verification: focused paired-speed runtime-contract pytest, focused native
+  GPT source tests, dry-run SM120 candidate plan, one-step RTX 5090 parity smoke,
+  and `git diff --check`.
+
 - Bench: `tools/bench_native_gpt_sm120_candidate.sh` now exposes
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=adamw_token_shadow_refresh`, comparing
   the default fused token-weight BF16 LM-head shadow AdamW refresh against the

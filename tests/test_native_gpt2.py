@@ -1433,8 +1433,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
     assert '"graph_editor_tensor_flow"' in speed_tool
     assert '"torch_required"' in speed_tool
+    assert '"train_loss_host_d2h_count"' in speed_tool
     assert "native_runtime_contract_gate" in speed_tool
     assert "candidate native training must report graph_editor_tensor_flow=false" in speed_tool
+    assert "and train_loss_host_d2h_count=0" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_count" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool
@@ -11660,6 +11662,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
+        "\"train_loss_host_d2h_count\":0,"
         "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )
@@ -11693,12 +11696,15 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert "native_runtime_contract_gate" in passing.stdout
     assert "graph_editor_tensor_flow: expected=false observed=false passed=true" in passing.stdout
     assert "torch_required: expected=false observed=false passed=true" in passing.stdout
+    assert "optimized_kernel_contract_passed: expected=true observed=true passed=true" in passing.stdout
+    assert "train_loss_host_d2h_count: expected=0 observed=0 passed=true" in passing.stdout
 
     candidate.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":true,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
+        "\"train_loss_host_d2h_count\":1,"
         "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )
@@ -11715,6 +11721,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert failing.returncode == 1
     assert "native runtime contract gate failed" in failing.stderr
     assert "graph_editor_tensor_flow: expected=false observed=true passed=false" in failing.stdout
+    assert "train_loss_host_d2h_count: expected=0 observed=1 passed=false" in failing.stdout
 
 
 def test_canonical_infer_gpt_wrapper_reports_generic_program_name() -> None:
