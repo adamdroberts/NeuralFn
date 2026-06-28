@@ -13778,7 +13778,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN",
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_PADDED_BF16_PATTERN",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_BF16_PATTERN"}),
-            false);
+            true);
     const bool fuse_token_weight_bf16_adamw_refresh_enabled =
         token_weight_bf16_shadow_enabled &&
         env_flag_enabled_or_default(

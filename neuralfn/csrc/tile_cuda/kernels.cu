@@ -318,7 +318,7 @@ bool token_weight_padded_bf16_pattern_enabled() {
       raw = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_PADDED_BF16_PATTERN");
     }
     if (raw == nullptr || raw[0] == '\0') {
-      return false;
+      return true;
     }
     return !(std::strcmp(raw, "0") == 0 || std::strcmp(raw, "false") == 0 ||
              std::strcmp(raw, "FALSE") == 0 || std::strcmp(raw, "off") == 0 ||

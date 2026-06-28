@@ -77,14 +77,15 @@ Runtime JSON reports
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
-`token_weight_padding_zero_launches_elided`. On the legacy initializer path,
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` is diagnostic-only: it
-stores precomputed BF16 shadow constants for public-vocab rows. The current
-CUDA 13.3.33 dedicated RTX 5090 same-script recheck improved startup wall to
-`0.971706x` and token-weight init to `0.963982x` versus the default padded
-conversion path, but kept default promotion rejected because
-candidate-over-llm.kittens train-loop regressed to `1.007196x` and tokens/sec
-fell to `0.992892x`.
+`token_weight_padding_zero_launches_elided`. The default padded initializer
+also stores precomputed BF16 shadow constants for public-vocab rows. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0` only for paired bisection
+against the older conversion-based padded BF16-shadow writer. The CUDA 13.3.33
+dedicated RTX 5090 same-script rerun promoted the pattern route after
+`setup.token_weight_init.total_ms` improved to `0.976915x`, `setup_wall_ms` to
+`0.993685x`, train-loop wall stayed inside the gate at `1.000153x`, and
+candidate-over-llm.kittens train-loop wall / tokens/sec passed at `0.996062x`
+and `1.003992x`.
 known-zero BF16 padding rows use direct `cudaMemsetAsync` when that runtime
 symbol is available, and runtime JSON reports
 `token_weight_bf16_padding_memset_count`.
@@ -1789,9 +1790,9 @@ copies the full token-weight matrix through host RAM. The default initializer
 uses CUDA Tile, vectorized float4 stores for GPT-sized tables, and a power-of-two
 deterministic value pattern for the full padded vocabulary table; direct
 low-level Tile ABI calls use that same vectorized default when no token-init
-environment variable is set. The default vector4 BF16-shadow writer keeps the
-conversion-based route because the precomputed-pattern variant regressed
-startup timing. Set `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
+environment variable is set. The default padded path also uses precomputed
+BF16 shadow constants for the public vocabulary rows. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
 `NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`, or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` only when comparing against
 that rejected BF16-pattern writer. Set

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Native GPT startup: promoted the fused padded token-weight BF16-pattern
+  initializer as the default. The dense GPT trainer and Tile CUDA library now
+  default `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN` /
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_BF16_PATTERN` on, with `=0` reserved for
+  paired bisection against the older conversion-based padded BF16-shadow writer.
+  The `token_weight_padded_bf16_pattern` benchmark profile is now an accepted
+  default-vs-legacy proof after the CUDA 13.3.33 dedicated RTX 5090 rerun
+  passed the same-script gates: `setup.token_weight_init.total_ms=0.976915x`,
+  `setup_wall_ms=0.993685x`, `train_loop_wall_ms_per_step=1.000153x`,
+  `train_tokens_per_second=0.999848x`, candidate-over-llm.kittens train-loop
+  wall `0.996062x`, and candidate-over-llm.kittens tokens/sec `1.003992x`.
+  Verification: focused native GPT pytest coverage, no-Torch dependency
+  verifier, GPU-backed Tile C ABI/true-fused tests, and the paired SM120
+  candidate benchmark.
+
 - Native GPT LM-head safety: production-shape dense GPT training no longer
   treats `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` as
   enough to integrate the current scalar strict true-fused LM-head body. Runtime

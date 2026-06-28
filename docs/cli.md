@@ -1659,15 +1659,14 @@ Leave the variables unset for the default build. The helper links the shared
 object with `-Bsymbolic`, so a candidate library loaded by a linked native
 trainer resolves its C ABI wrappers to its own C++ kernel implementations rather
 than the trainer's built-in default Tile symbols.
-The `token_weight_padded_bf16_pattern` startup candidate remains rejected after
-post-CUDA-13.3 dedicated RTX 5090 reruns. A 3-step, 2-sample check improved the
-target `setup.token_weight_init.total_ms` bucket to `0.953426x`, but still
-missed candidate-over-reference first-step CUDA-event timing at `1.000443x`.
-The canonical 3-step, 3-sample, 1-warmup check then passed candidate/reference
-throughput and first-step gates, but failed the target token-init bucket at
-`1.017866x` despite setup wall improving to `0.992765x`. Do not promote it as a
-startup fix until the token-init and candidate/reference gates both pass in the
-same script.
+The `token_weight_padded_bf16_pattern` startup candidate is now an accepted
+default-vs-legacy profile after the post-CUDA-13.3 dedicated RTX 5090 rerun.
+The 3-step, 3-sample, 1-warmup same-script gate promoted the precomputed
+BF16-shadow route with `setup.token_weight_init.total_ms=0.976915x`,
+`setup_wall_ms=0.993685x`, train-loop wall inside the gate at `1.000153x`, and
+candidate-over-llm.kittens train-loop wall / tokens/sec at `0.996062x` and
+`1.003992x`. Use `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0` only when
+bisecting against the older conversion-based padded BF16-shadow writer.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, and the NeuralFn side now receives

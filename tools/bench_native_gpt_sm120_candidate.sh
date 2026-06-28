@@ -1352,8 +1352,9 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1"
     ;;
   "token_weight_padded_bf16_pattern"|"token-weight-padded-bf16-pattern"|"token_weight_padded_pattern"|"token-weight-padded-pattern")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 reruns kept the padded token-weight BF16-pattern initializer rejected. A 3-step, 2-sample gate improved setup.token_weight_init.total_ms to 0.953426x but failed candidate-over-reference first-step CUDA-event timing at 1.000443x. The canonical 3-step, 3-sample, 1-warmup gate then passed candidate/reference throughput and first-step gates, but failed the target setup.token_weight_init.total_ms gate at 1.017866x despite setup_wall_ms improving to 0.992765x. Treat setup wins as allocation noise until token-init and candidate/reference gates both pass in the same script."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 post-reinstall 2026-06-28 3-step, 3-sample, 1-warmup same-script rerun promotes the padded token-weight BF16-pattern initializer as the default. It changed token_weight_init_strategy to device-vector4-strided-power2-deterministic-fused-bf16-pattern-shadow-padded-zero and passed all gates: setup.token_weight_init.total_ms=0.976915x, setup_wall_ms=0.993685x, train_loop_wall_ms_per_step=1.000153x, train_tokens_per_second=0.999848x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.996062x, and candidate-over-llm.kittens train_tokens_per_second=1.003992x."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002 train_loop_wall_ms_per_step=1.002}"

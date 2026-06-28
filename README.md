@@ -240,13 +240,15 @@ paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
 contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
 dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
 telemetry, and the default fused padded-vocab vector4-strided BF16-shadow
-token-weight initialization. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`
-only for paired bisection against the older separate padding-zero path. Set
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` only for rejected-candidate
-reproduction: the current CUDA 13.3.33 dedicated RTX 5090 recheck improved
-startup wall to `0.971706x` and token-weight init to `0.963982x`, but still
-failed the throughput/reference gate with candidate-over-llm.kittens train-loop
-`1.007196x` and tokens/sec `0.992892x`. Set
+token-weight initialization with precomputed BF16 shadow constants. Set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired bisection
+against the older separate padding-zero path. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0` only for paired bisection
+against the older conversion-based padded BF16-shadow writer. The CUDA 13.3.33
+dedicated RTX 5090 same-script rerun promoted the pattern route after it
+improved token-weight init to `0.976915x`, setup wall to `0.993685x`, stayed
+inside train-loop gates, and beat the llm.kittens reference at `0.996062x`
+train-loop wall / `1.003992x` tokens/sec. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
 Set `NFN_SM120_CUDA13_RUN_PARITY=1` after a CUDA toolkit or WSL driver change to
@@ -3218,7 +3220,7 @@ Prefer generic dense GPT environment names for current native runs. `NFN_NATIVE_
 
 Dense GPT transformer-LM training defaults `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` with `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`. This thresholded allocator keeps the large float and uint16 transformer arenas on regular `cudaMalloc`, routes only small late allocations through `cudaMallocAsync` / `cudaFreeAsync` when the CUDA runtime exports those symbols, and falls back to `cudaMalloc` on async allocation failure. Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` to restore the legacy all-`cudaMalloc` path, or raise `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES` only for allocator diagnostics. Runtime JSON reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, `device_cuda_malloc_async_max_bytes`, async symbol availability, allocation/free counts, fallback count, and threshold skip count. The SM120 wrapper profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_small` compares the promoted thresholded default against legacy `cudaMalloc`; CUDA 13.3.33 dedicated RTX 5090 gates measured setup wall `0.975293x`, train-loop wall `0.999566x`, steady-state CUDA-event time `0.999447x`, and tokens/sec `1.000439x`. The older all-async profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async` remains rejected because routing the large arenas through `cudaMallocAsync` regressed startup; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_float_arena` is the narrower rejected diagnostic for raising the threshold to `8000000000` bytes so the float arena alone uses async allocation.
 
-Dense GPT token-weight startup initialization keeps the runtime-flag strided padded BF16-shadow kernel as the default. A compile-time-specialized padded variant exists behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1`, but leave it disabled for normal training: the CUDA 13.3.33 dedicated RTX 5090 same-script startup gate rejected it because `setup.token_weight_init.total_ms` regressed to `1.021654x` mean and `setup_wall_ms` regressed to `1.006317x` mean. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_specialized` is therefore a rejected diagnostic profile for intentionally rerunning that comparison, while `token_weight_padded_bf16_pattern` remains the paired gate for deciding whether the precomputed BF16-pattern variant should become the default.
+Dense GPT token-weight startup initialization keeps the runtime-flag strided padded BF16-shadow kernel as the default, now using precomputed BF16 shadow constants for public vocabulary rows. A compile-time-specialized padded variant exists behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1`, but leave it disabled for normal training: the CUDA 13.3.33 dedicated RTX 5090 same-script startup gate rejected it because `setup.token_weight_init.total_ms` regressed to `1.021654x` mean and `setup_wall_ms` regressed to `1.006317x` mean. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_specialized` is therefore a rejected diagnostic profile for intentionally rerunning that comparison, while `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern` now compares the promoted precomputed-pattern default against the older conversion-based padded BF16-shadow writer.
 
 Dense GPT token host staging defaults to pageable host memory for the uint16 token/target upload arena, replacing the previous startup `cudaHostAlloc` with `malloc` while keeping the same contiguous `cudaMemcpyAsync` upload shape. The default pageable path does not require `cudaHostAlloc` / `cudaFreeHost` during CUDA runtime preflight; those symbols are required only when `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` explicitly restores the legacy pinned host arena for bisection. Runtime JSON reports `token_id_host_staging`, `token_id_pinned_host_enabled`, `token_u16_pinned_arena_cuda_host_alloc_count`, and `token_u16_pageable_arena_malloc_count`. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=pageable_token_host` compares the promoted pageable default against legacy pinned staging; the CUDA 13.3.33 dedicated RTX 5090 full 3-step gate measured `setup.token_arenas.total_ms=0.790184x`, `train_loop_wall_ms_per_step=1.000252x`, steady-state CUDA-event step time `1.000035x`, and `train_tokens_per_second=0.999750x`.
 
@@ -3271,19 +3273,20 @@ CE-padding-scrub route. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
 `cudaMemsetAsync` is available, the trainer now zeroes the padded BF16 rows
 directly instead of launching a float-to-BF16 conversion kernel over known-zero
 FP32 padding; JSON reports `token_weight_bf16_padding_memset_count`.
-The precomputed padded BF16-pattern variant remains diagnostic-only behind
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1`. Current CUDA 13.3 RTX 5090
-reruns did not promote it: a 3-step, 2-sample run improved
-`setup.token_weight_init.total_ms` to `0.953426x` but missed
-candidate-over-reference first-step CUDA-event timing at `1.000443x`, while
-the canonical 3-step, 3-sample, 1-warmup run passed candidate/reference
-throughput and first-step gates but failed the target token-init bucket at
-`1.017866x` despite setup wall improving to `0.992765x`.
+The precomputed padded BF16-pattern variant is now the default for the fused
+padded token-weight initializer. Current CUDA 13.3.33 RTX 5090 same-script
+reruns promoted it after the canonical 3-step, 3-sample, 1-warmup gate passed:
+`setup.token_weight_init.total_ms` improved to `0.976915x`, `setup_wall_ms` to
+`0.993685x`, train-loop wall stayed inside the gate at `1.000153x`, and
+candidate-over-llm.kittens train-loop wall / tokens/sec passed at `0.996062x`
+and `1.003992x`. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0` only for paired bisection
+against the older conversion-based padded BF16-shadow writer.
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` defaults on for dense GPT startup,
 using the vectorized token-weight initializer while preserving the deterministic
 power-of-two initialization contract and fused BF16 shadow write. The
-conversion-based vector4 BF16 shadow writer remains the default because the
-precomputed-pattern variant regressed startup timing. Set
+non-padded conversion-based vector4 BF16 shadow writer remains available for
+diagnostics. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
 `NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`, or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` only for paired startup
