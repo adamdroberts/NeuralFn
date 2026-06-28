@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 candidate workflow: added `lm_head_tk_dweight_28672` as an explicit
+  rejected profile for the current default LM-head row chunk. The profile
+  expands to
+  `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,28672,N,T`, so future
+  dWeight experiments can reproduce the current-shape TK route without
+  accidentally reusing the older 32768/49152-row evidence. README and CLI docs
+  now state that all LM-head TK dWeight profiles are diagnostic-only unless a
+  later same-script gate beats the native default.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_28672
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_tk_dweight_28672_candidate.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which rejected the route on
+  the dedicated RTX 5090 at `1.017069x` train-loop wall,
+  `1.017164x` steady-state CUDA-event step time, `1.069370x` LM-head backward,
+  `1.100283x` LM-head cooperative stage, and `0.983220x` tokens/sec.
+
 - LM-head benchmarking: the focused `build/lm_head_backward_bench` JSON now
   reports graph-body cuBLASLt launch counters and Tile fallback counters for
   dHidden and dWeight inside each baseline/candidate variant. This makes

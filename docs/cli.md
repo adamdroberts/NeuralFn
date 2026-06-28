@@ -1924,13 +1924,16 @@ train-loop wall time to `1.003097x`, steady-state CUDA-event step time to
 `1.000836x`, block backward to `1.010331x`, and MLP projection to `1.004728x`.
 Use `lm_head_logits_bf16_fallback_49152` only for the rejected historical
 49152-row fallback route.
-`lm_head_tk_dweight_32768` expands to
-`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T` for the current
-legacy 32768-row LM-head dWeight bucket. Runtime JSON reports
-`linear_tk_dweight_gemm_count`; the dedicated RTX 5090 5-step, 3-sample
-same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
-the route at `1.022262x` train-loop wall time and `1.279309x`
-`stage.lm_head_backward.dweight.total_ms`.
+`lm_head_tk_dweight_28672` expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,28672,N,T` for the current
+default LM-head dWeight bucket. Runtime JSON reports
+`linear_tk_dweight_gemm_count`; the CUDA 13.3.33 dedicated RTX 5090 3-step,
+2-sample stage-timed gate routed the shape through TK but rejected it at
+`1.017069x` train-loop wall time, `1.017164x` steady-state CUDA-event step
+time, `1.069370x` LM-head backward time, `1.100283x` LM-head cooperative time,
+and `0.983220x` tokens/sec. Use `lm_head_tk_dweight_32768` and
+`lm_head_tk_dweight_49152` only for the older rejected LM-head dWeight bucket
+reproductions; real runs require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
 `lm_head_cublaslt_dhidden_32768` expands to
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and heuristic `0` for the
