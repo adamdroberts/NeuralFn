@@ -513,9 +513,12 @@ timing, prewarming the LM-head graph, and forcing the cooperative sequence
 wrapper all still failed the same-script llm.kittens parity gate. Disabling the
 cooperative LM-head wrapper entirely is also catalogued as
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off`; the
-CUDA 13.3 dedicated RTX 5090 10-step parity gate ran the direct
-CE+dHidden+dWeight schedule but regressed NeuralFn versus llm.kittens to
-`1.019533x` train-loop wall and `1.016084x` steady-state CUDA-event timing.
+CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample current-default rerun ran the
+direct CE+dHidden+dWeight schedule and improved setup wall to `0.868531x`, but
+it still regressed train-loop wall to `1.010400x`, first-step CUDA-event time
+to `1.028008x`, tokens/sec to `0.989710x`, candidate-over-llm.kittens
+train-loop wall to `1.005850x`, and candidate-over-llm.kittens tokens/sec to
+`0.994488x`.
 The full-trainer cuBLASLt cooperative wrapper diagnostic is also available as
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_cublaslt`, expanding to
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT=1`. It proves the full GPT loop can

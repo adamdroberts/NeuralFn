@@ -626,12 +626,13 @@ Real training tensors must not pass through graph editor node objects.
     `0.999870x` tokens/sec.
   - 2026-06-25 catalogued
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off` as
-    the rejected direct CE+dHidden+dWeight fallback. The 10-step llm.kittens
-    parity gate with
-    `NFN_SM120_PARITY_CANDIDATE_ENV="NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0"`
-    ran the direct schedule but failed at `1.019533x` train-loop wall and
-    `1.016084x` steady-state CUDA-event timing, so disabling the graph wrapper
-    is not a parity fix.
+    the rejected direct CE+dHidden+dWeight fallback. A 2026-06-28 CUDA 13.3.33
+    dedicated RTX 5090 current-default 3-step, 2-sample no-stage rerun improved
+    setup wall to `0.868531x`, but rejected disabling the graph wrapper because
+    train-loop wall regressed to `1.010400x`, first-step CUDA-event time to
+    `1.028008x`, tokens/sec dropped to `0.989710x`, candidate-over-llm.kittens
+    train-loop wall was `1.005850x`, and candidate-over-llm.kittens tokens/sec
+    was `0.994488x`. Disabling the graph wrapper is still not a parity fix.
   - 2026-06-24 hardened `tools/bench_native_gpt_sm120_parity.sh` against
     no-op profile evidence: it now exits before GPU work when
     `NFN_SM120_PARITY_CANDIDATE_PROFILE` or `NFN_SM120_PARITY_PROFILE` is set.

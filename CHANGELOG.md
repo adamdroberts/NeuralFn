@@ -4816,18 +4816,24 @@ Future updates should append new entries here rather than replacing older notes.
 - Catalogued the direct LM-head classifier/matmul fallback as a rejected SM120
   candidate profile. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off`
   expands to `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` and now requires
-  the rejected-profile opt-in for real GPU runs. This preserves the 2026-06-25
-  evidence that simply disabling the diagnostic CUDA Graph wrapper does not
-  close the llm.kittens parity gap.
+  the rejected-profile opt-in for real GPU runs. The latest 2026-06-28
+  CUDA 13.3.33 current-default rerun still rejects this route: setup wall
+  improved to `0.868531x`, but train-loop wall regressed to `1.010400x`,
+  first-step CUDA-event time to `1.028008x`, tokens/sec to `0.989710x`,
+  candidate-over-llm.kittens train-loop wall to `1.005850x`, and
+  candidate-over-llm.kittens tokens/sec to `0.994488x`.
 
   Verification:
-  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
-  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
-  tests/test_native_gpt2.py -q -k candidate_wrapper_covers_attention_and_ordering_profiles`;
-  earlier same-script parity evidence:
-  `NFN_SM120_PARITY_CANDIDATE_ENV="NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0"
-  bash tools/bench_native_gpt_sm120_parity.sh`, which failed at `1.019533x`
-  train-loop wall and `1.016084x` steady-state CUDA-event timing.
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_off
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_coop_off_after_llmk_ce_20260628.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which intentionally failed
+  the rejected candidate gates after writing the measured JSON.
 
 - Added a targeted failure diagnostic to the SM120 llm.kittens parity wrapper.
   `tools/bench_native_gpt_sm120_parity.sh` still exits nonzero when the metric

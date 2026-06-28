@@ -1236,7 +1236,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_cooperative_backward_off"|"lm-head-cooperative-backward-off"|"lm_head_direct_classifier_matmul"|"lm-head-direct-classifier-matmul")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 10-step llm.kittens parity gate disabled the default cooperative LM-head CUDA Graph wrapper and ran the direct CE+dHidden+dWeight schedule, but regressed NeuralFn versus llm.kittens to 1.019533x train-loop wall and 1.016084x steady-state CUDA-event timing; keep this route diagnostic-only until a real fused classifier-backward kernel replaces the wrapper."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample no-stage gate disabled the default cooperative LM-head CUDA Graph wrapper and ran the direct CE+dHidden+dWeight schedule. It improved setup_wall_ms to 0.868531x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.010400x, first-step CUDA-event time to 1.028008x, train_tokens_per_second dropped to 0.989710x, candidate-over-llm.kittens train-loop wall was 1.005850x, and candidate-over-llm.kittens tokens/sec was 0.994488x. Keep the cached CUDA Graph wrapper default until a real fused/reference-aligned classifier-backward path replaces it."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0"
     ;;
   "lm_head_cooperative_no_loss_backward"|"lm-head-cooperative-no-loss-backward"|"lm_head_cooperative_backward_no_loss"|"lm-head-cooperative-backward-no-loss")
