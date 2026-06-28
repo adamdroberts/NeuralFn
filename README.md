@@ -4088,8 +4088,12 @@ transformer-LM smoke, and then runs `python -m pytest tests/test_native_gpt2.py
 `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
 benchmark JSON at `/tmp/nfn_sm120_cuda13_baseline.json`. Bench-enabled
 validation fails when the emitted JSON no longer reports the promoted CUDA Tile
-dense-GPT route contract; set `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only
-when intentionally collecting a drifted diagnostic run.
+dense-GPT route contract, including `graph_editor_tensor_flow=false`,
+`torch_required=false`, `optimized_kernel_contract_passed=true`, zero train-loss
+host D2H copies, the fused Tile AdamW optimizer route, the CUDA Graph LM-head
+wrapper, and the current no-loss vec8 normal-store BF16/u16 CE kernel. Set
+`NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
+drifted diagnostic run.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

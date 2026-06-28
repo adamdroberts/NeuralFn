@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now treats the
+  bench-enabled JSON contract as an exact current dense-GPT native route check.
+  It fails if training reports graph-editor tensor flow, Torch dependency,
+  a failed optimized-kernel contract, train-loss host D2H copies, or an older
+  LM-head CE strategy instead of the promoted no-loss vec8 normal-store BF16/u16
+  Tile kernel. The README and Tile-CUDA SDK docs now describe the same stricter
+  health gate and the current token-weight init strategy.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`; `env
+  NFN_SM120_CUDA13_RUN_NO_TORCH=0 NFN_SM120_CUDA13_RUN_PYTEST=0
+  NFN_SM120_CUDA13_RUN_BENCH=1 NFN_SM120_CUDA13_BENCH_STEPS=1
+  NFN_SM120_CUDA13_BENCH_SAMPLES=1
+  NFN_SM120_CUDA13_INCLUDE_LLMK_REFERENCE=0
+  NFN_SM120_CUDA13_PROFILE_DIR=none
+  NFN_SM120_CUDA13_JSON_OUT=/tmp/nfn_sm120_cuda13_validator_contract_smoke.json
+  bash tools/validate_sm120_cuda13.sh`, which passed the new benchmark
+  contract on the dedicated RTX 5090.
+
 - Native no-Torch verifier: the GPT-2-evo family entrypoint check now uses a
   dedicated `nfn_gpt2_evo_native_train` stub and asserts that command
   inspection reaches the final dense GPT CUDA Tile delegate with

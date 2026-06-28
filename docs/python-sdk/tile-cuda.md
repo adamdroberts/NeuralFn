@@ -2404,16 +2404,22 @@ transformer-LM smoke, and runs the focused native pytest suite. Set
 benchmark.
 When the benchmark leg is enabled, `validate_sm120_cuda13.sh` also checks the
 emitted paired benchmark JSON for the promoted dense-GPT route contract:
+`graph_editor_tensor_flow: "false"`, `torch_required: "false"`,
+`optimized_kernel_contract_passed: "true"`,
+`train_loss_host_d2h_count: 0`,
 `optimizer_tile_strategy: "tile-size-1024-sumsq-scale-adamw"`,
 `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`, a
-promoted specialized BF16/u16 `lm_head_ce_kernel_strategy`, successful
+current promoted no-loss vec8 normal-store BF16/u16
+`lm_head_ce_kernel_strategy:
+"no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`, successful
 `lm_head_fused_graph_prewarm_success_count`, pointer-aware
 `lm_head_fused_graph_prewarm_duplicate_skip_count` telemetry,
 `block_backward_input_linear_strategy: "tk-sm120-bf16-dinput"`,
 `block_backward_weight_linear_strategy:
 "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate"`, and
 `token_weight_init_strategy:
-"device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"`. Set
+"device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"`.
+Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
 drifted diagnostic benchmark.
 The parity wrapper does not expand named native candidate profiles. If

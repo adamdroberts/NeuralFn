@@ -128,6 +128,22 @@ def metric_mean(name):
 
 checks = [
     (
+        value("graph_editor_tensor_flow") == "false",
+        "native benchmark JSON must report graph_editor_tensor_flow=false",
+    ),
+    (
+        value("torch_required") == "false",
+        "native benchmark JSON must report torch_required=false",
+    ),
+    (
+        value("optimized_kernel_contract_passed") == "true",
+        "native benchmark JSON must report optimized_kernel_contract_passed=true",
+    ),
+    (
+        metric_mean("train_loss_host_d2h_count") == 0.0,
+        "training loss accumulation must stay device-resident with train_loss_host_d2h_count=0",
+    ),
+    (
         value("optimizer_tile_strategy") == "tile-size-1024-sumsq-scale-adamw",
         "optimizer_tile_strategy must stay on the fused Tile AdamW path",
     ),
@@ -138,13 +154,8 @@ checks = [
     ),
     (
         value("lm_head_ce_kernel_strategy")
-        in {
-            "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores",
-            "no-loss-specialized-dlogits-vec8-loads-scalar-stores",
-            "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores",
-            "default-specialized-loss-bins-vec8-loads-scalar-stores",
-        },
-        "LM-head CE must use a promoted specialized BF16/u16 Tile route",
+        == "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores",
+        "LM-head CE must stay on the current promoted no-loss vec8 normal-store BF16/u16 Tile route",
     ),
     (
         metric_mean("lm_head_fused_graph_prewarm_success_count") is not None
@@ -166,8 +177,8 @@ checks = [
     ),
     (
         value("token_weight_init_strategy")
-        == "device-vector4-strided-power2-deterministic-fused-bf16-shadow",
-        "token-weight init must stay on the default vector4-strided BF16-shadow CUDA Tile route",
+        == "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero",
+        "token-weight init must stay on the default vector4-strided padded-zero BF16-shadow CUDA Tile route",
     ),
 ]
 
