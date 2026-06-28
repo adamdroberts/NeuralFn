@@ -3693,6 +3693,13 @@ def _safe_ratio(numerator: float | None, denominator: float | None) -> float | N
     return numerator / denominator
 
 
+def _sum_optional_metrics(*values: float | None) -> float | None:
+    observed = [value for value in values if value is not None]
+    if not observed:
+        return None
+    return float(sum(observed))
+
+
 def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str, object]:
     metrics = payload.get("candidate_native_metrics")
     values = payload.get("candidate_native_metric_values")
@@ -3776,6 +3783,22 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
     graph_body_total_node_replays_mean = _metric_mean(
         metrics,
         "lm_head_fused_graph_body_node_replay_total",
+    )
+    graph_body_cublaslt_dhidden_launch_mean = _metric_mean(
+        metrics,
+        "lm_head_graph_body_cublaslt_dhidden_launch_count",
+    )
+    graph_body_cublaslt_dweight_launch_mean = _metric_mean(
+        metrics,
+        "lm_head_graph_body_cublaslt_dweight_launch_count",
+    )
+    graph_body_tile_dhidden_fallback_mean = _metric_mean(
+        metrics,
+        "lm_head_graph_body_tile_dhidden_fallback_count",
+    )
+    graph_body_tile_dweight_fallback_mean = _metric_mean(
+        metrics,
+        "lm_head_graph_body_tile_dweight_fallback_count",
     )
     if graph_body_total_node_replays_mean is None and (
         graph_replay_mean is not None and graph_body_nodes_per_replay_mean is not None
@@ -3864,6 +3887,18 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "graph_body_dweight_nodes_per_replay_mean": _metric_mean(
             metrics,
             "lm_head_fused_graph_body_dweight_node_count_per_replay",
+        ),
+        "graph_body_cublaslt_dhidden_launch_mean": graph_body_cublaslt_dhidden_launch_mean,
+        "graph_body_cublaslt_dweight_launch_mean": graph_body_cublaslt_dweight_launch_mean,
+        "graph_body_tile_dhidden_fallback_mean": graph_body_tile_dhidden_fallback_mean,
+        "graph_body_tile_dweight_fallback_mean": graph_body_tile_dweight_fallback_mean,
+        "graph_body_cublaslt_launch_mean": _sum_optional_metrics(
+            graph_body_cublaslt_dhidden_launch_mean,
+            graph_body_cublaslt_dweight_launch_mean,
+        ),
+        "graph_body_tile_fallback_mean": _sum_optional_metrics(
+            graph_body_tile_dhidden_fallback_mean,
+            graph_body_tile_dweight_fallback_mean,
         ),
         "candidate_reference_gate_failed": candidate_reference_gate_failed,
         "reference_classifier_fusion_scope": (
@@ -3993,6 +4028,12 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
         "graph_body_ce_nodes_per_replay_mean",
         "graph_body_dhidden_nodes_per_replay_mean",
         "graph_body_dweight_nodes_per_replay_mean",
+        "graph_body_cublaslt_dhidden_launch_mean",
+        "graph_body_cublaslt_dweight_launch_mean",
+        "graph_body_tile_dhidden_fallback_mean",
+        "graph_body_tile_dweight_fallback_mean",
+        "graph_body_cublaslt_launch_mean",
+        "graph_body_tile_fallback_mean",
     ):
         value = target.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):

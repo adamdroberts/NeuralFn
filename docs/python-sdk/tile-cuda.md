@@ -2551,8 +2551,11 @@ can become a production gate. The paired speed summary also reports
 `graph_capture_success_per_replay_mean`,
 `graph_upload_success_per_replay_mean`,
 `graph_prewarm_success_per_replay_mean`, and
-`graph_body_total_node_replays_mean` so a CUDA Tile candidate can distinguish
-setup/capture movement from replay-body work in the same JSON block.
+`graph_body_total_node_replays_mean`. It also derives
+`graph_body_cublaslt_launch_mean` and `graph_body_tile_fallback_mean` from the
+dHidden/dWeight graph-body route counters, so a CUDA Tile candidate can
+distinguish setup/capture movement, cuBLASLt graph-body experiments, and
+default Tile fallback work in the same JSON block.
 The historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
 is rejected by default for real candidate-wrapper launches after the CUDA
 13.3 dedicated RTX 5090 confirmation changed the route but missed strict train-loop,

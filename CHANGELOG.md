@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT benchmarks: `tools/paired_kernel_speed.py` now derives
+  `graph_body_cublaslt_launch_mean` and `graph_body_tile_fallback_mean` inside
+  the `native_lm_head_true_fused_target` summary from the LM-head CUDA Graph
+  body dHidden/dWeight route counters. This keeps strict LM-head benchmark
+  failures pointed at the exact graph body route that still needs replacement.
+  Verification: focused paired-speed LM-head target test and
+  `git diff --check`.
+
 - Native GPT: added LM-head CUDA Graph body route counters for the diagnostic
   fused-kernel ABI. Tile ops now count cuBLASLt dHidden/dWeight launches and
   Tile dHidden/dWeight fallbacks inside the cached graph body, the dense GPT

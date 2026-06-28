@@ -5187,6 +5187,10 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
         "lm_head_fused_graph_body_ce_node_count_per_replay": 1,
         "lm_head_fused_graph_body_dhidden_node_count_per_replay": 1,
         "lm_head_fused_graph_body_dweight_node_count_per_replay": 1,
+        "lm_head_graph_body_cublaslt_dhidden_launch_count": 0,
+        "lm_head_graph_body_cublaslt_dweight_launch_count": 0,
+        "lm_head_graph_body_tile_dhidden_fallback_count": 1,
+        "lm_head_graph_body_tile_dweight_fallback_count": 1,
     }
     candidate_payload = json.loads(json.dumps(baseline_payload))
     candidate_payload["timing"]["train_loop_wall_ms"] = 12.0
@@ -5252,6 +5256,12 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert target["graph_prewarm_success_per_replay_mean"] == 1.0
     assert target["graph_body_nodes_per_replay_mean"] == 3.0
     assert target["graph_body_total_node_replays_mean"] == 3.0
+    assert target["graph_body_cublaslt_dhidden_launch_mean"] == 0.0
+    assert target["graph_body_cublaslt_dweight_launch_mean"] == 0.0
+    assert target["graph_body_tile_dhidden_fallback_mean"] == 1.0
+    assert target["graph_body_tile_dweight_fallback_mean"] == 1.0
+    assert target["graph_body_cublaslt_launch_mean"] == 0.0
+    assert target["graph_body_tile_fallback_mean"] == 2.0
     assert target["candidate_reference_gate_failed"] is True
     assert (
         target["reference_classifier_fusion_scope"]
@@ -5281,6 +5291,8 @@ def test_paired_kernel_speed_tool_reports_lm_head_true_fused_target() -> None:
     assert target["strict_true_fused_gate_scope"] == "experimental-strict-single-kernel-gate"
     assert "native_lm_head_true_fused_target:" in proc.stdout
     assert "true_fused_capability=False" in proc.stdout
+    assert "graph_body_tile_fallback_mean=2.000000" in proc.stdout
+    assert "graph_body_cublaslt_launch_mean=0.000000" in proc.stdout
     assert "path_class=fused-ce-dlogits-separate-classifier-matmuls" in proc.stdout
     assert "strict gate:" in proc.stdout
     assert "path_class=strict-true-fused-tile-kernel" in proc.stdout
