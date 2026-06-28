@@ -1856,23 +1856,24 @@ LM-head classifier route changes instead of relying only on coarse stage timing.
 This keeps the LM-head classifier path auditable while the next kernel step
 replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` is the default
+no-loss CE/dlogits kernel for optimizer-only dense GPT steps. It mirrors the
+llm.kittens SM120 classifier store policy with vec8 BF16 loads plus streaming
+vec8 stores, and the matching
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
-adds a diagnostic no-loss CE/dlogits kernel that mirrors the llm.kittens SM120
-classifier store policy for the current no-loss optimizer-step path: vec8 BF16
-loads plus streaming vec8 stores. It expands to
-`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps
+profile compares that default against
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0` while keeping
 `--train-loss-every-steps 0`. Runtime JSON reports
 `lm_head_ce_no_loss_llmk_style_specialized_requested`,
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
-no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep it
-diagnostic-only. The CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step,
-2-sample rerun after rebuilding the native selector proved the route but failed
-the strict default-vs-legacy gate at `1.000256x` train-loop wall and
-`0.999750x` train tokens/sec. A separate parity rerun with the route active
-still failed full-trainer parity at `1.002592x` train-loop wall and `1.002692x`
-steady-state event time, so the next required work remains the true fused
-classifier/dHidden/dWeight Tile kernel.
+no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. A CUDA 13.3.33
+dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample no-stage rerun
+measured `0.999669x` train-loop wall, `0.999849x` steady-state CUDA-event wall,
+`1.000333x` train tokens/sec, `0.997332x` candidate-over-llm.kittens train-loop
+wall, and `1.002269x` candidate-over-llm.kittens tokens/sec, so this is now the
+reference-aligned CE/dlogits default. The strict single-kernel
+classifier/dHidden/dWeight Tile route remains experimental.
 Dense GPT training now requests the non-strict cooperative LM-head backward
 route by default. On current CUDA 13.3 RTX 5090 builds this selects the
 diagnostic CUDA Graph/wrapper path when the strict callable symbol is present:
@@ -1942,12 +1943,13 @@ named benchmark profile
 a candidate run must require the future true-fused native LM-head backward
 kernel before training starts. The SM120 wrapper treats this named profile as a
 strict ABI preflight probe, not a metric-gated speed candidate. The current
-llm.kittens-style classifier/matmul parity route remains a diagnostic runtime
-route and does not satisfy this strict guard, so strict runs fail instead of
-falling back to wrapper replay, Torch, or graph-editor tensor flow; the
-metadata and training-loop failure messages explicitly name that parity probe as
-diagnostic-only. The generic `NativeGptRunConfig` / compatibility
-`NativeGpt2RunConfig` field
+llm.kittens-style CE/dlogits route plus separate classifier matmuls is the
+reference-aligned default, but it does not satisfy this strict single-kernel
+guard. Strict runs fail instead of falling back to wrapper replay, Torch, or
+graph-editor tensor flow, and the metadata plus training-loop failure messages
+explicitly state that the reference-aligned route is not the future strict
+true-fused classifier/dHidden/dWeight kernel. The generic `NativeGptRunConfig`
+/ compatibility `NativeGpt2RunConfig` field
 `require_cooperative_lm_head_backward=True`, direct
 `cli/scripts/train_gpt.py`, direct `cli/scripts/train_gpt_native.py`, and
 `nfn-native-train` all forward the same compiled flag; the
@@ -3862,18 +3864,20 @@ dedicated RTX 5090 rerun measured the default-specialized route at `0.975099x`
 train-loop wall, `0.976966x` steady-state CUDA-event wall, `1.025547x`
 tokens/sec, and `0.911191x` LM-head backward versus the older generic no-loss
 CE+dlogits kernel.
-`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` is now the
-default CUDA Tile kernel for the same no-loss CE+dlogits path. It keeps vec8
-BF16 loads but writes aligned vec8 BF16 gradients with normal stores instead of
-scalar stores, and reports
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1` remains the
+accepted rollback gate for the same no-loss CE+dlogits path when the
+llm.kittens-style route is disabled. It keeps vec8 BF16 loads but writes aligned
+vec8 BF16 gradients with normal stores instead of scalar stores, and reports
 `lm_head_ce_kernel_strategy:
 "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`. The matching
 same-script profile is
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_vec8_normal_store_specialized`,
-which compares the default against
+which compares the normal-store route against
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0`.
-Set that env var to `0` only for scalar-store rollback diagnostics. A CUDA
-13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed rerun measured
+Set `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0` to reproduce
+this route as the current non-streaming fallback; set the normal-store env var
+to `0` only for scalar-store rollback diagnostics. A CUDA 13.3.33 dedicated RTX
+5090 3-step, 2-sample stage-timed rerun measured
 `0.999856x` native train-loop wall, `0.999483x` steady-state CUDA-event wall,
 `0.999986x` LM-head backward, `1.000147x` tokens/sec,
 `0.999042x` candidate-over-llm.kittens train-loop wall, and `1.001246x`

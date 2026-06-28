@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT kernels: promoted the no-loss llm.kittens-style LM-head
+  CE/dlogits store route to the default optimizer-step classifier path,
+  superseding the earlier CUDA 13.3 rejection note. The native trainer and Tile
+  CUDA selector now default
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` /
+  `NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`, while `=0`
+  remains the rollback bisection path. The accepted
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
+  profile compares the llm.kittens-style vec8-load plus streaming-vec8-store
+  CE/dlogits kernel against the prior normal-store route, with
+  `--train-loss-every-steps 0` so validation/loss-bin tails are not part of the
+  timing. The strict `--require-cooperative-lm-head-backward` guard still
+  requires the future single Tile classifier/dHidden/dWeight kernel; the
+  promoted route is the reference-aligned fused CE/dlogits stage plus separate
+  optimized logits/dHidden/dWeight matmuls.
+
+  Verification: reran the accepted profile on the dedicated RTX 5090 with
+  CUDA 13.3.33 using a current-default 3-step, 2-sample no-stage paired gate:
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_llmk_ce_current_recheck_20260628.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`. It measured `0.999669x`
+  train-loop wall, `0.999849x` steady-state CUDA-event wall, `1.000333x`
+  tokens/sec, `0.997332x` candidate-over-llm.kittens train-loop wall, and
+  `1.002269x` candidate-over-llm.kittens tokens/sec.
+
 - Bench: refreshed the rejected `layernorm_affine_row_chunk_64` route after the
   CUDA 13.3.33 dedicated RTX 5090 reinstall. The same-script 3-step, 2-sample
   native/reference gate still proves the route by changing
@@ -1440,10 +1471,12 @@ Future updates should append new entries here rather than replacing older notes.
   2048-token default, Python bytecode compilation for touched CLI modules, and
   `git diff --check`.
 
-- Native GPT: rechecked and kept rejected the no-loss llm.kittens-style
-  LM-head CE/dlogits store route. The
-  `lm_head_ce_no_loss_llmk_style_specialized` profile remains diagnostic-only
-  and opt-in through `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`.
+- Native GPT: earlier CUDA 13.3.33 measurement of the no-loss
+  llm.kittens-style LM-head CE/dlogits store route. This result is superseded
+  by the 2026-06-28 promotion entry above; it is retained as the prior failed
+  gate evidence. At the time, the `lm_head_ce_no_loss_llmk_style_specialized`
+  profile remained diagnostic-only and opt-in through
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`.
   Verification: rebuilt the Tile ops library and linked trainer after the CUDA
   13.3.33 reinstall, reran the dedicated RTX 5090 5-step, 2-sample
   default-vs-legacy gate, and confirmed the route was active but failed strict

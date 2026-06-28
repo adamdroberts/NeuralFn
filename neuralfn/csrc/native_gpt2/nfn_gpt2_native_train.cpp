@@ -4623,7 +4623,7 @@ bool print_tile_plan(
         !cooperative_lm_head_backward_enabled) {
         plan_error =
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
-            "the llm.kittens-style classifier/matmul parity probe is diagnostic-only and does not "
+            "the llm.kittens-style CE/dlogits route plus separate classifier matmuls is not "
             "satisfy this strict true-fused requirement; required next step: replace row-chunked "
             "classifier plus separate dHidden/dWeight GEMMs with a cooperative classifier/dHidden/dWeight kernel";
     }
@@ -13381,7 +13381,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED",
                               "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED",
                               "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED"}),
-            false);
+            true);
     const bool lm_head_ce_no_loss_llmk_style_specialized_enabled =
         lm_head_ce_no_loss_llmk_style_specialized_requested &&
         lm_head_ce_bf16_vec_loads_enabled &&
@@ -22427,7 +22427,7 @@ int run_transformer_lm_training_json(
         !lm_head_cooperative_backward_kernel_enabled) {
         error =
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
-            "the llm.kittens-style classifier/matmul parity probe is diagnostic-only and does not "
+            "the llm.kittens-style CE/dlogits route plus separate classifier matmuls is not "
             "satisfy this strict true-fused requirement; required next step: replace row-chunked "
             "classifier plus separate dHidden/dWeight GEMMs with a cooperative classifier/dHidden/dWeight kernel";
         passed = false;

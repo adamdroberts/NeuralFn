@@ -526,11 +526,14 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_DEFAULTS+=("train_loop_wall_ms_per_step=1.000" "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002")
     ;;
   "lm_head_ce_no_loss_llmk_style_specialized"|"lm-head-ce-no-loss-llmk-style-specialized"|"ce_bf16_no_loss_llmk_style_specialized"|"ce-bf16-no-loss-llmk-style-specialized")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step, 2-sample same-script rerun after rebuilding the native selector proved the no-loss llm.kittens-style CE route but failed the strict default-vs-legacy gate: train_loop_wall_ms_per_step=1.000256x and train_tokens_per_second=0.999750x. A separate llm.kittens parity rerun with the route active still failed full-trainer parity at train_loop_wall_ms_per_step=1.002592x and train_loop_cuda_event_steady_state_wall_ms_per_step=1.002692x, so keep it diagnostic-only until the true fused classifier/dHidden/dWeight Tile kernel lands."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    DEFAULT_VS_LEGACY_PROFILE=1
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample no-stage rerun promoted the no-loss llm.kittens-style CE route as the default. It changed lm_head_ce_kernel_strategy from no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores to no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores and measured train_loop_wall_ms_per_step=0.999669x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.999849x, train_tokens_per_second=1.000333x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.997332x, and candidate-over-llm.kittens train_tokens_per_second=1.002269x. The default remains the reference-aligned fused CE/dlogits route with separate optimized logits/dHidden/dWeight stages; the strict single-kernel LM-head classifier remains experimental."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
   "lm_head_ce_no_loss_vec8_normal_store_specialized"|"lm-head-ce-no-loss-vec8-normal-store-specialized"|"ce_bf16_no_loss_vec8_normal_store_specialized"|"ce-bf16-no-loss-vec8-normal-store-specialized")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

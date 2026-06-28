@@ -3048,7 +3048,16 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert "--train-loss-every-steps" in ce_no_loss_llmk_payload["candidate_command"]
     assert "0" in ce_no_loss_llmk_payload["candidate_command"]
-    assert ce_no_loss_llmk_payload["metric_ratio_gates"]["enabled"] is False
+    assert (
+        ce_no_loss_llmk_payload["metadata"]["candidate_gate_scope"]
+        == "default-vs-legacy"
+    )
+    assert ce_no_loss_llmk_payload["metric_ratio_gates"]["enabled"] is True
+    assert any(
+        result["metric"] == "train_loop_wall_ms_per_step"
+        and result["max_ratio"] == 1.0
+        for result in ce_no_loss_llmk_payload["metric_ratio_gates"]["results"]
+    )
 
     loss_bins_output_path = tmp_path / "candidate-loss-bins-dry-run.json"
     loss_bins_env = os.environ.copy()
