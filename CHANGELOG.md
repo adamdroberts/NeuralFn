@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 CUDA 13.3 validation evidence: reran the default
+  `tools/validate_sm120_cuda13.sh` path after the validator/no-Torch rebuild
+  changes. The gate passed the no-Torch artifact/import scan, linked Tile CUDA
+  smoke checks, one-step runtime contract, LM-head backward benchmark, and
+  `tests/test_native_gpt2.py` (`110 passed, 1 skipped`). The summary recorded
+  `graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, `train_loss_host_d2h_count=0`, and
+  LM-head candidate/baseline ratio `0.999803x`.
+
+  Verification: `bash tools/validate_sm120_cuda13.sh`.
+
 - Native no-Torch verifier: `tools/check_native_no_torch_deps.py
   --rebuild-stale` now attempts the registered artifact rebuild command when a
   required artifact is missing, not only when an existing artifact is older than
