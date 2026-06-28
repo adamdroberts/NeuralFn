@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: added LM-head CUDA Graph body route counters for the diagnostic
+  fused-kernel ABI. Tile ops now count cuBLASLt dHidden/dWeight launches and
+  Tile dHidden/dWeight fallbacks inside the cached graph body, the dense GPT
+  runtime reports those four fields in JSON, and `tools/paired_kernel_speed.py`
+  includes them in native metric extraction and hot-route summaries. This does
+  not promote the rejected cuBLASLt graph-body route or close the strict
+  true-fused LM-head TODO; it makes future same-script candidates prove exactly
+  which body ran inside the graph wrapper. Verification: focused native GPT
+  telemetry tests, shell syntax checks, C++ trainer build, and
+  `git diff --check`.
+
 - Native GPT: added a dense GPT CUDA Tile `--smoke-nvfp4-pack` preflight and
   SDK/wrapper `smoke_nvfp4_pack` handoff. The compiled C++ trainer now loads
   `nfn_native_tile_float32_to_nvfp4_packed` and

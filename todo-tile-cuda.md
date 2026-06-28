@@ -2448,6 +2448,7 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   graph-runtime shims. `tests/test_tile_cuda_gpu.py` remains skipped in this
   environment, so it is not a live CUDA regression signal.
 - [ ] Close the remaining SM120 parity gap with new kernel work, not more default-switch promotion. The next high-value implementation target is the LM-head classifier/backward contract reported in runtime JSON: fuse or otherwise co-schedule row-chunked BF16 logits, public-vocab CE/dlogits, dHidden, and dWeight so the default path is closer to llm.kittens' full-resident fused classifier without triggering the full-logit memory cliff.
+  - 2026-06-28 added graph-body route counters for the diagnostic LM-head CUDA Graph wrapper: runtime JSON and paired speed summaries now report cuBLASLt dHidden/dWeight launch counts and Tile dHidden/dWeight fallback counts inside the graph body. This keeps `lm_head_graph_body_cublaslt` and future body candidates measurable, but the true fused LM-head replacement remains unchecked above.
   - 2026-06-23 added the dedicated linear-backward microbench to keep the next
     kernel work honest: candidate dInput/dWeight symbols for block backward and
     LM-head can now be timed against the current C ABI without dataset loading,

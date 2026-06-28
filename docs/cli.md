@@ -1298,6 +1298,12 @@ sequence counters mean the diagnostic wrapper or graph fallback path ran.
 `lm_head_fused_graph_thread_cache_hit_count` counts hot training-loop replays
 that reused the small per-thread graph exec cache without re-entering the
 mutex-protected graph cache scan.
+Graph-body route counters
+`lm_head_graph_body_cublaslt_dhidden_launch_count`,
+`lm_head_graph_body_cublaslt_dweight_launch_count`,
+`lm_head_graph_body_tile_dhidden_fallback_count`, and
+`lm_head_graph_body_tile_dweight_fallback_count` distinguish cuBLASLt graph-body
+experiments from default Tile fallback inside the same CUDA Graph wrapper.
 Full-loop native GPT JSON also reports
 `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats it as a hot route counter. Strict

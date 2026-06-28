@@ -10842,6 +10842,10 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_fused_graph_replay_count = 0;
     std::int64_t lm_head_fused_graph_replay_success_count = 0;
     std::int64_t lm_head_fused_graph_fallback_count = 0;
+    std::int64_t lm_head_graph_body_cublaslt_dhidden_launch_count = 0;
+    std::int64_t lm_head_graph_body_cublaslt_dweight_launch_count = 0;
+    std::int64_t lm_head_graph_body_tile_dhidden_fallback_count = 0;
+    std::int64_t lm_head_graph_body_tile_dweight_fallback_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_attempt_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_success_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_duplicate_skip_count = 0;
@@ -11168,6 +11172,10 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_lm_head_prob_only_dhidden_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_prob_only_dweight_target_correction_bf16_bits",
         "nfn_native_tile_lm_head_prob_only_combined_target_correction_bf16_bits",
+        "nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count",
+        "nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count",
+        "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count",
+        "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count",
         "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count",
         "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count",
         "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count",
@@ -11824,6 +11832,10 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_fused_graph_replay_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_replay_success_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_fused_graph_fallback_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_graph_body_cublaslt_dhidden_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_graph_body_cublaslt_dweight_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_graph_body_tile_dhidden_fallback_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_graph_body_tile_dweight_fallback_count_fn = nullptr;
     TileOptimizerTileSizeFn optimizer_tile_size_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
@@ -12467,6 +12479,14 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_fused_graph_replay_success_count");
                 lm_head_fused_graph_fallback_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_fused_graph_fallback_count");
+                lm_head_graph_body_cublaslt_dhidden_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count");
+                lm_head_graph_body_cublaslt_dweight_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count");
+                lm_head_graph_body_tile_dhidden_fallback_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count");
+                lm_head_graph_body_tile_dweight_fallback_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count");
                 optimizer_tile_size_fn = load_symbol<TileOptimizerTileSizeFn>(
                     tile_handle, "nfn_native_tile_optimizer_tile_size");
                 attention_stats_reset();
@@ -22111,6 +22131,22 @@ int run_transformer_lm_training_json(
     if (lm_head_fused_graph_fallback_count_fn != nullptr) {
         lm_head_fused_graph_fallback_count = lm_head_fused_graph_fallback_count_fn();
     }
+    if (lm_head_graph_body_cublaslt_dhidden_launch_count_fn != nullptr) {
+        lm_head_graph_body_cublaslt_dhidden_launch_count =
+            lm_head_graph_body_cublaslt_dhidden_launch_count_fn();
+    }
+    if (lm_head_graph_body_cublaslt_dweight_launch_count_fn != nullptr) {
+        lm_head_graph_body_cublaslt_dweight_launch_count =
+            lm_head_graph_body_cublaslt_dweight_launch_count_fn();
+    }
+    if (lm_head_graph_body_tile_dhidden_fallback_count_fn != nullptr) {
+        lm_head_graph_body_tile_dhidden_fallback_count =
+            lm_head_graph_body_tile_dhidden_fallback_count_fn();
+    }
+    if (lm_head_graph_body_tile_dweight_fallback_count_fn != nullptr) {
+        lm_head_graph_body_tile_dweight_fallback_count =
+            lm_head_graph_body_tile_dweight_fallback_count_fn();
+    }
     const bool lm_head_ce_loss_bin_reduction_runtime_enabled =
         lm_head_classifier_loss_bin_launch_count > 0;
     const bool lm_head_ce_no_loss_runtime_enabled =
@@ -23293,6 +23329,14 @@ int run_transformer_lm_training_json(
                     ? lm_head_classifier_backward_graph_body_dweight_node_count_fn()
                     : 0))
         << ",\n"
+        << "  \"lm_head_graph_body_cublaslt_dhidden_launch_count\": "
+        << lm_head_graph_body_cublaslt_dhidden_launch_count << ",\n"
+        << "  \"lm_head_graph_body_cublaslt_dweight_launch_count\": "
+        << lm_head_graph_body_cublaslt_dweight_launch_count << ",\n"
+        << "  \"lm_head_graph_body_tile_dhidden_fallback_count\": "
+        << lm_head_graph_body_tile_dhidden_fallback_count << ",\n"
+        << "  \"lm_head_graph_body_tile_dweight_fallback_count\": "
+        << lm_head_graph_body_tile_dweight_fallback_count << ",\n"
         << "  \"lm_head_fused_graph_fallback_count\": "
         << lm_head_fused_graph_fallback_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_attempt_count\": "

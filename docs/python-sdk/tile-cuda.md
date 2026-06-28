@@ -181,6 +181,12 @@ diagnostic sequence wrapper or graph fallback path.
 `lm_head_fused_graph_thread_cache_hit_count` reports hot graph replays that
 reused the small per-thread graph exec cache without taking the
 mutex-protected graph cache lookup.
+Graph-body route counters
+`lm_head_graph_body_cublaslt_dhidden_launch_count`,
+`lm_head_graph_body_cublaslt_dweight_launch_count`,
+`lm_head_graph_body_tile_dhidden_fallback_count`, and
+`lm_head_graph_body_tile_dweight_fallback_count` distinguish cuBLASLt graph-body
+experiments from default Tile fallback inside the same CUDA Graph wrapper.
 The capture-only
 `nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16`
 ABI is also available for diagnostics. Dense GPT JSON reports

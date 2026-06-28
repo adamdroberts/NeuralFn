@@ -346,6 +346,10 @@ std::int64_t nfn_native_tile_lm_head_fused_graph_cache_entry_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_replay_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_replay_success_count();
 std::int64_t nfn_native_tile_lm_head_fused_graph_fallback_count();
+std::int64_t nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count();
+std::int64_t nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count();
+std::int64_t nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count();
+std::int64_t nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count();
 
 int nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16(
     std::uint16_t* logits_bf16,

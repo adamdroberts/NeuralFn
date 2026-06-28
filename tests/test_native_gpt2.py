@@ -2306,12 +2306,24 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_fused_graph_replay_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_replay_success_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count" in tile_ops_header
+    assert "g_lm_head_graph_body_cublaslt_dhidden_launch_count" in tile_ops_source
+    assert "g_lm_head_graph_body_cublaslt_dweight_launch_count" in tile_ops_source
+    assert "g_lm_head_graph_body_tile_dhidden_fallback_count" in tile_ops_source
+    assert "g_lm_head_graph_body_tile_dweight_fallback_count" in tile_ops_source
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_classifier_true_fused_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
     assert "lm_head_fused_graph_upload_success_count" in source
     assert "lm_head_fused_graph_upload_failure_count" in source
     assert "lm_head_fused_graph_thread_cache_hit_count" in source
+    assert "lm_head_graph_body_cublaslt_dhidden_launch_count" in source
+    assert "lm_head_graph_body_cublaslt_dweight_launch_count" in source
+    assert "lm_head_graph_body_tile_dhidden_fallback_count" in source
+    assert "lm_head_graph_body_tile_dweight_fallback_count" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
     assert "lm_head_fused_graph_prewarm_dedup_enabled" in source
@@ -2498,6 +2510,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_fused_graph_body_ce_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_body_dhidden_node_replay_total" in speed_tool
     assert "lm_head_fused_graph_body_dweight_node_replay_total" in speed_tool
+    assert "lm_head_graph_body_cublaslt_dhidden_launch_count" in speed_tool
+    assert "lm_head_graph_body_cublaslt_dweight_launch_count" in speed_tool
+    assert "lm_head_graph_body_tile_dhidden_fallback_count" in speed_tool
+    assert "lm_head_graph_body_tile_dweight_fallback_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in speed_tool

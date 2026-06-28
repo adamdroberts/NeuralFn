@@ -1980,6 +1980,10 @@ std::atomic<std::int64_t> g_lm_head_fused_graph_thread_cache_hit_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_replay_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_replay_success_count{0};
 std::atomic<std::int64_t> g_lm_head_fused_graph_fallback_count{0};
+std::atomic<std::int64_t> g_lm_head_graph_body_cublaslt_dhidden_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_graph_body_cublaslt_dweight_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_graph_body_tile_dhidden_fallback_count{0};
+std::atomic<std::int64_t> g_lm_head_graph_body_tile_dweight_fallback_count{0};
 
 struct LmHeadGraphLocalStats {
     std::int64_t cache_hit_count = 0;
@@ -2133,6 +2137,10 @@ void reset_lm_head_cooperative_sequence_stats() {
     g_lm_head_fused_graph_replay_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_replay_success_count.store(0, std::memory_order_relaxed);
     g_lm_head_fused_graph_fallback_count.store(0, std::memory_order_relaxed);
+    g_lm_head_graph_body_cublaslt_dhidden_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_graph_body_cublaslt_dweight_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_graph_body_tile_dhidden_fallback_count.store(0, std::memory_order_relaxed);
+    g_lm_head_graph_body_tile_dweight_fallback_count.store(0, std::memory_order_relaxed);
     reset_lm_head_graph_local_stats();
 }
 
@@ -2212,6 +2220,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
                 row_stride,
                 cooperative_streams.dhidden);
         if (!cublaslt_dhidden_launched) {
+            g_lm_head_graph_body_tile_dhidden_fallback_count.fetch_add(1, std::memory_order_relaxed);
             neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
                 logits_bf16,
                 token_weight_bf16,
@@ -2220,6 +2229,8 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
                 hidden_dim,
                 row_stride,
                 cooperative_streams.dhidden);
+        } else {
+            g_lm_head_graph_body_cublaslt_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
         }
         const bool cublaslt_dweight_launched =
             cublaslt_graph_body &&
@@ -2234,6 +2245,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
                 dweight_beta,
                 cooperative_streams.dweight);
         if (!cublaslt_dweight_launched) {
+            g_lm_head_graph_body_tile_dweight_fallback_count.fetch_add(1, std::memory_order_relaxed);
             neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
                 hidden_bf16,
                 logits_bf16,
@@ -2243,6 +2255,8 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
                 row_stride,
                 dweight_beta,
                 cooperative_streams.dweight);
+        } else {
+            g_lm_head_graph_body_cublaslt_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
         }
         cudaEventRecord(cooperative_streams.dhidden_done, cooperative_streams.dhidden);
         cudaEventRecord(cooperative_streams.dweight_done, cooperative_streams.dweight);
@@ -2262,6 +2276,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             row_stride,
             stream);
     if (!cublaslt_dhidden_launched) {
+        g_lm_head_graph_body_tile_dhidden_fallback_count.fetch_add(1, std::memory_order_relaxed);
         neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
             logits_bf16,
             token_weight_bf16,
@@ -2270,6 +2285,8 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             hidden_dim,
             row_stride,
             stream);
+    } else {
+        g_lm_head_graph_body_cublaslt_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     }
     const bool cublaslt_dweight_launched =
         cublaslt_graph_body &&
@@ -2284,6 +2301,7 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             dweight_beta,
             stream);
     if (!cublaslt_dweight_launched) {
+        g_lm_head_graph_body_tile_dweight_fallback_count.fetch_add(1, std::memory_order_relaxed);
         neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
             hidden_bf16,
             logits_bf16,
@@ -2293,6 +2311,8 @@ void launch_lm_head_classifier_backward_graph_body_bf16_u16(
             row_stride,
             dweight_beta,
             stream);
+    } else {
+        g_lm_head_graph_body_cublaslt_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -2638,6 +2658,22 @@ std::int64_t nfn_native_tile_lm_head_fused_graph_replay_success_count() {
 std::int64_t nfn_native_tile_lm_head_fused_graph_fallback_count() {
     return g_lm_head_fused_graph_fallback_count.load(std::memory_order_relaxed) +
         lm_head_graph_local_stats().fallback_count;
+}
+
+std::int64_t nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count() {
+    return g_lm_head_graph_body_cublaslt_dhidden_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count() {
+    return g_lm_head_graph_body_cublaslt_dweight_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count() {
+    return g_lm_head_graph_body_tile_dhidden_fallback_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count() {
+    return g_lm_head_graph_body_tile_dweight_fallback_count.load(std::memory_order_relaxed);
 }
 
 int nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16(

@@ -1971,7 +1971,12 @@ ops symbols report zero in trainer-side summaries; current microbench builds
 require the graph counter ABI so baseline and candidate variants both carry
 capture/replay/fallback evidence. `lm_head_fused_graph_thread_cache_hit_count`
 counts hot replays that reused the small per-thread graph exec cache without
-taking the graph-cache mutex/vector-scan path. This graph body is now the
+taking the graph-cache mutex/vector-scan path. Runtime JSON and paired speed
+summaries also split graph-body dHidden/dWeight work into
+`lm_head_graph_body_cublaslt_*_launch_count` and
+`lm_head_graph_body_tile_*_fallback_count`, so the rejected cuBLASLt graph-body
+profile can prove whether it actually used cuBLASLt inside the cached graph.
+This graph body is now the
 default diagnostic LM-head route for native GPT training, but it still does not
 satisfy the strict true-fused LM-head kernel gate. Successful strict graph
 replay does not increment the
