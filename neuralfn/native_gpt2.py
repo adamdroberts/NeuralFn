@@ -128,7 +128,7 @@ class NativeGpt2RunConfig:
     recompute: int = 0
     zero_stage: int = 1
     resume: int = 0
-    cuda_visible_devices: str = "dedicated"
+    cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
     dataset_alias: str | None = None
     template_name: str = "gpt"
@@ -661,7 +661,7 @@ def native_gpt2_checkpoint_sampler_argv(
 
 def native_gpt2_checkpoint_sampler_env(
     *,
-    cuda_visible_devices: str = "dedicated",
+    cuda_visible_devices: str = "0",
     cuda_device_max_connections: str = "1",
 ) -> dict[str, str]:
     """Return environment defaults for native GPT checkpoint sampling."""
@@ -713,7 +713,7 @@ def run_native_gpt2_checkpoint_sampler(
     seed: int = 1337,
     cli: str | None = None,
     encoding_name: str = "gpt2",
-    cuda_visible_devices: str = "dedicated",
+    cuda_visible_devices: str = "0",
     cuda_device_max_connections: str = "1",
     runner: str = "auto",
 ) -> subprocess.CompletedProcess[str]:

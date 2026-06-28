@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: normal SDK, CLI, checkpoint-sampler, and SM120 workstation
+  launchers now default `CUDA_VISIBLE_DEVICES` to ordinal `0` instead of the
+  `dedicated` selector. This avoids spawning `nvidia-smi` on the regular
+  training path for the workstation setup where the RTX 5090 is the dedicated
+  compute GPU. The explicit `dedicated`, `auto`, and `dedicated-auto` aliases
+  remain available for benchmark wrappers and load-evidence runs that need the
+  display-disabled GPU probe. Verification: focused native GPT device-default
+  tests, shell syntax checks, C++ SM120 launcher build/help smoke, and
+  `git diff --check`.
+
 - Native GPT benchmarks: `tools/paired_kernel_speed.py` now derives
   `graph_body_cublaslt_launch_mean` and `graph_body_tile_fallback_mean` inside
   the `native_lm_head_true_fused_target` summary from the LM-head CUDA Graph

@@ -118,7 +118,7 @@ std::string select_display_disabled_cuda_device() {
 std::string resolve_cuda_visible_devices_default() {
     std::string requested = env_first(
         {"NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES", "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "NFN_SM120_CUDA_VISIBLE_DEVICES"},
-        "dedicated");
+        "0");
     std::string normalized = lower(trim(requested));
     if (normalized.empty() || normalized == "none" || normalized == "off") {
         return {};

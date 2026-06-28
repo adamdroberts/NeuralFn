@@ -37,6 +37,13 @@ Real training tensors must not pass through graph editor node objects.
   builds `build/nfn_train_gpt_sm120`, and `tools/build_native_gpt2_all.sh`
   includes it so workstation GPT runs can use the same defaults without Bash or
   Python startup before execing the native CUDA Tile trainer.
+- [x] Default normal native GPT launcher/SDK device routing to CUDA ordinal `0`.
+  `NativeTrainRunConfig`, native GPT checkpoint sampling, `train_gpt.py`,
+  `nfn train`, the native training guard, `tools/train_gpt_sm120.sh`, and the
+  compiled SM120 launcher now avoid the `dedicated` selector unless explicitly
+  requested, so the regular workstation path does not spawn `nvidia-smi` before
+  launching CUDA Tile training. Benchmark wrappers keep their explicit
+  `dedicated` defaults when they need selected-GPU load evidence.
 - [x] Add a generic compiled dense GPT launcher. `tools/build_train_gpt_cli.sh`
   builds `build/nfn_train_gpt`, `tools/build_native_gpt2_all.sh` and
   `tools/rebuild_native_sm120.sh` include it, and

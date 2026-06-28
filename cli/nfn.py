@@ -857,7 +857,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         and _resolve_direct_native_train_family_cli(model) is not None
     )
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     native_execution_flags = {

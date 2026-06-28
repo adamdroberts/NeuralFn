@@ -106,14 +106,14 @@ compiled-CLI handoff directly from a dataset alias/path, leaving shard metadata
 inspection to the C++ resolver. When that alias-only config is passed through
 the C++ binding, the binding executes `compiled_cli_argv` instead of the raw external-trainer argv so SDK `runner="auto"` keeps the no-Python shard resolver path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
 inspect/check or run the NeuralFn-owned raw Tile GPT plan. Native GPT configs
-and native checkpoint sampling default `cuda_visible_devices="dedicated"` and
+and native checkpoint sampling default `cuda_visible_devices="0"` and
 `cuda_device_max_connections="1"` before launching subprocess, launcher,
 compiled-CLI, or binding runs; the C++ binding uses `posix_spawnp()` instead of
 `fork()` and defaults `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
-The `dedicated` selector resolves through `nvidia-smi` to a display-disabled
-CUDA GPU and falls back to the first visible NVIDIA GPU if the query is
-unavailable. Pass `cuda_visible_devices="0"` or set `CUDA_VISIBLE_DEVICES`
-when you intentionally need the old hard ordinal.
+The explicit `dedicated` selector remains available when a benchmark needs
+`nvidia-smi` to choose a display-disabled CUDA GPU, but normal SDK training
+uses ordinal `0` to avoid that startup probe when `CUDA_VISIBLE_DEVICES` is
+unset.
 Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
 `"compiled-cli"` through `run_native_gpt_checkpoint_sampler()` /
 `run_native_gpt2_checkpoint_sampler()`, plus `temperature`, `top_k`,
@@ -279,13 +279,11 @@ helper appends that flag once, accepts either existing CLI spelling without
 duplicating it, and raises for non-dense families such as `llama`. Current builds
 still fail the guard because the LM-head path is a diagnostic CUDA Graph wrapper
 rather than a true fused classifier/dHidden/dWeight Tile kernel.
-The CLI subprocess fallback also defaults to the `dedicated` device selector,
-resolves it to a CUDA-visible ordinal, and sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
-only when the caller has not supplied those environment variables; set
-`NativeTrainRunConfig.cuda_visible_devices` to an explicit ordinal such as `"0"`
-or set the environment to target another CUDA GPU. This is a breaking default
-change from the earlier hard
-`CUDA_VISIBLE_DEVICES=0` generic native SDK fallback. Use
+The CLI subprocess fallback also defaults to CUDA ordinal `0` and sets
+`CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
+environment variables; set `NativeTrainRunConfig.cuda_visible_devices` to
+`"dedicated"` for the opt-in display-disabled GPU probe, use another explicit
+ordinal, or set the environment to target another CUDA GPU. Use
 `exec_native_train(config)` when a
 generic SDK launcher should `execvpe` the selected compiled native trainer and
 remove the Python parent process entirely; keep `run_native_train(...)` when you

@@ -701,7 +701,7 @@ def test_native_gpt_layer_evo_candidate_loss_stays_device_resident() -> None:
     assert "layer_evo_candidate_loss_host_roundtrips_elided" in source
 
 
-def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
+def test_native_training_guard_sets_fast_cuda_ordinal_default() -> None:
     source = (
         Path(__file__).resolve().parents[1]
         / "cli"
@@ -710,7 +710,7 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
     ).read_text(encoding="utf-8")
 
     assert "resolve_cuda_visible_devices_value" in source
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
@@ -723,7 +723,7 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
     ).read_text(encoding="utf-8")
 
     assert "resolve_cuda_visible_devices_value" in source
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
 
@@ -748,6 +748,7 @@ def test_native_cuda_device_resolves_dedicated_to_display_disabled_gpu(
     assert native_cuda_device_module.resolve_cuda_visible_devices_value("dedicated") == "2"
     assert native_cuda_device_module.resolve_cuda_visible_devices_value("auto") == "2"
     assert native_cuda_device_module.resolve_cuda_visible_devices_value("3") == "3"
+    assert native_cuda_device_module.resolve_cuda_visible_devices_value("0") == "0"
     assert calls
 
 
@@ -914,7 +915,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
     assert "resolve_cuda_visible_devices_value" in train_gpt_source
-    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))' in train_gpt_source
+    assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in train_gpt_source
     assert "DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED" in native_train_sdk_source
     assert "nfn_gpt_native_train_linked" in native_train_sdk_source
     assert "nfn_gpt_native_train_linked" in nfn_source

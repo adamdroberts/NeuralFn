@@ -57,7 +57,7 @@ class NativeTrainRunConfig:
     model_family: str = "gpt"
     args: tuple[str, ...] = ()
     native_train_cli: str | None = None
-    cuda_visible_devices: str = "dedicated"
+    cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
     require_cooperative_lm_head_backward: bool = False
     strict_native_command: bool = True
