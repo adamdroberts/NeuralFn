@@ -242,7 +242,10 @@ so reference timings do not accidentally resolve a conda/Torch CUDA runtime.
 Tune it with `NFN_SM120_CUDA13_PARITY_STEPS`,
 `NFN_SM120_CUDA13_PARITY_SAMPLES`, `NFN_SM120_CUDA13_PARITY_WARMUP`,
 `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
-`NFN_SM120_CUDA13_PARITY_JSON_OUT`.
+`NFN_SM120_CUDA13_PARITY_JSON_OUT`. If `NFN_SM120_CUDA13_PARITY_STEPS=1`, the
+validator disables the parity ratio gate by default because one-step smokes do
+not emit steady-state timing; set `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only
+when intentionally checking that failure path.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
 the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
 gates, but was still flat/slightly slower versus the current linked native
@@ -4147,7 +4150,10 @@ wrapper, and the current no-loss vec8 normal-store BF16/u16 CE kernel. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
 drifted diagnostic run. Set `NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct
 llm.kittens parity gate when the reference binary/runtime path itself needs
-validation.
+validation. For a quick one-step wiring smoke, set
+`NFN_SM120_CUDA13_PARITY_STEPS=1`; the validator leaves the runtime checks on
+but disables the ratio gate unless `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is
+set explicitly.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

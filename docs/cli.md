@@ -2477,6 +2477,10 @@ driver change to add the direct llm.kittens parity gate; tune it with
 `NFN_SM120_CUDA13_PARITY_JSON_OUT`. The parity wrapper keeps the llm.kittens
 side on `/usr/local/cuda/lib64:/usr/lib/wsl/lib` through
 `NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH` unless that variable is set empty.
+One-step validator smokes (`NFN_SM120_CUDA13_PARITY_STEPS=1`) disable the ratio
+gate by default because they do not produce steady-state timing; set
+`NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that
+failure path.
 
 For startup profiling, pass `--startup-only` to `nfn_gpt_native_train` or
 through the native wrapper/SDK config. The compiled frontend still resolves

@@ -16,6 +16,9 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_CUDA13_PARITY_WARMUP`, and
   `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and keeps the llm.kittens reference on
   the system CUDA runtime/WSL driver shim through the parity wrapper default.
+  One-step parity smokes automatically disable the ratio gate unless
+  `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is set explicitly, because they cannot
+  emit steady-state timing.
 
   Verification: `bash -n tools/validate_sm120_cuda13.sh`; focused validator
   static coverage; and a direct 3-step, 2-sample parity run on the dedicated RTX

@@ -849,6 +849,8 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "bench_native_gpt_sm120_candidate.sh" in source
     assert "NFN_SM120_CUDA13_RUN_PARITY" in source
     assert "NFN_SM120_CUDA13_PARITY_JSON_OUT" in source
+    assert 'PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"' in source
+    assert "PARITY_ENFORCE_GATE=0" in source
     assert "bench_native_gpt_sm120_parity.sh" in source
     assert "NFN_SM120_PARITY_ENFORCE_GATE" in source
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
