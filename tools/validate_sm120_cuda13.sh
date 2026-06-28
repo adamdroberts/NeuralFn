@@ -22,6 +22,7 @@ fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
 PARITY_JSON="${NFN_SM120_CUDA13_PARITY_JSON_OUT:-/tmp/nfn_sm120_cuda13_parity.json}"
 LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head_backward.json}"
+RUNTIME_CONTRACT_JSON="${NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT:-/tmp/nfn_sm120_cuda13_runtime_contract.json}"
 SUMMARY_JSON="${NFN_SM120_CUDA13_SUMMARY_JSON_OUT:-${NFN_SM120_CUDA13_VALIDATION_JSON_OUT:-}}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
 PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"
@@ -135,6 +136,89 @@ run_step \
   --tinystories \
   --smoke-transformer-lm-step \
   --tile-ops-lib "${TILE_OPS_LIB}"
+
+case "${NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT:-1}" in
+  1|true|TRUE|yes|YES|on|ON)
+    run_step \
+      "${TRAIN_BIN}" \
+      --backend tile-cuda \
+      --tile-ops-lib "${TILE_OPS_LIB}" \
+      --tinystories \
+      --max-steps 1 \
+      --train-transformer-lm \
+      --no-checkpoint \
+      --eval-every-steps 0 \
+      --train-loss-every-steps 0 \
+      --json-out "${RUNTIME_CONTRACT_JSON}"
+    run_step "${PYTHON_BIN}" - "${RUNTIME_CONTRACT_JSON}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+block_state = payload.get("block_state_layout") or {}
+
+checks = [
+    (
+        payload.get("graph_editor_tensor_flow") is False,
+        "runtime contract must keep graph_editor_tensor_flow=false",
+    ),
+    (
+        payload.get("torch_required") is False,
+        "runtime contract must keep torch_required=false",
+    ),
+    (
+        payload.get("optimized_kernel_contract_passed") is True,
+        "runtime contract must keep optimized_kernel_contract_passed=true",
+    ),
+    (
+        payload.get("train_loss_host_d2h_count") == 0,
+        "runtime contract must keep train_loss_host_d2h_count=0",
+    ),
+    (
+        payload.get("linear_tk_qkv_first_use_prewarm_success_count", 0) >= 1,
+        "runtime contract must keep the promoted TK QKV first-use prewarm active",
+    ),
+    (
+        payload.get("block_backward_qkv_dinput_before_dweight_count", 0) > 0,
+        "runtime contract must keep the promoted QKV dInput-before-dWeight route active",
+    ),
+    (
+        block_state.get("layer_norm_backward_affine_row_chunk_size") == 128,
+        "runtime contract must keep the promoted 128-row LayerNorm affine reduction chunk",
+    ),
+    (
+        block_state.get("linear_backward_bias_threads_per_block") == 512,
+        "runtime contract must keep the promoted 512-thread linear-bias reducer",
+    ),
+    (
+        payload.get("lm_head_classifier_backward_path_class") == "diagnostic-cuda-graph-wrapper",
+        "runtime contract must keep LM-head on the promoted CUDA Graph wrapper until a faster true-fused Tile kernel replaces it",
+    ),
+    (
+        payload.get("lm_head_classifier_true_fused_launch_count") == 0,
+        "runtime contract must not report strict true-fused LM-head launches on the default path",
+    ),
+]
+
+failed = [message for ok, message in checks if not ok]
+if failed:
+    print(f"SM120 CUDA 13.3 runtime contract failed for {path}:", file=sys.stderr)
+    for message in failed:
+        print(f"  - {message}", file=sys.stderr)
+    sys.exit(2)
+
+print(f"SM120 CUDA 13.3 runtime contract passed for {path}")
+PY
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT=${NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT}" >&2
+    exit 2
+    ;;
+esac
 
 case "${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-1}" in
   1|true|TRUE|yes|YES|on|ON)
@@ -324,7 +408,7 @@ case "${NFN_SM120_CUDA13_RUN_PARITY:-0}" in
     ;;
 esac
 
-run_step "${PYTHON_BIN}" - "${SUMMARY_JSON}" "${LM_HEAD_JSON}" "${BENCH_JSON}" "${PARITY_JSON}" "${TRAIN_BIN}" "${TILE_OPS_LIB}" <<'PY'
+run_step "${PYTHON_BIN}" - "${SUMMARY_JSON}" "${LM_HEAD_JSON}" "${BENCH_JSON}" "${PARITY_JSON}" "${RUNTIME_CONTRACT_JSON}" "${TRAIN_BIN}" "${TILE_OPS_LIB}" <<'PY'
 import json
 import os
 import sys
@@ -335,8 +419,9 @@ summary_path = Path(sys.argv[1])
 lm_head_path = Path(sys.argv[2])
 bench_path = Path(sys.argv[3])
 parity_path = Path(sys.argv[4])
-train_bin = sys.argv[5]
-tile_ops_lib = sys.argv[6]
+runtime_contract_path = Path(sys.argv[5])
+train_bin = sys.argv[6]
+tile_ops_lib = sys.argv[7]
 
 def enabled(name: str, default: str) -> bool:
     return os.environ.get(name, default).lower() in {"1", "true", "yes", "on"}
@@ -352,6 +437,7 @@ def load_json(path: Path):
 lm_head = load_json(lm_head_path)
 bench = load_json(bench_path) if enabled("NFN_SM120_CUDA13_RUN_BENCH", "0") else None
 parity = load_json(parity_path) if enabled("NFN_SM120_CUDA13_RUN_PARITY", "0") else None
+runtime_contract = load_json(runtime_contract_path) if enabled("NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT", "1") else None
 
 summary = {
     "status": "passed",
@@ -360,6 +446,7 @@ summary = {
     "train_bin": train_bin,
     "tile_ops_lib": tile_ops_lib,
     "run_no_torch": enabled("NFN_SM120_CUDA13_RUN_NO_TORCH", "1"),
+    "run_runtime_contract": enabled("NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT", "1"),
     "run_lm_head_bench": enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1"),
     "run_pytest": enabled("NFN_SM120_CUDA13_RUN_PYTEST", "1"),
     "run_bench": enabled("NFN_SM120_CUDA13_RUN_BENCH", "0"),
@@ -369,6 +456,9 @@ summary = {
         "lm_head_json": str(lm_head_path) if lm_head_path.exists() else "",
         "bench_json": str(bench_path) if bench_path.exists() and bench is not None else "",
         "parity_json": str(parity_path) if parity_path.exists() and parity is not None else "",
+        "runtime_contract_json": str(runtime_contract_path)
+        if runtime_contract_path.exists() and runtime_contract is not None
+        else "",
     },
 }
 
@@ -400,6 +490,33 @@ if isinstance(parity, dict):
     summary["parity_status"] = {
         "metric_ratio_gates": parity.get("metric_ratio_gates"),
         "candidate_over_reference": parity.get("candidate_over_reference"),
+    }
+
+if isinstance(runtime_contract, dict):
+    block_state = runtime_contract.get("block_state_layout") or {}
+    summary["runtime_contract_status"] = {
+        "graph_editor_tensor_flow": runtime_contract.get("graph_editor_tensor_flow"),
+        "torch_required": runtime_contract.get("torch_required"),
+        "optimized_kernel_contract_passed": runtime_contract.get("optimized_kernel_contract_passed"),
+        "train_loss_host_d2h_count": runtime_contract.get("train_loss_host_d2h_count"),
+        "linear_tk_qkv_first_use_prewarm_success_count": runtime_contract.get(
+            "linear_tk_qkv_first_use_prewarm_success_count"
+        ),
+        "block_backward_qkv_dinput_before_dweight_count": runtime_contract.get(
+            "block_backward_qkv_dinput_before_dweight_count"
+        ),
+        "layer_norm_backward_affine_row_chunk_size": block_state.get(
+            "layer_norm_backward_affine_row_chunk_size"
+        ),
+        "linear_backward_bias_threads_per_block": block_state.get(
+            "linear_backward_bias_threads_per_block"
+        ),
+        "lm_head_classifier_backward_path_class": runtime_contract.get(
+            "lm_head_classifier_backward_path_class"
+        ),
+        "lm_head_classifier_true_fused_launch_count": runtime_contract.get(
+            "lm_head_classifier_true_fused_launch_count"
+        ),
     }
 
 summary_path.parent.mkdir(parents=True, exist_ok=True)

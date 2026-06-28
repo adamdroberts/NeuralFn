@@ -4167,12 +4167,23 @@ smoke, and `tests/test_native_gpt2.py` (`108 passed, 1 skipped`).
 For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
 It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
-transformer-LM smoke, runs the focused LM-head backward candidate/current
-microbench, and then runs `python -m pytest tests/test_native_gpt2.py -q`.
+transformer-LM smoke, runs a one-step native runtime-contract probe, runs the
+focused LM-head backward candidate/current microbench, and then runs
+`python -m pytest tests/test_native_gpt2.py -q`. The runtime-contract probe is
+enabled by default with `NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT=1`, writes
+`NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT` (default
+`/tmp/nfn_sm120_cuda13_runtime_contract.json`), and fails if promoted dense-GPT
+speed defaults drift: graph-editor tensor flow must stay disabled, Torch must
+stay unnecessary, train-loss D2H copies must stay at zero, TK QKV first-use
+prewarm must run, QKV backward must use the dInput-before-dWeight route,
+LayerNorm affine must use the 128-row reducer, linear bias must use the
+512-thread reducer, and the default LM-head path must remain the diagnostic
+CUDA Graph wrapper until a faster strict true-fused Tile kernel replaces it.
 The default run also writes a top-level validation summary to
 `NFN_SM120_CUDA13_JSON_OUT` (default `/tmp/nfn_sm120_cuda13_baseline.json`) with
-the resolved trainer, Tile ops library, enabled sub-gates, artifact paths, and
-LM-head true-fused blocker fields. When `NFN_SM120_CUDA13_RUN_BENCH=1` is set,
+the resolved trainer, Tile ops library, enabled sub-gates, artifact paths,
+runtime-contract status, and LM-head true-fused blocker fields. When
+`NFN_SM120_CUDA13_RUN_BENCH=1` is set,
 `NFN_SM120_CUDA13_JSON_OUT` remains the paired native benchmark JSON path and
 the validation summary moves to
 `NFN_SM120_CUDA13_SUMMARY_JSON_OUT` (default

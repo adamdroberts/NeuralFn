@@ -850,6 +850,12 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "--smoke-nvfp4-pack" in source
     assert "--smoke-transformer-lm-step" in source
     assert "--tinystories" in source
+    assert "NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT" in source
+    assert "NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT" in source
+    assert "SM120 CUDA 13.3 runtime contract passed" in source
+    assert "runtime_contract_status" in source
+    assert "--max-steps 1" in source
+    assert "--train-loss-every-steps 0" in source
     assert "NFN_SM120_CUDA13_RUN_NO_TORCH" in source
     assert "NFN_SM120_CUDA13_REBUILD_STALE" in source
     assert "tools/check_native_no_torch_deps.py --rebuild-stale --json" in source
@@ -908,6 +914,12 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "block_backward_qkv_dinput_before_dweight_count" in source
     assert "QKV backward must keep the promoted dInput-before-dWeight route active" in source
     assert "block_state_layout.layer_norm_backward_affine_row_chunk_size" in source
+    assert "linear_tk_qkv_first_use_prewarm_success_count" in source
+    assert "promoted TK QKV first-use prewarm active" in source
+    assert "block_state.get(\"linear_backward_bias_threads_per_block\") == 512" in source
+    assert "promoted 512-thread linear-bias reducer" in source
+    assert "lm_head_classifier_true_fused_launch_count" in source
+    assert "must not report strict true-fused LM-head launches on the default path" in source
     assert "LayerNorm affine backward must keep the promoted 128-row reduction chunk" in source
     assert "block_backward_weight_linear_strategy" in source
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source

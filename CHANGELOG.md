@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: the default `tools/validate_sm120_cuda13.sh` flow
+  now runs a fast one-step native runtime-contract probe after the Tile smoke
+  checks. The probe writes `NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT` and
+  fails if the live dense-GPT trainer stops using the promoted speed defaults:
+  no graph-editor tensor flow, no Torch requirement, zero train-loss host D2H
+  copies, active TK QKV first-use prewarm, active QKV dInput-before-dWeight,
+  128-row LayerNorm affine reduction, 512-thread linear-bias reduction, and the
+  diagnostic CUDA Graph LM-head wrapper while the strict true-fused Tile kernel
+  remains slower. The top-level summary JSON now includes
+  `runtime_contract_status` so a default CUDA reinstall validation records
+  those runtime route proofs even when the optional paired benchmark is
+  disabled.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `git diff --check`;
+  `NFN_SM120_CUDA13_RUN_NO_TORCH=0 NFN_SM120_CUDA13_RUN_PYTEST=0
+  NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0 NFN_SM120_CUDA13_RUN_BENCH=0
+  NFN_SM120_CUDA13_RUN_PARITY=0
+  NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT=/tmp/nfn_sm120_cuda13_runtime_contract_fast_20260628.json
+  NFN_SM120_CUDA13_JSON_OUT=/tmp/nfn_sm120_cuda13_runtime_contract_summary_20260628.json
+  bash tools/validate_sm120_cuda13.sh`, which passed on the RTX 5090 and
+  recorded `graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, `train_loss_host_d2h_count=0`,
+  `linear_tk_qkv_first_use_prewarm_success_count=1`,
+  `block_backward_qkv_dinput_before_dweight_count=96`,
+  `layer_norm_backward_affine_row_chunk_size=128`,
+  `linear_backward_bias_threads_per_block=512`, and
+  `lm_head_classifier_backward_path_class=diagnostic-cuda-graph-wrapper`.
+
 - Breaking changes: native GPT NVFP4 preflight is stricter. Dense GPT and
   GPT-2-evo native `--print-plan` / `--dry-run` JSON now return exit code `2`
   when `--require-native-nvfp4-activation-packing` is set while the dense GPT
