@@ -2979,6 +2979,18 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     prewarms on. The dedicated RTX 5090 3-sample startup-only gate passed at
     `0.736103x` setup wall and proved the strategy-value change in the saved
     paired JSON.
+  - 2026-06-28 reran the rejected `token_weight_padded_init` candidate after
+    confirming CUDA UMD 13.3 on the dedicated display-disabled RTX 5090 and no
+    active compute processes. The explicit rejected-profile rerun used
+    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` with a 3-step,
+    2-sample same-script gate. It proved the route
+    (`token_weight_bf16_padding_memset_count: 1 -> 0`) and improved setup wall
+    time to `0.965032x`, but still failed promotion against the llm.kittens
+    reference: `train_loop_wall_ms_per_step=1.000427x`,
+    `train_loop_cuda_event_first_step_wall_ms_per_step=1.000846x`,
+    `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000203x`, and
+    `train_tokens_per_second=0.999952x`. Keep the padded initializer opt-in;
+    this is startup noise reduction, not the remaining steady-state parity fix.
   - 2026-06-27 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup_full` to
     keep fast-startup default decisions honest. The 5-step, 2-sample dedicated
     RTX 5090 full-training probe improved setup wall time to `0.655522x`, but
