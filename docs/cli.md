@@ -785,6 +785,15 @@ Dense GPT-2-compatible selectors, including `gpt2_modern`, report
 `native-dense-gpt-layer-evo-delegate`; structurally different templates report
 `template-native-trainer-missing`; custom graph files report
 `custom-graph-native-trainer-missing`.
+Normal dense GPT native training requires the optimized CUDA Tile contract by
+default. The compiled trainer fails instead of silently using basic routes when
+the optimized AdamW ABI is missing, attention row/scalar fallbacks launch, or
+the linear path uses TF32/SGEMM fallback. Plan and runtime JSON expose
+`optimized_kernel_contract_required`,
+`optimized_kernel_contract_basic_fallback_allowed`,
+`optimized_kernel_contract_passed`, and
+`optimized_kernel_contract_error`. Use `--allow-basic-kernel-fallback` only for
+diagnostic runs or same-script rejected-candidate bisection.
 Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to
 verify the raw evo mutate/select/adopt ABI on CUDA device buffers without
 opening datasets, importing Python/Torch, or routing payloads through

@@ -73,6 +73,12 @@ Real training tensors must not pass through graph editor node objects.
   `strict_native_command=False` for diagnostics. The no-Torch dependency gate
   exercises this default so native SDK handoff regressions cannot silently route
   through Torch-era scripts.
+- [x] Enforce optimized native GPT kernel routes by default. Dense GPT runtime
+  JSON now reports `optimized_kernel_contract_*` fields and fails normal
+  training if the optimized AdamW ABI is missing, attention falls back to
+  row/scalar paths, or the linear backend launches TF32/SGEMM fallback.
+  `--allow-basic-kernel-fallback` is reserved for diagnostics and rejected
+  same-script candidate bisection.
 
 ## Current SM120 parity baseline
 

@@ -6115,6 +6115,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         missing_payload["tile_ops_check"]["optimized_optimizer_contract_error"]
         == "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols"
     )
+    assert missing_payload["optimized_kernel_contract_required"] is True
+    assert missing_payload["optimized_kernel_contract_basic_fallback_allowed"] is False
+    assert missing_payload["optimized_kernel_contract_passed"] is False
+    assert (
+        missing_payload["optimized_kernel_contract_error"]
+        == "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols"
+    )
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in (
         missing_payload["tile_ops_check"]["optimized_optimizer_missing_symbols"]
     )
@@ -6147,6 +6154,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert missing_ops_profile_payload["tile_ops_check"]["loaded"] is False
     assert missing_ops_profile_payload["tile_ops_check"]["all_required_symbols_found"] is False
     assert missing_ops_profile_payload["tile_ops_check"]["optimized_optimizer_contract_loaded"] is False
+    assert missing_ops_profile_payload["optimized_kernel_contract_required"] is True
+    assert missing_ops_profile_payload["optimized_kernel_contract_passed"] is False
 
     missing_dataset_check = subprocess.run(
         [
@@ -6841,6 +6850,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_forward_scalar_launch_fallback_enabled"] is False
     assert train_transformer_payload["attention_forward_scalar_launch_allowed"] is False
     assert train_transformer_payload["optimized_attention_required"] is True
+    assert train_transformer_payload["optimized_kernel_contract_required"] is True
+    assert train_transformer_payload["optimized_kernel_contract_basic_fallback_allowed"] is False
+    assert train_transformer_payload["optimized_kernel_contract_passed"] is False
+    assert (
+        "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols"
+        in train_transformer_payload["optimized_kernel_contract_error"]
+    )
     assert train_transformer_payload["attention_forward_row_launch_auto_disable_enabled"] is True
     assert train_transformer_payload["attention_forward_row_launch_auto_disabled"] is False
     assert train_transformer_payload["attention_forward_row_launch_count"] == 0
@@ -10339,6 +10355,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only" in gpt2_source_text
     assert "if (passed && final_checkpoint_export_enabled)" in gpt2_source_text
     assert "require_optimized_attention = true" in gpt2_source_text
+    assert "require_optimized_kernels = true" in gpt2_source_text
+    assert "--allow-basic-kernel-fallback" in gpt2_source_text
+    assert "--require-optimized-kernels" in gpt2_source_text
+    assert "optimized native GPT kernel contract failed" in gpt2_source_text
+    assert "basic TF32/SGEMM linear fallback launched" in gpt2_source_text
+    assert '\\"optimized_kernel_contract_required\\"' in gpt2_source_text
+    assert '\\"optimized_kernel_contract_passed\\"' in gpt2_source_text
     assert "--allow-scalar-attention-fallback" in gpt2_source_text
     assert "optimized attention required, but scalar attention fallback launched" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text

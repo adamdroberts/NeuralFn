@@ -27,7 +27,12 @@ load the graph-backed planner lazily when first accessed.
 Dense GPT native training defaults to periodic validation loss every 250
 optimizer steps over 20 validation batches. Pass `--eval-every-steps 1000` to
 change the cadence, or `--eval-batches N` / `--eval-batch-size N` to bound the
-validation work for smoke tests.
+validation work for smoke tests. The native trainer also requires optimized
+CUDA Tile routes by default: missing many-tensor AdamW symbols, attention
+row/scalar fallbacks, or TF32/SGEMM linear fallback launches fail the run and
+are reported as `optimized_kernel_contract_*` JSON fields. Use
+`--allow-basic-kernel-fallback` only for diagnostics or rejected-candidate
+bisection, not normal training.
 
 Install extras only for the workflows you need:
 

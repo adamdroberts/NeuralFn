@@ -149,6 +149,7 @@ struct Config {
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
     bool require_optimized_attention = true;
+    bool require_optimized_kernels = true;
     bool require_cooperative_lm_head_backward = false;
     bool require_native_nvfp4_activation_packing = false;
     bool template_explicit = false;
@@ -549,6 +550,8 @@ void print_usage(const char* program) {
         << "  --output-dir PATH                 Native output directory\n"
         << "  --require-cooperative-lm-head-backward\n"
         << "                                     Fail if the fused cooperative LM-head backward Tile ABI is unavailable\n"
+        << "  --require-optimized-kernels       Require optimized AdamW/attention/linear Tile routes; default enabled\n"
+        << "  --allow-basic-kernel-fallback     Diagnostic only: permit scalar/basic fallback routes in native GPT training\n"
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
         << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --batch-size, --train-seq-len,\n"
@@ -4500,6 +4503,14 @@ bool print_tile_plan(
         optimized_optimizer_contract_loaded
             ? std::string()
             : "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols";
+    const bool optimized_kernel_contract_passed =
+        !cfg.require_optimized_kernels ||
+        !include_symbol_check ||
+        optimized_optimizer_contract_loaded;
+    const std::string optimized_kernel_contract_error =
+        optimized_kernel_contract_passed
+            ? std::string()
+            : optimized_optimizer_contract_error;
     const bool cooperative_lm_head_backward_route_integrated =
         cooperative_lm_head_backward_requested &&
         cooperative_lm_head_backward_true_fused_kernel_capable;
@@ -4694,6 +4705,14 @@ bool print_tile_plan(
         << (cfg.require_optimized_attention ? "false" : "true") << ",\n"
         << "  \"optimized_attention_required\": "
         << (cfg.require_optimized_attention ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_required\": "
+        << (cfg.require_optimized_kernels ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_basic_fallback_allowed\": "
+        << (cfg.require_optimized_kernels ? "false" : "true") << ",\n"
+        << "  \"optimized_kernel_contract_passed\": "
+        << (optimized_kernel_contract_passed ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_error\": \""
+        << json_escape(optimized_kernel_contract_error) << "\",\n"
         << "  \"attention_forward_row_launch_auto_disable_enabled\": true,\n"
         << "  \"packed_qkv_attention_enabled\": " << (packed_qkv_attention_enabled ? "true" : "false") << ",\n"
         << "  \"packed_qkv_attention_bf16_elements\": " << packed_qkv_attention_bf16_elements << ",\n"
@@ -11916,6 +11935,8 @@ int run_transformer_lm_training_json(
     AdamWManyWithDeviceScaleBf16ParamBf16GradFn adamw_many_with_device_scale_bf16_param_bf16_grad = nullptr;
     bool optimized_optimizer_contract_loaded = false;
     std::string optimized_optimizer_contract_error;
+    bool optimized_kernel_contract_passed = true;
+    std::string optimized_kernel_contract_error;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -22220,6 +22241,45 @@ int run_transformer_lm_training_json(
     }
     attention_forward_row_successes =
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
+    if (cfg.require_optimized_kernels) {
+        std::vector<std::string> violations;
+        const bool optimized_optimizer_symbols_required =
+            !cfg.startup_only && cfg.max_steps > 0;
+        if (optimized_optimizer_symbols_required && !optimized_optimizer_contract_loaded) {
+            violations.push_back(
+                optimized_optimizer_contract_error.empty()
+                    ? "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols"
+                    : optimized_optimizer_contract_error);
+        }
+        if (attention_forward_row_fallbacks > 0) {
+            violations.push_back(
+                "attention row kernel fell back " +
+                std::to_string(attention_forward_row_fallbacks) + " time(s)");
+        }
+        if (attention_forward_scalar_launches > 0) {
+            violations.push_back(
+                "scalar attention fallback launched " +
+                std::to_string(attention_forward_scalar_launches) + " time(s)");
+        }
+        if (linear_sgemm_count > 0) {
+            violations.push_back(
+                "basic TF32/SGEMM linear fallback launched " +
+                std::to_string(linear_sgemm_count) + " time(s)");
+        }
+        if (!violations.empty()) {
+            optimized_kernel_contract_passed = false;
+            std::ostringstream out;
+            out << "optimized native GPT kernel contract failed";
+            for (const std::string& violation : violations) {
+                out << "; " << violation;
+            }
+            optimized_kernel_contract_error = out.str();
+            if (passed) {
+                error = optimized_kernel_contract_error;
+                passed = false;
+            }
+        }
+    }
     if (passed && cfg.require_optimized_attention && attention_forward_scalar_launches > 0) {
         std::ostringstream out;
         out << "optimized attention required, but scalar attention fallback launched "
@@ -23921,6 +23981,14 @@ int run_transformer_lm_training_json(
         << (cfg.require_optimized_attention ? "false" : "true") << ",\n"
         << "  \"optimized_attention_required\": "
         << (cfg.require_optimized_attention ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_required\": "
+        << (cfg.require_optimized_kernels ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_basic_fallback_allowed\": "
+        << (cfg.require_optimized_kernels ? "false" : "true") << ",\n"
+        << "  \"optimized_kernel_contract_passed\": "
+        << (optimized_kernel_contract_passed ? "true" : "false") << ",\n"
+        << "  \"optimized_kernel_contract_error\": \""
+        << json_escape(optimized_kernel_contract_error) << "\",\n"
         << "  \"attention_forward_row_launch_auto_disable_enabled\": true,\n"
         << "  \"attention_forward_row_launch_auto_disabled\": " << (attention_forward_row_fallbacks > 0 ? "true" : "false") << ",\n"
         << "  \"attention_forward_row_launch_count\": " << attention_forward_row_launches << ",\n"
@@ -25846,6 +25914,15 @@ int main(int argc, char** argv) {
         } else if (arg == "--allow-scalar-attention-fallback" ||
                    arg == "--native-cuda-allow-scalar-attention-fallback") {
             cfg.require_optimized_attention = false;
+            cfg.require_optimized_kernels = false;
+        } else if (arg == "--allow-basic-kernel-fallback" ||
+                   arg == "--native-cuda-allow-basic-kernel-fallback") {
+            cfg.require_optimized_kernels = false;
+            cfg.require_optimized_attention = false;
+        } else if (arg == "--require-optimized-kernels" ||
+                   arg == "--native-cuda-require-optimized-kernels") {
+            cfg.require_optimized_kernels = true;
+            cfg.require_optimized_attention = true;
         } else if (arg == "--require-cooperative-lm-head-backward" ||
                    arg == "--native-cuda-require-cooperative-lm-head-backward") {
             cfg.require_cooperative_lm_head_backward = true;

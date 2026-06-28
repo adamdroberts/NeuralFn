@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: dense GPT training now enforces an optimized CUDA Tile kernel
+  contract by default. The compiled trainer reports
+  `optimized_kernel_contract_required`,
+  `optimized_kernel_contract_basic_fallback_allowed`,
+  `optimized_kernel_contract_passed`, and
+  `optimized_kernel_contract_error`, and fails the run if the optimized AdamW
+  ABI is missing, attention row/scalar fallback launches, or the linear path
+  uses TF32/SGEMM fallback. `--allow-basic-kernel-fallback` is available only
+  for diagnostics and same-script rejected-candidate bisection. Verification:
+  focused native GPT plan/runtime/source tests, C++ linked trainer build/help,
+  GPU-visible one-step SM120 candidate wrapper smoke, and `git diff --check`.
+
 - Native GPT benchmarks: `tools/paired_kernel_speed.py` now supports
   `--require-native-hot-route-counter NAME`, which fails a run unless the named
   counter appears in the hot route-counter delta set. The SM120 candidate
