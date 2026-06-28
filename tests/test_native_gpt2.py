@@ -219,6 +219,11 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt_fast_command"]["startup_budget_seconds"] == 2.0
     assert entrypoints["train_gpt_fast_command"]["startup_within_budget"] is True
     assert "--eval-batches 20" in entrypoints["train_gpt_fast_command"]["stdout"]
+    assert entrypoints["train_gpt_fast_exec_handoff"]["passed"] is True
+    assert entrypoints["train_gpt_fast_exec_handoff"]["startup_within_budget"] is True
+    assert "--train-transformer-lm" in entrypoints["train_gpt_fast_exec_handoff"]["stdout"]
+    assert "--no-checkpoint" in entrypoints["train_gpt_fast_exec_handoff"]["stdout"]
+    assert "--dry-run" not in entrypoints["train_gpt_fast_exec_handoff"]["stdout"]
     assert entrypoints["train_gpt2_compat_fast_command"]["passed"] is True
     assert entrypoints["train_gpt2_compat_fast_command"]["startup_within_budget"] is True
     assert "--train-transformer-lm" in entrypoints["train_gpt2_compat_fast_command"]["stdout"]

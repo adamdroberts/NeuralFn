@@ -240,6 +240,17 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_gpt_fast_exec_handoff",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt.py",
+            "--tinystories",
+            "--native-cuda-no-checkpoint",
+            "--max-steps",
+            "1",
+        ),
+    ),
+    (
         "train_gpt2_compat_fast_command",
         (
             sys.executable,

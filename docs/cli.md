@@ -2545,7 +2545,8 @@ native flags against stubbed native CLIs, and it imports the installed
 `nfn:main` console entry point plus programmatic `nfn.main([...],
 stdin_isatty=..., stdout_isatty=...)` dense GPT training dry-runs, native
 checkpoint metadata, prompt-token inference, and the direct
-`train_gpt_native.py` compiled-cli dry-run handoff plus missing-alias metadata
+`train_gpt.py` non-dry-run `execvpe` handoff plus the
+`train_gpt_native.py` compiled-cli dry-run handoff and missing-alias metadata
 handoff to C++. These checks prove the default
 direct-script, console-entry, direct GPT-native harness, and programmatic train/infer paths cross into
 native C++ before Torch, NumPy, tokenizer, dataset-manager, `infer_gpt`,

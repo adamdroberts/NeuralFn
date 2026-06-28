@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT startup verification: extended the no-Torch verifier with a
+  normal non-dry-run `train_gpt.py` invocation against a stubbed compiled CLI.
+  This proves the canonical GPT wrapper reaches the `execvpe` compiled C++
+  handoff before importing dataset managers, tokenizers, graph helpers, NumPy,
+  or Torch, instead of only proving the dry-run/metadata paths. Verified with
+  the focused no-Torch verifier regression and the full
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json` gate.
+
 - Native GPT SDK: added `NFN_NATIVE_GPT_LAUNCHER` as the generic launcher
   override honored by `resolve_native_gpt_launcher()` and the compatibility
   `resolve_native_gpt2_launcher()` path, with `NFN_NATIVE_GPT2_LAUNCHER`
