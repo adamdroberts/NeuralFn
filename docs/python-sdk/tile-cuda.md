@@ -745,10 +745,12 @@ GPT trainer mirrors that guard before route selection and reports
 `lm_head_true_fused_cooperative_requested`,
 `lm_head_true_fused_cooperative_production_shape`,
 `lm_head_true_fused_cooperative_allow_production`, and
-`lm_head_true_fused_cooperative_shape_allowed`. If the strict selector is set
-on a production GPT shape without the allow-production flag, capability stays
-false and the trainer falls back to the sequence wrapper instead of calling the
-strict symbol through the CUDA Graph wrapper path.
+`lm_head_true_fused_cooperative_shape_allowed`; full trainer integration also
+reports `lm_head_true_fused_cooperative_production_ready`. Production GPT
+shapes keep `lm_head_cooperative_backward_fused_kernel_capability_available=false`
+even when the allow-production debug flag is set, so the slow scalar diagnostic
+body cannot satisfy the optimized training route. Use the focused LM-head
+benchmark when intentionally measuring that body.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` compares that
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. The

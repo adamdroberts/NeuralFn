@@ -14220,6 +14220,8 @@ int run_transformer_lm_training_json(
     const bool lm_head_true_fused_cooperative_shape_allowed =
         !lm_head_true_fused_cooperative_production_shape ||
         lm_head_true_fused_cooperative_allow_production;
+    const bool lm_head_true_fused_cooperative_production_ready =
+        !lm_head_true_fused_cooperative_production_shape;
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -14284,7 +14286,7 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_true_fused_kernel_available;
     const bool lm_head_cooperative_backward_fused_kernel_capability_available =
         lm_head_cooperative_backward_fused_kernel_raw_capability_available &&
-        lm_head_true_fused_cooperative_shape_allowed;
+        lm_head_true_fused_cooperative_production_ready;
     const bool lm_head_llmk_classifier_matmul_parity_available =
         lm_head_classifier_backward_llmk_parity_available;
     const bool lm_head_cooperative_backward_fused_kernel_available =
@@ -23201,7 +23203,7 @@ int run_transformer_lm_training_json(
         error =
             "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
             "the llm.kittens-style CE/dlogits route plus separate classifier matmuls is not "
-            "satisfy this strict true-fused requirement; required next step: replace row-chunked "
+            "enough to satisfy this strict true-fused requirement; required next step: replace row-chunked "
             "classifier plus separate dHidden/dWeight GEMMs with a cooperative classifier/dHidden/dWeight kernel";
         passed = false;
     }
@@ -24227,6 +24229,8 @@ int run_transformer_lm_training_json(
         << (lm_head_true_fused_cooperative_allow_production ? "true" : "false") << ",\n"
         << "  \"lm_head_true_fused_cooperative_shape_allowed\": "
         << (lm_head_true_fused_cooperative_shape_allowed ? "true" : "false") << ",\n"
+        << "  \"lm_head_true_fused_cooperative_production_ready\": "
+        << (lm_head_true_fused_cooperative_production_ready ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
         << json_escape(lm_head_cooperative_backward_fused_kernel_abi_path_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "

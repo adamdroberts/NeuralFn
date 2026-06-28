@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT LM-head safety: production-shape dense GPT training no longer
+  treats `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` as
+  enough to integrate the current scalar strict true-fused LM-head body. Runtime
+  JSON now distinguishes the debug shape escape hatch from
+  `lm_head_true_fused_cooperative_production_ready`, and
+  `lm_head_cooperative_backward_fused_kernel_capability_available` stays false
+  for production GPT shapes until a real optimized strict CE+dHidden+dWeight
+  kernel replaces the diagnostic body. The focused LM-head benchmark can still
+  force the diagnostic body for measurement.
+
 - Native GPT runtime setup: the dense GPT trainer now treats
   `cudaHostAlloc` / `cudaFreeHost` as legacy pinned-token-staging symbols
   instead of default-path requirements. The default pageable uint16

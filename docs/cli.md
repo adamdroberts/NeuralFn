@@ -1290,11 +1290,12 @@ run. The native trainer mirrors that guard before route selection and reports
 `lm_head_true_fused_cooperative_requested`,
 `lm_head_true_fused_cooperative_production_shape`,
 `lm_head_true_fused_cooperative_allow_production`, and
-`lm_head_true_fused_cooperative_shape_allowed`. If the strict selector is set
-on a production GPT shape without the allow-production flag, the trainer leaves
-`lm_head_cooperative_backward_fused_kernel_capability_available=false`, avoids
-the CUDA Graph wrapper path that would call the strict symbol, and falls back to
-the sequence wrapper.
+`lm_head_true_fused_cooperative_shape_allowed`; full trainer integration also
+reports `lm_head_true_fused_cooperative_production_ready`. Production GPT
+shapes keep `lm_head_cooperative_backward_fused_kernel_capability_available=false`
+even when the allow-production debug flag is set, so the slow scalar diagnostic
+body cannot satisfy the optimized training route. Use the focused LM-head
+benchmark when intentionally measuring that body.
 The same strict body requires the CE row-thread setting to remain at 1024,
 because its dHidden/dWeight section is a fixed 32x32 shared-memory tile; smaller
 `NFN_*_CE_BF16_THREADS` settings make the capability probe return false and keep
