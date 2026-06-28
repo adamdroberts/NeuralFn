@@ -61,7 +61,7 @@ case "${PROFILE}" in
     DEFAULT_MAX_REFERENCE_RATIO=1.000
     DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
     REJECTED_PROFILE="${PROFILE}"
-    REJECTED_REASON="Production-shape focused strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 so the focused trainer-chunk microbench measures the cooperative single-kernel CE+dHidden+dWeight body. The profile defaults NFN_LM_HEAD_BACKWARD_MAX_RATIO, NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO, and NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO to 1.000; keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head profile. It forces NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 so the focused trainer-chunk microbench measures the cooperative single-kernel CE+dHidden+dWeight body. CUDA 13.3.33 dedicated RTX 5090 2026-06-28 one-iteration focused rerun proved strict-true-fused-tile-kernel but rejected the default 32x32 body at 6.708146x candidate/baseline and 22.033921x candidate/reference-summed time, with the strict body still 753.913597 ms slower than the reference CE+dHidden+dWeight components. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
     ;;

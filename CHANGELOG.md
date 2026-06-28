@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the focused strict true-fused LM-head evidence for the
+  default 32x32 diagnostic body. The current CUDA 13.3.33 dedicated RTX 5090
+  trainer-chunk preflight still proves the strict ABI route with
+  `candidate_true_fused_capability=true` and
+  `candidate_path_class=strict-true-fused-tile-kernel`, but rejects it at
+  `6.708146x` candidate/current-wrapper time and `22.033921x`
+  candidate/reference-summed time, with the strict body `753.913597 ms` slower
+  than the reference CE+dHidden+dWeight components. The LM-head focused wrapper,
+  SM120 full-loop candidate wrapper, and CUDA Tile tracker now carry that
+  current rejection evidence so the diagnostic body is not mistaken for a
+  promotable production kernel. Verification: ran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused
+  NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  bash tools/bench_lm_head_backward_candidate.sh` on the dedicated RTX 5090.
+
 - Native CLI: `tools/train_gpt_sm120.sh` now keeps its explicit Bash fallback in
   lockstep with the compiled `nfn_train_gpt_sm120` launcher. When
   `NFN_SM120_USE_COMPILED_LAUNCHER=0` is set for diagnostics, the fallback

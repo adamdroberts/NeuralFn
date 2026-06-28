@@ -822,6 +822,19 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       bottleneck component names. The benchmark still rejects placeholder
       wrappers, but the next Tile kernel iteration can now identify the
       remaining gap from one same-process run without manual subtraction.
+    - 2026-06-28 reran the production-shape focused default 32x32 strict
+      true-fused LM-head body after the latest CUDA 13.3.33/native defaults:
+      `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused
+      NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
+      NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+      bash tools/bench_lm_head_backward_candidate.sh`. The route still proves
+      `candidate_true_fused_capability=true` and
+      `candidate_path_class=strict-true-fused-tile-kernel`, but remains rejected
+      at `6.708146x` candidate/current-wrapper time,
+      `22.033921x` candidate/reference-summed time, and
+      `753.913597 ms` slower than the reference CE+dHidden+dWeight components.
+      Do not promote the strict body or flip production readiness until this
+      focused gate is near parity.
     - 2026-06-27 exposed the generic compiled GPT launcher through the Python
       SDK native-train path. `build_native_gpt_launcher_run_config()` resolves
       `NFN_NATIVE_GPT_TRAIN_CLI`, `build/nfn_train_gpt`, or installed
