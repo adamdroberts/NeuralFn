@@ -492,6 +492,22 @@ def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: P
     assert stale_sources[0]["exists"] is True
 
 
+def test_native_no_torch_dependency_verifier_rebuilds_missing_artifacts(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    missing_artifact = tmp_path / "build" / "nfn_gpt_native_train"
+
+    assert module.artifact_should_rebuild(missing_artifact, [], True) is True
+    assert module.artifact_should_rebuild(missing_artifact, [], False) is False
+
+
 def test_native_no_torch_dependency_verifier_maps_optional_family_sources() -> None:
     root = Path(__file__).resolve().parents[1]
     module_path = root / "tools" / "check_native_no_torch_deps.py"

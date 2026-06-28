@@ -102,7 +102,8 @@ gates, GPT template preset suite, and native no-Torch guard all pass. The
 CUDA 13.3 SM120 validator now runs
 `tools/check_native_no_torch_deps.py --rebuild-stale --json` by default before
 selecting the linked/dynamic trainer and before the CUDA smoke steps; this
-first refreshes stale native artifacts through their mapped build scripts. Set
+first refreshes missing or stale native artifacts through their mapped build
+scripts when a builder is registered. Set
 `NFN_SM120_CUDA13_RUN_NO_TORCH=0` only for a narrow CUDA-only bisection after
 the no-Torch gate has already passed.
 The current post-reinstall paired llm.kittens parity checks on the
@@ -4210,9 +4211,10 @@ import `neuralfn.native_cuda_device` before the compiled C++ trainer handoff.
 After a CUDA toolkit reinstall or local C++/CUDA edit, run
 `bash tools/validate_sm120_cuda13.sh`; the validator now runs
 `python tools/check_native_no_torch_deps.py --rebuild-stale --json` by default,
-so known stale native artifacts are rebuilt with their mapped `tools/build_*.sh`
-scripts before the validator selects `build/nfn_gpt_native_train_linked` versus
-the dynamic trainer and before missing-artifact checks run. Set
+so known missing or stale native artifacts are rebuilt with their mapped
+`tools/build_*.sh` scripts before the validator selects
+`build/nfn_gpt_native_train_linked` versus the dynamic trainer and before
+missing-artifact checks run. Set
 `NFN_SM120_CUDA13_REBUILD_STALE=0` only when intentionally checking that stale
 artifact detection fails without rebuilding. Keep `--skip-stale-artifacts` for
 deliberate dependency-only audits, not training readiness.

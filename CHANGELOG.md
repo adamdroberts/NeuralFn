@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native no-Torch verifier: `tools/check_native_no_torch_deps.py
+  --rebuild-stale` now attempts the registered artifact rebuild command when a
+  required artifact is missing, not only when an existing artifact is older than
+  its mapped source files. Missing artifacts still fail if no builder is
+  registered or if the build command exits unsuccessfully, and the text output
+  now reports the attempted rebuild command for those failures.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m
+  py_compile tools/check_native_no_torch_deps.py`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_rebuilds_missing_artifacts
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_detects_stale_artifacts
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`; `git diff --check`.
+
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now runs the
   no-Torch native dependency gate before selecting the linked/dynamic native GPT
   trainer or checking for missing Tile artifacts. The default

@@ -1131,6 +1131,10 @@ def stale_artifact_sources(path: Path, repo_root: Path) -> list[dict[str, object
     return stale_sources
 
 
+def artifact_should_rebuild(path: Path, stale_sources: list[dict[str, object]], rebuild_stale: bool) -> bool:
+    return bool(rebuild_stale and (not path.exists() or stale_sources))
+
+
 def ldd_output(path: Path) -> str:
     proc = subprocess.run(
         ["ldd", str(path)],
@@ -2060,7 +2064,7 @@ def main() -> int:
                 [] if args.skip_stale_artifacts else stale_artifact_sources(path, repo_root)
             )
             rebuild_report: dict[str, object] | None = None
-            if stale_sources and args.rebuild_stale:
+            if artifact_should_rebuild(path, stale_sources, bool(args.rebuild_stale)):
                 rebuild_report = rebuild_stale_artifact(path, repo_root)
                 if (
                     bool(rebuild_report.get("available"))
@@ -2143,6 +2147,14 @@ def main() -> int:
         for entry in artifact_report:
             if not entry["exists"]:
                 print(f"{entry['artifact']}: missing", file=sys.stderr)
+                rebuild = entry.get("rebuild")
+                if isinstance(rebuild, dict):
+                    command = " ".join(str(part) for part in rebuild.get("command", []))
+                    print(f"  rebuild attempted: {command or 'unavailable'}", file=sys.stderr)
+                    if rebuild.get("returncode") is not None:
+                        print(f"  rebuild exit code: {rebuild['returncode']}", file=sys.stderr)
+                    if rebuild.get("stderr"):
+                        print(str(rebuild["stderr"]), file=sys.stderr)
                 continue
             forbidden = entry["forbidden"]
             if forbidden:
