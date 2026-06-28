@@ -88,6 +88,15 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Refresh the no-stage llm.kittens parity gate after restoring the fused
+  padded token-weight initializer to opt-in. The 2026-06-28 dedicated RTX 5090
+  3-step, 3-sample, 1-warmup run measured NeuralFn at `0.997292x` median
+  train-loop wall, `0.996885x` median steady-state CUDA-event time, and
+  `1.002498x` median tokens/sec versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, with
+  `metric_ratio_gates: passed=true`. The runtime contract stayed clean:
+  `graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`.
 - [x] Preserve rejected heavy cuBLASLt plan retunes as named profiles instead of
   implicit defaults. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip`
   now records the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample

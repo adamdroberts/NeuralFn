@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the current no-stage SM120 parity gate after reverting the
+  fused padded token initializer to opt-in. The dedicated RTX 5090 run passed
+  the median llm.kittens gates with NeuralFn at `0.997292x` median train-loop
+  wall, `0.996885x` median steady-state CUDA-event time, and `1.002498x`
+  median tokens/sec versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`.
+  Runtime contract checks still passed with `graph_editor_tensor_flow=false`,
+  `torch_required=false`, `optimized_kernel_contract_passed=true`, and
+  `train_loss_host_d2h_count=0`. Verification: ran
+  `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=3
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_current_after_padded_optin.json
+  bash tools/bench_native_gpt_sm120_parity.sh` on the dedicated RTX 5090.
+
 - Native GPT: reverted the fused padded token-weight initializer to opt-in
   until the full throughput gate passes. `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT`
   now defaults to `0`; set it to `1` only when intentionally rerunning the
