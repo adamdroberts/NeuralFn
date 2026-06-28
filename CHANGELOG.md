@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: refreshed the current stage-timed SM120 parity
+  profile against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` on
+  the dedicated RTX 5090. The diagnostic run selected the display-disabled
+  5090, observed zero compute processes before and after the sample, and kept
+  the runtime contract clean (`graph_editor_tensor_flow=false`,
+  `torch_required=false`, `optimized_kernel_contract_passed=true`). With
+  stage timing enabled on the NeuralFn side, llm.kittens measured
+  `2418.950 ms/step` and NeuralFn measured `2446.923 ms/step`
+  (`1.011564x`, tokens/sec `0.988473x`). The current hot buckets are
+  `stage.block_backward.total_ms=3734.190 ms`,
+  `stage.train.model_forward.total_ms=1818.190 ms`,
+  `stage.block_forward.total_ms=1806.820 ms`, and
+  `stage.lm_head_backward.total_ms=1706.110 ms`; the largest leaf buckets are
+  LM-head cooperative backward (`1181.050 ms`), attention SDPA to-QKV backward
+  (`777.220 ms`), LM-head logits (`520.296 ms`), MLP projection dInput
+  (`506.933 ms`), and MLP projection dWeight+bias (`465.055 ms`). This keeps
+  the next implementation target on block-backward and LM-head classifier
+  kernels rather than startup or command-shape mismatches. Verification:
+  `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_current_stage_parity_20260629.json
+  bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Native GPT startup: long dense GPT training runs now defer throughput-only
   setup prewarms by default while short parity/smoke runs keep the existing
   prewarmed route. The dense native trainer enables this policy when

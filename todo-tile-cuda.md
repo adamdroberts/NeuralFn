@@ -168,6 +168,25 @@ Real training tensors must not pass through graph editor node objects.
 
 ## Current SM120 parity baseline
 
+- [x] Refresh the current stage-timed parity target after the long-run prewarm
+  policy and CUDA 13.3 validator work. The 2026-06-29 dedicated RTX 5090
+  3-step, 1-sample diagnostic measured llm.kittens at `2418.950 ms/step` and
+  NeuralFn at `2446.923 ms/step` (`1.011564x`, tokens/sec `0.988473x`) with
+  stage timing enabled only on the NeuralFn side. The selected GPU had zero
+  compute processes before and after the sample, and the runtime contract stayed
+  clean: `graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`.
+  Current hot buckets are `stage.block_backward.total_ms=3734.190 ms`,
+  `stage.train.model_forward.total_ms=1818.190 ms`,
+  `stage.block_forward.total_ms=1806.820 ms`, and
+  `stage.lm_head_backward.total_ms=1706.110 ms`. The largest leaf buckets are
+  LM-head cooperative backward (`1181.050 ms`), attention SDPA to-QKV backward
+  (`777.220 ms`), LM-head logits (`520.296 ms`), MLP projection dInput
+  (`506.933 ms`), and MLP projection dWeight+bias (`465.055 ms`). Continue with
+  real block-backward and LM-head classifier kernel work; the current command
+  shape already matches `train-sm120.sh` on batch, sequence length,
+  `524288` tokens/step, LR, warmup, eval/sample cadence, generated-token count,
+  and `CUDA_DEVICE_MAX_CONNECTIONS=1`.
 - [x] Refresh the no-stage llm.kittens parity gate after restoring the fused
   padded token-weight initializer to opt-in. The 2026-06-28 dedicated RTX 5090
   3-step, 3-sample, 1-warmup run measured NeuralFn at `0.997292x` median
