@@ -12048,6 +12048,13 @@ int run_transformer_lm_training_json(
     CudaEventDestroyFn cuda_event_destroy = nullptr;
     const char* tile_ops_dlopen_binding_strategy =
         linked_tile_ops_requested ? "RTLD_DEFAULT-linked" : "RTLD_LAZY";
+    const bool linked_tile_ops_symbol_scan_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LINKED_TILE_OPS_SYMBOL_SCAN",
+                              "NFN_NATIVE_GPT2_LINKED_TILE_OPS_SYMBOL_SCAN"}),
+            false);
+    const bool tile_ops_required_symbol_scan_skipped =
+        linked_tile_ops_requested && !linked_tile_ops_symbol_scan_requested;
     double tile_ops_dlopen_wall_ms = 0.0;
     double tile_ops_required_symbol_scan_wall_ms = 0.0;
     double tile_ops_typed_symbol_load_wall_ms = 0.0;
@@ -12100,14 +12107,16 @@ int run_transformer_lm_training_json(
             } else {
                 tile_loaded = true;
                 const auto required_symbol_scan_start = Clock::now();
-                for (const std::string& symbol : required_symbols) {
-                    void* ptr = dlsym(tile_handle, symbol.c_str());
-                    if (ptr == nullptr) {
-                        missing_symbols.push_back(symbol);
+                if (!tile_ops_required_symbol_scan_skipped) {
+                    for (const std::string& symbol : required_symbols) {
+                        void* ptr = dlsym(tile_handle, symbol.c_str());
+                        if (ptr == nullptr) {
+                            missing_symbols.push_back(symbol);
+                        }
                     }
+                    tile_ops_required_symbol_scan_wall_ms =
+                        elapsed_ms(required_symbol_scan_start, Clock::now());
                 }
-                tile_ops_required_symbol_scan_wall_ms =
-                    elapsed_ms(required_symbol_scan_start, Clock::now());
                 if (!missing_symbols.empty()) {
                     error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
                 } else {
@@ -23042,6 +23051,8 @@ int run_transformer_lm_training_json(
         << "  \"tile_ops_dlopen_binding_strategy\": \""
         << tile_ops_dlopen_binding_strategy << "\",\n"
         << "  \"tile_ops_dlopen_wall_ms\": " << tile_ops_dlopen_wall_ms << ",\n"
+        << "  \"tile_ops_required_symbol_scan_skipped\": "
+        << (tile_ops_required_symbol_scan_skipped ? "true" : "false") << ",\n"
         << "  \"tile_ops_required_symbol_scan_wall_ms\": "
         << tile_ops_required_symbol_scan_wall_ms << ",\n"
         << "  \"tile_ops_typed_symbol_load_wall_ms\": "

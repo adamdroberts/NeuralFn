@@ -1005,6 +1005,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "native_fast_startup_prewarm_policy",
     "tile_ops_library",
     "tile_ops_dlopen_binding_strategy",
+    "tile_ops_required_symbol_scan_skipped",
     "train_loss_device_accumulation_strategy",
     "train_loss_host_copy_scope",
     "lm_head_training_logits_dtype",

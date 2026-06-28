@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: linked dense-GPT trainers now skip the redundant
+  required Tile ABI symbol preflight by default when loading Tile ops through
+  `RTLD_DEFAULT`. Runtime JSON reports
+  `tile_ops_required_symbol_scan_skipped: true` and keeps
+  `tile_ops_required_symbol_scan_wall_ms` at zero for that path, while dynamic
+  `dlopen` Tile ops still run the full required-symbol scan. Set
+  `NFN_NATIVE_GPT_LINKED_TILE_OPS_SYMBOL_SCAN=1` to restore the old linked-path
+  scan for diagnostics. `tools/paired_kernel_speed.py` now treats the skipped
+  flag as a startup strategy value so same-script candidate runs expose the
+  route change.
+
 - SM120 benchmark tooling: `tools/paired_kernel_speed.py` now adds
   `native_hot_stage_ratios.top_leaf_candidate_total_ms` and prints a matching
   console section. The new view filters parent duration aggregates such as

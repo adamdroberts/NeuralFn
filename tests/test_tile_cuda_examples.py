@@ -4900,6 +4900,7 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "\\\"steps_completed\\\": 0, "
         "\\\"tile_ops_library\\\": \\\"build/libnfn_native_train_tile_ops.so\\\", "
         "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_LAZY\\\", "
+        "\\\"tile_ops_required_symbol_scan_skipped\\\": false, "
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\", "
         "\\\"device_cuda_malloc_async_requested\\\": false, "
         "\\\"device_cuda_malloc_async_enabled\\\": false, "
@@ -4919,6 +4920,9 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     ).replace(
         "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_LAZY\\\"",
         "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_DEFAULT-linked\\\"",
+    ).replace(
+        "\\\"tile_ops_required_symbol_scan_skipped\\\": false",
+        "\\\"tile_ops_required_symbol_scan_skipped\\\": true",
     ).replace(
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\"",
         "\\\"device_allocator_strategy\\\": \\\"cudaMallocAsync-null-stream\\\"",
@@ -4967,6 +4971,9 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     assert payload["candidate_native_metric_values"]["tile_ops_dlopen_binding_strategy"] == [
         "RTLD_DEFAULT-linked"
     ]
+    assert payload["candidate_native_metric_values"]["tile_ops_required_symbol_scan_skipped"] == [
+        "true"
+    ]
     assert payload["baseline_native_metric_values"]["device_allocator_strategy"] == [
         "cudaMalloc"
     ]
@@ -4992,8 +4999,13 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "baseline_values": ["RTLD_LAZY"],
         "candidate_values": ["RTLD_DEFAULT-linked"],
     }
+    assert strategy_changes["changed"]["tile_ops_required_symbol_scan_skipped"] == {
+        "baseline_values": ["false"],
+        "candidate_values": ["true"],
+    }
     assert "tile_ops_library: linked" in proc.stdout
     assert "tile_ops_dlopen_binding_strategy: RTLD_DEFAULT-linked" in proc.stdout
+    assert "tile_ops_required_symbol_scan_skipped: true" in proc.stdout
     assert "device_allocator_strategy: cudaMallocAsync-null-stream" in proc.stdout
     assert (
         "token_weight_init_strategy: "
