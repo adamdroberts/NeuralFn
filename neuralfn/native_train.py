@@ -35,6 +35,111 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "deepseek-v4": "nfn_deepseek_v4_native_train",
 }
 NATIVE_TRAIN_BINDING_MODULES = ("neuralfn_native_train", "neuralfn._native_train")
+_NATIVE_TRAIN_MODEL_REGISTRY = (
+    {
+        "name": "gpt",
+        "status": "implemented",
+        "native_target": "nfn_gpt_native_train",
+        "transformer_lm_status": "native-transformer-lm",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "gpt2-compatible-fixed-dense-transformer",
+        "notes": (
+            "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; "
+            "template/custom graph selection decides the GPT architecture."
+        ),
+    },
+    {
+        "name": "gpt2",
+        "status": "implemented",
+        "native_target": "nfn_gpt_native_train",
+        "transformer_lm_status": "native-transformer-lm",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "gpt2-compatible-fixed-dense-transformer",
+        "notes": "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
+    },
+    {
+        "name": "gpt3",
+        "status": "implemented",
+        "native_target": "nfn_gpt_native_train",
+        "transformer_lm_status": "native-transformer-lm",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "gpt2-compatible-fixed-dense-transformer-with-gpt3-context",
+        "notes": (
+            "GPT-3-style dense decoder training uses the same GPT native target; "
+            "context/window and width come from the selected template or custom graph."
+        ),
+    },
+    {
+        "name": "gpt2-evo",
+        "status": "implemented",
+        "native_target": "nfn_gpt2_evo_native_train",
+        "transformer_lm_status": "native-dense-gpt-layer-evo-delegate",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "dense-gpt2-compatible-layer-evo-delegate",
+        "notes": (
+            "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches "
+            "dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo."
+        ),
+    },
+    {
+        "name": "nanogpt",
+        "status": "implemented",
+        "native_target": "nfn_gpt_native_train",
+        "transformer_lm_status": "native-transformer-lm",
+        "token_lm_status": "implemented",
+        "geometry_status": "dense-gpt-template-geometry",
+        "notes": (
+            "NanoGPT routes to the shared dense GPT target with --template-name nanogpt; "
+            "the native loop now uses the selected 320-wide/5-head/5-layer dense GPT geometry. "
+            "Pass --train-token-lm for the token-only native preflight."
+        ),
+    },
+    {
+        "name": "llama",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_llama_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-rope-swiglu-native-loop",
+        "notes": "LLaMA/RoPE/SwiGLU training needs a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "mixllama",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_mixllama_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-moe-routing-native-loop",
+        "notes": "MoE routing and expert kernels need a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "jepa",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_jepa_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-jepa-objective-native-loop",
+        "notes": "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "semantic-router-moe",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_semantic_router_moe_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-semantic-router-moe-native-loop",
+        "notes": "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "deepseek-v4",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_deepseek_v4_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-deepseek-sparse-moe-native-loop",
+        "notes": "DeepSeek-style sparse/MoE variants need a dedicated native CUDA Tile C++ trainer.",
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -501,6 +606,8 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
         "--list-models",
         "--json",
     ]
+    if not str(native_train_cli or "").strip() and not _native_train_command_available(command[:1]):
+        return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
     proc = subprocess.run(
         command,
         text=True,
@@ -509,5 +616,7 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
         check=False,
     )
     if proc.returncode != 0:
+        if not str(native_train_cli or "").strip():
+            return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
         raise RuntimeError(f"native train registry command failed with exit {proc.returncode}: {proc.stderr.strip()}")
     return json.loads(proc.stdout)

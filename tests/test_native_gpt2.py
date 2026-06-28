@@ -5622,6 +5622,33 @@ def test_native_train_run_config_uses_direct_family_cli(
     assert "--model-family" not in args
 
 
+def test_native_train_model_registry_falls_back_without_generic_dispatcher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_generic = tmp_path / "missing_nfn_native_train"
+    monkeypatch.setattr(native_train_module, "DEFAULT_NATIVE_TRAIN_CLI", str(missing_generic))
+
+    registry = native_train_model_registry()
+    models = {entry["name"]: entry for entry in registry["models"]}
+
+    assert models["gpt"]["native_target"] == "nfn_gpt_native_train"
+    assert models["gpt2-evo"]["status"] == "implemented"
+    assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
+    assert models["nanogpt"]["token_lm_status"] == "implemented"
+    assert models["llama"]["status"] == "missing-native-trainer"
+
+
+def test_native_train_model_registry_static_names_match_cpp_registry() -> None:
+    root = Path(__file__).resolve().parents[1]
+    cpp_source = (root / "neuralfn" / "csrc" / "native_train" / "nfn_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    for entry in native_train_module._NATIVE_TRAIN_MODEL_REGISTRY:
+        assert f'"{entry["name"]}"' in cpp_source
+        assert f'"{entry["native_target"]}"' in cpp_source
+
+
 def test_native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

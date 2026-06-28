@@ -118,6 +118,15 @@
   tools/check_native_no_torch_deps.py --rebuild-stale --json`, and
   `bash tools/validate_sm120_cuda13.sh`.
 
+- Python SDK native training: `native_train_model_registry()` now has a
+  no-Torch static registry fallback when the generic `nfn_native_train`
+  dispatcher binary is not installed. SDK model discovery still reports the
+  compiled coverage for dense GPT, GPT-2 evo, NanoGPT, and missing trainer
+  families in lean installs that only ship direct family trainer binaries.
+  Explicit `native_train_cli=` failures still raise instead of silently using
+  the fallback. Verification: focused native GPT SDK tests covering the fallback
+  registry and C++ registry-name synchronization.
+
 - Native GPT benchmarking: added the rejected
   `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-serial-graph-body` diagnostic
   profile. It forces `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL=1`, checks that

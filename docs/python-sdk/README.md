@@ -258,6 +258,9 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+If that generic dispatcher binary is absent, the SDK returns the same registry
+from static no-Torch metadata so lean installs with only direct family trainers
+can still discover native coverage.
 `NativeTrainRunConfig` now defaults `strict_native_command=True`: the SDK and
 generic C++ binding reject Python and shell launcher executables such as
 `python`, `bash`, `*.py`, and `*.sh` on the native training path. Pass
