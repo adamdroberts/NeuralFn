@@ -856,7 +856,11 @@ strategy values, and linear-shape plan metadata all remain unchanged.
 `--require-native-route-change` makes that condition fail the run, and
 `tools/bench_native_gpt_sm120_candidate.sh` enables it automatically for
 measured candidate changes so a timing-only fluctuation cannot pass as a kernel
-promotion.
+promotion. The native runtime contract gate also requires candidate native JSON
+to report `optimized_kernel_contract_passed=true` in addition to
+`graph_editor_tensor_flow=false` and `torch_required=false`, so same-script
+benchmark promotion cannot accept a run that silently launched scalar/basic
+fallback kernels.
 Setup-only/prewarm counters are still reported but are not enough to pass that
 gate. The JSON splits counter evidence into `has_hot_route_counter_change`,
 `hot_changed`, and `setup_only_changed`, so cuBLAS handle prewarm, BF16

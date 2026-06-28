@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT benchmarks: paired native candidate runs now include
+  `optimized_kernel_contract_passed=true` in the native runtime contract gate,
+  alongside `graph_editor_tensor_flow=false` and `torch_required=false`. This
+  prevents same-script kernel promotion from accepting runs that used
+  scalar/basic fallback routes even if timing looks favorable. Verification:
+  focused paired-speed native runtime contract tests and `git diff --check`.
+
 - Native GPT: dense GPT training now enforces an optimized CUDA Tile kernel
   contract by default. The compiled trainer reports
   `optimized_kernel_contract_required`,

@@ -5569,6 +5569,56 @@ def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
     assert "median:train_loop_wall_ms_per_step: actual_ratio=1.020000" in proc.stdout
 
 
+def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_contract() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    passing_gate = module.evaluate_native_runtime_contract_gate(
+        {
+            "candidate_native_metric_values": {
+                "graph_editor_tensor_flow": ["false"],
+                "torch_required": ["false"],
+                "optimized_kernel_contract_passed": ["true"],
+            }
+        }
+    )
+    assert passing_gate["enabled"] is True
+    assert passing_gate["passed"] is True
+
+    failing_gate = module.evaluate_native_runtime_contract_gate(
+        {
+            "candidate_native_metric_values": {
+                "graph_editor_tensor_flow": ["false"],
+                "torch_required": ["false"],
+                "optimized_kernel_contract_passed": ["false"],
+                "optimized_kernel_contract_error": [
+                    "optimized native GPT kernel contract failed; basic TF32/SGEMM linear fallback launched 1 time(s)"
+                ],
+            }
+        }
+    )
+    assert failing_gate["enabled"] is True
+    assert failing_gate["passed"] is False
+    assert failing_gate["results"][2] == {
+        "metric": "optimized_kernel_contract_passed",
+        "expected": ["true"],
+        "observed": ["false"],
+        "passed": False,
+    }
+    assert (
+        failing_gate["failure_reason"]
+        == "candidate native training must report graph_editor_tensor_flow=false and torch_required=false and optimized_kernel_contract_passed=true"
+    )
+
+
 def test_paired_kernel_speed_tool_fails_min_metric_ratio_gate() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-min-ratio-gate.json"

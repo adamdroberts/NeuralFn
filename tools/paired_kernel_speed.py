@@ -962,6 +962,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "selected_graph_support_status",
     "graph_editor_tensor_flow",
     "torch_required",
+    "optimized_kernel_contract_passed",
+    "optimized_kernel_contract_error",
     "native_fast_startup_requested",
     "native_fast_startup_prewarm_policy",
     "tile_ops_library",
@@ -4011,18 +4013,28 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
     if not isinstance(values, dict):
         values = {}
     observed_contract = any(
-        key in values for key in ("graph_editor_tensor_flow", "torch_required")
+        key in values
+        for key in (
+            "graph_editor_tensor_flow",
+            "torch_required",
+            "optimized_kernel_contract_passed",
+        )
     )
     enabled = candidate_is_native or observed_contract
     results: list[dict[str, object]] = []
     if enabled:
-        for key in ("graph_editor_tensor_flow", "torch_required"):
+        expected_values = {
+            "graph_editor_tensor_flow": ["false"],
+            "torch_required": ["false"],
+            "optimized_kernel_contract_passed": ["true"],
+        }
+        for key, expected in expected_values.items():
             observed = values.get(key)
-            passed = observed == ["false"]
+            passed = observed == expected
             results.append(
                 {
                     "metric": key,
-                    "expected": ["false"],
+                    "expected": expected,
                     "observed": observed if isinstance(observed, list) else [],
                     "passed": passed,
                 }
@@ -4036,7 +4048,7 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             ""
             if not failed
             else "candidate native training must report graph_editor_tensor_flow=false "
-            "and torch_required=false"
+            "and torch_required=false and optimized_kernel_contract_passed=true"
         ),
     }
 
