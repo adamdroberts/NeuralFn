@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench workflow: refreshed the rejected `token_weight_padded_bf16_pattern`
+  SM120 profile after the CUDA 13.3.33 WSL reinstall and dedicated RTX 5090
+  validation. The route now improves setup wall time and token-weight
+  initialization versus the default padded conversion path, but it remains
+  rejected because the same-script llm.kittens reference gate still loses
+  throughput (`1.007196x` candidate/reference train-loop wall and `0.992892x`
+  candidate/reference tokens/sec). The candidate wrapper, README, and Tile-CUDA
+  SDK docs now describe the current rejection reason instead of the older setup
+  regression result.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=1
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_PROFILE_DIR=/tmp/nfn_sm120_token_weight_padded_bf16_pattern_profiles
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_token_weight_padded_bf16_pattern.json
+  bash tools/bench_native_gpt_sm120_candidate.sh` produced the expected
+  rejected-profile gate failure on candidate/reference throughput.
+
 - Bench tooling: `tools/paired_kernel_speed.py` now supports
   `--require-native-strategy-value-change NAME` for candidates whose route proof
   is a categorical native strategy field instead of a numeric hot route

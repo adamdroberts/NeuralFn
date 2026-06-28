@@ -1223,7 +1223,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "token_weight_padded_bf16_pattern"|"token-weight-padded-bf16-pattern"|"token_weight_padded_pattern"|"token-weight-padded-pattern")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 10-step, 3-sample same-script gate changed token_weight_init_strategy to device-vector4-strided-power2-deterministic-fused-bf16-pattern-shadow-padded-zero and kept the hot loop inside the gate, but rejected default promotion because setup.token_weight_init.total_ms regressed to 1.012279x mean versus the existing padded convert path."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 1-sample same-script recheck changed token_weight_init_strategy to device-vector4-strided-power2-deterministic-fused-bf16-pattern-shadow-padded-zero and improved setup_wall_ms to 0.971706x plus setup.token_weight_init.total_ms to 0.963982x versus the default padded convert path, but kept default promotion rejected because train_loop_wall_ms_per_step regressed to 1.001984x versus current native and 1.007196x versus llm.kittens, steady-state CUDA-event time regressed to 1.006745x versus llm.kittens, and train_tokens_per_second fell to 0.992892x versus llm.kittens."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002 train_loop_wall_ms_per_step=1.002}"

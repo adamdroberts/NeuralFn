@@ -227,9 +227,10 @@ telemetry, and the default fused padded-vocab vector4-strided BF16-shadow
 token-weight initialization. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`
 only for paired bisection against the older separate padding-zero path. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` only for rejected-candidate
-reproduction: the same-script CUDA 13.3 RTX 5090 gate kept the hot loop inside
-limits but regressed `setup.token_weight_init.total_ms` to `1.012279x` versus
-the default padded conversion path. Set
+reproduction: the current CUDA 13.3.33 dedicated RTX 5090 recheck improved
+startup wall to `0.971706x` and token-weight init to `0.963982x`, but still
+failed the throughput/reference gate with candidate-over-llm.kittens train-loop
+`1.007196x` and tokens/sec `0.992892x`. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
