@@ -18,11 +18,9 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
-from neuralfn.native_cuda_device import resolve_cuda_visible_devices_value
-
-
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 _DEFAULT_EVAL_BATCHES = "20"
+_AUTO_CUDA_VISIBLE_DEVICE_VALUES = {"auto", "dedicated", "dedicated-auto"}
 _NATIVE_METADATA_ACTION_FLAGS = {
     "--print-plan",
     "--list-templates",
@@ -39,6 +37,48 @@ _NATIVE_METADATA_ACTION_FLAGS = {
     "--smoke-transformer-lm-step",
     "--smoke-embedding-lm-step",
 }
+
+
+def resolve_cuda_visible_devices_value(requested: str | None) -> str:
+    value = str(requested or "").strip()
+    normalized = value.lower()
+    if normalized in {"", "none", "off"}:
+        return ""
+    if normalized not in _AUTO_CUDA_VISIBLE_DEVICE_VALUES:
+        return value
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,display_active,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "0"
+    first_index = ""
+    best_index = ""
+    best_util: int | None = None
+    for raw_line in proc.stdout.splitlines():
+        parts = [part.strip() for part in raw_line.split(",")]
+        if len(parts) < 3 or not parts[0]:
+            continue
+        index, display, util_text = parts[:3]
+        if not first_index:
+            first_index = index
+        try:
+            util = int(util_text)
+        except ValueError:
+            util = 0
+        if display == "Disabled" and (best_util is None or util < best_util):
+            best_index = index
+            best_util = util
+    return best_index or first_index or "0"
 
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:

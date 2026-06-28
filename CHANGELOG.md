@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native CLI startup: `nfn train`, `cli/scripts/train_gpt.py`, and
+  `native_training_guard.py` now keep CUDA-visible-device alias resolution local
+  to the script instead of importing `neuralfn.native_cuda_device` before
+  execing compiled native trainers. This removes a Python SDK package import
+  from the direct C++ handoff path while preserving the `auto` / `dedicated`
+  display-disabled GPU selection behavior. Verification: focused native GPT
+  source and direct-dispatch tests, no-Torch dependency/import gate, and
+  `git diff --check`.
+
 - Native GPT startup: stage-timed `--startup-only` probes now skip CUDA
   event-pool preallocation and report
   `stage_timing_prealloc_event_pairs_requested: 0`, because no optimizer step

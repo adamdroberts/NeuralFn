@@ -679,6 +679,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     --base-model gpt3 --graph-file ...` now run under the same import blocker
     and stubbed compiled CLI, proving template/custom-graph selection stays on
     the native command path instead of importing the graph-backed runtime.
+  - 2026-06-28 removed the `neuralfn.native_cuda_device` package import from
+    the direct native wrappers (`nfn train`, `cli/scripts/train_gpt.py`, and
+    `native_training_guard.py`). They now keep the small CUDA-visible-device
+    resolver local to the script so default device selection cannot import the
+    Python SDK package before the compiled C++ trainer handoff.
 - [x] Add a generic native-train binding command resolver so SDK tests and callers can inspect the compiled argv that `neuralfn._native_train` will spawn without importing Torch, dataset managers, or graph payload paths.
 - [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.

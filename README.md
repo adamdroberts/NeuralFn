@@ -3955,6 +3955,11 @@ are present:
 python tools/check_native_no_torch_deps.py
 ```
 
+The direct native wrappers (`nfn train`, `cli/scripts/train_gpt.py`, and
+`native_training_guard.py`) keep their CUDA-visible-device default resolver
+local to the script, so selecting ordinal `0` or a display-disabled GPU does not
+import `neuralfn.native_cuda_device` before the compiled C++ trainer handoff.
+
 After a CUDA toolkit reinstall or local C++/CUDA edit, run
 `python tools/check_native_no_torch_deps.py --rebuild-stale` to rebuild known
 stale native artifacts with their mapped `tools/build_*.sh` scripts before the

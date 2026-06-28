@@ -17,9 +17,6 @@ for candidate in (SCRIPTS_DIR, ROOT.parent):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
-from neuralfn.native_cuda_device import resolve_cuda_visible_devices_value
-
-
 def _arg_value(argv: list[str], *flags: str) -> str | None:
     for idx, arg in enumerate(argv):
         for flag in flags:
@@ -64,6 +61,7 @@ def _is_lightweight_root_help(argv: list[str]) -> bool:
 
 
 _DENSE_GPT_NATIVE_MODELS = {"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"}
+_AUTO_CUDA_VISIBLE_DEVICE_VALUES = {"auto", "dedicated", "dedicated-auto"}
 _NATIVE_TRAIN_FAMILY_TARGETS = {
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
@@ -74,6 +72,48 @@ _NATIVE_TRAIN_FAMILY_TARGETS = {
     "nanogpt": "nfn_nanogpt_native_train",
     "nano-gpt": "nfn_nanogpt_native_train",
 }
+
+
+def resolve_cuda_visible_devices_value(requested: str | None) -> str:
+    value = str(requested or "").strip()
+    normalized = value.lower()
+    if normalized in {"", "none", "off"}:
+        return ""
+    if normalized not in _AUTO_CUDA_VISIBLE_DEVICE_VALUES:
+        return value
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,display_active,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "0"
+    first_index = ""
+    best_index = ""
+    best_util: int | None = None
+    for raw_line in proc.stdout.splitlines():
+        parts = [part.strip() for part in raw_line.split(",")]
+        if len(parts) < 3 or not parts[0]:
+            continue
+        index, display, util_text = parts[:3]
+        if not first_index:
+            first_index = index
+        try:
+            util = int(util_text)
+        except ValueError:
+            util = 0
+        if display == "Disabled" and (best_util is None or util < best_util):
+            best_index = index
+            best_util = util
+    return best_index or first_index or "0"
 
 
 def _print_lightweight_root_help() -> None:

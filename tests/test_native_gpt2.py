@@ -709,6 +709,7 @@ def test_native_training_guard_sets_fast_cuda_ordinal_default() -> None:
         / "native_training_guard.py"
     ).read_text(encoding="utf-8")
 
+    assert "from neuralfn.native_cuda_device import" not in source
     assert "resolve_cuda_visible_devices_value" in source
     assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
@@ -722,6 +723,7 @@ def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
         / "nfn.py"
     ).read_text(encoding="utf-8")
 
+    assert "from neuralfn.native_cuda_device import" not in source
     assert "resolve_cuda_visible_devices_value" in source
     assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
@@ -914,6 +916,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
+    assert "from neuralfn.native_cuda_device import" not in train_gpt_source
     assert "resolve_cuda_visible_devices_value" in train_gpt_source
     assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in train_gpt_source
     assert "DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED" in native_train_sdk_source
