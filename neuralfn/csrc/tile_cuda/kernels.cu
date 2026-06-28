@@ -327,6 +327,25 @@ bool token_weight_padded_bf16_pattern_enabled() {
   return value;
 }
 
+bool token_weight_padded_specialized_enabled() {
+  static const bool value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_SPECIALIZED");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_PADDED_SPECIALIZED");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return false;
+    }
+    return !(std::strcmp(raw, "0") == 0 || std::strcmp(raw, "false") == 0 ||
+             std::strcmp(raw, "FALSE") == 0 || std::strcmp(raw, "off") == 0 ||
+             std::strcmp(raw, "OFF") == 0);
+  }();
+  return value;
+}
+
 bool cross_entropy_bf16_vec_normal_stores_enabled() {
   static const bool value = []() {
     const char* raw = std::getenv("NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES");
@@ -7662,6 +7681,60 @@ __global__ void init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_f
         shadow_bf16_bits[tail] = precomputed_bf16_pattern
             ? gpt2_token_weight_init_bf16_pattern1(bucket)
             : bf16_bits_from_float(value);
+      } else {
+        values[tail] = 0.0f;
+        shadow_bf16_bits[tail] = 0;
+      }
+    }
+  }
+}
+
+template <bool PrecomputedBf16Pattern>
+__global__ void init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n) {
+  const std::int64_t vector_count = (total_n + 3) / 4;
+  const std::int64_t stride = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  for (std::int64_t vector_idx =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       vector_idx < vector_count;
+       vector_idx += stride) {
+    const std::int64_t idx = vector_idx * 4;
+    if (idx + 3 < total_n) {
+      if (idx >= public_n) {
+        reinterpret_cast<float4*>(values)[vector_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] = make_ushort4(0, 0, 0, 0);
+        continue;
+      }
+      if (idx + 3 < public_n) {
+        const int bucket = static_cast<int>(idx) & 15;
+        const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket);
+        reinterpret_cast<float4*>(values)[vector_idx] = pattern;
+        if constexpr (PrecomputedBf16Pattern) {
+          reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] =
+              gpt2_token_weight_init_bf16_pattern4(bucket);
+        } else {
+          reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] = make_ushort4(
+              bf16_bits_from_float(pattern.x),
+              bf16_bits_from_float(pattern.y),
+              bf16_bits_from_float(pattern.z),
+              bf16_bits_from_float(pattern.w));
+        }
+        continue;
+      }
+    }
+    for (std::int64_t tail = idx; tail < total_n; ++tail) {
+      if (tail < public_n) {
+        const int bucket = static_cast<int>(tail) & 15;
+        const float value = static_cast<float>(bucket - 8) * 0.01f;
+        values[tail] = value;
+        if constexpr (PrecomputedBf16Pattern) {
+          shadow_bf16_bits[tail] = gpt2_token_weight_init_bf16_pattern1(bucket);
+        } else {
+          shadow_bf16_bits[tail] = bf16_bits_from_float(value);
+        }
       } else {
         values[tail] = 0.0f;
         shadow_bf16_bits[tail] = 0;
@@ -16119,13 +16192,30 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
     const int strided_blocks = std::min<int>(
         kMaxBlocks,
         std::max<int>(1, blocks));
-    init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel<<<
-        strided_blocks, kThreads, 0, stream>>>(
-            values,
-            shadow_bf16_bits,
-            public_n,
-            total_n,
-            token_weight_padded_bf16_pattern_enabled());
+    const bool padded_bf16_pattern = token_weight_padded_bf16_pattern_enabled();
+    if (!token_weight_padded_specialized_enabled()) {
+      init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel<<<
+          strided_blocks, kThreads, 0, stream>>>(
+              values,
+              shadow_bf16_bits,
+              public_n,
+              total_n,
+              padded_bf16_pattern);
+    } else if (padded_bf16_pattern) {
+      init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel<true><<<
+          strided_blocks, kThreads, 0, stream>>>(
+              values,
+              shadow_bf16_bits,
+              public_n,
+              total_n);
+    } else {
+      init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel<false><<<
+          strided_blocks, kThreads, 0, stream>>>(
+              values,
+              shadow_bf16_bits,
+              public_n,
+              total_n);
+    }
     return;
   }
   init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel<<<blocks, kThreads, 0, stream>>>(

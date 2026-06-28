@@ -9742,6 +9742,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "init_gpt2_token_weight_fast_int32_with_bf16_shadow_float32_kernel" in kernels_text
@@ -9866,7 +9868,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in header_text
     assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in source_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel" in kernels_text
-    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel" in kernels_text
+    assert "token_weight_padded_specialized" in candidate_bench_text
     padded_token_init_kernel = kernels_text[
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
@@ -11357,7 +11360,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "            true);"
     ) in gpt2_source_text
     assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_kernel" in kernels_text
-    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel" in kernels_text
+    assert (
+        "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel<false>"
+        in kernels_text
+    )
+    assert (
+        "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel<true>"
+        in kernels_text
+    )
     assert (
         '"device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"'
         in gpt2_source_text

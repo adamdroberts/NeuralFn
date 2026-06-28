@@ -900,6 +900,17 @@ case "${CANDIDATE_PROFILE,,}" in
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:-setup_cuda_event_timing_enabled}"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=1.250}"
     ;;
+  "token_weight_padded_specialized"|"token-weight-padded-specialized"|"token_weight_padded_compile_time"|"token-weight-padded-compile-time")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-sample startup-only gate compared the compile-time-specialized strided padded token-weight BF16-shadow initializer against the older runtime-flag kernel. It rejected default promotion because setup.token_weight_init.total_ms regressed to 1.021654x mean and setup_wall_ms regressed to 1.006317x mean."
+    CANDIDATE_NOTE="Rejected diagnostic comparing the compile-time-specialized strided padded token-weight BF16-shadow initializer against the older runtime-flag kernel in the same startup-only script."
+    STARTUP_ONLY=1
+    STEPS=0
+    INCLUDE_LLMK_REFERENCE=0
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002}"
+    ;;
   "concurrent_arena_materialize"|"concurrent-arena-materialize"|"parallel_arena_materialize"|"parallel-arena-materialize")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-sample startup-only gate overlapped the float and uint16 arena cudaMalloc calls and moved concurrent_arena_materialize_count 0->1, but rejected default promotion because the setup_wall_ms median regressed to 1.003922x and uint16_arena_cuda_malloc_wall_ms regressed to 2.664592x mean despite a noisy 0.987871x mean setup wall."

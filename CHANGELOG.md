@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT / SM120: added a compile-time-specialized strided padded
+  token-weight initializer diagnostic in
+  `neuralfn/csrc/tile_cuda/kernels.cu`, but kept the older runtime-flag kernel
+  as the default because the same-script CUDA 13.3.33 dedicated RTX 5090
+  startup gate rejected the specialized route. Set
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1` only for intentional
+  bisection; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_specialized`
+  is marked rejected by default after measuring
+  `setup.token_weight_init.total_ms=1.021654x` mean and
+  `setup_wall_ms=1.006317x` mean versus the default. Runtime strategy names and
+  JSON fields are unchanged, and `token_weight_padded_bf16_pattern` remains the
+  promotion gate for the precomputed BF16-pattern variant. Verification:
+  focused native GPT source test, linked native GPT rebuild, direct startup
+  probe, and same-script startup A/B.
+
 - Native GPT startup: linked dense-GPT trainers now skip the redundant
   required Tile ABI symbol preflight by default when loading Tile ops through
   `RTLD_DEFAULT`. Runtime JSON reports
