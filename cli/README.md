@@ -160,7 +160,10 @@ compiled native CLI paths. Native dense GPT inference should point `nfn infer
 for legacy `gpt2_evo.pt/json` eager artifacts; its parser, `--help`, and
 `--evo`/`--megakernel` artifact default resolution stay off the Torch,
 dataset-manager, and NumPy import path, but legacy `.pt/.json` token generation
-loads the graph-backed runtime after argument parsing:
+loads the graph-backed runtime after argument parsing. Shared legacy inference
+helpers imported from `scripts/infer_jepa_semantic.py`, including dataset
+selector/download helpers, are lazy wrappers so test collection and parser/help
+startup can import them without immediately loading the graph-backed runtime:
 
 ```bash
 python scripts/train_gpt.py --device cuda --tinystories --eval-every-steps 1000

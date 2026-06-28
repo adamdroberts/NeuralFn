@@ -128,6 +128,13 @@ class InferMegakernelArtifactTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     parser.parse_args(["--tokenizer", "sp2048", "--o200k"])
 
+    def test_infer_jepa_semantic_reexports_dataset_helpers_for_shared_imports(self) -> None:
+        module = self.load_module("infer_jepa_semantic")
+
+        self.assertTrue(callable(module.dataset_download_kwargs_from_args))
+        self.assertTrue(callable(module.resolve_dataset_selector_args))
+        self.assertTrue(callable(module.resolve_or_download_dataset))
+
     def test_resolve_semantic_targets_normalizes_explicit_phrase_topics(self) -> None:
         module = self.load_module("infer_jepa_semantic")
         vocab = module.ConversationalVocabulary("vocab_86d_gpt2.json")

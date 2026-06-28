@@ -68,6 +68,11 @@ Canonical docs:
   `--evo`/`--megakernel` artifact default resolution lightweight: do not import
   Torch, `server.dataset_manager`, NumPy, or graph-backed inference helpers
   until actual generation runs.
+- Keep `cli/scripts/infer_jepa_semantic.py` shared dataset helper exports lazy:
+  sibling inference modules and `nfn_impl` may import
+  `dataset_download_kwargs_from_args`, `resolve_dataset_selector_args`, and
+  `resolve_or_download_dataset`, but those wrappers should not load the
+  graph-backed runtime until called.
 - Keep `NFN_DATASETS_DIR` honored by native GPT-2 alias resolution so Python and
   compiled native CLI paths can share a non-home dataset cache.
 - Keep `nfn train|infer|eval --help` and `nfn kernels ... --help` on lightweight

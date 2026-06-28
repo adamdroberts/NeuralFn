@@ -199,6 +199,22 @@ def _ensure_runtime_imports() -> None:
     )
     _RUNTIME_IMPORTS_LOADED = True
 
+
+def dataset_download_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
+    _ensure_runtime_imports()
+    return globals()["dataset_download_kwargs_from_args"](args)
+
+
+def resolve_dataset_selector_args(args: argparse.Namespace):
+    _ensure_runtime_imports()
+    return globals()["resolve_dataset_selector_args"](args)
+
+
+def resolve_or_download_dataset(*args, **kwargs):
+    _ensure_runtime_imports()
+    return globals()["resolve_or_download_dataset"](*args, **kwargs)
+
+
 LOGGER = logging.getLogger("jepa_semantic_infer")
 COMPILE_CHECKPOINT_MARKERS = (
     ".node_modules.attention.node_modules.q_proj.proj.weight",

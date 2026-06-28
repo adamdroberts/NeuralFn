@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CLI inference imports: restored `infer_jepa_semantic` re-exports for
+  `dataset_download_kwargs_from_args`, `resolve_dataset_selector_args`, and
+  `resolve_or_download_dataset` as lazy wrappers. Shared inference modules and
+  `nfn_impl` can import those helpers during test collection again without
+  immediately loading the graph-backed runtime; the wrappers still defer
+  Torch/dataset imports until the helper is called. Verification:
+  `python -m pytest cli/tests/test_nfn_cli.py -q --collect-only`,
+  `python -m pytest cli/tests/test_infer_megakernel_artifacts.py -q -k
+  reexports_dataset_helpers`, and
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+
 - Native trainer: fixed the split-QKV attention fallback allocation path used
   when `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0`. The saved attention LSE sidecar
   now reuses the combined float arena when that arena has already assigned
