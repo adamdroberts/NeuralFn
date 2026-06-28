@@ -120,6 +120,12 @@ Real training tensors must not pass through graph editor node objects.
   `metric_ratio_gates: passed=true`. The runtime contract stayed clean:
   `graph_editor_tensor_flow=false`, `torch_required=false`,
   `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`.
+  - 2026-06-28 current-default 3-step, 2-sample no-stage parity still passed the
+    configured gate but showed the remaining gap: NeuralFn measured `1.001983x`
+    llm.kittens train-loop wall, `1.001132x` steady-state CUDA-event step time,
+    and `0.997519x` tokens/sec. The same JSON reports
+    `diagnostic-cuda-graph-wrapper`, `true_fused_capability=false`, and
+    `graph_body_nodes_per_replay=3`, so keep the strict goal open.
 - [x] Preserve rejected heavy cuBLASLt plan retunes as named profiles instead of
   implicit defaults. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip`
   now records the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample

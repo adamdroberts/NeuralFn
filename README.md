@@ -315,6 +315,14 @@ confirmed the selected GPU was idle before and after every sample and reported
 the promoted default route with
 `block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
 `block_backward_qkv_dinput_before_dweight_count=480`.
+The current 2026-06-28 3-step, 2-sample no-stage parity refresh still passes
+the configured parity gate, but does not close the strict goal: NeuralFn was
+`1.001983x` llm.kittens train-loop wall, `1.001132x` steady-state CUDA-event
+step time, and `0.997519x` tokens/sec. Runtime JSON still reports
+`lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,
+`true_fused_capability: false`, and `graph_body_nodes_per_replay: 3`, so the
+next implementation target remains a reference-aligned LM-head classifier path
+rather than another setup or wrapper default.
 SM120 GPT launchers default unset `CUDA_VISIBLE_DEVICES` to the `dedicated`
 selector, which picks the lowest-utilization display-disabled NVIDIA GPU through
 `nvidia-smi` and falls back to ordinal `0` if that probe cannot identify a

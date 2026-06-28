@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the current-default no-stage llm.kittens parity gate on the
+  dedicated RTX 5090 after the launcher selector change. The 3-step, 2-sample
+  run passed the configured parity thresholds, but still measured NeuralFn at
+  `1.001983x` llm.kittens train-loop wall, `1.001132x` steady-state CUDA-event
+  step time, and `0.997519x` tokens/sec. Runtime JSON still reports
+  `diagnostic-cuda-graph-wrapper`, `true_fused_capability=false`, and
+  `graph_body_nodes_per_replay=3`, so the remaining implementation target is
+  the reference-aligned LM-head classifier path. Verification:
+  `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_current_parity_20260628.json
+  bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Bench: refreshed the `token_weight_padded_init` route after the SM120 launcher
   moved to the dedicated GPU selector. The 2026-06-28 3-step, 2-sample full
   training gate proved the Tile-CUDA route by moving
