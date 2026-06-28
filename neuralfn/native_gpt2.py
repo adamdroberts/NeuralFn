@@ -361,6 +361,9 @@ def resolve_native_gpt2_launcher(value: str | None = None) -> str:
     requested = str(value or "").strip()
     if requested:
         return requested
+    env_value = str(os.environ.get("NFN_NATIVE_GPT_LAUNCHER", "")).strip()
+    if env_value:
+        return env_value
     env_value = str(os.environ.get("NFN_NATIVE_GPT2_LAUNCHER", "")).strip()
     if env_value:
         return env_value

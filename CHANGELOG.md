@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT SDK: added `NFN_NATIVE_GPT_LAUNCHER` as the generic launcher
+  override honored by `resolve_native_gpt_launcher()` and the compatibility
+  `resolve_native_gpt2_launcher()` path, with `NFN_NATIVE_GPT2_LAUNCHER`
+  retained as the fallback. This keeps dense GPT launcher configuration aligned
+  with the generic `NFN_NATIVE_GPT_*` environment surface while preserving
+  existing local scripts. Verified with focused native GPT resolver tests and
+  Python bytecode compilation.
+
 - Native GPT benchmarking: fixed
   `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` /
   `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` so the SM120 candidate

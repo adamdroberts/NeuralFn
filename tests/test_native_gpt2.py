@@ -30,6 +30,7 @@ from neuralfn.native_gpt import (
     normalize_native_gpt_encoding_name,
     read_native_gpt_checkpoint_info,
     resolve_native_gpt_binding_command,
+    resolve_native_gpt_launcher,
     run_native_gpt,
     run_native_gpt_compiled_cli_capture,
 )
@@ -4084,6 +4085,19 @@ def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(
     assert explicit.available is True
     assert automatic.resolved == "launcher"
     assert automatic.available is True
+
+
+def test_native_gpt_launcher_env_prefers_generic_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generic_launcher = tmp_path / "nfn_gpt_tile_train"
+    compat_launcher = tmp_path / "nfn_gpt2_tile_train"
+    monkeypatch.setenv("NFN_NATIVE_GPT_LAUNCHER", str(generic_launcher))
+    monkeypatch.setenv("NFN_NATIVE_GPT2_LAUNCHER", str(compat_launcher))
+
+    assert resolve_native_gpt_launcher() == str(generic_launcher)
+    assert resolve_native_gpt2_launcher() == str(generic_launcher)
 
 
 def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytest.MonkeyPatch) -> None:
