@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT metadata startup: added
+  `run_native_gpt_compiled_cli_capture()` and compatibility
+  `run_native_gpt2_compiled_cli_capture()` for dense GPT commands that need
+  captured stdout/stderr. The helpers pass raw compiled CLI argv through the C++
+  `run_gpt_capture` binding when available and fall back to Python
+  `subprocess.run()` only when the binding is missing. Direct `train_gpt.py`
+  and dense `nfn train` metadata/preflight actions now use this path for
+  no-data command inspection, template listing, plans, and Tile smoke checks.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m
+  py_compile neuralfn/native_gpt2.py neuralfn/native_gpt.py
+  neuralfn/__init__.py cli/scripts/train_gpt.py cli/nfn.py
+  tools/check_native_no_torch_deps.py`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_compiled_cli_capture_prefers_cpp_binding
+  tests/test_native_gpt2.py::test_native_gpt_cpp_binding_requires_command_resolver_symbol
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`; `git diff --check`.
+
 - SM120 CUDA 13.3 validation evidence: reran the default
   `tools/validate_sm120_cuda13.sh` path after the validator/no-Torch rebuild
   changes. The gate passed the no-Torch artifact/import scan, linked Tile CUDA

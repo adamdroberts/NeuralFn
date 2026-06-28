@@ -8,7 +8,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import struct
-from typing import Any
+from typing import Any, Sequence
 
 from .native_cuda_device import resolve_cuda_visible_devices_value
 
@@ -1250,6 +1250,63 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
         proc = subprocess.run(config.launcher_argv(), env=env, check=False)
         return int(proc.returncode)
     raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
+
+
+def run_native_gpt2_compiled_cli_capture(
+    command: Sequence[str],
+    *,
+    cuda_visible_devices: str = "0",
+    cuda_device_max_connections: str = "1",
+    runner: str = "auto",
+) -> subprocess.CompletedProcess[str]:
+    """Run a compiled dense GPT CLI argv and capture output through the C++ binding."""
+
+    argv = [str(item) for item in command]
+    normalized_runner = str(runner or "auto").strip().lower().replace("_", "-")
+    if normalized_runner not in {"auto", "binding", "compiled-cli"}:
+        raise ValueError("native GPT compiled CLI capture runner must be one of: auto, binding, compiled-cli")
+    if normalized_runner in {"auto", "binding"}:
+        try:
+            module_name, _runner, _resolver = _load_native_gpt2_binding()
+            module = importlib.import_module(module_name)
+            capture_runner = (
+                getattr(module, "run_gpt_capture", None)
+                or getattr(module, "run_gpt2_capture", None)
+                or getattr(module, "run_infer", None)
+            )
+            if callable(capture_runner):
+                result = capture_runner(
+                    {
+                        "compiled_cli_argv": argv,
+                        "cuda_visible_devices": resolve_cuda_visible_devices_value(cuda_visible_devices),
+                        "cuda_device_max_connections": str(cuda_device_max_connections),
+                    }
+                )
+                return subprocess.CompletedProcess(
+                    argv,
+                    int(result.get("returncode", 126)),
+                    stdout=str(result.get("stdout", "")),
+                    stderr=str(result.get("stderr", "")),
+                )
+            if normalized_runner == "binding":
+                raise RuntimeError("native GPT binding does not expose run_gpt_capture/run_infer")
+        except ImportError as exc:
+            if normalized_runner == "binding":
+                raise RuntimeError(f"Native GPT binding requested but unavailable: {exc}") from exc
+    env = os.environ.copy()
+    if str(cuda_visible_devices or "").strip():
+        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(cuda_visible_devices))
+    if str(cuda_device_max_connections or "").strip():
+        _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(cuda_device_max_connections))
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    return subprocess.run(
+        argv,
+        env=env,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
 def exec_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "compiled-cli") -> int:

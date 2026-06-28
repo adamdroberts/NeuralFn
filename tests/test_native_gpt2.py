@@ -31,6 +31,7 @@ from neuralfn.native_gpt import (
     read_native_gpt_checkpoint_info,
     resolve_native_gpt_binding_command,
     run_native_gpt,
+    run_native_gpt_compiled_cli_capture,
 )
 from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
@@ -53,6 +54,7 @@ from neuralfn.native_gpt2 import (
     resolve_native_gpt2_token_shards,
     run_native_gpt2,
     run_native_gpt2_checkpoint_sampler,
+    run_native_gpt2_compiled_cli_capture,
     write_native_gpt2_run_config,
 )
 from neuralfn.native_train import (
@@ -1106,6 +1108,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
+    assert "run_native_gpt_compiled_cli_capture" in train_gpt_source
+    assert "return _run_compiled_cli_capture(command, env)" in train_gpt_source
     assert "from neuralfn.native_cuda_device import" not in train_gpt_source
     assert "resolve_cuda_visible_devices_value" in train_gpt_source
     assert (
@@ -1117,6 +1121,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in nfn_source
     assert "_native_gpt_cli_uses_linked_tile_ops" in nfn_source
     assert '_append_value_arg(out, "--tile-ops-lib", "linked")' in nfn_source
+    assert "_native_command_is_dense_gpt_cli(command)" in nfn_source
+    assert "run_native_gpt_compiled_cli_capture" in nfn_source
     assert "nfn_gpt_native_train_linked" in native_train_source
     assert "linked_local_build" in native_train_source
     assert "nfn_gpt_native_train_linked" in gpt2_evo_source
@@ -4619,6 +4625,41 @@ def test_native_gpt_cpp_binding_requires_command_resolver_symbol() -> None:
     assert "resolve_native_gpt2_binding_command" in python_source
     assert "resolve_native_gpt_binding_command" in generic_source
     assert "resolve_command(config_dict)/resolve_native_gpt_command(config_dict)/resolve_native_gpt2_command(config_dict)" in python_source
+
+
+def test_native_gpt_compiled_cli_capture_prefers_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_capture(payload: dict[str, object]) -> dict[str, object]:
+        calls.append(payload)
+        return {"returncode": 7, "stdout": "captured-out", "stderr": "captured-err"}
+
+    fake_binding = SimpleNamespace(
+        run_gpt=lambda _payload: 0,
+        resolve_native_gpt_command=lambda payload: payload["compiled_cli_argv"],
+        run_gpt_capture=fake_capture,
+    )
+    monkeypatch.setitem(sys.modules, "neuralfn_native_gpt", fake_binding)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
+    monkeypatch.setattr(native_gpt2_module.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess fallback should not run")))
+
+    result = run_native_gpt2_compiled_cli_capture(
+        ["/tmp/nfn_gpt_native_train", "--print-plan"],
+        cuda_visible_devices="0",
+    )
+    generic_result = run_native_gpt_compiled_cli_capture(
+        ["/tmp/nfn_gpt_native_train", "--list-templates"],
+        cuda_visible_devices="0",
+    )
+
+    assert result.returncode == 7
+    assert result.stdout == "captured-out"
+    assert result.stderr == "captured-err"
+    assert generic_result.returncode == 7
+    assert calls[0]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--print-plan"]
+    assert calls[1]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--list-templates"]
 
 
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(

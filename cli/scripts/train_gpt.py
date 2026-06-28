@@ -483,9 +483,27 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
         or "--list-templates" in command
         or "--check-tile-ops" in command
     ):
-        return int(subprocess.run(command, env=env, check=False).returncode)
+        return _run_compiled_cli_capture(command, env)
     os.execvpe(command[0], command, env)
     return 127
+
+
+def _run_compiled_cli_capture(command: list[str], env: dict[str, str]) -> int:
+    try:
+        from neuralfn.native_gpt import run_native_gpt_compiled_cli_capture
+
+        result = run_native_gpt_compiled_cli_capture(
+            command,
+            cuda_visible_devices=env.get("CUDA_VISIBLE_DEVICES", ""),
+            cuda_device_max_connections=env.get("CUDA_DEVICE_MAX_CONNECTIONS", "1"),
+        )
+    except (ImportError, RuntimeError, ValueError):
+        return int(subprocess.run(command, env=env, check=False).returncode)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return int(result.returncode)
 
 
 def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:

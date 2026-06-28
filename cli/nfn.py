@@ -963,10 +963,41 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         print(shlex.join(command))
         return 0
     if "--dry-run" in command or "--print-command" in command:
-        proc = subprocess.run(command, env=env, check=False)
-        return int(proc.returncode)
+        if _native_command_is_dense_gpt_cli(command):
+            return _run_dense_gpt_compiled_cli_capture(command, env)
+        return int(subprocess.run(command, env=env, check=False).returncode)
     os.execvpe(command[0], command, env)
     return 127
+
+
+def _native_command_is_dense_gpt_cli(command: list[str]) -> bool:
+    if not command:
+        return False
+    name = Path(str(command[0])).name
+    return name in {
+        "nfn_gpt_native_train",
+        "nfn_gpt_native_train_linked",
+        "nfn-gpt-native-train",
+        "nfn-gpt-native-train-linked",
+    }
+
+
+def _run_dense_gpt_compiled_cli_capture(command: list[str], env: dict[str, str]) -> int:
+    try:
+        from neuralfn.native_gpt import run_native_gpt_compiled_cli_capture
+
+        result = run_native_gpt_compiled_cli_capture(
+            command,
+            cuda_visible_devices=env.get("CUDA_VISIBLE_DEVICES", ""),
+            cuda_device_max_connections=env.get("CUDA_DEVICE_MAX_CONNECTIONS", "1"),
+        )
+    except (ImportError, RuntimeError, ValueError):
+        return int(subprocess.run(command, env=env, check=False).returncode)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return int(result.returncode)
 
 
 def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:

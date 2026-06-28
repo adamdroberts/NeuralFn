@@ -35,6 +35,7 @@ from .native_gpt2 import (
     resolve_native_gpt2_token_shards as resolve_native_gpt_token_shards,
     run_native_gpt2,
     run_native_gpt2_checkpoint_sampler,
+    run_native_gpt2_compiled_cli_capture,
     write_native_gpt2_run_config,
 )
 
@@ -90,6 +91,10 @@ def run_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto") -> int:
     return run_native_gpt2(config, runner=runner)
 
 
+def run_native_gpt_compiled_cli_capture(*args, **kwargs):
+    return run_native_gpt2_compiled_cli_capture(*args, **kwargs)
+
+
 def exec_native_gpt(config: NativeGptRunConfig, *, runner: str = "compiled-cli") -> int:
     return exec_native_gpt2(config, runner=runner)
 
@@ -143,6 +148,7 @@ __all__ = [
     "resolve_native_gpt_launcher",
     "resolve_native_gpt_token_shards",
     "run_native_gpt_checkpoint_sampler",
+    "run_native_gpt_compiled_cli_capture",
     "run_native_gpt",
     "write_native_gpt_run_config",
 ]
