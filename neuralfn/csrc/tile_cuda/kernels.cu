@@ -861,6 +861,22 @@ __global__ void nvfp4_packed_to_float32_kernel(
   dest[idx] = nvfp4_e2m1_code_to_float_device(code) * block_scale;
 }
 
+__device__ __forceinline__ float nvfp4_packed_value_device(
+    const std::uint8_t* __restrict__ packed,
+    const std::uint8_t* __restrict__ block_scales_e4m3,
+    float tensor_scale,
+    std::int64_t index) {
+  constexpr std::int64_t kNvfp4BlockSize = 16;
+  const std::uint8_t packed_byte = packed[index / 2];
+  const std::uint8_t code =
+      (index & 1) == 0 ? (packed_byte & 0x0f) : ((packed_byte >> 4) & 0x0f);
+  const std::int64_t scale_block = index / kNvfp4BlockSize;
+  const float safe_tensor_scale = tensor_scale > 0.0f ? tensor_scale : 1.0f;
+  const float block_scale =
+      nvfp4_e4m3fn_to_float_device(block_scales_e4m3[scale_block]) * safe_tensor_scale;
+  return nvfp4_e2m1_code_to_float_device(code) * block_scale;
+}
+
 __tile_global__ void bf16_bits_add_bias_inplace_tile_float32_kernel(
     std::uint16_t* __restrict__ values_bf16_bits,
     const float* __restrict__ bias,
@@ -11157,7 +11173,6 @@ __global__ void linear_nvfp4_input_weight_bf16_bits_float32_kernel(
     std::int64_t input_dim,
     std::int64_t output_dim,
     bool has_bias) {
-  constexpr std::int64_t kNvfp4BlockSize = 16;
   const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
   if (idx >= n) {
     return;
@@ -11170,16 +11185,64 @@ __global__ void linear_nvfp4_input_weight_bf16_bits_float32_kernel(
   float acc = has_bias ? bias[col] : 0.0f;
   for (std::int64_t i = 0; i < input_dim; ++i) {
     const std::int64_t x_index = x_row_offset + i;
-    const std::uint8_t packed_byte = x_nvfp4_packed[x_index / 2];
-    const std::uint8_t code =
-        (x_index & 1) == 0 ? (packed_byte & 0x0f) : ((packed_byte >> 4) & 0x0f);
-    const std::int64_t scale_block = x_index / kNvfp4BlockSize;
-    const float x_scale = nvfp4_e4m3fn_to_float_device(x_block_scales_e4m3[scale_block]) *
-        safe_tensor_scale;
-    const float x_value = nvfp4_e2m1_code_to_float_device(code) * x_scale;
+    const float x_value =
+        nvfp4_packed_value_device(x_nvfp4_packed, x_block_scales_e4m3, safe_tensor_scale, x_index);
     acc += x_value * bf16_bits_to_f32_device(w_row[i]);
   }
   out[idx] = acc;
+}
+
+__global__ void linear_backward_weight_accumulate_nvfp4_input_float32_kernel(
+    const std::uint8_t* __restrict__ x_nvfp4_packed,
+    const std::uint8_t* __restrict__ x_block_scales_e4m3,
+    float x_tensor_scale,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta) {
+  constexpr int kTile = 16;
+  __shared__ float x_tile[kTile][kTile];
+  __shared__ float grad_tile[kTile][kTile];
+
+  const int in_col = static_cast<int>(blockIdx.x) * kTile + threadIdx.x;
+  const int out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.y;
+  const float safe_tensor_scale = x_tensor_scale > 0.0f ? x_tensor_scale : 1.0f;
+  float acc = 0.0f;
+
+  for (std::int64_t row_base = 0; row_base < rows; row_base += kTile) {
+    const std::int64_t row = row_base + threadIdx.y;
+    if (row < rows && in_col < input_dim) {
+      x_tile[threadIdx.y][threadIdx.x] = nvfp4_packed_value_device(
+          x_nvfp4_packed,
+          x_block_scales_e4m3,
+          safe_tensor_scale,
+          row * input_dim + in_col);
+    } else {
+      x_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    const int grad_out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.x;
+    if (row < rows && grad_out_col < output_dim) {
+      grad_tile[threadIdx.y][threadIdx.x] = grad_out[row * output_dim + grad_out_col];
+    } else {
+      grad_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    __syncthreads();
+    if (in_col < input_dim && out_col < output_dim) {
+      for (int k = 0; k < kTile; ++k) {
+        acc += x_tile[k][threadIdx.x] * grad_tile[k][threadIdx.y];
+      }
+    }
+    __syncthreads();
+  }
+
+  if (in_col < input_dim && out_col < output_dim) {
+    const std::int64_t weight_idx = static_cast<std::int64_t>(out_col) * input_dim + in_col;
+    grad_weight[weight_idx] = beta == 0.0f ? acc : grad_weight[weight_idx] * beta + acc;
+  }
 }
 
 __tile_global__ void linear_backward_bias_float32_kernel(
@@ -17854,6 +17917,35 @@ void launch_linear_nvfp4_input_weight_bf16_float32(
       input_dim,
       output_dim,
       has_bias);
+}
+
+void launch_linear_backward_weight_accumulate_nvfp4_input_float32_beta(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
+  constexpr int kTile = 16;
+  const dim3 block(kTile, kTile, 1);
+  const dim3 grid(
+      static_cast<unsigned int>((input_dim + kTile - 1) / kTile),
+      static_cast<unsigned int>((output_dim + kTile - 1) / kTile),
+      1);
+  linear_backward_weight_accumulate_nvfp4_input_float32_kernel<<<grid, block, 0, stream>>>(
+      x_nvfp4_packed,
+      x_block_scales_e4m3,
+      x_tensor_scale,
+      grad_out,
+      grad_weight,
+      rows,
+      input_dim,
+      output_dim,
+      beta);
 }
 
 void launch_linear_bf16_gelu_bf16_float32(
