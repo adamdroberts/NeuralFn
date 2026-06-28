@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT benchmarking: added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, a startup-only
+  paired diagnostic that enables `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` for the
+  candidate only. `tools/paired_kernel_speed.py` now exposes
+  `timing.setup_cuda_event_timing_requested`,
+  `timing.setup_cuda_event_timing_enabled`, and
+  `timing.setup_cuda_event_timing_sync_count` as native metrics so the route
+  gate can prove `setup_cuda_event_timing_enabled` changed. Use this profile to
+  distinguish setup wall buckets from actual CUDA kernel time before promoting
+  startup candidates; keep it out of throughput runs because setup-event timing
+  intentionally synchronizes between measured phases.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q` passed with `106 passed, 2 skipped` before the
+  profile edit; `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/paired_kernel_speed.py`; `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing
+  NFN_SM120_NATIVE_DRY_RUN_PLAN=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`; and a one-sample live RTX 5090
+  run with `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing
+  NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_setup_event_timing_candidate.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`, which passed the route gate with
+  `required_strategy_value_changes=["setup_cuda_event_timing_enabled"]` and
+  changed `setup_cuda_event_timing_requested/enabled` from `false` to `true`
+  while keeping the native runtime contract green.
+
 - Native GPT startup: promoted the thresholded CUDA async allocator as the
   default. Dense GPT C++ training now defaults
   `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` and

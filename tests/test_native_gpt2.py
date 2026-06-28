@@ -3060,6 +3060,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
     assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
     assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
+    assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
+    assert '"setup.cuda_event.token_weight_init.total_ms"' in speed_source
     assert "concurrent_arena_materialize_requested" in speed_source
     assert "concurrent_arena_materialize_enabled" in speed_source
     assert "concurrent_arena_materialize_count" in speed_source
@@ -3140,6 +3142,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
             "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1 "
             "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216"
         ),
+        "setup_event_timing": "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1",
         "lm_head_cooperative_sequence_wrapper": (
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 "
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "

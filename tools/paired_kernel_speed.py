@@ -765,6 +765,18 @@ NATIVE_METRIC_PATHS = (
         "block_state_layout.attention_backward_tk_block_size_symbol_loaded",
         ("block_state_layout", "attention_backward_tk_block_size_symbol_loaded"),
     ),
+    (
+        "setup_cuda_event_timing_requested",
+        ("timing", "setup_cuda_event_timing_requested"),
+    ),
+    (
+        "setup_cuda_event_timing_enabled",
+        ("timing", "setup_cuda_event_timing_enabled"),
+    ),
+    (
+        "setup_cuda_event_timing_sync_count",
+        ("timing", "setup_cuda_event_timing_sync_count"),
+    ),
     ("float_arena_cuda_malloc_wall_ms", ("float_arena_cuda_malloc_wall_ms",)),
     (
         "float_arena_pointer_assign_wall_ms",

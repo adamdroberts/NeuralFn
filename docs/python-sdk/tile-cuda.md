@@ -2096,7 +2096,10 @@ SM120 wrappers can enable the same mode with
 `NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` for native candidate comparisons or
 `NFN_SM120_PARITY_SETUP_EVENT_TIMING=1` for llm.kittens parity comparisons.
 The paired benchmark text summary prints the common
-`setup.cuda_event.*.total_ms` fields when those records are present.
+`setup.cuda_event.*.total_ms` fields when those records are present. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing` for a startup-only
+same-script attribution run; the profile enables setup-event timing only for
+the candidate and gates on `setup_cuda_event_timing_enabled` changing.
 The native dense-GPT path loads Tile ops with lazy dynamic binding while still
 validating required ABI symbols explicitly; runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,

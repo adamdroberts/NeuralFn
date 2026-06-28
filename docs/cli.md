@@ -686,7 +686,12 @@ SM120 candidate and parity wrappers expose this as
 `NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` and
 `NFN_SM120_PARITY_SETUP_EVENT_TIMING=1`. `tools/paired_kernel_speed.py` prints
 the common `setup.cuda_event.*.total_ms` fields in its text summary when the
-diagnostic records are present.
+diagnostic records are present. The paired candidate wrapper also provides the
+startup-only diagnostic profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, which enables the
+event timer only for the candidate and requires the
+`setup_cuda_event_timing_enabled` strategy value to change before accepting the
+run as a valid attribution probe.
 The dense GPT training route loads Tile ops with lazy dynamic binding and still
 validates required ABI symbols explicitly; JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,
