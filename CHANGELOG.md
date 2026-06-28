@@ -12,7 +12,11 @@
   `lm_head_graph_body_cublaslt_dweight` profiles, so the rejected all-on route
   can be measured one GEMM at a time before any default is changed. Verified
   with focused native GPT static coverage, native C++ rebuilds, the no-Torch
-  verifier, and a native startup smoke.
+  verifier, a native startup smoke, and 3-step dedicated RTX 5090 split-route
+  benchmark checks. Those checks kept both split profiles rejected:
+  dHidden-only regressed train-loop wall to `1.075566x` and LM-head backward to
+  `1.328682x`; dWeight-only missed the strict gate at `1.001673x` train-loop
+  wall and `1.002494x` steady-state CUDA-event timing.
 
 - Native GPT LM-head diagnostics: full dense GPT runtime JSON now reports the
   strict true-fused LM-head section counters from the loaded Tile ops library:

@@ -1221,6 +1221,11 @@ Those profiles set only
 `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT=1`, respectively, and the
 runtime JSON reports the corresponding `*_requested` booleans plus the existing
 cuBLASLt launch/fallback counters.
+Keep both split profiles diagnostic-only unless a fresh same-script gate proves
+otherwise. The CUDA 13.3.33 dedicated RTX 5090 3-step stage-timed checks
+rejected dHidden-only at `1.075566x` train-loop wall / `1.328682x` LM-head
+backward and dWeight-only at `1.001673x` train-loop wall / `1.002494x`
+steady-state CUDA-event timing.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from
