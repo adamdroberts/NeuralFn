@@ -217,6 +217,18 @@ Real training tensors must not pass through graph editor node objects.
   Graph wrapper with `true_fused_capability=false`, so the next material work
   remains a reference-aligned fused CE/dlogits path plus faster separate logits,
   dHidden, and dWeight stages.
+- [x] Rechecked the default no-stage parity path after the CUDA 13.3.33 WSL
+  reinstall and the latest rejected storage-profile work. The 2026-06-28
+  dedicated RTX 5090 3-step, 1-sample same-script run included the llm.kittens
+  reference and reported current NeuralFn at `0.999448x` train-loop wall time,
+  `0.998914x` steady-state CUDA-event step time, and `1.000456x` tokens/sec
+  versus llm.kittens. The selected GPU had display disabled and no compute
+  processes before samples, and the runtime contract still passed with
+  `graph_editor_tensor_flow=false` and `torch_required=false`. The
+  `native_lm_head_true_fused_target` section still reports
+  `diagnostic-cuda-graph-wrapper`, `true_fused_capability=false`, and
+  `graph_body_nodes_per_replay=3`; treat that as the remaining architectural
+  target rather than a current no-stage throughput regression.
 - [x] Reject reduced MLP activation storage as a default startup-memory route.
   The 2026-06-27 dedicated RTX 5090 3-step, 2-sample, stage-timed probes for
   `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=3` and `=9` reduced stored MLP activation
