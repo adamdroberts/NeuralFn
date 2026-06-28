@@ -785,18 +785,21 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 split-stage 3-step, 2-sample rerun skipped the single LM-head cuBLASLt prewarm plan and improved setup_wall_ms to 0.989552x, but rejected default promotion because train-loop wall regressed to 1.001350x, first-step CUDA-event time to 1.002789x, forward QKV first-step avg to 1.022751x, and no route, strategy, or plan-cache change passed the native route gate."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=all"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000}"
     ;;
   "cublaslt_plan_prewarm_lm_head_only"|"cublaslt-plan-prewarm-lm-head-only"|"linear_cublaslt_plan_prewarm_lm_head_only"|"linear-cublaslt-plan-prewarm-lm-head-only")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate prewarmed only the LM-head cuBLASLt plan and saved setup_wall_ms to 0.947250x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.011688x, steady-state CUDA-event time to 1.001999x, LM-head backward to 1.000280x, block backward to 1.022887x, and MLP projection backward to 1.021800x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=all"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000}"
     ;;
   "cublaslt_plan_prewarm_off"|"cublaslt-plan-prewarm-off"|"linear_cublaslt_plan_prewarm_off"|"linear-cublaslt-plan-prewarm-off")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate disabled cuBLASLt plan prewarm and improved setup_wall_ms to 0.834325x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.015300x, first-step CUDA-event time to 1.044809x, train_tokens_per_second to 0.984974x, LM-head backward to 1.031614x, and block backward to 1.023253x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1 NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=all"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000}"
     ;;
   "tk_forward_no_n96"|"tk-forward-no-n96"|"llmk_forward_no_n96"|"llmk-forward-no-n96")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
@@ -1048,7 +1051,7 @@ case "${CANDIDATE_PROFILE,,}" in
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 startup_plus_first_step_wall_ms=1.000 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
     ;;
   "lm_head_graph_prewarm_dedup"|"lm-head-graph-prewarm-dedup"|"lm_head_graph_dedup"|"lm-head-graph-dedup")
     CANDIDATE_NOTE="Compares the legacy LM-head graph-prewarm loop against the default pointer-aware dedup key path. Equal-sized row chunks with different buffers are intentionally distinct keys, so this profile checks deterministic prewarm work rather than setup timing or route-change gates."

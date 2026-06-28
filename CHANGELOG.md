@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: extended the `startup_plus_first_step_wall_ms` guard to the SM120
+  cuBLASLt plan-prewarm bisection profiles and the default-on
+  `lm_head_graph_prewarm` regression check. These profiles now fail promotion
+  when they only reduce `setup_wall_ms` by pushing work into the first real
+  optimizer step, matching the existing fast-startup and TK QKV prewarm policy.
+  Verification: focused native GPT candidate-wrapper source test, candidate
+  wrapper dry-run expansion for the affected profiles, and `git diff --check`.
+
 - Bench: `tools/paired_kernel_speed.py` now derives
   `startup_plus_first_step_wall_ms`, `startup_plus_steady_state_step_wall_ms`,
   and `startup_plus_train_loop_wall_ms` from native JSON when setup and

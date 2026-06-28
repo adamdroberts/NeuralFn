@@ -2455,6 +2455,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "0.992403x stage.block_backward.mlp_proj.total_ms" in bench_source
     assert "graph capture attempts 3->0 and graph cache hits 45->48" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
+    graph_prewarm_block = bench_source.split('"lm_head_graph_prewarm"|', 1)[1].split(
+        "    ;;", 1
+    )[0]
+    assert "startup_plus_first_step_wall_ms=1.000" in graph_prewarm_block
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
     assert (
@@ -3001,6 +3005,14 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    for profile in (
+        "cublaslt_plan_prewarm_block_only",
+        "cublaslt_plan_prewarm_lm_head_only",
+        "cublaslt_plan_prewarm_off",
+    ):
+        profile_block = bench_source.split(f'"{profile}"|', 1)[1].split("    ;;", 1)[0]
+        assert "train_loop_cuda_event_first_step_wall_ms_per_step=1.000" in profile_block
+        assert "startup_plus_first_step_wall_ms=1.000" in profile_block
     for profile in ("combined_device_arena", "cuda_malloc_async"):
         profile_block = bench_source.split(f'"{profile}"|', 1)[1].split("    ;;", 1)[0]
         assert "STARTUP_ONLY=1" in profile_block
