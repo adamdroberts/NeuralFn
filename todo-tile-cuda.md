@@ -78,6 +78,15 @@ Real training tensors must not pass through graph editor node objects.
   diagnostic-cuda-graph-wrapper`, `candidate_true_fused_capability: false`,
   and `true_fused_launch_count: 0`, so this is a clean CUDA 13.3 baseline, not
   strict LM-head completion.
+- [x] Prove the normal GPT wrapper crosses the compiled C++ boundary, not just
+  dry-run and metadata paths. `tools/check_native_no_torch_deps.py` now runs
+  `cli/scripts/train_gpt.py --tinystories --max-steps 1` against a stubbed
+  native GPT CLI without `--dry-run` or `--print-command`, under the same
+  import blocker for Torch, NumPy, tokenizers, dataset managers, graph shims,
+  and `train_gpt_native`. The passing stdout must include the translated
+  `--train-transformer-lm` / `--no-checkpoint` compiled-trainer arguments and
+  must not include `--dry-run`, proving the wrapper reached `execvpe` before
+  legacy Python training imports.
 - [x] Add the focused LM-head backward candidate/current microbench to the
   default CUDA 13.3 SM120 validator. `tools/validate_sm120_cuda13.sh` now runs
   `tools/bench_lm_head_backward_candidate.sh` with the `trainer-chunk` profile
