@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the rejected `qkv_concurrent_dinput_dweight` side-stream
+  profile on the CUDA 13.3.33 dedicated RTX 5090 path. The 3-step, 2-sample
+  same-script rerun proved the intended schedule change by moving
+  `block_backward_qkv_concurrent_dinput_dweight_count` from `0` to `288` and
+  `block_backward_qkv_dinput_before_dweight_count` from `288` to `0`, but still
+  rejected promotion at `1.001725x` train-loop wall, `1.002119x` steady-state
+  CUDA-event step time, `0.998283x` tokens/sec, and `1.003575x`
+  candidate-over-llm.kittens train-loop wall. No default changed; this keeps the
+  QKV side-stream branch diagnostic-only while remaining work stays focused on
+  real LM-head/block-backward kernel changes.
+
 - CUDA 13 validation: `tools/validate_sm120_cuda13.sh` now runs
   `tools/check_native_no_torch_deps.py --json` by default before GPU smoke
   checks, so the post-toolkit-reinstall validation path proves the compiled

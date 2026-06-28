@@ -1466,8 +1466,10 @@ would not measure a real route change.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic. The current
-packed-QKV one-step gate still rejects it at `1.009068x` train-loop wall time
-and `1.040672x` QKV backward. Runtime JSON now reports
+CUDA 13.3.33 dedicated RTX 5090 rerun proved the intended route by moving
+`block_backward_qkv_concurrent_dinput_dweight_count` from `0` to `288`, but it
+still rejects promotion at `1.001725x` train-loop wall and `1.003575x`
+candidate-over-llm.kittens train-loop wall. Runtime JSON reports
 `block_backward_qkv_concurrent_dinput_dweight_count`, and the paired benchmark
 route-change gate treats that count as hot-route evidence.
 The named `mlp_proj_tk_dweight_65536` profile expands to

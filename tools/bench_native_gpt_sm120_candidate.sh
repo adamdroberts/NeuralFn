@@ -971,7 +971,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "qkv_concurrent_dinput_dweight"|"qkv-concurrent-dinput-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.005526x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample same-script rerun proved the QKV side-stream route by moving block_backward_qkv_concurrent_dinput_dweight_count from 0 to 288 and block_backward_qkv_dinput_before_dweight_count from 288 to 0, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.001725x versus current native, steady-state CUDA-event step time regressed to 1.002119x, train tokens/sec fell to 0.998283x, and candidate-over-llm.kittens train_loop_wall_ms_per_step stayed at 1.003575x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1"
     REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_qkv_concurrent_dinput_dweight_count"
     ;;

@@ -1133,6 +1133,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "stage.lm_head_backward.dweight.total_ms to 1.337552x" in candidate_bench
     assert "lm_head_tk_dweight_49152" in candidate_bench
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T" in candidate_bench
+    assert "qkv_concurrent_dinput_dweight" in candidate_bench
+    assert "block_backward_qkv_concurrent_dinput_dweight_count from 0 to 288" in candidate_bench
+    assert "block_backward_qkv_dinput_before_dweight_count from 288 to 0" in candidate_bench
+    assert "train_loop_wall_ms_per_step regressed to 1.001725x" in candidate_bench
+    assert "candidate-over-llm.kittens train_loop_wall_ms_per_step stayed at 1.003575x" in candidate_bench
     assert "lm_head_concurrent_dhidden_dweight" in candidate_bench
     assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench

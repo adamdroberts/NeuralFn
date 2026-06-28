@@ -505,6 +505,15 @@ Real training tensors must not pass through graph editor node objects.
     launch counter. This keeps future CUDA Tile experiments from passing route
     proof because an unrelated strategy field changed while the intended hot
     kernel schedule did not run.
+  - 2026-06-28 reran `qkv_concurrent_dinput_dweight` on the dedicated RTX 5090
+    with the hot-route counter gate. The profile proved the intended schedule
+    change by moving `block_backward_qkv_concurrent_dinput_dweight_count` from
+    `0` to `288` and `block_backward_qkv_dinput_before_dweight_count` from
+    `288` to `0`, but still rejected promotion at `1.001725x` train-loop wall,
+    `1.002119x` steady-state CUDA-event step time, `0.998283x` tokens/sec, and
+    `1.003575x` candidate-over-llm.kittens train-loop wall. Keep this
+    side-stream branch diagnostic-only; it is not the remaining block-backward
+    kernel fix.
   - 2026-06-28 tightened the paired native runtime contract gate so SM120
     candidate benchmarks must also report `train_loss_host_d2h_count=0`.
     Candidate promotion now fails if the timed training path pulls train-loss
