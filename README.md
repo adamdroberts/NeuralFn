@@ -736,13 +736,14 @@ strategy when padded BF16-shadow fusion is available.
 After the CUDA 13.3 reinstall on the dedicated RTX 5090, the rebuilt 2-sample
 same-script gate passed at `0.989905x` setup wall, `0.987217x` token init, and
 `0.997838x` total wall, with the same no-graph/no-Torch contract.
-The fused padded-vocab BF16-shadow token initializer now defaults on for native
-GPT startup. It initializes public token rows and zeroes the padded vocabulary
-tail plus BF16 shadow in one launch, eliding two separate padding zero/refresh
-operations. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for
-paired bisection against the older separate padding-zero/default vector4 path.
-The CUDA 13.3.33 dedicated RTX 5090 startup-only gate promoted the route after
-measuring `0.976762x` setup wall time and `0.961152x` token-weight init time.
+The fused padded-vocab BF16-shadow token initializer remains opt-in for native
+GPT startup behind `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. It proves
+the one-launch padding route, but the current CUDA 13.3.33 dedicated RTX 5090
+startup-only rerun is not enough to promote it on its own. Keep the separate
+padding-zero/vector4 path as the default until the fused route passes full
+llm.kittens throughput gates; the latest startup-only check measured
+`0.961154x` setup wall and `0.972885x` token-weight init, but the previous
+full 10-step reference run still failed throughput parity.
 The combined float+BF16 transformer arena is also still diagnostic-only behind
 `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`. A CUDA 13.3.33 dedicated RTX 5090
 startup-only recheck proved the route change, but rejected it at `1.031475x`
@@ -2469,13 +2470,14 @@ rerunning those rejected routes after a CUDA or kernel change.
 `token_weight_two_pass_bf16` is rejected under the same policy: the current
 startup-only rerun left total setup flat (`0.996873x`) but regressed token
 initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
-`token_weight_padded_init` now reproduces the default fused padded-vocab
-initializer against the legacy `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`
+`token_weight_padded_init` now reproduces the opt-in fused padded-vocab
+initializer against the default `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`
 path. The kernel writes public vocab BF16 shadow rows through the same
-conversion-based vector4 path as the default initializer and still zeroes padded
-rows in the same launch. The CUDA 13.3.33 dedicated RTX 5090 startup-only gate
-promoted it at `0.976762x` setup wall time and `0.961152x`
-`setup.token_weight_init.total_ms`; a full 10-step reference run still failed
+conversion-based vector4 path and still zeroes padded rows in the same launch.
+The current CUDA 13.3.33 dedicated RTX 5090 startup-only gate proves the route,
+but keeps it opt-in until a full throughput run passes. The latest startup-only
+run measured `0.961154x` setup wall and `0.972885x`
+`setup.token_weight_init.total_ms`; a full 10-step reference run also failed
 the existing llm.kittens throughput gates, so this is a startup win rather than
 a throughput parity claim.
 `combined_device_arena` is also rejected by default: the CUDA 13.3.33
@@ -3254,11 +3256,11 @@ startup path for paired benchmarks. Runtime JSON reports
 `token_weight_bf16_initial_refresh_fusion_enabled`, and
 `token_weight_bf16_initial_refresh_elided`; `--startup-only` is the cleanest way
 to measure this setup-only change.
-The padded-vocab fused initializer now defaults on and uses the
+The padded-vocab fused initializer remains opt-in and uses the
 conversion-based vector4 BF16-shadow writer for public rows, then zeroes the
 padded rows in the same Tile launch. Set
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired bisection
-against the older separate padding-zero path.
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only for paired bisection
+against the default separate padding-zero path.
 The CUDA 13.3.33 post-reinstall retile sweep also rejected the other supported
 compile-time token-init tile sizes against the 4096 default: 8192 measured
 `1.013697x` token-init time, 2048 measured `1.010289x`, and 1024 measured

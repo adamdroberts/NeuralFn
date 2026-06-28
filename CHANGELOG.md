@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT: reverted the fused padded token-weight initializer to opt-in
+  until the full throughput gate passes. `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT`
+  now defaults to `0`; set it to `1` only when intentionally rerunning the
+  fused padded-vocab route. The `token_weight_padded_init` candidate profile is
+  still marked rejected by default even though the latest startup-only run
+  proved the route by moving `token_weight_bf16_padding_memset_count` from `1`
+  to `0` and measured `0.961154x` setup wall plus `0.972885x`
+  `setup.token_weight_init.total_ms`, because the previous full 10-step
+  reference run still failed llm.kittens throughput gates. Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_init
+  NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_STARTUP_ONLY=1 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STEPS=0
+  bash tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090.
+
 - Bench: refreshed the focused strict true-fused LM-head evidence for the
   default 32x32 diagnostic body. The current CUDA 13.3.33 dedicated RTX 5090
   trainer-chunk preflight still proves the strict ABI route with
@@ -1062,18 +1077,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Refreshed the SM120 startup candidate-profile registry with fresh CUDA 13.3.33
   dedicated RTX 5090 evidence for the arena allocator and token-weight
-  initialization probes. The rerun keeps the current defaults unchanged:
+  initialization probes. At the time, the rerun kept those defaults unchanged:
   `cuda_malloc_async`, `uint16_arena_first`,
   `token_weight_vector4_strided`, `token_weight_threaded`,
   `token_weight_bf16_pattern`, `token_weight_fast_int32`, and
-  `token_weight_two_pass_bf16` remain rejected, while
-  `token_weight_padded_init` remains the accepted default-vs-legacy startup
-  proof.
+  `token_weight_two_pass_bf16` remained rejected, while
+  `token_weight_padded_init` temporarily stayed accepted as a
+  default-vs-legacy startup proof. Later CUDA 13.3.33 evidence in this
+  changelog reverts that padded route back to opt-in.
 
   Verification: reran the startup-only paired wrapper with
   `NFN_SM120_NATIVE_SAMPLES=3`, `NFN_SM120_NATIVE_WARMUP=0`,
   `NFN_SM120_NATIVE_PROFILE_DIR=none`, and the dedicated RTX 5090 selected.
-  Non-default probes regressed setup wall time; the default padded token-weight
+  Non-default probes regressed setup wall time; the then-default padded token-weight
   initializer measured `0.988862x` setup wall time and `0.976989x`
   token-weight initialization time versus the legacy path.
 
@@ -1330,16 +1346,17 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: added unit coverage for stale compute-app rows in
   `tests/test_tile_cuda_examples.py`.
 
-- Promoted the fused padded token-weight initializer for native GPT startup and
+- Previously promoted the fused padded token-weight initializer for native GPT startup and
   changed it to write public-vocab BF16 shadow rows through the conversion-based
   vector4 body used by the current default initializer, while still zeroing
-  padded vocab rows in the same launch. The route now defaults on, and the
+  padded vocab rows in the same launch. That route briefly defaulted on, and the
   `token_weight_padded_init` SM120 candidate profile is a default-vs-legacy
-  proof against `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`.
+  proof against `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0`; later
+  evidence in this changelog reverts the runtime default to opt-in.
 
-  Migration note: set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only
-  when intentionally reproducing the older separate padding-zero/default
-  vector4 startup path.
+  Migration note: this entry is superseded. Current builds keep
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` by default; set it to `1`
+  only when intentionally reproducing the fused padded-vocab route.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` with
   `bash tools/build_native_train_tile_ops.sh`, ran the focused source/profile

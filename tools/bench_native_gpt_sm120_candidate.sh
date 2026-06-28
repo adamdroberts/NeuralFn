@@ -1201,12 +1201,10 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1"
     ;;
   "token_weight_padded_init"|"token-weight-padded-init"|"token_weight_padded_zero"|"token-weight-padded-zero")
-    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 startup-only 3-sample rerun kept the conversion-based fused padded token-weight initializer as the default after measuring setup_wall_ms at 0.988862x and setup.token_weight_init.total_ms at 0.976989x versus the older separate padding-zero/default vector4 path. The full 10-step reference run still failed llm.kittens throughput gates, so this profile remains a startup default-vs-legacy proof rather than a throughput parity claim."
-    DEFAULT_VS_LEGACY_PROFILE=1
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 startup-only 3-sample rerun proved the fused padded token-weight initializer route by moving token_weight_bf16_padding_memset_count from 1 to 0 and measured setup_wall_ms at 0.961154x mean / 0.964534x median plus setup.token_weight_init.total_ms at 0.972885x mean / 0.976840x median versus the separate padding-zero/vector4 default. Keep the route opt-in behind NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1 until the full llm.kittens throughput gates pass, because the earlier full 10-step reference run still failed those gates."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=1.000 setup.token_weight_init.total_ms=1.000}"
     ;;
   "token_weight_fast_int32"|"token-weight-fast-int32"|"token_weight_no_vector4"|"token-weight-no-vector4")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

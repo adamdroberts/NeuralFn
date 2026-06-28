@@ -13073,7 +13073,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT",
                               "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_PADDED_INIT"}),
-            true);
+            false);
     const bool fuse_token_weight_bf16_adamw_refresh_enabled =
         token_weight_bf16_shadow_enabled &&
         env_flag_enabled_or_default(
