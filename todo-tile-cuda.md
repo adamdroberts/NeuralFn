@@ -2528,6 +2528,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     those counters, so paired benchmark failures show whether the diagnostic
     wrapper body used cuBLASLt or fell back to Tile while the true fused target
     remains open.
+  - 2026-06-28 follow-up: added
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=adamw_token_shadow_refresh` so the
+    fused token-weight BF16 shadow AdamW refresh default is compared against the
+    older two-launch refresh route in the same SM120 candidate harness. This
+    closes a benchmark-coverage gap for the optimized optimizer path but does
+    not close the LM-head true-fused parity item above.
   - 2026-06-23 added the dedicated linear-backward microbench to keep the next
     kernel work honest: candidate dInput/dWeight symbols for block backward and
     LM-head can now be timed against the current C ABI without dataset loading,

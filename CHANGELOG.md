@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/bench_native_gpt_sm120_candidate.sh` now exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=adamw_token_shadow_refresh`, comparing
+  the default fused token-weight BF16 LM-head shadow AdamW refresh against the
+  older `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=0` two-launch
+  refresh path in the same candidate wrapper. The profile gates train-loop,
+  steady-state CUDA-event, AdamW-stage, and tokens/sec ratios so optimizer
+  route changes are measured like the other SM120 CUDA Tile candidates.
+  Verification: focused native GPT source test, GPU-visible dry-run candidate
+  plan, one-step gated RTX 5090 route/timing smoke, and `git diff --check`.
+
 - Native GPT startup: the CUDA Tile dense-GPT trainer now defaults the tied
   token embedding/LM-head initializer to the vector4-strided Tile route. Set
   `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` or

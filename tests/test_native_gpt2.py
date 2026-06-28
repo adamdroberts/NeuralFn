@@ -1119,6 +1119,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "candidate-over-llm.kittens wall to 1.018312x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.025016x" in candidate_bench
+    assert "adamw_token_shadow_refresh" in candidate_bench
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=0" in candidate_bench
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=1" in candidate_bench
+    assert "older two-launch token-shadow refresh path" in candidate_bench
+    assert "stage.adamw_update.total_ms=1.004" in candidate_bench
+    assert "token_weight_bf16_fused_adamw_refresh_count" in paired_speed
+    assert "token_weight_bf16_adamw_refresh_fusion_enabled" in paired_speed
+    assert "adamw_bf16_shadow_refresh_strategy" in paired_speed
     assert "token_weight_vector4_strided" in candidate_bench
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0" in candidate_bench
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1" in candidate_bench
@@ -3019,6 +3027,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "lm_head_cooperative_no_loss_backward": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1 NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1",
+        "adamw_token_shadow_refresh": "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=1",
         "combined_device_arena": "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1",
         "cuda_malloc_async": "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1",
         "lm_head_cooperative_sequence_wrapper": (

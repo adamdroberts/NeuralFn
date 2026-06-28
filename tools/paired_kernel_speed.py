@@ -763,6 +763,10 @@ NATIVE_METRIC_PATHS = (
         "token_weight_bf16_padding_memset_count",
         ("token_weight_bf16_padding_memset_count",),
     ),
+    (
+        "token_weight_bf16_fused_adamw_refresh_count",
+        ("token_weight_bf16_fused_adamw_refresh_count",),
+    ),
     ("uint16_arena_first_requested", ("uint16_arena_first_requested",)),
     ("uint16_arena_first_enabled", ("uint16_arena_first_enabled",)),
     ("arena_materialize_order", ("arena_materialize_order",)),
@@ -820,6 +824,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_bf16_workspace_prewarm_requested",
     "linear_bf16_workspace_prewarm_success_count",
     "linear_bf16_workspace_prewarm_failure_count",
+    "token_weight_bf16_fused_adamw_refresh_count",
     "linear_tk_qkv_first_use_prewarm_requested",
     "linear_tk_qkv_first_use_prewarm_requested_count",
     "linear_tk_qkv_first_use_prewarm_enabled_count",
@@ -1112,6 +1117,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "token_weight_bf16_initial_refresh_fusion_enabled",
     "token_weight_bf16_initial_refresh_elided",
     "token_weight_bf16_padding_memset_count",
+    "token_weight_bf16_adamw_refresh_fusion_enabled",
+    "adamw_bf16_shadow_refresh_strategy",
 )
 NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_wall_ms_per_step",
