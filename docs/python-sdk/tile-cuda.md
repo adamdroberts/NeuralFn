@@ -471,7 +471,12 @@ still take precedence.
 `--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 32768 to
 reproduce the legacy pre-promotion route, pass 49152 to reproduce the rejected
 larger-chunk route, or pass 8192, 6144, or 4096 explicitly to reproduce older
-smaller-workspace profiles. The C++ transformer-LM
+smaller-workspace profiles. The 24576-row and 30720-row three-chunk profiles
+are rejected diagnostics: the CUDA 13.3.33 dedicated RTX 5090 run for 24576
+rows reduced LM-head BF16 logit bytes to `0.857143x` and setup to `0.958578x`
+but regressed train-loop wall to `1.002694x`; the 30720-row run increased
+LM-head BF16 logit bytes to `1.071429x` and regressed train-loop wall to
+`1.026742x`. The C++ transformer-LM
 loop uses that bounded full-vocab tied LM-head workspace and reduces CE loss
 partials on device with `nfn_native_tile_sum_partials_float32`, so training and
 validation loss copy one device scalar to the host instead of copying once per

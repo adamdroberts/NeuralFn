@@ -3383,7 +3383,11 @@ remains diagnostic-only.
 The compiled trainer, SDK, Python wrappers, root CLI, and focused LM-head
 microbench all share the 28672-row LM-head chunk default. Use the explicit
 LM-head row-chunk flags only when reproducing rejected larger/smaller-workspace
-profiles or profiling a new candidate.
+profiles or profiling a new candidate. The latest adjacent three-chunk probes
+kept that default: 24576 rows reduced LM-head BF16 logit bytes to `0.857143x`
+and setup to `0.958578x`, but regressed train-loop wall to `1.002694x` and
+LM-head backward to `1.005528x`; 30720 rows increased logit bytes to
+`1.071429x` and regressed train-loop wall to `1.026742x`.
 
 For BF16 LM-head CE profiling, `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or `NFN_TILE_CUDA_CE_BF16_EXP2=1` switches the in-place BF16 CE+dlogits kernel from `expf` to `exp2f(x * log2(e))`. The default remains `expf`; runtime JSON reports `lm_head_ce_bf16_exp2_enabled`. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_exp2` to reproduce the named same-script check. It remains rejected by default because the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed rerun moved the no-loss CE strategy off the specialized kernel and regressed train-loop wall to `1.019757x`, steady-state CUDA-event wall to `1.022252x`, LM-head backward to `1.097477x`, and LM-head cooperative time to `1.140828x`.
 

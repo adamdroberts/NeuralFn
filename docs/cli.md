@@ -491,7 +491,11 @@ route. The named same-script profile
 after the CUDA 13.3 dedicated RTX 5090 confirmation regressed train-loop wall
 time and block-backward timing versus 32768 rows; the promoted
 `lm_head_row_chunk_28672` profile compares 32768 rows against 28672 rows under
-the same external GPU load. Set
+the same external GPU load. The adjacent three-chunk probes are also rejected:
+`lm_head_row_chunk_24576` reduced LM-head BF16 logit bytes to `0.857143x` and
+setup to `0.958578x`, but regressed train-loop wall to `1.002694x` and
+LM-head backward to `1.005528x`; `lm_head_row_chunk_30720` increased logit
+bytes to `1.071429x` and regressed train-loop wall to `1.026742x`. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
 diagnostics. Effective chunks above 49152 rows require
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` for explicit diagnostics.

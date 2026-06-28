@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: added rejected SM120 profiles
+  `lm_head_row_chunk_24576` and `lm_head_row_chunk_30720` around the current
+  28672-row LM-head default. The 24576-row probe kept three graph replays and
+  reduced LM-head BF16 logit bytes to `0.857143x`, uint16 arena bytes to
+  `0.981486x`, and setup wall to `0.958578x`, but regressed train-loop wall to
+  `1.002694x`, steady-state CUDA-event timing to `1.002341x`, LM-head backward
+  to `1.005528x`, and tokens/sec to `0.997312x`. The 30720-row probe increased
+  LM-head BF16 logit bytes to `1.071429x` and regressed train-loop wall to
+  `1.026742x`, LM-head backward to `1.106116x`, and tokens/sec to `0.973958x`.
+  This keeps the current 28672-row default intact and closes the adjacent
+  three-chunk bisection as a benchmarked diagnostic.
+
 - Native GPT benchmarking: added the `nvfp4_qkv_dweight` SM120 candidate
   profile for the existing opt-in QKV dWeight NVFP4 sidecar. The profile runs
   the candidate with `--tile-cuda-activation-dtype nvfp4` and
