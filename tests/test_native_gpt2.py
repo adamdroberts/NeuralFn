@@ -1290,6 +1290,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "DEFAULT_VS_LEGACY_PROFILE=0" in candidate_bench
     assert "candidate_gate_scope=default-vs-legacy" in candidate_bench
     assert "filter_generated_candidate_ratio_gates" in candidate_bench
+    assert 'MAX_CANDIDATE_RATIO_RAW=""' in candidate_bench
+    assert 'MIN_CANDIDATE_RATIO_RAW=""' in candidate_bench
     assert 'metric" == "train_loop_cuda_event_steady_state_wall_ms_per_step"' in candidate_bench
     assert '"$metric" == stage.*' in candidate_bench
     assert "tile_ops_arg_for" in candidate_bench

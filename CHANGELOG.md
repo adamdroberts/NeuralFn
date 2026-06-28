@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: fixed
+  `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` /
+  `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` so the SM120 candidate
+  wrapper clears generated profile-level max/min timing gates when the user did
+  not explicitly provide their own ratio gates. Route, strategy, runtime
+  contract, and LM-head graph-wrapper gates still run, so diagnostic profiles
+  can isolate route correctness without one-sample timing or missing
+  steady-state metrics causing a failure. Verified with the linked Tile ops
+  loader test, shell syntax checks, dry-run metadata inspection, and a one-step
+  RTX 5090 LM-head graph-wrapper smoke where `metric_ratio_gates.enabled=false`
+  while `native_lm_head_graph_wrapper_tile_body_gate.passed=true`.
+
 - Native GPT benchmarking: added a hard LM-head CUDA Graph Tile-body contract
   gate to `tools/paired_kernel_speed.py` and wired accepted LM-head CE/default
   profiles in `tools/bench_native_gpt_sm120_candidate.sh` through it. The new

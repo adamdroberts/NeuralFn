@@ -1417,8 +1417,10 @@ Set `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` or the shorter
 `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` only for diagnostic measurement
 runs where you intentionally want the wrapper to emit paired metrics for a known
 or exploratory candidate without enforcing the default promotion gates. The
-existing `--require-native-route-change` behavior is unchanged; this only
-disables automatic ratio thresholds.
+existing `--require-native-route-change` behavior is unchanged; this clears
+generated timing-ratio thresholds, including profile-level defaults, unless you
+explicitly provide `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
+`NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO`.
 Rejected candidate profiles that are explicitly rerun with
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` now use that same
 route-proof behavior by default: the wrapper still prints the paired timing

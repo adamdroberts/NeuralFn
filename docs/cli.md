@@ -2247,7 +2247,8 @@ gates for this capability-only profile, so setup timing noise does not make the
 readiness check exit nonzero. For other route-proof-only diagnostics, set
 `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` or the shorter
 `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1`; both names keep route-change
-checks intact while suppressing automatic timing-ratio thresholds.
+checks intact while suppressing generated timing-ratio thresholds, including
+profile-level defaults unless explicit max/min ratio env vars are supplied.
 The profile intentionally omits `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM`
 because the current CUDA stack still leaves the trainer context unusable after
 that unsupported probe.

@@ -1641,10 +1641,14 @@ filter_generated_candidate_ratio_gates() {
   printf '%s\n' "${filtered[*]}"
 }
 
-if [[ -z "$USER_MAX_CANDIDATE_RATIO_RAW" ]]; then
+if [[ -z "$USER_MAX_CANDIDATE_RATIO_RAW" && "$AUTO_DISABLE_METRIC_RATIO_GATES" == "1" ]]; then
+  MAX_CANDIDATE_RATIO_RAW=""
+elif [[ -z "$USER_MAX_CANDIDATE_RATIO_RAW" ]]; then
   MAX_CANDIDATE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MAX_CANDIDATE_RATIO_RAW")"
 fi
-if [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" ]]; then
+if [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" && "$AUTO_DISABLE_METRIC_RATIO_GATES" == "1" ]]; then
+  MIN_CANDIDATE_RATIO_RAW=""
+elif [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" ]]; then
   MIN_CANDIDATE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MIN_CANDIDATE_RATIO_RAW")"
 fi
 
