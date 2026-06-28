@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native launcher: the direct `train_gpt.py` / `train_gpt2.py` compiled-CLI
+  fast path now defaults unset `CUDA_VISIBLE_DEVICES` to the `dedicated`
+  display-disabled NVIDIA GPU selector instead of ordinal `0`, matching the
+  SM120 launchers, direct compiled binaries, and benchmark wrappers. Existing
+  explicit `CUDA_VISIBLE_DEVICES` values still win, and the selector falls back
+  to `0` if `nvidia-smi` cannot identify a display-disabled GPU. Verification:
+  updated the native linked-loader regression test and confirmed
+  `python cli/scripts/train_gpt.py --tinystories --dry-run --print-command`
+  plus the `train_gpt2.py` compatibility wrapper stay on the compiled native
+  command path.
+
 - Native trainer: direct compiled GPT binaries now resolve
   `CUDA_VISIBLE_DEVICES=dedicated`, `auto`, and `dedicated-auto` before any CUDA
   runtime calls, matching the wrapper scripts and paired benchmark selector.
