@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 parity workflow: `tools/bench_native_gpt_sm120_parity.sh` no longer
+  applies its auto-created strict `1.003x` metric-ratio gates to
+  `NFN_SM120_PARITY_STAGE_TIMING=1` runs. Native stage timing is
+  candidate-only CUDA-event attribution instrumentation, so stage-timed parity
+  runs now emit metadata
+  `default_metric_ratio_gate=disabled_for_candidate_only_stage_timing` unless
+  `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` (or its native/generic alias) is set
+  explicitly. Non-stage parity runs still enforce the default wall and
+  steady-state gates. Verification: `bash -n
+  tools/bench_native_gpt_sm120_parity.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir
+  -q`; `git diff --check`; a dedicated RTX 5090 3-step non-stage parity sample
+  passed at `1.000735x` train-loop wall and `1.000462x` steady-state
+  CUDA-event time after the matching stage-timed diagnostic sample failed only
+  from candidate-only attribution overhead at `1.005075x`.
+
 - CUDA 13 SM120 validation: the default `tools/validate_sm120_cuda13.sh` flow
   now runs a fast one-step native runtime-contract probe after the Tile smoke
   checks. The probe writes `NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT` and

@@ -1317,6 +1317,10 @@ def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_pa
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["native_stage_timing"] is True
     assert payload["append_native_profile_json_dir"] == ""
+    assert payload["metric_ratio_gates"]["enabled"] is False
+    assert payload["metadata"] == {
+        "default_metric_ratio_gate": "disabled_for_candidate_only_stage_timing"
+    }
 
 
 def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tmp_path: Path) -> None:

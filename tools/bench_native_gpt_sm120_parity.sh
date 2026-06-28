@@ -78,9 +78,21 @@ STAGE_TIMING="$(env_or_alias4 NFN_SM120_NATIVE_STAGE_TIMING NFN_SM120_NATIVE_PAR
 REFERENCE_OUTPUT_DIR="$(env_or_alias3 NFN_SM120_NATIVE_REFERENCE_OUTPUT_DIR NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR NFN_SM120_REFERENCE_OUTPUT_DIR /tmp/nfn_llmk_sm120_parity)"
 DRY_RUN_PLAN="$(env_or_alias3 NFN_SM120_NATIVE_DRY_RUN_PLAN NFN_SM120_PARITY_DRY_RUN_PLAN NFN_SM120_DRY_RUN_PLAN 0)"
 MAX_CANDIDATE_RATIO_RAW="$(env_or_alias3 NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_PARITY_MAX_CANDIDATE_RATIO NFN_SM120_MAX_CANDIDATE_RATIO "")"
+MAX_CANDIDATE_RATIO_EXPLICIT=0
+if [[ -n "${NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO-}" ||
+      -n "${NFN_SM120_PARITY_MAX_CANDIDATE_RATIO-}" ||
+      -n "${NFN_SM120_MAX_CANDIDATE_RATIO-}" ]]; then
+  MAX_CANDIDATE_RATIO_EXPLICIT=1
+fi
 DEFAULT_MAX_TRAIN_LOOP_RATIO="$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)"
 DEFAULT_MAX_STEADY_STATE_RATIO="$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)"
 ENFORCE_GATE="$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)"
+DEFAULT_RATIO_GATE_SKIPPED_FOR_STAGE_TIMING=0
+case "${ENFORCE_GATE,,}:${STAGE_TIMING,,}:$MAX_CANDIDATE_RATIO_EXPLICIT" in
+  1:1:0|1:true:0|1:yes:0|1:on:0|true:1:0|true:true:0|true:yes:0|true:on:0|yes:1:0|yes:true:0|yes:yes:0|yes:on:0|on:1:0|on:true:0|on:yes:0|on:on:0)
+    DEFAULT_RATIO_GATE_SKIPPED_FOR_STAGE_TIMING=1
+    ;;
+esac
 REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED="$(env_or_alias4 NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED NFN_SM120_NATIVE_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED NFN_SM120_PARITY_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED NFN_SM120_REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED 0)"
 if [[ -n "$CANDIDATE_PROFILE_RAW" ]]; then
   cat >&2 <<EOF
@@ -97,14 +109,23 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
     *)
       case "${ENFORCE_GATE,,}" in
         "1"|"true"|"yes"|"on")
-          gate_stat_prefix=""
-          if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -gt 1 ]]; then
-            gate_stat_prefix="median:"
-          fi
-          MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"
-          case "${TRAIN_LOOP_EVENT_TIMING,,}" in
+          case "${STAGE_TIMING,,}" in
             "1"|"true"|"yes"|"on")
-              MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"
+              if [[ "$DEFAULT_RATIO_GATE_SKIPPED_FOR_STAGE_TIMING" == "1" ]]; then
+                echo "NFN SM120 parity: native stage timing is candidate-only diagnostic instrumentation; skipping default metric-ratio gates. Set NFN_SM120_PARITY_MAX_CANDIDATE_RATIO explicitly to gate this run." >&2
+              fi
+              ;;
+            *)
+              gate_stat_prefix=""
+              if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -gt 1 ]]; then
+                gate_stat_prefix="median:"
+              fi
+              MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"
+              case "${TRAIN_LOOP_EVENT_TIMING,,}" in
+                "1"|"true"|"yes"|"on")
+                  MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"
+                  ;;
+              esac
               ;;
           esac
           ;;
@@ -132,6 +153,13 @@ paired_args=()
 case "${DRY_RUN_PLAN,,}" in
   "1"|"true"|"yes"|"on")
     paired_args+=(--dry-run-plan)
+    ;;
+esac
+case "${STAGE_TIMING,,}" in
+  "1"|"true"|"yes"|"on")
+    if [[ "$DEFAULT_RATIO_GATE_SKIPPED_FOR_STAGE_TIMING" == "1" && -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
+      paired_args+=(--metadata "default_metric_ratio_gate=disabled_for_candidate_only_stage_timing")
+    fi
     ;;
 esac
 for item in $MAX_CANDIDATE_RATIO_RAW; do

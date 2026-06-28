@@ -138,6 +138,15 @@ pass as kernel improvements. The built-in `fast_startup_full`,
 `lm_head_graph_prewarm` profile gate `startup_plus_first_step_wall_ms=1.000`
 by default. `--dry-run-plan` output also prints the configured metric-ratio
 gates, so profile expansion can be audited without launching GPU work.
+For NeuralFn-vs-llm.kittens parity, leave
+`NFN_SM120_PARITY_STAGE_TIMING=0` for pass/fail throughput runs. Stage timing is
+candidate-only CUDA-event instrumentation used for attribution sidecars, so the
+parity wrapper now skips its auto-created `1.003x` metric-ratio gates when
+stage timing is enabled unless `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` (or a
+native/generic alias) is set explicitly. On the 2026-06-28 dedicated RTX 5090
+recheck, a 3-step stage-timed diagnostic sample reported a false gate failure
+at `1.005075x` train-loop wall, while the same non-stage paired run passed at
+`1.000735x` train-loop wall and `1.000462x` steady-state CUDA-event time.
 The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
 profile passes candidate-over-llm.kittens gates, but it does not beat the
