@@ -772,6 +772,30 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         },
     ),
     (
+        "train_gpt_dry_run",
+        (
+            "bash",
+            "tools/train_gpt.sh",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_gpt3_dry_run",
+        (
+            "bash",
+            "tools/train_gpt.sh",
+            "--base-model",
+            "gpt3",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
         "train_gpt_sm120_dry_run",
         (
             "bash",

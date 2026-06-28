@@ -2900,6 +2900,14 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` as a utility module is also lightweight; its shared dataset helper re-exports are lazy wrappers, and Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
 
+`tools/train_gpt.sh` is the generic no-Python workstation wrapper for the
+universal dense GPT trainer. It prefers `build/nfn_train_gpt`, honors
+`NFN_NATIVE_GPT_TRAIN_CLI`, and falls back to the same shell parser used by
+`tools/train_gpt_sm120.sh` when `NFN_GPT_USE_COMPILED_LAUNCHER=0` or the
+compiled launcher is not present. Use the SM120-labelled wrapper only when you
+want that name in scripts or logs; both paths route to the same template/custom
+graph aware native GPT trainer defaults.
+
 Tiny native GPT diagnostic runs with `seq_len < 16` use the split-QKV row-vector attention fallback even when the default packed-QKV SM120 TK route is enabled. Normal training shapes such as the workstation default `64 x 1024` keep the packed path, while one-step CUDA smokes such as `--batch-size 1 --train-seq-len 2 --train-batch-tokens 2` avoid launching the packed attention kernel without a valid packed scratch allocation.
 
 `tools/build_train_gpt_cli.sh` builds `build/nfn_train_gpt`, a generic compiled

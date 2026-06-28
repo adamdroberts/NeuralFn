@@ -229,6 +229,16 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--layer-evo" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
     assert "--tile-cuda-activation-dtype nvfp4" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
     shell_entrypoints = {entry["name"]: entry for entry in payload["shell_entrypoints"]}
+    assert shell_entrypoints["train_gpt_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints["train_gpt_dry_run"]["stdout"]
+    assert "--template-name gpt" in shell_entrypoints["train_gpt_dry_run"]["stdout"]
+    assert "--batch-size 64" in shell_entrypoints["train_gpt_dry_run"]["stdout"]
+    assert "--train-seq-len 1024" in shell_entrypoints["train_gpt_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_gpt3_dry_run"]["passed"] is True
+    assert "--model-family gpt3" in shell_entrypoints["train_gpt_gpt3_dry_run"]["stdout"]
+    assert "--template-name gpt3" in shell_entrypoints["train_gpt_gpt3_dry_run"]["stdout"]
+    assert "--batch-size 32" in shell_entrypoints["train_gpt_gpt3_dry_run"]["stdout"]
+    assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_gpt3_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_dry_run"]["passed"] is True
     assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
     assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
@@ -4906,6 +4916,78 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert generic_args[generic_args.index("--train-seq-len") + 1] == "2048"
     assert generic_args[generic_args.index("--eval-every-steps") + 1] == "1000"
     assert generic_args[generic_args.index("--train-batch-tokens") + 1] == "524288"
+
+
+def test_generic_train_gpt_shell_wrapper_prefers_compiled_launcher_and_falls_back(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    compiled_launcher = tmp_path / "nfn_train_gpt"
+    compiled_args = tmp_path / "compiled-argv.txt"
+    compiled_launcher.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n",
+        encoding="utf-8",
+    )
+    compiled_launcher.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_NATIVE_GPT_TRAIN_CLI": str(compiled_launcher),
+            "NFN_TEST_NATIVE_GPT_ARGV": str(compiled_args),
+        }
+    )
+
+    compiled_proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt.sh"), "--base-model", "gpt3", "--dry-run"],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert compiled_proc.returncode == 0, compiled_proc.stderr
+    assert compiled_args.read_text(encoding="utf-8").splitlines() == [
+        "--base-model",
+        "gpt3",
+        "--dry-run",
+    ]
+
+    fallback_native = tmp_path / "nfn_gpt_native_train"
+    fallback_args = tmp_path / "fallback-argv.txt"
+    fallback_native.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n",
+        encoding="utf-8",
+    )
+    fallback_native.chmod(0o755)
+    fallback_env = os.environ.copy()
+    fallback_env.update(
+        {
+            "NFN_GPT_USE_COMPILED_LAUNCHER": "0",
+            "NFN_NATIVE_GPT_TRAIN_BIN": str(fallback_native),
+            "NFN_TEST_NATIVE_GPT_ARGV": str(fallback_args),
+        }
+    )
+
+    fallback_proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt.sh"), "--base-model", "gpt3", "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=fallback_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert fallback_proc.returncode == 0, fallback_proc.stderr
+    fallback_argv = fallback_args.read_text(encoding="utf-8").splitlines()
+    assert fallback_argv[fallback_argv.index("--model-family") + 1] == "gpt3"
+    assert fallback_argv[fallback_argv.index("--template-name") + 1] == "gpt3"
+    assert fallback_argv[fallback_argv.index("--dataset-alias") + 1] == "/tmp/native-cache"
+    assert "--train-transformer-lm" in fallback_argv
 
 
 def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None:

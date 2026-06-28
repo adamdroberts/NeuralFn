@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT workflow: added `tools/train_gpt.sh` as the generic no-Python
+  workstation wrapper for the universal dense GPT trainer. It prefers the
+  compiled `build/nfn_train_gpt` launcher via `NFN_NATIVE_GPT_TRAIN_CLI` and
+  falls back to the existing shell parser with `NFN_GPT_USE_COMPILED_LAUNCHER=0`
+  or when no compiled launcher is available, so scripts no longer need the
+  SM120-labelled helper name to reach the generic GPT/template/custom-graph
+  native training path. The no-Torch entrypoint verifier now runs the generic
+  wrapper dry-runs as part of its shell-entrypoint set.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_generic_train_gpt_shell_wrapper_prefers_compiled_launcher_and_falls_back
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints
+  -q`; `git diff --check`.
+
 - CUDA 13 SM120 validation: the optional
   `NFN_SM120_CUDA13_RUN_BENCH=1` contract now passes
   `NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED` through to the paired native
