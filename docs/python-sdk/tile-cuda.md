@@ -1012,6 +1012,9 @@ workstation shape. Training JSON reports `packed_qkv_attention_enabled: true`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
 Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` to force the split-QKV fallback for
 paired bisection or lower-memory runs.
+When that split fallback is forced, saved attention LSE sidecars reuse the
+combined float arena when it is active instead of taking a second standalone
+allocation. The default packed-QKV route is unchanged.
 Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for short
 diagnostic runs that need packed-backward section timing: it uses CUDA events
 and synchronizes the stream to report dprep and TK backward totals/counts as

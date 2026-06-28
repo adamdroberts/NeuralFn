@@ -10766,6 +10766,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "float_arena_pointer_assign_wall_ms" in gpt2_source_text
     assert "uint16_arena_cuda_malloc_wall_ms" in gpt2_source_text
     assert "uint16_arena_pointer_assign_wall_ms" in gpt2_source_text
+    assert (
+        "if (stored_attention_lse_arena == nullptr) {\n"
+        "            void* raw_lse = nullptr;\n"
+        "            status = device_malloc(&raw_lse, lse_bytes);"
+    ) in gpt2_source_text
     assert '\\"float_arena_allocated_bytes\\"' in gpt2_source_text
     assert '\\"uint16_arena_allocated_bytes\\"' in gpt2_source_text
     assert '\\"transformer_arena_allocated_bytes\\"' in gpt2_source_text

@@ -15165,15 +15165,17 @@ int run_transformer_lm_training_json(
         stored_attention_bf16_arena_elements = stored_attention_bf16_elements;
         stored_attention_bf16_arena_bytes = static_cast<std::int64_t>(bf16_bytes);
 
-        void* raw_lse = nullptr;
         const std::size_t lse_bytes = sizeof(float) * static_cast<std::size_t>(stored_attention_lse_elements);
-        status = device_malloc(&raw_lse, lse_bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc stored_attention_lse_arena");
-            return;
+        if (stored_attention_lse_arena == nullptr) {
+            void* raw_lse = nullptr;
+            status = device_malloc(&raw_lse, lse_bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_attention_lse_arena");
+                return;
+            }
+            stored_attention_lse_arena = static_cast<float*>(raw_lse);
+            float_ptrs.push_back(stored_attention_lse_arena);
         }
-        stored_attention_lse_arena = static_cast<float*>(raw_lse);
-        float_ptrs.push_back(stored_attention_lse_arena);
         stored_attention_lse_arena_elements = stored_attention_lse_elements;
         stored_attention_lse_arena_bytes = static_cast<std::int64_t>(lse_bytes);
 

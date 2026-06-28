@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: fixed the split-QKV attention fallback allocation path used
+  when `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0`. The saved attention LSE sidecar
+  now reuses the combined float arena when that arena has already assigned
+  `stored_attention_lse_arena`, instead of doing an extra standalone
+  `cudaMalloc` and overwriting the pointer. The default packed-QKV route is
+  unchanged, but split-attention diagnostics avoid the duplicate startup
+  allocation and leaked arena reservation. Verification: added a static native
+  trainer regression in `tests/test_native_gpt2.py`.
+
 - Native SM120 launcher: the compiled `nfn_train_gpt_sm120` helper now
   advertises `--native-cuda-fast-startup` / `--fast-startup` and canonicalizes
   either spelling to `--fast-startup` before execing the native GPT trainer,
