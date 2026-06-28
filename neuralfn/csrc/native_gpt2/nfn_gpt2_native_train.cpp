@@ -5536,6 +5536,15 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         << "  \"tensor_scale\": " << kTensorScale << ",\n"
         << "  \"max_abs_error\": " << max_abs_error << ",\n"
         << "  \"nonzero_scale_bytes\": " << nonzero_scale_bytes << ",\n"
+        << "  \"packed_nvfp4_activation_arena_ready\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"native_activation_packing_prerequisite_status\": \""
+        << (passed ? "packed-nvfp4-activation-arena-ready" : "packed-nvfp4-activation-arena-failed")
+        << "\",\n"
+        << "  \"native_activation_packing_remaining_required_kernels\": [\n"
+        << "    \"projection-fp4-gemm-forward-backward\",\n"
+        << "    \"attention-qkv-fp4-gemm-forward-backward\",\n"
+        << "    \"lm-head-fp4-gemm-forward-backward\"\n"
+        << "  ],\n"
         << "  \"passed\": " << (passed ? "true" : "false");
     if (!error.empty()) {
         std::cout << ",\n"

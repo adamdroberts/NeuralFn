@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Native GPT: the dense trainer's `--smoke-nvfp4-pack` JSON now separates the
+  verified packed activation-arena prerequisite from the remaining FP4 GEMM
+  training work. The smoke output reports
+  `packed_nvfp4_activation_arena_ready`,
+  `native_activation_packing_prerequisite_status`, and
+  `native_activation_packing_remaining_required_kernels` after launching the
+  raw CUDA Tile pack/dequantize kernels. This does not mark
+  `tile_cuda.native_activation_packing_active` true; projection, attention QKV,
+  and LM-head FP4 forward/backward GEMMs are still required before dense GPT
+  training is actually packed-NVFP4 end to end. Verification: focused native
+  source test (skipped in the current environment), no-Torch native dependency
+  verifier with stale C++ artifact rebuilds, linked CUDA
+  `--smoke-nvfp4-pack`, and `git diff --check`.
+
 `README.md` captures the current product and setup story. This file captures the more detailed history behind meaningful changes, including migration notes and verification.
 
 Future updates should append new entries here rather than replacing older notes.

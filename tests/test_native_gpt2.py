@@ -10011,6 +10011,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "print_nvfp4_pack_smoke_json" in gpt2_source_text
     assert "native_nvfp4_pack" in gpt2_source_text
     assert "nonzero_scale_bytes" in gpt2_source_text
+    assert "packed_nvfp4_activation_arena_ready" in gpt2_source_text
+    assert "native_activation_packing_prerequisite_status" in gpt2_source_text
+    assert "packed-nvfp4-activation-arena-ready" in gpt2_source_text
+    assert "native_activation_packing_remaining_required_kernels" in gpt2_source_text
     assert '\\"effective_activation_dtype\\"' in gpt2_evo_source_text
     assert '\\"native_activation_packing_active\\"' in gpt2_evo_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
