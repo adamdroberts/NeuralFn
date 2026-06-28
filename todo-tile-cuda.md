@@ -66,18 +66,19 @@ Real training tensors must not pass through graph editor node objects.
   kernel throughput parity.
 - [x] Gate CUDA 13.3 SM120 validation on the same no-Torch runtime invariant.
   `tools/validate_sm120_cuda13.sh` now runs
-  `tools/check_native_no_torch_deps.py --json` before CUDA smoke checks by
-  default, so post-toolkit-reinstall validation fails if compiled native
-  artifacts, SDK bindings, or fast Python wrappers regain Torch/c10/Python
-  runtime links or slow import paths. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json` before CUDA
+  smoke checks by default, so post-toolkit-reinstall validation fails if
+  compiled native artifacts, SDK bindings, or fast Python wrappers regain
+  Torch/c10/Python runtime links or slow import paths, and refreshes stale
+  registered artifacts before continuing. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
   only for narrow CUDA-only bisections after the no-Torch gate already passed.
-  The 2026-06-28 post-reinstall validator run passed the no-Torch gate, Tile
-  smoke, NVFP4 pack smoke, transformer-LM step smoke, focused LM-head
-  benchmark, and `tests/test_native_gpt2.py` (`109 passed, 1 skipped`). The
-  focused LM-head JSON still reports `candidate_path_class:
-  diagnostic-cuda-graph-wrapper`, `candidate_true_fused_capability: false`,
-  and `true_fused_launch_count: 0`, so this is a clean CUDA 13.3 baseline, not
-  strict LM-head completion.
+  The 2026-06-28 post-reinstall rerun first caught stale
+  `build/nfn_gpt2_native_train` and `build/libnfn_native_train_tile_ops_tk.so`
+  artifacts, then passed after rebuilding them. The focused native GPT pytest
+  suite now reports `111 passed, 2 skipped`. The focused LM-head JSON still
+  reports `candidate_path_class: diagnostic-cuda-graph-wrapper`,
+  `candidate_true_fused_capability: false`, and `true_fused_launch_count: 0`,
+  so this is a clean CUDA 13.3 baseline, not strict LM-head completion.
 - [x] Prove the normal GPT wrapper crosses the compiled C++ boundary, not just
   dry-run and metadata paths. `tools/check_native_no_torch_deps.py` now runs
   `cli/scripts/train_gpt.py --tinystories --max-steps 1` against a stubbed

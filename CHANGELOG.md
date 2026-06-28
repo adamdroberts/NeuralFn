@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT validation: reran the post-CUDA-13.3 no-Torch and focused native
+  GPT gates. A plain `tools/check_native_no_torch_deps.py --json` correctly
+  failed on stale `build/nfn_gpt2_native_train` and
+  `build/libnfn_native_train_tile_ops_tk.so`; rerunning with
+  `--rebuild-stale --json` rebuilt those artifacts and passed. The focused
+  native GPT pytest suite now passes with `111 passed, 2 skipped`. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -x -q` and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`.
+
 - Native GPT benchmarking: rechecked the default no-loss llm.kittens-style
   LM-head CE/dlogits route after the CUDA reinstall. The default-vs-legacy
   3-step, 2-sample gate passed with `0.999943x` train-loop wall, `0.999902x`
