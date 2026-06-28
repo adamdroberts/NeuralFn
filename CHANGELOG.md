@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_ln1_bf16_off`
+  profile. The CUDA 13.3.33 dedicated RTX 5090 3-step, one-sample no-stage
+  probe disabled the saved packed-attention LN1 BF16 tape and reduced
+  `uint16_arena_allocated_bytes` to `0.951156x`, transformer arena bytes to
+  `0.962522x`, activation storage to `0.938352x`, and `setup_wall_ms` to
+  `0.937251x`, but rejected default promotion because
+  `train_loop_wall_ms_per_step` regressed to `1.008748x` and
+  `train_tokens_per_second` fell to `0.991327x`. Verification: GPU-visible
+  paired wrapper probe on the dedicated RTX 5090, focused native GPT
+  candidate-wrapper source test, dry-run expansion, and `git diff --check`.
+
 - Bench: `tools/paired_kernel_speed.py` now carries native
   `float_arena_request_stats` and `uint16_arena_request_stats` into each paired
   command row and summarizes them under `native_arena_request_stats`. Text and
