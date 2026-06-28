@@ -71,6 +71,13 @@ Real training tensors must not pass through graph editor node objects.
   artifacts, SDK bindings, or fast Python wrappers regain Torch/c10/Python
   runtime links or slow import paths. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
   only for narrow CUDA-only bisections after the no-Torch gate already passed.
+  The 2026-06-28 post-reinstall validator run passed the no-Torch gate, Tile
+  smoke, NVFP4 pack smoke, transformer-LM step smoke, focused LM-head
+  benchmark, and `tests/test_native_gpt2.py` (`109 passed, 1 skipped`). The
+  focused LM-head JSON still reports `candidate_path_class:
+  diagnostic-cuda-graph-wrapper`, `candidate_true_fused_capability: false`,
+  and `true_fused_launch_count: 0`, so this is a clean CUDA 13.3 baseline, not
+  strict LM-head completion.
 - [x] Add the focused LM-head backward candidate/current microbench to the
   default CUDA 13.3 SM120 validator. `tools/validate_sm120_cuda13.sh` now runs
   `tools/bench_lm_head_backward_candidate.sh` with the `trainer-chunk` profile
