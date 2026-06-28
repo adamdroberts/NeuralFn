@@ -12,8 +12,14 @@
   Tile dHidden/dWeight graph-body launches instead of the cuBLASLt diagnostic
   body. This keeps CE-specialization and loss-bin profile promotions from
   passing on timing while silently leaving the optimized LM-head wrapper route.
-  Verification: syntax and focused source tests are listed with this change's
-  commit.
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`; `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  -q`; dry-run metadata with
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`;
+  and a two-step dedicated RTX 5090 smoke with broad timing gates that reported
+  `native_lm_head_graph_wrapper_tile_body_gate: passed=true`.
 
 - Native GPT: kept the current NVFP4 QKV dweight sidecar off the default
   throughput path after same-script SM120 parity showed it regressed

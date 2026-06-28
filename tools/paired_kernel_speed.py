@@ -4245,6 +4245,17 @@ def evaluate_lm_head_graph_wrapper_tile_body_gate(
     dweight_nodes = target.get("graph_body_dweight_nodes_per_replay_mean")
     cublaslt = target.get("graph_body_cublaslt_launch_mean")
     tile = target.get("graph_body_tile_fallback_mean")
+    prewarm_cublaslt = target.get("prewarm_body_cublaslt_launch_mean")
+    prewarm_tile = target.get("prewarm_body_tile_fallback_mean")
+
+    cublaslt_total = _sum_optional_metrics(
+        cublaslt if isinstance(cublaslt, (int, float)) else None,
+        prewarm_cublaslt if isinstance(prewarm_cublaslt, (int, float)) else None,
+    )
+    tile_total = _sum_optional_metrics(
+        tile if isinstance(tile, (int, float)) else None,
+        prewarm_tile if isinstance(prewarm_tile, (int, float)) else None,
+    )
 
     checks = {
         "diagnostic_graph_wrapper": graph_wrapper,
@@ -4254,8 +4265,8 @@ def evaluate_lm_head_graph_wrapper_tile_body_gate(
         "one_ce_node": isinstance(ce_nodes, (int, float)) and ce_nodes == 1.0,
         "one_dhidden_node": isinstance(dhidden_nodes, (int, float)) and dhidden_nodes == 1.0,
         "one_dweight_node": isinstance(dweight_nodes, (int, float)) and dweight_nodes == 1.0,
-        "no_cublaslt_graph_body": isinstance(cublaslt, (int, float)) and cublaslt == 0.0,
-        "tile_graph_body_present": isinstance(tile, (int, float)) and tile > 0.0,
+        "no_cublaslt_graph_body": isinstance(cublaslt_total, (int, float)) and cublaslt_total == 0.0,
+        "tile_graph_body_present": isinstance(tile_total, (int, float)) and tile_total > 0.0,
     }
     missing = [name for name, passed in checks.items() if not passed]
     passed = not required or not missing
@@ -4267,7 +4278,9 @@ def evaluate_lm_head_graph_wrapper_tile_body_gate(
             + f" (path_class={path_class or 'unobserved'}, "
             + f"replay_success={replay_success}, fallback={graph_fallback}, "
             + f"nodes={nodes}, ce={ce_nodes}, dhidden={dhidden_nodes}, "
-            + f"dweight={dweight_nodes}, cublaslt={cublaslt}, tile={tile})"
+            + f"dweight={dweight_nodes}, cublaslt={cublaslt}, "
+            + f"prewarm_cublaslt={prewarm_cublaslt}, tile={tile}, "
+            + f"prewarm_tile={prewarm_tile})"
         )
     return {
         "enabled": required,
