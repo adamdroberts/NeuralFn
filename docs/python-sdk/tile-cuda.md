@@ -1626,12 +1626,14 @@ GPT template name can be passed through this no-Torch selection path, and the
 compiled C++ plan JSON reports
 `shipped_template_catalog`, `shipped_template_catalog_count`,
 `template_known`, and `resolved_native_template_name` so SDK callers can audit
-the no-Python selector catalog. The public `gpt` template alias plus
-`gpt2`, `gpt2_modern`, `gpt2_megakernel`, and `gpt2_moa` map to the implemented native
-transformer-LM loop; `gpt2_moa` resolves to
-`--native-cuda-activation moa` automatically. Structurally different shipped
-template names and custom graph files are selected and reported in JSON, but
-return `selected-graph-native-trainer-missing` for real training until their
+the no-Python selector catalog. The public `gpt` template alias plus `gpt2`,
+`gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`,
+`nanogpt_modern`, and `nanogpt_megakernel` map to the implemented native
+transformer-LM loop; `gpt2_moa` resolves to `--native-cuda-activation moa`
+automatically, `gpt3` selects the 2048-token context default, and NanoGPT
+selectors use the 320-wide/5-layer template geometry. Structurally different
+shipped template names and custom graph files are selected and reported in JSON,
+but return `selected-graph-native-trainer-missing` for real training until their
 native C++ Tile trainer plans are implemented. Missing custom graph paths return
 `custom-graph-file-missing` with `graph_file_exists: false` and
 `graph_file_size_bytes: -1`; existing custom graph files report their byte size

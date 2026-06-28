@@ -200,3 +200,44 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
     assert "--model-family gpt3" in str(sm120_gpt3_entry["stdout"])
     assert "--template-name gpt3" in str(sm120_gpt3_entry["stdout"])
     assert "--train-seq-len 2048" in str(sm120_gpt3_entry["stdout"])
+
+    catalog_entry = shell_entries["native_gpt_linked_list_templates"]
+    assert catalog_entry["passed"] is True
+    catalog = json.loads(str(catalog_entry["stdout"]))
+    templates_by_name = {
+        str(template["name"]): template
+        for template in catalog["templates"]
+    }
+    expected_native_templates = {
+        "gpt": "gpt2",
+        "gpt2": "gpt2",
+        "gpt2_modern": "gpt2_modern",
+        "gpt2_megakernel": "gpt2_megakernel",
+        "gpt2_moa": "gpt2_moa",
+        "gpt3": "gpt3",
+        "nanogpt": "nanogpt",
+        "nanogpt_modern": "nanogpt_modern",
+        "nanogpt_megakernel": "nanogpt_megakernel",
+    }
+    for template_name, resolved_name in expected_native_templates.items():
+        template = templates_by_name[template_name]
+        assert template["resolved_native_template_name"] == resolved_name
+        assert template["selected_graph_support_status"] == "native-transformer-lm"
+        assert template["selected_graph_native_runnable"] is True
+
+    gpt3_geometry = templates_by_name["gpt3"]["selected_template_geometry"]
+    assert gpt3_geometry["seq_len"] == 2048
+    assert gpt3_geometry["model_dim"] == 768
+    assert gpt3_geometry["num_heads"] == 12
+    assert gpt3_geometry["num_layers"] == 12
+
+    for template_name in ("nanogpt", "nanogpt_modern", "nanogpt_megakernel"):
+        geometry = templates_by_name[template_name]["selected_template_geometry"]
+        assert geometry["model_dim"] == 320
+        assert geometry["num_heads"] == 5
+        assert geometry["num_layers"] == 5
+        assert geometry["seq_len"] == 1024
+
+    llama_template = templates_by_name["llama"]
+    assert llama_template["selected_graph_support_status"] == "template-native-trainer-missing"
+    assert llama_template["selected_graph_native_runnable"] is False
