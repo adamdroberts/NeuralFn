@@ -147,6 +147,10 @@ native/generic alias) is set explicitly. On the 2026-06-28 dedicated RTX 5090
 recheck, a 3-step stage-timed diagnostic sample reported a false gate failure
 at `1.005075x` train-loop wall, while the same non-stage paired run passed at
 `1.000735x` train-loop wall and `1.000462x` steady-state CUDA-event time.
+A stronger 5-step, 3-sample non-stage gate also passed with median ratios
+`0.992989x` train-loop wall, `0.994042x` steady-state CUDA-event time, and
+`1.007140x` tokens/sec, with zero selected-GPU compute processes before and
+after every sample.
 The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
 profile passes candidate-over-llm.kittens gates, but it does not beat the

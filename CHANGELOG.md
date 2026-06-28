@@ -22,7 +22,11 @@ Future updates should append new entries here rather than replacing older notes.
   -q`; `git diff --check`; a dedicated RTX 5090 3-step non-stage parity sample
   passed at `1.000735x` train-loop wall and `1.000462x` steady-state
   CUDA-event time after the matching stage-timed diagnostic sample failed only
-  from candidate-only attribution overhead at `1.005075x`.
+  from candidate-only attribution overhead at `1.005075x`; a stronger 5-step,
+  3-sample non-stage gate then passed with median ratios `0.992989x`
+  train-loop wall, `0.994042x` steady-state CUDA-event time, and `1.007140x`
+  tokens/sec with zero selected-GPU compute processes before and after every
+  sample.
 
 - CUDA 13 SM120 validation: the default `tools/validate_sm120_cuda13.sh` flow
   now runs a fast one-step native runtime-contract probe after the Tile smoke
