@@ -142,6 +142,18 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"lm_head_classifier_last_vocab\\\": 50257, "
                 "\\\"lm_head_classifier_last_row_stride\\\": 50304, "
                 "\\\"block_state_layout\\\": {\\\"layer_norm_backward_affine_row_chunk_size\\\": 512}, "
+                "\\\"float_arena_request_stats\\\": {"
+                "\\\"request_count\\\": 2, \\\"total_requested_bytes\\\": 3072, "
+                "\\\"total_allocated_bytes\\\": 4096, \\\"element_bytes\\\": 4, "
+                "\\\"top_families\\\": [{\\\"family\\\": \\\"block.*.persistent_output\\\", "
+                "\\\"request_count\\\": 1, \\\"elements\\\": 512, \\\"bytes\\\": 2048}, "
+                "{\\\"family\\\": \\\"token_weight\\\", \\\"request_count\\\": 1, "
+                "\\\"elements\\\": 256, \\\"bytes\\\": 1024}]}, "
+                "\\\"uint16_arena_request_stats\\\": {"
+                "\\\"request_count\\\": 1, \\\"total_requested_bytes\\\": 8192, "
+                "\\\"total_allocated_bytes\\\": 8192, \\\"element_bytes\\\": 2, "
+                "\\\"top_families\\\": [{\\\"family\\\": \\\"lm_head_bf16_logits\\\", "
+                "\\\"request_count\\\": 1, \\\"elements\\\": 4096, \\\"bytes\\\": 8192}]}, "
                 "\\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
@@ -253,6 +265,13 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["uint16_arena_pointer_assign_wall_ms"]["mean"] == 0.01
     assert payload["candidate_native_metrics"]["transformer_device_arena_cuda_malloc_wall_ms"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["transformer_device_arena_pointer_assign_wall_ms"]["mean"] == 0.0
+    candidate_arena = payload["native_arena_request_stats"]["candidate"]
+    assert candidate_arena["float"]["total_requested_bytes"]["mean"] == 3072.0
+    assert candidate_arena["float"]["total_allocated_bytes"]["mean"] == 4096.0
+    assert candidate_arena["float"]["top_families"][0]["family"] == "block.*.persistent_output"
+    assert candidate_arena["float"]["top_families"][0]["bytes"]["mean"] == 2048.0
+    assert candidate_arena["uint16"]["top_families"][0]["family"] == "lm_head_bf16_logits"
+    assert candidate_arena["uint16"]["top_families"][0]["bytes"]["mean"] == 8192.0
     assert payload["candidate_native_metrics"]["linear_bf16_gemm_count"]["mean"] == 7.0
     assert payload["candidate_native_metrics"]["bf16_to_f32_vec4_count"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0
@@ -326,6 +345,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
         "min=0.700000 max=0.700000 (count_mean=1.000000; avg_ms_mean=0.700000)"
         in proc.stdout
     )
+    assert "native_arena_request_stats:" in proc.stdout
+    assert "float: requested_bytes_mean=3072 allocated_bytes_mean=4096" in proc.stdout
+    assert "block.*.persistent_output: bytes_mean=2048" in proc.stdout
+    assert "lm_head_bf16_logits: bytes_mean=8192" in proc.stdout
     assert (
         "stage.lm_head_backward.total_ms: mean=7.000000 median=7.000000 "
         "min=7.000000 max=7.000000 (count_mean=2.000000; avg_ms_mean=3.500000)"

@@ -1909,6 +1909,40 @@ def native_cublaslt_plan_cache_from_payload(payload: dict[str, Any]) -> list[dic
     return plans
 
 
+def native_arena_request_stats_from_payload(payload: dict[str, Any]) -> dict[str, object]:
+    stats: dict[str, object] = {}
+    for arena_name, payload_key in (
+        ("float", "float_arena_request_stats"),
+        ("uint16", "uint16_arena_request_stats"),
+    ):
+        arena = payload.get(payload_key)
+        if not isinstance(arena, dict):
+            continue
+        copied: dict[str, object] = {}
+        for key in (
+            "request_count",
+            "requested_bytes",
+            "total_requested_bytes",
+            "allocated_bytes",
+            "total_allocated_bytes",
+            "element_bytes",
+            "family_count",
+            "top_count",
+            "top_bytes",
+            "top_family_bytes",
+        ):
+            value = arena.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                copied[key] = float(value)
+        for key in ("top_requests", "top_families"):
+            value = arena.get(key)
+            if isinstance(value, list):
+                copied[key] = [item for item in value if isinstance(item, dict)]
+        if copied:
+            stats[arena_name] = copied
+    return stats
+
+
 def native_json_out_path_from_argv(argv: Sequence[str]) -> Path | None:
     for index, arg in enumerate(argv):
         if arg in NATIVE_JSON_OUT_FLAGS and index + 1 < len(argv):
@@ -2008,6 +2042,14 @@ def native_linear_shape_stats_from_command_output(argv: Sequence[str], stdout: s
 def native_cublaslt_plan_cache_from_command_output(argv: Sequence[str], stdout: str) -> list[dict[str, object]]:
     payload = native_payload_from_command_output(argv, stdout)
     return native_cublaslt_plan_cache_from_payload(payload) if payload is not None else []
+
+
+def native_arena_request_stats_from_command_output(
+    argv: Sequence[str],
+    stdout: str,
+) -> dict[str, object]:
+    payload = native_payload_from_command_output(argv, stdout)
+    return native_arena_request_stats_from_payload(payload) if payload is not None else {}
 
 
 def native_failure_summary(metrics: dict[str, float | int | str | bool]) -> str:
@@ -2170,6 +2212,7 @@ def run_once(
             "native_metrics": native_metrics_from_command_output(run_argv, stdout),
             "native_linear_shape_stats": native_linear_shape_stats_from_command_output(run_argv, stdout),
             "native_cublaslt_plan_cache": native_cublaslt_plan_cache_from_command_output(run_argv, stdout),
+            "native_arena_request_stats": native_arena_request_stats_from_command_output(run_argv, stdout),
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
@@ -2192,6 +2235,7 @@ def run_once(
     native_metrics = native_metrics_from_command_output(run_argv, stdout)
     native_linear_shape_stats = native_linear_shape_stats_from_command_output(run_argv, stdout)
     native_cublaslt_plan_cache = native_cublaslt_plan_cache_from_command_output(run_argv, stdout)
+    native_arena_request_stats = native_arena_request_stats_from_command_output(run_argv, stdout)
     if returncode != 0 and not continue_on_error:
         native_summary = native_failure_summary(native_metrics)
         native_section = f"\nnative JSON summary:\n{native_summary}\n" if native_summary else ""
@@ -2211,6 +2255,7 @@ def run_once(
         "native_metrics": native_metrics,
         "native_linear_shape_stats": native_linear_shape_stats,
         "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
+        "native_arena_request_stats": native_arena_request_stats,
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
@@ -2339,6 +2384,155 @@ def sample_metric_ratios(
         ):
             ratios[key] = float(numerator_value) / float(denominator_value)
     return ratios
+
+
+def _arena_stats_for_command(row: dict[str, object], command_name: str) -> dict[str, object]:
+    command = row.get(command_name)
+    if not isinstance(command, dict):
+        return {}
+    stats = command.get("native_arena_request_stats")
+    return stats if isinstance(stats, dict) else {}
+
+
+def _arena_numeric_value(arena: dict[str, object], key: str) -> float | None:
+    value = arena.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def summarize_native_arena_request_stats(rows: Sequence[dict[str, object]]) -> dict[str, object]:
+    def summarize_command(command_name: str) -> dict[str, object]:
+        command_summary: dict[str, object] = {}
+        for arena_name in ("float", "uint16"):
+            numeric_values: dict[str, list[float]] = {}
+            family_values: dict[str, dict[str, list[float]]] = {}
+            for row in rows:
+                arena_stats = _arena_stats_for_command(row, command_name)
+                arena = arena_stats.get(arena_name)
+                if not isinstance(arena, dict):
+                    continue
+                for key in (
+                    "request_count",
+                    "total_requested_bytes",
+                    "total_allocated_bytes",
+                    "top_family_bytes",
+                ):
+                    value = _arena_numeric_value(arena, key)
+                    if value is not None:
+                        numeric_values.setdefault(key, []).append(value)
+                top_families = arena.get("top_families")
+                if not isinstance(top_families, list):
+                    continue
+                for family in top_families:
+                    if not isinstance(family, dict):
+                        continue
+                    name = family.get("family")
+                    if not isinstance(name, str) or not name:
+                        continue
+                    values = family_values.setdefault(name, {"bytes": [], "request_count": []})
+                    bytes_value = _arena_numeric_value(family, "bytes")
+                    request_count = _arena_numeric_value(family, "request_count")
+                    if bytes_value is not None:
+                        values["bytes"].append(bytes_value)
+                    if request_count is not None:
+                        values["request_count"].append(request_count)
+            if not numeric_values and not family_values:
+                continue
+            arena_summary: dict[str, object] = {
+                key: summarize(values) for key, values in numeric_values.items() if values
+            }
+            family_rows: list[dict[str, object]] = []
+            for family, values in family_values.items():
+                bytes_values = values.get("bytes", [])
+                if not bytes_values:
+                    continue
+                row: dict[str, object] = {
+                    "family": family,
+                    "bytes": summarize(bytes_values),
+                }
+                request_counts = values.get("request_count", [])
+                if request_counts:
+                    row["request_count"] = summarize(request_counts)
+                family_rows.append(row)
+            family_rows.sort(
+                key=lambda item: float(item["bytes"]["mean"]) if isinstance(item.get("bytes"), dict) else 0.0,
+                reverse=True,
+            )
+            arena_summary["top_families"] = family_rows[:10]
+            command_summary[arena_name] = arena_summary
+        return command_summary
+
+    def summarize_ratio(
+        denominator_name: str,
+        numerator_name: str,
+    ) -> dict[str, object]:
+        ratio_summary: dict[str, object] = {}
+        for arena_name in ("float", "uint16"):
+            numeric_ratios: dict[str, list[float]] = {}
+            family_ratios: dict[str, list[float]] = {}
+            for row in rows:
+                denominator_stats = _arena_stats_for_command(row, denominator_name)
+                numerator_stats = _arena_stats_for_command(row, numerator_name)
+                denominator_arena = denominator_stats.get(arena_name)
+                numerator_arena = numerator_stats.get(arena_name)
+                if not isinstance(denominator_arena, dict) or not isinstance(numerator_arena, dict):
+                    continue
+                for key in ("total_requested_bytes", "total_allocated_bytes", "top_family_bytes"):
+                    denominator_value = _arena_numeric_value(denominator_arena, key)
+                    numerator_value = _arena_numeric_value(numerator_arena, key)
+                    if denominator_value is not None and numerator_value is not None and denominator_value != 0.0:
+                        numeric_ratios.setdefault(key, []).append(numerator_value / denominator_value)
+                denominator_families = {
+                    item.get("family"): item
+                    for item in denominator_arena.get("top_families", [])
+                    if isinstance(item, dict) and isinstance(item.get("family"), str)
+                }
+                for item in numerator_arena.get("top_families", []):
+                    if not isinstance(item, dict):
+                        continue
+                    family = item.get("family")
+                    if not isinstance(family, str):
+                        continue
+                    denominator_item = denominator_families.get(family)
+                    if not isinstance(denominator_item, dict):
+                        continue
+                    denominator_bytes = _arena_numeric_value(denominator_item, "bytes")
+                    numerator_bytes = _arena_numeric_value(item, "bytes")
+                    if denominator_bytes is not None and numerator_bytes is not None and denominator_bytes != 0.0:
+                        family_ratios.setdefault(family, []).append(numerator_bytes / denominator_bytes)
+            if not numeric_ratios and not family_ratios:
+                continue
+            arena_ratio: dict[str, object] = {
+                key: summarize(values) for key, values in numeric_ratios.items() if values
+            }
+            family_rows = [
+                {"family": family, "candidate_bytes_over_baseline": summarize(values)}
+                for family, values in family_ratios.items()
+                if values
+            ]
+            family_rows.sort(
+                key=lambda item: float(item["candidate_bytes_over_baseline"]["mean"])
+                if isinstance(item.get("candidate_bytes_over_baseline"), dict)
+                else 0.0,
+                reverse=True,
+            )
+            arena_ratio["shared_top_family_ratios"] = family_rows[:10]
+            ratio_summary[arena_name] = arena_ratio
+        return ratio_summary
+
+    summary: dict[str, object] = {}
+    for command_name in ("baseline", "candidate", "reference"):
+        command_summary = summarize_command(command_name)
+        if command_summary:
+            summary[command_name] = command_summary
+    candidate_over_baseline = summarize_ratio("baseline", "candidate")
+    if candidate_over_baseline:
+        summary["candidate_over_baseline"] = candidate_over_baseline
+    candidate_over_reference = summarize_ratio("reference", "candidate")
+    if candidate_over_reference:
+        summary["candidate_over_reference"] = candidate_over_reference
+    return summary
 
 
 def summarize_native_route_counter_changes(
@@ -4259,6 +4453,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         )
         native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
         native_cublaslt_plan_cache = summarize_cublaslt_plan_cache(sample_rows)
+        native_arena_request_stats = summarize_native_arena_request_stats(sample_rows)
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
         candidate_over_baseline_native_metrics = summarize_metric_ratios(
             sample_rows,
@@ -4313,6 +4508,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "native_strategy_value_changes": native_strategy_value_changes,
         "native_linear_shape_stats": native_linear_shape_stats,
         "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
+        "native_arena_request_stats": native_arena_request_stats,
         "candidate_over_baseline_native_metrics": candidate_over_baseline_native_metrics,
         "paired_samples": sample_rows,
     }
@@ -4766,6 +4962,82 @@ def print_text(payload: dict[str, object]) -> None:
             print(f"    baseline_only: {', '.join(str(item) for item in baseline_only[:10])}")
         if isinstance(candidate_only, list) and candidate_only:
             print(f"    candidate_only: {', '.join(str(item) for item in candidate_only[:10])}")
+    arena_stats = payload.get("native_arena_request_stats")
+    if isinstance(arena_stats, dict) and arena_stats:
+        print("  native_arena_request_stats:")
+        for command_name in ("baseline", "candidate", "reference"):
+            command_stats = arena_stats.get(command_name)
+            if not isinstance(command_stats, dict) or not command_stats:
+                continue
+            print(f"    {command_name}:")
+            for arena_name in ("float", "uint16"):
+                arena = command_stats.get(arena_name)
+                if not isinstance(arena, dict):
+                    continue
+                requested = arena.get("total_requested_bytes")
+                allocated = arena.get("total_allocated_bytes")
+                requested_mean = (
+                    requested.get("mean") if isinstance(requested, dict) else None
+                )
+                allocated_mean = (
+                    allocated.get("mean") if isinstance(allocated, dict) else None
+                )
+                if isinstance(requested_mean, (int, float)) or isinstance(allocated_mean, (int, float)):
+                    requested_text = (
+                        "n/a"
+                        if not isinstance(requested_mean, (int, float))
+                        else f"{float(requested_mean):.0f}"
+                    )
+                    allocated_text = (
+                        "n/a"
+                        if not isinstance(allocated_mean, (int, float))
+                        else f"{float(allocated_mean):.0f}"
+                    )
+                    print(
+                        f"      {arena_name}: requested_bytes_mean={requested_text} "
+                        f"allocated_bytes_mean={allocated_text}"
+                    )
+                top_families = arena.get("top_families")
+                if isinstance(top_families, list) and top_families:
+                    print(f"        top_{arena_name}_families:")
+                    for family in top_families[:5]:
+                        if not isinstance(family, dict):
+                            continue
+                        family_name = family.get("family")
+                        bytes_stats = family.get("bytes")
+                        if not isinstance(family_name, str) or not isinstance(bytes_stats, dict):
+                            continue
+                        bytes_mean = bytes_stats.get("mean")
+                        if not isinstance(bytes_mean, (int, float)):
+                            continue
+                        print(f"          {family_name}: bytes_mean={float(bytes_mean):.0f}")
+        ratios = arena_stats.get("candidate_over_baseline")
+        if isinstance(ratios, dict) and ratios:
+            print("    candidate_over_baseline:")
+            for arena_name in ("float", "uint16"):
+                arena = ratios.get(arena_name)
+                if not isinstance(arena, dict):
+                    continue
+                allocated_ratio = arena.get("total_allocated_bytes")
+                if isinstance(allocated_ratio, dict) and isinstance(allocated_ratio.get("mean"), (int, float)):
+                    print(
+                        f"      {arena_name}.total_allocated_bytes: "
+                        f"mean={float(allocated_ratio['mean']):.6f}"
+                    )
+                family_ratios = arena.get("shared_top_family_ratios")
+                if isinstance(family_ratios, list) and family_ratios:
+                    print(f"        shared_top_{arena_name}_family_ratios:")
+                    for family in family_ratios[:5]:
+                        if not isinstance(family, dict):
+                            continue
+                        family_name = family.get("family")
+                        ratio_stats = family.get("candidate_bytes_over_baseline")
+                        if not isinstance(family_name, str) or not isinstance(ratio_stats, dict):
+                            continue
+                        ratio_mean = ratio_stats.get("mean")
+                        if not isinstance(ratio_mean, (int, float)):
+                            continue
+                        print(f"          {family_name}: mean={float(ratio_mean):.6f}")
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")

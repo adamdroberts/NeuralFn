@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/paired_kernel_speed.py` now carries native
+  `float_arena_request_stats` and `uint16_arena_request_stats` into each paired
+  command row and summarizes them under `native_arena_request_stats`. Text and
+  JSON reports show top allocation families plus candidate-over-baseline byte
+  ratios, so SM120 startup and memory candidates identify the named buffers
+  behind arena-size changes without manually opening raw profile JSON. This is
+  reporting-only and does not change dense GPT training defaults. Verification:
+  focused paired-kernel-speed smoke test and `git diff --check`.
+
 - Bench: added an explicit rejected `lm_head_row_chunk_16384` SM120 candidate
   profile. The CUDA 13.3.33 dedicated RTX 5090 3-step, one-sample no-stage
   probe halved `lm_head_bf16_logit_bytes` to `0.500000x` and improved
