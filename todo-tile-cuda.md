@@ -64,6 +64,13 @@ Real training tensors must not pass through graph editor node objects.
   candidates unless both are exactly `false`. This keeps benchmark promotion
   paths from accepting graph-editor tensor flow or Torch fallback while chasing
   kernel throughput parity.
+- [x] Gate CUDA 13.3 SM120 validation on the same no-Torch runtime invariant.
+  `tools/validate_sm120_cuda13.sh` now runs
+  `tools/check_native_no_torch_deps.py --json` before CUDA smoke checks by
+  default, so post-toolkit-reinstall validation fails if compiled native
+  artifacts, SDK bindings, or fast Python wrappers regain Torch/c10/Python
+  runtime links or slow import paths. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
+  only for narrow CUDA-only bisections after the no-Torch gate already passed.
 - [x] Make canonical llm.kittens parity runs median-based by default. After the
   CUDA 13.3 WSL reinstall, one-sample runs could fail at sub-percent jitter
   even with zero compute processes on the dedicated RTX 5090; the parity
