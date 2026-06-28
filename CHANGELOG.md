@@ -6,6 +6,11 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: `tools/paired_kernel_speed.py --dry-run-plan` now prints configured
+  metric-ratio gates in addition to the baseline/candidate/reference command
+  expansion. This makes SM120 profile policy review visible without launching
+  GPU work. Verification: focused dry-run-plan unit test and `git diff --check`.
+
 - Bench: extended the `startup_plus_first_step_wall_ms` guard to the SM120
   cuBLASLt plan-prewarm bisection profiles and the default-on
   `lm_head_graph_prewarm` regression check. These profiles now fail promotion

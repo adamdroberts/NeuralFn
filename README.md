@@ -114,7 +114,8 @@ but increases the first optimizer step should fail the combined metric instead
 of hiding the cost shift. The built-in `fast_startup_full`,
 `tk_qkv_forward_prewarm`, cuBLASLt plan-prewarm bisections, and default-on
 `lm_head_graph_prewarm` profile gate `startup_plus_first_step_wall_ms=1.000`
-by default.
+by default. `--dry-run-plan` output also prints the configured metric-ratio
+gates, so profile expansion can be audited without launching GPU work.
 The same CUDA 13.3.33 rechecks keep `llmk_sm120_reference_flags` and
 `mlp_proj_dinput_before_dweight` diagnostic-only. The refreshed reference-flags
 profile passes candidate-over-llm.kittens gates, but it does not beat the

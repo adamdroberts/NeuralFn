@@ -4403,6 +4403,22 @@ def print_text(payload: dict[str, object]) -> None:
         metadata = payload.get("metadata")
         if isinstance(metadata, dict) and metadata:
             print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")
+        metric_ratio_gates = payload.get("metric_ratio_gates")
+        if isinstance(metric_ratio_gates, dict) and metric_ratio_gates.get("enabled") is True:
+            rendered_gates: list[str] = []
+            for item in metric_ratio_gates.get("results", []):
+                if not isinstance(item, dict):
+                    continue
+                metric = str(item.get("metric", ""))
+                stat = str(item.get("stat", "mean"))
+                if not metric:
+                    continue
+                if item.get("max_ratio") is not None:
+                    rendered_gates.append(f"max:{stat}:{metric}<={item['max_ratio']}")
+                if item.get("min_ratio") is not None:
+                    rendered_gates.append(f"min:{stat}:{metric}>={item['min_ratio']}")
+            if rendered_gates:
+                print(f"  metric_ratio_gates: {', '.join(rendered_gates)}")
         order_plan = payload.get("sample_order_plan")
         if isinstance(order_plan, list):
             rendered = [

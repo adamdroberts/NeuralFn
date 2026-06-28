@@ -354,6 +354,10 @@ def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> Non
             "--require-idle-selected-gpu",
             "--metadata",
             "candidate_profile=unit_dry_run",
+            "--max-candidate-ratio",
+            "startup_plus_first_step_wall_ms=1.000",
+            "--min-candidate-ratio",
+            "mean:train_tokens_per_second=1.000",
             "--dry-run-plan",
             "--json-out",
             str(output_path),
@@ -367,9 +371,20 @@ def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> Non
     assert proc.returncode == 0, proc.stderr
     assert "dry_run_plan: true" in proc.stdout
     assert 'metadata: {"candidate_profile": "unit_dry_run"}' in proc.stdout
+    assert (
+        "metric_ratio_gates: "
+        "max:mean:startup_plus_first_step_wall_ms<=1.0, "
+        "min:mean:train_tokens_per_second>=1.0"
+    ) in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["dry_run_plan"] is True
     assert payload["metadata"] == {"candidate_profile": "unit_dry_run"}
+    assert payload["metric_ratio_gates"]["enabled"] is True
+    gate_results = payload["metric_ratio_gates"]["results"]
+    assert gate_results[0]["metric"] == "startup_plus_first_step_wall_ms"
+    assert gate_results[0]["max_ratio"] == 1.0
+    assert gate_results[1]["metric"] == "train_tokens_per_second"
+    assert gate_results[1]["min_ratio"] == 1.0
     assert payload["baseline_command"] == ["definitely_missing_baseline_command", "--old"]
     assert payload["candidate_command"] == ["definitely_missing_candidate_command", "--new"]
     assert payload["sample_order_plan"] == [
