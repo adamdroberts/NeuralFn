@@ -11192,6 +11192,36 @@ __global__ void linear_nvfp4_input_weight_bf16_bits_float32_kernel(
   out[idx] = acc;
 }
 
+__global__ void linear_nvfp4_input_weight_bf16_bits_output_bf16_kernel(
+    const std::uint8_t* __restrict__ x_nvfp4_packed,
+    const std::uint8_t* __restrict__ x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* __restrict__ weight_bf16_bits,
+    const float* __restrict__ bias,
+    std::uint16_t* __restrict__ out_bf16_bits,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / output_dim;
+  const std::int64_t col = idx % output_dim;
+  const std::uint16_t* w_row = weight_bf16_bits + col * input_dim;
+  const std::int64_t x_row_offset = row * input_dim;
+  const float safe_tensor_scale = x_tensor_scale > 0.0f ? x_tensor_scale : 1.0f;
+  float acc = has_bias ? bias[col] : 0.0f;
+  for (std::int64_t i = 0; i < input_dim; ++i) {
+    const std::int64_t x_index = x_row_offset + i;
+    const float x_value =
+        nvfp4_packed_value_device(x_nvfp4_packed, x_block_scales_e4m3, safe_tensor_scale, x_index);
+    acc += x_value * bf16_bits_to_f32_device(w_row[i]);
+  }
+  out_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
+}
+
 __global__ void linear_backward_weight_accumulate_nvfp4_input_float32_kernel(
     const std::uint8_t* __restrict__ x_nvfp4_packed,
     const std::uint8_t* __restrict__ x_block_scales_e4m3,
@@ -17913,6 +17943,34 @@ void launch_linear_nvfp4_input_weight_bf16_float32(
       weight_bf16_bits,
       bias,
       out,
+      n,
+      input_dim,
+      output_dim,
+      has_bias);
+}
+
+void launch_linear_nvfp4_input_weight_bf16_output_float32(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  linear_nvfp4_input_weight_bf16_bits_output_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      x_nvfp4_packed,
+      x_block_scales_e4m3,
+      x_tensor_scale,
+      weight_bf16_bits,
+      bias,
+      out_bf16_bits,
       n,
       input_dim,
       output_dim,

@@ -10012,14 +10012,19 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "packed-nvfp4-activation-arena-ready" in gpt2_source_text
     assert "native_activation_packing_remaining_required_kernels" in gpt2_source_text
     assert "nfn_native_tile_linear_nvfp4_input_weight_bf16_float32" in gpt2_source_text
+    assert "nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32" in gpt2_source_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta" in gpt2_source_text
     assert "projection_max_abs_error" in gpt2_source_text
+    assert "projection_bf16_output_max_abs_error" in gpt2_source_text
     assert "projection_dweight_max_abs_error" in gpt2_source_text
     assert "linear_nvfp4_input_weight_bf16_bits_float32_kernel" in kernels_text
+    assert "linear_nvfp4_input_weight_bf16_bits_output_bf16_kernel" in kernels_text
     assert "linear_backward_weight_accumulate_nvfp4_input_float32_kernel" in kernels_text
     assert "launch_linear_nvfp4_input_weight_bf16_float32" in source_text
+    assert "launch_linear_nvfp4_input_weight_bf16_output_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_nvfp4_input_float32_beta" in source_text
     assert "nfn_native_tile_linear_nvfp4_input_weight_bf16_float32" in header_text
+    assert "nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta" in header_text
     assert '\\"effective_activation_dtype\\"' in gpt2_evo_source_text
     assert '\\"native_activation_packing_active\\"' in gpt2_evo_source_text

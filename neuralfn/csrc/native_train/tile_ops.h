@@ -518,6 +518,19 @@ int nfn_native_tile_linear_nvfp4_input_weight_bf16_float32(
     bool has_bias,
     void* cuda_stream);
 
+int nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta(
     const std::uint8_t* x_nvfp4_packed,
     const std::uint8_t* x_block_scales_e4m3,
