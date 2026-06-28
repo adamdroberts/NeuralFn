@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench workflow: expanded the no-argument
+  `tools/sweep_native_gpt_sm120_candidates.sh` profile set to cover the current
+  accepted dense-GPT SM120 default proofs: QKV/LN ordering, LayerNorm affine
+  row-chunking, linear-bias launch width, BF16 attention grad handoff, LM-head
+  graph prewarm and pointer-aware dedup, LM-head loss bins, fused token-shadow
+  AdamW refresh, padded token init, and the grouped cuBLASLt probe. The sweep
+  summary now also includes BF16 attention handoff, fused token-shadow AdamW,
+  padded token init, and token-padding memset route deltas so accepted-default
+  regressions are visible from `summary.tsv`.
+
+  Migration note: no trainer kernel default changed. This only updates the
+  no-argument benchmark workflow to match the documented accepted-default set;
+  pass positional profiles or `NFN_SM120_NATIVE_SWEEP_PROFILES` to run a smaller
+  subset.
+
+  Verification: `bash -n tools/sweep_native_gpt_sm120_candidates.sh`,
+  `python -m pytest
+  tests/test_tile_cuda_examples.py::test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates
+  -q`, dry-run no-argument sweep, and `git diff --check`.
+
 - CLI inference imports: restored `infer_jepa_semantic` re-exports for
   `dataset_download_kwargs_from_args`, `resolve_dataset_selector_args`, and
   `resolve_or_download_dataset` as lazy wrappers. Shared inference modules and

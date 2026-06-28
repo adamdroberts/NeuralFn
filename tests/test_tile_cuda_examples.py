@@ -3955,9 +3955,14 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'NFN_SM120_NATIVE_JSON_OUT="$json_out"' in text
     assert 'NFN_SM120_NATIVE_PROFILE_DIR="$profile_dir"' in text
     assert 'qkv_dinput_ln128' in text
+    assert 'layernorm_affine_row_chunk_128' in text
     assert 'linear_bias_threads_512' in text
+    assert 'bf16_attention_grad_out' in text
     assert 'lm_head_graph_prewarm' in text
+    assert 'lm_head_graph_prewarm_dedup' in text
     assert 'lm_head_loss_bins' in text
+    assert 'adamw_token_shadow_refresh' in text
+    assert 'token_weight_padded_init' in text
     assert 'cublaslt_grouped_probe' in text
     assert 'llmk_sm120_reference_flags' not in text.partition("else")[2].partition("fi")[0]
     assert 'token_weight_vector4_strided' not in text.partition("else")[2].partition("fi")[0]
@@ -3973,6 +3978,11 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'linear_bias_threads_per_block' in text
     assert 'linear_bgrad_direct_writes' in text
     assert 'linear_bgrad_accumulates' in text
+    assert 'bf16_attention_grad_out_enabled' in text
+    assert 'token_bf16_adamw_refresh_fused' in text
+    assert 'token_bf16_adamw_refresh_count' in text
+    assert 'token_padded_init_enabled' in text
+    assert 'token_bf16_padding_memsets' in text
     assert 'cublaslt_grouped_layout_status' in text
     assert 'cublaslt_grouped_matmul_status' in text
     assert 'route_delta(payload, "block_backward_qkv_dinput_before_dweight_count")' in text
@@ -3987,6 +3997,11 @@ def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     assert 'route_delta(payload, "lm_head_cooperative_sequence_launch_count")' in text
     assert 'route_delta(payload, "linear_cublaslt_bgrad_direct_write_count")' in text
     assert 'route_delta(payload, "linear_cublaslt_bgrad_accumulate_count")' in text
+    assert 'route_delta(payload, "attention_backward_bf16_grad_out_handoff_enabled")' in text
+    assert 'route_delta(payload, "token_weight_bf16_adamw_refresh_fusion_enabled")' in text
+    assert 'route_delta(payload, "token_weight_bf16_fused_adamw_refresh_count")' in text
+    assert 'route_delta(payload, "token_weight_padded_init_fusion_enabled")' in text
+    assert 'route_delta(payload, "token_weight_bf16_padding_memset_count")' in text
     assert 'summary.tsv' in text
     assert 'NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES' in text
 

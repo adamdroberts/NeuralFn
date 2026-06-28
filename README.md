@@ -1055,15 +1055,19 @@ directories, and a `summary.tsv` under
 `NFN_SM120_NATIVE_SWEEP_OUT_DIR` (defaulting to `/tmp`). Positional arguments
 select profiles, or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; with no profile list
 it sweeps the current SM120 hot-path proof set: `qkv_dinput_ln128`,
-`linear_bias_threads_512`, `lm_head_graph_prewarm`, `lm_head_loss_bins`, and
+`layernorm_affine_row_chunk_128`, `linear_bias_threads_512`,
+`bf16_attention_grad_out`, `lm_head_graph_prewarm`,
+`lm_head_graph_prewarm_dedup`, `lm_head_loss_bins`,
+`adamw_token_shadow_refresh`, `token_weight_padded_init`, and
 `cublaslt_grouped_probe`.
 Startup-only bisections such as
 `token_weight_vector4_strided` remain available when named explicitly; that
 profile now compares the old non-strided initializer against the current
 strided default so startup evidence stays reproducible. The current parity gap
 is still steady-state block/LM-head throughput rather than token setup. The
-sweep preserves the
-candidate wrapper's strict
+summary also reports BF16 attention grad handoff, fused token-shadow AdamW
+refresh, padded token init, and padding-memset route deltas. The sweep preserves
+the candidate wrapper's strict
 same-script route and metric gates and exits nonzero if any profile fails; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only for exploratory evidence
 collection where rejected candidates should not fail the outer job. Its

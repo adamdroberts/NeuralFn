@@ -17,9 +17,14 @@ elif [[ -n "${NFN_SM120_CANDIDATE_SWEEP_PROFILES-}" ]]; then
 else
   profiles=(
     qkv_dinput_ln128
+    layernorm_affine_row_chunk_128
     linear_bias_threads_512
+    bf16_attention_grad_out
     lm_head_graph_prewarm
+    lm_head_graph_prewarm_dedup
     lm_head_loss_bins
+    adamw_token_shadow_refresh
+    token_weight_padded_init
     cublaslt_grouped_probe
   )
 fi
@@ -93,6 +98,11 @@ header = [
     "linear_bias_threads_per_block",
     "linear_bgrad_direct_writes",
     "linear_bgrad_accumulates",
+    "bf16_attention_grad_out_enabled",
+    "token_bf16_adamw_refresh_fused",
+    "token_bf16_adamw_refresh_count",
+    "token_padded_init_enabled",
+    "token_bf16_padding_memsets",
     "cublaslt_grouped_layout_status",
     "cublaslt_grouped_matmul_status",
     "json",
@@ -159,6 +169,11 @@ for item in sys.argv[2:]:
             route_delta(payload, "block_state_layout.linear_backward_bias_threads_per_block"),
             route_delta(payload, "linear_cublaslt_bgrad_direct_write_count"),
             route_delta(payload, "linear_cublaslt_bgrad_accumulate_count"),
+            route_delta(payload, "attention_backward_bf16_grad_out_handoff_enabled"),
+            route_delta(payload, "token_weight_bf16_adamw_refresh_fusion_enabled"),
+            route_delta(payload, "token_weight_bf16_fused_adamw_refresh_count"),
+            route_delta(payload, "token_weight_padded_init_fusion_enabled"),
+            route_delta(payload, "token_weight_bf16_padding_memset_count"),
             route_delta(payload, "linear_cublaslt_grouped_layout_probe_status"),
             route_delta(payload, "linear_cublaslt_grouped_matmul_probe_status"),
             json_path,
