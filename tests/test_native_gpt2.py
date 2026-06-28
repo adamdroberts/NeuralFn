@@ -4685,6 +4685,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
             "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS": "50",
             "NFN_SM120_NATIVE_BATCH_SIZE": "16",
             "NFN_SM120_NATIVE_TRAIN_SEQ_LEN": "512",
+            "NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES": "0",
         }
     )
     proc = subprocess.run(
@@ -4788,6 +4789,7 @@ def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None
             "NFN_SM120_NATIVE_WARMUP_STEPS": "12",
             "NFN_SM120_NATIVE_MAX_STEPS": "123",
             "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS": "50",
+            "NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES": "0",
         }
     )
     proc = subprocess.run(
@@ -4824,6 +4826,86 @@ def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None
     for flag, value in expected_pairs.items():
         assert args[args.index(flag) + 1] == value
     assert "--train-transformer-lm" in args
+
+
+def test_compiled_and_shell_sm120_launchers_default_to_dedicated_gpu_selector(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    sm120_launcher = tmp_path / "nfn_train_gpt_sm120"
+    build = subprocess.run(
+        ["bash", str(root / "tools" / "build_train_gpt_sm120_cli.sh"), str(sm120_launcher)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    fake_native = tmp_path / "nfn_gpt_native_train"
+    compiled_env_out = tmp_path / "compiled-env.txt"
+    shell_env_out = tmp_path / "shell-env.txt"
+    fake_native.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'CUDA_VISIBLE_DEVICES=%s\\n' \"$CUDA_VISIBLE_DEVICES\" > \"$NFN_TEST_NATIVE_GPT_ENV\"\n",
+        encoding="utf-8",
+    )
+    fake_native.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_nvidia_smi = fake_bin / "nvidia-smi"
+    fake_nvidia_smi.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '0, Enabled, 3\\n1, Disabled, 8\\n2, Disabled, 1\\n'\n",
+        encoding="utf-8",
+    )
+    fake_nvidia_smi.chmod(0o755)
+
+    base_env = os.environ.copy()
+    base_env.update(
+        {
+            "PATH": f"{fake_bin}{os.pathsep}{base_env.get('PATH', '')}",
+            "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
+            "CUDA_VISIBLE_DEVICES": "",
+            "CUDA_DEVICE_MAX_CONNECTIONS": "",
+            "CUDA_MODULE_LOADING": "",
+        }
+    )
+    base_env.pop("NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES", None)
+    base_env.pop("NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", None)
+    base_env.pop("NFN_SM120_CUDA_VISIBLE_DEVICES", None)
+
+    compiled_env = base_env.copy()
+    compiled_env["NFN_TEST_NATIVE_GPT_ENV"] = str(compiled_env_out)
+    compiled_proc = subprocess.run(
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=compiled_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compiled_proc.returncode == 0, compiled_proc.stderr
+    assert compiled_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
+
+    shell_env = base_env.copy()
+    shell_env["NFN_TEST_NATIVE_GPT_ENV"] = str(shell_env_out)
+    shell_env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
+    shell_proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh"), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=shell_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert shell_proc.returncode == 0, shell_proc.stderr
+    assert shell_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
 
 
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:

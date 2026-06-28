@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native launcher: SM120 dense GPT launchers now default unset
+  `CUDA_VISIBLE_DEVICES` to the `dedicated` selector instead of hard-coding
+  ordinal `0`. The compiled `build/nfn_train_gpt_sm120` /
+  `build/nfn_train_gpt` helper and the `tools/train_gpt_sm120.sh` shell
+  fallback pick the lowest-utilization display-disabled NVIDIA GPU through
+  `nvidia-smi`, falling back to `0` only when the probe cannot identify a GPU.
+  Override `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
+  `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or
+  `NFN_SM120_CUDA_VISIBLE_DEVICES` with an explicit ordinal to skip the
+  selector. Verification: added deterministic fake-`nvidia-smi` launcher
+  coverage for both compiled and shell paths.
+
 - Bench: refreshed the rejected `qkv_concurrent_dinput_dweight` side-stream
   profile on the CUDA 13.3.33 dedicated RTX 5090 path. The 3-step, 2-sample
   same-script rerun proved the intended schedule change by moving

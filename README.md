@@ -314,6 +314,12 @@ confirmed the selected GPU was idle before and after every sample and reported
 the promoted default route with
 `block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
 `block_backward_qkv_dinput_before_dweight_count=480`.
+SM120 GPT launchers default unset `CUDA_VISIBLE_DEVICES` to the `dedicated`
+selector, which picks the lowest-utilization display-disabled NVIDIA GPU through
+`nvidia-smi` and falls back to ordinal `0` if that probe cannot identify a
+device. Set `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
+`NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES` to
+an explicit ordinal when a run should bypass the selector.
 The diagnostic `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_corrections`
 profile is available for reproducing the probability-only LM-head CE route. It
 sets `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1`, writes probability-only
