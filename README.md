@@ -4182,12 +4182,19 @@ validation fails when the emitted JSON no longer reports the promoted CUDA Tile
 dense-GPT route contract, including `graph_editor_tensor_flow=false`,
 `torch_required=false`, `optimized_kernel_contract_passed=true`, zero train-loss
 host D2H copies, the fused Tile AdamW optimizer route, the CUDA Graph LM-head
-wrapper, the llm.kittens-style no-loss BF16/u16 CE kernel, QKV
-dInput-before-dWeight backward, and the 128-row LayerNorm affine reducer. Set
+wrapper, an explicit `native_lm_head_true_fused_target` status showing that the
+strict `strict-true-fused-tile-kernel` replacement is still outstanding, the
+llm.kittens-style no-loss BF16/u16 CE kernel, QKV dInput-before-dWeight
+backward, and the 128-row LayerNorm affine reducer. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
-drifted diagnostic run. Set `NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct
-llm.kittens parity gate when the reference binary/runtime path itself needs
-validation. For a quick one-step wiring smoke, set
+drifted diagnostic run. Set `NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED=1`
+with `NFN_SM120_CUDA13_RUN_BENCH=1` only when validating a candidate that should
+replace the diagnostic CUDA Graph LM-head wrapper with a faster strict Tile
+classifier backward kernel; current defaults intentionally fail that strict gate
+because the strict single-kernel body is not yet the promoted path. Set
+`NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct llm.kittens parity gate when
+the reference binary/runtime path itself needs validation. For a quick one-step
+wiring smoke, set
 `NFN_SM120_CUDA13_PARITY_STEPS=1`; the validator leaves the runtime checks on
 but disables the ratio gate unless `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is
 set explicitly.

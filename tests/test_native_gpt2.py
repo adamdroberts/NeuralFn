@@ -865,9 +865,13 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "bench_native_gpt_sm120_parity.sh" in source
     assert "NFN_SM120_PARITY_ENFORCE_GATE" in source
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
+    assert "NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED" in source
+    assert "NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED" in source
     assert "NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES" in source
     assert "candidate_native_metric_values" in source
     assert "candidate_native_metrics" in source
+    assert "native_lm_head_true_fused_target" in source
+    assert "native_lm_head_true_fused_gate" in source
     assert "graph_editor_tensor_flow" in source
     assert "torch_required" in source
     assert "optimized_kernel_contract_passed" in source
@@ -876,6 +880,9 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "tile-size-1024-sumsq-scale-adamw" in source
     assert "lm_head_classifier_backward_path_class" in source
     assert "diagnostic-cuda-graph-wrapper" in source
+    assert "strict true-fused LM-head Tile work remains" in source
+    assert "strict-true-fused-tile-kernel" in source
+    assert "default CUDA 13 validation must leave the strict LM-head true-fused gate disabled" in source
     assert "lm_head_ce_kernel_strategy" in source
     assert "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores" in source
     assert "promoted llm.kittens-style no-loss BF16/u16 Tile route" in source

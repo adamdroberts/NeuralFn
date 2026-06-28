@@ -160,6 +160,7 @@ case "${NFN_SM120_CUDA13_RUN_BENCH:-0}" in
       NFN_SM120_NATIVE_SAMPLES="${NFN_SM120_CUDA13_BENCH_SAMPLES:-2}" \
       NFN_SM120_NATIVE_WARMUP="${NFN_SM120_CUDA13_BENCH_WARMUP:-0}" \
       NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE="${NFN_SM120_CUDA13_INCLUDE_LLMK_REFERENCE:-0}" \
+      NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED="${NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED:-0}" \
       NFN_SM120_NATIVE_PROFILE_DIR="${NFN_SM120_CUDA13_PROFILE_DIR:-none}" \
       NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES="${NFN_SM120_CUDA13_DISABLE_METRIC_RATIO_GATES:-1}" \
       NFN_SM120_NATIVE_JSON_OUT="${BENCH_JSON}" \
@@ -175,6 +176,8 @@ path = Path(sys.argv[1])
 payload = json.loads(path.read_text(encoding="utf-8"))
 values = payload.get("candidate_native_metric_values") or {}
 metrics = payload.get("candidate_native_metrics") or {}
+true_fused_target = payload.get("native_lm_head_true_fused_target") or {}
+true_fused_gate = payload.get("native_lm_head_true_fused_gate") or {}
 
 def value(name):
     observed = values.get(name)
@@ -211,6 +214,18 @@ checks = [
         value("lm_head_classifier_backward_path_class")
         == "diagnostic-cuda-graph-wrapper",
         "LM-head backward must stay on the promoted CUDA Graph wrapper until a faster true-fused Tile kernel replaces it",
+    ),
+    (
+        true_fused_target.get("status") == "diagnostic-cuda-graph-wrapper"
+        and true_fused_target.get("graph_wrapper_active") is True
+        and true_fused_target.get("next_required_path_class")
+        == "strict-true-fused-tile-kernel",
+        "benchmark JSON must explicitly report that strict true-fused LM-head Tile work remains",
+    ),
+    (
+        true_fused_gate.get("enabled") is False
+        and true_fused_gate.get("passed") is True,
+        "default CUDA 13 validation must leave the strict LM-head true-fused gate disabled unless NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED=1 is set",
     ),
     (
         value("lm_head_ce_kernel_strategy")

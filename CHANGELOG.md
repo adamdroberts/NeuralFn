@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: the optional
+  `NFN_SM120_CUDA13_RUN_BENCH=1` contract now passes
+  `NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED` through to the paired native
+  benchmark and asserts that default benchmark JSON includes
+  `native_lm_head_true_fused_target` / `native_lm_head_true_fused_gate`.
+  Default validation now explicitly records that the promoted path is still the
+  diagnostic CUDA Graph LM-head wrapper and that the strict
+  `strict-true-fused-tile-kernel` replacement remains outstanding; setting
+  `NFN_SM120_CUDA13_REQUIRE_LM_HEAD_TRUE_FUSED=1` turns that target into an
+  opt-in failing gate until a faster strict Tile classifier backward kernel is
+  actually promoted.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `git diff --check`;
+  `NFN_SM120_CUDA13_RUN_NO_TORCH=0
+  NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0 NFN_SM120_CUDA13_RUN_PYTEST=0
+  NFN_SM120_CUDA13_RUN_BENCH=1 NFN_SM120_CUDA13_BENCH_STEPS=3
+  NFN_SM120_CUDA13_BENCH_SAMPLES=1 NFN_SM120_CUDA13_BENCH_WARMUP=0
+  NFN_SM120_CUDA13_JSON_OUT=/tmp/nfn_sm120_cuda13_true_fused_target_contract_20260628.json
+  bash tools/validate_sm120_cuda13.sh`.
+
 - CUDA 13 SM120 validation: refreshed the optional
   `NFN_SM120_CUDA13_RUN_BENCH=1` benchmark contract to match the current native
   dense-GPT defaults. The contract now requires the promoted
