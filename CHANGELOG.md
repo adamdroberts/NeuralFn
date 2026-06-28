@@ -708,6 +708,21 @@ Future updates should append new entries here rather than replacing older notes.
   registry/coverage/example tests, `git diff --check`, and the dedicated-GPU
   one-step rejection gate.
 
+- Bench: refreshed the rejected `trainer-chunk-true-fused-tile4` focused
+  LM-head microbench evidence after the CUDA 13.3 reinstall. The CUDA 13.3.33
+  dedicated RTX 5090 one-iteration rerun proved
+  `candidate_path_class=strict-true-fused-tile-kernel`, but rejected promotion at
+  `37.738071x` candidate/current-wrapper and `113.697403x`
+  candidate/reference-summed time, with the strict body still `4510.827989 ms`
+  slower than the reference CE+dHidden+dWeight components. No default trainer
+  path changed; this keeps the tile4 profile rejected-by-default.
+  Verification: reran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile4
+  NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0 bash
+  tools/bench_lm_head_backward_candidate.sh`; the command failed only because
+  the candidate correctly exceeded the parity gates.
+
 - Breaking changes: native GPT compatibility SDK helpers and native checkpoint
   sampling now default `cuda_visible_devices="dedicated"` instead of the hard
   ordinal `"0"`. This aligns `NativeGptRunConfig`, `NativeGpt2RunConfig`,

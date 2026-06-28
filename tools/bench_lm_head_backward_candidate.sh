@@ -118,7 +118,7 @@ case "${PROFILE}" in
     DEFAULT_MAX_REFERENCE_RATIO=1.000
     DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
     REJECTED_PROFILE="${PROFILE}"
-    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile4 profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4, forces CE threads to 16, and measures the cooperative single-kernel CE+dHidden+dWeight body. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile4 profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4, forces CE threads to 16, and measures the cooperative single-kernel CE+dHidden+dWeight body. CUDA 13.3.33 dedicated RTX 5090 2026-06-28 one-iteration focused rerun proved strict-true-fused-tile-kernel but rejected it at 37.738071x candidate/baseline and 113.697403x candidate/reference-summed time, with the strict body still 4510.827989 ms slower than the reference CE+dHidden+dWeight components. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
     export NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:+${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS} }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4"
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"

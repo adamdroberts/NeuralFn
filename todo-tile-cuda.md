@@ -219,6 +219,14 @@ Real training tensors must not pass through graph editor node objects.
     backward time, and `186.457823x` cooperative LM-head time versus the CUDA
     Graph wrapper. This is benchmark coverage only; the diagnostic single-kernel
     body remains unusable for training-speed parity.
+  - 2026-06-28 reran the focused `trainer-chunk-true-fused-tile4` microbench on
+    the dedicated RTX 5090 after the CUDA 13.3 reinstall. It proved the strict
+    route again (`candidate_path_class=strict-true-fused-tile-kernel`) but
+    rejected promotion at `37.738071x` candidate/current-wrapper and
+    `113.697403x` candidate/reference-summed time, with the strict body
+    `4510.827989 ms` slower than the reference CE+dHidden+dWeight components.
+    The tile4 body is now recorded as a dead-end tuning branch unless a future
+    implementation proves both current-wrapper and reference parity.
   - 2026-06-26 tightened this evidence path with an explicit strict launch
     counter. The Tile ops ABI now exports
     `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`, focused

@@ -2331,6 +2331,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile16.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile8.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile4.so" in wrapper_source
+    assert "37.738071x candidate/baseline" in wrapper_source
+    assert "113.697403x candidate/reference-summed" in wrapper_source
+    assert "4510.827989 ms slower" in wrapper_source
     assert "FORCE_REBUILD_TILE_OPS=1" in wrapper_source
     bench_source = (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(
         encoding="utf-8"
