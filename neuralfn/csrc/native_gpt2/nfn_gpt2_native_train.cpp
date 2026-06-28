@@ -13554,6 +13554,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
                               "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
             true);
+    const bool pinned_token_host_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PINNED_TOKEN_HOST",
+                              "NFN_NATIVE_GPT2_PINNED_TOKEN_HOST"}),
+            false);
     const bool lm_head_fused_loss_backward_enabled =
         lm_head_bf16_logits_enabled &&
         direct_u16_token_ids_enabled &&
@@ -14203,6 +14208,7 @@ int run_transformer_lm_training_json(
     std::vector<std::int64_t*> int_ptrs;
     std::vector<std::uint16_t*> uint16_ptrs;
     std::vector<std::uint16_t*> pinned_uint16_ptrs;
+    std::vector<std::uint16_t*> pageable_uint16_ptrs;
     std::vector<void*> token_device_ptrs;
     std::vector<void*> descriptor_ptrs;
     float* float_arena = nullptr;
@@ -14297,6 +14303,7 @@ int run_transformer_lm_training_json(
     std::int64_t token_i64_arena_cuda_malloc_count = 0;
     std::int64_t token_u16_device_arena_cuda_malloc_count = 0;
     std::int64_t token_u16_pinned_arena_cuda_host_alloc_count = 0;
+    std::int64_t token_u16_pageable_arena_malloc_count = 0;
     std::size_t token_device_arena_requested_bytes = 0;
     std::size_t token_device_arena_bytes = 0;
     std::int64_t token_device_arena_cuda_malloc_count = 0;
@@ -15091,16 +15098,29 @@ int run_transformer_lm_training_json(
         token_ids_u16 = token_u16_device_arena;
         targets_u16 = token_u16_device_arena + rows;
 
-        status = cuda_host_alloc(
-            reinterpret_cast<void**>(&token_u16_pinned_arena),
-            sizeof(std::uint16_t) * static_cast<std::size_t>(token_u16_pinned_arena_elements),
-            0U);
-        if (status != 0) {
-            error = cuda_error(status, "cudaHostAlloc transformer_lm_token_u16_pinned_arena");
-            return;
+        const std::size_t token_u16_host_bytes =
+            sizeof(std::uint16_t) * static_cast<std::size_t>(token_u16_pinned_arena_elements);
+        if (pinned_token_host_enabled) {
+            status = cuda_host_alloc(
+                reinterpret_cast<void**>(&token_u16_pinned_arena),
+                token_u16_host_bytes,
+                0U);
+            if (status != 0) {
+                error = cuda_error(status, "cudaHostAlloc transformer_lm_token_u16_pinned_arena");
+                return;
+            }
+            pinned_uint16_ptrs.push_back(token_u16_pinned_arena);
+            token_u16_pinned_arena_cuda_host_alloc_count = 1;
+        } else {
+            token_u16_pinned_arena =
+                static_cast<std::uint16_t*>(std::malloc(token_u16_host_bytes));
+            if (token_u16_pinned_arena == nullptr) {
+                error = "malloc transformer_lm_token_u16_pageable_arena failed";
+                return;
+            }
+            pageable_uint16_ptrs.push_back(token_u16_pinned_arena);
+            token_u16_pageable_arena_malloc_count = 1;
         }
-        pinned_uint16_ptrs.push_back(token_u16_pinned_arena);
-        token_u16_pinned_arena_cuda_host_alloc_count = 1;
         token_ids_pinned = token_u16_pinned_arena;
         targets_pinned = token_u16_pinned_arena + rows;
     };
@@ -22500,6 +22520,9 @@ int run_transformer_lm_training_json(
             }
         }
     }
+    for (std::uint16_t* ptr : pageable_uint16_ptrs) {
+        std::free(ptr);
+    }
     if (device_cuda_free_async_count > 0 && cuda_device_synchronize != nullptr) {
         const int status = cuda_device_synchronize();
         if (status != 0 && error.empty()) {
@@ -24607,10 +24630,17 @@ int run_transformer_lm_training_json(
         << ",\n"
         << "  \"token_id_upload_strategy\": \""
         << (direct_u16_token_ids_enabled
-                ? "uint16-pinned-async-h2d-direct-kernel-consumption"
-                : "uint16-pinned-async-h2d-device-widen")
+                ? (pinned_token_host_enabled
+                       ? "uint16-pinned-async-h2d-direct-kernel-consumption"
+                       : "uint16-pageable-async-h2d-direct-kernel-consumption")
+                : (pinned_token_host_enabled
+                       ? "uint16-pinned-async-h2d-device-widen"
+                       : "uint16-pageable-async-h2d-device-widen"))
         << "\",\n"
-        << "  \"token_id_host_staging\": \"pinned\",\n"
+        << "  \"token_id_host_staging\": \""
+        << (pinned_token_host_enabled ? "pinned" : "pageable") << "\",\n"
+        << "  \"token_id_pinned_host_enabled\": "
+        << (pinned_token_host_enabled ? "true" : "false") << ",\n"
         << "  \"token_id_h2d_copy\": \"cudaMemcpyAsync-contiguous-arena\",\n"
         << "  \"token_id_h2d_copy_calls_per_microbatch\": 1,\n"
         << "  \"token_id_h2d_copy_calls_elided_per_microbatch\": 1,\n"
@@ -24627,9 +24657,12 @@ int run_transformer_lm_training_json(
         << (direct_u16_token_ids_enabled
                 ? (rows * 2 * static_cast<std::int64_t>(sizeof(std::int64_t)))
                 : 0) << ",\n"
-        << "  \"token_batch_staging_strategy\": \"direct-sampler-to-pinned-arena\",\n"
+        << "  \"token_batch_staging_strategy\": \""
+        << (pinned_token_host_enabled
+                ? "direct-sampler-to-pinned-arena"
+                : "direct-sampler-to-pageable-arena") << "\",\n"
         << "  \"token_batch_vector_materialization\": false,\n"
-        << "  \"token_batch_vector_copy_to_pinned_elided\": true,\n"
+        << "  \"token_batch_vector_copy_to_host_arena_elided\": true,\n"
         << "  \"token_id_host_validation\": false,\n"
         << "  \"token_buffer_allocation_strategy\": \"combined-arenas\",\n"
         << "  \"token_device_allocation_strategy\": \"single-device-arena\",\n"
@@ -24675,6 +24708,7 @@ int run_transformer_lm_training_json(
         << "  \"token_i64_arena_cuda_malloc_count\": " << token_i64_arena_cuda_malloc_count << ",\n"
         << "  \"token_u16_device_arena_cuda_malloc_count\": " << token_u16_device_arena_cuda_malloc_count << ",\n"
         << "  \"token_u16_pinned_arena_cuda_host_alloc_count\": " << token_u16_pinned_arena_cuda_host_alloc_count << ",\n"
+        << "  \"token_u16_pageable_arena_malloc_count\": " << token_u16_pageable_arena_malloc_count << ",\n"
         << "  \"token_i64_arena_elements\": " << token_i64_arena_elements << ",\n"
         << "  \"token_u16_device_arena_elements\": " << token_u16_device_arena_elements << ",\n"
         << "  \"token_u16_pinned_arena_elements\": " << token_u16_pinned_arena_elements << ",\n"

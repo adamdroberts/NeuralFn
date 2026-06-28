@@ -911,6 +911,17 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002}"
     ;;
+  "pageable_token_host"|"pageable-token-host"|"token_host_pageable"|"token-host-pageable"|"token_pinned_host_off"|"token-pinned-host-off")
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample full optimizer gate promoted pageable host token staging as the default. It changed token_id_host_staging from pinned to pageable, improved setup.token_arenas.total_ms to 0.790184x mean, kept train_loop_wall_ms_per_step at 1.000252x, steady-state CUDA-event step time at 1.000035x, and train_tokens_per_second at 0.999750x."
+    CANDIDATE_NOTE="Compares the promoted pageable host token staging default against legacy pinned host token staging."
+    DEFAULT_VS_LEGACY_PROFILE=1
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PINNED_TOKEN_HOST=0"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }token_id_host_staging"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.001 train_loop_cuda_event_steady_state_wall_ms_per_step=1.001 setup.token_arenas.total_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.999}"
+    ;;
   "concurrent_arena_materialize"|"concurrent-arena-materialize"|"parallel_arena_materialize"|"parallel-arena-materialize")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 3-sample startup-only gate overlapped the float and uint16 arena cudaMalloc calls and moved concurrent_arena_materialize_count 0->1, but rejected default promotion because the setup_wall_ms median regressed to 1.003922x and uint16_arena_cuda_malloc_wall_ms regressed to 2.664592x mean despite a noisy 0.987871x mean setup wall."

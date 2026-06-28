@@ -205,10 +205,10 @@ periodic validation records in `validation.losses` when `eval_every_steps` is
 positive, uses `eval_batch_size` as the validation sampler and active forward
 batch size, clips gradients on device before AdamW, reports vocab and clip
 metadata plus the row-chunked LM-head workspace size in the native JSON, stages
-cached uint16 token/target batches through pinned host memory, enqueues H2D
+cached uint16 token/target batches through pageable host memory, enqueues H2D
 copy with `cudaMemcpyAsync`, widens them to int64 on device through one
-`nfn_native_tile_uint16_to_int64`, reports `token_id_host_staging: "pinned"` and
-`token_batch_staging_strategy: "direct-sampler-to-pinned-arena"` plus
+`nfn_native_tile_uint16_to_int64`, reports `token_id_host_staging: "pageable"` and
+`token_batch_staging_strategy: "direct-sampler-to-pageable-arena"` plus
 `token_id_h2d_copy: "cudaMemcpyAsync-contiguous-arena"`, initializes the tied token
 embedding/LM-head weight on device through
 `nfn_native_tile_init_gpt2_token_weight_float32` without host materialization,

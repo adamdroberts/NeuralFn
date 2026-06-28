@@ -21,6 +21,20 @@ Future updates should append new entries here rather than replacing older notes.
   focused native GPT source test, linked native GPT rebuild, direct startup
   probe, and same-script startup A/B.
 
+- Native GPT / SM120: promoted pageable host token staging for the dense GPT
+  trainer. The small uint16 token/target staging arena now uses `malloc` by
+  default instead of startup `cudaHostAlloc` while keeping the same contiguous
+  `cudaMemcpyAsync` upload shape; set `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` to
+  restore the legacy pinned host arena for bisection. Runtime JSON now reports
+  `token_id_host_staging`, `token_id_pinned_host_enabled`, and
+  `token_u16_pageable_arena_malloc_count`. The
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=pageable_token_host` profile compares the
+  promoted pageable default against legacy pinned staging. Verification on the
+  dedicated RTX 5090 passed the CUDA 13.3.33 full 3-step gate with
+  `setup.token_arenas.total_ms=0.790184x`,
+  `train_loop_wall_ms_per_step=1.000252x`, steady-state CUDA-event step time
+  `1.000035x`, and `train_tokens_per_second=0.999750x`.
+
 - Native GPT startup: linked dense-GPT trainers now skip the redundant
   required Tile ABI symbol preflight by default when loading Tile ops through
   `RTLD_DEFAULT`. Runtime JSON reports

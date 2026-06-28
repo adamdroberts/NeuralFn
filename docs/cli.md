@@ -824,12 +824,12 @@ uint16 arena, enqueues one H2D `cudaMemcpyAsync`, and widens tokens plus targets
 to int64 IDs on device with one `nfn_native_tile_uint16_to_int64` launch.
 The per-batch CPU int64 expansion and token-range scan are intentionally absent
 from this native hot path; output JSON reports
-`token_id_upload_strategy: "uint16-pinned-async-h2d-device-widen"`,
-`token_id_host_staging: "pinned"`, `token_id_h2d_copy:
+`token_id_upload_strategy: "uint16-pageable-async-h2d-device-widen"`,
+`token_id_host_staging: "pageable"`, `token_id_h2d_copy:
 "cudaMemcpyAsync-contiguous-arena"`, `token_id_h2d_copy_calls_per_microbatch:
 1`, `token_id_widen_strategy: "single-contiguous-arena-kernel"`,
 `token_id_widen_kernel_launches_per_microbatch: 1`, and
-`token_batch_staging_strategy: "direct-sampler-to-pinned-arena"`,
+`token_batch_staging_strategy: "direct-sampler-to-pageable-arena"`,
 `token_batch_vector_materialization: false`, and `token_id_host_validation:
 false`.
 

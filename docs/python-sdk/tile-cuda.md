@@ -1719,12 +1719,12 @@ only for paired profiling by setting `NFN_NATIVE_GPT_DIRECT_U16_TOKENS=0` or
 `NFN_NATIVE_GPT2_DIRECT_U16_TOKENS=0`.
 Native JSON reports
 `token_id_direct_u16_enabled: true`,
-`token_id_upload_strategy: "uint16-pinned-async-h2d-direct-kernel-consumption"`,
-`token_id_host_staging: "pinned"`, `token_id_h2d_copy:
+`token_id_upload_strategy: "uint16-pageable-async-h2d-direct-kernel-consumption"`,
+`token_id_host_staging: "pageable"`, `token_id_h2d_copy:
 "cudaMemcpyAsync-contiguous-arena"`, `token_id_h2d_copy_calls_per_microbatch:
 1`, `token_id_widen_strategy: "elided-direct-u16-kernels"`,
 `token_id_widen_kernel_launches_per_microbatch: 0`, and
-`token_batch_staging_strategy: "direct-sampler-to-pinned-arena"`,
+`token_batch_staging_strategy: "direct-sampler-to-pageable-arena"`,
 `token_batch_vector_materialization: false`, and `token_id_host_validation:
 false`; batch validation belongs at shard creation or a future device-side
 validation pass, not in the per-step CPU hot path.

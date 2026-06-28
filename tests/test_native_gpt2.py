@@ -7595,18 +7595,19 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["train_loss_on_validation_steps"] is False
     assert train_transformer_payload["token_id_direct_u16_enabled"] is True
     assert train_transformer_payload["token_id_upload_strategy"] == (
-        "uint16-pinned-async-h2d-direct-kernel-consumption"
+        "uint16-pageable-async-h2d-direct-kernel-consumption"
     )
-    assert train_transformer_payload["token_id_host_staging"] == "pinned"
+    assert train_transformer_payload["token_id_host_staging"] == "pageable"
+    assert train_transformer_payload["token_id_pinned_host_enabled"] is False
     assert train_transformer_payload["token_id_h2d_copy"] == "cudaMemcpyAsync-contiguous-arena"
     assert train_transformer_payload["token_id_h2d_copy_calls_per_microbatch"] == 1
     assert train_transformer_payload["token_id_h2d_copy_calls_elided_per_microbatch"] == 1
     assert train_transformer_payload["token_id_widen_strategy"] == "elided-direct-u16-kernels"
     assert train_transformer_payload["token_id_widen_kernel_launches_per_microbatch"] == 0
     assert train_transformer_payload["token_id_widen_kernel_launches_elided_per_microbatch"] == 2
-    assert train_transformer_payload["token_batch_staging_strategy"] == "direct-sampler-to-pinned-arena"
+    assert train_transformer_payload["token_batch_staging_strategy"] == "direct-sampler-to-pageable-arena"
     assert train_transformer_payload["token_batch_vector_materialization"] is False
-    assert train_transformer_payload["token_batch_vector_copy_to_pinned_elided"] is True
+    assert train_transformer_payload["token_batch_vector_copy_to_host_arena_elided"] is True
     assert train_transformer_payload["token_id_host_validation"] is False
     assert train_transformer_payload["token_buffer_allocation_strategy"] == "combined-arenas"
     assert train_transformer_payload["token_device_allocation_strategy"] == "single-device-arena"
@@ -7618,6 +7619,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_i64_arena_cuda_malloc_count"] == 0
     assert train_transformer_payload["token_u16_device_arena_cuda_malloc_count"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_cuda_host_alloc_count"] == 0
+    assert train_transformer_payload["token_u16_pageable_arena_malloc_count"] == 0
     assert train_transformer_payload["token_i64_arena_elements"] == 0
     assert train_transformer_payload["token_u16_device_arena_elements"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
@@ -9720,6 +9722,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "transformer_lm_token_u16_pinned_arena" in gpt2_source_text
     assert "token_buffer_allocation_strategy" in gpt2_source_text
     assert "token_device_allocation_strategy" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_PINNED_TOKEN_HOST" in gpt2_source_text
+    assert "token_id_pinned_host_enabled" in gpt2_source_text
+    assert "token_u16_pageable_arena_malloc_count" in gpt2_source_text
+    assert '"token_id_host_staging"' in speed_source
+    assert "pageable_token_host" in candidate_bench_text
     assert "token_device_arena_cuda_malloc_count" in gpt2_source_text
     assert "token_i64_arena_cuda_malloc_count" in gpt2_source_text
     assert "token_i64_arena_elements = direct_u16_token_ids_enabled ? 0 : rows * 2" in gpt2_source_text
