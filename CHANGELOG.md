@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: the standalone LM-head backward benchmark now separates candidate
+  warmup from reference-component warmup. Direct C++ runs default reference
+  logits/CE/dHidden/dWeight component timing to `max(1, warmup)`, and
+  `tools/bench_lm_head_backward_candidate.sh` exposes
+  `NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP` for intentional cold-start
+  diagnostics. This keeps one-shot strict true-fused LM-head probes from
+  comparing against cold reference component timings. Verification: rebuilt the
+  benchmark, reran the focused native GPT source test, and reran the CUDA 13.3
+  strict true-fused trainer-chunk probe, which still rejected the candidate.
+
 - Bench: `tools/bench_native_gpt_sm120_parity.sh` now defaults to three
   measured samples and one warmup sample instead of a single measured sample.
   This makes the canonical llm.kittens parity gate use the existing

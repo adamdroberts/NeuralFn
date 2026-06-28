@@ -2566,6 +2566,11 @@ future production true-fused classifier-backward path. The default parity run
 accepts the current optimized CUDA Graph LM-head wrapper as native Tile/C++
 training evidence and still enforces the no-Torch/no-graph-editor runtime
 contract.
+Focused LM-head microbenchmarks keep reference component timings warm by
+default even for one-shot strict probes: `tools/bench_lm_head_backward_candidate.sh`
+passes through `NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP` only when an
+explicit override is needed, while the C++ benchmark otherwise uses
+`max(1, warmup)` for reference logits/CE/dHidden/dWeight components.
 The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes

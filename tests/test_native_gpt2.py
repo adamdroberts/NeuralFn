@@ -2599,7 +2599,11 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_to_reference_cublaslt_summed_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_summed_with_logits_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio" in bench_source
-    assert '"  \\"reference_component_warmup\\": "' in bench_source
+    assert "int reference_component_warmup = -1" in bench_source
+    assert "--reference-component-warmup" in bench_source
+    assert "int effective_reference_component_warmup(const Options& options)" in bench_source
+    assert "return std::max(1, options.warmup)" in bench_source
+    assert '"  \\"reference_component_warmup\\": " << effective_reference_component_warmup(options)' in bench_source
     assert "label + \" warmup prepare synchronize\"" in bench_source
     assert "label + \" warmup synchronize\"" in bench_source
     assert "--no-loss" in bench_source
@@ -2645,6 +2649,8 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "-lcudart -ldl" in build_script
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP" in wrapper
+    assert 'BENCH_ARGS+=(--reference-component-warmup "${REFERENCE_COMPONENT_WARMUP}")' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
     assert "select_auto_cuda_device" in wrapper
     assert "nvidia-smi --query-gpu=index,display_active,utilization.gpu" in wrapper

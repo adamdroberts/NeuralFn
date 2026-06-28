@@ -2428,6 +2428,11 @@ single-sample runs keep the paired speed tool's unqualified mean behavior. Set
 an exact no-slower-than-reference diagnostic sweep is required. Prefix explicit
 gates with `mean:`, `median:`, `min:`, or `max:` when the statistic should be
 explicit; dry-run plans remain ungated.
+Focused LM-head candidate benchmarks keep reference component timings warm by
+default even when the main strict probe sets `NFN_LM_HEAD_BACKWARD_WARMUP=0`:
+the C++ benchmark uses `max(1, warmup)` for reference logits/CE/dHidden/dWeight
+components unless `NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP` explicitly
+sets `--reference-component-warmup`.
 Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` or
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to write the resolved paired command plan,
 CUDA selection, profile settings, and alternating sample order without

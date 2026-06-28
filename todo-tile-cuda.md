@@ -157,6 +157,18 @@ Real training tensors must not pass through graph editor node objects.
   `candidate_true_fused_capability=false` and
   `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper`. This remains
   a graph-replay optimization, not the final true fused Tile kernel.
+  - 2026-06-28 reran the production trainer-chunk and strict true-fused
+    trainer-chunk probes after the CUDA reinstall. The graph-wrapper candidate
+    measured `0.970829x` versus the cooperative baseline at 32,768 rows, but
+    still reports `candidate_path_class=diagnostic-cuda-graph-wrapper`. The
+    strict true-fused single-kernel diagnostic reports
+    `candidate_path_class=strict-true-fused-tile-kernel` but remains rejected at
+    `6.739547x` versus the cooperative baseline and `22.092373x` versus the
+    reference CE+dHidden+dWeight component sum. The benchmark now keeps
+    reference-component timings warm by default via `max(1, warmup)`, while
+    `NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP` remains available for
+    intentional cold-start diagnostics. The post-fix rerun reported
+    `reference_component_warmup=1` with `NFN_LM_HEAD_BACKWARD_WARMUP=0`.
 - [x] Make paired full-trainer benchmarks report the LM-head true-fused blocker
   explicitly. `tools/paired_kernel_speed.py` now emits
   `native_lm_head_true_fused_target` whenever the candidate profile is still
