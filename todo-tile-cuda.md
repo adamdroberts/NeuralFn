@@ -76,11 +76,12 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_lm_head_backward_candidate.sh` with the `trainer-chunk` profile
   and writes `/tmp/nfn_sm120_cuda13_lm_head_backward.json`, using a real Tile
   ops shared object for the standalone `dlopen` benchmark even when the trainer
-  smoke path uses the linked binary. The validator defaults this focused slice
-  to zero warmup so graph capture body counters are present in timed JSON
-  instead of hidden behind graph-cache hits. This keeps CUDA-reinstall
-  validation tied to the current LM-head migration blocker without treating the
-  diagnostic CUDA Graph wrapper as strict true-fused completion.
+  smoke path uses the linked binary. The standalone LM-head benchmark now
+  carries warmup graph-route counters separately, so the warmed trainer-chunk
+  validation still proves graph capture body routing even when timed iterations
+  are graph-cache hits. This keeps CUDA-reinstall validation tied to the
+  current LM-head migration blocker without treating the diagnostic CUDA Graph
+  wrapper as strict true-fused completion.
 - [x] Make canonical llm.kittens parity runs median-based by default. After the
   CUDA 13.3 WSL reinstall, one-sample runs could fail at sub-percent jitter
   even with zero compute processes on the dedicated RTX 5090; the parity

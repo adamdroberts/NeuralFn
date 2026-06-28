@@ -4158,9 +4158,9 @@ library because the standalone benchmark `dlopen`s its candidate ABI. Override
 it with `NFN_SM120_CUDA13_LM_HEAD_PROFILE`,
 `NFN_SM120_CUDA13_LM_HEAD_JSON_OUT`, or
 `NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB`. The validator also defaults
-`NFN_SM120_CUDA13_LM_HEAD_WARMUP=0` so the graph capture body remains visible
-in the timed JSON counters; otherwise a warmup capture can leave only graph
-cache hits in the measured section. Set
+`NFN_SM120_CUDA13_LM_HEAD_WARMUP=1`; the benchmark JSON reports separate
+`warmup_graph_*` fields so graph capture body counters remain visible even when
+timed iterations are graph cache hits. Set
 `NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0` only for a narrow CUDA smoke after the
 LM-head gate has already passed. This check still validates the promoted
 diagnostic CUDA Graph wrapper against the older/current route; it is not a

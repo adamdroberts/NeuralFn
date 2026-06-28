@@ -137,6 +137,17 @@ struct VariantResult {
     std::int64_t graph_body_cublaslt_dweight_launch_count = 0;
     std::int64_t graph_body_tile_dhidden_fallback_count = 0;
     std::int64_t graph_body_tile_dweight_fallback_count = 0;
+    std::int64_t warmup_graph_capture_attempt_count = 0;
+    std::int64_t warmup_graph_capture_success_count = 0;
+    std::int64_t warmup_graph_cache_hit_count = 0;
+    std::int64_t warmup_graph_thread_cache_hit_count = 0;
+    std::int64_t warmup_graph_replay_count = 0;
+    std::int64_t warmup_graph_replay_success_count = 0;
+    std::int64_t warmup_graph_fallback_count = 0;
+    std::int64_t warmup_graph_body_cublaslt_dhidden_launch_count = 0;
+    std::int64_t warmup_graph_body_cublaslt_dweight_launch_count = 0;
+    std::int64_t warmup_graph_body_tile_dhidden_fallback_count = 0;
+    std::int64_t warmup_graph_body_tile_dweight_fallback_count = 0;
 };
 
 struct ComponentResult {
@@ -392,6 +403,20 @@ VariantResult run_variant(
         }
         cuda_check(cudaDeviceSynchronize(), name + " warmup synchronize");
     }
+    VariantResult result;
+    result.name = name;
+    result.symbol = symbol;
+    result.warmup_graph_capture_attempt_count = graph_capture_attempt_count();
+    result.warmup_graph_capture_success_count = graph_capture_success_count();
+    result.warmup_graph_cache_hit_count = graph_cache_hit_count();
+    result.warmup_graph_thread_cache_hit_count = graph_thread_cache_hit_count();
+    result.warmup_graph_replay_count = graph_replay_count();
+    result.warmup_graph_replay_success_count = graph_replay_success_count();
+    result.warmup_graph_fallback_count = graph_fallback_count();
+    result.warmup_graph_body_cublaslt_dhidden_launch_count = graph_body_cublaslt_dhidden_launch_count();
+    result.warmup_graph_body_cublaslt_dweight_launch_count = graph_body_cublaslt_dweight_launch_count();
+    result.warmup_graph_body_tile_dhidden_fallback_count = graph_body_tile_dhidden_fallback_count();
+    result.warmup_graph_body_tile_dweight_fallback_count = graph_body_tile_dweight_fallback_count();
     reset_stats();
 
     cudaEvent_t start = nullptr;
@@ -428,9 +453,6 @@ VariantResult run_variant(
     }
     cuda_check(cudaEventRecord(stop), "cudaEventRecord stop");
     cuda_check(cudaEventSynchronize(stop), "cudaEventSynchronize stop");
-    VariantResult result;
-    result.name = name;
-    result.symbol = symbol;
     cuda_check(cudaEventElapsedTime(&result.total_ms, start, stop), "cudaEventElapsedTime");
     result.ms_per_iter = static_cast<double>(result.total_ms) / static_cast<double>(options.iterations);
     result.launch_count = launch_count();
@@ -802,7 +824,29 @@ std::string render_json(
             << "\"graph_body_tile_dhidden_fallback_count\":"
             << value.graph_body_tile_dhidden_fallback_count << ","
             << "\"graph_body_tile_dweight_fallback_count\":"
-            << value.graph_body_tile_dweight_fallback_count
+            << value.graph_body_tile_dweight_fallback_count << ","
+            << "\"warmup_graph_capture_attempt_count\":"
+            << value.warmup_graph_capture_attempt_count << ","
+            << "\"warmup_graph_capture_success_count\":"
+            << value.warmup_graph_capture_success_count << ","
+            << "\"warmup_graph_cache_hit_count\":"
+            << value.warmup_graph_cache_hit_count << ","
+            << "\"warmup_graph_thread_cache_hit_count\":"
+            << value.warmup_graph_thread_cache_hit_count << ","
+            << "\"warmup_graph_replay_count\":"
+            << value.warmup_graph_replay_count << ","
+            << "\"warmup_graph_replay_success_count\":"
+            << value.warmup_graph_replay_success_count << ","
+            << "\"warmup_graph_fallback_count\":"
+            << value.warmup_graph_fallback_count << ","
+            << "\"warmup_graph_body_cublaslt_dhidden_launch_count\":"
+            << value.warmup_graph_body_cublaslt_dhidden_launch_count << ","
+            << "\"warmup_graph_body_cublaslt_dweight_launch_count\":"
+            << value.warmup_graph_body_cublaslt_dweight_launch_count << ","
+            << "\"warmup_graph_body_tile_dhidden_fallback_count\":"
+            << value.warmup_graph_body_tile_dhidden_fallback_count << ","
+            << "\"warmup_graph_body_tile_dweight_fallback_count\":"
+            << value.warmup_graph_body_tile_dweight_fallback_count
             << "}";
         return out.str();
     };

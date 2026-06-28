@@ -850,7 +850,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_PROFILE" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_WARMUP" in source
-    assert 'NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-0}"' in source
+    assert 'NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-1}"' in source
     assert "build/lm_head_backward_bench" in source
     assert "bench_lm_head_backward_candidate.sh" in source
     assert "trainer-chunk" in source
@@ -2803,6 +2803,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "graph_body_cublaslt_dweight_launch_count" in bench_source
     assert "graph_body_tile_dhidden_fallback_count" in bench_source
     assert "graph_body_tile_dweight_fallback_count" in bench_source
+    assert "warmup_graph_capture_attempt_count" in bench_source
+    assert "warmup_graph_body_tile_dhidden_fallback_count" in bench_source
+    assert "warmup_graph_body_tile_dweight_fallback_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_capture_attempt_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_replay_success_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in bench_source
@@ -2810,7 +2813,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count" in bench_source
     assert "cudaEventElapsedTime" in bench_source
     assert "timed_reset_between_iterations" in bench_source
-    assert "cuda_check(cudaDeviceSynchronize(), name + \" warmup synchronize\");\n    }\n    reset_stats();" in bench_source
+    assert "cuda_check(cudaDeviceSynchronize(), name + \" warmup synchronize\");\n    }\n    VariantResult result;" in bench_source
+    assert "result.warmup_graph_body_tile_dhidden_fallback_count = graph_body_tile_dhidden_fallback_count();" in bench_source
+    assert "result.warmup_graph_body_tile_dweight_fallback_count = graph_body_tile_dweight_fallback_count();" in bench_source
+    assert "reset_stats();" in bench_source
     assert "timed pre-reset logits memset" in bench_source
     assert "cudaEventRecord(start)" in bench_source
     assert "neuralfn/csrc/native_train/lm_head_backward_bench.cpp" in build_script

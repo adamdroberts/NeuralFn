@@ -769,15 +769,32 @@ case "${REQUIRE_GRAPH_BODY_TILE,,}" in
 data = json.loads(pathlib.Path(sys.argv[1]).read_text())
 candidate = data.get("candidate") or {}
 graph_replay_success_count = int(candidate.get("graph_replay_success_count", 0) or 0)
+warmup_graph_replay_success_count = int(candidate.get("warmup_graph_replay_success_count", 0) or 0)
 graph_fallback_count = int(candidate.get("graph_fallback_count", 0) or 0)
-cublaslt_dhidden = int(candidate.get("graph_body_cublaslt_dhidden_launch_count", 0) or 0)
-cublaslt_dweight = int(candidate.get("graph_body_cublaslt_dweight_launch_count", 0) or 0)
-tile_dhidden = int(candidate.get("graph_body_tile_dhidden_fallback_count", 0) or 0)
-tile_dweight = int(candidate.get("graph_body_tile_dweight_fallback_count", 0) or 0)
+warmup_graph_fallback_count = int(candidate.get("warmup_graph_fallback_count", 0) or 0)
+cublaslt_dhidden = (
+    int(candidate.get("graph_body_cublaslt_dhidden_launch_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_cublaslt_dhidden_launch_count", 0) or 0)
+)
+cublaslt_dweight = (
+    int(candidate.get("graph_body_cublaslt_dweight_launch_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_cublaslt_dweight_launch_count", 0) or 0)
+)
+tile_dhidden = (
+    int(candidate.get("graph_body_tile_dhidden_fallback_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_tile_dhidden_fallback_count", 0) or 0)
+)
+tile_dweight = (
+    int(candidate.get("graph_body_tile_dweight_fallback_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_tile_dweight_fallback_count", 0) or 0)
+)
 if graph_replay_success_count <= 0:
     raise SystemExit("candidate graph-body Tile gate failed: graph_replay_success_count is zero")
-if graph_fallback_count != 0:
-    raise SystemExit(f"candidate graph-body Tile gate failed: graph_fallback_count={graph_fallback_count}")
+if graph_fallback_count != 0 or warmup_graph_fallback_count != 0:
+    raise SystemExit(
+        "candidate graph-body Tile gate failed: graph fallback occurred "
+        f"(timed={graph_fallback_count}, warmup={warmup_graph_fallback_count})"
+    )
 if cublaslt_dhidden != 0 or cublaslt_dweight != 0:
     raise SystemExit(
         "candidate graph-body Tile gate failed: cuBLASLt diagnostic body ran "
@@ -786,7 +803,8 @@ if cublaslt_dhidden != 0 or cublaslt_dweight != 0:
 if tile_dhidden <= 0 or tile_dweight <= 0:
     raise SystemExit(
         "candidate graph-body Tile gate failed: Tile graph-body counters missing "
-        f"(dhidden={tile_dhidden}, dweight={tile_dweight})"
+        f"(dhidden={tile_dhidden}, dweight={tile_dweight}, "
+        f"warmup_graph_replay_success_count={warmup_graph_replay_success_count})"
     )
 ' "${JSON_OUT}"
     ;;

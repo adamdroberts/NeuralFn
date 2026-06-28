@@ -12,9 +12,10 @@ Future updates should append new entries here rather than replacing older notes.
   `/tmp/nfn_sm120_cuda13_lm_head_backward.json` by default, and keeps the
   trainer-linked smoke path separate from the standalone benchmark's real
   `dlopen` Tile ops library through `NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB`.
-  It defaults `NFN_SM120_CUDA13_LM_HEAD_WARMUP=0` so graph capture body
-  counters remain visible in the validation JSON instead of being hidden by
-  warmup-created graph cache hits.
+  The benchmark now reports `warmup_graph_*` route counters separately from
+  timed counters, so the default warmed `trainer-chunk` validation can still
+  prove whether graph capture used Tile dHidden/dWeight body launches even when
+  measured iterations are graph cache hits.
   Use `NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0` only for narrow CUDA smoke runs
   after this LM-head gate has already passed. This validates the promoted
   graph-wrapper LM-head route against the older/current candidate comparison;
@@ -25,10 +26,14 @@ Future updates should append new entries here rather than replacing older notes.
   `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
   -q`; `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
-  NFN_LM_HEAD_BACKWARD_WARMUP=0
-  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_warmup0_check.json bash
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_warmup_counter_check.json bash
   tools/bench_lm_head_backward_candidate.sh`, which passed and reported
-  graph-body Tile fallback counters; `git diff --check`.
+  warmup graph-body Tile fallback counters;
+  `NFN_SM120_CUDA13_RUN_PYTEST=0 NFN_SM120_CUDA13_RUN_BENCH=0
+  NFN_SM120_CUDA13_RUN_PARITY=0
+  NFN_SM120_CUDA13_LM_HEAD_JSON_OUT=/tmp/nfn_sm120_cuda13_lm_head_validator_warmup.json
+  bash tools/validate_sm120_cuda13.sh`, which passed on the dedicated RTX 5090;
+  `git diff --check`.
 
 - SM120 LM-head diagnostics: added a rejected-by-default 24x24 strict
   true-fused LM-head profile for the Tile CUDA trainer path. Tile CUDA now
