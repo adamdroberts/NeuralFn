@@ -1448,19 +1448,14 @@ loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
 capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
 compares explicit prewarm opt-out against the default-on prewarmed route without
-also disabling the already-default cuBLAS handle or BF16 workspace prewarm. It gates
-train-loop wall, steady-state CUDA-event timing with a `1.002` tolerance,
-LM-head backward, block backward, and MLP projection backward. The current CUDA
-13.3.33 RTX 5090 post-MLP-FC-rollback graph-only refresh passed those gates:
-train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
-LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection
-backward `0.992403x`. Route proof moved graph capture attempts from `3` to `0`
-and graph cache hits from `45` to `48`. A later pointer-aware dedup validation
-on the dedicated RTX 5090 moved runtime LM-head graph capture attempts from
-`1` to `0`, prewarm successes from `2` to `3`, duplicate skips from `1` to `0`,
-and cache hits to `48`; throughput was still about `1.011718x` slower than
-llm.kittens, so the remaining parity target is the true fused LM-head kernel
-body rather than lazy graph capture.
+also disabling the already-default cuBLAS handle or BF16 workspace prewarm. The
+post-token-pattern opt-out rerun on CUDA 13.3.33 / RTX 5090 saved setup wall
+(`0.898657x`) but failed the production gates: train-loop wall regressed to
+`1.011184x`, first-step CUDA-event time to `1.032819x`, train tokens per second
+to `0.988942x`, startup-plus-first-step wall to `1.001224x`, and the
+candidate-over-llm.kittens train-loop wall ratio to `1.007336x`. The prewarm
+therefore stays default-on; the remaining parity target is the true fused
+LM-head kernel body rather than lazy graph capture.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -2451,11 +2446,11 @@ size.
 
 `fast_startup_full` is the matching rejected full-training probe. It runs real
 optimizer steps with `NFN_NATIVE_GPT_FAST_STARTUP=1` to check whether skipped
-setup prewarms only move work into the first training step. The CUDA 13.3.33
-dedicated RTX 5090 5-step, 2-sample gate improved setup wall time to
-`0.655522x`, but rejected default promotion because train-loop wall regressed
-to `1.017654x`, first-step CUDA-event time to `1.086326x`, tokens/sec to
-`0.982655x`, and candidate-over-llm.kittens train-loop wall to `1.010462x`.
+setup prewarms only move work into the first training step. The current CUDA
+13.3.33 dedicated RTX 5090 post-token-pattern gate improved setup wall time to
+`0.669761x`, but rejected default promotion because train-loop wall regressed
+to `1.034057x`, first-step CUDA-event time to `1.100651x`, tokens/sec to
+`0.967064x`, and candidate-over-llm.kittens train-loop wall to `1.030835x`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

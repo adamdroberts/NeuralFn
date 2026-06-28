@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: refreshed the throughput-prewarm evidence after the
+  padded BF16 token-init default. `fast_startup_full` still remains rejected:
+  setup improves to `0.669761x`, but train-loop wall regresses to `1.034057x`,
+  first-step CUDA-event time to `1.100651x`, tokens/sec to `0.967064x`, and
+  candidate-over-llm.kittens train-loop wall to `1.030835x`. The isolated
+  TK-QKV prewarm opt-out saves setup (`0.789043x`) but fails train-loop and
+  first-step gates, so full-shape TK QKV first-use prewarm stays default-on.
+  The isolated LM-head graph-prewarm opt-out saves setup (`0.898657x`) but
+  fails first-step/startup-plus-first-step and llm.kittens gates, so LM-head
+  CUDA Graph prewarm stays default-on. Verification: paired SM120 candidate
+  reruns on the dedicated RTX 5090 plus shell/static checks.
+
 - Native GPT startup: promoted the fused padded token-weight BF16-pattern
   initializer as the default. The dense GPT trainer and Tile CUDA library now
   default `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN` /

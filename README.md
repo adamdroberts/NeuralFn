@@ -230,11 +230,12 @@ step-proportional (`4096 * max_steps`, capped by
 `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`) instead of always reserving 16,384
 pairs, so 1-2 step probes do less CUDA event setup before the hot loop.
 Fast startup remains a startup/preflight policy, not the default full-training
-policy. The `fast_startup_full` probe ran real optimizer steps with
-`NFN_NATIVE_GPT_FAST_STARTUP=1` and improved setup wall time to `0.655522x`,
-but rejected default promotion because train-loop wall regressed to
-`1.017654x`, first-step CUDA-event time to `1.086326x`, tokens/sec to
-`0.982655x`, and candidate-over-llm.kittens train-loop wall to `1.010462x`.
+policy. The current `fast_startup_full` probe ran real optimizer steps with
+`NFN_NATIVE_GPT_FAST_STARTUP=1` after the token-init default change and improved
+setup wall time to `0.669761x`, but rejected default promotion because
+train-loop wall regressed to `1.034057x`, first-step CUDA-event time to
+`1.100651x`, tokens/sec to `0.967064x`, and candidate-over-llm.kittens
+train-loop wall to `1.030835x`.
 When `NFN_SM120_CUDA13_RUN_BENCH=1` is enabled, the health gate also parses the
 paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
 contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
@@ -1264,14 +1265,13 @@ The native GPT trainer now enables TK forward-QKV first-use prewarm by default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` is the
 default-vs-legacy proof: the baseline sets
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0`, and the candidate keeps the default
-`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup launch. The 2026-06-27 CUDA
-13.3.33 dedicated RTX 5090 3-step, 3-sample no-stage-timing rerun improved
-current NeuralFn train-loop wall to `0.981250x`, first-step CUDA-event timing
-to `0.945699x`, tokens/sec to `1.019109x`, and total wall to `0.999956x`.
-Setup regressed to `1.252423x`, and strict llm.kittens reference gates still
-narrowly failed at `1.000567x` train-loop wall, `1.001159x` steady-state
-CUDA-event timing, and `0.999507x` tokens/sec, so this is an incremental
-first-use default, not final `train-sm120.sh` parity. Set
+`NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` setup launch. The 2026-06-28 CUDA
+13.3.33 dedicated RTX 5090 post-token-pattern isolated opt-out rerun kept the
+default on: disabling it improved setup wall to `0.789043x`, but failed the
+short-run throughput contract at `1.022429x` train-loop wall, `1.066154x`
+first-step CUDA-event time, `0.978059x` tokens/sec, and `1.016452x`
+candidate-over-llm.kittens train-loop wall. This remains a required first-use
+default, not final `train-sm120.sh` parity. Set
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only to reproduce the older no-prewarm
 path.
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` limits the setup prewarm to the
@@ -2190,20 +2190,16 @@ bisection. The route moved `lm_head_fused_graph_thread_cache_hit_count` from
 `45` to `48`, but regressed train-loop wall to `1.003958x`, steady-state
 CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
 tokens/sec to `0.996059x`. The
-default was rechecked after the CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback
-graph-only rerun passed same-script gates: train-loop wall `0.985915x`,
-steady-state CUDA-event timing `0.999199x`, LM-head backward `0.957549x`, block
-backward `0.997858x`, and MLP projection backward `0.992403x` versus explicit
-prewarm opt-out. Route proof moved graph capture attempts from `3` to `0` and
-graph cache hits from `45` to `48`. Set
+default was rechecked after the CUDA 13.3.33 RTX 5090 post-token-pattern
+isolated opt-out rerun: disabling graph prewarm saved setup wall to
+`0.898657x`, but failed the short-run throughput contract at `1.011184x`
+train-loop wall, `1.032819x` first-step CUDA-event time, `0.988942x`
+tokens/sec, `1.001224x` startup-plus-first-step wall, and `1.007336x`
+candidate-over-llm.kittens train-loop wall. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
-capture path for bisection. A later CUDA 13.3 dedicated RTX 5090 3-step
-stage-timed parity sample with pointer-aware dedup moved runtime LM-head graph
-capture attempts from `1` to `0`, prewarm successes from `2` to `3`, duplicate
-skips from `1` to `0`, and cache hits to `48`; the same sample was still about
-`1.011718x` slower than llm.kittens, so the remaining implementation target is
-still a true fused LM-head classifier-backward Tile kernel. When graph prewarm
+capture path for bisection. The remaining implementation target is still a true
+fused LM-head classifier-backward Tile kernel. When graph prewarm
 eliminates runtime LM-head graph capture,
 trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and

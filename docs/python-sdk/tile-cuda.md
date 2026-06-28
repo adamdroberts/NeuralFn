@@ -230,11 +230,11 @@ deterministic prewarm work. Equal-shaped chunks with distinct buffers no longer
 count as a route change, so the profile disables the generic route-change gate
 and avoids setup timing gates that are dominated by allocator noise.
 The default was rechecked after the
-CUDA 13.3.33 RTX 5090 post-MLP-FC-rollback graph-only rerun passed same-script
-gates: train-loop wall `0.985915x`, steady-state CUDA-event timing `0.999199x`,
-LM-head backward `0.957549x`, block backward `0.997858x`, and MLP projection
-backward `0.992403x`. Route proof moved graph capture attempts from `3` to `0`
-and graph cache hits from `45` to `48`. Set
+CUDA 13.3.33 RTX 5090 post-token-pattern graph-prewarm opt-out rerun: disabling
+it saved setup wall to `0.898657x`, but failed the short-run throughput
+contract at `1.011184x` train-loop wall, `1.032819x` first-step CUDA-event
+time, `0.988942x` tokens/sec, `1.001224x` startup-plus-first-step wall, and
+`1.007336x` candidate-over-llm.kittens train-loop wall. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` only for lazy-capture
 bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` compares
@@ -755,10 +755,11 @@ benchmark when intentionally measuring that body.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` compares that
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. The
-2026-06-27 CUDA 13.3.33 dedicated RTX 5090 rerun improved NeuralFn first-step
-and 3-step wall timing versus current native, but still narrowly missed
-llm.kittens `train-sm120.sh` reference throughput, so it is a default-on
-incremental route rather than final parity. Set
+2026-06-28 CUDA 13.3.33 dedicated RTX 5090 post-token-pattern opt-out rerun
+kept the default on: disabling it improved setup wall to `0.789043x`, but
+failed the short-run throughput contract at `1.022429x` train-loop wall,
+`1.066154x` first-step CUDA-event time, `0.978059x` tokens/sec, and
+`1.016452x` candidate-over-llm.kittens train-loop wall. Set
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only to reproduce the older path.
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` caps the setup GEMM to the first
 `N` rows. Native GPT JSON reports

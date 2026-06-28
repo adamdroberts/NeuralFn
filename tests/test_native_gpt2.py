@@ -2785,19 +2785,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         '"fast_startup_full"|"fast-startup-full"|"native_fast_startup_full"|'
         '"native-fast-startup-full"'
     ) in bench_source
-    assert "setup_wall_ms to 0.655522x" in bench_source
-    assert "train_loop_wall_ms_per_step regressed to 1.017654x" in bench_source
+    assert "setup_wall_ms to 0.669761x" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 1.034057x" in bench_source
     assert "startup_plus_first_step_wall_ms=1.000" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
-    assert "post-MLP-FC-rollback rerun" in bench_source
-    assert "0.985915x train_loop_wall_ms_per_step" in bench_source
-    assert "0.999199x steady-state CUDA-event timing" in bench_source
-    assert "0.957549x stage.lm_head_backward.total_ms" in bench_source
-    assert "0.997858x stage.block_backward.total_ms" in bench_source
-    assert "0.992403x stage.block_backward.mlp_proj.total_ms" in bench_source
-    assert "graph capture attempts 3->0 and graph cache hits 45->48" in bench_source
+    assert "post-token-pattern isolated opt-out rerun" in bench_source
+    assert "1.011184x train_loop_wall_ms_per_step" in bench_source
+    assert "1.032819x first-step CUDA-event time" in bench_source
+    assert "0.988942x train_tokens_per_second" in bench_source
+    assert "1.001224x startup_plus_first_step_wall_ms" in bench_source
+    assert "1.007336x candidate-over-llm.kittens train-loop wall" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     graph_prewarm_block = bench_source.split('"lm_head_graph_prewarm"|', 1)[1].split(
         "    ;;", 1

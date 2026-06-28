@@ -241,7 +241,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "fast_startup_full"|"fast-startup-full"|"native_fast_startup_full"|"native-fast-startup-full")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 full 5-step, 2-sample gate improved setup_wall_ms to 0.655522x by skipping TK QKV first-use and LM-head graph setup prewarms, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.017654x, first-step CUDA-event time to 1.086326x, train_tokens_per_second to 0.982655x, and candidate-over-llm.kittens train-loop wall to 1.010462x. Keep fast_startup as startup-only/preflight policy unless long-run gates prove the first-step cost is amortized."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 post-token-pattern 3-step, 2-sample gate improved setup_wall_ms to 0.669761x by skipping TK QKV first-use and LM-head graph setup prewarms, and startup_plus_train_loop_wall_ms was noise-flat at 0.999758x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.034057x, first-step CUDA-event time to 1.100651x, train_tokens_per_second to 0.967064x, and candidate-over-llm.kittens train-loop wall to 1.030835x. Keep fast_startup as startup-only/preflight policy unless a long-run amortization gate explicitly accepts first-step cost outside the short-run throughput contract."
     CANDIDATE_NOTE="Runs real optimizer steps with NFN_NATIVE_GPT_FAST_STARTUP=1 instead of startup-only mode. This shows whether skipped setup prewarms simply move work into the first training step."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FAST_STARTUP=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FAST_STARTUP=1"
@@ -399,7 +399,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "tk_qkv_forward_prewarm"|"tk-qkv-forward-prewarm"|"qkv_forward_tk_prewarm"|"qkv-forward-tk-prewarm")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-step, 3-sample no-stage-timing rerun promoted the full-shape TK QKV first-use prewarm as the default because it improved current NeuralFn train_loop_wall_ms_per_step to 0.981250x, first-step CUDA-event timing to 0.945699x, train_tokens_per_second to 1.019109x, and total_wall_ms to 0.999956x while moving linear_tk_qkv_first_use_prewarm_success_count from 0 to 1. Setup regressed to 1.252423x and strict llm.kittens reference gates from the matching reference run still narrowly failed at 1.000567x train-loop wall, 1.001159x steady-state CUDA-event timing, and 0.999507x tokens/sec, so this is an incremental default-on first-use improvement, not final train-sm120 parity."
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 post-token-pattern isolated opt-out rerun kept the full-shape TK QKV first-use prewarm as the default. Disabling it improved setup_wall_ms to 0.789043x, but failed the short-run throughput contract at 1.022429x train_loop_wall_ms_per_step, 1.066154x first-step CUDA-event time, 0.978059x train_tokens_per_second, and 1.016452x candidate-over-llm.kittens train-loop wall. The prewarm remains a default-on first-use improvement, not final train-sm120 parity."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1"
@@ -1207,7 +1207,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-26 post-MLP-FC-rollback rerun eliminated runtime LM-head graph capture and passed same-script gates at 0.985915x train_loop_wall_ms_per_step, 0.999199x steady-state CUDA-event timing, 0.957549x stage.lm_head_backward.total_ms, 0.997858x stage.block_backward.total_ms, and 0.992403x stage.block_backward.mlp_proj.total_ms. Route proof moved graph capture attempts 3->0 and graph cache hits 45->48. The native trainer defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 post-token-pattern isolated opt-out rerun kept LM-head CUDA Graph prewarm as the default. Disabling it saved setup_wall_ms to 0.898657x, but failed the short-run throughput contract at 1.011184x train_loop_wall_ms_per_step, 1.032819x first-step CUDA-event time, 0.988942x train_tokens_per_second, 1.001224x startup_plus_first_step_wall_ms, and 1.007336x candidate-over-llm.kittens train-loop wall. The native trainer defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
