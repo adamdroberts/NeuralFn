@@ -280,6 +280,16 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert '"models"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
     assert '"name": "gpt"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
     assert '"status": "implemented"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
+    assert shell_entrypoints["native_train_gpt_list_templates"]["passed"] is True
+    assert shell_entrypoints["native_train_gpt_list_templates"]["startup_within_budget"] is True
+    assert '"action": "list_templates"' in shell_entrypoints["native_train_gpt_list_templates"]["stdout"]
+    assert '"token_shards_resolved": false' in shell_entrypoints["native_train_gpt_list_templates"]["stdout"]
+    assert shell_entrypoints["native_train_gpt_wrapper_list_templates"]["passed"] is True
+    assert shell_entrypoints["native_train_gpt_wrapper_list_templates"]["startup_within_budget"] is True
+    assert '"action": "list_templates"' in shell_entrypoints["native_train_gpt_wrapper_list_templates"]["stdout"]
+    assert '"token_shards_resolved": false' in shell_entrypoints[
+        "native_train_gpt_wrapper_list_templates"
+    ]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True

@@ -236,6 +236,8 @@ bool has_any_forwarded_value_flag(const std::vector<std::string>& args, const st
 bool has_native_train_action(const std::vector<std::string>& args) {
     static constexpr std::string_view ACTION_FLAGS[] = {
         "--check-tile-ops",
+        "--list-templates",
+        "--native-cuda-list-templates",
         "--print-plan",
         "--sample-token-batch",
         "--smoke-attention-step",
@@ -352,6 +354,8 @@ void print_usage(const char* program) {
         << "  --native-gpt2-cli PATH          Compatibility override for the dense GPT native cached-shard CLI\n"
         << "  NFN_NATIVE_<MODEL>_CLI=PATH     Override a per-family native trainer, for example NFN_NATIVE_NANOGPT_CLI\n"
         << "  --list-models                   Print native training coverage\n"
+        << "  --list-templates                Forward dense GPT template catalog lookup without dataset/CUDA setup\n"
+        << "  --native-cuda-list-templates    Wrapper alias for --list-templates\n"
         << "  --json                          Use JSON with --list-models\n"
         << "  --help                          Show this help\n\n"
         << "Python wrapper aliases such as --tinystories, --dataset tinystories, --output,\n"
@@ -659,6 +663,7 @@ int main(int argc, char** argv) {
         }
         if (!saw_separator && arg_is_any(arg, {
                 "--native-cuda-print-plan",
+                "--native-cuda-list-templates",
                 "--native-cuda-check-tile-ops",
                 "--native-cuda-smoke-tile-ops",
                 "--native-cuda-smoke-optimizer-step",
@@ -678,6 +683,8 @@ int main(int argc, char** argv) {
             })) {
             if (arg == "--native-cuda-print-plan") {
                 forwarded.push_back("--print-plan");
+            } else if (arg == "--native-cuda-list-templates") {
+                forwarded.push_back("--list-templates");
             } else if (arg == "--native-cuda-check-tile-ops") {
                 forwarded.push_back("--check-tile-ops");
             } else if (arg == "--native-cuda-smoke-tile-ops") {

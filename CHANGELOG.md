@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native CLI: `nfn_native_train --base-model gpt --native-cuda-list-templates`
+  now normalizes the wrapper alias to `--list-templates` and treats both
+  spellings as no-data native actions, so the unified C++ frontend prints the
+  dense GPT template support catalog before dataset, CUDA, or training setup.
+  The no-Torch verifier now budget-checks both unified frontend catalog
+  spellings in addition to the lower-level GPT binaries.
+
 - Native verifier: made the unified native-training frontend and SDK C++
   bindings required no-Torch artifacts. `tools/check_native_no_torch_deps.py`
   now fails when `build/nfn_native_train`, `neuralfn/_native_gpt.*.so`,

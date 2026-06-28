@@ -91,7 +91,10 @@ Real training tensors must not pass through graph editor node objects.
   also runs budgeted direct native metadata startup probes for
   `build/nfn_gpt_native_train_linked --list-templates`,
   `build/nfn_gpt2_native_train --list-templates`, and
-  `build/nfn_native_train --list-models --json`.
+  `build/nfn_native_train --list-models --json`, plus the unified frontend GPT
+  catalog actions `build/nfn_native_train --base-model gpt --list-templates`
+  and `build/nfn_native_train --base-model gpt
+  --native-cuda-list-templates`.
 - [x] Enforce optimized native GPT kernel routes by default. Dense GPT runtime
   JSON now reports `optimized_kernel_contract_*` fields and fails normal
   training if the optimized AdamW ABI is missing, attention falls back to
