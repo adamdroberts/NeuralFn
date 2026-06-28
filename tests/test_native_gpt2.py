@@ -1168,6 +1168,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup_wall_ms to 1.031475x" in candidate_bench
     assert "setup.uint16_arena_materialize.total_ms to 2.339592x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.289567x" in candidate_bench
+    assert "cuda_malloc_async_float_arena" in candidate_bench
+    assert "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=8000000000" in candidate_bench
+    assert "device_cuda_malloc_async_max_bytes" in candidate_bench
+    assert "setup.float_arena_materialize.total_ms to 1.194290x" in candidate_bench
+    assert "train_tokens_per_second fell to 0.999772x" in candidate_bench
     assert "lm_head_cooperative_backward" in candidate_bench
     assert "activated the cooperative LM-head CUDA Graph path" in candidate_bench
     assert "steady-state CUDA-event timing to 1.005839x" in candidate_bench

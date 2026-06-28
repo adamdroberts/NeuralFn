@@ -652,7 +652,12 @@ allocation/free counts, `device_cuda_malloc_async_fallback_count`, and
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_small` compares the
 promoted thresholded default against legacy `cudaMalloc`; the older
 `cuda_malloc_async` profile remains rejected because routing the large arenas
-through async allocation regressed startup.
+through async allocation regressed startup. The narrower
+`cuda_malloc_async_float_arena` profile raises the threshold to `8000000000`
+bytes so only the float transformer arena moves to `cudaMallocAsync`; it also
+remains rejected because the latest same-script run regressed setup wall,
+float-arena materialization, steady-state CUDA-event step time, and tokens/sec
+against the current thresholded default.
 Set `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena
 startup profiling. It overlaps the float and uint16 arena `cudaMalloc` calls
 with host `std::thread` workers when the default split-arena `cudaMalloc` path

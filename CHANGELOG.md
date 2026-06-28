@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 candidate workflow: added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_float_arena` to capture
+  the rejected allocator threshold between the promoted small-async route and
+  the older all-async route. The profile compares the current default
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216` against
+  `8000000000`, which routes the float transformer arena through
+  `cudaMallocAsync` while keeping the larger uint16 arena on `cudaMalloc`.
+  This is intentionally not promoted: the latest same-script RTX 5090 run
+  changed `device_cuda_malloc_async_max_bytes`, moved async allocation count
+  `2 -> 3`, and reduced threshold skips `2 -> 1`, but regressed setup wall,
+  float-arena materialization, train-loop timing, steady-state CUDA-event
+  timing, and tokens/sec against the thresholded default.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1
+  NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=8000000000'
+  NFN_SM120_NATIVE_BASELINE_ENV='NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1
+  NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216'
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_cuda_malloc_async_float_arena_candidate.json
+  NFN_SM120_NATIVE_REQUIRE_STRATEGY_VALUE_CHANGES=device_cuda_malloc_async_max_bytes
+  bash tools/bench_native_gpt_sm120_candidate.sh` failed the intended
+  no-slower gates with `setup_wall_ms=1.020591x`,
+  `setup.float_arena_materialize.total_ms=1.194290x`,
+  `train_loop_wall_ms_per_step=1.000229x`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000237x`, and
+  `train_tokens_per_second=0.999772x`.
+
 - Native GPT validation: after the CUDA 13.3 WSL reinstall, refreshed stale
   `build/nfn_gpt2_native_train` and
   `build/libnfn_native_train_tile_ops_tk.so` artifacts, confirmed the strict
