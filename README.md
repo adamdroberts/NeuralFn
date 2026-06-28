@@ -341,6 +341,10 @@ until the same-script training gate beats the head layout. A 2026-06-28
 dedicated RTX 5090 run kept `store_mlp_blocks6_tail` rejected: setup improved
 to `0.957064x`, but train-loop wall regressed to `1.010155x` versus six-block
 head placement and the candidate stayed `1.197974x` slower than llm.kittens.
+The matching `store_packed_attention_blocks6_tail` run also stayed rejected:
+setup improved to `0.961199x`, but train-loop wall regressed to `1.008900x`,
+block recompute to `1.201126x`, and the candidate stayed `1.068327x` slower
+than llm.kittens.
 The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` diagnostic is rejected
 even earlier because disabling residual1 activation storage failed the paired

@@ -1014,7 +1014,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "store_packed_attention_blocks6_tail"|"store-packed-attention-blocks6-tail"|"stored_packed_attention_blocks6_tail"|"stored-packed-attention-blocks6-tail"|"packed_attention_blocks6_tail"|"packed-attention-blocks6-tail")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Unpromoted CUDA 13.3 diagnostic: compares six stored packed-attention blocks at the default head placement against six stored packed-attention blocks at tail placement. It must beat the same-script training gate before default promotion."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 1-sample stage-timed gate compared six stored packed-attention blocks at head placement against six at tail placement. Tail placement improved setup_wall_ms to 0.961199x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.008900x, steady-state CUDA-event timing to 1.009114x, train_tokens_per_second fell to 0.991177x, block recompute regressed to 1.201126x, and candidate-over-llm.kittens train-loop wall remained 1.068327x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6 NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=head"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6 NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=tail"
     AUTO_ATTENTION_SECTION_TIMING=1

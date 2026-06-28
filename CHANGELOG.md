@@ -20,8 +20,16 @@
   stored MLP activation blocks at head placement against six at tail placement.
   Tail placement improved `setup_wall_ms` to `0.957064x`, but remains rejected
   because train-loop wall regressed to `1.010155x`, steady-state CUDA-event
-  timing to `1.010887x`, tokens/sec fell to `0.989947x`, and candidate-over-
-  llm.kittens train-loop wall stayed at `1.197974x`.
+  timing to `1.010887x`, tokens/sec fell to `0.989947x`, and
+  candidate-over-llm.kittens train-loop wall stayed at `1.197974x`.
+
+- Native GPT benchmarking: measured the matching
+  `store_packed_attention_blocks6_tail` diagnostic profile. Tail placement
+  improved `setup_wall_ms` to `0.961199x`, but remains rejected because
+  train-loop wall regressed to `1.008900x`, steady-state CUDA-event timing to
+  `1.009114x`, tokens/sec fell to `0.991177x`, block recompute regressed to
+  `1.201126x`, and candidate-over-llm.kittens train-loop wall stayed at
+  `1.068327x`.
 
 - Native GPT LM-head diagnostics: split the cached LM-head graph-body cuBLASLt
   bisection route into independent dHidden and dWeight switches
