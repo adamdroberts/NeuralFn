@@ -13105,7 +13105,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT"}),
-            false);
+            true);
     const bool token_weight_bf16_pattern_init_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT",
@@ -22746,7 +22746,9 @@ int run_transformer_lm_training_json(
         24);
     const std::string token_weight_init_strategy =
         token_weight_padded_init_fusion_enabled
-            ? "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"
+            ? (token_weight_vector4_strided_init_requested
+                   ? "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"
+                   : "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero")
             : (legacy_mod17_token_weight_init_enabled
                    ? (token_weight_bf16_initial_refresh_elided
                           ? (token_weight_threaded_init_enabled

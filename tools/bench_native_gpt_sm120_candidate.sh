@@ -1176,8 +1176,6 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
     ;;
   "token_weight_vector4_strided"|"token-weight-vector4-strided")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-sample startup-only rerun requested the strided vector4 token-weight initializer, but rejected it because it did not change any tracked route, strategy, or plan and regressed setup_wall_ms to 1.012563x, setup.float_arena_materialize.total_ms to 1.022720x, setup.uint16_arena_materialize.total_ms to 1.017532x, and setup.token_weight_init.total_ms to 1.006804x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1"
     ;;

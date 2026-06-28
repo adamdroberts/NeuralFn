@@ -153,8 +153,8 @@ checks = [
     ),
     (
         value("token_weight_init_strategy")
-        == "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero",
-        "token-weight init must stay on the fused padded BF16-shadow CUDA Tile route",
+        == "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero",
+        "token-weight init must stay on the fused padded strided BF16-shadow CUDA Tile route",
     ),
 ]
 

@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: the CUDA Tile dense-GPT trainer now defaults the tied
+  token embedding/LM-head initializer to the vector4-strided Tile route. Set
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` or
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` to compare against the
+  older non-strided vector4 initializer. Runtime JSON now reports
+  `token_weight_vector4_strided_init_requested: true` and the
+  `device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero`
+  strategy by default when padded BF16-shadow fusion is available. Verification:
+  rebuilt CUDA 13.3 RTX 5090 same-script gate measured `0.989905x` setup wall,
+  `0.987217x` token init, and `0.997838x` total wall versus the old default with
+  `graph_editor_tensor_flow=false` and `torch_required=false`.
+
 - Bench: the standalone LM-head backward benchmark now separates candidate
   warmup from reference-component warmup. Direct C++ runs default reference
   logits/CE/dHidden/dWeight component timing to `max(1, warmup)`, and
@@ -8875,16 +8887,16 @@ Future updates should append new entries here rather than replacing older notes.
   `token_weight_two_pass_bf16` also carry explicit baseline envs. Native GPT
   JSON now reports `token_weight_vector4_strided_init_requested` and labels the
   selected route as
-  `device-vector4-strided-power2-deterministic[-fused-bf16-shadow]`, so
-  same-script route gates can distinguish the hidden Tile dispatch.
+  `device-vector4-strided-power2-deterministic` or a fused BF16-shadow variant,
+  so same-script route gates can distinguish the hidden Tile dispatch.
 
   Migration note: the default token-weight initializer did not change. The new
   JSON field is additive; consumers that compare `token_weight_init_strategy`
   should accept the new strided strategy string when the opt-in env is set.
   The corrected dedicated RTX 5090 CUDA 13.3 startup-only gate for
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_vector4_strided` passed at
-  `0.949594x` setup wall and `0.986349x` token init over 2 samples, but the
-  route remains diagnostic-only pending broader evidence.
+  `0.949594x` setup wall and `0.986349x` token init over 2 samples; the later
+  Unreleased entry promotes the rebuilt strided padded route as the default.
 
   Verification: focused native GPT and paired-kernel pytest, native GPT CLI
   build, corrected same-script RTX 5090 startup benchmark, and

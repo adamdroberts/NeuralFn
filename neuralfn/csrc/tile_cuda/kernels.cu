@@ -7582,6 +7582,50 @@ __global__ void init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_
   }
 }
 
+__global__ void init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n) {
+  const std::int64_t vector_count = (total_n + 3) / 4;
+  const std::int64_t stride = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  for (std::int64_t vector_idx =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       vector_idx < vector_count;
+       vector_idx += stride) {
+    const std::int64_t idx = vector_idx * 4;
+    if (idx + 3 < total_n) {
+      if (idx >= public_n) {
+        reinterpret_cast<float4*>(values)[vector_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] = make_ushort4(0, 0, 0, 0);
+        continue;
+      }
+      if (idx + 3 < public_n) {
+        const int bucket = static_cast<int>(idx) & 15;
+        const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket);
+        reinterpret_cast<float4*>(values)[vector_idx] = pattern;
+        reinterpret_cast<ushort4*>(shadow_bf16_bits)[vector_idx] = make_ushort4(
+            bf16_bits_from_float(pattern.x),
+            bf16_bits_from_float(pattern.y),
+            bf16_bits_from_float(pattern.z),
+            bf16_bits_from_float(pattern.w));
+        continue;
+      }
+    }
+    for (std::int64_t tail = idx; tail < total_n; ++tail) {
+      if (tail < public_n) {
+        const int bucket = static_cast<int>(tail) & 15;
+        const float value = static_cast<float>(bucket - 8) * 0.01f;
+        values[tail] = value;
+        shadow_bf16_bits[tail] = bf16_bits_from_float(value);
+      } else {
+        values[tail] = 0.0f;
+        shadow_bf16_bits[tail] = 0;
+      }
+    }
+  }
+}
+
 __tile_global__ void sumsq_partials_float32_kernel(
     const float* __restrict__ values,
     float* __restrict__ partials,
@@ -16008,6 +16052,16 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
   }
   constexpr int kThreads = 256;
   const int blocks = static_cast<int>((total_n + (kThreads * 4 - 1)) / (kThreads * 4));
+  if (token_weight_vector4_strided_init_enabled()) {
+    constexpr int kMaxBlocks = 4096;
+    const int strided_blocks = std::min<int>(
+        kMaxBlocks,
+        std::max<int>(1, blocks));
+    init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel<<<
+        strided_blocks, kThreads, 0, stream>>>(
+            values, shadow_bf16_bits, public_n, total_n);
+    return;
+  }
   init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel<<<blocks, kThreads, 0, stream>>>(
       values, shadow_bf16_bits, public_n, total_n);
 }

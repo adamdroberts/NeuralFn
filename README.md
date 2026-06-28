@@ -723,21 +723,19 @@ dedicated RTX 5090 5-sample startup-only recheck improved mean setup wall and
 mean token-weight init, but kept the route diagnostic-only because token-weight
 init remained unstable with median and max regressions versus the
 conversion-based vector4 shadow writer.
-The opt-in vector4-strided token-weight initializer
-(`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
-the paired wrapper now forces baseline
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, and
-native JSON reports
+The vector4-strided token-weight initializer is now the CUDA 13.3 RTX 5090
+native dense-GPT startup default. Set
+`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` /
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` only when intentionally
+bisecting against the older non-strided vector4 initializer. The paired wrapper
+continues to force baseline `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0`
+versus candidate `=1`, and native JSON reports
 `token_weight_vector4_strided_init_requested` plus the distinct
-`device-vector4-strided-power2-deterministic[-fused-bf16-shadow]` strategy.
-After the CUDA 13.3 reinstall on the dedicated RTX 5090, the corrected
-2-sample startup-only gate passed (`0.949594x` setup wall,
-`0.986349x` token init), but the broader 5-sample startup-only gate rejected the
-route because `setup.token_weight_init.total_ms` regressed to `1.003837x`.
-Real paired-wrapper runs now fail fast for this rejected profile unless
-`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run expansion
-still works without that opt-in.
+`device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero`
+strategy when padded BF16-shadow fusion is available.
+After the CUDA 13.3 reinstall on the dedicated RTX 5090, the rebuilt 2-sample
+same-script gate passed at `0.989905x` setup wall, `0.987217x` token init, and
+`0.997838x` total wall, with the same no-graph/no-Torch contract.
 The fused padded-vocab BF16-shadow token initializer now defaults on for native
 GPT startup. It initializes public token rows and zeroes the padded vocabulary
 tail plus BF16 shadow in one launch, eliding two separate padding zero/refresh
@@ -1019,9 +1017,11 @@ it sweeps the current SM120 hot-path proof set: `qkv_dinput_ln128`,
 `linear_bias_threads_512`, `lm_head_graph_prewarm`, `lm_head_loss_bins`, and
 `cublaslt_grouped_probe`.
 Startup-only bisections such as
-`token_weight_vector4_strided` remain available when named explicitly, but they
-are no longer the default because the current parity gap is steady-state
-block/LM-head throughput rather than token setup. The sweep preserves the
+`token_weight_vector4_strided` remain available when named explicitly; that
+profile now compares the old non-strided initializer against the current
+strided default so startup evidence stays reproducible. The current parity gap
+is still steady-state block/LM-head throughput rather than token setup. The
+sweep preserves the
 candidate wrapper's strict
 same-script route and metric gates and exits nonzero if any profile fails; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only for exploratory evidence
@@ -2439,12 +2439,12 @@ switches and remain diagnostic-only unless the measured gate justifies a
 default change. After the CUDA 13.3 reinstall on the dedicated RTX 5090, the
 corrected `token_weight_vector4_strided` profile passed a 2-sample
 startup-only gate (`0.949594x` setup wall, `0.986349x` token init) with a
-strategy-value route change, but remains default-off pending broader evidence.
+strategy-value route change; the rebuilt follow-up gate above promotes it as
+the current default.
 The follow-up CUDA 13.3.33 three-sample sweep through the linked trainer kept
-the other startup profiles default-off: `token_weight_vector4_strided` improved
-token init (`0.979990x`) but lost total setup (`1.016446x`),
-`token_weight_threaded` improved total setup (`0.980440x`) only by shifting
-unrelated arena timing while its own token init regressed (`1.009360x`),
+the other startup profiles default-off: `token_weight_threaded` improved total
+setup (`0.980440x`) only by shifting unrelated arena timing while its own token
+init regressed (`1.009360x`),
 `token_weight_fast_int32` regressed setup (`1.021488x`),
 `token_weight_two_pass_bf16` regressed setup (`1.050417x`), and
 `combined_device_arena` regressed startup-only setup (`1.060057x`) versus the
@@ -3115,10 +3115,10 @@ Tile initializer in paired startup benchmarks. On the CUDA 13.3 dedicated RTX
 measured explicit vector4 against fast int32 at `0.949565x` mean token-weight
 initialization time, `0.970270x` setup wall time, and `0.970405x` total wall
 time, so vector4 remains the default.
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` and
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` remain startup-only profiling
-switches for token-weight initialization experiments; vector4-strided and
-threaded are not the default.
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` compares against the old
+non-strided vector4 initializer, and
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` remains a startup-only profiling
+switch for the not-promoted threaded CUDA initializer.
 
 The trainer-facing Tile-CUDA linear ABI supports both the default BF16-primary block-weight path and the older FP32-master/BF16-shadow path for native GPT training. The trainer allocates one BF16 block-weight arena for QKV, attention projection, MLP FC, and MLP projection weights; default AdamW updates that arena directly, while the old path refreshes it with one `nfn_native_tile_float32_to_bf16_bits_many` call after parameter initialization and each AdamW update. Block forward/recompute plus block dInput GEMMs route through `nfn_native_tile_linear_weight_bf16_float32`, `nfn_native_tile_linear_weight_bf16_output_float32`, `nfn_native_tile_linear_bf16_input_weight_bf16_float32`, and `nfn_native_tile_linear_backward_input_weight_bf16_float32`. Transformer block dWeight+bias accumulation still calls `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32` or `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`; shape-supported BF16 dWeight GEMMs request the cuBLASLt `CUBLASLT_EPILOGUE_BGRADB` epilogue. By default, BGRADB writes bias gradients into Tile-owned scratch and accumulates into the optimizer-step bias buffer; set `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`, `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` only for paired diagnostics against direct beta-zero bias writes. Shape-supported transformer-block BF16 GEMMs use cached cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default; set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT=0` or `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` to force the older BF16 `cublasGemmEx` bridge. `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` / `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` is diagnostic-only for LM-head-sized BF16 shapes with `k > 32768`; the 5090 paired check moved the LM-head dHidden shape to cuBLASLt but measured it slower than GEMMEx, so the default cap remains. `NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT=1` / `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` is a default-off BF16-output cuBLASLt probe for all-BF16 and BF16-input/float-weight LM-head logits; the dedicated RTX 5090 paired check moved the logits bucket to cuBLASLt in shape stats but measured neutral/slightly slower, so GEMMEx remains the default fallback. cuBLASLt plans now retain their matmul descriptors and matrix layouts so cache hits skip per-GEMM descriptor construction; set `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` or `NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0` only for paired profiling against the older descriptor-recreate path. `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` / `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` can raise or lower the cuBLASLt heuristic workspace cap for paired diagnostics; the default remains 128 MiB because the normal 5-step RTX 5090 run rejected a 256 MiB cap as train-loop neutral/slightly slower. `nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits` now defaults to the mixed float32-hidden/BF16-grad cuBLASLt bgrad epilogue route for supported QKV profiling shapes; set `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` or `NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=0` to compare against the previous split dWeight plus Tile bias-reduction path. `NFN_NATIVE_GPT_FUSE_BF16_BF16_DWEIGHT_BGRAD=0` / `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD=0` is the matching BF16-input/BF16-gradient split diagnostic: it keeps block dWeight on cuBLASLt/GEMMEx and runs a separate BF16 bias reduction, but the dedicated RTX 5090 paired check measured it slower than BGRADB, so the fused route remains default. `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32` still fuses stored-BF16 MLP preactivation dGELU into the MLP projection dInput GEMM and writes the result back to the trainer's float gradient buffer; set `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to compare against the older separate dInput plus GELU route. `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32`, `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`, and `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32` expose the matching raw ABI for experiments that keep that fused MLP projection gradient as BF16 bits when feeding the following MLP FC backward GEMMs; the BF16 handoff is now the default after paired dedicated-RTX-5090 timing showed it faster. `NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` or `NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` is an opt-in diagnostic route that sends block-sized GPT BF16-gradient/BF16-weight dInput shapes through the SM120 TK GEMM bridge when `m <= 4096`, `k <= 4096`, and the tile multiples are valid; the old cuBLASLt/GEMMEx fallback remains the default because the paired 5090 check rejected the TK block route. `NFN_NATIVE_LINEAR_TK_DINPUT=1` remains a broad diagnostic switch for larger supported BF16/BF16 dInput shapes. Prefer `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=m,n,k,opA,opB` / `NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE=...` for single-shape probes, and use the matching `*_DISABLE_SHAPE` aliases for bisection; the LM-head dHidden probe `768,8192,50304,N,N` measured slower than the GEMMEx default, so classifier-sized dHidden remains opt-in. The default MLP projection backward path packs `incoming_grad` once into BF16 scratch and reuses it for dWeight+bias and fused dInput+dGELU; set `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` to compare against the previous per-stage pack path, or `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0` to compare against the older float-gradient handoff. `nfn_native_tile_linear_bf16_output_float32` writes BF16 LM-head logits, and `nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32` lets the compiled trainer reuse a full-microbatch BF16 final-norm hidden prepack with FP32 tied token weights for LM-head logits. `nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits` computes validation/test CE partials over the public tokenizer vocab while stepping through the padded logit row stride, `nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace` overwrites public-vocab logits with BF16 dlogits and zeroes padded dlogit columns, and the BF16 dlogits feed `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32` through full-microbatch BF16 final-norm hidden prepack by default. `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` reproduces the older per-chunk LM-head hidden packing path and is now rejected by the SM120 paired wrapper because the fresh gate regressed train-loop wall to `1.049342x` and LM-head backward to `1.055161x`; set it only for intentional historical bisection. Set `NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=0` to reproduce the previous float-hidden LM-head dWeight path. BF16/BF16 LM-head dWeight and full hidden prepack are now the defaults after paired dedicated-RTX-5090 timing measured them faster. Set `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` to return the tied LM-head chunks to the older optimized TF32 tensor-op `cublasSgemm` path for debugging, set `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` to keep BF16 training backward while comparing validation/test loss against the older float logits loss workspace, or set `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE=0` only for paired benchmarks against the previous padded-vocab CE behavior. The public GPT tokenizer vocab remains 50,257, but the native tied token embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly row counts; training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, plus `lm_head_public_vocab_ce_enabled`, `lm_head_softmax_vocab`, `lm_head_logit_row_stride`, and `lm_head_padded_dlogits_zeroed`. Dry-run plan JSON reports `shape.padded_vocab_size: 50304`. Set `NFN_TILE_CUDA_LINEAR_BF16=1` or `NFN_NATIVE_LINEAR_BF16=1` only when you want the normal linear ABI to opt into the BF16 bridge for profiling or shape-specific tuning. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or `NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI through the cached cuBLASLt TF32 path; on the current GPT-2 5090 shape it is measurable but slower than the SGEMM default. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM bridge by default when the Tile ops library was built with TK support; set `NFN_TILE_CUDA_LINEAR_TK_GEMM=0` or `NFN_NATIVE_LINEAR_TK_GEMM=0` to force the BF16 `cublasGemmEx` fallback for diagnostics. The raw optimizer ABI also exposes `nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32`, which writes updated FP32 master weights and optional BF16 shadow entries in the same descriptor-driven Tile launch; set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only after forcing `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0`, because the shadow-refresh path is bypassed by the BF16-primary default. GPT training JSON reports `linear_backend_strategy`, `block_forward_linear_strategy`, `block_backward_input_linear_strategy`, `block_backward_mlp_proj_dgelu_strategy`, `block_backward_mlp_proj_bf16_grad_out_reuse_enabled`, `block_backward_bf16_mlp_grad_handoff_enabled`, `block_backward_weight_linear_strategy`, `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`, `lm_head_prepack_bf16_hidden_enabled`, `lm_head_dweight_strategy`, `linear_bias_gradient_first_write_bgrad_direct_enabled`, `linear_cublaslt_descriptor_cache_enabled`, `block_weight_bf16_shadow_strategy`, `block_weight_bf16_shadow_fused_adamw_refresh_enabled`, `block_weight_bf16_shadow_elements`, `block_weight_bf16_shadow_bytes`, `block_weight_bf16_shadow_descriptor_count`, `block_weight_bf16_refresh_count`, `block_weight_bf16_fused_adamw_refresh_count`, `adamw_bf16_shadow_refresh_strategy`, and the linear GEMM/cache counters so native runs show whether large projections used BF16-primary weights, shadow weights, cuBLASLt, the descriptor cache, the BF16 bridge, fused MLP projection dGELU, MLP projection BF16 grad-out reuse, BF16 MLP gradient handoff, fused AdamW shadow writes, TK LM-head GEMM, public-vocab CE, per-chunk or prepacked LM-head hidden, or BF16/BF16 LM-head dWeight. The tied LM-head row chunk defaults to 32768 rows on the dedicated RTX 5090/CUDA 13.3 workstation route, which uses about 3.30GiB of BF16 logit workspace at the default `64 x 1024` microbatch and keeps the chunk count at 2; pass `--lm-head-row-chunk-size 49152` or wrapper `--native-cuda-lm-head-row-chunk-size 49152` only to reproduce the rejected larger-chunk route, or 8192 for the older lower-memory route. Full `--train-transformer-lm` uses BF16 logits for validation/test loss and in-place tied LM-head CE backward by default, so the separate float logits and full-vocab `grad_logits` chunks are not allocated; default JSON reports `logit_workspace_elements: 0`, `grad_logit_workspace_elements: 0`, `lm_head_training_logits_dtype: "bf16"`, `lm_head_loss_logits_dtype: "bf16"`, `lm_head_bf16_loss_enabled: true`, `lm_head_prepack_bf16_hidden_enabled: true`, `lm_head_dweight_input_dtype: "bf16"`, `lm_head_ce_backward_strategy: "public-vocab-strided-fused-row-bf16-logits-dlogits"`, `lm_head_dweight_strategy: "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate"`, and `lm_head_grad_logits_workspace_allocated: false`.
 
@@ -3437,8 +3437,10 @@ comparison against the previous fast int32-index Tile path, set
 paired comparison against the older int64-index Tile path, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against
 the not-promoted threaded CUDA initializer. Training JSON reports
-`token_weight_init_strategy: "device-vector4-power2-deterministic"` or the
-default fused BF16-shadow padded-zero variant,
+`token_weight_init_strategy:
+"device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"`
+by default, with non-padded strided labels used only when padded fusion is
+unavailable,
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`,
@@ -3653,9 +3655,9 @@ scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`,
 `attn_proj_dinput_before_dweight`, and `qkv_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route
-detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
-include `token_weight_vector4_strided`, whose broader gate failed the
-token-init stage ratio.
+detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. The
+`token_weight_vector4_strided` startup profile is kept as a default-vs-old
+initializer comparison rather than a rejected candidate.
 The sweep `summary.tsv` includes explicit QKV/MLP-FC/attention-projection
 concurrent route deltas so external GPU load cannot hide whether a side-stream
 candidate actually launched the alternate kernel schedule.

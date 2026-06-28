@@ -793,7 +793,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "block_backward_weight_linear_strategy" in source
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source
     assert "token_weight_init_strategy" in source
-    assert "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero" in source
+    assert "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero" in source
     assert "SM120 CUDA 13.3 benchmark contract passed" in source
     assert "CUDA 13.3 SM120 validation passed." in source
 
@@ -1119,6 +1119,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "candidate-over-llm.kittens wall to 1.018312x" in candidate_bench
     assert "token_weight_threaded" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.025016x" in candidate_bench
+    assert "token_weight_vector4_strided" in candidate_bench
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0" in candidate_bench
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1" in candidate_bench
+    assert "1.012563x" not in candidate_bench
     assert "token_weight_bf16_pattern" in candidate_bench
     assert "setup_wall_ms regressed to 1.005840x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.015463x" in candidate_bench
@@ -7088,11 +7092,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
     assert (
         train_transformer_payload["token_weight_init_strategy"]
-        == "device-vector4-power2-deterministic"
+        == "device-vector4-strided-power2-deterministic"
     )
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
     assert train_transformer_payload["token_weight_vector4_init_enabled"] is True
-    assert train_transformer_payload["token_weight_vector4_strided_init_requested"] is False
+    assert train_transformer_payload["token_weight_vector4_strided_init_requested"] is True
     assert train_transformer_payload["token_weight_bf16_pattern_init_requested"] is False
     assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
@@ -9217,6 +9221,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in header_text
     assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in source_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel" in kernels_text
     padded_token_init_kernel = kernels_text[
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
@@ -10694,7 +10699,18 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     ) in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT" in kernels_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",\n'
+        '                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",\n'
+        '                              "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT"}),\n'
+        "            true);"
+    ) in gpt2_source_text
     assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_float32_kernel" in kernels_text
+    assert (
+        '"device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"'
+        in gpt2_source_text
+    )
     assert "launch_init_gpt2_token_weight_vector4_strided_float32" in kernels_text
     assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in script_text
     assert "LLM_KITTENS_ROOT" in script_text

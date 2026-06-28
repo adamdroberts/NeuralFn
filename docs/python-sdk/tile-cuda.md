@@ -1686,9 +1686,13 @@ validation pass, not in the per-step CPU hot path.
 
 The same native trainer initializes the tied token embedding/LM-head weight on
 device with `nfn_native_tile_init_gpt2_token_weight_fast_float32`. Native JSON
-reports `token_weight_init_strategy: "device-vector4-power2-deterministic"` or
-the fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
-`token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`,
+reports `token_weight_init_strategy:
+"device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero"`
+by default when padded BF16-shadow fusion is available, plus
+`token_weight_threaded_init_enabled`,
+`token_weight_vector4_init_enabled`,
+`token_weight_vector4_strided_init_requested`,
+`token_weight_fast_int32_init_enabled`,
 `token_weight_init_legacy_mod17_enabled`, and
 `token_weight_host_materialization: false`, so startup no longer constructs and
 copies the full token-weight matrix through host RAM. The default initializer
@@ -2938,10 +2942,13 @@ exists; live or named compute processes still fail the idle guard before
 warmup.
 Native JSON reports `token_weight_vector4_strided_init_requested` and labels
 the selected path as
-`device-vector4-strided-power2-deterministic[-fused-bf16-shadow]`, so the
-paired route-change gate can distinguish the hidden Tile dispatch. They remain
-diagnostic-only; the default compiled trainer still uses the fused vector4
-FP32/BF16-shadow initializer.
+`device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero`
+by default, so the
+paired route-change gate can distinguish the hidden Tile dispatch. The strided
+vector4 path is the default on the CUDA 13.3 RTX 5090 native dense-GPT trainer;
+set `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` only to compare
+against the older non-strided initializer. The other startup profiles remain
+diagnostic-only.
 On the current dedicated RTX 5090 CUDA 13.3 stack, the wrapper rejects
 `token_weight_threaded` by default because a 3-sample startup-only rerun
 improved total setup only through unrelated arena timing (`0.978343x`) while
