@@ -3034,7 +3034,11 @@ Set `NativeGptRunConfig.startup_only=True` or
 compiled CLI. High-level native training commands also accept
 `--native-cuda-startup-only` and normalize it to the same compiled C++ flag
 before dispatch; the dense native GPT parser accepts either spelling for direct
-calls. Startup-only runs still resolve cached token shards, load CUDA, allocate
+calls. For low-latency startup/preflight probes, high-level commands accept
+`--native-cuda-fast-startup` or `--fast-startup` and normalize either spelling
+to the compiled C++ `--fast-startup` flag, which skips throughput-only setup
+prewarms without changing the normal long-training default. Startup-only runs
+still resolve cached token shards, load CUDA, allocate
 the full Tile-CUDA transformer training arenas, initialize native parameters,
 and emit normal setup timing, but exit before optimizer steps or checkpoint
 export with `status: "native-transformer-lm-startup-ready"`. Native GPT SDK

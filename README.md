@@ -184,7 +184,8 @@ trainer to `1.076611x` train-loop wall time.
 For smoke tests and low-latency startup checks, set
 `NFN_NATIVE_GPT_FAST_STARTUP=1` (or the compatibility aliases
 `NFN_NATIVE_GPT2_FAST_STARTUP=1` / `NFN_TILE_CUDA_FAST_STARTUP=1`), pass
-`--fast-startup` to `nfn_gpt_native_train`, or set
+`--fast-startup` or `--native-cuda-fast-startup` through `nfn train`,
+`train_gpt.py`, or `nfn_gpt_native_train`, or set
 `fast_startup=True` on `NativeTrainRunConfig` / `build_native_train_run_config()`.
 This keeps the long-training default route unchanged, but flips the default
 setup-prewarm policy so the TK QKV first-use prewarm and LM-head CUDA Graph

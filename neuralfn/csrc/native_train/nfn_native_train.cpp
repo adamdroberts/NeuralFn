@@ -685,6 +685,8 @@ int main(int argc, char** argv) {
                 "--native-cuda-require-cooperative-lm-head-backward",
                 "--require-cooperative-lm-head-backward",
                 "--native-cuda-startup-only",
+                "--native-cuda-fast-startup",
+                "--fast-startup",
             })) {
             if (arg == "--native-cuda-print-plan") {
                 forwarded.push_back("--print-plan");
@@ -721,6 +723,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--require-cooperative-lm-head-backward");
             } else if (arg == "--native-cuda-startup-only") {
                 forwarded.push_back("--startup-only");
+            } else if (arg == "--native-cuda-fast-startup" || arg == "--fast-startup") {
+                forwarded.push_back("--fast-startup");
             }
             continue;
         }

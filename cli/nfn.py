@@ -158,6 +158,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --eval-every-steps N
           --native-cuda-lm-head-row-chunk-size N
           --native-cuda-no-checkpoint, --no-checkpoint
+          --native-cuda-fast-startup, --fast-startup
           --native-cuda-runner {auto,binding,compiled-cli,launcher}
           --native-cuda-dry-run
 
@@ -763,6 +764,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--no-checkpoint": "--no-checkpoint",
         "--native-cuda-write-checkpoint": "--write-checkpoint",
         "--write-checkpoint": "--write-checkpoint",
+        "--native-cuda-fast-startup": "--fast-startup",
+        "--fast-startup": "--fast-startup",
     }
     split_value_flags = {
         "--dataset-alias",

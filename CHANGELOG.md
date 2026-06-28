@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native CLI workflow: high-level dense GPT training wrappers now normalize
+  `--native-cuda-fast-startup` and `--fast-startup` to the compiled C++
+  `--fast-startup` flag, and `nfn train --help` advertises the option. This
+  makes the existing low-latency startup/preflight policy discoverable from the
+  normal CLI without changing the long-training default, which still keeps
+  throughput prewarms enabled.
+
 - Native trainer docs/tests: added a no-Torch verifier regression guard that
   parses the compiled dense GPT template catalog and asserts `gpt`, `gpt2`,
   `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`,

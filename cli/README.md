@@ -235,6 +235,10 @@ step. Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is
 command inspection only on the default `compiled-cli` runner: it builds the C++
 argv from the dataset alias/path without importing `server.dataset_manager`,
 NumPy, tiktoken, or Torch and without writing raw-text token shards.
+For startup/preflight probes, pass `--native-cuda-fast-startup` or
+`--fast-startup`; the wrappers normalize either spelling to the compiled C++
+`--fast-startup` flag so the trainer skips throughput-only setup prewarms
+without changing the normal long-training default.
 Full `--train-transformer-lm` runs also emit `cuda_runtime_preflight` before
 allocation and fail early when the driver is unavailable or older than the
 loaded CUDA runtime.

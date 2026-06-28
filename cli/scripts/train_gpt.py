@@ -292,6 +292,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--write-checkpoint": "--write-checkpoint",
         "--native-cuda-require-cooperative-lm-head-backward": "--require-cooperative-lm-head-backward",
         "--require-cooperative-lm-head-backward": "--require-cooperative-lm-head-backward",
+        "--native-cuda-fast-startup": "--fast-startup",
+        "--fast-startup": "--fast-startup",
     }
     pass_value_flags = {
         "--model-family",

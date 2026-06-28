@@ -8218,6 +8218,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
             "--native-cuda-print-command",
             "--native-cuda-no-checkpoint",
             "--native-cuda-startup-only",
+            "--native-cuda-fast-startup",
             "--kernel-backend",
             "tile-cuda",
             "--output",
@@ -8233,12 +8234,14 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--tinystories" in high_level_aliases.stdout
     assert "--no-checkpoint" in high_level_aliases.stdout
     assert "--startup-only" in high_level_aliases.stdout
+    assert "--fast-startup" in high_level_aliases.stdout
     assert "--backend tile-cuda" in high_level_aliases.stdout
     assert "--output-dir /tmp/native-model" in high_level_aliases.stdout
     assert "--train-transformer-lm" in high_level_aliases.stdout
     assert "--train-seq-len 2048" in high_level_aliases.stdout
     assert "--native-cuda-print-command" not in high_level_aliases.stdout
     assert "--native-cuda-startup-only" not in high_level_aliases.stdout
+    assert "--native-cuda-fast-startup" not in high_level_aliases.stdout
     assert "--kernel-backend" not in high_level_aliases.stdout
     assert "--output " not in high_level_aliases.stdout
 
