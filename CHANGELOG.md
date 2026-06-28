@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT LM-head attribution: full-trainer JSON now reports
+  `lm_head_fused_graph_prewarm_body_cublaslt_*_launch_count` and
+  `lm_head_fused_graph_prewarm_body_tile_*_fallback_count` before resetting
+  Tile stats after CUDA Graph prewarm. The existing hot-loop graph-body counters
+  remain post-reset replay/fallback counters, while the new fields show which
+  dHidden/dWeight route was captured into the graph executable. The paired
+  benchmark's `native_lm_head_true_fused_target` summary now includes
+  `prewarm_body_cublaslt_*` and `prewarm_body_tile_*` means so same-script
+  kernel comparisons can distinguish captured graph body route from hot replay
+  behavior.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/paired_kernel_speed.py`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel
+  -q`; `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`;
+  `build/nfn_gpt_native_train_linked --backend tile-cuda --tinystories
+  --max-steps 1 --train-batch-tokens 524288 --eval-every-steps 0
+  --train-loss-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-generate-tokens 0 --native-cuda-checkpoint-every 0
+  --no-checkpoint --tile-ops-lib linked --json-out
+  /tmp/nfn_native_gpt_prewarm_body_linked_smoke.json`, which reported
+  prewarm body Tile dHidden/dWeight counts `4/4`, cuBLASLt body counts `0/0`,
+  hot graph-body launch counters `0/0`, and `lm_head_fused_graph_replay_count=24`
+  on the dedicated RTX 5090.
+
 - SM120 candidate workflow: added `lm_head_tk_dweight_28672` as an explicit
   rejected profile for the current default LM-head row chunk. The profile
   expands to

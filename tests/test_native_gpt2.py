@@ -2417,6 +2417,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_graph_body_cublaslt_dweight_launch_count" in source
     assert "lm_head_graph_body_tile_dhidden_fallback_count" in source
     assert "lm_head_graph_body_tile_dweight_fallback_count" in source
+    assert "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count" in source
+    assert "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count" in source
+    assert "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in source
+    assert "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
     assert "lm_head_fused_graph_prewarm_dedup_enabled" in source
@@ -2572,7 +2576,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
     assert (
-        "lm_head_dhidden_fast16bf_32768, lm_head_cooperative_cublaslt, lm_head_tk_dweight_32768"
+        "lm_head_dhidden_fast16bf_32768, lm_head_cooperative_cublaslt, lm_head_tk_dweight_28672, lm_head_tk_dweight_32768"
         in bench_source
     )
     assert "1.335573x stage.lm_head_backward.total_ms" in bench_source
@@ -2609,6 +2613,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_graph_body_cublaslt_dweight_launch_count" in speed_tool
     assert "lm_head_graph_body_tile_dhidden_fallback_count" in speed_tool
     assert "lm_head_graph_body_tile_dweight_fallback_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in speed_tool
+    assert "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count" in speed_tool
+    assert "prewarm_body_tile_fallback_mean" in speed_tool
     assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_failure_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in speed_tool

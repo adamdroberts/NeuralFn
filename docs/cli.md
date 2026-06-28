@@ -1328,9 +1328,17 @@ Graph-body route counters
 `lm_head_graph_body_tile_dhidden_fallback_count`, and
 `lm_head_graph_body_tile_dweight_fallback_count` distinguish cuBLASLt graph-body
 experiments from default Tile fallback inside the same CUDA Graph wrapper.
+Because full-trainer graph prewarm resets hot Tile stats before optimizer
+steps, runtime JSON also reports
+`lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count`,
+`lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count`,
+`lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count`, and
+`lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count` to show which
+body route was captured into the graph executable before replay counters start.
 The paired benchmark `native_lm_head_true_fused_target` summary derives
-`graph_body_cublaslt_launch_mean` and `graph_body_tile_fallback_mean` from
-those counters so failed strict LM-head runs show which graph body executed.
+`graph_body_cublaslt_launch_mean` / `graph_body_tile_fallback_mean` from the
+hot-loop counters and `prewarm_body_cublaslt_launch_mean` /
+`prewarm_body_tile_fallback_mean` from the prewarm-captured counters.
 Full-loop native GPT JSON also reports
 `lm_head_classifier_true_fused_launch_count`, and
 `tools/paired_kernel_speed.py` treats it as a hot route counter. Strict

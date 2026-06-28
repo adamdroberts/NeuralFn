@@ -10946,6 +10946,10 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_graph_body_cublaslt_dweight_launch_count = 0;
     std::int64_t lm_head_graph_body_tile_dhidden_fallback_count = 0;
     std::int64_t lm_head_graph_body_tile_dweight_fallback_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count = 0;
+    std::int64_t lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_attempt_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_success_count = 0;
     std::int64_t lm_head_fused_graph_prewarm_duplicate_skip_count = 0;
@@ -21526,6 +21530,22 @@ int run_transformer_lm_training_json(
                 lm_head_fused_graph_prewarm_cache_entry_count =
                     lm_head_fused_graph_cache_entry_count_fn();
             }
+            if (error.empty() && lm_head_graph_body_cublaslt_dhidden_launch_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count =
+                    lm_head_graph_body_cublaslt_dhidden_launch_count_fn();
+            }
+            if (error.empty() && lm_head_graph_body_cublaslt_dweight_launch_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count =
+                    lm_head_graph_body_cublaslt_dweight_launch_count_fn();
+            }
+            if (error.empty() && lm_head_graph_body_tile_dhidden_fallback_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count =
+                    lm_head_graph_body_tile_dhidden_fallback_count_fn();
+            }
+            if (error.empty() && lm_head_graph_body_tile_dweight_fallback_count_fn != nullptr) {
+                lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count =
+                    lm_head_graph_body_tile_dweight_fallback_count_fn();
+            }
             if (error.empty() && lm_head_classifier_stats_reset != nullptr) {
                 lm_head_classifier_stats_reset();
             }
@@ -23509,6 +23529,14 @@ int run_transformer_lm_training_json(
         << lm_head_graph_body_tile_dhidden_fallback_count << ",\n"
         << "  \"lm_head_graph_body_tile_dweight_fallback_count\": "
         << lm_head_graph_body_tile_dweight_fallback_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count\": "
+        << lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count\": "
+        << lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count\": "
+        << lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count << ",\n"
+        << "  \"lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count\": "
+        << lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count << ",\n"
         << "  \"lm_head_fused_graph_fallback_count\": "
         << lm_head_fused_graph_fallback_count << ",\n"
         << "  \"lm_head_fused_graph_prewarm_attempt_count\": "

@@ -643,6 +643,22 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_graph_body_tile_dweight_fallback_count",),
     ),
     (
+        "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count",
+        ("lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count",),
+    ),
+    (
+        "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count",
+        ("lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count",),
+    ),
+    (
+        "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count",
+        ("lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count",),
+    ),
+    (
+        "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count",
+        ("lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count",),
+    ),
+    (
         "lm_head_fused_graph_fallback_count",
         ("lm_head_fused_graph_fallback_count",),
     ),
@@ -888,6 +904,10 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_graph_body_cublaslt_dweight_launch_count",
     "lm_head_graph_body_tile_dhidden_fallback_count",
     "lm_head_graph_body_tile_dweight_fallback_count",
+    "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count",
+    "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count",
+    "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count",
+    "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count",
     "lm_head_fused_graph_fallback_count",
     "lm_head_ce_row_loss_reduction_requested",
     "lm_head_ce_row_loss_reduction_available",
@@ -1276,6 +1296,10 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_graph_body_cublaslt_dweight_launch_count",
     "lm_head_graph_body_tile_dhidden_fallback_count",
     "lm_head_graph_body_tile_dweight_fallback_count",
+    "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count",
+    "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count",
+    "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count",
+    "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count",
     "lm_head_fused_graph_fallback_count",
     "lm_head_fused_graph_prewarm_attempt_count",
     "lm_head_fused_graph_prewarm_success_count",
@@ -3888,6 +3912,22 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         metrics,
         "lm_head_graph_body_tile_dweight_fallback_count",
     )
+    prewarm_body_cublaslt_dhidden_launch_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_prewarm_body_cublaslt_dhidden_launch_count",
+    )
+    prewarm_body_cublaslt_dweight_launch_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count",
+    )
+    prewarm_body_tile_dhidden_fallback_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count",
+    )
+    prewarm_body_tile_dweight_fallback_mean = _metric_mean(
+        metrics,
+        "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count",
+    )
     if graph_body_total_node_replays_mean is None and (
         graph_replay_mean is not None and graph_body_nodes_per_replay_mean is not None
     ):
@@ -3987,6 +4027,18 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "graph_body_tile_fallback_mean": _sum_optional_metrics(
             graph_body_tile_dhidden_fallback_mean,
             graph_body_tile_dweight_fallback_mean,
+        ),
+        "prewarm_body_cublaslt_dhidden_launch_mean": prewarm_body_cublaslt_dhidden_launch_mean,
+        "prewarm_body_cublaslt_dweight_launch_mean": prewarm_body_cublaslt_dweight_launch_mean,
+        "prewarm_body_tile_dhidden_fallback_mean": prewarm_body_tile_dhidden_fallback_mean,
+        "prewarm_body_tile_dweight_fallback_mean": prewarm_body_tile_dweight_fallback_mean,
+        "prewarm_body_cublaslt_launch_mean": _sum_optional_metrics(
+            prewarm_body_cublaslt_dhidden_launch_mean,
+            prewarm_body_cublaslt_dweight_launch_mean,
+        ),
+        "prewarm_body_tile_fallback_mean": _sum_optional_metrics(
+            prewarm_body_tile_dhidden_fallback_mean,
+            prewarm_body_tile_dweight_fallback_mean,
         ),
         "candidate_reference_gate_failed": candidate_reference_gate_failed,
         "reference_classifier_fusion_scope": (
@@ -4154,6 +4206,12 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
         "graph_body_tile_dweight_fallback_mean",
         "graph_body_cublaslt_launch_mean",
         "graph_body_tile_fallback_mean",
+        "prewarm_body_cublaslt_dhidden_launch_mean",
+        "prewarm_body_cublaslt_dweight_launch_mean",
+        "prewarm_body_tile_dhidden_fallback_mean",
+        "prewarm_body_tile_dweight_fallback_mean",
+        "prewarm_body_cublaslt_launch_mean",
+        "prewarm_body_tile_fallback_mean",
     ):
         value = target.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):

@@ -2064,6 +2064,11 @@ summaries also split graph-body dHidden/dWeight work into
 `lm_head_graph_body_cublaslt_*_launch_count` and
 `lm_head_graph_body_tile_*_fallback_count`, so the rejected cuBLASLt graph-body
 profile can prove whether it actually used cuBLASLt inside the cached graph.
+Because full-trainer graph prewarm resets hot Tile stats before optimizer
+steps, runtime JSON also reports
+`lm_head_fused_graph_prewarm_body_cublaslt_*_launch_count` and
+`lm_head_fused_graph_prewarm_body_tile_*_fallback_count` to show which body
+route was captured into the graph executable before replay counters start.
 This graph body is now the
 default diagnostic LM-head route for native GPT training, but it still does not
 satisfy the strict true-fused LM-head kernel gate. Successful strict graph
@@ -3285,7 +3290,7 @@ profiles or profiling a new candidate.
 
 For BF16 LM-head CE profiling, `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or `NFN_TILE_CUDA_CE_BF16_EXP2=1` switches the in-place BF16 CE+dlogits kernel from `expf` to `exp2f(x * log2(e))`. The default remains `expf`; runtime JSON reports `lm_head_ce_bf16_exp2_enabled`. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_exp2` to reproduce the named same-script check. It remains rejected by default because the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed rerun moved the no-loss CE strategy off the specialized kernel and regressed train-loop wall to `1.019757x`, steady-state CUDA-event wall to `1.022252x`, LM-head backward to `1.097477x`, and LM-head cooperative time to `1.140828x`.
 
-For cooperative LM-head graph-body bisection, `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, or `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT=1` asks the cached cooperative CUDA Graph body to try the existing strided cuBLASLt dHidden/dWeight calls before falling back to the default Tile launchers. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt` to reproduce the same-script check. It remains rejected by default because the CUDA 13.3 dedicated RTX 5090 3-step, 1-sample gate regressed train-loop wall to `1.079498x`, steady-state CUDA-event wall to `1.083841x`, LM-head backward to `1.344089x`, and LM-head cooperative time to `1.495431x`.
+For cooperative LM-head graph-body bisection, `NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT=1`, or `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT=1` asks the cached cooperative CUDA Graph body to try the existing strided cuBLASLt dHidden/dWeight calls before falling back to the default Tile launchers. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt` to reproduce the same-script check, and read the `lm_head_fused_graph_prewarm_body_*` counters in full-trainer JSON to see the captured graph-body route after prewarm has reset hot launch counters. It remains rejected by default because the CUDA 13.3 dedicated RTX 5090 3-step, 1-sample gate regressed train-loop wall to `1.079498x`, steady-state CUDA-event wall to `1.083841x`, LM-head backward to `1.344089x`, and LM-head cooperative time to `1.495431x`.
 
 LM-head Tile ops graph and true-fused diagnostic flags are sampled once per
 process after the Tile ops library is loaded, matching the other low-level
