@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: promoted the thresholded CUDA async allocator as the
+  default. Dense GPT C++ training now defaults
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` and
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`, keeping the large
+  float and uint16 transformer arenas on regular `cudaMalloc` while routing
+  only small late allocations through `cudaMallocAsync` when available. Runtime
+  JSON now reports `device_cuda_malloc_async_max_bytes` and
+  `device_cuda_malloc_async_threshold_skip_count` alongside the existing async
+  allocator fields. Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` to restore the
+  legacy all-`cudaMalloc` path; the older all-async arena profile remains
+  rejected.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/paired_kernel_speed.py`; `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_reports_opt_in_async_allocator
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`; `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`;
+  `bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked`;
+  a linked startup smoke with `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` and
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`, which reported
+  `device_allocator_strategy=cudaMallocAsync-null-stream-thresholded`,
+  `device_cuda_malloc_async_count=2`,
+  `device_cuda_malloc_async_threshold_skip_count=2`, and zero async fallbacks;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_small
+  NFN_SM120_NATIVE_STEPS=0 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_cuda_malloc_async_small_candidate.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`, which passed startup gates
+  at `0.990883x` setup wall, `0.960388x` float arena materialization, and
+  `0.947680x` uint16 arena materialization; and a 3-step, 2-sample full
+  optimizer paired run against legacy `cudaMalloc`, which passed at `0.975293x`
+  setup wall, `0.999566x` train-loop wall, `0.999447x` steady-state CUDA-event
+  step time, `1.000439x` tokens/sec, and `0.999625x` candidate-over-llm.kittens
+  train-loop wall on the dedicated RTX 5090. Both paired runs kept
+  `graph_editor_tensor_flow=false`, `torch_required=false`, and
+  `optimized_kernel_contract_passed=true`.
+
 - Native GPT LM-head attribution: full-trainer JSON now reports
   `lm_head_fused_graph_prewarm_body_cublaslt_*_launch_count` and
   `lm_head_fused_graph_prewarm_body_tile_*_fallback_count` before resetting

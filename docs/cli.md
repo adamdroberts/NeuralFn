@@ -638,27 +638,28 @@ slower than the default stored-activation scratch-recompute route; the CUDA
 When a paired benchmark is interrupted with Ctrl-C, the tool now terminates the
 active child process group and exits with a concise interruption message, so a
 long native CUDA candidate does not continue running after the wrapper exits.
-Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
-the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
-and frees them with `cudaFreeAsync` when those symbols are available, falling
-back to `cudaMalloc` if an async allocation fails. The path is default-off
-because paired dedicated-RTX-5090 timing measured it slower than the default
-arena `cudaMalloc` path; the latest CUDA 13.3 explicit arena-gated retest
-measured `1.177290x` setup wall time, `2.243472x` float-arena materialization,
-`1.716820x` uint16-arena materialization, and `1.176781x` total startup wall
-time. JSON reports `device_allocator_strategy`,
-`device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, async
-symbol availability, async allocation/free counts, and
-`device_cuda_malloc_async_fallback_count`. The SM120 wrapper profile
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async` reproduces the allocator
-check by forcing baseline `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` and candidate
-`=1`; it is rejected by default because the CUDA 13.3 RTX 5090 startup gate
-regressed setup wall time and uint16 arena materialization.
+Dense GPT native runs default `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` with
+`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`. This thresholded route
+keeps the large float and uint16 transformer arenas on regular `cudaMalloc`,
+uses CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` only for small late
+allocations when those symbols are available, and falls back to `cudaMalloc` if
+an async allocation fails. Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` to restore
+the legacy all-`cudaMalloc` path. JSON reports `device_allocator_strategy`,
+`device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`,
+`device_cuda_malloc_async_max_bytes`, async symbol availability, async
+allocation/free counts, `device_cuda_malloc_async_fallback_count`, and
+`device_cuda_malloc_async_threshold_skip_count`. The SM120 wrapper profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_small` compares the
+promoted thresholded default against legacy `cudaMalloc`; the older
+`cuda_malloc_async` profile remains rejected because routing the large arenas
+through async allocation regressed startup.
 Set `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena
 startup profiling. It overlaps the float and uint16 arena `cudaMalloc` calls
 with host `std::thread` workers when the default split-arena `cudaMalloc` path
-is active, and falls back to serial materialization for combined-arena or
-`cudaMallocAsync` diagnostics. JSON reports
+is active, and falls back to serial materialization for combined-arena or async
+allocator diagnostics. Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` when manually
+profiling this route; the SM120 wrapper profile does that for both baseline and
+candidate commands. JSON reports
 `concurrent_arena_materialize_requested`,
 `concurrent_arena_materialize_enabled`,
 `concurrent_arena_materialize_count`, and the setup bucket

@@ -3337,20 +3337,23 @@ older flush candidate measured about `1.0245x` slower; runtime JSON reports
 `block_dweight_bf16_staging_enabled`, `block_dweight_bf16_staging_strategy`,
 staging allocation sizes, zero count, BF16 clip/AdamW descriptor counts, and
 BF16-gradient AdamW launch counts. Set
-`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` to profile dense GPT transformer-LM startup
-through CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` for the large device
-arenas. The async allocator path is default-off because paired dedicated-RTX-5090
-timing measured it slower than the default `cudaMalloc` arena path. The latest
-CUDA 13.3 explicit arena-gated retest measured `1.177290x` setup wall time,
-`2.243472x` float-arena materialization, `1.716820x` uint16-arena
-materialization, and `1.176781x` total startup wall time. Runtime JSON
-reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
-`device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
-counts, and `device_cuda_malloc_async_fallback_count`. Set
+Dense GPT transformer-LM startup defaults `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`
+with `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`. This thresholded
+allocator keeps the large float and uint16 transformer arenas on regular
+`cudaMalloc`, uses CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` only for
+small late allocations when those symbols are available, and falls back to
+`cudaMalloc` if an async allocation fails. Set
+`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` to restore the legacy all-`cudaMalloc`
+path, or raise `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES` only for allocator
+diagnostics. Runtime JSON reports `device_allocator_strategy`,
+`device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`,
+`device_cuda_malloc_async_max_bytes`, async symbol availability,
+allocation/free counts, `device_cuda_malloc_async_fallback_count`, and
+`device_cuda_malloc_async_threshold_skip_count`. Set
 `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena startup
 profiling. It overlaps the float and uint16 arena `cudaMalloc` calls with host
 `std::thread` workers when the default split-arena `cudaMalloc` path is active,
-falls back to serial materialization for combined-arena or `cudaMallocAsync`
+falls back to serial materialization for combined-arena or async allocator
 diagnostics, and reports `concurrent_arena_materialize_requested`,
 `concurrent_arena_materialize_enabled`,
 `concurrent_arena_materialize_count`, and

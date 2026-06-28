@@ -857,7 +857,9 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "cudaFreeAsync" in source
     assert "device_cuda_malloc_async_requested" in source
     assert "device_cuda_malloc_async_enabled" in source
+    assert "device_cuda_malloc_async_max_bytes" in source
     assert "device_cuda_malloc_async_fallback_count" in source
+    assert "device_cuda_malloc_async_threshold_skip_count" in source
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
     assert "setup_timing_accounted_ms" in source
     assert "setup_timing_unattributed_ms" in source
@@ -3134,6 +3136,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "adamw_token_shadow_refresh": "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=1",
         "combined_device_arena": "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1",
         "cuda_malloc_async": "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1",
+        "cuda_malloc_async_small": (
+            "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1 "
+            "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216"
+        ),
         "lm_head_cooperative_sequence_wrapper": (
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 "
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "

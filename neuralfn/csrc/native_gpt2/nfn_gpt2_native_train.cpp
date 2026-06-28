@@ -14291,9 +14291,16 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC",
                               "NFN_NATIVE_GPT2_CUDA_MALLOC_ASYNC"}),
-            false);
+            true);
     const bool async_device_allocator_enabled =
         async_device_allocator_requested && cuda_malloc_async != nullptr && cuda_free_async != nullptr;
+    const std::int64_t async_device_allocator_max_bytes =
+        async_device_allocator_requested
+            ? env_nonnegative_i64_or(
+                  {"NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES",
+                   "NFN_NATIVE_GPT2_CUDA_MALLOC_ASYNC_MAX_BYTES"},
+                  16 * 1024 * 1024)
+            : 0;
     const bool concurrent_arena_materialize_requested_flag =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE",
@@ -14315,17 +14322,26 @@ int run_transformer_lm_training_json(
     std::int64_t device_cuda_malloc_async_count = 0;
     std::int64_t device_cuda_free_async_count = 0;
     std::int64_t device_cuda_malloc_async_fallback_count = 0;
+    std::int64_t device_cuda_malloc_async_threshold_skip_count = 0;
     std::int64_t device_exit_cuda_free_skipped_count = 0;
     std::int64_t runtime_library_dlclose_skipped_count = 0;
     auto device_malloc = [&](void** ptr, std::size_t bytes) -> int {
         if (async_device_allocator_enabled) {
-            const int status = cuda_malloc_async(ptr, bytes, nullptr);
-            if (status == 0) {
-                async_device_ptrs.push_back(*ptr);
-                device_cuda_malloc_async_count += 1;
-                return 0;
+            const std::size_t async_max_bytes =
+                async_device_allocator_max_bytes < 0
+                    ? 0
+                    : static_cast<std::size_t>(async_device_allocator_max_bytes);
+            if (bytes <= async_max_bytes) {
+                const int status = cuda_malloc_async(ptr, bytes, nullptr);
+                if (status == 0) {
+                    async_device_ptrs.push_back(*ptr);
+                    device_cuda_malloc_async_count += 1;
+                    return 0;
+                }
+                device_cuda_malloc_async_fallback_count += 1;
+            } else {
+                device_cuda_malloc_async_threshold_skip_count += 1;
             }
-            device_cuda_malloc_async_fallback_count += 1;
         }
         return cuda_malloc(ptr, bytes);
     };
@@ -24575,11 +24591,17 @@ int run_transformer_lm_training_json(
         << "  \"token_buffer_allocation_strategy\": \"combined-arenas\",\n"
         << "  \"token_device_allocation_strategy\": \"single-device-arena\",\n"
         << "  \"device_allocator_strategy\": \""
-        << (async_device_allocator_enabled ? "cudaMallocAsync-null-stream" : "cudaMalloc") << "\",\n"
+        << (async_device_allocator_enabled
+                ? (async_device_allocator_max_bytes == std::numeric_limits<std::int64_t>::max()
+                       ? "cudaMallocAsync-null-stream"
+                       : "cudaMallocAsync-null-stream-thresholded")
+                : "cudaMalloc") << "\",\n"
         << "  \"device_cuda_malloc_async_requested\": "
         << (async_device_allocator_requested ? "true" : "false") << ",\n"
         << "  \"device_cuda_malloc_async_enabled\": "
         << (async_device_allocator_enabled ? "true" : "false") << ",\n"
+        << "  \"device_cuda_malloc_async_max_bytes\": "
+        << async_device_allocator_max_bytes << ",\n"
         << "  \"device_cuda_malloc_async_symbol_loaded\": "
         << (cuda_malloc_async != nullptr ? "true" : "false") << ",\n"
         << "  \"device_cuda_free_async_symbol_loaded\": "
@@ -24588,6 +24610,8 @@ int run_transformer_lm_training_json(
         << "  \"device_cuda_free_async_count\": " << device_cuda_free_async_count << ",\n"
         << "  \"device_cuda_malloc_async_fallback_count\": "
         << device_cuda_malloc_async_fallback_count << ",\n"
+        << "  \"device_cuda_malloc_async_threshold_skip_count\": "
+        << device_cuda_malloc_async_threshold_skip_count << ",\n"
         << "  \"concurrent_arena_materialize_requested\": "
         << (concurrent_arena_materialize_requested != 0 ? "true" : "false") << ",\n"
         << "  \"concurrent_arena_materialize_enabled\": "
