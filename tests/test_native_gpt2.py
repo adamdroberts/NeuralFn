@@ -3104,6 +3104,12 @@ def test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel() -> None
         {
             "candidate_native_metrics": {
                 "lm_head_classifier_true_fused_launch_count": {"mean": 16.0},
+                "lm_head_true_fused_ce_cycles_per_block": {"mean": 1000.0},
+                "lm_head_true_fused_dhidden_cycles_per_block": {"mean": 2000.0},
+                "lm_head_true_fused_dweight_cycles_per_block": {"mean": 3000.0},
+                "lm_head_true_fused_ce_blocks": {"mean": 16.0},
+                "lm_head_true_fused_dhidden_blocks": {"mean": 32.0},
+                "lm_head_true_fused_dweight_blocks": {"mean": 48.0},
             },
             "candidate_native_metric_values": {
                 "lm_head_classifier_backward_path_class": [
@@ -3124,6 +3130,10 @@ def test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel() -> None
     )
     assert target["required"] is True
     assert target["status"] == "strict-true-fused-slow"
+    assert target["true_fused_ce_cycles_per_block_mean"] == 1000.0
+    assert target["true_fused_dhidden_cycles_per_block_mean"] == 2000.0
+    assert target["true_fused_dweight_cycles_per_block_mean"] == 3000.0
+    assert target["true_fused_ce_blocks_mean"] == 16.0
     assert "failed candidate/reference parity gates" in target["reason"]
 
     gate = module.evaluate_lm_head_true_fused_gate(required=True, target=target)

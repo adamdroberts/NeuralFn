@@ -2725,6 +2725,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `lm_head_true_fused_*_cycles_per_block`. Full-loop candidate profiles now
     expose the same strict-body section split as the focused LM-head benchmark,
     while the slow strict body remains rejected.
+  - 2026-06-28 follow-up: `tools/paired_kernel_speed.py` now promotes those
+    full-loop true-fused section counters into the
+    `native_lm_head_true_fused_target` summary as
+    `true_fused_*_cycles_per_block_mean` and `true_fused_*_blocks_mean`, so
+    same-script reports show the slow strict body's CE/dHidden/dWeight split
+    without opening the raw candidate JSON.
   - 2026-06-28 continuation probe after the CUDA 13.3 reinstall and latest
     validator updates: a one-step, one-sample stage-timed same-script run
     (`/tmp/nfn_sm120_stage_probe_continue_20260628.json`) selected the

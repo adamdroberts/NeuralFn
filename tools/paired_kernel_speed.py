@@ -3977,6 +3977,42 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         metrics,
         "lm_head_classifier_true_fused_launch_count",
     )
+    true_fused_ce_cycles_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_ce_cycles",
+    )
+    true_fused_dhidden_cycles_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dhidden_cycles",
+    )
+    true_fused_dweight_cycles_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dweight_cycles",
+    )
+    true_fused_ce_blocks_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_ce_blocks",
+    )
+    true_fused_dhidden_blocks_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dhidden_blocks",
+    )
+    true_fused_dweight_blocks_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dweight_blocks",
+    )
+    true_fused_ce_cycles_per_block_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_ce_cycles_per_block",
+    )
+    true_fused_dhidden_cycles_per_block_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dhidden_cycles_per_block",
+    )
+    true_fused_dweight_cycles_per_block_mean = _metric_mean(
+        metrics,
+        "lm_head_true_fused_dweight_cycles_per_block",
+    )
     strict_true_fused = (
         true_fused_capability is True
         and path_class == "strict-true-fused-tile-kernel"
@@ -4115,6 +4151,15 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "symbol_available": symbol_available,
         "graph_wrapper_active": graph_wrapper_active,
         "true_fused_launch_mean": true_fused_launch_mean,
+        "true_fused_ce_cycles_mean": true_fused_ce_cycles_mean,
+        "true_fused_dhidden_cycles_mean": true_fused_dhidden_cycles_mean,
+        "true_fused_dweight_cycles_mean": true_fused_dweight_cycles_mean,
+        "true_fused_ce_blocks_mean": true_fused_ce_blocks_mean,
+        "true_fused_dhidden_blocks_mean": true_fused_dhidden_blocks_mean,
+        "true_fused_dweight_blocks_mean": true_fused_dweight_blocks_mean,
+        "true_fused_ce_cycles_per_block_mean": true_fused_ce_cycles_per_block_mean,
+        "true_fused_dhidden_cycles_per_block_mean": true_fused_dhidden_cycles_per_block_mean,
+        "true_fused_dweight_cycles_per_block_mean": true_fused_dweight_cycles_per_block_mean,
         "graph_replay_mean": graph_replay_mean,
         "graph_replay_success_mean": graph_replay_success_mean,
         "graph_replay_success_rate": _safe_ratio(
@@ -4387,6 +4432,12 @@ def print_lm_head_true_fused_target(payload: dict[str, object]) -> None:
     )
     graph_fragments: list[str] = []
     for key in (
+        "true_fused_ce_cycles_per_block_mean",
+        "true_fused_dhidden_cycles_per_block_mean",
+        "true_fused_dweight_cycles_per_block_mean",
+        "true_fused_ce_blocks_mean",
+        "true_fused_dhidden_blocks_mean",
+        "true_fused_dweight_blocks_mean",
         "graph_replay_mean",
         "graph_replay_success_mean",
         "graph_replay_success_rate",
