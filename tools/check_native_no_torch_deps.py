@@ -1137,6 +1137,23 @@ def _write_native_cli_stub(root: Path) -> Path:
     return stub
 
 
+def _write_gpt2_evo_cli_stub(root: Path, dense_cli: Path) -> Path:
+    stub = root / "nfn_gpt2_evo_native_train"
+    stub.write_text(
+        "#!/bin/sh\n"
+        "for arg in \"$@\"; do\n"
+        "  if [ \"$arg\" = \"--print-command\" ]; then\n"
+        f"    printf '%s\\n' '{dense_cli} --backend tile-cuda --train-transformer-lm --template-name gpt2 --tile-cuda-activation-dtype nvfp4 --layer-evo'\n"
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        "printf '%s\\n' \"$@\"\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
 def _write_native_checkpoint_stub(root: Path) -> Path:
     checkpoint = root / "model_00000010.bin"
     max_seq_len = 8
@@ -1229,13 +1246,14 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         temp_root = Path(tmp)
         _write_import_blocker(temp_root)
         native_cli = _write_native_cli_stub(temp_root)
+        gpt2_evo_cli = _write_gpt2_evo_cli_stub(temp_root, native_cli)
         native_checkpoint = _write_native_checkpoint_stub(temp_root)
         _write_latest_native_checkpoint_stub(temp_root)
         native_graph = _write_native_graph_stub(temp_root)
         env = os.environ.copy()
         env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
         env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
-        env["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_cli)
+        env["NFN_NATIVE_GPT2_EVO_CLI"] = str(gpt2_evo_cli)
         env["NFN_NATIVE_NANOGPT_CLI"] = str(native_cli)
         env["NFN_NATIVE_LLAMA_CLI"] = str(native_cli)
         env["NFN_NATIVE_MIXLLAMA_CLI"] = str(native_cli)

@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native no-Torch verifier: the GPT-2-evo family entrypoint check now uses a
+  dedicated `nfn_gpt2_evo_native_train` stub and asserts that command
+  inspection reaches the final dense GPT CUDA Tile delegate with
+  `--train-transformer-lm --layer-evo --tile-cuda-activation-dtype nvfp4`.
+  This keeps the verifier aligned with the compiled family dispatcher instead
+  of accepting a generic argument echo.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints
+  tests/test_native_dependencies.py::test_no_torch_verifier_covers_universal_gpt_native_routes
+  tests/test_native_dependencies.py::test_no_torch_verifier_covers_console_train_fast_path
+  -q`.
+
 - Native training CLI: `nfn_native_train --base-model gpt2-evo --dry-run
   --print-command` now delegates the print-command request into
   `nfn_gpt2_evo_native_train`, so the command shown is the final dense GPT

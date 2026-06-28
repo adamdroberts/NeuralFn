@@ -224,6 +224,10 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--native-cuda-activation moa" in entrypoints["train_gpt2_compat_template_name_command"]["stdout"]
     assert entrypoints["train_gpt2_compat_custom_graph_command"]["passed"] is True
     assert "--graph-file" in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
+    assert entrypoints["nfn_train_gpt2_evo_family_command"]["passed"] is True
+    assert "--train-transformer-lm" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
+    assert "--layer-evo" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
+    assert "--tile-cuda-activation-dtype nvfp4" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
     shell_entrypoints = {entry["name"]: entry for entry in payload["shell_entrypoints"]}
     assert shell_entrypoints["train_gpt_sm120_dry_run"]["passed"] is True
     assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
