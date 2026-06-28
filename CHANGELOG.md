@@ -7,11 +7,13 @@
   beside the existing LM-head fused path-class ABI. Dense GPT plan/runtime JSON
   now reports
   `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, paired
-  kernel speed summaries preserve that field, and the optimized-kernel contract
-  rejects launches of the current `scalar-cooperative-tile-diagnostic`
-  true-fused body so it cannot be mistaken for a production optimized Tile
-  kernel. The diagnostic CUDA Graph wrapper remains the current promoted
-  route; strict true-fused LM-head parity is still an open kernel task.
+  kernel speed summaries preserve that field, the focused LM-head benchmark
+  mirrors it as `candidate_symbol_abi_implementation_class`, and the
+  optimized-kernel contract rejects launches of the current
+  `scalar-cooperative-tile-diagnostic` true-fused body so it cannot be mistaken
+  for a production optimized Tile kernel. The diagnostic CUDA Graph wrapper
+  remains the current promoted route; strict true-fused LM-head parity is still
+  an open kernel task.
   Verification: `bash tools/build_native_train_tile_ops.sh`,
   `bash tools/build_native_gpt2_all.sh`,
   `nm -D build/libnfn_native_train_tile_ops.so | rg
@@ -25,7 +27,14 @@
   tools/check_native_no_torch_deps.py --rebuild-stale --json`; the full
   `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py -q` module also passed with `113 passed, 2
-  skipped`.
+  skipped`. The focused benchmark mirror was additionally verified with
+  `bash tools/build_lm_head_backward_bench.sh` and an unsandboxed tiny
+  `build/lm_head_backward_bench --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so --rows 1 --hidden-dim 4 --vocab 16
+  --row-stride 16 --iterations 1 --warmup 0` smoke, which reported both
+  `candidate_symbol_abi_path_class` and
+  `candidate_symbol_abi_implementation_class` as
+  `diagnostic-cuda-graph-wrapper`.
 
 - Native GPT SDK: corrected the unified native model registry so dense GPT
   selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`) all report

@@ -717,7 +717,10 @@ route proof on each baseline/candidate variant as
 `graph_body_tile_dweight_fallback_count`. Use these fields with
 `graph_replay_success_count` and `graph_fallback_count` when deciding whether a
 candidate measured the optimized Tile classifier body or a diagnostic cuBLASLt
-or fallback path. The focused `trainer-chunk` wrapper profile sets
+or fallback path. Focused benchmark JSON also reports the loaded fused-symbol
+ABI metadata as `candidate_symbol_abi_path_class` and
+`candidate_symbol_abi_implementation_class`. The focused `trainer-chunk`
+wrapper profile sets
 `NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE=1` by default, so it rejects a
 candidate that misses graph replay, falls back out of the graph, uses cuBLASLt
 for the graph body, or fails to increment both Tile dHidden/dWeight graph-body
@@ -1193,7 +1196,8 @@ mid-run. The same Tile ops ABI exports
 runtime JSON mirrors it as
 `lm_head_cooperative_backward_fused_kernel_abi_implementation_class` so SDK and
 CLI callers can distinguish diagnostic CUDA Graph wrappers from the
-`scalar-cooperative-tile-diagnostic` body.
+`scalar-cooperative-tile-diagnostic` body. The focused LM-head benchmark mirrors
+the same value as `candidate_symbol_abi_implementation_class`.
 For SDK launches through `NativeGpt2RunConfig` or the generic
 `NativeGptRunConfig`, `batch_size_explicit`, `seq_len_explicit`, and
 `num_layers_explicit` control whether the compiled CLI receives those shape

@@ -1976,10 +1976,13 @@ The Tile ops ABI also exports
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()`, which
 returns `diagnostic-cuda-graph-wrapper` for current builds. Native GPT runtime
 JSON reports that value as
-`lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
-LM-head benchmark reports it as `candidate_symbol_abi_path_class` so strict
-candidate gates can compare ABI-declared route class against counter-inferred
-route class.
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`. The companion
+implementation-class ABI is mirrored as
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class`. The
+focused LM-head benchmark reports the same ABI metadata as
+`candidate_symbol_abi_path_class` and
+`candidate_symbol_abi_implementation_class` so strict candidate gates can
+compare ABI-declared route class against counter-inferred route class.
 True-fused cooperative smoke runs also expose
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()` through the Tile
 ops ABI, and `tools/bench_lm_head_backward_candidate.sh` includes

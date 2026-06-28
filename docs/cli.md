@@ -1283,8 +1283,9 @@ ABI reports `diagnostic-cuda-graph-wrapper`,
 `diagnostic-cuda-graph-wrapper-serial-body`, or
 `scalar-cooperative-tile-diagnostic`; runtime JSON mirrors it as
 `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, and the
-focused LM-head backward benchmark reports the path class as
-`candidate_symbol_abi_path_class`.
+focused LM-head backward benchmark reports the path and implementation classes
+as `candidate_symbol_abi_path_class` and
+`candidate_symbol_abi_implementation_class`.
 Strict true-fused cooperative smoke profiles additionally report
 `true_fused_launch_count` for each focused LM-head benchmark variant. The field
 comes from

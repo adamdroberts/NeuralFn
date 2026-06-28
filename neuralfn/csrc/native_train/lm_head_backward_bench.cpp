@@ -716,6 +716,7 @@ std::string render_json(
     bool true_fused_candidate_production_shape,
     bool true_fused_allow_production_env,
     std::string_view candidate_symbol_abi_path_class,
+    std::string_view candidate_symbol_abi_implementation_class,
     const VariantResult& baseline,
     const VariantResult& candidate,
     const ComponentResult& reference_components,
@@ -919,6 +920,8 @@ std::string render_json(
         << (true_fused_production_ready ? "true" : "false") << ",\n"
         << "  \"candidate_symbol_abi_path_class\": \""
         << json_escape(candidate_symbol_abi_path_class) << "\",\n"
+        << "  \"candidate_symbol_abi_implementation_class\": \""
+        << json_escape(candidate_symbol_abi_implementation_class) << "\",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
         << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
@@ -1007,6 +1010,10 @@ int main(int argc, char** argv) {
             load_symbol<IntFn>(handle, "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused");
         auto fused_kernel_path_class =
             load_symbol<StringFn>(handle, "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class");
+        auto fused_kernel_implementation_class =
+            load_symbol<StringFn>(
+                handle,
+                "nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class");
         auto reset_stats = load_symbol<VoidFn>(handle, "nfn_native_tile_lm_head_classifier_stats_reset");
         auto launch_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_launch_count");
@@ -1208,6 +1215,9 @@ int main(int argc, char** argv) {
                 true_fused_production_shape(options),
                 true_fused_allow_production_env_enabled(),
                 fused_kernel_path_class() != nullptr ? fused_kernel_path_class() : "missing",
+                fused_kernel_implementation_class() != nullptr
+                    ? fused_kernel_implementation_class()
+                    : "missing",
                 baseline,
                 candidate,
                 reference_components,
