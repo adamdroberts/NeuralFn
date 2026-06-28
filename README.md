@@ -115,6 +115,14 @@ same JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
+Direct compiled native GPT binaries now accept the same symbolic CUDA device
+selectors as the benchmark wrappers. Set `CUDA_VISIBLE_DEVICES=dedicated`,
+`auto`, or `dedicated-auto` before launching `build/nfn_gpt_native_train_linked`
+or `build/nfn_gpt_native_train`; the binary resolves the selector through
+`nvidia-smi` before any CUDA runtime calls. `dedicated` selects an idle
+display-disabled NVIDIA GPU, while `auto` falls back to the first parseable GPU
+if no display-disabled candidate is found. Numeric masks such as
+`CUDA_VISIBLE_DEVICES=0` are passed through unchanged.
 The paired benchmark also reports `startup_plus_first_step_wall_ms`,
 `startup_plus_steady_state_step_wall_ms`, and
 `startup_plus_train_loop_wall_ms` for native runs with setup timing. Use those

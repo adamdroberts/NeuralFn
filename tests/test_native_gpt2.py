@@ -9272,6 +9272,7 @@ def test_packed_attention_ln1_recompute_uses_stats_only_tile_abi() -> None:
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     gpt2_source = root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    nanogpt_source = root / "neuralfn" / "csrc" / "native_train" / "nanogpt_native_train.cpp"
     token_shards_header = root / "neuralfn" / "csrc" / "native_train" / "token_shards.h"
     token_shards_source = root / "neuralfn" / "csrc" / "native_train" / "token_shards.cpp"
     header = root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h"
@@ -9282,6 +9283,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     candidate_bench = root / "tools" / "bench_native_gpt_sm120_candidate.sh"
     speed_tool = root / "tools" / "paired_kernel_speed.py"
     gpt2_source_text = gpt2_source.read_text()
+    nanogpt_source_text = nanogpt_source.read_text()
     gpt2_evo_source_text = gpt2_evo_source.read_text()
     token_shards_header_text = token_shards_header.read_text()
     token_shards_source_text = token_shards_source.read_text()
@@ -9304,6 +9306,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cudaHostAlloc" in gpt2_source_text
     assert "cudaFreeHost" in gpt2_source_text
     assert "copy_async" in gpt2_source_text
+    assert "resolve_symbolic_cuda_visible_devices()" in gpt2_source_text
+    assert "resolve_symbolic_cuda_visible_devices()" in nanogpt_source_text
+    assert "requested == \"dedicated\"" in gpt2_source_text
+    assert "requested == \"auto\" || requested == \"dedicated-auto\"" in gpt2_source_text
+    assert "nvidia-smi --query-gpu=index,display_active,utilization.gpu" in gpt2_source_text
+    assert gpt2_source_text.index("resolve_symbolic_cuda_visible_devices();") < gpt2_source_text.index(
+        'setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0")'
+    )
     assert "print_invocation_command(argc, argv)" in gpt2_source_text
     tile_print_command_guard = 'if (cfg.backend == "tile-cuda" && cfg.print_command)'
     assert tile_print_command_guard in gpt2_source_text

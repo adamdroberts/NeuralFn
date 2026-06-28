@@ -58,6 +58,14 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+Direct compiled native GPT binaries resolve symbolic CUDA device selectors
+before they load CUDA. Set `CUDA_VISIBLE_DEVICES=dedicated`, `auto`, or
+`dedicated-auto` when invoking `build/nfn_gpt_native_train_linked`,
+`build/nfn_gpt_native_train`, or the NanoGPT native smoke binary directly.
+The resolver queries `nvidia-smi`; `dedicated` selects an idle display-disabled
+NVIDIA GPU, `auto` can fall back to the first parseable GPU, and numeric masks
+continue to pass through unchanged.
+
 The raw ABI includes an opt-in dense GPT token-weight startup route,
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
 which initializes the public vocabulary rows and zeroes the padded vocabulary

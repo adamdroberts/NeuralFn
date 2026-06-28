@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: direct compiled GPT binaries now resolve
+  `CUDA_VISIBLE_DEVICES=dedicated`, `auto`, and `dedicated-auto` before any CUDA
+  runtime calls, matching the wrapper scripts and paired benchmark selector.
+  `dedicated` chooses an idle display-disabled NVIDIA GPU from `nvidia-smi`,
+  `auto` can fall back to the first parseable GPU, and explicit numeric masks
+  still pass through unchanged. This fixes direct invocations that previously
+  passed the literal string `dedicated` into CUDA and failed with
+  `CUDA error 100: no CUDA-capable device is detected`. Verification: the
+  pre-fix direct smoke failed with `CUDA_VISIBLE_DEVICES=dedicated`; after the
+  change, rebuilt `build/nfn_gpt_native_train_linked`,
+  `build/nfn_gpt_native_train`, `build/nfn_gpt2_native_train`, and the missing
+  native helper binaries, then ran symbolic-selector smokes for the linked GPT
+  trainer, the GPT-2 compatibility trainer, and the NanoGPT helper
+  (`build/nfn_nanogpt_native_train --smoke-tile-ops`). The no-Torch guard
+  passed with no stale artifacts.
+
 - Bench: refreshed the current-default no-stage llm.kittens parity gate on the
   dedicated RTX 5090 after the launcher selector change. The 3-step, 2-sample
   run passed the configured parity thresholds, but still measured NeuralFn at

@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,78 @@ bool env_is_empty(const char* name) {
 void setenv_default_if_empty(const char* name, const char* value) {
     if (value != nullptr && value[0] != '\0' && env_is_empty(name)) {
         setenv(name, value, 1);
+    }
+}
+
+std::string trim_copy(std::string value) {
+    auto is_space = [](unsigned char ch) { return std::isspace(ch) != 0; };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [&](unsigned char ch) {
+        return !is_space(ch);
+    }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [&](unsigned char ch) {
+        return !is_space(ch);
+    }).base(), value.end());
+    return value;
+}
+
+std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> parts;
+    std::stringstream stream(line);
+    std::string part;
+    while (std::getline(stream, part, ',')) {
+        parts.push_back(trim_copy(part));
+    }
+    return parts;
+}
+
+void resolve_symbolic_cuda_visible_devices() {
+    const char* raw_value = std::getenv("CUDA_VISIBLE_DEVICES");
+    if (raw_value == nullptr || raw_value[0] == '\0') {
+        return;
+    }
+    std::string requested(raw_value);
+    std::transform(requested.begin(), requested.end(), requested.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    const bool dedicated = requested == "dedicated";
+    const bool auto_select = requested == "auto" || requested == "dedicated-auto";
+    if (!dedicated && !auto_select) {
+        return;
+    }
+
+    FILE* pipe = popen(
+        "nvidia-smi --query-gpu=index,display_active,utilization.gpu "
+        "--format=csv,noheader,nounits 2>/dev/null",
+        "r");
+    if (pipe == nullptr) {
+        return;
+    }
+
+    char buffer[512];
+    std::string first_parseable_index;
+    std::string selected_index;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        const std::vector<std::string> fields = split_csv_line(buffer);
+        if (fields.empty() || fields[0].empty()) {
+            continue;
+        }
+        if (first_parseable_index.empty()) {
+            first_parseable_index = fields[0];
+        }
+        const std::string display = fields.size() > 1 ? fields[1] : "";
+        const int utilization = fields.size() > 2 ? std::atoi(fields[2].c_str()) : 100;
+        if (display == "Disabled" && utilization <= 25) {
+            selected_index = fields[0];
+            break;
+        }
+    }
+    pclose(pipe);
+
+    if (selected_index.empty() && auto_select) {
+        selected_index = first_parseable_index;
+    }
+    if (!selected_index.empty()) {
+        setenv("CUDA_VISIBLE_DEVICES", selected_index.c_str(), 1);
     }
 }
 
@@ -26100,6 +26173,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    resolve_symbolic_cuda_visible_devices();
     setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
     setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
     setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
