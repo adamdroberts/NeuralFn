@@ -991,6 +991,9 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "RTLD_LAZY | RTLD_LOCAL" in source
     assert "NFN_NATIVE_GPT_LINKED_TILE_OPS_SYMBOL_SCAN" in source
     assert "tile_ops_required_symbol_scan_skipped" in source
+    assert "NFN_NATIVE_GPT_STARTUP_STATS_RESET" in source
+    assert "startup_stats_reset_skipped" in source
+    assert "startup_stats_reset_count" in source
     assert "tile_ops_dlopen_wall_ms" in source
     assert "tile_ops_required_symbol_scan_wall_ms" in source
     assert "tile_ops_typed_symbol_load_wall_ms" in source

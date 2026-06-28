@@ -16,6 +16,21 @@ Future updates should append new entries here rather than replacing older notes.
   scan for diagnostics. `tools/paired_kernel_speed.py` now treats the skipped
   flag as a startup strategy value so same-script candidate runs expose the
   route change.
+  Fresh native trainer processes also skip the initial Tile stats reset by
+  default, because the host atomics and true-fused LM-head device counters
+  already start at their initial values and LM-head graph prewarm still resets
+  LM-head counters before training. Runtime JSON reports
+  `startup_stats_reset_skipped` and `startup_stats_reset_count`; set
+  `NFN_NATIVE_GPT_STARTUP_STATS_RESET=1` to restore the reset path for
+  diagnostics or reused-process experiments. Verification on the dedicated RTX
+  5090 rebuilt `build/nfn_gpt_native_train_linked` and compared startup-only
+  probes: the default path reported `startup_stats_reset_skipped=true`,
+  `startup_stats_reset_count=0`, `setup.load_tile_ops=0.081122 ms`, and
+  `setup.startup_stats_reset=0.000020 ms`; the opt-in reset path reported
+  `startup_stats_reset_skipped=false`, `startup_stats_reset_count=3`, and
+  `setup.startup_stats_reset=182.605 ms`. The remaining startup wall time is
+  now dominated by `setup.float_arena_materialize`, `setup.token_weight_init`,
+  and `setup.uint16_arena_materialize`.
 
 - SM120 benchmark tooling: `tools/paired_kernel_speed.py` now adds
   `native_hot_stage_ratios.top_leaf_candidate_total_ms` and prints a matching

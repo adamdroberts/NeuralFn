@@ -12055,6 +12055,13 @@ int run_transformer_lm_training_json(
             false);
     const bool tile_ops_required_symbol_scan_skipped =
         linked_tile_ops_requested && !linked_tile_ops_symbol_scan_requested;
+    const bool startup_stats_reset_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_STARTUP_STATS_RESET",
+                              "NFN_NATIVE_GPT2_STARTUP_STATS_RESET"}),
+            false);
+    bool startup_stats_reset_skipped = !startup_stats_reset_requested;
+    std::int64_t startup_stats_reset_count = 0;
     double tile_ops_dlopen_wall_ms = 0.0;
     double tile_ops_required_symbol_scan_wall_ms = 0.0;
     double tile_ops_typed_symbol_load_wall_ms = 0.0;
@@ -12610,9 +12617,6 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count");
                 optimizer_tile_size_fn = load_symbol<TileOptimizerTileSizeFn>(
                     tile_handle, "nfn_native_tile_optimizer_tile_size");
-                attention_stats_reset();
-                trainer_linear_stats_reset();
-                lm_head_classifier_stats_reset();
                 if (linear_cublaslt_grouped_layout_probe_requested &&
                     trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr) {
                     linear_cublaslt_grouped_layout_probe_status =
@@ -12837,6 +12841,24 @@ int run_transformer_lm_training_json(
                     elapsed_ms(typed_symbol_load_start, Clock::now());
                 }
             }
+        }
+    });
+    run_setup_timed("setup.startup_stats_reset", [&]() {
+        if (!startup_stats_reset_requested || !error.empty()) {
+            return;
+        }
+        startup_stats_reset_skipped = false;
+        if (attention_stats_reset != nullptr) {
+            attention_stats_reset();
+            startup_stats_reset_count += 1;
+        }
+        if (trainer_linear_stats_reset != nullptr) {
+            trainer_linear_stats_reset();
+            startup_stats_reset_count += 1;
+        }
+        if (lm_head_classifier_stats_reset != nullptr) {
+            lm_head_classifier_stats_reset();
+            startup_stats_reset_count += 1;
         }
     });
 
@@ -23057,6 +23079,10 @@ int run_transformer_lm_training_json(
         << tile_ops_required_symbol_scan_wall_ms << ",\n"
         << "  \"tile_ops_typed_symbol_load_wall_ms\": "
         << tile_ops_typed_symbol_load_wall_ms << ",\n"
+        << "  \"startup_stats_reset_skipped\": "
+        << (startup_stats_reset_skipped ? "true" : "false") << ",\n"
+        << "  \"startup_stats_reset_count\": "
+        << startup_stats_reset_count << ",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_runtime_symbol_load_wall_ms\": "
         << cuda_runtime_symbol_load_wall_ms << ",\n"

@@ -792,6 +792,10 @@ NATIVE_METRIC_PATHS = (
         ("token_weight_bf16_padding_memset_count",),
     ),
     (
+        "startup_stats_reset_count",
+        ("startup_stats_reset_count",),
+    ),
+    (
         "token_weight_bf16_fused_adamw_refresh_count",
         ("token_weight_bf16_fused_adamw_refresh_count",),
     ),
@@ -1006,6 +1010,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "tile_ops_library",
     "tile_ops_dlopen_binding_strategy",
     "tile_ops_required_symbol_scan_skipped",
+    "startup_stats_reset_skipped",
     "train_loss_device_accumulation_strategy",
     "train_loss_host_copy_scope",
     "lm_head_training_logits_dtype",

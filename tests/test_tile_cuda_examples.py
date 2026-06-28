@@ -4901,6 +4901,8 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "\\\"tile_ops_library\\\": \\\"build/libnfn_native_train_tile_ops.so\\\", "
         "\\\"tile_ops_dlopen_binding_strategy\\\": \\\"RTLD_LAZY\\\", "
         "\\\"tile_ops_required_symbol_scan_skipped\\\": false, "
+        "\\\"startup_stats_reset_skipped\\\": false, "
+        "\\\"startup_stats_reset_count\\\": 3, "
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\", "
         "\\\"device_cuda_malloc_async_requested\\\": false, "
         "\\\"device_cuda_malloc_async_enabled\\\": false, "
@@ -4923,6 +4925,12 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     ).replace(
         "\\\"tile_ops_required_symbol_scan_skipped\\\": false",
         "\\\"tile_ops_required_symbol_scan_skipped\\\": true",
+    ).replace(
+        "\\\"startup_stats_reset_skipped\\\": false",
+        "\\\"startup_stats_reset_skipped\\\": true",
+    ).replace(
+        "\\\"startup_stats_reset_count\\\": 3",
+        "\\\"startup_stats_reset_count\\\": 0",
     ).replace(
         "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\"",
         "\\\"device_allocator_strategy\\\": \\\"cudaMallocAsync-null-stream\\\"",
@@ -4974,6 +4982,9 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     assert payload["candidate_native_metric_values"]["tile_ops_required_symbol_scan_skipped"] == [
         "true"
     ]
+    assert payload["candidate_native_metric_values"]["startup_stats_reset_skipped"] == [
+        "true"
+    ]
     assert payload["baseline_native_metric_values"]["device_allocator_strategy"] == [
         "cudaMalloc"
     ]
@@ -4990,6 +5001,7 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "1"
     ]
     assert payload["candidate_native_metrics"]["token_weight_bf16_padding_memset_count"]["mean"] == 1.0
+    assert payload["candidate_native_metrics"]["startup_stats_reset_count"]["mean"] == 0.0
     strategy_changes = payload["native_strategy_value_changes"]
     assert strategy_changes["changed"]["tile_ops_library"] == {
         "baseline_values": ["build/libnfn_native_train_tile_ops.so"],
@@ -5003,9 +5015,14 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "baseline_values": ["false"],
         "candidate_values": ["true"],
     }
+    assert strategy_changes["changed"]["startup_stats_reset_skipped"] == {
+        "baseline_values": ["false"],
+        "candidate_values": ["true"],
+    }
     assert "tile_ops_library: linked" in proc.stdout
     assert "tile_ops_dlopen_binding_strategy: RTLD_DEFAULT-linked" in proc.stdout
     assert "tile_ops_required_symbol_scan_skipped: true" in proc.stdout
+    assert "startup_stats_reset_skipped: true" in proc.stdout
     assert "device_allocator_strategy: cudaMallocAsync-null-stream" in proc.stdout
     assert (
         "token_weight_init_strategy: "
