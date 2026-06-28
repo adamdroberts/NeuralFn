@@ -1915,53 +1915,66 @@ bool env_flag_enabled(const char* name) {
 }
 
 bool lm_head_graph_body_serial_enabled() {
-    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL") ||
-           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL") ||
-           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_SERIAL");
+    static const bool enabled =
+        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL") ||
+        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL") ||
+        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_SERIAL");
+    return enabled;
 }
 
 bool lm_head_graph_upload_enabled() {
-    const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_UPLOAD");
-    const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD");
-    const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_UPLOAD");
-    const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
-    if (value == nullptr) {
-        return true;
-    }
-    std::string_view text(value);
-    return !(text == "0" || text == "false" || text == "FALSE" ||
-             text == "no" || text == "NO" || text == "off" || text == "OFF");
+    static const bool enabled = []() {
+        const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_UPLOAD");
+        const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD");
+        const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_UPLOAD");
+        const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
+        if (value == nullptr) {
+            return true;
+        }
+        std::string_view text(value);
+        return !(text == "0" || text == "false" || text == "FALSE" ||
+                 text == "no" || text == "NO" || text == "off" || text == "OFF");
+    }();
+    return enabled;
 }
 
 bool lm_head_graph_prewarm_thread_cache_enabled() {
-    const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
-    const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
-    const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
-    const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
-    if (value == nullptr) {
-        return false;
-    }
-    std::string_view text(value);
-    return !(text == "0" || text == "false" || text == "FALSE" ||
-             text == "no" || text == "NO" || text == "off" || text == "OFF");
+    static const bool enabled = []() {
+        const char* tile_value = std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+        const char* gpt_value = std::getenv("NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+        const char* gpt2_value = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE");
+        const char* value = tile_value != nullptr ? tile_value : (gpt_value != nullptr ? gpt_value : gpt2_value);
+        if (value == nullptr) {
+            return false;
+        }
+        std::string_view text(value);
+        return !(text == "0" || text == "false" || text == "FALSE" ||
+                 text == "no" || text == "NO" || text == "off" || text == "OFF");
+    }();
+    return enabled;
 }
 
 bool lm_head_graph_body_cublaslt_enabled() {
-    return env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
-           env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
-           env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT");
+    static const bool enabled =
+        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
+        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT") ||
+        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_GRAPH_BODY_CUBLASLT");
+    return enabled;
 }
 
 bool lm_head_true_fused_cooperative_enabled() {
-    const bool requested =
-        env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
-        env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
-        env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE");
-    if (!requested) {
-        return false;
-    }
-    return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() ==
-           neuralfn::tile_cuda::lm_head_true_fused_required_threads();
+    static const bool enabled = []() {
+        const bool requested =
+            env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+            env_flag_enabled("NFN_NATIVE_GPT_LM_HEAD_TRUE_FUSED_COOPERATIVE") ||
+            env_flag_enabled("NFN_NATIVE_GPT2_LM_HEAD_TRUE_FUSED_COOPERATIVE");
+        if (!requested) {
+            return false;
+        }
+        return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() ==
+               neuralfn::tile_cuda::lm_head_true_fused_required_threads();
+    }();
+    return enabled;
 }
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};

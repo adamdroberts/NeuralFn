@@ -2091,6 +2091,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
+    assert "static const bool enabled = []() {" in tile_ops_source
+    assert 'std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_UPLOAD")' in tile_ops_source
+    assert 'std::getenv("NFN_TILE_CUDA_LM_HEAD_GRAPH_PREWARM_THREAD_CACHE")' in tile_ops_source
+    assert "bool lm_head_true_fused_cooperative_enabled()" in tile_ops_source
+    true_fused_gate = tile_ops_source.split("bool lm_head_true_fused_cooperative_enabled()", 1)[1].split(
+        "std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count", 1
+    )[0]
+    assert "static const bool enabled = []() {" in true_fused_gate
+    assert 'env_flag_enabled("NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE")' in true_fused_gate
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
@@ -2295,9 +2304,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     ) in tile_ops_source
     assert (
         "return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row() ==\n"
-        "           neuralfn::tile_cuda::lm_head_true_fused_required_threads();"
-        in tile_ops_source
+        "               neuralfn::tile_cuda::lm_head_true_fused_required_threads();"
+        in true_fused_gate
     )
+    assert "return enabled;" in true_fused_gate
     assert "nfn_native_tile_lm_head_true_fused_mat_tile" in tile_ops_header
     assert "nfn_native_tile_lm_head_true_fused_required_threads" in tile_ops_header
     assert "nfn_native_tile_lm_head_true_fused_mat_tile" in source

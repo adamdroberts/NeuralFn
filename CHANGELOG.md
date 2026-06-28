@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native Tile-CUDA: cached the LM-head graph/true-fused diagnostic environment
+  gates inside `libnfn_native_train_tile_ops.so`. The graph upload, graph
+  prewarm thread-cache, graph-body serial/cuBLASLt, and true-fused cooperative
+  checks now follow the rest of the Tile-CUDA kernel toggles by sampling the
+  environment once per process instead of re-reading it on every LM-head
+  classifier backward call. Set those flags before launching native training.
+
+  Verification: `bash tools/build_native_train_tile_ops.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  tests/test_native_gpt2.py::test_native_gpt_transformer_lm_supports_linked_tile_ops_loader
+  -q`; `build/nfn_gpt_native_train_linked --smoke-tile-ops --tile-ops-lib
+  linked`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/paired_kernel_speed.py ... --samples 3 --json-out
+  /tmp/nfn_sm120_cached_lm_head_env_gates_3sample.json`, comparing the
+  previous Tile ops library from commit `1be47c55` against the rebuilt
+  candidate. The paired run reported no route-counter changes, passed the
+  native no-graph-editor/no-Torch runtime contract, and measured total wall
+  `0.999879x`, steady-state CUDA-event step time `0.999758x`, train-loop wall
+  `1.000365x`, and tokens/sec `0.999636x`.
+
 - Bench workflow: added `tk_qkv_forward_prewarm_49152` as an explicit rejected
   SM120 candidate profile. The middle-ground QKV prewarm cap improves startup
   versus the full 65536-row default, but the same-script training probe still

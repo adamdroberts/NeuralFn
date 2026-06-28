@@ -1124,6 +1124,11 @@ default Tile launchers. The named wrapper profile is
 rejected after the CUDA 13.3 dedicated RTX 5090 rerun because it regressed
 train-loop wall to `1.079498x`, steady-state CUDA-event wall to `1.083841x`,
 LM-head backward to `1.344089x`, and LM-head cooperative time to `1.495431x`.
+LM-head Tile ops graph and true-fused diagnostic flags are sampled once per
+process after loading the Tile ops library, so set graph upload, prewarm thread
+cache, serial graph body, cuBLASLt graph body, and true-fused cooperative flags
+before launching native training rather than mutating the process environment
+mid-run.
 For SDK launches through `NativeGpt2RunConfig` or the generic
 `NativeGptRunConfig`, `batch_size_explicit`, `seq_len_explicit`, and
 `num_layers_explicit` control whether the compiled CLI receives those shape
