@@ -8580,6 +8580,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert build_missing.returncode == 0, build_missing.stderr
+    dense_gpt = tmp_path / "nfn_gpt_native_train_real"
+    build_dense_gpt = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_gpt_cli.sh"), str(dense_gpt)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build_dense_gpt.returncode == 0, build_dense_gpt.stderr
     gpt2_evo = tmp_path / "nfn_gpt2_evo_native_train"
     assert gpt2_evo.exists()
     nanogpt = tmp_path / "nfn_nanogpt_native_train"
@@ -8597,6 +8607,32 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
     fake_gpt.chmod(0o755)
+
+    dense_required_nvfp4 = subprocess.run(
+        [
+            str(dense_gpt),
+            "--print-plan",
+            "--train-transformer-lm",
+            "--require-native-nvfp4-activation-packing",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert dense_required_nvfp4.returncode == 2, dense_required_nvfp4.stderr
+    dense_required_nvfp4_plan = json.loads(dense_required_nvfp4.stdout)
+    assert dense_required_nvfp4_plan["tile_cuda"]["native_activation_packing_required"] is True
+    assert (
+        dense_required_nvfp4_plan["tile_cuda"]["activation_dtype_status"]
+        == "required-nvfp4-native-packing-missing"
+    )
+    assert dense_required_nvfp4_plan["tile_cuda"]["native_activation_packing_next_required_kernels"] == [
+        "packed-nvfp4-activation-arena",
+        "projection-fp4-gemm-forward-backward",
+        "attention-qkv-fp4-gemm-forward-backward",
+        "lm-head-fp4-gemm-forward-backward",
+    ]
 
     unified_evo_delegate = subprocess.run(
         [
