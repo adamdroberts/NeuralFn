@@ -1175,7 +1175,8 @@ train-loss logging comparison. The same-script 3-step, 2-sample gate forces
 `1.018809x` train tokens/sec, `0.927229x` LM-head backward, `0.999905x`
 block backward, and `0.995141x` MLP projection backward versus the older
 row-loss tail. The wrapper records that evidence in `candidate_note` metadata
-for the promoted profile.
+for older benchmark JSON; current dry-run plans expose it as the profile's
+accepted default-vs-legacy reason.
 The native GPT trainer now enables TK forward-QKV first-use prewarm by default.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` is the
 default-vs-legacy proof: the baseline sets

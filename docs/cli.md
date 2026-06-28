@@ -1986,8 +1986,8 @@ older row-loss path. The candidate side expands to
 The 2026-06-24 CUDA 13.3 RTX 5090 rerun measured `0.981781x` train-loop wall,
 `0.977802x` steady-state CUDA-event timing, `1.018709x` train tokens/sec,
 `0.909450x` LM-head backward, and `0.541560x` LM-head CE with loss-bin
-launches moving `0 -> 48`; the wrapper records this in `candidate_note`
-metadata for the promoted profile. Set
+launches moving `0 -> 48`; current dry-run plans expose this through the
+accepted default-vs-legacy profile reason. Set
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
 When `--native-stage-timing` is used through the paired speed tool or the SM120

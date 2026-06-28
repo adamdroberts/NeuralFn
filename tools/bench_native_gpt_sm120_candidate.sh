@@ -349,7 +349,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
     ;;
   "linear_bias_threads_512"|"linear-bias-threads-512"|"bgrad_threads_512"|"bgrad-threads-512")
-    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 corrected-lib 3-step, 2-sample stage-timed rerun changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and kept 512 as the default after measuring train_loop_wall_ms_per_step=0.992990x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.998950x, train_tokens_per_second=1.007496x, stage.block_backward.total_ms=0.989262x, stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x, and stage.block_backward.mlp_proj.dweight_bias.total_ms=0.984430x."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 corrected-lib 3-step, 2-sample stage-timed rerun changed block_state_layout.linear_backward_bias_threads_per_block from 256 to 512 and kept 512 as the default after measuring train_loop_wall_ms_per_step=0.992990x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.998950x, train_tokens_per_second=1.007496x, stage.block_backward.total_ms=0.989262x, stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x, and stage.block_backward.mlp_proj.dweight_bias.total_ms=0.984430x."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=512"
@@ -543,7 +544,8 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
     ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
-    CANDIDATE_NOTE="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun keeps the loss-bin train-loss logging route as the default because it moved lm_head_classifier_loss_bin_launch_count from 0 to 48, improved train_loop_wall_ms_per_step to 0.981541x, steady-state CUDA-event step time to 0.982697x, train_tokens_per_second to 1.018809x, stage.lm_head_backward.total_ms to 0.927229x, stage.block_backward.total_ms to 0.999905x, and stage.block_backward.mlp_proj.total_ms to 0.995141x versus the older row-loss tail."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun keeps the loss-bin train-loss logging route as the default because it moved lm_head_classifier_loss_bin_launch_count from 0 to 48, improved train_loop_wall_ms_per_step to 0.981541x, steady-state CUDA-event step time to 0.982697x, train_tokens_per_second to 1.018809x, stage.lm_head_backward.total_ms to 0.927229x, stage.block_backward.total_ms to 0.999905x, and stage.block_backward.mlp_proj.total_ms to 0.995141x versus the older row-loss tail."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1"
@@ -655,7 +657,8 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "bf16_attention_grad_out"|"bf16-attention-grad-out"|"attention_bf16_grad_out"|"attention-bf16-grad-out")
     DEFAULT_VS_LEGACY_PROFILE=1
-    CANDIDATE_NOTE="Compares the promoted default BF16 attention grad-out handoff against the legacy direct float32 scratch route. CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample promotion gate measured the promoted route at 0.999028x current NeuralFn train-loop wall, 1.000975x current NeuralFn tokens/sec, 0.998462x llm.kittens reference train-loop wall, and 1.001921x llm.kittens reference tokens/sec."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="Compares the promoted default BF16 attention grad-out handoff against the legacy direct float32 scratch route. CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample promotion gate measured the promoted route at 0.999028x current NeuralFn train-loop wall, 1.000975x current NeuralFn tokens/sec, 0.998462x llm.kittens reference train-loop wall, and 1.001921x llm.kittens reference tokens/sec."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000}"
@@ -1091,7 +1094,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 startup_plus_first_step_wall_ms=1.000 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
     ;;
   "lm_head_graph_prewarm_dedup"|"lm-head-graph-prewarm-dedup"|"lm_head_graph_dedup"|"lm-head-graph-dedup")
-    CANDIDATE_NOTE="Compares the legacy LM-head graph-prewarm loop against the default pointer-aware dedup key path. Equal-sized row chunks with different buffers are intentionally distinct keys, so this profile checks deterministic prewarm work rather than setup timing or route-change gates."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="Compares the legacy LM-head graph-prewarm loop against the default pointer-aware dedup key path. Equal-sized row chunks with different buffers are intentionally distinct keys, so this profile checks deterministic prewarm work rather than setup timing or route-change gates."
     DEFAULT_VS_LEGACY_PROFILE=1
     FORCE_DISABLE_ROUTE_CHANGE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0"

@@ -1457,7 +1457,7 @@ part of the promoted 128-row LayerNorm affine route, and reports
 `block_backward_qkv_dinput_before_dweight_count`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128` to compare that promoted
 default against the old 256-row/QKV-dWeight-first baseline in one paired
-script; the profile is allowed by default, emits `candidate_note` metadata, and
+script; the profile is allowed by default, emits accepted-profile metadata, and
 gates train-loop wall, steady-state CUDA-event wall, total block backward, and
 train tokens/sec. Because it is a promoted default-vs-legacy regression check,
 the train-loop and block-backward gates stay strict while the steady-state

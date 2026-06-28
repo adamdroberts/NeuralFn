@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: marked the already-promoted SM120 default-vs-legacy profiles
+  `linear_bias_threads_512`, `lm_head_loss_bins`, `bf16_attention_grad_out`,
+  and `lm_head_graph_prewarm_dedup` as explicit accepted candidate profiles in
+  `tools/bench_native_gpt_sm120_candidate.sh`. Their baseline/candidate
+  expansions and gates are unchanged; dry-run plans and benchmark metadata now
+  identify them the same way as the other accepted old-vs-new profiles instead
+  of carrying their promotion evidence only as a generic candidate note.
+
 - Native trainer validation: refreshed the current default dense GPT
   llm.kittens parity evidence after promoting the fused padded token-weight
   initializer. Verification:
