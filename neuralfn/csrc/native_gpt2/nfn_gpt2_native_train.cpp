@@ -1560,9 +1560,9 @@ std::string native_nvfp4_activation_packing_requirement_error(const Config& cfg)
         return std::string();
     }
     return "native NVFP4 activation packing required, but the dense GPT C++ trainer "
-           "currently records nvfp4 as intent only; required next step: wire packed "
-           "FP4 activation buffers and projection/attention FP4 GEMM routes before "
-           "using this run as an NVFP4 training path";
+           "does not yet route dense training activations through packed NVFP4 storage; "
+           "required next step: wire projection backward, attention QKV, and LM-head "
+           "FP4 routes before using this run as an NVFP4 training path";
 }
 
 std::string native_tile_cuda_activation_json(const Config& cfg) {
@@ -1589,8 +1589,7 @@ std::string native_tile_cuda_activation_json(const Config& cfg) {
         << json_escape(nvfp4_requirement_error)
         << "\""
         << ",\"native_activation_packing_next_required_kernels\":["
-        << "\"packed-nvfp4-activation-arena\","
-        << "\"projection-fp4-gemm-forward-backward\","
+        << "\"projection-fp4-backward\","
         << "\"attention-qkv-fp4-gemm-forward-backward\","
         << "\"lm-head-fp4-gemm-forward-backward\""
         << "]"
@@ -1598,7 +1597,7 @@ std::string native_tile_cuda_activation_json(const Config& cfg) {
         << (!nvfp4_requirement_error.empty()
                 ? "required-nvfp4-native-packing-missing"
                 : nvfp4_requested && !nvfp4_active
-                ? "requested-nvfp4-not-yet-packed-native-dense-gpt"
+                ? "requested-nvfp4-forward-primitive-only-native-dense-gpt"
                 : "native-dense-gpt-bf16-float32-activation-storage")
         << "\"}";
     return out.str();
@@ -5724,7 +5723,7 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         << (passed ? "packed-nvfp4-activation-arena-ready" : "packed-nvfp4-activation-arena-failed")
         << "\",\n"
         << "  \"native_activation_packing_remaining_required_kernels\": [\n"
-        << "    \"projection-fp4-gemm-forward-backward\",\n"
+        << "    \"projection-fp4-backward\",\n"
         << "    \"attention-qkv-fp4-gemm-forward-backward\",\n"
         << "    \"lm-head-fp4-gemm-forward-backward\"\n"
         << "  ],\n"

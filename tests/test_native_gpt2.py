@@ -8746,7 +8746,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--require-native-nvfp4-activation-packing" in dense_gpt_source
     assert "required-nvfp4-native-packing-missing" in dense_gpt_source
     assert "native_tile_cuda_activation_json" in dense_gpt_source
-    assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in dense_gpt_source
+    assert "requested-nvfp4-forward-primitive-only-native-dense-gpt" in dense_gpt_source
     assert "json_escape(cfg.tile_cuda_activation_dtype)" in dense_gpt_source
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
@@ -8772,8 +8772,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         == "required-nvfp4-native-packing-missing"
     )
     assert dense_required_nvfp4_plan["tile_cuda"]["native_activation_packing_next_required_kernels"] == [
-        "packed-nvfp4-activation-arena",
-        "projection-fp4-gemm-forward-backward",
+        "projection-fp4-backward",
         "attention-qkv-fp4-gemm-forward-backward",
         "lm-head-fp4-gemm-forward-backward",
     ]
@@ -8867,7 +8866,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["tile_cuda"]["native_activation_packing_error"] == ""
     assert (
         evo_plan["tile_cuda"]["activation_dtype_status"]
-        == "requested-nvfp4-not-yet-packed-native-dense-gpt"
+        == "requested-nvfp4-forward-primitive-only-native-dense-gpt"
     )
     assert evo_plan["layer_evo"]["enabled"] is True
     assert evo_plan["layer_evo"]["layer_index"] == 6
@@ -9002,10 +9001,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         evo_required_nvfp4_plan["tile_cuda"]["activation_dtype_status"]
         == "required-nvfp4-native-packing-missing"
     )
-    assert "intent only" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
+    assert "does not yet route dense training activations" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
     assert evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_next_required_kernels"] == [
-        "packed-nvfp4-activation-arena",
-        "projection-fp4-gemm-forward-backward",
+        "projection-fp4-backward",
         "attention-qkv-fp4-gemm-forward-backward",
         "lm-head-fp4-gemm-forward-backward",
     ]
@@ -10005,7 +10003,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert '\\"float_workspace_cuda_mallocs_elided\\"' in gpt2_source_text
     assert '\\"workspace_allocation_strategy\\": \\"float-arena-plus-int64-device\\"' in gpt2_source_text
     assert "native_tile_cuda_activation_json" in gpt2_source_text
-    assert "requested-nvfp4-not-yet-packed-native-dense-gpt" in gpt2_source_text
+    assert "requested-nvfp4-forward-primitive-only-native-dense-gpt" in gpt2_source_text
     assert "--smoke-nvfp4-pack" in gpt2_source_text
     assert "--native-cuda-smoke-nvfp4-pack" in gpt2_source_text
     assert "print_nvfp4_pack_smoke_json" in gpt2_source_text
