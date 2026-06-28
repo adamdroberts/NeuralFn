@@ -1359,9 +1359,13 @@ hot-loop counters and `prewarm_body_cublaslt_launch_mean` /
 `prewarm_body_tile_fallback_mean` from the prewarm-captured counters.
 Full-loop native GPT JSON also reports
 `lm_head_classifier_true_fused_launch_count`, and
-`tools/paired_kernel_speed.py` treats it as a hot route counter. Strict
-true-fused full-GPT candidate profiles therefore have to move that launch count
-instead of relying only on ABI path-class metadata.
+`tools/paired_kernel_speed.py` treats it as a hot route counter. It also reports
+`lm_head_true_fused_*_cycles`, `lm_head_true_fused_*_blocks`, and
+`lm_head_true_fused_*_cycles_per_block` for CE, dHidden, and dWeight sections
+when the strict body runs, matching the focused LM-head benchmark evidence
+inside the full training loop. Strict true-fused full-GPT candidate profiles
+therefore have to move that launch count and can show which internal section is
+slow instead of relying only on ABI path-class metadata.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16`,
 `lm_head_true_fused_tile24`, `lm_head_true_fused_tile8`, and
 `lm_head_true_fused_tile4` rebuild the candidate Tile ops library with 16x16,

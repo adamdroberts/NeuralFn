@@ -2406,6 +2406,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_true_fused_dhidden_cycles" in tile_ops_source
     assert "nfn_native_tile_lm_head_true_fused_dweight_cycles" in tile_ops_source
     assert "nfn_native_tile_lm_head_true_fused_ce_blocks" in tile_ops_header
+    assert "lm_head_true_fused_ce_cycles_fn" in source
+    assert "lm_head_true_fused_dhidden_cycles_fn" in source
+    assert "lm_head_true_fused_dweight_cycles_fn" in source
+    assert '\\"lm_head_true_fused_ce_cycles\\"' in source
+    assert '\\"lm_head_true_fused_dhidden_cycles\\"' in source
+    assert '\\"lm_head_true_fused_dweight_cycles\\"' in source
+    assert '\\"lm_head_true_fused_ce_cycles_per_block\\"' in source
+    assert '\\"lm_head_true_fused_dhidden_cycles_per_block\\"' in source
+    assert '\\"lm_head_true_fused_dweight_cycles_per_block\\"' in source
     assert "g_lm_head_true_fused_ce_cycles_device" in kernels_source
     assert "g_lm_head_true_fused_dhidden_cycles_device" in kernels_source
     assert "g_lm_head_true_fused_dweight_cycles_device" in kernels_source

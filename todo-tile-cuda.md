@@ -2718,6 +2718,13 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     baseline/candidate JSON. This does not promote the slow strict body, but it
     turns future true-fused failures into targeted CE versus matrix-section
     evidence instead of a single opaque candidate time.
+  - 2026-06-28 follow-up: full dense GPT runtime JSON now reads the same
+    true-fused CE/dHidden/dWeight cycle counters from the loaded Tile ops
+    library and emits `lm_head_true_fused_*_cycles`,
+    `lm_head_true_fused_*_blocks`, and
+    `lm_head_true_fused_*_cycles_per_block`. Full-loop candidate profiles now
+    expose the same strict-body section split as the focused LM-head benchmark,
+    while the slow strict body remains rejected.
   - 2026-06-28 continuation probe after the CUDA 13.3 reinstall and latest
     validator updates: a one-step, one-sample stage-timed same-script run
     (`/tmp/nfn_sm120_stage_probe_continue_20260628.json`) selected the

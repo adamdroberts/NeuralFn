@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: full dense GPT runtime JSON now reports the
+  strict true-fused LM-head section counters from the loaded Tile ops library:
+  CE/dHidden/dWeight cycle totals, cooperative block counts, and cycles per
+  block. This keeps full-loop candidate profiles aligned with the focused
+  LM-head benchmark when the slow strict body is being debugged, without
+  promoting that diagnostic route over the current CUDA Graph wrapper. Verified
+  with focused static regression coverage, C++ rebuild syntax, and native
+  no-Torch checks.
+
 - Native GPT startup verification: extended the no-Torch verifier with a
   normal non-dry-run `train_gpt.py` invocation against a stubbed compiled CLI.
   This proves the canonical GPT wrapper reaches the `execvpe` compiled C++
