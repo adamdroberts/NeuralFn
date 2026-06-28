@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now writes a
+  top-level validation summary JSON even when the optional paired native
+  benchmark is disabled. In the default flow, `NFN_SM120_CUDA13_JSON_OUT`
+  points at that summary; when `NFN_SM120_CUDA13_RUN_BENCH=1`, the existing
+  benchmark JSON behavior is preserved and the summary moves to
+  `NFN_SM120_CUDA13_SUMMARY_JSON_OUT` (or the compatibility alias
+  `NFN_SM120_CUDA13_VALIDATION_JSON_OUT`). The summary records enabled gates,
+  resolved native artifacts, LM-head benchmark paths, and the strict
+  true-fused LM-head blocker fields so CUDA reinstall validations leave durable
+  machine-readable evidence.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `git diff --check`;
+  `NFN_SM120_CUDA13_RUN_NO_TORCH=0 NFN_SM120_CUDA13_RUN_PYTEST=0
+  NFN_SM120_CUDA13_RUN_BENCH=0 NFN_SM120_CUDA13_RUN_PARITY=0
+  NFN_SM120_CUDA13_JSON_OUT=/tmp/nfn_sm120_cuda13_summary_smoke_20260628.json
+  bash tools/validate_sm120_cuda13.sh`, which wrote the validation summary with
+  `candidate_path_class: diagnostic-cuda-graph-wrapper` and
+  `candidate_true_fused_launch_count: 0`.
+
 - Native GPT workflow: added `tools/train_gpt.sh` as the generic no-Python
   workstation wrapper for the universal dense GPT trainer. It prefers the
   compiled `build/nfn_train_gpt` launcher via `NFN_NATIVE_GPT_TRAIN_CLI` and

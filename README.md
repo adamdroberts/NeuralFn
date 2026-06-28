@@ -4169,6 +4169,15 @@ It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
 transformer-LM smoke, runs the focused LM-head backward candidate/current
 microbench, and then runs `python -m pytest tests/test_native_gpt2.py -q`.
+The default run also writes a top-level validation summary to
+`NFN_SM120_CUDA13_JSON_OUT` (default `/tmp/nfn_sm120_cuda13_baseline.json`) with
+the resolved trainer, Tile ops library, enabled sub-gates, artifact paths, and
+LM-head true-fused blocker fields. When `NFN_SM120_CUDA13_RUN_BENCH=1` is set,
+`NFN_SM120_CUDA13_JSON_OUT` remains the paired native benchmark JSON path and
+the validation summary moves to
+`NFN_SM120_CUDA13_SUMMARY_JSON_OUT` (default
+`/tmp/nfn_sm120_cuda13_validation.json`); the older
+`NFN_SM120_CUDA13_VALIDATION_JSON_OUT` alias is accepted for the same summary.
 The LM-head step defaults to
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`, writes
 `/tmp/nfn_sm120_cuda13_lm_head_backward.json`, and uses the real Tile ops shared

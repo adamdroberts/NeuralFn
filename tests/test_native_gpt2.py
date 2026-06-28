@@ -857,6 +857,11 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "tests/test_native_gpt2.py -q" in source
     assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
     assert "NFN_SM120_CUDA13_RUN_BENCH" in source
+    assert "NFN_SM120_CUDA13_SUMMARY_JSON_OUT" in source
+    assert "NFN_SM120_CUDA13_VALIDATION_JSON_OUT" in source
+    assert "CUDA 13.3 SM120 validation summary written" in source
+    assert "lm_head_true_fused_status" in source
+    assert "candidate_true_fused_launch_count" in source
     assert "NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_JSON_OUT" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB" in source

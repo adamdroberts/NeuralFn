@@ -22,6 +22,7 @@ fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
 PARITY_JSON="${NFN_SM120_CUDA13_PARITY_JSON_OUT:-/tmp/nfn_sm120_cuda13_parity.json}"
 LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head_backward.json}"
+SUMMARY_JSON="${NFN_SM120_CUDA13_SUMMARY_JSON_OUT:-${NFN_SM120_CUDA13_VALIDATION_JSON_OUT:-}}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
 PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"
 PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-2}"
@@ -34,6 +35,16 @@ elif [[ "${PARITY_STEPS}" =~ ^[0-9]+$ && "${PARITY_STEPS}" -lt 2 ]]; then
   PARITY_ENFORCE_GATE=0
 else
   PARITY_ENFORCE_GATE=1
+fi
+if [[ -z "${SUMMARY_JSON}" ]]; then
+  case "${NFN_SM120_CUDA13_RUN_BENCH:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      SUMMARY_JSON="/tmp/nfn_sm120_cuda13_validation.json"
+      ;;
+    *)
+      SUMMARY_JSON="${BENCH_JSON}"
+      ;;
+  esac
 fi
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
@@ -312,5 +323,88 @@ case "${NFN_SM120_CUDA13_RUN_PARITY:-0}" in
     exit 2
     ;;
 esac
+
+run_step "${PYTHON_BIN}" - "${SUMMARY_JSON}" "${LM_HEAD_JSON}" "${BENCH_JSON}" "${PARITY_JSON}" "${TRAIN_BIN}" "${TILE_OPS_LIB}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+summary_path = Path(sys.argv[1])
+lm_head_path = Path(sys.argv[2])
+bench_path = Path(sys.argv[3])
+parity_path = Path(sys.argv[4])
+train_bin = sys.argv[5]
+tile_ops_lib = sys.argv[6]
+
+def enabled(name: str, default: str) -> bool:
+    return os.environ.get(name, default).lower() in {"1", "true", "yes", "on"}
+
+def load_json(path: Path):
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"error": f"failed to parse {path}: {exc}"}
+
+lm_head = load_json(lm_head_path)
+bench = load_json(bench_path) if enabled("NFN_SM120_CUDA13_RUN_BENCH", "0") else None
+parity = load_json(parity_path) if enabled("NFN_SM120_CUDA13_RUN_PARITY", "0") else None
+
+summary = {
+    "status": "passed",
+    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    "cuda_validator": "tools/validate_sm120_cuda13.sh",
+    "train_bin": train_bin,
+    "tile_ops_lib": tile_ops_lib,
+    "run_no_torch": enabled("NFN_SM120_CUDA13_RUN_NO_TORCH", "1"),
+    "run_lm_head_bench": enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1"),
+    "run_pytest": enabled("NFN_SM120_CUDA13_RUN_PYTEST", "1"),
+    "run_bench": enabled("NFN_SM120_CUDA13_RUN_BENCH", "0"),
+    "run_parity": enabled("NFN_SM120_CUDA13_RUN_PARITY", "0"),
+    "artifacts": {
+        "summary_json": str(summary_path),
+        "lm_head_json": str(lm_head_path) if lm_head_path.exists() else "",
+        "bench_json": str(bench_path) if bench_path.exists() and bench is not None else "",
+        "parity_json": str(parity_path) if parity_path.exists() and parity is not None else "",
+    },
+}
+
+if isinstance(lm_head, dict):
+    candidate = lm_head.get("candidate") or {}
+    summary["lm_head_true_fused_status"] = {
+        "candidate_path_class": lm_head.get("candidate_path_class"),
+        "candidate_true_fused_capability": lm_head.get("candidate_true_fused_capability"),
+        "candidate_true_fused_production_ready": lm_head.get("candidate_true_fused_production_ready"),
+        "true_fused_replacement_required": lm_head.get("true_fused_replacement_required"),
+        "next_required_path_class": lm_head.get("next_required_path_class"),
+        "candidate_ms_per_iter": candidate.get("ms_per_iter"),
+        "candidate_to_baseline_ms_per_iter_ratio": lm_head.get("candidate_to_baseline_ms_per_iter_ratio"),
+        "candidate_true_fused_launch_count": candidate.get("true_fused_launch_count"),
+        "candidate_graph_replay_count": candidate.get("graph_replay_count"),
+        "candidate_graph_cache_hit_count": candidate.get("graph_cache_hit_count"),
+    }
+elif lm_head is not None:
+    summary["lm_head_true_fused_status"] = lm_head
+
+if isinstance(bench, dict):
+    summary["native_bench_status"] = {
+        "metric_ratio_gates": bench.get("metric_ratio_gates"),
+        "native_lm_head_true_fused_target": bench.get("native_lm_head_true_fused_target"),
+        "native_lm_head_true_fused_gate": bench.get("native_lm_head_true_fused_gate"),
+    }
+
+if isinstance(parity, dict):
+    summary["parity_status"] = {
+        "metric_ratio_gates": parity.get("metric_ratio_gates"),
+        "candidate_over_reference": parity.get("candidate_over_reference"),
+    }
+
+summary_path.parent.mkdir(parents=True, exist_ok=True)
+summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(f"CUDA 13.3 SM120 validation summary written to {summary_path}")
+PY
 
 printf '\nCUDA 13.3 SM120 validation passed.\n'
