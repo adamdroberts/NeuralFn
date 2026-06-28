@@ -95,7 +95,11 @@ CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
-gates, GPT template preset suite, and native no-Torch guard all pass.
+gates, GPT template preset suite, and native no-Torch guard all pass. The
+CUDA 13.3 SM120 validator now runs `tools/check_native_no_torch_deps.py --json`
+by default before the CUDA smoke steps; set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
+only for a narrow CUDA-only bisection after the no-Torch gate has already
+passed.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
 sample. A fresh 2026-06-28 3-step, 3-sample check without stage timing measured

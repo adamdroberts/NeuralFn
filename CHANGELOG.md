@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 validation: `tools/validate_sm120_cuda13.sh` now runs
+  `tools/check_native_no_torch_deps.py --json` by default before GPU smoke
+  checks, so the post-toolkit-reinstall validation path proves the compiled
+  native artifacts and fast Python wrappers remain Torch-free in the same gate
+  that checks Tile ops, NVFP4 packing, transformer LM smoke, pytest contracts,
+  and optional benchmark contracts. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0` only
+  for a narrow CUDA-only bisection. Verification: ran shell syntax check,
+  focused validator source-contract pytest, the no-Torch verifier directly,
+  `git diff --check`, a GPU-visible validator smoke with pytest/bench disabled,
+  and the full default `bash tools/validate_sm120_cuda13.sh`, which passed with
+  `tests/test_native_gpt2.py` reporting `106 passed, 1 skipped`.
+
 - Native CLI: `nfn_native_train --base-model gpt --native-cuda-list-templates`
   now normalizes the wrapper alias to `--list-templates` and treats both
   spellings as no-data native actions, so the unified C++ frontend prints the

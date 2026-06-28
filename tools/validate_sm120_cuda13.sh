@@ -42,6 +42,18 @@ if [[ "${TILE_OPS_LIB}" != "linked" && ! -f "${TILE_OPS_LIB}" ]]; then
   exit 2
 fi
 
+case "${NFN_SM120_CUDA13_RUN_NO_TORCH:-1}" in
+  1|true|TRUE|yes|YES|on|ON)
+    run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --json
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_CUDA13_RUN_NO_TORCH=${NFN_SM120_CUDA13_RUN_NO_TORCH}" >&2
+    exit 2
+    ;;
+esac
+
 run_step \
   "${TRAIN_BIN}" \
   --backend tile-cuda \
