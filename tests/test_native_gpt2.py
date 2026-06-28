@@ -1181,11 +1181,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms to 1.015463x" in candidate_bench
     assert "setup.uint16_arena_materialize.total_ms stayed noise-flat at 0.998215x" in candidate_bench
     assert "token_weight_padded_init" in candidate_bench
+    assert "DEFAULT_VS_LEGACY_PROFILE=1" in candidate_bench
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
     assert "moving token_weight_bf16_padding_memset_count from 1 to 0" in candidate_bench
-    assert "train_loop_wall_ms_per_step to 0.999280x" in candidate_bench
-    assert "candidate/reference train_loop_wall_ms_per_step=1.000957x" in candidate_bench
-    assert "Keep the route opt-in" in candidate_bench
+    assert "median train_loop_wall_ms_per_step=0.998418x" in candidate_bench
+    assert "median steady-state CUDA-event step time=0.998668x" in candidate_bench
+    assert "median train_tokens_per_second=1.001805x" in candidate_bench
     assert "host_descriptor_reserve" in candidate_bench
     assert "NFN_NATIVE_GPT_HOST_DESCRIPTOR_RESERVE=1" in candidate_bench
     assert "setup_wall_ms to 1.016598x" in candidate_bench
@@ -9460,6 +9462,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT" in gpt2_source_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT",\n'
+        '                              "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_PADDED_INIT"}),\n'
+        "            true);"
+    ) in gpt2_source_text
     assert "token_weight_bf16_shadow_enabled" in gpt2_source_text
     assert "token_weight_bf16_refresh_count" in gpt2_source_text
     assert "token_weight_bf16_fused_adamw_refresh_count" in gpt2_source_text

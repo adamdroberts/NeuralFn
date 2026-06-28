@@ -66,14 +66,13 @@ The resolver queries `nvidia-smi`; `dedicated` selects an idle display-disabled
 NVIDIA GPU, `auto` can fall back to the first parseable GPU, and numeric masks
 continue to pass through unchanged.
 
-The raw ABI includes an opt-in dense GPT token-weight startup route,
+The raw ABI includes the default dense GPT token-weight startup route,
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
 which initializes the public vocabulary rows and zeroes the padded vocabulary
-tail plus BF16 shadow in one launch. The native trainer keeps this route off
-by default until a full throughput gate passes; the startup-only gate proved the
-route, but the previous full-training reference run still failed llm.kittens
-throughput checks. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only
-for paired bisection or rejected-candidate profiling.
+tail plus BF16 shadow in one launch. The native trainer enables this route by
+default after the current llm.kittens parity gate passed; set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired bisection
+against the older separate padding-zero/vector4 path.
 Runtime JSON reports
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
@@ -2993,16 +2992,15 @@ It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 2026-06-25
 `1.001840x` median, and `1.048989x` max. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
 post-kernel-change revalidation.
-`token_weight_padded_init` compares the default conversion-based fused padded
-BF16-shadow initializer against the legacy
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` path. The padded kernel writes
+`token_weight_padded_init` compares the legacy
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` path against the default
+conversion-based fused padded BF16-shadow initializer. The padded kernel writes
 public-vocab BF16 shadow rows through the same conversion-based vector4 path as
 the default initializer and zeros padded rows in the same launch. The CUDA
-13.3.33 dedicated RTX 5090 startup-only gate promoted it at `0.976762x`
-`setup_wall_ms` and `0.961152x` `setup.token_weight_init.total_ms`; the full
-10-step reference run still failed the existing llm.kittens throughput gates,
-so this is a startup default-vs-legacy proof rather than a throughput parity
-claim.
+13.3.33 dedicated RTX 5090 current 28672-row 5-step, 3-sample llm.kittens
+parity rerun passed at median train-loop `0.998418x`, median steady-state
+CUDA-event `0.998668x`, and median tokens/sec `1.001805x`, so this route is now
+the default.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
 object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or

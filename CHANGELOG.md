@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: promoted the fused padded-vocab token-weight initializer as
+  the default for dense GPT Tile-CUDA training. The default C++ path now enables
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, which writes public-vocab
+  BF16 shadow rows and zeroes padded rows in one launch, moving
+  `token_weight_bf16_padding_memset_count` from `1` to `0`; set
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only to compare against the
+  legacy separate padding-zero/vector4 path. The `token_weight_padded_init`
+  benchmark profile is now accepted as a default-vs-legacy proof. Verification:
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=3
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PROFILE_DIR=none
+  NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1'
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_token_weight_padded_init_parity_20260628.json
+  bash tools/bench_native_gpt_sm120_parity.sh` passed on the dedicated RTX 5090
+  with median train-loop `0.998418x`, median steady-state CUDA-event
+  `0.998668x`, median tokens/sec `1.001805x`, and the native runtime contract
+  green against llm.kittens.
+
 - Native trainer: updated dense GPT `--dry-run` / `--print-plan`
   `remaining_validation` now that the 28672-row default has a current green
   llm.kittens parity gate. The plan no longer says the outstanding work is to

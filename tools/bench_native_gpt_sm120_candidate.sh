@@ -1210,8 +1210,9 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1"
     ;;
   "token_weight_padded_init"|"token-weight-padded-init"|"token_weight_padded_zero"|"token-weight-padded-zero")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample full training gate proved the fused padded token-weight initializer route by moving token_weight_bf16_padding_memset_count from 1 to 0 and improved NeuralFn-vs-NeuralFn train_loop_wall_ms_per_step to 0.999280x, train_tokens_per_second to 1.000728x, setup_wall_ms to 0.978283x, startup_plus_first_step_wall_ms to 0.994803x, and startup_plus_train_loop_wall_ms to 0.997357x. Keep the route opt-in behind NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1 because the llm.kittens reference gate still failed at candidate/reference train_loop_wall_ms_per_step=1.000957x, steady-state CUDA-event step time=1.001429x, and train_tokens_per_second=0.999070x; token init itself also regressed to 1.070588x versus the default vector4 BF16-shadow route."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 current 28672-row 5-step, 3-sample llm.kittens parity rerun promotes the fused padded token-weight initializer as the default. It moves token_weight_bf16_padding_memset_count from 1 to 0, keeps the runtime contract green, and passed candidate/reference gates at median train_loop_wall_ms_per_step=0.998418x, median steady-state CUDA-event step time=0.998668x, and median train_tokens_per_second=1.001805x. The profile now compares legacy NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0 against the default =1 route."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1"
     ;;

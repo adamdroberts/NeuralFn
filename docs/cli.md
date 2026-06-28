@@ -165,8 +165,9 @@ bisection against the older separate padding-zero/default vector4 path after
 rebuilding the trainer-facing Tile ops library. The padded kernel writes
 public-vocab BF16 shadow rows from the same conversion-based vector4 path as the
 default initializer and still zeros padded rows in the same launch. The CUDA
-13.3.33 dedicated RTX 5090 startup-only gate promoted it at `0.976762x`
-`setup_wall_ms` and `0.961152x` `setup.token_weight_init.total_ms`. The
+13.3.33 dedicated RTX 5090 current llm.kittens parity rerun promoted it with
+median train-loop `0.998418x`, median steady-state CUDA-event `0.998668x`, and
+median tokens/sec `1.001805x`. The
 `token_weight_vector4_strided` paired profile forces baseline
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, so
 the benchmark JSON has a visible strategy-value route change for the hidden
