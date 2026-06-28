@@ -2180,6 +2180,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     tile_ops_header = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text(
         encoding="utf-8"
     )
+    kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
     assert "using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();" not in source
     for required_arg in [
         "std::uint16_t* logits_bf16",
@@ -2349,6 +2352,16 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_true_fused_ce_cycles" in tile_ops_source
+    assert "nfn_native_tile_lm_head_true_fused_dhidden_cycles" in tile_ops_source
+    assert "nfn_native_tile_lm_head_true_fused_dweight_cycles" in tile_ops_source
+    assert "nfn_native_tile_lm_head_true_fused_ce_blocks" in tile_ops_header
+    assert "g_lm_head_true_fused_ce_cycles_device" in kernels_source
+    assert "g_lm_head_true_fused_dhidden_cycles_device" in kernels_source
+    assert "g_lm_head_true_fused_dweight_cycles_device" in kernels_source
+    assert "atomicAdd(&g_lm_head_true_fused_ce_cycles_device" in kernels_source
+    assert "atomicAdd(&g_lm_head_true_fused_dhidden_cycles_device" in kernels_source
+    assert "atomicAdd(&g_lm_head_true_fused_dweight_cycles_device" in kernels_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_count" in tile_ops_source
@@ -2360,6 +2373,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "kLmHeadCooperativeBackwardTrueFusedPathClassSymbol" in source
     assert "kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol" in source
     assert "candidate_symbol_abi_path_class" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
+    assert "true_fused_ce_cycles_per_block" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_header
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_source

@@ -2665,6 +2665,13 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `candidate_to_baseline_ms_per_iter_ratio: 0.999499` at 28672 rows and kept
     `graph_fallback_count: 0`, so the benchmark-shape change preserves the
     current wrapper while making future strict-body probes honest.
+  - 2026-06-28 follow-up: added device-side section cycle counters for the
+    strict true-fused LM-head cooperative kernel. The raw Tile ABI now exposes
+    CE/dHidden/dWeight cycle totals and cooperative-block counts, and
+    `build/lm_head_backward_bench` emits `true_fused_*_cycles_per_block` in the
+    baseline/candidate JSON. This does not promote the slow strict body, but it
+    turns future true-fused failures into targeted CE versus matrix-section
+    evidence instead of a single opaque candidate time.
   - 2026-06-28 continuation probe after the CUDA 13.3 reinstall and latest
     validator updates: a one-step, one-sample stage-timed same-script run
     (`/tmp/nfn_sm120_stage_probe_continue_20260628.json`) selected the

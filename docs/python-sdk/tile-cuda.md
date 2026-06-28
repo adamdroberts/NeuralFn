@@ -2312,7 +2312,12 @@ JSON also includes
 `reference_components` with separate logits, CE, dHidden, dWeight, summed
 backward, and summed logits+backward timings for the current raw Tile ABI, which
 is the fastest way to see which part of a new LM-head classifier-backward
-candidate actually moved. It also reports `candidate_reference_gap`, including
+candidate actually moved. Strict true-fused candidate JSON also reports
+`true_fused_ce_cycles_per_block`, `true_fused_dhidden_cycles_per_block`, and
+`true_fused_dweight_cycles_per_block`, plus raw section cycle totals and block
+counts from the cooperative kernel body, so a slow candidate can be attributed
+to CE, dHidden, or dWeight before changing the kernel. It also reports
+`candidate_reference_gap`, including
 absolute candidate-minus-reference milliseconds for generic and cuBLASLt
 reference paths plus the `reference_bottleneck_component`, so same-script
 candidate evidence shows the remaining gap without manual subtraction. Wrapper

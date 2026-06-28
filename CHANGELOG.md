@@ -815,6 +815,14 @@ Future updates should append new entries here rather than replacing older notes.
   its JSON output and includes it in the overall pass/fail result. Updated the
   SDK docs to remove the stale NanoGPT geometry-mismatch wording.
 
+- Native LM-head diagnostics: added raw Tile ABI counters for strict true-fused
+  cooperative LM-head CE, dHidden, and dWeight section cycles plus block counts.
+  `build/lm_head_backward_bench` now emits those values and
+  `true_fused_*_cycles_per_block` in candidate JSON so rejected true-fused
+  kernel runs identify the slow section before another kernel retile or
+  co-scheduling attempt. This is diagnostic-only and does not change the
+  default CUDA Graph LM-head wrapper.
+
 - Native trainer: added a diagnostic padded token-weight BF16-pattern
   initializer behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` /
   `NFN_TILE_CUDA_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` and the

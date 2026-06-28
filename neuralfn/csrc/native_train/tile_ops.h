@@ -453,6 +453,12 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_ce_node_
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dhidden_node_count();
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count();
 int nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity();
+std::int64_t nfn_native_tile_lm_head_true_fused_ce_cycles();
+std::int64_t nfn_native_tile_lm_head_true_fused_dhidden_cycles();
+std::int64_t nfn_native_tile_lm_head_true_fused_dweight_cycles();
+std::int64_t nfn_native_tile_lm_head_true_fused_ce_blocks();
+std::int64_t nfn_native_tile_lm_head_true_fused_dhidden_blocks();
+std::int64_t nfn_native_tile_lm_head_true_fused_dweight_blocks();
 
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
     std::uint16_t* logits,

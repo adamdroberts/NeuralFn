@@ -137,6 +137,12 @@ struct VariantResult {
     std::int64_t graph_body_cublaslt_dweight_launch_count = 0;
     std::int64_t graph_body_tile_dhidden_fallback_count = 0;
     std::int64_t graph_body_tile_dweight_fallback_count = 0;
+    std::int64_t true_fused_ce_cycles = 0;
+    std::int64_t true_fused_dhidden_cycles = 0;
+    std::int64_t true_fused_dweight_cycles = 0;
+    std::int64_t true_fused_ce_blocks = 0;
+    std::int64_t true_fused_dhidden_blocks = 0;
+    std::int64_t true_fused_dweight_blocks = 0;
     std::int64_t warmup_graph_capture_attempt_count = 0;
     std::int64_t warmup_graph_capture_success_count = 0;
     std::int64_t warmup_graph_cache_hit_count = 0;
@@ -359,6 +365,12 @@ VariantResult run_variant(
     CountFn graph_body_cublaslt_dweight_launch_count,
     CountFn graph_body_tile_dhidden_fallback_count,
     CountFn graph_body_tile_dweight_fallback_count,
+    CountFn true_fused_ce_cycles,
+    CountFn true_fused_dhidden_cycles,
+    CountFn true_fused_dweight_cycles,
+    CountFn true_fused_ce_blocks,
+    CountFn true_fused_dhidden_blocks,
+    CountFn true_fused_dweight_blocks,
     const Options& options,
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -475,6 +487,12 @@ VariantResult run_variant(
     result.graph_body_cublaslt_dweight_launch_count = graph_body_cublaslt_dweight_launch_count();
     result.graph_body_tile_dhidden_fallback_count = graph_body_tile_dhidden_fallback_count();
     result.graph_body_tile_dweight_fallback_count = graph_body_tile_dweight_fallback_count();
+    result.true_fused_ce_cycles = true_fused_ce_cycles();
+    result.true_fused_dhidden_cycles = true_fused_dhidden_cycles();
+    result.true_fused_dweight_cycles = true_fused_dweight_cycles();
+    result.true_fused_ce_blocks = true_fused_ce_blocks();
+    result.true_fused_dhidden_blocks = true_fused_dhidden_blocks();
+    result.true_fused_dweight_blocks = true_fused_dweight_blocks();
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     return result;
@@ -825,6 +843,30 @@ std::string render_json(
             << value.graph_body_tile_dhidden_fallback_count << ","
             << "\"graph_body_tile_dweight_fallback_count\":"
             << value.graph_body_tile_dweight_fallback_count << ","
+            << "\"true_fused_ce_cycles\":" << value.true_fused_ce_cycles << ","
+            << "\"true_fused_dhidden_cycles\":" << value.true_fused_dhidden_cycles << ","
+            << "\"true_fused_dweight_cycles\":" << value.true_fused_dweight_cycles << ","
+            << "\"true_fused_ce_blocks\":" << value.true_fused_ce_blocks << ","
+            << "\"true_fused_dhidden_blocks\":" << value.true_fused_dhidden_blocks << ","
+            << "\"true_fused_dweight_blocks\":" << value.true_fused_dweight_blocks << ","
+            << "\"true_fused_ce_cycles_per_block\":"
+            << std::fixed << std::setprecision(6)
+            << (value.true_fused_ce_blocks > 0
+                    ? static_cast<double>(value.true_fused_ce_cycles) /
+                          static_cast<double>(value.true_fused_ce_blocks)
+                    : 0.0) << ","
+            << "\"true_fused_dhidden_cycles_per_block\":"
+            << std::fixed << std::setprecision(6)
+            << (value.true_fused_dhidden_blocks > 0
+                    ? static_cast<double>(value.true_fused_dhidden_cycles) /
+                          static_cast<double>(value.true_fused_dhidden_blocks)
+                    : 0.0) << ","
+            << "\"true_fused_dweight_cycles_per_block\":"
+            << std::fixed << std::setprecision(6)
+            << (value.true_fused_dweight_blocks > 0
+                    ? static_cast<double>(value.true_fused_dweight_cycles) /
+                          static_cast<double>(value.true_fused_dweight_blocks)
+                    : 0.0) << ","
             << "\"warmup_graph_capture_attempt_count\":"
             << value.warmup_graph_capture_attempt_count << ","
             << "\"warmup_graph_capture_success_count\":"
@@ -1006,6 +1048,18 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count");
         auto graph_body_tile_dweight_fallback_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count");
+        auto true_fused_ce_cycles =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_ce_cycles");
+        auto true_fused_dhidden_cycles =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dhidden_cycles");
+        auto true_fused_dweight_cycles =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dweight_cycles");
+        auto true_fused_ce_blocks =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_ce_blocks");
+        auto true_fused_dhidden_blocks =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dhidden_blocks");
+        auto true_fused_dweight_blocks =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dweight_blocks");
         auto reference_logits_fn = load_symbol<LinearBf16InputWeightBf16OutputFn>(
             handle,
             "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
@@ -1092,6 +1146,12 @@ int main(int argc, char** argv) {
                 graph_body_cublaslt_dweight_launch_count,
                 graph_body_tile_dhidden_fallback_count,
                 graph_body_tile_dweight_fallback_count,
+                true_fused_ce_cycles,
+                true_fused_dhidden_cycles,
+                true_fused_dweight_cycles,
+                true_fused_ce_blocks,
+                true_fused_dhidden_blocks,
+                true_fused_dweight_blocks,
                 options,
                 static_cast<std::uint16_t*>(logits.get()),
                 static_cast<const std::uint16_t*>(targets.get()),

@@ -120,6 +120,12 @@ std::atomic<std::int64_t> g_lm_head_classifier_last_vocab{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_row_stride{0};
 std::atomic<std::int64_t> g_lm_head_classifier_loss_bin_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_classifier_true_fused_launch_count{0};
+__device__ unsigned long long g_lm_head_true_fused_ce_cycles_device = 0;
+__device__ unsigned long long g_lm_head_true_fused_dhidden_cycles_device = 0;
+__device__ unsigned long long g_lm_head_true_fused_dweight_cycles_device = 0;
+__device__ unsigned long long g_lm_head_true_fused_ce_blocks_device = 0;
+__device__ unsigned long long g_lm_head_true_fused_dhidden_blocks_device = 0;
+__device__ unsigned long long g_lm_head_true_fused_dweight_blocks_device = 0;
 std::atomic<std::int64_t> g_bf16_to_f32_vec4_count{0};
 struct TokenCrossEntropyWorkspace {
   float* row_max = nullptr;
@@ -12868,6 +12874,7 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
   __shared__ float reduce_max_shared[32];
   __shared__ float reduce_sum_shared[32];
 
+  const unsigned long long ce_start_cycles = threadIdx.x == 0 ? clock64() : 0ULL;
   for (std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
        row < rows;
        row += static_cast<std::int64_t>(gridDim.x)) {
@@ -12917,6 +12924,11 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   }
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    atomicAdd(&g_lm_head_true_fused_ce_cycles_device, clock64() - ce_start_cycles);
+    atomicAdd(&g_lm_head_true_fused_ce_blocks_device, 1ULL);
+  }
 
   grid.sync();
 
@@ -12931,6 +12943,7 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
   const std::int64_t hidden_row_tiles = (rows + kMatTile - 1) / kMatTile;
   const std::int64_t hidden_col_tiles = (hidden_dim + kMatTile - 1) / kMatTile;
   const std::int64_t hidden_tiles = hidden_row_tiles * hidden_col_tiles;
+  const unsigned long long dhidden_start_cycles = threadIdx.x == 0 ? clock64() : 0ULL;
   for (std::int64_t tile_index = static_cast<std::int64_t>(blockIdx.x);
        tile_index < hidden_tiles;
        tile_index += static_cast<std::int64_t>(gridDim.x)) {
@@ -12961,10 +12974,16 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
       grad_hidden[row * hidden_dim + dim] += sum;
     }
   }
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    atomicAdd(&g_lm_head_true_fused_dhidden_cycles_device, clock64() - dhidden_start_cycles);
+    atomicAdd(&g_lm_head_true_fused_dhidden_blocks_device, 1ULL);
+  }
 
   const std::int64_t weight_row_tiles = (vocab + kMatTile - 1) / kMatTile;
   const std::int64_t weight_col_tiles = hidden_col_tiles;
   const std::int64_t weight_tiles = weight_row_tiles * weight_col_tiles;
+  const unsigned long long dweight_start_cycles = threadIdx.x == 0 ? clock64() : 0ULL;
   for (std::int64_t tile_index = static_cast<std::int64_t>(blockIdx.x);
        tile_index < weight_tiles;
        tile_index += static_cast<std::int64_t>(gridDim.x)) {
@@ -12995,6 +13014,11 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
       const std::int64_t index = col * hidden_dim + dim;
       grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
     }
+  }
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    atomicAdd(&g_lm_head_true_fused_dweight_cycles_device, clock64() - dweight_start_cycles);
+    atomicAdd(&g_lm_head_true_fused_dweight_blocks_device, 1ULL);
   }
 }
 
@@ -21652,6 +21676,8 @@ std::int64_t token_cross_entropy_workspace_row_capacity() {
   return g_token_cross_entropy_workspace_row_capacity.load(std::memory_order_relaxed);
 }
 
+void reset_lm_head_true_fused_section_cycles();
+
 void reset_lm_head_classifier_chunk_stats() {
   g_lm_head_classifier_chunk_launch_count.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_last_rows.store(0, std::memory_order_relaxed);
@@ -21659,6 +21685,7 @@ void reset_lm_head_classifier_chunk_stats() {
   g_lm_head_classifier_last_row_stride.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_loss_bin_launch_count.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_true_fused_launch_count.store(0, std::memory_order_relaxed);
+  reset_lm_head_true_fused_section_cycles();
 }
 
 std::int64_t lm_head_classifier_chunk_launch_count() {
@@ -21683,6 +21710,64 @@ std::int64_t lm_head_classifier_loss_bin_launch_count() {
 
 std::int64_t lm_head_classifier_true_fused_launch_count() {
   return g_lm_head_classifier_true_fused_launch_count.load(std::memory_order_relaxed);
+}
+
+void reset_lm_head_true_fused_section_cycles() {
+  const unsigned long long zero = 0;
+  cudaMemcpyToSymbol(g_lm_head_true_fused_ce_cycles_device, &zero, sizeof(zero));
+  cudaMemcpyToSymbol(g_lm_head_true_fused_dhidden_cycles_device, &zero, sizeof(zero));
+  cudaMemcpyToSymbol(g_lm_head_true_fused_dweight_cycles_device, &zero, sizeof(zero));
+  cudaMemcpyToSymbol(g_lm_head_true_fused_ce_blocks_device, &zero, sizeof(zero));
+  cudaMemcpyToSymbol(g_lm_head_true_fused_dhidden_blocks_device, &zero, sizeof(zero));
+  cudaMemcpyToSymbol(g_lm_head_true_fused_dweight_blocks_device, &zero, sizeof(zero));
+}
+
+std::int64_t clamp_lm_head_true_fused_counter(unsigned long long value) {
+  return value > static_cast<unsigned long long>(std::numeric_limits<std::int64_t>::max())
+      ? std::numeric_limits<std::int64_t>::max()
+      : static_cast<std::int64_t>(value);
+}
+
+std::int64_t lm_head_true_fused_ce_cycles() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_ce_cycles_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
+}
+
+std::int64_t lm_head_true_fused_dhidden_cycles() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_dhidden_cycles_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
+}
+
+std::int64_t lm_head_true_fused_dweight_cycles() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_dweight_cycles_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
+}
+
+std::int64_t lm_head_true_fused_ce_blocks() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_ce_blocks_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
+}
+
+std::int64_t lm_head_true_fused_dhidden_blocks() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_dhidden_blocks_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
+}
+
+std::int64_t lm_head_true_fused_dweight_blocks() {
+  unsigned long long value = 0;
+  const cudaError_t status =
+      cudaMemcpyFromSymbol(&value, g_lm_head_true_fused_dweight_blocks_device, sizeof(value));
+  return status == cudaSuccess ? clamp_lm_head_true_fused_counter(value) : -1;
 }
 
 std::int64_t attention_forward_row_fallback_count() {
