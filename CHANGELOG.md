@@ -21,7 +21,10 @@ Future updates should append new entries here rather than replacing older notes.
 
   Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches
-  -q`; `git diff --check`.
+  -q`; `git diff --check`; `bash tools/validate_sm120_cuda13.sh`, which
+  passed on the dedicated RTX 5090 with Tile fill, NVFP4 pack, TinyStories
+  transformer-LM smoke, LM-head benchmark, and `tests/test_native_gpt2.py`
+  reporting `109 passed, 1 skipped`.
 
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now writes a
   top-level validation summary JSON even when the optional paired native
