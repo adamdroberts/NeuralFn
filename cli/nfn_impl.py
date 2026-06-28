@@ -5,6 +5,7 @@ import curses
 from dataclasses import dataclass, replace
 from datetime import datetime
 import hashlib
+import importlib
 import json
 import math
 import os
@@ -19,9 +20,6 @@ import tty as tty_module
 from types import SimpleNamespace
 import uuid
 from typing import Any, Callable, Sequence
-
-import numpy as np
-import torch
 
 try:
     from rich.align import Align
@@ -82,71 +80,164 @@ from infer_jepa_semantic import (
     top_p_arg,
 )
 from infer_llama_fast import generate_sequence
-from neuralfn import TorchTrainer, load_graph
-from neuralfn.config import build_composed_lm_spec, model_spec_to_dict
-from neuralfn.semantic import ConversationalVocabulary, semantic_vocab_ref_for_graph, semantic_vocab_ref_for_tokenizer
-from neuralfn.torch_backend import TorchTrainConfig
-from neuralfn.torch_templates import build_gpt_root_graph
-from parameter_golf_runtime import (
-    PARAMETER_GOLF_CHECKPOINT_FORMAT,
-    build_parameter_golf_model,
-    checkpoint_metadata_path,
-    infer_config_from_state_dict,
-    is_parameter_golf_flat_state_dict,
-    load_checkpoint_metadata,
-    load_parameter_golf_state_dict,
-    load_sentencepiece_tokenizer,
-    load_training_log_hparams,
-    resolve_parameter_golf_tokenizer_path,
-)
-from server.dataset_manager import normalize_raw_text_encoding_name, raw_text_encoding_name_for_backbone, raw_text_encoding_vocab_size
-from server.models import LoadDatasetRequest
-from server.services.graph_ops import load_dataset_source_into_graph
-from train_jepa_semantic import (
-    DEFAULT_CACHED_TOKENIZER_VARIANT,
-    DEFAULT_DATASET_ALIAS,
-    DATASET_SHORTCUT_CONTRACTS,
-    REFERENCE_DEFAULTS,
-    SUPPORTED_CACHED_TOKENIZER_VARIANTS,
-    SUPPORTED_TOKENIZER_CHOICES,
-    TINYSTORIES_DATASET_CONTRACT,
-    apply_sanitized_template_spec,
-    add_pretraining_file_argument,
-    add_dataset_download_arguments,
-    add_dataset_selector_arguments,
-    add_raw_text_tokenizer_arguments,
-    apply_cached_tokenizer_vocab_policy,
-    apply_tinystories_dataset_defaults,
-    build_trainer_summary,
-    default_tokenizer_for_dataset,
-    estimate_schedule,
-    estimate_text_schedule,
-    env_optional_float,
-    env_optional_int,
-    build_progress_logger,
-    configure_console_logging,
-    evaluate_model as evaluate_semantic_model,
-    evaluate_model as evaluate_text_model,
-    format_elapsed,
-    print_graph_summary,
-    raw_text_tokenizer_is_available,
-    resolve_dataset_shortcut_contract,
-    resolve_dataset_selector_args,
-    resolve_effective_training_schedule,
-    resolve_lr_schedule_defaults,
-    resolve_or_download_dataset,
-    resolve_pretraining_file_dataset,
-    safe_evaluate_validation_loss,
-    sanitized_model_spec_dict,
-    save_artifacts,
-    tokenizer_download_kwargs_from_args,
-    validate_raw_text_tokenizer_availability,
-)
 from train_llama_fast import LLAMA_DEFAULTS
 from train_mixllama_fast import MIXLLAMA_DEFAULTS
 from train_nanogpt import NANOGPT_DEFAULTS
 from train_gpt import GPT_DEFAULTS
 from train_semantic_router_moe import ROUTER_DEFAULTS
+
+
+class _LazyImport:
+    __slots__ = ("_module_name", "_attr_name", "_label", "_value")
+
+    def __init__(self, module_name: str, attr_name: str | None = None) -> None:
+        self._module_name = module_name
+        self._attr_name = attr_name
+        self._label = f"{module_name}.{attr_name}" if attr_name else module_name
+        self._value: Any | None = None
+
+    def _load(self) -> Any:
+        value = self._value
+        if value is None:
+            module = importlib.import_module(self._module_name)
+            value = getattr(module, self._attr_name) if self._attr_name else module
+            self._value = value
+        return value
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._load(), name)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._load()(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"<lazy import {self._label}>"
+
+
+def _lazy_attr(module_name: str, attr_name: str) -> _LazyImport:
+    return _LazyImport(module_name, attr_name)
+
+
+np = _LazyImport("numpy")
+torch = _LazyImport("torch")
+TorchTrainer = _lazy_attr("neuralfn", "TorchTrainer")
+load_graph = _lazy_attr("neuralfn", "load_graph")
+build_composed_lm_spec = _lazy_attr("neuralfn.config", "build_composed_lm_spec")
+model_spec_to_dict = _lazy_attr("neuralfn.config", "model_spec_to_dict")
+TorchTrainConfig = _lazy_attr("neuralfn.torch_backend", "TorchTrainConfig")
+build_gpt_root_graph = _lazy_attr("neuralfn.torch_templates", "build_gpt_root_graph")
+ConversationalVocabulary = _lazy_attr("neuralfn.semantic", "ConversationalVocabulary")
+semantic_vocab_ref_for_graph = _lazy_attr("neuralfn.semantic", "semantic_vocab_ref_for_graph")
+semantic_vocab_ref_for_tokenizer = _lazy_attr("neuralfn.semantic", "semantic_vocab_ref_for_tokenizer")
+PARAMETER_GOLF_CHECKPOINT_FORMAT = "parameter_golf_root_gpt_flat_v1"
+build_parameter_golf_model = _lazy_attr("parameter_golf_runtime", "build_parameter_golf_model")
+checkpoint_metadata_path = _lazy_attr("parameter_golf_runtime", "checkpoint_metadata_path")
+infer_config_from_state_dict = _lazy_attr("parameter_golf_runtime", "infer_config_from_state_dict")
+is_parameter_golf_flat_state_dict = _lazy_attr("parameter_golf_runtime", "is_parameter_golf_flat_state_dict")
+load_checkpoint_metadata = _lazy_attr("parameter_golf_runtime", "load_checkpoint_metadata")
+load_parameter_golf_state_dict = _lazy_attr("parameter_golf_runtime", "load_parameter_golf_state_dict")
+load_sentencepiece_tokenizer = _lazy_attr("parameter_golf_runtime", "load_sentencepiece_tokenizer")
+load_training_log_hparams = _lazy_attr("parameter_golf_runtime", "load_training_log_hparams")
+resolve_parameter_golf_tokenizer_path = _lazy_attr("parameter_golf_runtime", "resolve_parameter_golf_tokenizer_path")
+normalize_raw_text_encoding_name = _lazy_attr("server.dataset_manager", "normalize_raw_text_encoding_name")
+raw_text_encoding_name_for_backbone = _lazy_attr("server.dataset_manager", "raw_text_encoding_name_for_backbone")
+raw_text_encoding_vocab_size = _lazy_attr("server.dataset_manager", "raw_text_encoding_vocab_size")
+LoadDatasetRequest = _lazy_attr("server.models", "LoadDatasetRequest")
+load_dataset_source_into_graph = _lazy_attr("server.services.graph_ops", "load_dataset_source_into_graph")
+
+DEFAULT_CACHED_TOKENIZER_VARIANT = "sp1024"
+SUPPORTED_CACHED_TOKENIZER_VARIANTS = ("sp1024", "sp2048", "sp4096", "sp8192")
+SUPPORTED_TOKENIZER_CHOICES = ("gpt2", "cl100k_base", "o200k_base", *SUPPORTED_CACHED_TOKENIZER_VARIANTS)
+DEFAULT_DATASET_ALIAS = f"willdepueoai__parameter-golf__{DEFAULT_CACHED_TOKENIZER_VARIANT}__train1"
+TINYSTORIES_DATASET_CONTRACT = {
+    "dataset_alias": "roneneldan__TinyStories__TinyStoriesV2-GPT4",
+    "dataset_hf_path": "roneneldan/TinyStories",
+    "dataset_train_file": "TinyStoriesV2-GPT4-train.txt",
+    "dataset_val_file": "TinyStoriesV2-GPT4-valid.txt",
+}
+DATASET_SHORTCUT_CONTRACTS = {
+    "golf1": {
+        "dataset_alias": "willdepueoai__parameter-golf__sp1024__train1",
+        "dataset_hf_path": "willdepueoai/parameter-golf",
+        "dataset_variant": "sp1024",
+        "dataset_train_shards": 1,
+    },
+    "golf10": {
+        "dataset_alias": "willdepueoai__parameter-golf__sp1024__train10",
+        "dataset_hf_path": "willdepueoai/parameter-golf",
+        "dataset_variant": "sp1024",
+        "dataset_train_shards": 10,
+    },
+    "shakespear": {"dataset_alias": "karpathy__tiny_shakespeare"},
+    "shakespeare": {"dataset_alias": "karpathy__tiny_shakespeare"},
+    "tinystories": TINYSTORIES_DATASET_CONTRACT,
+}
+REFERENCE_DEFAULTS = {
+    "iterations": 20_000,
+    "warmdown_fraction": 0.75,
+    "warmup_steps": 20,
+    "train_batch_tokens": 524_288,
+    "train_seq_len": 1_024,
+    "max_wallclock_seconds": 0.0,
+    "qk_gain_init": 1.5,
+    "vocab_size": 1_024,
+    "num_layers": 9,
+    "num_kv_heads": 4,
+    "model_dim": 512,
+    "num_heads": 8,
+    "mlp_mult": 2.0,
+    "tie_embeddings": True,
+    "rope_base": 10_000.0,
+    "logit_softcap": 30.0,
+    "embed_lr": 0.6,
+    "head_lr": 0.008,
+    "tied_embed_lr": 0.05,
+    "tied_embed_init_std": 0.005,
+    "matrix_lr": 0.04,
+    "scalar_lr": 0.04,
+    "muon_momentum": 0.95,
+    "muon_backend_steps": 5,
+    "muon_momentum_warmup_start": 0.85,
+    "muon_momentum_warmup_steps": 500,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "adam_eps": 1e-8,
+    "grad_clip_norm": 0.0,
+    "val_batch_size": 524_288,
+    "val_loss_every": 1_000,
+    "train_log_every": 1,
+}
+apply_sanitized_template_spec = _lazy_attr("train_jepa_semantic", "apply_sanitized_template_spec")
+add_pretraining_file_argument = _lazy_attr("train_jepa_semantic", "add_pretraining_file_argument")
+add_dataset_download_arguments = _lazy_attr("train_jepa_semantic", "add_dataset_download_arguments")
+add_dataset_selector_arguments = _lazy_attr("train_jepa_semantic", "add_dataset_selector_arguments")
+add_raw_text_tokenizer_arguments = _lazy_attr("train_jepa_semantic", "add_raw_text_tokenizer_arguments")
+apply_cached_tokenizer_vocab_policy = _lazy_attr("train_jepa_semantic", "apply_cached_tokenizer_vocab_policy")
+apply_tinystories_dataset_defaults = _lazy_attr("train_jepa_semantic", "apply_tinystories_dataset_defaults")
+build_trainer_summary = _lazy_attr("train_jepa_semantic", "build_trainer_summary")
+default_tokenizer_for_dataset = _lazy_attr("train_jepa_semantic", "default_tokenizer_for_dataset")
+estimate_schedule = _lazy_attr("train_jepa_semantic", "estimate_schedule")
+estimate_text_schedule = _lazy_attr("train_jepa_semantic", "estimate_text_schedule")
+env_optional_float = _lazy_attr("train_jepa_semantic", "env_optional_float")
+env_optional_int = _lazy_attr("train_jepa_semantic", "env_optional_int")
+build_progress_logger = _lazy_attr("train_jepa_semantic", "build_progress_logger")
+configure_console_logging = _lazy_attr("train_jepa_semantic", "configure_console_logging")
+evaluate_semantic_model = _lazy_attr("train_jepa_semantic", "evaluate_model")
+evaluate_text_model = _lazy_attr("train_jepa_semantic", "evaluate_model")
+format_elapsed = _lazy_attr("train_jepa_semantic", "format_elapsed")
+print_graph_summary = _lazy_attr("train_jepa_semantic", "print_graph_summary")
+raw_text_tokenizer_is_available = _lazy_attr("train_jepa_semantic", "raw_text_tokenizer_is_available")
+resolve_dataset_shortcut_contract = _lazy_attr("train_jepa_semantic", "resolve_dataset_shortcut_contract")
+resolve_dataset_selector_args = _lazy_attr("train_jepa_semantic", "resolve_dataset_selector_args")
+resolve_effective_training_schedule = _lazy_attr("train_jepa_semantic", "resolve_effective_training_schedule")
+resolve_lr_schedule_defaults = _lazy_attr("train_jepa_semantic", "resolve_lr_schedule_defaults")
+resolve_or_download_dataset = _lazy_attr("train_jepa_semantic", "resolve_or_download_dataset")
+resolve_pretraining_file_dataset = _lazy_attr("train_jepa_semantic", "resolve_pretraining_file_dataset")
+safe_evaluate_validation_loss = _lazy_attr("train_jepa_semantic", "safe_evaluate_validation_loss")
+sanitized_model_spec_dict = _lazy_attr("train_jepa_semantic", "sanitized_model_spec_dict")
+save_artifacts = _lazy_attr("train_jepa_semantic", "save_artifacts")
+tokenizer_download_kwargs_from_args = _lazy_attr("train_jepa_semantic", "tokenizer_download_kwargs_from_args")
+validate_raw_text_tokenizer_availability = _lazy_attr("train_jepa_semantic", "validate_raw_text_tokenizer_availability")
 
 HELP_STYLES = ("short", "long", "verbose")
 COMMANDS = ("train", "infer", "eval", "kernels")

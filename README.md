@@ -22,7 +22,10 @@ shim: `from nfn import main; main()` can serve root help, direct dense GPT
 native training, and native fast-path inference without importing `nfn_impl`,
 `train_gpt_native`, or `torch`. Planner helpers such as `maybe_plan`,
 `recipe_from_state`, and `render_help` are still available from `nfn`, but they
-load the graph-backed planner lazily when first accessed.
+load the graph-backed planner lazily when first accessed. Importing `nfn_impl`
+itself also keeps Torch, NumPy, `server.dataset_manager`, graph ops,
+parameter-golf Torch helpers, and `train_jepa_semantic` lazy until a
+graph-backed command path uses them.
 
 Dense GPT native training defaults to periodic validation loss every 250
 optimizer steps over 20 validation batches. Pass `--eval-every-steps 1000` to

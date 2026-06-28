@@ -78,6 +78,10 @@ Canonical docs:
 - Keep `nfn train|infer|eval --help` and `nfn kernels ... --help` on lightweight
   static help in `cli/nfn.py`; do not import `nfn_impl`, Torch, or graph-backed
   runtime modules for help-only commands.
+- Keep `cli/nfn_impl.py` import-light too: importing it for parser/planner
+  helpers must not import Torch, NumPy, `server.dataset_manager`, graph ops,
+  parameter-golf Torch helpers, or `train_jepa_semantic`; load those lazily only
+  when a graph-backed command path needs them.
 - Keep `nfn kernels list [--json]` metadata-only: it should report registry
   coverage without importing `nfn_impl`, Torch, or graph-backed runtime modules.
 - Keep non-GPT-2 training commands and direct legacy training scripts on

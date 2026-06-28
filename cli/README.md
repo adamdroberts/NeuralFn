@@ -42,6 +42,10 @@ compatibility training do not import it. Install
 `pip install -e ".[server]"` for the editor/backend. NeuralFn no longer exposes
 a `.[torch]` extra; legacy graph-backed PyTorch training/inference requires a
 separately managed PyTorch install outside NeuralFn package metadata.
+Importing `nfn_impl` for parser/planner helpers also keeps Torch, NumPy,
+`server.dataset_manager`, graph ops, parameter-golf Torch helpers, and
+`train_jepa_semantic` lazy until a command path actually needs the graph-backed
+runtime.
 
 ## Workflow model
 

@@ -34,6 +34,10 @@ materialization, `pip install -e ".[graph]"` for Python graph helpers,
 `.[all]` extra is also Torch-free, and NeuralFn no longer exposes a `.[torch]`
 extra. Legacy graph-backed Torch code requires a separately managed PyTorch
 install outside NeuralFn's package metadata.
+Importing `nfn_impl` for parser/planner helpers also keeps Torch, NumPy,
+`server.dataset_manager`, graph ops, parameter-golf Torch helpers, and
+`train_jepa_semantic` lazy until a command path actually needs the graph-backed
+runtime.
 
 ## Commands
 

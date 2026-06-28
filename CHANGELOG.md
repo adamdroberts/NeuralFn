@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CLI startup: made `cli/nfn_impl.py` import-light by replacing eager imports of
+  Torch, NumPy, `TorchTrainer`, `TorchTrainConfig`, semantic helpers,
+  parameter-golf Torch helpers, `server.dataset_manager`, graph ops, and
+  `train_jepa_semantic` helpers with lazy proxies. The native fast paths already
+  bypassed `nfn_impl`; this closes the remaining implementation-module import
+  liability so parser/planner code can be imported without loading the
+  graph-backed runtime. The static dataset shortcut/default constants used by
+  the parser remain local to `nfn_impl` and the original helper module is loaded
+  only when a graph-backed command path calls into it.
+
+  Migration note: no CLI flags or graph-backed behavior changed. Code that
+  monkeypatches `nfn_impl.TorchTrainer` or training helper names can continue to
+  patch those module attributes; they are lazy callables until replaced.
+
+  Verification: `python -m pytest
+  cli/tests/test_nfn_cli.py::NfnCliTest::test_nfn_impl_import_does_not_load_torch_runtime
+  -q`, `python -m pytest cli/tests/test_nfn_cli.py -q --collect-only`,
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  `git diff --check`.
+
 - Bench workflow: expanded the no-argument
   `tools/sweep_native_gpt_sm120_candidates.sh` profile set to cover the current
   accepted dense-GPT SM120 default proofs: QKV/LN ordering, LayerNorm affine

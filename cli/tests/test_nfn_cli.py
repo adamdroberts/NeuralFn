@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -37,6 +38,59 @@ from train_jepa_semantic import dataset_download_kwargs_from_args, parameter_gol
 
 
 class NfnCliTest(unittest.TestCase):
+    def test_nfn_impl_import_does_not_load_torch_runtime(self) -> None:
+        code = f"""
+import builtins
+from pathlib import Path
+import sys
+
+blocked = {{
+    "torch",
+    "numpy",
+    "server.dataset_manager",
+    "server.services.graph_ops",
+    "parameter_golf_runtime",
+    "neuralfn.torch_backend",
+    "neuralfn.semantic",
+    "train_jepa_semantic",
+}}
+real_import = builtins.__import__
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name in blocked or any(name.startswith(prefix + ".") for prefix in blocked):
+        raise AssertionError(f"blocked import: {{name}}")
+    return real_import(name, globals, locals, fromlist, level)
+
+root = Path({str(NEURALFN_ROOT)!r})
+sys.path.insert(0, str(root / "cli"))
+sys.path.insert(0, str(root / "cli" / "scripts"))
+builtins.__import__ = guarded_import
+try:
+    import nfn_impl
+finally:
+    builtins.__import__ = real_import
+
+print("NFN_IMPL_IMPORTED", nfn_impl.COMMANDS)
+print("TORCH_LOADED", "torch" in sys.modules)
+print("NUMPY_LOADED", "numpy" in sys.modules)
+"""
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("NFN_IMPL_IMPORTED", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NUMPY_LOADED False", proc.stdout)
+
     def test_artifact_root_defaults_to_home_neuralfn_artifacts(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NEURALFN_ARTIFACTS_DIR", None)
