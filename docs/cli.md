@@ -621,6 +621,17 @@ the placement and resolved start offsets as
 `stored_packed_attention_block_placement`, and
 `stored_packed_attention_block_start`. These are diagnostics only until a
 same-script training gate proves the tail placement faster. The diagnostic
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=nvfp4_qkv_dweight` compares the BF16 QKV
+dWeight default against the opt-in packed LN1 NVFP4 sidecar. The candidate
+passes `--tile-cuda-activation-dtype nvfp4`, sets
+`NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1`, requires the
+`block_backward_nvfp4_qkv_dweight_pack_count` and
+`block_backward_nvfp4_qkv_dweight_count` counters to move, and gates
+`stage.block_backward.qkv.dweight_bias.total_ms` before the sidecar can be
+promoted. A 2026-06-28 dedicated RTX 5090 3-step, 1-sample stage-timed run
+proved 288 NVFP4 pack/dWeight calls but kept the profile rejected at
+`2.699758x` train-loop wall and `42.421293x` QKV dWeight+bias.
+The diagnostic
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` forces baseline
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` and candidate `=0`; it is
 rejected before normal CUDA launch because the CUDA 13.3 dedicated RTX 5090

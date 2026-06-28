@@ -413,6 +413,13 @@ symbols are available; runtime JSON reports
 "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias"`. This sidecar route is
 opt-in because the current separate pack plus dweight kernels regress the
 llm.kittens SM120 parity gate; default training keeps the BF16 QKV dweight path.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=nvfp4_qkv_dweight` when benchmarking
+that sidecar: the wrapper forces `--tile-cuda-activation-dtype nvfp4`, requires
+the NVFP4 pack/dWeight counters and strategy value to change, and compares QKV
+dWeight stage timing against the BF16 default before any promotion. A
+2026-06-28 dedicated RTX 5090 3-step, 1-sample stage-timed run proved 288
+NVFP4 pack/dWeight calls but kept the profile rejected at `2.699758x`
+train-loop wall and `42.421293x` QKV dWeight+bias.
 Full dense GPT activation storage is still not end-to-end packed FP4, so NVFP4
 requests report effective `bf16-float32-mixed` storage with native activation
 packing inactive until attention forward/dinput and LM-head FP4 routes are

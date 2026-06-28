@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: added the `nvfp4_qkv_dweight` SM120 candidate
+  profile for the existing opt-in QKV dWeight NVFP4 sidecar. The profile runs
+  the candidate with `--tile-cuda-activation-dtype nvfp4` and
+  `NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1`, requires the runtime strategy to change
+  to `packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias`, and gates on the
+  NVFP4 pack/dWeight counters plus QKV dWeight stage timing. This keeps partial
+  NVFP4 training experiments measurable in the same script as the BF16 default
+  without promoting the route. Verification: shell/static tests plus a
+  dedicated RTX 5090 3-step, 1-sample stage-timed run that proved 288 NVFP4
+  pack/dWeight calls and kept the profile rejected at `2.699758x` train-loop
+  wall, `2.692837x` steady-state CUDA-event timing, `4.335894x` block backward,
+  and `42.421293x` QKV dWeight+bias.
+
 - Native GPT LM-head diagnostics: split the cached LM-head graph-body cuBLASLt
   bisection route into independent dHidden and dWeight switches
   (`NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN` and

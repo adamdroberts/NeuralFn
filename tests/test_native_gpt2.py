@@ -3418,6 +3418,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",
         "store_packed_attention_blocks6_tail": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT=tail",
         "store_packed_attention_ln1_bf16_off": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=0",
+        "nvfp4_qkv_dweight": "NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1",
         "store_residual1_off": "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0",
         "full_activation_tape": "NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
@@ -3455,6 +3456,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "stored_packed_attention_block_placement" in gpt2_source
     assert "stored_mlp_activation_for" in gpt2_source
     assert "stored_packed_attention_for" in gpt2_source
+    assert "--tile-cuda-activation-dtype nvfp4" in bench_source
+    assert (
+        "block_backward_nvfp4_qkv_dweight_pack_count "
+        "block_backward_nvfp4_qkv_dweight_count"
+    ) in bench_source
+    assert "block_backward_qkv_dweight_strategy" in bench_source
+    assert "block_backward_nvfp4_qkv_dweight_count" in speed_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     assert "kept 512 as the default" in bench_source
     assert "stage.block_backward.mlp_fc.dweight_bias.total_ms=0.972707x" in bench_source

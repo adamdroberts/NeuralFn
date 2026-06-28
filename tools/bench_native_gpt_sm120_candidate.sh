@@ -1027,6 +1027,18 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
+  "nvfp4_qkv_dweight"|"nvfp4-qkv-dweight"|"qkv_dweight_nvfp4"|"qkv-dweight-nvfp4"|"packed_ln1_nvfp4_qkv_dweight"|"packed-ln1-nvfp4-qkv-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 1-sample stage-timed gate forced --tile-cuda-activation-dtype nvfp4 plus NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1. It proved the sidecar route by moving block_backward_nvfp4_qkv_dweight_pack_count and block_backward_nvfp4_qkv_dweight_count from 0 to 288 and changing block_backward_qkv_dweight_strategy to packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias, but rejected default promotion because train_loop_wall_ms_per_step regressed to 2.699758x, steady-state CUDA-event timing to 2.692837x, block backward to 4.335894x, QKV dWeight+bias to 42.421293x, and tokens/sec fell to 0.370403x."
+    CANDIDATE_NOTE="Compares the default BF16 QKV dWeight path against the opt-in packed LN1 NVFP4 sidecar used only for QKV dWeight. This is partial NVFP4 activation storage, not the full dense-GPT activation-packing contract."
+    CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--tile-cuda-activation-dtype nvfp4"
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }block_backward_nvfp4_qkv_dweight_pack_count block_backward_nvfp4_qkv_dweight_count"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }block_backward_qkv_dweight_strategy block_backward_nvfp4_qkv_dweight_requested"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.999}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.001 train_loop_cuda_event_steady_state_wall_ms_per_step=1.001 stage.block_backward.total_ms=1.001 stage.block_backward.qkv.dweight_bias.total_ms=1.001}"
+    ;;
   "store_residual1_off"|"store-residual1-off"|"stored_residual1_off"|"stored-residual1-off"|"residual1_activation_store_off"|"residual1-activation-store-off")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-25 1-step paired gate disabled stored residual1 activations, verified the saved-packed-attention recompute route keeps one attention-projection scratch buffer, and rejected default promotion because train_loop_wall_ms_per_step regressed to 1.059928x and tokens/sec to 0.943455x despite setup_wall_ms improving to 0.810095x; keep NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1 for the default path."
