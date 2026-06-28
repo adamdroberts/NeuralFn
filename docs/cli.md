@@ -620,7 +620,11 @@ the placement and resolved start offsets as
 `stored_mlp_activation_block_start`,
 `stored_packed_attention_block_placement`, and
 `stored_packed_attention_block_start`. These are diagnostics only until a
-same-script training gate proves the tail placement faster. The diagnostic
+same-script training gate proves the tail placement faster. A 2026-06-28
+dedicated RTX 5090 run kept `store_mlp_blocks6_tail` rejected: tail placement
+improved `setup_wall_ms` to `0.957064x`, but regressed train-loop wall to
+`1.010155x` versus six-block head placement and stayed `1.197974x` slower than
+llm.kittens. The diagnostic
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=nvfp4_qkv_dweight` compares the BF16 QKV
 dWeight default against the opt-in packed LN1 NVFP4 sidecar. The candidate
 passes `--tile-cuda-activation-dtype nvfp4`, sets

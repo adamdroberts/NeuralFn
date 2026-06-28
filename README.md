@@ -337,7 +337,11 @@ compare the same six stored blocks at `head` versus `tail` placement with
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCK_PLACEMENT`; they report
 `stored_mlp_activation_block_start` and
 `stored_packed_attention_block_start` in native JSON and remain unpromoted
-until the same-script training gate beats the head layout. The
+until the same-script training gate beats the head layout. A 2026-06-28
+dedicated RTX 5090 run kept `store_mlp_blocks6_tail` rejected: setup improved
+to `0.957064x`, but train-loop wall regressed to `1.010155x` versus six-block
+head placement and the candidate stayed `1.197974x` slower than llm.kittens.
+The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_residual1_off` diagnostic is rejected
 even earlier because disabling residual1 activation storage failed the paired
 native run with cuBLASLt status 14; keep stored residual1 activations enabled

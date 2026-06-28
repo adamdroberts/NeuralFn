@@ -3452,7 +3452,10 @@ are rejected until same-script training gates prove that the setup win no
 longer comes with hot-loop regressions. `store_mlp_blocks6_tail` and
 `store_packed_attention_blocks6_tail` compare tail placement against the same
 six-block head placement and are diagnostics only until same-script training
-gates prove a win.
+gates prove a win. A 2026-06-28 dedicated RTX 5090 run kept
+`store_mlp_blocks6_tail` rejected: setup improved to `0.957064x`, but
+train-loop wall regressed to `1.010155x` versus six-block head placement and
+the candidate stayed `1.197974x` slower than llm.kittens.
 transformer-LM arenas now default to split float and BF16/uint16 device arenas
 (`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`); runtime JSON reports
 `float_allocation_strategy: "single-arena"` and

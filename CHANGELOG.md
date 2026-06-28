@@ -15,6 +15,14 @@
   wall, `2.692837x` steady-state CUDA-event timing, `4.335894x` block backward,
   and `42.421293x` QKV dWeight+bias.
 
+- Native GPT benchmarking: measured the existing `store_mlp_blocks6_tail`
+  diagnostic profile. The same-script RTX 5090 stage-timed run compared six
+  stored MLP activation blocks at head placement against six at tail placement.
+  Tail placement improved `setup_wall_ms` to `0.957064x`, but remains rejected
+  because train-loop wall regressed to `1.010155x`, steady-state CUDA-event
+  timing to `1.010887x`, tokens/sec fell to `0.989947x`, and candidate-over-
+  llm.kittens train-loop wall stayed at `1.197974x`.
+
 - Native GPT LM-head diagnostics: split the cached LM-head graph-body cuBLASLt
   bisection route into independent dHidden and dWeight switches
   (`NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN` and

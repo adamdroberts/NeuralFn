@@ -1001,7 +1001,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "store_mlp_blocks6_tail"|"store-mlp-blocks6-tail"|"stored_mlp_blocks6_tail"|"stored-mlp-blocks6-tail"|"mlp_activation_blocks6_tail"|"mlp-activation-blocks6-tail")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Unpromoted CUDA 13.3 diagnostic: compares six stored MLP activation blocks at the default head placement against six stored MLP activation blocks at tail placement. It must beat the same-script training gate before default promotion."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 1-sample stage-timed gate compared six stored MLP activation blocks at head placement against six at tail placement. Tail placement improved setup_wall_ms to 0.957064x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.010155x, steady-state CUDA-event timing to 1.010887x, train_tokens_per_second fell to 0.989947x, and candidate-over-llm.kittens train-loop wall remained 1.197974x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6 NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=head"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6 NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail"
     ;;
