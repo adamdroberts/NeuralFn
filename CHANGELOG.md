@@ -29,6 +29,34 @@
   `train_loop_wall_ms_per_step=1.000472x` and
   `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000910x`.
 
+- Native GPT benchmarking: added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the
+  old eager throughput-prewarm setup against the long-run deferred-prewarm
+  policy in the same selected-GPU wrapper. The profile pins the baseline
+  threshold to `999999999`, pins the candidate threshold to `1`, disables the
+  external llm.kittens reference leg, and requires the
+  `native_fast_startup_prewarm_policy` strategy value to change. Its default
+  ratio gate checks setup wall time only because short two-step
+  startup-plus-training samples are not the right acceptance metric for a
+  long-run amortization policy. A two-step, two-sample paired run on the
+  dedicated RTX 5090 passed with `setup_wall_ms=0.634549x`, changed
+  `native_fast_startup_prewarm_policy` from `throughput-prewarm-defaults` to
+  `long-run-defer-throughput-prewarms-by-default`, and kept
+  `graph_editor_tensor_flow=false`, `torch_required=false`, and
+  `optimized_kernel_contract_passed=true`. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "lm_head_true_fused or fast_startup or prewarm"`,
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm
+  NFN_SM120_NATIVE_DRY_RUN_PLAN=1 NFN_SM120_NATIVE_STEPS=2
+  NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0
+  bash tools/bench_native_gpt_sm120_candidate.sh`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm
+  NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_long_run_defer_profile.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Native GPT validation: `tools/validate_sm120_cuda13.sh` now runs the direct
   llm.kittens parity gate by default instead of leaving it opt-in. Set
   `NFN_SM120_CUDA13_RUN_PARITY=0` only for fast CUDA-only smoke checks that

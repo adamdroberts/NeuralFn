@@ -248,6 +248,14 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.005 train_loop_cuda_event_steady_state_wall_ms_per_step=1.005 setup_wall_ms=0.800 startup_plus_first_step_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.995}"
     ;;
+  "long_run_defer_prewarm"|"long-run-defer-prewarm"|"defer_prewarm_long_run"|"defer-prewarm-long-run")
+    CANDIDATE_NOTE="Compares the old eager throughput-prewarm setup against the long-run deferred-prewarm policy. The profile sets the candidate threshold to one step so short benchmark runs exercise the same policy branch that default 20k-step quality runs use."
+    INCLUDE_LLMK_REFERENCE=0
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.900}"
+    ;;
   "lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 2-sample same-script gate routed LM-head dHidden through TK dInput but regressed train_loop_wall_ms_per_step to 1.045528x and stage.lm_head_backward.dhidden.total_ms to 1.132973x."

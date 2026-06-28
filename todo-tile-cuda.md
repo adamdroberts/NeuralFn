@@ -159,6 +159,12 @@ Real training tensors must not pass through graph editor node objects.
   `native_fast_startup_prewarm_policy` as
   `long-run-defer-throughput-prewarms-by-default` so 20k-step workstation runs
   do not pay avoidable startup cost before the first optimizer step.
+- [x] Add a same-script benchmark profile for long-run prewarm deferral.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` compares the old
+  eager-prewarm baseline against the deferred-prewarm candidate by setting
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999` on the baseline and `=1`
+  on the candidate, then requiring the `native_fast_startup_prewarm_policy`
+  strategy value to change.
 
 ## Current SM120 parity baseline
 

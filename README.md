@@ -238,7 +238,10 @@ Long native training runs also defer throughput prewarms by default. When
 smoke runs on the existing prewarmed route while avoiding up-front QKV/LM-head
 graph prewarm cost for 20k-step quality runs where first-use cost is amortized.
 Set the threshold higher than `max_steps`, or force the individual prewarm env
-vars, when a long run must use the old eager-prewarm setup.
+vars, when a long run must use the old eager-prewarm setup. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the old
+eager-prewarm setup against the deferred long-run policy in the paired native
+benchmark wrapper.
 Stage-timed startup-only probes also elide the CUDA event-pool preallocation
 because no optimizer step can consume those events before exit; runtime JSON
 reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.

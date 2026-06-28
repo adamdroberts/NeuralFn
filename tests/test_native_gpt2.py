@@ -2803,6 +2803,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "setup_wall_ms to 0.669761x" in bench_source
     assert "train_loop_wall_ms_per_step regressed to 1.034057x" in bench_source
     assert "startup_plus_first_step_wall_ms=1.000" in bench_source
+    assert '"long_run_defer_prewarm"|"long-run-defer-prewarm"' in bench_source
+    assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999" in bench_source
+    assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1" in bench_source
+    assert "native_fast_startup_prewarm_policy" in bench_source
+    assert "setup_wall_ms=0.900" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
