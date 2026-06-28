@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 LM-head diagnostics: added a rejected-by-default 24x24 strict
+  true-fused LM-head profile for the Tile CUDA trainer path. Tile CUDA now
+  accepts `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24`, the CE row-thread
+  selector accepts `576`, and the wrappers expose
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile24` plus
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile24`. The profile
+  is benchmark coverage only and remains rejected until the same-script focused
+  and full-loop gates beat both the CUDA Graph wrapper and llm.kittens
+  reference paths. The CUDA 13.3.33 dedicated RTX 5090 focused probe proved
+  `candidate_path_class=strict-true-fused-tile-kernel` and moved
+  `true_fused_launch_count` to `1`, but rejected promotion at `6.266142x`
+  candidate/current-wrapper and `21.764091x` candidate/reference-summed time,
+  with the strict body still `679.228962 ms` slower than the reference
+  CE+dHidden+dWeight components.
+
+  Verification: `bash -n tools/bench_lm_head_backward_candidate.sh`;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on
+  -q`; `git diff --check`;
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile24
+  NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_true_fused_tile24.json bash
+  tools/bench_lm_head_backward_candidate.sh`, which intentionally exited
+  non-zero on the rejection gate after writing the measured JSON.
+
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now accepts
   `NFN_SM120_CUDA13_RUN_PARITY=1` to append the direct llm.kittens parity gate
   after the native smoke/pytest/optional native-vs-native benchmark checks. The

@@ -193,8 +193,9 @@ static_assert(
     NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 4 ||
         NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 8 ||
         NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16 ||
+        NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 24 ||
         NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 32,
-    "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE must be 4, 8, 16, or 32");
+    "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE must be 4, 8, 16, 24, or 32");
 constexpr int kLmHeadTrueFusedMatTile = NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE;
 constexpr int kLmHeadTrueFusedRequiredThreads =
     kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile;
@@ -244,6 +245,7 @@ int cross_entropy_bf16_threads_per_row() {
       case 128:
       case 256:
       case 512:
+      case 576:
       case 1024:
         return static_cast<int>(parsed);
       default:

@@ -2738,17 +2738,20 @@ through the default compile-mode path. Raw TK GEMM bisections that intentionally
 avoid cuBLASLt should be built as local experiments only, because CUDA 13.3 may
 reject over-shared kernel instantiations at `ptxas` time.
 
-Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `16`, `64`, `128`, `256`, `512`, or `1024`; unsupported values fall back to 1024. The raw Tile ABI exports the resolved launch value through `nfn_native_tile_token_cross_entropy_bf16_threads_per_row`, dense GPT runtime JSON reports it as `lm_head_ce_bf16_threads_per_row`, and `tools/paired_kernel_speed.py` treats it as a native strategy value so CE launch-shape bisections are not mistaken for timing-only noise. Runtime JSON also reports `lm_head_true_fused_mat_tile` and `lm_head_true_fused_required_threads` from the loaded Tile ops library so strict fused LM-head profile runs can prove which compile-time tile body they used.
+Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `16`, `64`, `128`, `256`, `512`, `576`, or `1024`; unsupported values fall back to 1024. The raw Tile ABI exports the resolved launch value through `nfn_native_tile_token_cross_entropy_bf16_threads_per_row`, dense GPT runtime JSON reports it as `lm_head_ce_bf16_threads_per_row`, and `tools/paired_kernel_speed.py` treats it as a native strategy value so CE launch-shape bisections are not mistaken for timing-only noise. Runtime JSON also reports `lm_head_true_fused_mat_tile` and `lm_head_true_fused_required_threads` from the loaded Tile ops library so strict fused LM-head profile runs can prove which compile-time tile body they used.
 
 The strict true-fused LM-head diagnostic body can be rebuilt with a smaller
 compile-time matmul tile for focused bisection. Pass
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16"`
-to pair a 16x16 body with 256 CE threads, or use `...=8` to pair an 8x8 body
-with 64 CE threads, or use `...=4` to pair a 4x4 body with 16 CE threads. The rejected profiles
+to pair a 16x16 body with 256 CE threads, use `...=24` to pair a 24x24 body
+with 576 CE threads, use `...=8` to pair an 8x8 body with 64 CE threads, or
+use `...=4` to pair a 4x4 body with 16 CE threads. The rejected profiles
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16` /
-`trainer-chunk-true-fused-tile8` / `trainer-chunk-true-fused-tile4` and
+`trainer-chunk-true-fused-tile24` / `trainer-chunk-true-fused-tile8` /
+`trainer-chunk-true-fused-tile4` and
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16` /
-`lm_head_true_fused_tile8` / `lm_head_true_fused_tile4` set these combinations
+`lm_head_true_fused_tile24` / `lm_head_true_fused_tile8` /
+`lm_head_true_fused_tile4` set these combinations
 for focused LM-head and full GPT-loop checks. The focused LM-head profiles build their Tile ops candidate
 into `/tmp` by default so they do not replace `build/libnfn_native_train_tile_ops.so`;
 set `NFN_NATIVE_TILE_OPS_LIB` only when you intentionally want a custom output

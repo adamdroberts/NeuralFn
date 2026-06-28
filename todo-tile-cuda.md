@@ -241,6 +241,17 @@ Real training tensors must not pass through graph editor node objects.
     `4510.827989 ms` slower than the reference CE+dHidden+dWeight components.
     The tile4 body is now recorded as a dead-end tuning branch unless a future
     implementation proves both current-wrapper and reference parity.
+  - 2026-06-28 added a rejected-by-default 24x24 strict true-fused LM-head
+    diagnostic profile. Tile CUDA now accepts
+    `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24`, the CE row-thread selector
+    accepts `576`, and `trainer-chunk-true-fused-tile24` /
+    `lm_head_true_fused_tile24` build the matching candidate library in `/tmp`
+    for focused and full-loop bisection. The CUDA 13.3.33 dedicated RTX 5090
+    focused probe proved `candidate_path_class=strict-true-fused-tile-kernel`
+    and moved `true_fused_launch_count` to `1`, but rejected promotion at
+    `6.266142x` candidate/current-wrapper and `21.764091x`
+    candidate/reference-summed time, with the strict body still `679.228962 ms`
+    slower than the reference CE+dHidden+dWeight components.
   - 2026-06-26 tightened this evidence path with an explicit strict launch
     counter. The Tile ops ABI now exports
     `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`, focused
