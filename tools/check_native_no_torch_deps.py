@@ -23,9 +23,9 @@ REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_train_gpt"),
     Path("build/nfn_train_gpt_sm120"),
+    Path("build/nfn_native_train"),
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
-    Path("build/nfn_native_train"),
     Path("build/nfn_gpt2_evo_native_train"),
     Path("build/nfn_nanogpt_native_train"),
     Path("build/nfn_llama_native_train"),
@@ -37,8 +37,12 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/lm_head_backward_bench"),
     Path("build/libnfn_native_train_tile_ops_tk.so"),
 )
+REQUIRED_DEFAULT_ARTIFACT_GLOBS = (
+    "neuralfn/_native_gpt.*.so",
+    "neuralfn/_native_gpt2.*.so",
+    "neuralfn/_native_train.*.so",
+)
 OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
-    "neuralfn/_native*.so",
 )
 ARTIFACT_SOURCE_DEPENDENCIES = {
     Path("build/nfn_gpt_native_train"): (
@@ -886,6 +890,15 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         ),
         {},
     ),
+    (
+        "native_train_registry_list_models",
+        (
+            "build/nfn_native_train",
+            "--list-models",
+            "--json",
+        ),
+        {},
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
@@ -973,6 +986,9 @@ def parse_args() -> argparse.Namespace:
 
 def default_artifacts() -> list[Path]:
     artifacts = list(REQUIRED_DEFAULT_ARTIFACTS)
+    for pattern in REQUIRED_DEFAULT_ARTIFACT_GLOBS:
+        matches = sorted(Path().glob(pattern))
+        artifacts.extend(matches or [Path(pattern)])
     artifacts.extend(path for path in OPTIONAL_DEFAULT_ARTIFACTS if path.exists())
     for pattern in OPTIONAL_DEFAULT_ARTIFACT_GLOBS:
         artifacts.extend(sorted(Path().glob(pattern)))

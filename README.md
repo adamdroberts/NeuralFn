@@ -3867,13 +3867,17 @@ benchmarking; GPT-2-prefixed names remain compatibility fallbacks.
 The same verifier now requires the dense GPT fast-path artifacts
 `build/nfn_gpt_native_train`, `build/nfn_gpt_native_train_linked`,
 `build/nfn_gpt2_native_train`, `build/nfn_train_gpt`,
-`build/nfn_train_gpt_sm120`, and `build/libnfn_native_train_tile_ops.so`.
-Those binaries must exist, be fresh against their source dependencies, and link
-no Torch/Python runtime libraries before native GPT training is considered
-ready. The verifier also runs budgeted direct metadata checks against
+`build/nfn_train_gpt_sm120`, `build/nfn_native_train`, and
+`build/libnfn_native_train_tile_ops.so`, plus rebuilt SDK C++ bindings matching
+`neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and
+`neuralfn/_native_train.*.so`. Those binaries and bindings must exist, be fresh
+against their source dependencies, and link no Torch/Python runtime libraries
+before native GPT training is considered ready. The verifier also runs budgeted
+direct metadata checks against
 `build/nfn_gpt_native_train_linked --list-templates` and
-`build/nfn_gpt2_native_train --list-templates`, so slow native binary startup is
-caught even when Python wrappers stay fast.
+`build/nfn_gpt2_native_train --list-templates`, plus
+`build/nfn_native_train --list-models --json`, so slow native binary or native
+registry startup is caught even when Python wrappers stay fast.
 
 Large raw-text datasets whose tokenizer ids fit in `uint16` are cached as `fineweb_train_*.bin` / `fineweb_val_*.bin` token shards on first training load. Subsequent runs estimate schedule length from metadata or shard sizes and memmap the token shards instead of re-tokenizing `data.txt` / `val.txt`. Tokenizers with ids outside `uint16` remain on the raw-text path. Dataset source nodes store dataset names and sequence length only; real text/token payloads stay in the dataset cache and do not pass through graph-editor node metadata.
 
@@ -3969,11 +3973,13 @@ Python runtime libraries, and default native GPT Python training and inference
 entrypoints can construct their compiled-C++ commands or inspect native
 checkpoints while imports of `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl` are blocked.
-By default the artifact scan checks the required native GPT trainer and raw Tile
-ops library, plus any optional compiled C++ native frontends and per-family
-trainer binaries that are already present in `build/`, plus built SDK binding
-modules matching `neuralfn/_native*.so`; explicitly supplied artifact paths
-remain strict and must exist.
+By default the artifact scan checks the required native GPT trainer, linked
+trainer, GPT-2 compatibility frontend, generic/SM120 no-Bash launchers, unified
+native frontend, raw Tile ops library, and SDK binding modules
+(`neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and
+`neuralfn/_native_train.*.so`), plus any optional per-family trainer binaries
+already present in `build/`; explicitly supplied artifact paths remain strict
+and must exist.
 The gate also imports the top-level native SDK exports such as
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `native_gpt_kernel_backend()`, `native_gpt_parameter_count()`,

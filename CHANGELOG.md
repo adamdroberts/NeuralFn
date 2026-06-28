@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native verifier: made the unified native-training frontend and SDK C++
+  bindings required no-Torch artifacts. `tools/check_native_no_torch_deps.py`
+  now fails when `build/nfn_native_train`, `neuralfn/_native_gpt.*.so`,
+  `neuralfn/_native_gpt2.*.so`, or `neuralfn/_native_train.*.so` is missing,
+  stale, or linked against Torch/c10/Python runtime libraries, alongside the
+  dense GPT trainer, linked trainer, compatibility frontend, no-Bash launchers,
+  and Tile ops library. It also budget-checks
+  `build/nfn_native_train --list-models --json`, so native registry startup is
+  part of the fast-path contract. After CUDA toolkit changes, rebuild with
+  `bash tools/rebuild_native_sm120.sh` or the individual native build helpers
+  before running the verifier.
+
 - Native verifier: promoted the compiled dense GPT launch surface from optional
   to required in `tools/check_native_no_torch_deps.py`. The no-Torch gate now
   fails if `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,

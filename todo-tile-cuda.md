@@ -82,12 +82,16 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Require compiled GPT fast-path artifacts in the no-Torch verifier. The
   default `tools/check_native_no_torch_deps.py` artifact set now fails if
   `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,
-  `build/nfn_train_gpt`, or `build/nfn_train_gpt_sm120` is missing or stale,
-  alongside the native GPT trainer and Tile ops library. This makes the
-  no-Bash/no-Python workstation launch path required evidence instead of an
-  optional convenience binary. The same gate now also runs budgeted direct
-  native metadata startup probes for `build/nfn_gpt_native_train_linked
-  --list-templates` and `build/nfn_gpt2_native_train --list-templates`.
+  `build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`,
+  `build/nfn_native_train`, `neuralfn/_native_gpt.*.so`,
+  `neuralfn/_native_gpt2.*.so`, or `neuralfn/_native_train.*.so` is missing or
+  stale, alongside the native GPT trainer and Tile ops library. This makes the
+  no-Bash/no-Python workstation launch path and SDK C++ binding surface
+  required evidence instead of optional convenience artifacts. The same gate now
+  also runs budgeted direct native metadata startup probes for
+  `build/nfn_gpt_native_train_linked --list-templates`,
+  `build/nfn_gpt2_native_train --list-templates`, and
+  `build/nfn_native_train --list-models --json`.
 - [x] Enforce optimized native GPT kernel routes by default. Dense GPT runtime
   JSON now reports `optimized_kernel_contract_*` fields and fails normal
   training if the optimized AdamW ABI is missing, attention falls back to

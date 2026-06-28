@@ -275,6 +275,11 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert shell_entrypoints["native_gpt2_compat_list_templates"]["passed"] is True
     assert shell_entrypoints["native_gpt2_compat_list_templates"]["startup_within_budget"] is True
     assert "shipped_template_catalog" in shell_entrypoints["native_gpt2_compat_list_templates"]["stdout"]
+    assert shell_entrypoints["native_train_registry_list_models"]["passed"] is True
+    assert shell_entrypoints["native_train_registry_list_models"]["startup_within_budget"] is True
+    assert '"models"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
+    assert '"name": "gpt"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
+    assert '"status": "implemented"' in shell_entrypoints["native_train_registry_list_models"]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -365,7 +370,8 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
     assert Path("build/nfn_gpt2_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt_sm120") in module.REQUIRED_DEFAULT_ARTIFACTS
-    assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_native_train") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt_sm120") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt_native_train_linked") not in module.OPTIONAL_DEFAULT_ARTIFACTS
@@ -398,7 +404,10 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
         root / "build" / "nfn_nanogpt_native_train",
         root,
     ) == ("bash", "tools/build_native_missing_trainers.sh")
-    assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
+    assert "neuralfn/_native_gpt.*.so" in module.REQUIRED_DEFAULT_ARTIFACT_GLOBS
+    assert "neuralfn/_native_gpt2.*.so" in module.REQUIRED_DEFAULT_ARTIFACT_GLOBS
+    assert "neuralfn/_native_train.*.so" in module.REQUIRED_DEFAULT_ARTIFACT_GLOBS
+    assert not module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
 def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: Path) -> None:

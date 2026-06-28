@@ -61,11 +61,11 @@ bash tools/build_native_train_tile_ops.sh
 The raw ABI includes an opt-in dense GPT token-weight startup route,
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
 which initializes the public vocabulary rows and zeroes the padded vocabulary
-tail plus BF16 shadow in one launch. The native trainer now enables this route
-by default because the CUDA 13.3.33 dedicated RTX 5090 startup-only gate
-measured `0.976762x` setup wall time and `0.961152x` token-weight init time
-versus the older separate padding-zero/default vector4 path. Set
-`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for paired bisection.
+tail plus BF16 shadow in one launch. The native trainer keeps this route off
+by default until a full throughput gate passes; the startup-only gate proved the
+route, but the previous full-training reference run still failed llm.kittens
+throughput checks. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only
+for paired bisection or rejected-candidate profiling.
 Runtime JSON reports
 `token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
@@ -2299,11 +2299,15 @@ runs `ldd` checks for Torch/c10/Python runtime libraries on the required
 dense GPT fast-path artifacts: `build/nfn_gpt_native_train`,
 `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,
 `build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`, and
-`build/libnfn_native_train_tile_ops.so`. Optional per-family trainers already
-present in `build/` and built SDK binding modules matching `neuralfn/_native*.so`
-are scanned as additional evidence. It also budget-checks direct native trainer
-metadata startup through `build/nfn_gpt_native_train_linked --list-templates`
-and `build/nfn_gpt2_native_train --list-templates`, then runs `cli/scripts/train_gpt.py`,
+`build/nfn_native_train`, the raw Tile ops library
+`build/libnfn_native_train_tile_ops.so`, and the SDK C++ bindings
+`neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and
+`neuralfn/_native_train.*.so`. Optional per-family trainers already present in
+`build/` are scanned as additional evidence. It also budget-checks direct
+native trainer metadata startup through
+`build/nfn_gpt_native_train_linked --list-templates`,
+`build/nfn_gpt2_native_train --list-templates`, and
+`build/nfn_native_train --list-models --json`, then runs `cli/scripts/train_gpt.py`,
 `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
