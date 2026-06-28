@@ -304,6 +304,36 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert '"token_shards_resolved": false' in shell_entrypoints[
         "native_train_gpt_wrapper_list_templates"
     ]["stdout"]
+    catalog_report = payload["native_template_catalogs"]
+    assert catalog_report["passed"] is True
+    catalog_entrypoints = {
+        entry["entrypoint"]: entry for entry in catalog_report["entrypoints"]
+    }
+    linked_catalog = catalog_entrypoints["native_gpt_linked_list_templates"]
+    assert linked_catalog["passed"] is True
+    assert linked_catalog["token_shards_resolved"] is False
+    required_dense = linked_catalog["required_dense_templates"]
+    for template_name in (
+        "gpt",
+        "gpt2",
+        "gpt2_modern",
+        "gpt2_megakernel",
+        "gpt2_moa",
+        "gpt3",
+        "nanogpt",
+        "nanogpt_modern",
+        "nanogpt_megakernel",
+    ):
+        assert required_dense[template_name]["passed"] is True
+        assert required_dense[template_name]["status"] == "native-transformer-lm"
+        assert required_dense[template_name]["native_runnable"] is True
+    assert required_dense["gpt3"]["geometry"]["seq_len"] == 2048
+    assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
+    assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
+    missing_sentinels = linked_catalog["missing_native_sentinels"]
+    assert missing_sentinels["llama"]["passed"] is True
+    assert missing_sentinels["llama"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["semantic_router_moe_modern"]["passed"] is True
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True

@@ -947,6 +947,27 @@ DEFAULT_SHELL_ENTRYPOINTS = (
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
+REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
+    "gpt": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_modern": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_megakernel": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_moa": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt3": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 2048},
+    "nanogpt": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
+    "nanogpt_modern": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
+    "nanogpt_megakernel": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
+}
+REQUIRED_NATIVE_MISSING_TEMPLATE_SENTINELS = (
+    "llama",
+    "semantic_router_moe_modern",
+)
+NATIVE_TEMPLATE_CATALOG_ENTRYPOINTS = (
+    "native_gpt_linked_list_templates",
+    "native_gpt2_compat_list_templates",
+    "native_train_gpt_list_templates",
+    "native_train_gpt_wrapper_list_templates",
+)
 
 
 def _native_gpt_parameter_count(
@@ -1709,6 +1730,161 @@ def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -
     return entries
 
 
+def _parse_json_stdout(stdout: object) -> tuple[dict[str, object] | None, str | None]:
+    if not isinstance(stdout, str) or not stdout.strip():
+        return None, "empty stdout"
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON stdout: {exc}"
+    if not isinstance(parsed, dict):
+        return None, "JSON stdout was not an object"
+    return parsed, None
+
+
+def _template_geometry_matches(
+    geometry: object,
+    expected_geometry: dict[str, int],
+) -> tuple[bool, list[str]]:
+    errors: list[str] = []
+    if not isinstance(geometry, dict):
+        return False, ["missing selected_template_geometry"]
+    for field, expected_value in expected_geometry.items():
+        if geometry.get(field) != expected_value:
+            errors.append(f"{field}={geometry.get(field)!r}, expected {expected_value!r}")
+    return not errors, errors
+
+
+def _validate_native_template_catalog(
+    *,
+    entrypoint_name: str,
+    entry: dict[str, object] | None,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "entrypoint": entrypoint_name,
+        "passed": False,
+        "required_dense_templates": {},
+        "missing_native_sentinels": {},
+        "errors": [],
+    }
+    errors = report["errors"]
+    if not isinstance(errors, list):
+        raise AssertionError("internal report error storage mismatch")
+    if entry is None:
+        errors.append("entrypoint was not run")
+        return report
+    if not bool(entry.get("passed")):
+        errors.append(f"entrypoint did not pass: returncode={entry.get('returncode')!r}")
+    catalog, parse_error = _parse_json_stdout(entry.get("stdout"))
+    if parse_error is not None or catalog is None:
+        errors.append(parse_error or "template catalog JSON was unavailable")
+        return report
+    report["action"] = catalog.get("action")
+    report["shipped_template_catalog_count"] = catalog.get("shipped_template_catalog_count")
+    report["selector_count"] = catalog.get("selector_count")
+    report["token_shards_resolved"] = catalog.get("token_shards_resolved")
+    if catalog.get("action") != "list_templates":
+        errors.append(f"action={catalog.get('action')!r}, expected 'list_templates'")
+    if catalog.get("token_shards_resolved") is not False:
+        errors.append("template catalog listing resolved token shards")
+    templates = catalog.get("templates")
+    if not isinstance(templates, list):
+        errors.append("templates was not a list")
+        return report
+    by_name = {
+        template.get("name"): template
+        for template in templates
+        if isinstance(template, dict) and isinstance(template.get("name"), str)
+    }
+    dense_reports: dict[str, object] = {}
+    for template_name, expected_geometry in REQUIRED_NATIVE_DENSE_GPT_TEMPLATES.items():
+        template = by_name.get(template_name)
+        template_report: dict[str, object] = {
+            "passed": False,
+            "status": None,
+            "native_runnable": None,
+            "geometry": None,
+            "errors": [],
+        }
+        template_errors = template_report["errors"]
+        if not isinstance(template_errors, list):
+            raise AssertionError("internal template error storage mismatch")
+        if template is None:
+            template_errors.append("template missing from catalog")
+        else:
+            template_report["status"] = template.get("selected_graph_support_status")
+            template_report["native_runnable"] = template.get("selected_graph_native_runnable")
+            geometry = template.get("selected_template_geometry")
+            template_report["geometry"] = geometry
+            if template.get("selected_graph_support_status") != "native-transformer-lm":
+                template_errors.append(
+                    "status="
+                    f"{template.get('selected_graph_support_status')!r}, "
+                    "expected 'native-transformer-lm'"
+                )
+            if template.get("selected_graph_native_runnable") is not True:
+                template_errors.append("selected_graph_native_runnable was not true")
+            geometry_passed, geometry_errors = _template_geometry_matches(geometry, expected_geometry)
+            if not geometry_passed:
+                template_errors.extend(geometry_errors)
+        template_report["passed"] = not template_errors
+        if template_errors:
+            errors.append(f"{template_name}: {'; '.join(template_errors)}")
+        dense_reports[template_name] = template_report
+    sentinel_reports: dict[str, object] = {}
+    for template_name in REQUIRED_NATIVE_MISSING_TEMPLATE_SENTINELS:
+        template = by_name.get(template_name)
+        template_report = {
+            "passed": False,
+            "status": None,
+            "native_runnable": None,
+            "errors": [],
+        }
+        template_errors = template_report["errors"]
+        if not isinstance(template_errors, list):
+            raise AssertionError("internal sentinel error storage mismatch")
+        if template is None:
+            template_errors.append("template missing from catalog")
+        else:
+            template_report["status"] = template.get("selected_graph_support_status")
+            template_report["native_runnable"] = template.get("selected_graph_native_runnable")
+            if template.get("selected_graph_support_status") != "template-native-trainer-missing":
+                template_errors.append(
+                    "status="
+                    f"{template.get('selected_graph_support_status')!r}, "
+                    "expected 'template-native-trainer-missing'"
+                )
+            if template.get("selected_graph_native_runnable") is not False:
+                template_errors.append("selected_graph_native_runnable was not false")
+        template_report["passed"] = not template_errors
+        if template_errors:
+            errors.append(f"{template_name}: {'; '.join(template_errors)}")
+        sentinel_reports[template_name] = template_report
+    report["required_dense_templates"] = dense_reports
+    report["missing_native_sentinels"] = sentinel_reports
+    report["passed"] = not errors
+    return report
+
+
+def native_template_catalog_report(shell_report: list[dict[str, object]]) -> dict[str, object]:
+    shell_entrypoints = {
+        str(entry.get("name")): entry
+        for entry in shell_report
+        if isinstance(entry, dict) and entry.get("name") is not None
+    }
+    catalog_reports = [
+        _validate_native_template_catalog(
+            entrypoint_name=name,
+            entry=shell_entrypoints.get(name),
+        )
+        for name in NATIVE_TEMPLATE_CATALOG_ENTRYPOINTS
+    ]
+    return {
+        "passed": all(bool(report.get("passed")) for report in catalog_reports),
+        "entrypoints": catalog_reports,
+    }
+
+
 def project_dependency_report(repo_root: Path) -> dict[str, object]:
     pyproject = repo_root / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -1922,6 +2098,7 @@ def main() -> int:
 
     python_report: list[dict[str, object]] = []
     shell_report: list[dict[str, object]] = []
+    catalog_report: dict[str, object] | None = None
     dependency_report: dict[str, object] | None = None
     requirements_report: dict[str, object] | None = None
     egg_info_report: dict[str, object] | None = None
@@ -1942,6 +2119,8 @@ def main() -> int:
             max_entrypoint_seconds=float(args.max_entrypoint_seconds),
         )
         failed = failed or any(not bool(entry["passed"]) for entry in shell_report)
+        catalog_report = native_template_catalog_report(shell_report)
+        failed = failed or not bool(catalog_report["passed"])
 
     if args.json:
         print(
@@ -1955,6 +2134,7 @@ def main() -> int:
                     "egg_info_dependencies": egg_info_report,
                     "python_entrypoints": python_report,
                     "shell_entrypoints": shell_report,
+                    "native_template_catalogs": catalog_report,
                 },
                 indent=2,
             )
@@ -2038,6 +2218,17 @@ def main() -> int:
                     )
                 if entry["stderr"]:
                     print(str(entry["stderr"]), file=sys.stderr)
+        if catalog_report is not None:
+            if catalog_report["passed"]:
+                print("native_template_catalogs: ok")
+            else:
+                print("native_template_catalogs: failed", file=sys.stderr)
+                for report in catalog_report.get("entrypoints", []):
+                    if not isinstance(report, dict) or report.get("passed"):
+                        continue
+                    print(f"  {report.get('entrypoint')}: failed", file=sys.stderr)
+                    for error in report.get("errors", []):
+                        print(f"    {error}", file=sys.stderr)
     return 1 if failed else 0
 
 

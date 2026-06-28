@@ -2990,6 +2990,13 @@ renaming a shipped GPT preset, run
 `python tools/generate_native_gpt_template_catalog.py --check` so native
 `--template-name` / `--preset` status JSON remains synchronized with the Python
 SDK catalog.
+`python tools/check_native_no_torch_deps.py --skip-artifacts --json` also parses
+the compiled template catalog from the native GPT entrypoints and fails if the
+dense GPT selectors (`gpt`, GPT-2 variants, GPT-3, and NanoGPT variants) stop
+reporting `native-transformer-lm`, if GPT-3 loses its 2048-token geometry, if
+NanoGPT loses its 320-wide/5-layer geometry, or if structurally different
+templates such as LLaMA start falling back through Torch instead of reporting a
+missing native trainer.
 
 For same-script native GPT benchmarks through `nfn train`, pass `--native-cuda-no-checkpoint` or `--no-checkpoint` to skip final checkpoint export, in addition to setting validation, sample, and checkpoint cadences to `0` when you want timing-only runs.
 

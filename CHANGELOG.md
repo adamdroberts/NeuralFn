@@ -811,7 +811,9 @@ Future updates should append new entries here rather than replacing older notes.
   runnable. The guard also locks GPT3's 2048-token geometry and NanoGPT's
   320-wide/5-layer geometry, and confirms structurally different templates such
   as LLaMA still report native-trainer-missing instead of falling back to Torch.
-  Updated the SDK docs to remove the stale NanoGPT geometry-mismatch wording.
+  The verifier now exposes this parsed check as `native_template_catalogs` in
+  its JSON output and includes it in the overall pass/fail result. Updated the
+  SDK docs to remove the stale NanoGPT geometry-mismatch wording.
 
 - Native trainer: added a diagnostic padded token-weight BF16-pattern
   initializer behind `NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1` /
