@@ -272,6 +272,17 @@ void launch_linear_backward_weight_accumulate_nvfp4_input_float32_beta(
     std::int64_t output_dim,
     float beta,
     cudaStream_t stream);
+void launch_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
 void launch_store_mlp_activations_bf16_float32(
     const float* ln2_out,
     const float* fc_out,
@@ -3433,6 +3444,31 @@ int nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta(
         x_block_scales_e4m3,
         x_tensor_scale,
         grad_out,
+        grad_weight,
+        rows,
+        input_dim,
+        output_dim,
+        beta,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta(
+        x_nvfp4_packed,
+        x_block_scales_e4m3,
+        x_tensor_scale,
+        grad_out_bf16_bits,
         grad_weight,
         rows,
         input_dim,

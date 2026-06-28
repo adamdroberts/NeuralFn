@@ -408,15 +408,18 @@ The `--smoke-nvfp4-pack` preflight now reports
 `native_activation_packing_prerequisite_status`, and
 `native_activation_packing_remaining_required_kernels`. It also loads
 `nfn_native_tile_linear_nvfp4_input_weight_bf16_float32`,
-`nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32`, and
+`nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32`,
 `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta`,
+and
+`nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta`,
 then reports `projection_max_abs_error`,
 `projection_bf16_output_max_abs_error`, and
-`projection_dweight_max_abs_error` for tiny packed-input projection forward,
-QKV-storage-shaped BF16 projection output, and dweight passes. This proves the
-raw CUDA Tile pack/dequantize arena and first packed projection primitives are
-callable from the native trainer, not that the full dense GPT training loop is
-consuming packed FP4 activations yet.
+`projection_dweight_max_abs_error`, and
+`projection_dweight_bf16_grad_max_abs_error` for tiny packed-input projection
+forward, QKV-storage-shaped BF16 projection output, and float/BF16-grad dweight
+passes. This proves the raw CUDA Tile pack/dequantize arena and first packed
+projection primitives are callable from the native trainer, not that the full
+dense GPT training loop is consuming packed FP4 activations yet.
 
 Dense GPT plan/runtime JSON reports
 `native_geometry_contract.selected_template_geometry` and

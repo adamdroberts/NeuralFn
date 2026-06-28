@@ -10,12 +10,16 @@
   `native_activation_packing_remaining_required_kernels` after launching the
   raw CUDA Tile pack/dequantize kernels, then loads
   `nfn_native_tile_linear_nvfp4_input_weight_bf16_float32`,
-  `nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32`, and
+  `nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32`,
   `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta`,
+  and
+  `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta`,
   then reports `projection_max_abs_error`,
   `projection_bf16_output_max_abs_error`, and
-  `projection_dweight_max_abs_error` for tiny packed-input projection forward,
-  QKV-storage-shaped BF16 projection output, and dweight passes. This does not mark
+  `projection_dweight_max_abs_error`, and
+  `projection_dweight_bf16_grad_max_abs_error` for tiny packed-input projection
+  forward, QKV-storage-shaped BF16 projection output, and float/BF16-grad
+  dweight passes. This does not mark
   `tile_cuda.native_activation_packing_active` true; attention QKV and LM-head
   FP4 routes are still required before dense GPT training is actually
   packed-NVFP4 end to end. Verification: focused native source test (skipped in
