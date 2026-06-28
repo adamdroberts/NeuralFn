@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: reran the full `tools/validate_sm120_cuda13.sh`
+  gate after rebuilding stale native artifacts with
+  `tools/build_native_gpt_cli.sh`, `tools/build_native_gpt2_cli.sh`, and
+  `tools/build_native_train_tile_ops.sh`. The no-Torch preflight now reports no
+  stale artifacts, and the README validation note has been refreshed to the
+  current `tests/test_native_gpt2.py` count.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json` passed; `bash
+  tools/validate_sm120_cuda13.sh` passed on the dedicated RTX 5090 with CUDA
+  13.3, including Tile fill, NVFP4 pack/unpack, TinyStories transformer-LM
+  smoke, the focused LM-head backward benchmark, and
+  `tests/test_native_gpt2.py` (`108 passed, 1 skipped`).
+
 - Native GPT kernels: promoted the no-loss llm.kittens-style LM-head
   CE/dlogits store route to the default optimizer-step classifier path,
   superseding the earlier CUDA 13.3 rejection note. The native trainer and Tile

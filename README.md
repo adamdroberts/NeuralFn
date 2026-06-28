@@ -255,11 +255,12 @@ next useful slice remains a production true-fused/reference-aligned LM-head
 classifier-backward Tile kernel, not another flag-only reroute.
 Dense GPT native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
-default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row
-chunk is restored to 32768 rows for the workstation 5090 profile after the
-CUDA 13.3 paired confirmation rejected the 49152-row route at `1.012983x`
-train-loop wall time. Pass `--lm-head-row-chunk-size 49152` only to reproduce
-that rejected historical route, or pass `--lm-head-row-chunk-size 8192`,
+default `50304,28672,768,T,N` row-chunk shape. The default tied LM-head row
+chunk is 28672 rows for the workstation 5090 profile after the CUDA 13.3.33
+paired confirmation beat the prior 32768-row route, while the older 49152-row
+route remained rejected at `1.012983x` train-loop wall time. Pass
+`--lm-head-row-chunk-size 49152` only to reproduce that rejected historical
+route, or pass `--lm-head-row-chunk-size 8192`,
 `--native-cuda-lm-head-row-chunk-size 8192`, or
 `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` to reproduce the older
 lower-memory default. A full-batch 65536-row chunk is not a default candidate:
@@ -274,7 +275,7 @@ that rejected diagnostic, with
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
 65536`. The
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` profile now pins
-the baseline to `--lm-head-row-chunk-size 32768` and the candidate to
+the historical baseline to `--lm-head-row-chunk-size 32768` and the candidate to
 `--lm-head-row-chunk-size 49152`, so the same-script wrapper still compares the
 rejected larger route against the older default under the same external GPU
 load. The promoted `lm_head_row_chunk_28672` profile pins the baseline to
@@ -4152,7 +4153,7 @@ contract green (`graph_editor_tensor_flow=false`, `torch_required=false`,
 with median train-loop and steady-state CUDA-event ratios of `1.001715x` and
 `1.001653x`. The full `bash tools/validate_sm120_cuda13.sh` gate also passed
 on that setup, including Tile fill, NVFP4 pack, TinyStories transformer-LM
-smoke, and `tests/test_native_gpt2.py` (`107 passed, 1 skipped`).
+smoke, and `tests/test_native_gpt2.py` (`108 passed, 1 skipped`).
 For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
 It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
