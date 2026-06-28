@@ -148,7 +148,12 @@ Future updates should append new entries here rather than replacing older notes.
   the CUDA 13.3 reinstall. The candidate still changes only
   `token_weight_init_strategy`; the latest paired run keeps it rejected even
   though process/setup metrics improved, because the intended token-init target
-  and first-step reference gates did not both pass.
+  and first-step reference gates did not both pass in the same script. A
+  3-step, 2-sample check improved `setup.token_weight_init.total_ms` to
+  `0.953426x` but missed candidate-over-reference first-step CUDA-event timing
+  at `1.000443x`; the canonical 3-step, 3-sample, 1-warmup check passed
+  candidate/reference throughput and first-step gates, but failed the target
+  token-init gate at `1.017866x` while setup wall improved to `0.992765x`.
 
   Verification: `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
   NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern
@@ -156,10 +161,18 @@ Future updates should append new entries here rather than replacing older notes.
   NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
   NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_token_weight_padded_bf16_pattern_rerun.json
   bash tools/bench_native_gpt_sm120_candidate.sh` failed the expected rejected
-  profile gate with `setup.token_weight_init.total_ms=1.001098x` and
-  candidate-over-reference first-step CUDA-event timing `1.000752x`, while
-  keeping the native runtime contract green and measuring
-  `candidate_over_reference train_loop_wall_ms_per_step=0.999856x`.
+  profile gate with candidate-over-reference first-step CUDA-event timing
+  `1.000443x`, while keeping the native runtime contract green and measuring
+  `setup.token_weight_init.total_ms=0.953426x`; and
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_padded_bf16_pattern
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_token_weight_padded_bf16_pattern_3sample.json
+  bash tools/bench_native_gpt_sm120_candidate.sh` failed the expected rejected
+  profile gate on `setup.token_weight_init.total_ms=1.017866x`, while passing
+  candidate/reference throughput gates and keeping the native runtime contract
+  green.
 
 - Native GPT benchmarking: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=setup_event_timing`, a startup-only

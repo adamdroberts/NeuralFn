@@ -3201,6 +3201,14 @@ CE-padding-scrub route. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
 `cudaMemsetAsync` is available, the trainer now zeroes the padded BF16 rows
 directly instead of launching a float-to-BF16 conversion kernel over known-zero
 FP32 padding; JSON reports `token_weight_bf16_padding_memset_count`.
+The precomputed padded BF16-pattern variant remains diagnostic-only behind
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_BF16_PATTERN=1`. Current CUDA 13.3 RTX 5090
+reruns did not promote it: a 3-step, 2-sample run improved
+`setup.token_weight_init.total_ms` to `0.953426x` but missed
+candidate-over-reference first-step CUDA-event timing at `1.000443x`, while
+the canonical 3-step, 3-sample, 1-warmup run passed candidate/reference
+throughput and first-step gates but failed the target token-init bucket at
+`1.017866x` despite setup wall improving to `0.992765x`.
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` defaults on for dense GPT startup,
 using the vectorized token-weight initializer while preserving the deterministic
 power-of-two initialization contract and fused BF16 shadow write. The
