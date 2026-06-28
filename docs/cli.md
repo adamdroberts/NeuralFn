@@ -2293,7 +2293,10 @@ default. Fast startup does not change the long-training default; it changes the
 default prewarm policy so TK QKV first-use prewarm and LM-head CUDA Graph
 prewarm are skipped unless `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` or
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` explicitly force them
-back on. Runtime JSON reports `native_fast_startup_requested` and
+back on. The same policy can be requested directly with
+`nfn_gpt_native_train --fast-startup` or through the Python SDK with
+`build_native_train_run_config(..., fast_startup=True)`. Runtime JSON reports
+`native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`.
 Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
 setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.

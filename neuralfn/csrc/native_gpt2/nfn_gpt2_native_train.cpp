@@ -148,6 +148,7 @@ struct Config {
     bool startup_only = false;
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
+    bool fast_startup = false;
     bool require_optimized_attention = true;
     bool require_optimized_kernels = true;
     bool require_cooperative_lm_head_backward = false;
@@ -511,6 +512,7 @@ void print_usage(const char* program) {
         << "  --train-embedding-lm              Train dense GPT embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
         << "  --train-transformer-lm            Run the dense GPT transformer/LM training loop with validation JSON (default)\n"
         << "  --startup-only                    Run full Tile-CUDA transformer setup and exit before optimizer steps\n"
+        << "  --fast-startup                    Skip throughput-only setup prewarms for low-latency preflight/startup runs\n"
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
         << "  --no-checkpoint                   Skip final trained checkpoint export for speed/preflight runs\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
@@ -10789,6 +10791,7 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_workspace_prewarm_success_count = 0;
     std::int64_t linear_bf16_workspace_prewarm_failure_count = 0;
     const bool native_fast_startup_requested =
+        cfg.fast_startup ||
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_FAST_STARTUP",
                               "NFN_NATIVE_GPT2_FAST_STARTUP",
@@ -25685,6 +25688,8 @@ int main(int argc, char** argv) {
             cfg.backend = "tile-cuda";
             cfg.startup_only = true;
             cfg.train_transformer_lm = true;
+        } else if (arg == "--fast-startup" || arg == "--native-cuda-fast-startup") {
+            cfg.fast_startup = true;
         } else if (arg == "--no-train-transformer-lm") {
             cfg.train_transformer_lm = false;
         } else if (arg == "--no-checkpoint" || arg == "--native-cuda-no-checkpoint") {

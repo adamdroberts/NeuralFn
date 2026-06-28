@@ -279,6 +279,11 @@ helper appends that flag once, accepts either existing CLI spelling without
 duplicating it, and raises for non-dense families such as `llama`. Current builds
 still fail the guard because the LM-head path is a diagnostic CUDA Graph wrapper
 rather than a true fused classifier/dHidden/dWeight Tile kernel.
+Pass `fast_startup=True` for dense GPT SDK preflight or startup probes that
+should append `--fast-startup` and skip throughput-only setup prewarms without
+using environment variables. Normal training defaults keep those prewarms on,
+and the SDK suppresses duplicate `--fast-startup` /
+`--native-cuda-fast-startup` argv entries.
 The CLI subprocess fallback also defaults to CUDA ordinal `0` and sets
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
 environment variables; set `NativeTrainRunConfig.cuda_visible_devices` to

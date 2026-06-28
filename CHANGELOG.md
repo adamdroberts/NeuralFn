@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: `nfn_gpt_native_train` now accepts `--fast-startup` /
+  `--native-cuda-fast-startup`, and `NativeTrainRunConfig` plus the
+  `build_native_train_run_config()`, `build_native_sm120_gpt_run_config()`, and
+  `build_native_gpt_launcher_run_config()` helpers accept
+  `fast_startup=True` for dense GPT-family startup/preflight probes. The
+  structured option appends the native flag once and uses the existing runtime
+  JSON fields (`native_fast_startup_requested` and
+  `native_fast_startup_prewarm_policy`) while leaving normal training defaults
+  unchanged. Verification: focused native GPT source/SDK tests, linked trainer
+  build/help, and `git diff --check`.
+
 - Native GPT benchmarks: paired native candidate runs now include
   `optimized_kernel_contract_passed=true` in the native runtime contract gate,
   alongside `graph_editor_tensor_flow=false` and `torch_required=false`. This

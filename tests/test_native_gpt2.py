@@ -1372,8 +1372,11 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_FAST_STARTUP" in gpt_source
     assert "NFN_NATIVE_GPT2_FAST_STARTUP" in gpt_source
     assert "NFN_TILE_CUDA_FAST_STARTUP" in gpt_source
+    assert "--fast-startup" in gpt_source
+    assert "--native-cuda-fast-startup" in gpt_source
     assert "native_fast_startup_requested" in gpt_source
     assert "native_fast_startup_prewarm_policy" in gpt_source
+    assert "cfg.fast_startup ||" in gpt_source
     assert "!native_fast_startup_requested && !cfg.startup_only" in gpt_source
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
@@ -2024,6 +2027,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
+    assert "cfg.fast_startup ||" in source
     assert "!native_fast_startup_requested && !cfg.startup_only" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert (
@@ -4772,15 +4776,18 @@ def test_native_train_run_config_can_require_strict_dense_gpt_lm_head(
         "gpt3",
         ["--tinystories", "--dry-run"],
         require_cooperative_lm_head_backward=True,
+        fast_startup=True,
     )
 
     assert cfg.to_dict()["require_cooperative_lm_head_backward"] is True
+    assert cfg.to_dict()["fast_startup"] is True
     assert cfg.argv() == [
         str(family_cli),
         "--model-family",
         "gpt3",
         "--tinystories",
         "--dry-run",
+        "--fast-startup",
         "--require-cooperative-lm-head-backward",
     ]
 
@@ -4793,10 +4800,19 @@ def test_native_train_run_config_can_require_strict_dense_gpt_lm_head(
     assert duplicate_cfg.argv().count("--require-cooperative-lm-head-backward") == 0
     assert duplicate_cfg.argv().count("--native-cuda-require-cooperative-lm-head-backward") == 1
 
+    fast_startup_duplicate_cfg = build_native_train_run_config(
+        "gpt",
+        ["--dry-run", "--native-cuda-fast-startup"],
+        fast_startup=True,
+    )
+
+    assert fast_startup_duplicate_cfg.argv().count("--fast-startup") == 0
+    assert fast_startup_duplicate_cfg.argv().count("--native-cuda-fast-startup") == 1
+
     unsupported_cfg = build_native_train_run_config(
         "llama",
         ["--dry-run"],
-        require_cooperative_lm_head_backward=True,
+        fast_startup=True,
     )
 
     with pytest.raises(ValueError, match="only supported for dense GPT"):

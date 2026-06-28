@@ -162,11 +162,13 @@ the cuBLASLt LM-head wrapper that wins in isolation regressed the full native
 trainer to `1.076611x` train-loop wall time.
 For smoke tests and low-latency startup checks, set
 `NFN_NATIVE_GPT_FAST_STARTUP=1` (or the compatibility aliases
-`NFN_NATIVE_GPT2_FAST_STARTUP=1` / `NFN_TILE_CUDA_FAST_STARTUP=1`). This keeps
-the long-training default route unchanged, but flips the default setup-prewarm
-policy so the TK QKV first-use prewarm and LM-head CUDA Graph prewarm are
-skipped unless their explicit prewarm env vars force them back on. Native JSON
-reports `native_fast_startup_requested` and
+`NFN_NATIVE_GPT2_FAST_STARTUP=1` / `NFN_TILE_CUDA_FAST_STARTUP=1`), pass
+`--fast-startup` to `nfn_gpt_native_train`, or set
+`fast_startup=True` on `NativeTrainRunConfig` / `build_native_train_run_config()`.
+This keeps the long-training default route unchanged, but flips the default
+setup-prewarm policy so the TK QKV first-use prewarm and LM-head CUDA Graph
+prewarm are skipped unless their explicit prewarm env vars force them back on.
+Native JSON reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
 to compare the startup-only tradeoff in the same selected-GPU window.

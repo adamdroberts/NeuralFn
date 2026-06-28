@@ -60,6 +60,7 @@ class NativeTrainRunConfig:
     cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
     require_cooperative_lm_head_backward: bool = False
+    fast_startup: bool = False
     strict_native_command: bool = True
 
     def argv(self) -> list[str]:
@@ -103,19 +104,25 @@ class NativeTrainRunConfig:
         return payload
 
     def _resolved_args(self, normalized_family: str) -> tuple[str, ...]:
-        args = self.args
-        if not self.require_cooperative_lm_head_backward:
-            return args
-        if normalized_family not in DENSE_GPT_MODEL_FAMILIES:
-            raise ValueError(
-                "require_cooperative_lm_head_backward is only supported for dense GPT native train families"
-            )
-        if (
-            "--require-cooperative-lm-head-backward" in args
-            or "--native-cuda-require-cooperative-lm-head-backward" in args
+        args = tuple(self.args)
+        resolved_args = list(args)
+        if (self.fast_startup or self.require_cooperative_lm_head_backward) and (
+            normalized_family not in DENSE_GPT_MODEL_FAMILIES
         ):
-            return args
-        return (*args, "--require-cooperative-lm-head-backward")
+            raise ValueError(
+                "fast_startup and require_cooperative_lm_head_backward are only supported for dense GPT native train families"
+            )
+        if self.fast_startup and (
+            "--fast-startup" not in resolved_args
+            and "--native-cuda-fast-startup" not in resolved_args
+        ):
+            resolved_args.append("--fast-startup")
+        if self.require_cooperative_lm_head_backward and (
+            "--require-cooperative-lm-head-backward" not in resolved_args
+            and "--native-cuda-require-cooperative-lm-head-backward" not in resolved_args
+        ):
+            resolved_args.append("--require-cooperative-lm-head-backward")
+        return tuple(resolved_args)
 
 
 def normalize_native_model_family(value: str | None) -> str:
@@ -266,6 +273,7 @@ def build_native_train_run_config(
     *,
     native_train_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
+    fast_startup: bool = False,
     strict_native_command: bool = True,
 ) -> NativeTrainRunConfig:
     return NativeTrainRunConfig(
@@ -273,6 +281,7 @@ def build_native_train_run_config(
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=native_train_cli,
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        fast_startup=bool(fast_startup),
         strict_native_command=bool(strict_native_command),
     )
 
@@ -283,6 +292,7 @@ def build_native_sm120_gpt_run_config(
     *,
     native_sm120_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
+    fast_startup: bool = False,
     strict_native_command: bool = True,
 ) -> NativeTrainRunConfig:
     """Return a dense GPT config that launches the compiled SM120 trainer directly."""
@@ -295,6 +305,7 @@ def build_native_sm120_gpt_run_config(
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=resolve_native_sm120_train_cli(native_sm120_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        fast_startup=bool(fast_startup),
         strict_native_command=bool(strict_native_command),
     )
 
@@ -305,6 +316,7 @@ def build_native_gpt_launcher_run_config(
     *,
     native_gpt_launcher_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
+    fast_startup: bool = False,
     strict_native_command: bool = True,
 ) -> NativeTrainRunConfig:
     """Return a dense GPT config that launches the generic compiled GPT helper directly."""
@@ -317,6 +329,7 @@ def build_native_gpt_launcher_run_config(
         args=tuple(str(arg) for arg in (args or ())),
         native_train_cli=resolve_native_gpt_launcher_train_cli(native_gpt_launcher_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
+        fast_startup=bool(fast_startup),
         strict_native_command=bool(strict_native_command),
     )
 
