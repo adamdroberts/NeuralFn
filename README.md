@@ -233,6 +233,16 @@ failed the throughput/reference gate with candidate-over-llm.kittens train-loop
 `1.007196x` and tokens/sec `0.992892x`. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
+Set `NFN_SM120_CUDA13_RUN_PARITY=1` after a CUDA toolkit or WSL driver change to
+append the direct llm.kittens reference parity gate to the health check. That
+mode runs `tools/bench_native_gpt_sm120_parity.sh` with the same linked native
+trainer and forwards the wrapper's default
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/wsl/lib`,
+so reference timings do not accidentally resolve a conda/Torch CUDA runtime.
+Tune it with `NFN_SM120_CUDA13_PARITY_STEPS`,
+`NFN_SM120_CUDA13_PARITY_SAMPLES`, `NFN_SM120_CUDA13_PARITY_WARMUP`,
+`NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
+`NFN_SM120_CUDA13_PARITY_JSON_OUT`.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
 the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
 gates, but was still flat/slightly slower versus the current linked native
@@ -4135,7 +4145,9 @@ dense-GPT route contract, including `graph_editor_tensor_flow=false`,
 host D2H copies, the fused Tile AdamW optimizer route, the CUDA Graph LM-head
 wrapper, and the current no-loss vec8 normal-store BF16/u16 CE kernel. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
-drifted diagnostic run.
+drifted diagnostic run. Set `NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct
+llm.kittens parity gate when the reference binary/runtime path itself needs
+validation.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

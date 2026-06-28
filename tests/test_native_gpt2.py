@@ -847,6 +847,10 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "NFN_SM120_CUDA13_RUN_BENCH" in source
     assert "NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT" in source
     assert "bench_native_gpt_sm120_candidate.sh" in source
+    assert "NFN_SM120_CUDA13_RUN_PARITY" in source
+    assert "NFN_SM120_CUDA13_PARITY_JSON_OUT" in source
+    assert "bench_native_gpt_sm120_parity.sh" in source
+    assert "NFN_SM120_PARITY_ENFORCE_GATE" in source
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
     assert "NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES" in source
     assert "candidate_native_metric_values" in source

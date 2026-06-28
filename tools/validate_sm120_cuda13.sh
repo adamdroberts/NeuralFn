@@ -20,6 +20,7 @@ else
   TILE_OPS_LIB="${ROOT_DIR}/build/libnfn_native_train_tile_ops.so"
 fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
+PARITY_JSON="${NFN_SM120_CUDA13_PARITY_JSON_OUT:-/tmp/nfn_sm120_cuda13_parity.json}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
@@ -204,6 +205,27 @@ PY
     ;;
   *)
     echo "Unsupported NFN_SM120_CUDA13_RUN_BENCH=${NFN_SM120_CUDA13_RUN_BENCH}" >&2
+    exit 2
+    ;;
+esac
+
+case "${NFN_SM120_CUDA13_RUN_PARITY:-0}" in
+  1|true|TRUE|yes|YES|on|ON)
+    run_step env \
+      NFN_NATIVE_GPT_TRAIN_BIN="${TRAIN_BIN}" \
+      NFN_NATIVE_TILE_OPS_LIB="${TILE_OPS_LIB}" \
+      NFN_SM120_PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}" \
+      NFN_SM120_PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-2}" \
+      NFN_SM120_PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-0}" \
+      NFN_SM120_PARITY_PROFILE_DIR="${NFN_SM120_CUDA13_PARITY_PROFILE_DIR:-none}" \
+      NFN_SM120_PARITY_JSON_OUT="${PARITY_JSON}" \
+      NFN_SM120_PARITY_ENFORCE_GATE="${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE:-1}" \
+      bash "${ROOT_DIR}/tools/bench_native_gpt_sm120_parity.sh"
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_CUDA13_RUN_PARITY=${NFN_SM120_CUDA13_RUN_PARITY}" >&2
     exit 2
     ;;
 esac

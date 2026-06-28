@@ -2470,7 +2470,13 @@ checking the dynamic Tile library route. The gate launches the Tile fill and
 cached TinyStories transformer-LM smokes, and runs `tests/test_native_gpt2.py`.
 Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the pytest pass or
 `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
-benchmark.
+benchmark. Set `NFN_SM120_CUDA13_RUN_PARITY=1` after a CUDA toolkit or WSL
+driver change to add the direct llm.kittens parity gate; tune it with
+`NFN_SM120_CUDA13_PARITY_STEPS`, `NFN_SM120_CUDA13_PARITY_SAMPLES`,
+`NFN_SM120_CUDA13_PARITY_WARMUP`, `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
+`NFN_SM120_CUDA13_PARITY_JSON_OUT`. The parity wrapper keeps the llm.kittens
+side on `/usr/local/cuda/lib64:/usr/lib/wsl/lib` through
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH` unless that variable is set empty.
 
 For startup profiling, pass `--startup-only` to `nfn_gpt_native_train` or
 through the native wrapper/SDK config. The compiled frontend still resolves

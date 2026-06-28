@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now accepts
+  `NFN_SM120_CUDA13_RUN_PARITY=1` to append the direct llm.kittens parity gate
+  after the native smoke/pytest/optional native-vs-native benchmark checks. The
+  parity mode forwards the linked native trainer, writes
+  `NFN_SM120_CUDA13_PARITY_JSON_OUT` (default:
+  `/tmp/nfn_sm120_cuda13_parity.json`), honors
+  `NFN_SM120_CUDA13_PARITY_STEPS`, `NFN_SM120_CUDA13_PARITY_SAMPLES`,
+  `NFN_SM120_CUDA13_PARITY_WARMUP`, and
+  `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and keeps the llm.kittens reference on
+  the system CUDA runtime/WSL driver shim through the parity wrapper default.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`; focused validator
+  static coverage; and a direct 3-step, 2-sample parity run on the dedicated RTX
+  5090, which passed the 1.003 median gates after the reference runtime fix.
+
 - SM120 parity workflow: the llm.kittens reference side of
   `tools/bench_native_gpt_sm120_parity.sh` and optional reference side of
   `tools/bench_native_gpt_sm120_candidate.sh` now default
