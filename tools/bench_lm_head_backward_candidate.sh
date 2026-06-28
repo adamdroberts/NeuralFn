@@ -43,6 +43,19 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     DEFAULT_REQUIRE_GRAPH_BODY_TILE=1
     ;;
+  trainer-chunk-serial-graph-body|trainer_chunk_serial_graph_body|serial-graph-body-trainer-chunk|serial_graph_body_trainer_chunk)
+    DEFAULT_ROWS=28672
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=0
+    DEFAULT_REQUIRE_GRAPH_BODY_TILE=1
+    DEFAULT_REQUIRE_GRAPH_BODY_SERIAL=1
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused serial graph-body LM-head diagnostic. It forces NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL=1 so the CUDA Graph wrapper captures CE, dHidden, and dWeight on the caller stream instead of the default fork-join cooperative streams. Keep rejected as a negative-control profile; production candidates must beat the default concurrent graph-body route, not this serial route."
+    export NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL="${NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL:-1}"
+    ;;
   trainer-chunk-strict|trainer_chunk_strict|strict-trainer-chunk|strict_trainer_chunk)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
@@ -207,7 +220,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-serial-graph-body, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
@@ -235,6 +248,7 @@ MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK="${NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_D
 MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK="${NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 REQUIRE_GRAPH_BODY_TILE="${NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE:-${DEFAULT_REQUIRE_GRAPH_BODY_TILE:-0}}"
+REQUIRE_GRAPH_BODY_SERIAL="${NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_SERIAL:-${DEFAULT_REQUIRE_GRAPH_BODY_SERIAL:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
 ALLOW_REJECTED_PROFILE="${NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE:-0}"
@@ -581,6 +595,17 @@ case "${REQUIRE_TRUE_FUSED,,}" in
     ;;
 esac
 
+case "${REQUIRE_GRAPH_BODY_SERIAL,,}" in
+  1|true|yes|on)
+    ;;
+  0|false|no|off|"")
+    ;;
+  *)
+    echo "Invalid NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_SERIAL='${REQUIRE_GRAPH_BODY_SERIAL}'" >&2
+    exit 2
+    ;;
+esac
+
 if [[ "${#NO_LOSS_ARG[@]}" -gt 0 && "${LOSS_BINS}" != "0" ]]; then
   echo "NFN_LM_HEAD_BACKWARD_NO_LOSS cannot be combined with NFN_LM_HEAD_BACKWARD_LOSS_BINS=${LOSS_BINS}" >&2
   exit 2
@@ -613,6 +638,7 @@ case "${DRY_RUN,,}" in
   1|true|yes|on)
     DRY_RUN_ENV_PREFIX=()
     for ENV_NAME in \
+      NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL \
       NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE \
       NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION \
       NFN_TILE_CUDA_CE_BF16_THREADS \
@@ -808,6 +834,42 @@ if tile_dhidden <= 0 or tile_dweight <= 0:
         "candidate graph-body Tile gate failed: Tile graph-body counters missing "
         f"(dhidden={tile_dhidden}, dweight={tile_dweight}, "
         f"warmup_graph_replay_success_count={warmup_graph_replay_success_count})"
+    )
+' "${JSON_OUT}"
+    ;;
+esac
+
+case "${REQUIRE_GRAPH_BODY_SERIAL,,}" in
+  1|true|yes|on)
+    python -c 'import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+candidate = data.get("candidate") or {}
+graph_replay_success_count = int(candidate.get("graph_replay_success_count", 0) or 0)
+warmup_graph_replay_success_count = int(candidate.get("warmup_graph_replay_success_count", 0) or 0)
+abi_path_class = str(data.get("candidate_symbol_abi_path_class", ""))
+candidate_path_class = str(data.get("candidate_path_class", ""))
+tile_dhidden = (
+    int(candidate.get("graph_body_tile_dhidden_fallback_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_tile_dhidden_fallback_count", 0) or 0)
+)
+tile_dweight = (
+    int(candidate.get("graph_body_tile_dweight_fallback_count", 0) or 0)
+    + int(candidate.get("warmup_graph_body_tile_dweight_fallback_count", 0) or 0)
+)
+if "serial-body" not in abi_path_class:
+    raise SystemExit(
+        "candidate serial graph-body gate failed: serial ABI path class missing "
+        f"(candidate_symbol_abi_path_class={abi_path_class!r}, candidate_path_class={candidate_path_class!r})"
+    )
+if graph_replay_success_count <= 0:
+    raise SystemExit(
+        "candidate serial graph-body gate failed: CUDA Graph replay did not occur "
+        f"(timed={graph_replay_success_count}, warmup={warmup_graph_replay_success_count})"
+    )
+if tile_dhidden <= 0 or tile_dweight <= 0:
+    raise SystemExit(
+        "candidate serial graph-body gate failed: Tile graph-body counters missing "
+        f"(dhidden={tile_dhidden}, dweight={tile_dweight})"
     )
 ' "${JSON_OUT}"
     ;;

@@ -118,6 +118,19 @@
   tools/check_native_no_torch_deps.py --rebuild-stale --json`, and
   `bash tools/validate_sm120_cuda13.sh`.
 
+- Native GPT benchmarking: added the rejected
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-serial-graph-body` diagnostic
+  profile. It forces `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL=1`, checks that
+  the CUDA Graph wrapper reports the serial-body ABI path, and verifies that
+  the Tile dHidden/dWeight graph-body counters ran. This provides an explicit
+  negative-control route for LM-head kernel work so new candidates are compared
+  against the default concurrent graph-body profile, not an accidentally
+  serialized path. Verification: focused pytest for LM-head benchmark contracts,
+  dry-run command expansion, and a one-iteration dedicated RTX 5090 run that
+  reported `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper-serial-body`,
+  `graph_replay_success_count=1`, `graph_body_tile_dhidden_fallback_count=1`,
+  and `graph_body_tile_dweight_fallback_count=1`.
+
 - Native GPT benchmarking: rechecked the default no-loss llm.kittens-style
   LM-head CE/dlogits route after the CUDA reinstall. The default-vs-legacy
   3-step, 2-sample gate passed with `0.999943x` train-loop wall, `0.999902x`

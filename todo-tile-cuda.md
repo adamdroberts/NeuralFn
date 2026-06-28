@@ -316,6 +316,16 @@ Real training tensors must not pass through graph editor node objects.
   `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED` /
   `NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_TRUE_FUSED` aliases for LM-head-specific
   bisections.
+  - 2026-06-29 added the rejected-by-default
+    `trainer-chunk-serial-graph-body` focused profile. It forces
+    `NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL=1`, verifies the CUDA Graph
+    wrapper reports the serial-body ABI path, and requires Tile graph-body
+    dHidden/dWeight counters. This is a negative-control route for LM-head
+    kernel bisection, not a production candidate; new kernels still need to
+    beat the default concurrent
+    `trainer-chunk` graph-body path. The one-iteration dedicated RTX 5090 run
+    verified `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper-serial-body`,
+    `graph_replay_success_count=1`, and both Tile graph-body counters at `1`.
   - 2026-06-27 added the rejected-by-default 4x4 strict true-fused LM-head
     diagnostic profile. Tile CUDA now accepts
     `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4`, the CE row-thread selector

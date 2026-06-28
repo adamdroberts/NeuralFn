@@ -3025,6 +3025,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert 'export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
+    assert "trainer-chunk-serial-graph-body|trainer_chunk_serial_graph_body" in wrapper
+    assert "NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_SERIAL" in wrapper
+    assert "candidate serial graph-body gate failed" in wrapper
     assert "DEFAULT_REQUIRE_GRAPH_BODY_TILE=1" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE" in wrapper
     assert "candidate graph-body Tile gate failed" in wrapper
