@@ -85,7 +85,9 @@ Real training tensors must not pass through graph editor node objects.
   `build/nfn_train_gpt`, or `build/nfn_train_gpt_sm120` is missing or stale,
   alongside the native GPT trainer and Tile ops library. This makes the
   no-Bash/no-Python workstation launch path required evidence instead of an
-  optional convenience binary.
+  optional convenience binary. The same gate now also runs budgeted direct
+  native metadata startup probes for `build/nfn_gpt_native_train_linked
+  --list-templates` and `build/nfn_gpt2_native_train --list-templates`.
 - [x] Enforce optimized native GPT kernel routes by default. Dense GPT runtime
   JSON now reports `optimized_kernel_contract_*` fields and fails normal
   training if the optimized AdamW ABI is missing, attention falls back to

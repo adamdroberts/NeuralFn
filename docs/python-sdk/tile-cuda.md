@@ -2301,7 +2301,9 @@ dense GPT fast-path artifacts: `build/nfn_gpt_native_train`,
 `build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`, and
 `build/libnfn_native_train_tile_ops.so`. Optional per-family trainers already
 present in `build/` and built SDK binding modules matching `neuralfn/_native*.so`
-are scanned as additional evidence, then the verifier runs `cli/scripts/train_gpt.py`,
+are scanned as additional evidence. It also budget-checks direct native trainer
+metadata startup through `build/nfn_gpt_native_train_linked --list-templates`
+and `build/nfn_gpt2_native_train --list-templates`, then runs `cli/scripts/train_gpt.py`,
 `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,

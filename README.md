@@ -3870,7 +3870,10 @@ The same verifier now requires the dense GPT fast-path artifacts
 `build/nfn_train_gpt_sm120`, and `build/libnfn_native_train_tile_ops.so`.
 Those binaries must exist, be fresh against their source dependencies, and link
 no Torch/Python runtime libraries before native GPT training is considered
-ready.
+ready. The verifier also runs budgeted direct metadata checks against
+`build/nfn_gpt_native_train_linked --list-templates` and
+`build/nfn_gpt2_native_train --list-templates`, so slow native binary startup is
+caught even when Python wrappers stay fast.
 
 Large raw-text datasets whose tokenizer ids fit in `uint16` are cached as `fineweb_train_*.bin` / `fineweb_val_*.bin` token shards on first training load. Subsequent runs estimate schedule length from metadata or shard sizes and memmap the token shards instead of re-tokenizing `data.txt` / `val.txt`. Tokenizers with ids outside `uint16` remain on the raw-text path. Dataset source nodes store dataset names and sequence length only; real text/token payloads stay in the dataset cache and do not pass through graph-editor node metadata.
 

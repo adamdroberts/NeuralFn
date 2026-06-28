@@ -870,6 +870,22 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         ),
         {},
     ),
+    (
+        "native_gpt_linked_list_templates",
+        (
+            "build/nfn_gpt_native_train_linked",
+            "--list-templates",
+        ),
+        {},
+    ),
+    (
+        "native_gpt2_compat_list_templates",
+        (
+            "build/nfn_gpt2_native_train",
+            "--list-templates",
+        ),
+        {},
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256

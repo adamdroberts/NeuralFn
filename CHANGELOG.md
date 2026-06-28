@@ -12,7 +12,11 @@ Future updates should append new entries here rather than replacing older notes.
   `build/nfn_train_gpt`, or `build/nfn_train_gpt_sm120` is missing or stale,
   in addition to the existing native GPT trainer and Tile ops library checks.
   This makes the fast no-Bash/no-Python workstation path part of the required
-  setup evidence instead of a best-effort optional artifact.
+  setup evidence instead of a best-effort optional artifact. The verifier also
+  budget-checks direct metadata startup for
+  `build/nfn_gpt_native_train_linked --list-templates` and
+  `build/nfn_gpt2_native_train --list-templates`, so slow native binary startup
+  fails even when wrapper dry-runs remain fast.
 
 - Bench: refreshed the current no-stage SM120 parity gate after reverting the
   fused padded token initializer to opt-in. The dedicated RTX 5090 run passed

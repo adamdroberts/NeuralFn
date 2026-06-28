@@ -269,6 +269,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
     assert "--batch-size 32" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
     assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
+    assert shell_entrypoints["native_gpt_linked_list_templates"]["passed"] is True
+    assert shell_entrypoints["native_gpt_linked_list_templates"]["startup_within_budget"] is True
+    assert "shipped_template_catalog" in shell_entrypoints["native_gpt_linked_list_templates"]["stdout"]
+    assert shell_entrypoints["native_gpt2_compat_list_templates"]["passed"] is True
+    assert shell_entrypoints["native_gpt2_compat_list_templates"]["startup_within_budget"] is True
+    assert "shipped_template_catalog" in shell_entrypoints["native_gpt2_compat_list_templates"]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
