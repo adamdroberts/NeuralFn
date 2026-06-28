@@ -3787,6 +3787,16 @@ the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+For accepted LM-head CE/default profiles, the candidate wrapper now also
+requires the current CUDA Graph Tile-body contract: candidate metrics must show
+`lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,
+successful graph replay, zero graph fallback, three graph-body nodes, and Tile
+dHidden/dWeight body launches rather than the cuBLASLt diagnostic graph body.
+Pass `--require-native-lm-head-graph-wrapper-tile-body` directly to
+`tools/paired_kernel_speed.py`, or set
+`NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1` on
+`tools/bench_native_gpt_sm120_candidate.sh`, to enforce the same guard on an
+ad-hoc profile.
 The llm.kittens parity wrapper `tools/bench_native_gpt_sm120_parity.sh` uses the
 same linked NeuralFn default: it compares `train_gpt2cu` against
 `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when the linked

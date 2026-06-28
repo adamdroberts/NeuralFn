@@ -2596,6 +2596,14 @@ Use `--require-native-strategy-value-change NAME`, or
 `tools/bench_native_gpt_sm120_candidate.sh`, when the route proof must be a
 categorical native strategy field such as allocator mode rather than a numeric
 hot route counter.
+Use `--require-native-lm-head-graph-wrapper-tile-body`, or set
+`NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1` on
+`tools/bench_native_gpt_sm120_candidate.sh`, when an LM-head candidate must
+prove it kept the current CUDA Graph Tile-body contract. The guard checks for
+`diagnostic-cuda-graph-wrapper`, successful graph replay, zero graph fallback,
+three graph-body nodes, and Tile dHidden/dWeight body launches instead of the
+cuBLASLt diagnostic graph body. The accepted no-loss and loss-bin LM-head CE
+candidate profiles enable this guard automatically.
 The lower-level hot linear matrix wrapper follows the same rule for raw Tile C
 ABI symbol sweeps. `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` forwards the
 per-profile symbol-change guard, and aggregate JSON reports

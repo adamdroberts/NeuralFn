@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: added a hard LM-head CUDA Graph Tile-body contract
+  gate to `tools/paired_kernel_speed.py` and wired accepted LM-head CE/default
+  profiles in `tools/bench_native_gpt_sm120_candidate.sh` through it. The new
+  `--require-native-lm-head-graph-wrapper-tile-body` /
+  `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1` guard rejects
+  candidates unless native metrics show `diagnostic-cuda-graph-wrapper`,
+  successful graph replay, zero graph fallback, three graph-body nodes, and
+  Tile dHidden/dWeight graph-body launches instead of the cuBLASLt diagnostic
+  body. This keeps CE-specialization and loss-bin profile promotions from
+  passing on timing while silently leaving the optimized LM-head wrapper route.
+  Verification: syntax and focused source tests are listed with this change's
+  commit.
+
 - Native GPT: kept the current NVFP4 QKV dweight sidecar off the default
   throughput path after same-script SM120 parity showed it regressed
   `train_loop_wall_ms_per_step` to `2.688127x` llm.kittens and reduced

@@ -1859,6 +1859,15 @@ For stricter checks, pass
 SM120 candidate wrapper adds that automatically for the concurrent
 dInput/dWeight profiles so a profile cannot satisfy route proof via an
 unrelated strategy or adjacent counter.
+For LM-head CE/default bisections, pass
+`tools/paired_kernel_speed.py --require-native-lm-head-graph-wrapper-tile-body`,
+or set `NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1` on
+`tools/bench_native_gpt_sm120_candidate.sh`, to reject candidates that stop
+using the current CUDA Graph wrapper contract. The gate requires a
+`diagnostic-cuda-graph-wrapper` path class, successful graph replay, no graph
+fallback, three graph-body nodes, and Tile dHidden/dWeight graph-body launches
+instead of the cuBLASLt diagnostic graph body. Accepted no-loss/loss-bin
+LM-head CE profiles enable this automatically.
 For categorical native strategy changes such as allocator mode or launch
 policy, pass
 `tools/paired_kernel_speed.py --require-native-strategy-value-change NAME` or

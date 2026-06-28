@@ -1768,6 +1768,16 @@ def parse_args() -> argparse.Namespace:
             "true-fused Tile capability is unavailable."
         ),
     )
+    parser.add_argument(
+        "--require-native-lm-head-graph-wrapper-tile-body",
+        action="store_true",
+        help=(
+            "Fail after measurement unless candidate native metrics show the current "
+            "LM-head CUDA Graph wrapper contract: diagnostic graph-wrapper path class, "
+            "successful graph replay, no graph fallback, three graph-body nodes, and "
+            "Tile dHidden/dWeight body launches instead of the cuBLASLt diagnostic body."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -4220,6 +4230,54 @@ def evaluate_lm_head_true_fused_gate(
     }
 
 
+def evaluate_lm_head_graph_wrapper_tile_body_gate(
+    *,
+    required: bool,
+    target: dict[str, object],
+) -> dict[str, object]:
+    path_class = str(target.get("path_class") or target.get("abi_path_class") or "")
+    graph_wrapper = path_class.startswith("diagnostic-cuda-graph-wrapper")
+    replay_success = target.get("graph_replay_success_mean")
+    graph_fallback = target.get("graph_fallback_mean")
+    nodes = target.get("graph_body_nodes_per_replay_mean")
+    ce_nodes = target.get("graph_body_ce_nodes_per_replay_mean")
+    dhidden_nodes = target.get("graph_body_dhidden_nodes_per_replay_mean")
+    dweight_nodes = target.get("graph_body_dweight_nodes_per_replay_mean")
+    cublaslt = target.get("graph_body_cublaslt_launch_mean")
+    tile = target.get("graph_body_tile_fallback_mean")
+
+    checks = {
+        "diagnostic_graph_wrapper": graph_wrapper,
+        "graph_replay_success": isinstance(replay_success, (int, float)) and replay_success > 0.0,
+        "no_graph_fallback": isinstance(graph_fallback, (int, float)) and graph_fallback == 0.0,
+        "three_graph_body_nodes": isinstance(nodes, (int, float)) and nodes == 3.0,
+        "one_ce_node": isinstance(ce_nodes, (int, float)) and ce_nodes == 1.0,
+        "one_dhidden_node": isinstance(dhidden_nodes, (int, float)) and dhidden_nodes == 1.0,
+        "one_dweight_node": isinstance(dweight_nodes, (int, float)) and dweight_nodes == 1.0,
+        "no_cublaslt_graph_body": isinstance(cublaslt, (int, float)) and cublaslt == 0.0,
+        "tile_graph_body_present": isinstance(tile, (int, float)) and tile > 0.0,
+    }
+    missing = [name for name, passed in checks.items() if not passed]
+    passed = not required or not missing
+    failure_reason = ""
+    if required and missing:
+        failure_reason = (
+            "candidate native LM-head graph-wrapper Tile-body contract failed: "
+            + ",".join(missing)
+            + f" (path_class={path_class or 'unobserved'}, "
+            + f"replay_success={replay_success}, fallback={graph_fallback}, "
+            + f"nodes={nodes}, ce={ce_nodes}, dhidden={dhidden_nodes}, "
+            + f"dweight={dweight_nodes}, cublaslt={cublaslt}, tile={tile})"
+        )
+    return {
+        "enabled": required,
+        "passed": passed,
+        "checks": checks,
+        "missing": missing,
+        "failure_reason": failure_reason,
+    }
+
+
 def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[str, object]:
     candidate_command = payload.get("candidate_command")
     candidate_is_native = (
@@ -4928,6 +4986,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         required=bool(args.require_native_lm_head_true_fused),
         target=payload["native_lm_head_true_fused_target"],
     )
+    payload["native_lm_head_graph_wrapper_tile_body_gate"] = (
+        evaluate_lm_head_graph_wrapper_tile_body_gate(
+            required=bool(args.require_native_lm_head_graph_wrapper_tile_body),
+            target=payload["native_lm_head_true_fused_target"],
+        )
+    )
     payload["native_runtime_contract_gate"] = evaluate_native_runtime_contract_gate(payload)
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
@@ -5277,6 +5341,18 @@ def print_text(payload: dict[str, object]) -> None:
         failure_reason = route_gate.get("failure_reason")
         if failure_reason:
             print(f"    failure_reason: {failure_reason}")
+    lm_head_graph_gate = payload.get("native_lm_head_graph_wrapper_tile_body_gate")
+    if isinstance(lm_head_graph_gate, dict) and lm_head_graph_gate.get("enabled") is True:
+        print(
+            "  native_lm_head_graph_wrapper_tile_body_gate: "
+            f"passed={str(lm_head_graph_gate.get('passed', False)).lower()}"
+        )
+        missing = lm_head_graph_gate.get("missing")
+        if isinstance(missing, list) and missing:
+            print("    missing: " + ", ".join(map(str, missing)))
+        failure_reason = lm_head_graph_gate.get("failure_reason")
+        if failure_reason:
+            print(f"    failure_reason: {failure_reason}")
     if isinstance(plan_cache, dict) and plan_cache.get("enabled") is True:
         print("  native_cublaslt_plan_cache:")
         plan_changes = plan_cache.get("plan_cache_changed")
@@ -5561,6 +5637,19 @@ def main() -> int:
         print(
             "native route change gate failed: "
             + str(route_gate.get("failure_reason", "candidate-native-route-unchanged")),
+            file=sys.stderr,
+        )
+        return 1
+    lm_head_graph_gate = payload.get("native_lm_head_graph_wrapper_tile_body_gate")
+    if (
+        isinstance(lm_head_graph_gate, dict)
+        and lm_head_graph_gate.get("enabled") is True
+        and lm_head_graph_gate.get("passed") is False
+    ):
+        reason = str(lm_head_graph_gate.get("failure_reason", "")).strip()
+        print(
+            "native LM-head graph-wrapper Tile-body gate failed"
+            + (": " + reason if reason else ""),
             file=sys.stderr,
         )
         return 1

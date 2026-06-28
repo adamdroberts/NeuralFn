@@ -1276,6 +1276,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "--min-candidate-reference-ratio" in candidate_bench
     assert "--max-candidate-reference-ratio" in paired_speed
     assert "--min-candidate-reference-ratio" in paired_speed
+    assert "--require-native-lm-head-graph-wrapper-tile-body" in paired_speed
+    assert "native_lm_head_graph_wrapper_tile_body_gate" in paired_speed
+    assert "candidate native LM-head graph-wrapper Tile-body contract failed" in paired_speed
+    assert "NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY" in candidate_bench
+    assert "--require-native-lm-head-graph-wrapper-tile-body" in candidate_bench
+    assert "candidate_lm_head_graph_wrapper_tile_body_gate=required" in candidate_bench
     assert "NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=\"${NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH-/usr/local/cuda/lib64:/usr/lib/wsl/lib}\"" in candidate_bench
     assert "REFERENCE_ENV_RAW=\"$(env_or_alias5 NFN_SM120_NATIVE_REFERENCE_ENV NFN_SM120_NATIVE_CANDIDATE_REFERENCE_ENV NFN_SM120_CANDIDATE_REFERENCE_ENV NFN_SM120_PARITY_REFERENCE_ENV NFN_SM120_REFERENCE_ENV \"\")\"" in candidate_bench
     assert 'paired_args+=(--reference-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in candidate_bench

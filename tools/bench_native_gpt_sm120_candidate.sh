@@ -184,6 +184,7 @@ AUTO_ATTENTION_SECTION_TIMING=0
 FORCE_DISABLE_ROUTE_CHANGE=0
 SKIP_LM_HEAD_CE_STAGE_GATE=0
 LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=""
+REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY="$(env_or_alias NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY 0)"
 if [[ -z "$CANDIDATE_EXTRA_ARGS_RAW" && -n "${NFN_SM120_NATIVE_CANDIDATE_ARGS-}" ]]; then
   CANDIDATE_EXTRA_ARGS_RAW="$NFN_SM120_NATIVE_CANDIDATE_ARGS"
 fi
@@ -467,6 +468,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_ce_no_loss_default_specialized"|"lm-head-ce-no-loss-default-specialized"|"ce_bf16_no_loss_default_specialized"|"ce-bf16-no-loss-default-specialized")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample rerun confirmed the default no-loss CE specialization against the older generic no-loss CE+dlogits route: train_loop_wall_ms_per_step=0.977958x, train_tokens_per_second=1.022549x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.996300x, and candidate-over-llm.kittens train_tokens_per_second=1.003608x."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0"
@@ -531,6 +533,7 @@ case "${CANDIDATE_PROFILE,,}" in
   "lm_head_ce_no_loss_llmk_style_specialized"|"lm-head-ce-no-loss-llmk-style-specialized"|"ce_bf16_no_loss_llmk_style_specialized"|"ce-bf16-no-loss-llmk-style-specialized")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     DEFAULT_VS_LEGACY_PROFILE=1
+    REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample no-stage rerun promoted the no-loss llm.kittens-style CE route as the default. It changed lm_head_ce_kernel_strategy from no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores to no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores and measured train_loop_wall_ms_per_step=0.999669x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.999849x, train_tokens_per_second=1.000333x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.997332x, and candidate-over-llm.kittens train_tokens_per_second=1.002269x. The default remains the reference-aligned fused CE/dlogits route with separate optimized logits/dHidden/dWeight stages; the strict single-kernel LM-head classifier remains experimental."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1"
@@ -541,6 +544,7 @@ case "${CANDIDATE_PROFILE,,}" in
   "lm_head_ce_no_loss_vec8_normal_store_specialized"|"lm-head-ce-no-loss-vec8-normal-store-specialized"|"ce_bf16_no_loss_vec8_normal_store_specialized"|"ce-bf16-no-loss-vec8-normal-store-specialized")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     DEFAULT_VS_LEGACY_PROFILE=1
+    REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-27 3-step, 2-sample stage-timed rerun promoted the no-loss CE vec8 normal-store specialized kernel as the default. It changed lm_head_ce_kernel_strategy to no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores and measured train_loop_wall_ms_per_step=0.999856x, train_loop_cuda_event_steady_state_wall_ms_per_step=0.999483x, stage.lm_head_backward.total_ms=0.999986x, train_tokens_per_second=1.000147x, candidate-over-llm.kittens train_loop_wall_ms_per_step=0.999042x, and candidate-over-llm.kittens train_tokens_per_second=1.001246x. Promoted-default reruns stayed inside a 0.1% same-script jitter band: one measured train_loop_wall_ms_per_step=0.999826x, steady-state CUDA-event step time=0.999545x, train_tokens_per_second=1.000173x, and LM-head total=1.000553x; another measured train_loop_wall_ms_per_step=1.000254x, steady-state CUDA-event step time=1.000304x, train_tokens_per_second=0.999745x, LM-head total=1.000629x, and candidate-over-llm.kittens train_loop_wall_ms_per_step=0.999702x. This default-vs-legacy profile therefore gates full-loop and graph-wrapper LM-head ratios at 0.1% instead of exact zero-jitter. The CUDA Graph LM-head wrapper does not emit stage.lm_head_backward.ce.total_ms."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_VEC8_NORMAL_STORE_SPECIALIZED=1"
@@ -567,6 +571,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY=1
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed rerun keeps the loss-bin train-loss logging route as the default because it moved lm_head_classifier_loss_bin_launch_count from 0 to 48, improved train_loop_wall_ms_per_step to 0.981541x, steady-state CUDA-event step time to 0.982697x, train_tokens_per_second to 1.018809x, stage.lm_head_backward.total_ms to 0.927229x, stage.block_backward.total_ms to 0.999905x, and stage.block_backward.mlp_proj.total_ms to 0.995141x versus the older row-loss tail."
     DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"
@@ -1917,6 +1922,11 @@ fi
 if [[ "$DEFAULT_VS_LEGACY_PROFILE" == "1" ]]; then
   paired_args+=(--metadata "candidate_gate_scope=default-vs-legacy")
 fi
+case "${REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--metadata "candidate_lm_head_graph_wrapper_tile_body_gate=required")
+    ;;
+esac
 if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then
   paired_args+=(--metadata "candidate_route_change_gate=disabled")
 fi
@@ -2056,6 +2066,17 @@ case "${REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED,,}" in
     ;;
   *)
     echo "Unsupported NFN_SM120_NATIVE_REQUIRE_LM_HEAD_TRUE_FUSED value: $REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED" >&2
+    exit 2
+    ;;
+esac
+case "${REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--require-native-lm-head-graph-wrapper-tile-body)
+    ;;
+  "0"|"false"|"no"|"off")
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY value: $REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY" >&2
     exit 2
     ;;
 esac
