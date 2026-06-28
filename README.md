@@ -258,19 +258,22 @@ inside train-loop gates, and beat the llm.kittens reference at `0.996062x`
 train-loop wall / `1.003992x` tokens/sec. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
-Set `NFN_SM120_CUDA13_RUN_PARITY=1` after a CUDA toolkit or WSL driver change to
-append the direct llm.kittens reference parity gate to the health check. That
-mode runs `tools/bench_native_gpt_sm120_parity.sh` with the same linked native
-trainer and forwards the wrapper's default
+The CUDA 13.3 health check now includes the direct llm.kittens reference parity
+gate by default. It runs `tools/bench_native_gpt_sm120_parity.sh` with the same
+linked native trainer and forwards the wrapper's default
 `NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/wsl/lib`,
 so reference timings do not accidentally resolve a conda/Torch CUDA runtime.
 Tune it with `NFN_SM120_CUDA13_PARITY_STEPS`,
 `NFN_SM120_CUDA13_PARITY_SAMPLES`, `NFN_SM120_CUDA13_PARITY_WARMUP`,
 `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
-`NFN_SM120_CUDA13_PARITY_JSON_OUT`. If `NFN_SM120_CUDA13_PARITY_STEPS=1`, the
-validator disables the parity ratio gate by default because one-step smokes do
-not emit steady-state timing; set `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only
-when intentionally checking that failure path.
+`NFN_SM120_CUDA13_PARITY_JSON_OUT`; set `NFN_SM120_CUDA13_RUN_PARITY=0` only for
+fast CUDA-only smoke checks that intentionally skip the reference comparison.
+The default parity leg uses 10 steps, 5 samples, and 1 warmup so the strict
+ratio gate is not dominated by first-step jitter. If
+`NFN_SM120_CUDA13_PARITY_STEPS=1`, the validator disables the parity ratio gate
+by default because one-step smokes do not emit steady-state timing; set
+`NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that
+failure path.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
 the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
 gates, but was still flat/slightly slower versus the current linked native
@@ -4335,12 +4338,13 @@ with `NFN_SM120_CUDA13_RUN_BENCH=1` only when validating a candidate that should
 replace the diagnostic CUDA Graph LM-head wrapper with a faster strict Tile
 classifier backward kernel; current defaults intentionally fail that strict gate
 because the strict single-kernel body is not yet the promoted path. Set
-`NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct llm.kittens parity gate when
-the reference binary/runtime path itself needs validation. For a quick one-step
-wiring smoke, set
+The same validator runs the direct llm.kittens parity gate by default with 10
+steps, 5 samples, and 1 warmup, then writes
+`/tmp/nfn_sm120_cuda13_parity.json`; set `NFN_SM120_CUDA13_RUN_PARITY=0` only
+for fast CUDA-only smoke checks. For a quick one-step wiring smoke, set
 `NFN_SM120_CUDA13_PARITY_STEPS=1`; the validator leaves the runtime checks on
-but disables the ratio gate unless `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is
-set explicitly.
+but disables the ratio gate unless `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is set
+explicitly.
 
 The native training SDK keeps the same compiled-boundary contract by default.
 `NativeTrainRunConfig.strict_native_command` is `True`, so

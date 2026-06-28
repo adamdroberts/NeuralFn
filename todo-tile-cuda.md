@@ -81,6 +81,18 @@ Real training tensors must not pass through graph editor node objects.
   `candidate_path_class: diagnostic-cuda-graph-wrapper`,
   `candidate_true_fused_capability: false`, and `true_fused_launch_count: 0`,
   so this is a clean CUDA 13.3 baseline, not strict LM-head completion.
+- [x] Make direct llm.kittens parity part of the default CUDA 13.3 SM120 health
+  gate. `tools/validate_sm120_cuda13.sh` now runs
+  `tools/bench_native_gpt_sm120_parity.sh` unless
+  `NFN_SM120_CUDA13_RUN_PARITY=0` is set for a fast CUDA-only smoke, writes
+  `/tmp/nfn_sm120_cuda13_parity.json`, and records parity in the summary JSON by
+  default. The default leg uses 10 steps, 5 samples, and 1 warmup to match the
+  standalone parity wrapper while keeping the strict `1.003x` ratio gates. This
+  prevents a post-toolkit or kernel-change validation from going green while
+  skipping the explicit `train-sm120.sh` comparison target. The final full
+  default validator passed with `run_parity=true`; `/tmp/nfn_sm120_cuda13_parity.json`
+  reported median ratios of `1.000064x` train-loop wall and `1.000942x`
+  steady-state, with no selected-GPU compute processes before or after samples.
 - [x] Prove the normal GPT wrapper crosses the compiled C++ boundary, not just
   dry-run and metadata paths. `tools/check_native_no_torch_deps.py` now runs
   `cli/scripts/train_gpt.py --tinystories --max-steps 1` against a stubbed

@@ -11,9 +11,9 @@ LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head
 RUNTIME_CONTRACT_JSON="${NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT:-/tmp/nfn_sm120_cuda13_runtime_contract.json}"
 SUMMARY_JSON="${NFN_SM120_CUDA13_SUMMARY_JSON_OUT:-${NFN_SM120_CUDA13_VALIDATION_JSON_OUT:-}}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
-PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"
-PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-2}"
-PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-0}"
+PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-10}"
+PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-5}"
+PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-1}"
 REBUILD_STALE="${NFN_SM120_CUDA13_REBUILD_STALE:-1}"
 LM_HEAD_TILE_OPS_LIB="${NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 if [[ -n "${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE:-}" ]]; then
@@ -402,7 +402,7 @@ PY
     ;;
 esac
 
-case "${NFN_SM120_CUDA13_RUN_PARITY:-0}" in
+case "${NFN_SM120_CUDA13_RUN_PARITY:-1}" in
   1|true|TRUE|yes|YES|on|ON)
     run_step env \
       NFN_NATIVE_GPT_TRAIN_BIN="${TRAIN_BIN}" \
@@ -451,7 +451,7 @@ def load_json(path: Path):
 
 lm_head = load_json(lm_head_path)
 bench = load_json(bench_path) if enabled("NFN_SM120_CUDA13_RUN_BENCH", "0") else None
-parity = load_json(parity_path) if enabled("NFN_SM120_CUDA13_RUN_PARITY", "0") else None
+parity = load_json(parity_path) if enabled("NFN_SM120_CUDA13_RUN_PARITY", "1") else None
 runtime_contract = load_json(runtime_contract_path) if enabled("NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT", "1") else None
 
 summary = {
@@ -465,7 +465,7 @@ summary = {
     "run_lm_head_bench": enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1"),
     "run_pytest": enabled("NFN_SM120_CUDA13_RUN_PYTEST", "1"),
     "run_bench": enabled("NFN_SM120_CUDA13_RUN_BENCH", "0"),
-    "run_parity": enabled("NFN_SM120_CUDA13_RUN_PARITY", "0"),
+    "run_parity": enabled("NFN_SM120_CUDA13_RUN_PARITY", "1"),
     "artifacts": {
         "summary_json": str(summary_path),
         "lm_head_json": str(lm_head_path) if lm_head_path.exists() else "",

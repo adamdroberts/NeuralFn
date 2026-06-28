@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Native GPT validation: `tools/validate_sm120_cuda13.sh` now runs the direct
+  llm.kittens parity gate by default instead of leaving it opt-in. Set
+  `NFN_SM120_CUDA13_RUN_PARITY=0` only for fast CUDA-only smoke checks that
+  intentionally skip the reference comparison. The summary JSON now records
+  parity by default and includes `/tmp/nfn_sm120_cuda13_parity.json` when the
+  gate runs. The default parity leg now uses 10 steps, 5 samples, and 1 warmup
+  to match the standalone parity wrapper and avoid making the default health
+  gate depend on a 3-step first-step jitter sample. A 3-step/2-sample trial
+  correctly failed the strict gate at `1.003282x` train-loop wall while passing
+  steady-state at `1.002777x`, and a 10-step/3-sample full-validator trial
+  failed the strict median steady-state gate at `1.003132x`. The promoted
+  10-step/5-sample default parity leg passed the same gates with
+  `1.001320x` train-loop wall and `1.002545x` steady-state median ratios, then
+  the full default validator passed with `run_parity=true`,
+  `run_no_torch=true`, `run_runtime_contract=true`, `run_lm_head_bench=true`,
+  and `run_pytest=true`; the final default parity medians were `1.000064x`
+  train-loop wall and `1.000942x` steady-state. Verification:
+  `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "sm120_cuda13_validator_covers_native_cuda_smokes"`; `git diff --check`;
+  `bash tools/validate_sm120_cuda13.sh`.
+
 - Native GPT validation: reran the post-CUDA-13.3 no-Torch and focused native
   GPT gates. A plain `tools/check_native_no_torch_deps.py --json` correctly
   failed on stale `build/nfn_gpt2_native_train` and
