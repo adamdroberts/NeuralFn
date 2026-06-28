@@ -4137,11 +4137,13 @@ local to the script, so selecting ordinal `0` or a display-disabled GPU does not
 import `neuralfn.native_cuda_device` before the compiled C++ trainer handoff.
 
 After a CUDA toolkit reinstall or local C++/CUDA edit, run
-`python tools/check_native_no_torch_deps.py --rebuild-stale` to rebuild known
-stale native artifacts with their mapped `tools/build_*.sh` scripts before the
-same no-Torch dependency/import gate continues. Keep
-`--skip-stale-artifacts` for deliberate dependency-only audits, not training
-readiness.
+`bash tools/validate_sm120_cuda13.sh`; the validator now runs
+`python tools/check_native_no_torch_deps.py --rebuild-stale --json` by default,
+so known stale native artifacts are rebuilt with their mapped `tools/build_*.sh`
+scripts before the same no-Torch dependency/import gate continues. Set
+`NFN_SM120_CUDA13_REBUILD_STALE=0` only when intentionally checking that stale
+artifact detection fails without rebuilding. Keep `--skip-stale-artifacts` for
+deliberate dependency-only audits, not training readiness.
 On the 2026-06-28 CUDA 13.3 workstation recheck, stale
 `build/nfn_gpt2_native_train` and
 `build/libnfn_native_train_tile_ops_tk.so` artifacts were rebuilt with the

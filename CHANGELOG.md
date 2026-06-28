@@ -6,18 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-- CUDA 13 SM120 validation: reran the full `tools/validate_sm120_cuda13.sh`
-  gate after rebuilding stale native artifacts with
+- CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now runs
+  `tools/check_native_no_torch_deps.py --rebuild-stale --json` by default, so
+  CUDA-toolkit reinstalls and local C++/CUDA edits rebuild known stale native
+  artifacts before the no-Torch gate continues. Set
+  `NFN_SM120_CUDA13_REBUILD_STALE=0` only to reproduce the old strict stale
+  detection failure mode. Reran the full validation gate after rebuilding stale
+  native artifacts with
   `tools/build_native_gpt_cli.sh`, `tools/build_native_gpt2_cli.sh`, and
   `tools/build_native_train_tile_ops.sh`. The no-Torch preflight now reports no
   stale artifacts, and the README validation note has been refreshed to the
   current `tests/test_native_gpt2.py` count.
 
   Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
-  tools/check_native_no_torch_deps.py --json` passed; `bash
-  tools/validate_sm120_cuda13.sh` passed on the dedicated RTX 5090 with CUDA
-  13.3, including Tile fill, NVFP4 pack/unpack, TinyStories transformer-LM
-  smoke, the focused LM-head backward benchmark, and
+  tools/check_native_no_torch_deps.py --json` passed; `bash -n
+  tools/validate_sm120_cuda13.sh`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  -m pytest tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `bash tools/validate_sm120_cuda13.sh` passed on the dedicated RTX 5090
+  with CUDA 13.3, including Tile fill, NVFP4 pack/unpack, TinyStories
+  transformer-LM smoke, the focused LM-head backward benchmark, and
   `tests/test_native_gpt2.py` (`108 passed, 1 skipped`).
 
 - Native GPT kernels: promoted the no-loss llm.kittens-style LM-head

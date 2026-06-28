@@ -26,6 +26,7 @@ CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
 PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"
 PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-2}"
 PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-0}"
+REBUILD_STALE="${NFN_SM120_CUDA13_REBUILD_STALE:-1}"
 LM_HEAD_TILE_OPS_LIB="${NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 if [[ -n "${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE:-}" ]]; then
   PARITY_ENFORCE_GATE="${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE}"
@@ -78,7 +79,18 @@ esac
 
 case "${NFN_SM120_CUDA13_RUN_NO_TORCH:-1}" in
   1|true|TRUE|yes|YES|on|ON)
-    run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --json
+    case "${REBUILD_STALE}" in
+      1|true|TRUE|yes|YES|on|ON)
+        run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --rebuild-stale --json
+        ;;
+      0|false|FALSE|no|NO|off|OFF)
+        run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --json
+        ;;
+      *)
+        echo "Unsupported NFN_SM120_CUDA13_REBUILD_STALE=${REBUILD_STALE}" >&2
+        exit 2
+        ;;
+    esac
     ;;
   0|false|FALSE|no|NO|off|OFF)
     ;;

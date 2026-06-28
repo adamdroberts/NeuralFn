@@ -841,6 +841,8 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "--smoke-transformer-lm-step" in source
     assert "--tinystories" in source
     assert "NFN_SM120_CUDA13_RUN_NO_TORCH" in source
+    assert "NFN_SM120_CUDA13_REBUILD_STALE" in source
+    assert "tools/check_native_no_torch_deps.py --rebuild-stale --json" in source
     assert "tools/check_native_no_torch_deps.py --json" in source
     assert "tests/test_native_gpt2.py -q" in source
     assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
