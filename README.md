@@ -2818,7 +2818,10 @@ negative-control profile. It forces
 wrapper reports the serial-body ABI path while CE, dHidden, and dWeight run
 through the Tile graph-body counters on the caller stream. Use it only to
 compare against the default concurrent graph-body route; production candidates
-still need to beat the default `trainer-chunk` profile.
+still need to beat the default `trainer-chunk` profile. The full SM120 paired
+wrapper automatically runs this focused preflight before
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_serial_body` unless
+`NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=0` disables LM-head preflights.
 
 Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `16`, `64`, `128`, `256`, `512`, `576`, or `1024`; unsupported values fall back to 1024. The raw Tile ABI exports the resolved launch value through `nfn_native_tile_token_cross_entropy_bf16_threads_per_row`, dense GPT runtime JSON reports it as `lm_head_ce_bf16_threads_per_row`, and `tools/paired_kernel_speed.py` treats it as a native strategy value so CE launch-shape bisections are not mistaken for timing-only noise. Runtime JSON also reports `lm_head_true_fused_mat_tile`, `lm_head_true_fused_required_threads`, `lm_head_true_fused_*_cycles`, `lm_head_true_fused_*_blocks`, and `lm_head_true_fused_*_cycles_per_block` from the loaded Tile ops library so strict fused LM-head profile runs can prove which compile-time tile body they used and whether CE, dHidden, or dWeight dominates the slow strict body inside the full training loop. The paired benchmark `native_lm_head_true_fused_target` summary surfaces those full-loop fields as `true_fused_*_cycles_per_block_mean` and `true_fused_*_blocks_mean`.
 

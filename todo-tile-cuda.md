@@ -326,6 +326,8 @@ Real training tensors must not pass through graph editor node objects.
     `trainer-chunk` graph-body path. The one-iteration dedicated RTX 5090 run
     verified `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper-serial-body`,
     `graph_replay_success_count=1`, and both Tile graph-body counters at `1`.
+    The full SM120 `lm_head_graph_serial_body` profile now selects this focused
+    preflight automatically before paired trainer measurement.
   - 2026-06-27 added the rejected-by-default 4x4 strict true-fused LM-head
     diagnostic profile. Tile CUDA now accepts
     `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4`, the CE row-thread selector

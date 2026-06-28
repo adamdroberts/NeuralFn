@@ -125,9 +125,11 @@
   the Tile dHidden/dWeight graph-body counters ran. This provides an explicit
   negative-control route for LM-head kernel work so new candidates are compared
   against the default concurrent graph-body profile, not an accidentally
-  serialized path. Verification: focused pytest for LM-head benchmark contracts,
-  dry-run command expansion, and a one-iteration dedicated RTX 5090 run that
-  reported `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper-serial-body`,
+  serialized path. The full SM120 `lm_head_graph_serial_body` candidate now
+  selects this focused preflight automatically. Verification: focused pytest for
+  LM-head benchmark contracts, dry-run command expansion, and a one-iteration
+  dedicated RTX 5090 run that reported
+  `candidate_symbol_abi_path_class=diagnostic-cuda-graph-wrapper-serial-body`,
   `graph_replay_success_count=1`, `graph_body_tile_dhidden_fallback_count=1`,
   and `graph_body_tile_dweight_fallback_count=1`.
 

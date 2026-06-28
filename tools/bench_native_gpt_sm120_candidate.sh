@@ -1252,6 +1252,7 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-25 3-step, 2-sample stage-timed gate changed the strict LM-head ABI path class to diagnostic-cuda-graph-wrapper-serial-body, but regressed train_loop_wall_ms_per_step to 1.005992x, steady-state CUDA-event timing to 1.004767x, stage.lm_head_backward.total_ms to 1.022264x, and stage.lm_head_backward.cooperative.total_ms to 1.031743x versus the default side-stream graph body."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1 NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_SERIAL=1"
+    LM_HEAD_BACKWARD_PREFLIGHT_PROFILE="trainer-chunk-serial-graph-body"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000}"
     ;;
   "lm_head_true_fused_cooperative"|"lm-head-true-fused-cooperative"|"lm_head_true_fused"|"lm-head-true-fused")
