@@ -1222,6 +1222,12 @@ CUDA 13.3.33 dedicated RTX 5090 3-step, 1-sample stage-timed probe improved
 setup wall time to `0.961917x`, but regressed train-loop wall to `1.002107x`,
 steady-state CUDA-event timing to `1.002784x`, block backward to `1.002263x`,
 and candidate-over-llm.kittens train-loop wall to `1.001097x`.
+The `tk_qkv_forward_prewarm_49152` profile is likewise rejected: the 2026-06-28
+CUDA 13.3.33 dedicated RTX 5090 3-step, 1-sample stage-timed probe improved
+setup wall time to `0.978456x` and startup-plus-first-step wall to `0.998249x`,
+but regressed train-loop wall to `1.002539x`, first-step CUDA-event timing to
+`1.004288x`, forward-QKV first-step timing to `1.063042x`, and tokens/sec to
+`0.997467x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

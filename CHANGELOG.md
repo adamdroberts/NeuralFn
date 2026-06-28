@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench workflow: added `tk_qkv_forward_prewarm_49152` as an explicit rejected
+  SM120 candidate profile. The middle-ground QKV prewarm cap improves startup
+  versus the full 65536-row default, but the same-script training probe still
+  loses the hot path (`1.002539x` train-loop wall, `1.004288x` first-step
+  CUDA-event timing, `1.063042x` forward-QKV first-step timing, and `0.997467x`
+  tokens/sec), so the default remains the full-shape prewarm until a route
+  beats both startup-plus-first-step and steady training gates.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/paired_kernel_speed.py --baseline '/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train_linked
+  --backend tile-cuda --tinystories --max-steps 3 --train-batch-tokens 524288
+  --eval-every-steps 0 --train-loss-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0
+  --native-cuda-activation gelu --no-checkpoint --tile-ops-lib linked'
+  --candidate '/mnt/disk2/dev/innovation/NeuralFn/build/nfn_gpt_native_train_linked
+  --backend tile-cuda --tinystories --max-steps 3 --train-batch-tokens 524288
+  --eval-every-steps 0 --train-loss-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0
+  --native-cuda-activation gelu --no-checkpoint --tile-ops-lib linked'
+  --baseline-env NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1 --candidate-env
+  NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1 --candidate-env
+  NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=49152 --samples 1 --warmup 0
+  --cuda-visible-devices dedicated --require-idle-selected-gpu
+  --allow-stale-selected-gpu-utilization-without-compute-processes
+  --append-native-profile-json-dir /tmp/nfn_sm120_tk_qkv_prewarm_49152_profiles
+  --native-stage-timing --json-out /tmp/nfn_sm120_tk_qkv_prewarm_49152.json`.
+
 - Bench workflow: refreshed the rejected `token_weight_padded_bf16_pattern`
   SM120 profile after the CUDA 13.3.33 WSL reinstall and dedicated RTX 5090
   validation. The route now improves setup wall time and token-weight
