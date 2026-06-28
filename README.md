@@ -3562,7 +3562,12 @@ section attribution in candidate JSON: `true_fused_ce_cycles_per_block`,
 `true_fused_dhidden_cycles_per_block`, and
 `true_fused_dweight_cycles_per_block`, plus raw cycle totals and block counts.
 These fields are diagnostic evidence for replacing the current CUDA Graph
-wrapper; they do not promote the rejected strict true-fused body.
+wrapper; they do not promote the rejected strict true-fused body. Set
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK`,
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, or
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK` to make the
+focused wrapper fail when a strict true-fused candidate exceeds a section-level
+cycle budget.
 
 NanoGPT's native `--smoke-lm-step` accepts loss, gradient, and weight-update
 absolute error up to `1e-5`. CUDA 13.3 on the RTX 5090 has shown stable tied

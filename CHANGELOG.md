@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native LM-head diagnostics: `tools/bench_lm_head_backward_candidate.sh` can
+  now gate strict true-fused LM-head candidates by section-level device-cycle
+  attribution. Set
+  `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK`,
+  `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, or
+  `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK` to require a
+  nonzero strict true-fused launch and fail when the candidate CE, dHidden, or
+  dWeight section exceeds its per-block budget. This keeps future CUDA Tile
+  LM-head kernels accountable to the section that actually regressed instead
+  of only the aggregate candidate/reference ratio.
+
 - SM120 parity workflow: `tools/bench_native_gpt_sm120_parity.sh` no longer
   applies its auto-created strict `1.003x` metric-ratio gates to
   `NFN_SM120_PARITY_STAGE_TIMING=1` runs. Native stage timing is

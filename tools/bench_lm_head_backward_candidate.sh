@@ -230,6 +230,9 @@ MAX_REFERENCE_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS:-}"
 MAX_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_GAP_MS:-}"
 MAX_CUBLASLT_REFERENCE_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS:-}"
 MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS:-}"
+MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK="${NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK:-}"
+MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK="${NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK:-}"
+MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK="${NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 REQUIRE_GRAPH_BODY_TILE="${NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE:-${DEFAULT_REQUIRE_GRAPH_BODY_TILE:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
@@ -901,3 +904,43 @@ check_json_gap \
 check_json_gap \
   "candidate_minus_reference_cublaslt_summed_with_logits_ms_per_iter" \
   "${MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS}"
+
+check_candidate_section_cycles_per_block() {
+  local key="$1"
+  local limit="$2"
+  if [[ -z "${limit}" ]]; then
+    return 0
+  fi
+  python -c 'import json, pathlib, sys
+path, key, limit_raw = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.loads(pathlib.Path(path).read_text())
+candidate = data.get("candidate") or {}
+launches = int(candidate.get("true_fused_launch_count", 0) or 0)
+if launches <= 0:
+    raise SystemExit(
+        f"{key} gate requires a strict true-fused candidate, but "
+        "candidate.true_fused_launch_count is zero"
+    )
+value = float(candidate[key])
+limit = float(limit_raw)
+if value > limit:
+    section = key.replace("true_fused_", "").replace("_cycles_per_block", "")
+    raw_cycles = candidate.get(f"true_fused_{section}_cycles", "unknown")
+    blocks = candidate.get(f"true_fused_{section}_blocks", "unknown")
+    raise SystemExit(
+        f"candidate.{key} {value:.6f} exceeds limit {limit:.6f}; "
+        f"raw_cycles={raw_cycles}, blocks={blocks}, "
+        f"candidate_path_class={data.get('candidate_path_class', 'unknown')}"
+    )
+' "${JSON_OUT}" "${key}" "${limit}"
+}
+
+check_candidate_section_cycles_per_block \
+  "true_fused_ce_cycles_per_block" \
+  "${MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK}"
+check_candidate_section_cycles_per_block \
+  "true_fused_dhidden_cycles_per_block" \
+  "${MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK}"
+check_candidate_section_cycles_per_block \
+  "true_fused_dweight_cycles_per_block" \
+  "${MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK}"

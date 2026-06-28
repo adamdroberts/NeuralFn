@@ -918,6 +918,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       The profile now fails if the candidate misses graph replay, falls back
       out of the graph, uses cuBLASLt for dHidden/dWeight, or does not increment
       both Tile graph-body counters.
+    - 2026-06-28 added opt-in section-cycle gates to the focused LM-head
+      wrapper:
+      `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK`,
+      `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, and
+      `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK`. Each gate
+      requires a nonzero strict true-fused launch count and then fails on the
+      specific CE, dHidden, or dWeight per-block cycle budget, keeping future
+      Tile kernel work tied to section attribution instead of aggregate timing
+      alone.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

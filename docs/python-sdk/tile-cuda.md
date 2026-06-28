@@ -2316,7 +2316,13 @@ candidate actually moved. Strict true-fused candidate JSON also reports
 `true_fused_ce_cycles_per_block`, `true_fused_dhidden_cycles_per_block`, and
 `true_fused_dweight_cycles_per_block`, plus raw section cycle totals and block
 counts from the cooperative kernel body, so a slow candidate can be attributed
-to CE, dHidden, or dWeight before changing the kernel. It also reports
+to CE, dHidden, or dWeight before changing the kernel. The wrapper can enforce
+those section diagnostics with
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK`,
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, and
+`NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK`; each gate
+requires a nonzero strict true-fused launch count before comparing the per-block
+cycle value. It also reports
 `candidate_reference_gap`, including
 absolute candidate-minus-reference milliseconds for generic and cuBLASLt
 reference paths plus the `reference_bottleneck_component`, so same-script
