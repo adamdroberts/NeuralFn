@@ -175,6 +175,7 @@ std::string value_after_equals(const std::string& arg) {
         << "  --graph-file PATH | --graph PATH\n"
         << "  --dataset-alias PATH | --dataset-path PATH\n"
         << "  --output-dir PATH\n"
+        << "  --native-cuda-fast-startup | --fast-startup\n"
         << "  -h, --help\n";
     std::exit(0);
 }
@@ -307,9 +308,12 @@ int main(int argc, char** argv) {
             output_dir = require_value("--output-dir");
         } else if (arg.rfind("--output-dir=", 0) == 0) {
             output_dir = value_after_equals(arg);
+        } else if (arg == "--native-cuda-fast-startup" || arg == "--fast-startup") {
+            append(extra_args, "--fast-startup");
         } else if (arg == "--") {
             while (++i < argc) {
-                append(extra_args, argv[i]);
+                std::string passthrough = argv[i];
+                append(extra_args, passthrough == "--native-cuda-fast-startup" ? "--fast-startup" : passthrough);
             }
             break;
         } else {

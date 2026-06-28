@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native SM120 launcher: the compiled `nfn_train_gpt_sm120` helper now
+  advertises `--native-cuda-fast-startup` / `--fast-startup` and canonicalizes
+  either spelling to `--fast-startup` before execing the native GPT trainer,
+  including passthrough args after `--`. This keeps the no-Python workstation
+  entrypoint consistent with `nfn train` and `train_gpt.py` while preserving the
+  normal long-training default.
+
 - Native CLI workflow: high-level dense GPT training wrappers now normalize
   `--native-cuda-fast-startup` and `--fast-startup` to the compiled C++
   `--fast-startup` flag, and `nfn train --help` advertises the option. This

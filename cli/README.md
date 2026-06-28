@@ -238,7 +238,10 @@ NumPy, tiktoken, or Torch and without writing raw-text token shards.
 For startup/preflight probes, pass `--native-cuda-fast-startup` or
 `--fast-startup`; the wrappers normalize either spelling to the compiled C++
 `--fast-startup` flag so the trainer skips throughput-only setup prewarms
-without changing the normal long-training default.
+without changing the normal long-training default. The compiled SM120
+workstation helper does the same normalization before it execs the native GPT
+trainer, so printed argv from `nfn-train-gpt-sm120` and
+`tools/train_gpt_sm120.sh` stays canonical.
 Full `--train-transformer-lm` runs also emit `cuda_runtime_preflight` before
 allocation and fail early when the driver is unavailable or older than the
 loaded CUDA runtime.

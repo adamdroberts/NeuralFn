@@ -4694,7 +4694,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         }
     )
     proc = subprocess.run(
-        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache", "--native-cuda-fast-startup"],
         cwd=root,
         env=env,
         text=True,
@@ -4724,6 +4724,8 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     for flag, value in expected_pairs.items():
         assert args[args.index(flag) + 1] == value
     assert "--train-transformer-lm" in args
+    assert "--fast-startup" in args
+    assert "--native-cuda-fast-startup" not in args
     env_lines = observed_env.read_text(encoding="utf-8").splitlines()
     assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines

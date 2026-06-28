@@ -3037,8 +3037,10 @@ before dispatch; the dense native GPT parser accepts either spelling for direct
 calls. For low-latency startup/preflight probes, high-level commands accept
 `--native-cuda-fast-startup` or `--fast-startup` and normalize either spelling
 to the compiled C++ `--fast-startup` flag, which skips throughput-only setup
-prewarms without changing the normal long-training default. Startup-only runs
-still resolve cached token shards, load CUDA, allocate
+prewarms without changing the normal long-training default. The generic and
+SM120 compiled GPT launchers perform the same normalization before execing the
+native trainer, so SDK launcher configs and no-Python workstation commands emit
+canonical native argv. Startup-only runs still resolve cached token shards, load CUDA, allocate
 the full Tile-CUDA transformer training arenas, initialize native parameters,
 and emit normal setup timing, but exit before optimizer steps or checkpoint
 export with `status: "native-transformer-lm-startup-ready"`. Native GPT SDK
