@@ -2322,7 +2322,11 @@ those section diagnostics with
 `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, and
 `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK`; each gate
 requires a nonzero strict true-fused launch count before comparing the per-block
-cycle value. It also reports
+cycle value. `tools/bench_native_gpt_sm120_candidate.sh` forwards the matching
+`NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases into
+that focused LM-head preflight, so a full native candidate can fail on the
+specific slow strict section before the paired trainer run starts. It also
+reports
 `candidate_reference_gap`, including
 absolute candidate-minus-reference milliseconds for generic and cuBLASLt
 reference paths plus the `reference_bottleneck_component`, so same-script

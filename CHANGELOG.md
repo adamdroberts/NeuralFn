@@ -15,7 +15,10 @@ Future updates should append new entries here rather than replacing older notes.
   nonzero strict true-fused launch and fail when the candidate CE, dHidden, or
   dWeight section exceeds its per-block budget. This keeps future CUDA Tile
   LM-head kernels accountable to the section that actually regressed instead
-  of only the aggregate candidate/reference ratio.
+  of only the aggregate candidate/reference ratio. The SM120 candidate wrapper
+  forwards matching `NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK`
+  aliases into the focused LM-head preflight before it spends time on the full
+  paired trainer benchmark.
 
 - SM120 parity workflow: `tools/bench_native_gpt_sm120_parity.sh` no longer
   applies its auto-created strict `1.003x` metric-ratio gates to

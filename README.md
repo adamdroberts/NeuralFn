@@ -3567,7 +3567,9 @@ wrapper; they do not promote the rejected strict true-fused body. Set
 `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK`, or
 `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK` to make the
 focused wrapper fail when a strict true-fused candidate exceeds a section-level
-cycle budget.
+cycle budget. The SM120 candidate wrapper forwards matching
+`NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases into
+that focused preflight before it launches the full paired trainer benchmark.
 
 NanoGPT's native `--smoke-lm-step` accepts loss, gradient, and weight-update
 absolute error up to `1e-5`. CUDA 13.3 on the RTX 5090 has shown stable tied

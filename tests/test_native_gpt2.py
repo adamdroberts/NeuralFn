@@ -2680,6 +2680,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile4\"" in bench_source
     assert "NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT" in bench_source
     assert "NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_REFERENCE_GAP_MS" in bench_source
+    assert "NFN_SM120_NATIVE_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK" in bench_source
+    assert "NFN_SM120_NATIVE_CANDIDATE_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK" in bench_source
+    assert "NFN_SM120_CANDIDATE_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK" in bench_source
+    assert 'export NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK="$LM_HEAD_BACKWARD_MAX_TRUE_FUSED_CE_CYCLES_PER_BLOCK"' in bench_source
+    assert 'export NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK="$LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DHIDDEN_CYCLES_PER_BLOCK"' in bench_source
+    assert 'export NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK="$LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK"' in bench_source
     assert "lm_head_backward_preflight_profile=" in bench_source
     assert "run_lm_head_backward_preflight" in bench_source
     assert "tools/bench_lm_head_backward_candidate.sh" in bench_source

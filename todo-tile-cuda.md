@@ -926,7 +926,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       requires a nonzero strict true-fused launch count and then fails on the
       specific CE, dHidden, or dWeight per-block cycle budget, keeping future
       Tile kernel work tied to section attribution instead of aggregate timing
-      alone.
+      alone. The SM120 native candidate wrapper forwards the matching
+      `NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases
+      into that focused preflight so known-slow strict sections fail before the
+      full paired trainer benchmark starts.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:
