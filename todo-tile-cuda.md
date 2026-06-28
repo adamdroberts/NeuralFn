@@ -2607,6 +2607,16 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     older two-launch refresh route in the same SM120 candidate harness. This
     closes a benchmark-coverage gap for the optimized optimizer path but does
     not close the LM-head true-fused parity item above.
+  - 2026-06-28 follow-up: aligned
+    `tools/bench_lm_head_backward_candidate.sh` trainer-chunk profiles with the
+    current 28672-row dense GPT LM-head chunk default. Focused
+    `trainer-chunk`, strict true-fused, cuBLASLt, row-loss, and loss-bin
+    LM-head microbench runs now measure the same row shape as the actual
+    trainer unless `NFN_LM_HEAD_BACKWARD_ROWS` overrides it. The corrected
+    focused `trainer-chunk` run on the dedicated RTX 5090 measured
+    `candidate_to_baseline_ms_per_iter_ratio: 0.999499` at 28672 rows and kept
+    `graph_fallback_count: 0`, so the benchmark-shape change preserves the
+    current wrapper while making future strict-body probes honest.
   - 2026-06-23 added the dedicated linear-backward microbench to keep the next
     kernel work honest: candidate dInput/dWeight symbols for block backward and
     LM-head can now be timed against the current C ABI without dataset loading,

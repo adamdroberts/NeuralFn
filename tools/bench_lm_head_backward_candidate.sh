@@ -35,7 +35,7 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=0
     ;;
   trainer-chunk|trainer_chunk)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -43,7 +43,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   trainer-chunk-strict|trainer_chunk_strict|strict-trainer-chunk|strict_trainer_chunk)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -51,7 +51,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=1
     ;;
   trainer-chunk-true-fused|trainer_chunk_true_fused|true-fused-trainer-chunk|true_fused_trainer_chunk)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -66,7 +66,7 @@ case "${PROFILE}" in
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
     ;;
   trainer-chunk-true-fused-tile16|trainer_chunk_true_fused_tile16|true-fused-trainer-chunk-tile16|true_fused_trainer_chunk_tile16)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -87,7 +87,7 @@ case "${PROFILE}" in
     fi
     ;;
   trainer-chunk-true-fused-tile8|trainer_chunk_true_fused_tile8|true-fused-trainer-chunk-tile8|true_fused_trainer_chunk_tile8)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -108,7 +108,7 @@ case "${PROFILE}" in
     fi
     ;;
   trainer-chunk-true-fused-tile4|trainer_chunk_true_fused_tile4|true-fused-trainer-chunk-tile4|true_fused_trainer_chunk_tile4)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -147,7 +147,7 @@ case "${PROFILE}" in
     export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
     ;;
   trainer-chunk-cublaslt|trainer_chunk_cublaslt|trainer-cublaslt|trainer_cublaslt)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -158,7 +158,7 @@ case "${PROFILE}" in
     REJECTED_REASON="CUDA 13.3 dedicated RTX 5090 trainer-chunk evidence rejects this cuBLASLt LM-head route: 37.070129 ms/iter vs 25.271233 ms/iter baseline, candidate/baseline ratio 1.466890."
     ;;
   trainer-row-loss-cublaslt|trainer_row_loss_cublaslt)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -169,7 +169,7 @@ case "${PROFILE}" in
     REJECTED_REASON="CUDA 13.3 dedicated RTX 5090 evidence rejects the cuBLASLt LM-head route; keep this profile for intentional diagnostics only."
     ;;
   trainer-row-loss|trainer_row_loss)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
@@ -177,7 +177,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   trainer-loss-bins|trainer_loss_bins)
-    DEFAULT_ROWS=32768
+    DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=1024

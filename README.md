@@ -582,7 +582,7 @@ graph candidate at
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
 symbol (`1.000186x`). Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
-32768-row optimizer no-loss trainer chunk scale,
+28672-row optimizer no-loss trainer chunk scale,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` to run that same shape with
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` enabled by default,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused` with
@@ -3267,7 +3267,10 @@ entries did not change. The dedicated RTX 5090 check for LM-head dHidden shape
 `768,8192,50304,N,N` measured this allow-list route slower than GEMMEx, so it
 remains diagnostic-only.
 
-The compiled trainer, SDK, Python wrappers, and root CLI all share the 32768-row LM-head chunk default. Use the explicit LM-head row-chunk flags only when reproducing rejected larger/smaller-workspace profiles or profiling a new candidate.
+The compiled trainer, SDK, Python wrappers, root CLI, and focused LM-head
+microbench all share the 28672-row LM-head chunk default. Use the explicit
+LM-head row-chunk flags only when reproducing rejected larger/smaller-workspace
+profiles or profiling a new candidate.
 
 For BF16 LM-head CE profiling, `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or `NFN_TILE_CUDA_CE_BF16_EXP2=1` switches the in-place BF16 CE+dlogits kernel from `expf` to `exp2f(x * log2(e))`. The default remains `expf`; runtime JSON reports `lm_head_ce_bf16_exp2_enabled`. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_exp2` to reproduce the named same-script check. It remains rejected by default because the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed rerun moved the no-loss CE strategy off the specialized kernel and regressed train-loop wall to `1.019757x`, steady-state CUDA-event wall to `1.022252x`, LM-head backward to `1.097477x`, and LM-head cooperative time to `1.140828x`.
 
@@ -3327,7 +3330,7 @@ compile-time token-init tile sizes against the 4096 default: 8192 measured
 `1.016591x` in startup-only paired runs, so token-init retile work is not the
 next useful startup path.
 
-The 32768-row tied LM-head chunk default remains the current local optimum on
+The 28672-row tied LM-head chunk default remains the current local optimum on
 the dedicated RTX 5090. A CUDA 13.3.33 post-reinstall stage-timed sweep rejected
 `--lm-head-row-chunk-size 16384` (`1.016019x` train-loop wall,
 `1.062838x` LM-head backward, with dHidden at `1.244198x`) and

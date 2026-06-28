@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- LM-head benchmarking: `tools/bench_lm_head_backward_candidate.sh` now defaults
+  every trainer-chunk LM-head profile to 28672 rows, matching the current dense
+  GPT trainer LM-head row chunk. Focused `trainer-chunk`, strict true-fused,
+  cuBLASLt, row-loss, and loss-bin microbench profiles now measure the same
+  row shape as the live trainer unless `NFN_LM_HEAD_BACKWARD_ROWS` overrides
+  it. README, Tile-CUDA SDK docs, and the Tile-CUDA todo were updated to stop
+  describing the focused gate as a 32768-row current shape.
+
+  Verification: `bash -n tools/bench_lm_head_backward_candidate.sh`;
+  `NFN_LM_HEAD_BACKWARD_DRY_RUN=1
+  NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk bash
+  tools/bench_lm_head_backward_candidate.sh`, which printed `--rows 28672`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
+  -q`; `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_trainer_chunk_28672.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which passed on the
+  dedicated RTX 5090 at `candidate_to_baseline_ms_per_iter_ratio=0.999499`
+  with `graph_fallback_count=0`.
+
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now treats the
   bench-enabled JSON contract as an exact current dense-GPT native route check.
   It fails if training reports graph-editor tensor flow, Torch dependency,
