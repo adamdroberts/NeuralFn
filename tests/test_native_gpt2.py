@@ -1378,6 +1378,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "native_fast_startup_prewarm_policy" in gpt_source
     assert "cfg.fast_startup ||" in gpt_source
     assert "!native_fast_startup_requested && !cfg.startup_only" in gpt_source
+    assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'

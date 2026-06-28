@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT startup: stage-timed `--startup-only` probes now skip CUDA
+  event-pool preallocation and report
+  `stage_timing_prealloc_event_pairs_requested: 0`, because no optimizer step
+  can emit stage timing events before the process exits. Normal training stage
+  timing keeps the existing preallocated event pool. Verification: focused
+  native GPT source test, linked trainer build/help, GPU-visible stage-timed
+  startup smoke, and `git diff --check`.
+
 - Native GPT startup: `nfn_gpt_native_train` now accepts `--fast-startup` /
   `--native-cuda-fast-startup`, and `NativeTrainRunConfig` plus the
   `build_native_train_run_config()`, `build_native_sm120_gpt_run_config()`, and

@@ -2309,6 +2309,10 @@ reports `native_fast_startup_prewarm_policy` as
 2026-06-28 dedicated RTX 5090 3-sample A/B measured the new startup-only
 default at `0.755407x` `setup_wall_ms` versus forced old QKV prewarm, with
 `linear_tk_qkv_first_use_prewarm_success_count` changing from `1` to `0`.
+When `NFN_NATIVE_GPT_STAGE_TIMING=1` is set on a startup-only probe, the native
+trainer now reports `stage_timing_prealloc_event_pairs_requested: 0` and skips
+the CUDA event-pool preallocation because no optimizer step will consume the
+events before exit.
 
 `fast_startup_full` is the matching rejected full-training probe. It runs real
 optimizer steps with `NFN_NATIVE_GPT_FAST_STARTUP=1` to check whether skipped

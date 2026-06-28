@@ -13888,11 +13888,13 @@ int run_transformer_lm_training_json(
     const std::int64_t default_stage_timing_prealloc_events =
         std::min<std::int64_t>(stage_timing_max_events, 16384);
     const std::int64_t stage_timing_prealloc_event_pairs_requested =
-        std::min<std::int64_t>(
-            stage_timing_max_events,
-            env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS",
-                                    "NFN_NATIVE_GPT2_STAGE_TIMING_PREALLOC_EVENTS"},
-                                   default_stage_timing_prealloc_events));
+        cfg.startup_only
+            ? 0
+            : std::min<std::int64_t>(
+                  stage_timing_max_events,
+                  env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS",
+                                          "NFN_NATIVE_GPT2_STAGE_TIMING_PREALLOC_EVENTS"},
+                                         default_stage_timing_prealloc_events));
     if (error.empty() && stage_timing_requested) {
         if (cuda_event_create_with_flags == nullptr || cuda_event_record == nullptr ||
             cuda_event_elapsed_time == nullptr || cuda_event_destroy == nullptr) {

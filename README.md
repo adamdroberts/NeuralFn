@@ -181,6 +181,9 @@ the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
 `linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0` and the
 runtime policy reporting
 `startup-only-skip-throughput-prewarms-by-default`.
+Stage-timed startup-only probes also elide the CUDA event-pool preallocation
+because no optimizer step can consume those events before exit; runtime JSON
+reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.
 Fast startup remains a startup/preflight policy, not the default full-training
 policy. The `fast_startup_full` probe ran real optimizer steps with
 `NFN_NATIVE_GPT_FAST_STARTUP=1` and improved setup wall time to `0.655522x`,

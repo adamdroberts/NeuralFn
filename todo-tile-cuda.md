@@ -114,6 +114,11 @@ Real training tensors must not pass through graph editor node objects.
   `build/nfn_gpt_native_train` to `0.083 ms` on
   `build/nfn_gpt_native_train_linked`, with `torch_required=false` and
   `graph_editor_tensor_flow=false`.
+- [x] Elide stage-timing event-pool preallocation on startup-only probes. When
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` is set with `--startup-only`, the trainer now
+  reports `stage_timing_prealloc_event_pairs_requested: 0` and does not create
+  thousands of CUDA events that cannot be consumed before exit. Normal
+  stage-timed training still preallocates the event pool for hot-loop timing.
 - [x] Prefer the installed CUDA 13 runtime path in native C++ startup when no
   explicit `--cuda-runtime-lib` / `NFN_CUDA_RUNTIME_LIB` is supplied. The
   resolver now checks `/usr/local/cuda/lib64/libcudart.so.13` and adjacent
