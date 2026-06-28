@@ -2721,9 +2721,15 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "graph_replay_count" in bench_source
     assert "graph_replay_success_count" in bench_source
     assert "graph_fallback_count" in bench_source
+    assert "graph_body_cublaslt_dhidden_launch_count" in bench_source
+    assert "graph_body_cublaslt_dweight_launch_count" in bench_source
+    assert "graph_body_tile_dhidden_fallback_count" in bench_source
+    assert "graph_body_tile_dweight_fallback_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_capture_attempt_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_replay_success_count" in bench_source
     assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in bench_source
+    assert "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count" in bench_source
+    assert "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count" in bench_source
     assert "cudaEventElapsedTime" in bench_source
     assert "timed_reset_between_iterations" in bench_source
     assert "cuda_check(cudaDeviceSynchronize(), name + \" warmup synchronize\");\n    }\n    reset_stats();" in bench_source

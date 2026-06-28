@@ -665,6 +665,15 @@ returns `3`, with one CE/dlogits node, one dHidden node, and one dWeight node.
 Native GPT JSON mirrors these as per-replay and replay-total
 `lm_head_fused_graph_body_*` fields, so same-script benchmarks can attribute the
 current wrapper without promoting it as a real fused kernel.
+The focused `build/lm_head_backward_bench` JSON mirrors the same graph-body
+route proof on each baseline/candidate variant as
+`graph_body_cublaslt_dhidden_launch_count`,
+`graph_body_cublaslt_dweight_launch_count`,
+`graph_body_tile_dhidden_fallback_count`, and
+`graph_body_tile_dweight_fallback_count`. Use these fields with
+`graph_replay_success_count` and `graph_fallback_count` when deciding whether a
+candidate measured the optimized Tile classifier body or a diagnostic cuBLASLt
+or fallback path.
 The strict cooperative true-fused route has its own launch counter:
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`. Focused
 LM-head benchmark JSON mirrors it as `true_fused_launch_count` on each variant,

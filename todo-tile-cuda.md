@@ -877,6 +877,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       bottleneck component names. The benchmark still rejects placeholder
       wrappers, but the next Tile kernel iteration can now identify the
       remaining gap from one same-process run without manual subtraction.
+    - 2026-06-28 extended each focused LM-head benchmark variant JSON with
+      graph-body cuBLASLt launch and Tile fallback counters for dHidden and
+      dWeight. Future candidate runs must use these counters with graph replay
+      counters to prove the measured body is the optimized Tile classifier
+      route and not a diagnostic cuBLASLt/fallback path.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

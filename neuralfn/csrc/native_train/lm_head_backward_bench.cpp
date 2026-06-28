@@ -133,6 +133,10 @@ struct VariantResult {
     std::int64_t graph_replay_count = 0;
     std::int64_t graph_replay_success_count = 0;
     std::int64_t graph_fallback_count = 0;
+    std::int64_t graph_body_cublaslt_dhidden_launch_count = 0;
+    std::int64_t graph_body_cublaslt_dweight_launch_count = 0;
+    std::int64_t graph_body_tile_dhidden_fallback_count = 0;
+    std::int64_t graph_body_tile_dweight_fallback_count = 0;
 };
 
 struct ComponentResult {
@@ -340,6 +344,10 @@ VariantResult run_variant(
     CountFn graph_replay_count,
     CountFn graph_replay_success_count,
     CountFn graph_fallback_count,
+    CountFn graph_body_cublaslt_dhidden_launch_count,
+    CountFn graph_body_cublaslt_dweight_launch_count,
+    CountFn graph_body_tile_dhidden_fallback_count,
+    CountFn graph_body_tile_dweight_fallback_count,
     const Options& options,
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -441,6 +449,10 @@ VariantResult run_variant(
     result.graph_replay_count = graph_replay_count();
     result.graph_replay_success_count = graph_replay_success_count();
     result.graph_fallback_count = graph_fallback_count();
+    result.graph_body_cublaslt_dhidden_launch_count = graph_body_cublaslt_dhidden_launch_count();
+    result.graph_body_cublaslt_dweight_launch_count = graph_body_cublaslt_dweight_launch_count();
+    result.graph_body_tile_dhidden_fallback_count = graph_body_tile_dhidden_fallback_count();
+    result.graph_body_tile_dweight_fallback_count = graph_body_tile_dweight_fallback_count();
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     return result;
@@ -782,7 +794,15 @@ std::string render_json(
             << "\"graph_cache_entry_count\":" << value.graph_cache_entry_count << ","
             << "\"graph_replay_count\":" << value.graph_replay_count << ","
             << "\"graph_replay_success_count\":" << value.graph_replay_success_count << ","
-            << "\"graph_fallback_count\":" << value.graph_fallback_count
+            << "\"graph_fallback_count\":" << value.graph_fallback_count << ","
+            << "\"graph_body_cublaslt_dhidden_launch_count\":"
+            << value.graph_body_cublaslt_dhidden_launch_count << ","
+            << "\"graph_body_cublaslt_dweight_launch_count\":"
+            << value.graph_body_cublaslt_dweight_launch_count << ","
+            << "\"graph_body_tile_dhidden_fallback_count\":"
+            << value.graph_body_tile_dhidden_fallback_count << ","
+            << "\"graph_body_tile_dweight_fallback_count\":"
+            << value.graph_body_tile_dweight_fallback_count
             << "}";
         return out.str();
     };
@@ -934,6 +954,14 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_replay_success_count");
         auto graph_fallback_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_fallback_count");
+        auto graph_body_cublaslt_dhidden_launch_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_cublaslt_dhidden_launch_count");
+        auto graph_body_cublaslt_dweight_launch_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_cublaslt_dweight_launch_count");
+        auto graph_body_tile_dhidden_fallback_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_tile_dhidden_fallback_count");
+        auto graph_body_tile_dweight_fallback_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_graph_body_tile_dweight_fallback_count");
         auto reference_logits_fn = load_symbol<LinearBf16InputWeightBf16OutputFn>(
             handle,
             "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
@@ -1016,6 +1044,10 @@ int main(int argc, char** argv) {
                 graph_replay_count,
                 graph_replay_success_count,
                 graph_fallback_count,
+                graph_body_cublaslt_dhidden_launch_count,
+                graph_body_cublaslt_dweight_launch_count,
+                graph_body_tile_dhidden_fallback_count,
+                graph_body_tile_dweight_fallback_count,
                 options,
                 static_cast<std::uint16_t*>(logits.get()),
                 static_cast<const std::uint16_t*>(targets.get()),

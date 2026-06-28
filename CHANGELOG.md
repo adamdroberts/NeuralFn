@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- LM-head benchmarking: the focused `build/lm_head_backward_bench` JSON now
+  reports graph-body cuBLASLt launch counters and Tile fallback counters for
+  dHidden and dWeight inside each baseline/candidate variant. This makes
+  same-script LM-head candidate runs prove whether the CUDA Graph body measured
+  the optimized Tile classifier matmuls or a diagnostic cuBLASLt/fallback route.
+  README, Tile-CUDA SDK docs, and the Tile-CUDA todo were updated with the new
+  interpretation guidance.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
+  -q`; `bash tools/build_lm_head_backward_bench.sh`; `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_graph_body_counters.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which passed on the
+  dedicated RTX 5090 and reported candidate
+  `graph_body_tile_dhidden_fallback_count=1`,
+  `graph_body_tile_dweight_fallback_count=1`, and `graph_fallback_count=0`.
+
 - LM-head benchmarking: `tools/bench_lm_head_backward_candidate.sh` now defaults
   every trainer-chunk LM-head profile to 28672 rows, matching the current dense
   GPT trainer LM-head row chunk. Focused `trainer-chunk`, strict true-fused,

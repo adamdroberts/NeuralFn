@@ -604,7 +604,14 @@ reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_forced_production_debug`; it only reports
 `candidate_true_fused_production_ready` for non-production smoke shapes until
 the trainer-sized strict kernel beats the paired parity gates, so a selected
-strict symbol cannot be mistaken for a defaultable trainer-shape candidate,
+strict symbol cannot be mistaken for a defaultable trainer-shape candidate.
+Each baseline/candidate JSON block also reports
+`graph_body_cublaslt_dhidden_launch_count`,
+`graph_body_cublaslt_dweight_launch_count`,
+`graph_body_tile_dhidden_fallback_count`, and
+`graph_body_tile_dweight_fallback_count`, so same-script LM-head runs can prove
+whether the CUDA Graph body used the optimized Tile classifier matmuls or a
+diagnostic cuBLASLt/fallback route.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` to compare that same
 optimizer chunk against the cuBLASLt cooperative candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss
