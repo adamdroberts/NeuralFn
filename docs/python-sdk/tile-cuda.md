@@ -406,9 +406,12 @@ effective `bf16-float32-mixed` storage with native activation packing inactive.
 The `--smoke-nvfp4-pack` preflight now reports
 `packed_nvfp4_activation_arena_ready`,
 `native_activation_packing_prerequisite_status`, and
-`native_activation_packing_remaining_required_kernels`; this proves the raw
-CUDA Tile pack/dequantize arena is callable from the native trainer, not that
-the full dense GPT training loop is consuming packed FP4 activations yet.
+`native_activation_packing_remaining_required_kernels`. It also loads
+`nfn_native_tile_linear_nvfp4_input_weight_bf16_float32` and reports
+`projection_max_abs_error` for a tiny packed-input, bf16-weight projection
+forward pass. This proves the raw CUDA Tile pack/dequantize arena and first
+packed projection-forward primitive are callable from the native trainer, not
+that the full dense GPT training loop is consuming packed FP4 activations yet.
 
 Dense GPT plan/runtime JSON reports
 `native_geometry_contract.selected_template_geometry` and

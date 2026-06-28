@@ -5288,6 +5288,11 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
     constexpr std::int64_t kElements = 16;
     constexpr std::int64_t kPackedBytes = (kElements + 1) / 2;
     constexpr std::int64_t kScaleBytes = 1;
+    constexpr std::int64_t kLinearRows = 2;
+    constexpr std::int64_t kLinearInputDim = 8;
+    constexpr std::int64_t kLinearOutputDim = 3;
+    constexpr std::int64_t kLinearWeightElements = kLinearInputDim * kLinearOutputDim;
+    constexpr std::int64_t kLinearOutputElements = kLinearRows * kLinearOutputDim;
     constexpr float kTensorScale = 1.0f;
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
@@ -5297,6 +5302,12 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         1.5f, 2.0f, 3.0f, -3.0f,
         2.0f, -1.0f, 0.0f, 0.5f,
     };
+    const std::vector<float> linear_weight = {
+        0.25f, -0.5f, 0.75f, -1.0f, 1.25f, -1.5f, 0.5f, 0.125f,
+        -0.25f, 0.5f, -0.75f, 1.0f, -1.25f, 1.5f, -0.5f, -0.125f,
+        0.125f, 0.25f, 0.375f, 0.5f, -0.625f, -0.75f, 0.875f, 1.0f,
+    };
+    const std::vector<float> linear_bias = {0.125f, -0.25f, 0.5f};
 
     const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
     std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
@@ -5305,13 +5316,29 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
     bool cuda_runtime_loaded = false;
     bool pack_kernel_loaded = false;
     bool unpack_kernel_loaded = false;
+    bool linear_kernel_loaded = false;
+    bool f32_to_bf16_kernel_loaded = false;
     bool passed = false;
     double max_abs_error = 0.0;
+    double linear_max_abs_error = 0.0;
     int nonzero_scale_bytes = 0;
     std::string error;
 
     using PackFn = int (*)(const float*, std::uint8_t*, std::uint8_t*, float, std::int64_t, void*);
     using UnpackFn = int (*)(const std::uint8_t*, const std::uint8_t*, float, float*, std::int64_t, void*);
+    using F32ToBf16Fn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
+    using LinearNvfp4InputWeightBf16Fn = int (*)(
+        const std::uint8_t*,
+        const std::uint8_t*,
+        float,
+        const std::uint16_t*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        bool,
+        void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
@@ -5324,6 +5351,8 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
     void* cuda_handle = nullptr;
     PackFn pack = nullptr;
     UnpackFn unpack = nullptr;
+    F32ToBf16Fn f32_to_bf16 = nullptr;
+    LinearNvfp4InputWeightBf16Fn linear_nvfp4_input_weight_bf16 = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -5346,12 +5375,22 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         tile_loaded = true;
         pack = load_symbol<PackFn>(tile_handle, "nfn_native_tile_float32_to_nvfp4_packed");
         unpack = load_symbol<UnpackFn>(tile_handle, "nfn_native_tile_nvfp4_packed_to_float32");
+        f32_to_bf16 = load_symbol<F32ToBf16Fn>(tile_handle, "nfn_native_tile_float32_to_bf16_bits");
+        linear_nvfp4_input_weight_bf16 = load_symbol<LinearNvfp4InputWeightBf16Fn>(
+            tile_handle,
+            "nfn_native_tile_linear_nvfp4_input_weight_bf16_float32");
         pack_kernel_loaded = pack != nullptr;
         unpack_kernel_loaded = unpack != nullptr;
+        f32_to_bf16_kernel_loaded = f32_to_bf16 != nullptr;
+        linear_kernel_loaded = linear_nvfp4_input_weight_bf16 != nullptr;
         if (pack == nullptr) {
             error = dl_last_error("dlsym nfn_native_tile_float32_to_nvfp4_packed failed");
         } else if (unpack == nullptr) {
             error = dl_last_error("dlsym nfn_native_tile_nvfp4_packed_to_float32 failed");
+        } else if (f32_to_bf16 == nullptr) {
+            error = dl_last_error("dlsym nfn_native_tile_float32_to_bf16_bits failed");
+        } else if (linear_nvfp4_input_weight_bf16 == nullptr) {
+            error = dl_last_error("dlsym nfn_native_tile_linear_nvfp4_input_weight_bf16_float32 failed");
         }
     }
 
@@ -5386,6 +5425,10 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
 
     float* device_values = nullptr;
     float* device_roundtrip = nullptr;
+    float* device_weight = nullptr;
+    std::uint16_t* device_weight_bf16 = nullptr;
+    float* device_bias = nullptr;
+    float* device_linear_out = nullptr;
     std::uint8_t* device_packed = nullptr;
     std::uint8_t* device_scales = nullptr;
     if (error.empty()) {
@@ -5413,9 +5456,53 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         }
     }
     if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_weight), sizeof(float) * kLinearWeightElements);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc linear weight");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_weight_bf16), sizeof(std::uint16_t) * kLinearWeightElements);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc linear weight bf16");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_bias), sizeof(float) * kLinearOutputDim);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc linear bias");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_malloc(reinterpret_cast<void**>(&device_linear_out), sizeof(float) * kLinearOutputElements);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc linear output");
+        }
+    }
+    if (error.empty()) {
         int status = cuda_memcpy(device_values, expected.data(), sizeof(float) * expected.size(), kCudaMemcpyHostToDevice);
         if (status != 0) {
             error = cuda_error(status, "cudaMemcpy host-to-device source");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_memcpy(
+            device_weight,
+            linear_weight.data(),
+            sizeof(float) * linear_weight.size(),
+            kCudaMemcpyHostToDevice);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy host-to-device linear weight");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_memcpy(
+            device_bias,
+            linear_bias.data(),
+            sizeof(float) * linear_bias.size(),
+            kCudaMemcpyHostToDevice);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy host-to-device linear bias");
         }
     }
     if (error.empty()) {
@@ -5443,6 +5530,29 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         }
     }
     if (error.empty()) {
+        const int status = f32_to_bf16(device_weight, device_weight_bf16, kLinearWeightElements, nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_float32_to_bf16_bits linear weight");
+        }
+    }
+    if (error.empty()) {
+        const int status = linear_nvfp4_input_weight_bf16(
+            device_packed,
+            device_scales,
+            kTensorScale,
+            device_weight_bf16,
+            device_bias,
+            device_linear_out,
+            kLinearRows,
+            kLinearInputDim,
+            kLinearOutputDim,
+            true,
+            nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_linear_nvfp4_input_weight_bf16_float32");
+        }
+    }
+    if (error.empty()) {
         const int status = cuda_device_synchronize();
         if (status != 0) {
             error = cuda_error(status, "cudaDeviceSynchronize");
@@ -5450,11 +5560,33 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
     }
 
     std::vector<float> roundtrip(static_cast<std::size_t>(kElements), 0.0f);
+    std::vector<float> linear_out(static_cast<std::size_t>(kLinearOutputElements), 0.0f);
+    std::vector<std::uint16_t> linear_weight_bf16(static_cast<std::size_t>(kLinearWeightElements), 0);
     std::vector<std::uint8_t> scales(static_cast<std::size_t>(kScaleBytes), 0);
     if (error.empty()) {
         const int status = cuda_memcpy(roundtrip.data(), device_roundtrip, sizeof(float) * roundtrip.size(), kCudaMemcpyDeviceToHost);
         if (status != 0) {
             error = cuda_error(status, "cudaMemcpy device-to-host roundtrip");
+        }
+    }
+    if (error.empty()) {
+        const int status = cuda_memcpy(
+            linear_out.data(),
+            device_linear_out,
+            sizeof(float) * linear_out.size(),
+            kCudaMemcpyDeviceToHost);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy device-to-host linear output");
+        }
+    }
+    if (error.empty()) {
+        const int status = cuda_memcpy(
+            linear_weight_bf16.data(),
+            device_weight_bf16,
+            sizeof(std::uint16_t) * linear_weight_bf16.size(),
+            kCudaMemcpyDeviceToHost);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy device-to-host linear weight bf16");
         }
     }
     if (error.empty()) {
@@ -5475,10 +5607,30 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
                 ++nonzero_scale_bytes;
             }
         }
-        passed = max_abs_error <= 1e-6 && nonzero_scale_bytes == kScaleBytes;
+        for (std::int64_t row = 0; row < kLinearRows; ++row) {
+            for (std::int64_t col = 0; col < kLinearOutputDim; ++col) {
+                float reference = linear_bias[static_cast<std::size_t>(col)];
+                for (std::int64_t inner = 0; inner < kLinearInputDim; ++inner) {
+                    const std::int64_t x_index = row * kLinearInputDim + inner;
+                    const std::int64_t weight_index = col * kLinearInputDim + inner;
+                    reference += roundtrip[static_cast<std::size_t>(x_index)] *
+                        bf16_bits_to_float_host(linear_weight_bf16[static_cast<std::size_t>(weight_index)]);
+                }
+                const std::int64_t out_index = row * kLinearOutputDim + col;
+                const double abs_error = std::fabs(
+                    static_cast<double>(linear_out[static_cast<std::size_t>(out_index)]) -
+                    static_cast<double>(reference));
+                if (abs_error > linear_max_abs_error) {
+                    linear_max_abs_error = abs_error;
+                }
+            }
+        }
+        passed = max_abs_error <= 1e-6 && linear_max_abs_error <= 1e-5 &&
+            nonzero_scale_bytes == kScaleBytes;
         if (!passed) {
             std::ostringstream out;
             out << "NVFP4 pack smoke failed: max_abs_error=" << max_abs_error
+                << ", linear_max_abs_error=" << linear_max_abs_error
                 << ", nonzero_scale_bytes=" << nonzero_scale_bytes;
             error = out.str();
         }
@@ -5508,6 +5660,30 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
             error = cuda_error(status, "cudaFree scales");
         }
     }
+    if (device_weight != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_weight);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree linear weight");
+        }
+    }
+    if (device_weight_bf16 != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_weight_bf16);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree linear weight bf16");
+        }
+    }
+    if (device_bias != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_bias);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree linear bias");
+        }
+    }
+    if (device_linear_out != nullptr && cuda_free != nullptr) {
+        const int status = cuda_free(device_linear_out);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaFree linear output");
+        }
+    }
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
@@ -5528,13 +5704,20 @@ int print_nvfp4_pack_smoke_json(const Config& cfg, const char* program) {
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"pack_kernel\": \"nfn_native_tile_float32_to_nvfp4_packed\",\n"
         << "  \"unpack_kernel\": \"nfn_native_tile_nvfp4_packed_to_float32\",\n"
+        << "  \"projection_kernel\": \"nfn_native_tile_linear_nvfp4_input_weight_bf16_float32\",\n"
         << "  \"pack_kernel_loaded\": " << (pack_kernel_loaded ? "true" : "false") << ",\n"
         << "  \"unpack_kernel_loaded\": " << (unpack_kernel_loaded ? "true" : "false") << ",\n"
+        << "  \"f32_to_bf16_kernel_loaded\": " << (f32_to_bf16_kernel_loaded ? "true" : "false") << ",\n"
+        << "  \"projection_kernel_loaded\": " << (linear_kernel_loaded ? "true" : "false") << ",\n"
         << "  \"elements\": " << kElements << ",\n"
+        << "  \"projection_rows\": " << kLinearRows << ",\n"
+        << "  \"projection_input_dim\": " << kLinearInputDim << ",\n"
+        << "  \"projection_output_dim\": " << kLinearOutputDim << ",\n"
         << "  \"packed_bytes\": " << kPackedBytes << ",\n"
         << "  \"scale_bytes\": " << kScaleBytes << ",\n"
         << "  \"tensor_scale\": " << kTensorScale << ",\n"
         << "  \"max_abs_error\": " << max_abs_error << ",\n"
+        << "  \"projection_max_abs_error\": " << linear_max_abs_error << ",\n"
         << "  \"nonzero_scale_bytes\": " << nonzero_scale_bytes << ",\n"
         << "  \"packed_nvfp4_activation_arena_ready\": " << (passed ? "true" : "false") << ",\n"
         << "  \"native_activation_packing_prerequisite_status\": \""

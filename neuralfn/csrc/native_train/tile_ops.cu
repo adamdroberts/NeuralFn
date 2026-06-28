@@ -237,6 +237,18 @@ void launch_nvfp4_packed_to_float32(
     float* dest,
     std::int64_t n,
     cudaStream_t stream);
+void launch_linear_nvfp4_input_weight_bf16_float32(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream);
 void launch_store_mlp_activations_bf16_float32(
     const float* ln2_out,
     const float* fc_out,
@@ -3325,6 +3337,33 @@ int nfn_native_tile_nvfp4_packed_to_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_nvfp4_packed_to_float32(
         packed, block_scales_e4m3, tensor_scale, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_nvfp4_input_weight_bf16_float32(
+    const std::uint8_t* x_nvfp4_packed,
+    const std::uint8_t* x_block_scales_e4m3,
+    float x_tensor_scale,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_nvfp4_input_weight_bf16_float32(
+        x_nvfp4_packed,
+        x_block_scales_e4m3,
+        x_tensor_scale,
+        weight_bf16_bits,
+        bias,
+        out,
+        rows,
+        input_dim,
+        output_dim,
+        has_bias,
+        as_stream(cuda_stream));
     return launch_status();
 }
 
