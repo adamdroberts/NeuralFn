@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Native GPT startup: long dense GPT training runs now defer throughput-only
+  setup prewarms by default while short parity/smoke runs keep the existing
+  prewarmed route. The dense native trainer enables this policy when
+  `max_steps` is greater than `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
+  (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
+  `NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1024`), reports
+  `native_long_run_defer_prewarm_after_steps`,
+  `native_long_run_defer_prewarm_enabled`, and the policy string
+  `long-run-defer-throughput-prewarms-by-default` in runtime JSON, and still
+  allows explicit QKV or LM-head prewarm env vars to force the old eager setup.
+  A forced two-step smoke with `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1`
+  reported `native_long_run_defer_prewarm_enabled=true`,
+  `linear_tk_qkv_first_use_prewarm_requested=false`,
+  `lm_head_cooperative_backward_graph_prewarm_requested=false`,
+  `torch_required=false`, `graph_editor_tensor_flow=false`, and
+  `optimized_kernel_contract_passed=true`. The normal short-run validator route
+  still reported `native_fast_startup_prewarm_policy` as
+  `throughput-prewarm-defaults`, so parity/smoke runs keep the existing prewarm
+  behavior. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "fast_startup or prewarm"`,
+  `bash tools/build_native_gpt_cli_linked.sh`, the forced two-step native CUDA
+  smoke above, and `bash tools/validate_sm120_cuda13.sh`, whose pytest leg
+  passed with `112 passed, 1 skipped` and whose parity leg passed with median
+  `train_loop_wall_ms_per_step=1.000472x` and
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000910x`.
+
 - Native GPT validation: `tools/validate_sm120_cuda13.sh` now runs the direct
   llm.kittens parity gate by default instead of leaving it opt-in. Set
   `NFN_SM120_CUDA13_RUN_PARITY=0` only for fast CUDA-only smoke checks that

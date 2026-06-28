@@ -1630,10 +1630,17 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "--fast-startup" in gpt_source
     assert "--native-cuda-fast-startup" in gpt_source
     assert "native_fast_startup_requested" in gpt_source
+    assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS" in gpt_source
+    assert "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS" in gpt_source
+    assert "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS" in gpt_source
+    assert "native_long_run_defer_prewarm_after_steps" in gpt_source
+    assert "native_long_run_defer_prewarm_enabled" in gpt_source
     assert "native_fast_startup_prewarm_policy" in gpt_source
     assert "cfg.fast_startup ||" in gpt_source
-    assert "!native_fast_startup_requested && !cfg.startup_only" in gpt_source
+    assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in gpt_source
+    assert "!native_long_run_defer_prewarm_enabled" in gpt_source
     assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
+    assert "long-run-defer-throughput-prewarms-by-default" in gpt_source
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
@@ -2301,7 +2308,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
     assert "cfg.fast_startup ||" in source
-    assert "!native_fast_startup_requested && !cfg.startup_only" in source
+    assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS" in source
+    assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
+    assert "!native_long_run_defer_prewarm_enabled" in source
+    assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'

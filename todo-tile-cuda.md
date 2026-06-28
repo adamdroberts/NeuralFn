@@ -150,6 +150,15 @@ Real training tensors must not pass through graph editor node objects.
   row/scalar paths, or the linear backend launches TF32/SGEMM fallback.
   `--allow-basic-kernel-fallback` is reserved for diagnostics and rejected
   same-script candidate bisection.
+- [x] Defer throughput-only setup prewarms for long native GPT quality runs.
+  Dense GPT training keeps the current prewarmed route for short parity/smoke
+  runs, but when `max_steps` exceeds
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) it skips the
+  default TK QKV first-use and LM-head CUDA Graph prewarms up front. Runtime
+  JSON reports `native_long_run_defer_prewarm_enabled` and
+  `native_fast_startup_prewarm_policy` as
+  `long-run-defer-throughput-prewarms-by-default` so 20k-step workstation runs
+  do not pay avoidable startup cost before the first optimizer step.
 
 ## Current SM120 parity baseline
 
