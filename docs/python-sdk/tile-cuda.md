@@ -1676,9 +1676,10 @@ graph-editor nodes. `--native-cuda-dry-run --native-cuda-print-command` is also
 handled by the family binary itself: it prints the final dense GPT delegate
 command with `--train-transformer-lm --layer-evo`, preserving validation
 cadence flags such as `--eval-every-steps`, before token-shard resolution or
-graph-backed imports. The unified frontend preserves `--print-command` when it
-prints the GPT-2 evo family command, so the two-stage no-Torch command
-inspection path is reproducible from SDK and CLI subprocess wrappers. The same
+graph-backed imports. The unified frontend now forwards GPT-2 evo
+`--print-command` requests into that family binary instead of stopping at the
+intermediate preflight command, so SDK and CLI subprocess wrappers expose the
+same final dense GPT delegate. The same
 delegate now preserves `--tile-cuda-activation-dtype nvfp4|float32|none`; the
 dense GPT native trainer accepts that flag and reports the selected value as
 `tile_cuda.activation_dtype` in compiled plan and runtime JSON.

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native training CLI: `nfn_native_train --base-model gpt2-evo --dry-run
+  --print-command` now delegates the print-command request into
+  `nfn_gpt2_evo_native_train`, so the command shown is the final dense GPT
+  CUDA Tile trainer invocation with `--train-transformer-lm --layer-evo`
+  instead of the intermediate family preflight command. This keeps GPT-2-evo
+  command inspection compiled/no-Torch while making validation cadence and
+  NVFP4 intent visible on the actual delegate that will train.
+
+  Verification: `bash tools/build_native_train_cli.sh build/nfn_native_train`;
+  `build/nfn_native_train --base-model gpt2-evo --tinystories
+  --native-cuda-print-command --native-cuda-dry-run --eval-every-steps 1000`;
+  `bash tools/build_native_train_tile_ops.sh`;
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`;
+  `build/nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`;
+  `build/nfn_gpt_native_train --tinystories --startup-only
+  --train-transformer-lm --tile-ops-lib build/libnfn_native_train_tile_ops.so
+  --no-checkpoint --eval-every-steps 0 --native-cuda-sample-every 0`.
+
 - Native Tile-CUDA: cached the LM-head graph/true-fused diagnostic environment
   gates inside `libnfn_native_train_tile_ops.so`. The graph upload, graph
   prewarm thread-cache, graph-body serial/cuBLASLt, and true-fused cooperative

@@ -873,6 +873,9 @@ int main(int argc, char** argv) {
         command.insert(command.end(), forwarded.begin(), forwarded.end());
         if (print_command_requested) {
             command.push_back("--print-command");
+            if (model_entry->name == std::string_view("gpt2-evo")) {
+                return exec_command(command);
+            }
             print_command(command);
             return 0;
         }

@@ -8387,6 +8387,30 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
     fake_gpt.chmod(0o755)
 
+    unified_evo_delegate = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "gpt2-evo",
+            "--tinystories",
+            "--native-cuda-print-command",
+            "--native-cuda-dry-run",
+            "--eval-every-steps",
+            "1000",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_evo_delegate.returncode == 0, unified_evo_delegate.stderr
+    assert str(fake_gpt) in unified_evo_delegate.stdout
+    assert str(gpt2_evo) not in unified_evo_delegate.stdout
+    assert "--train-transformer-lm" in unified_evo_delegate.stdout
+    assert "--layer-evo" in unified_evo_delegate.stdout
+    assert "--eval-every-steps 1000" in unified_evo_delegate.stdout
+    assert "--tile-cuda-activation-dtype nvfp4" in unified_evo_delegate.stdout
+
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],
         text=True,
@@ -9062,9 +9086,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert evo_print_command.returncode == 0
-    assert str(gpt2_evo) in evo_print_command.stdout
-    assert "--dry-run" in evo_print_command.stdout
-    assert "--print-command" in evo_print_command.stdout
+    assert str(fake_gpt) in evo_print_command.stdout
+    assert str(gpt2_evo) not in evo_print_command.stdout
+    assert "--train-transformer-lm" in evo_print_command.stdout
+    assert "--layer-evo" in evo_print_command.stdout
+    assert "--eval-every-steps 1000" in evo_print_command.stdout
+    assert "--tile-cuda-activation-dtype nvfp4" in evo_print_command.stdout
+    assert "--dry-run" not in evo_print_command.stdout
+    assert "--print-command" not in evo_print_command.stdout
     assert "--native-cuda-print-command" not in evo_print_command.stdout
 
     evo_delegate_print_command = subprocess.run(
