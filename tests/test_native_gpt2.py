@@ -3825,6 +3825,14 @@ def test_native_gpt2_checkpoint_sampler_prefers_binding_capture(
         "1,2,3",
         "--max-new-tokens",
         "4",
+        "--temperature",
+        "0.8",
+        "--top-k",
+        "32",
+        "--repetition-penalty",
+        "1.0",
+        "--seed",
+        "1337",
     ]
     assert calls[0]["cuda_visible_devices"] == "2"
     assert calls[0]["cuda_device_max_connections"] == "1"
@@ -11612,6 +11620,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "#!/bin/sh\n"
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
+        "\"optimized_kernel_contract_passed\":true,"
         "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )
@@ -11650,6 +11659,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "#!/bin/sh\n"
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":true,\"torch_required\":false,"
+        "\"optimized_kernel_contract_passed\":true,"
         "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )
@@ -11874,6 +11884,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert build_launcher.returncode == 0, build_launcher.stderr
     sm120_launcher = tmp_path / "nfn_train_gpt_sm120"
+    generic_sm120_launcher = tmp_path / "nfn_train_gpt"
     build_generic_sm120_launcher = subprocess.run(
         ["bash", str(root / "tools" / "build_train_gpt_cli.sh"), str(generic_sm120_launcher)],
         cwd=root,
