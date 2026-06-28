@@ -1184,7 +1184,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "DEFAULT_VS_LEGACY_PROFILE=1" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0" in candidate_bench
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1" in candidate_bench
-    assert "moving token_weight_bf16_padding_memset_count from 1 to 0" in candidate_bench
+    assert "token_weight_bf16_padding_memset_count from 1 to 0" in candidate_bench
     assert "median train_loop_wall_ms_per_step=0.998418x" in candidate_bench
     assert "median steady-state CUDA-event step time=0.998668x" in candidate_bench
     assert "median train_tokens_per_second=1.001805x" in candidate_bench
@@ -7612,6 +7612,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "token_weight_bf16_initial_refresh_fusion_enabled": True,
             "token_weight_bf16_adamw_refresh_fusion_enabled": True,
             "token_weight_padded_init_fusion_enabled": False,
+            "token_weight_padded_bf16_pattern_enabled": False,
             "token_weight_padding_zero_launches_elided": 0,
             "token_weight_bf16_padding_memset_count": 0,
             "token_weight_bf16_initial_refresh_elided": False,
@@ -9501,7 +9502,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     ]
     assert "const float4 pattern = gpt2_token_weight_init_float_pattern4(bucket)" in padded_token_init_kernel
     assert "bf16_bits_from_float(pattern.x)" in padded_token_init_kernel
-    assert "shadow_bf16_bits[tail] = bf16_bits_from_float(value)" in padded_token_init_kernel
+    assert "precomputed_bf16_pattern" in padded_token_init_kernel
+    assert ": bf16_bits_from_float(value)" in padded_token_init_kernel
     assert "bf16_bits_from_float(value0)" not in padded_token_init_kernel
     assert "adamw_float_update_bf16_shadow_offsets" in gpt2_source_text
     assert "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow" in gpt2_source_text
