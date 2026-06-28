@@ -1914,11 +1914,12 @@ profile compares that default against
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. A CUDA 13.3.33
-dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample no-stage rerun
-measured `0.999669x` train-loop wall, `0.999849x` steady-state CUDA-event wall,
-`1.000333x` train tokens/sec, `0.997332x` candidate-over-llm.kittens train-loop
-wall, and `1.002269x` candidate-over-llm.kittens tokens/sec, so this is now the
-reference-aligned CE/dlogits default. The strict single-kernel
+dedicated RTX 5090 2026-06-28 post-reinstall current-default 3-step, 2-sample
+no-stage rerun measured `0.999943x` train-loop wall, `0.999902x` steady-state
+CUDA-event wall, `1.000056x` train tokens/sec, `0.997023x`
+candidate-over-llm.kittens train-loop wall, and `1.002670x`
+candidate-over-llm.kittens tokens/sec, so this remains the reference-aligned
+CE/dlogits default. The strict single-kernel
 classifier/dHidden/dWeight Tile route remains experimental.
 Dense GPT training now requests the non-strict cooperative LM-head backward
 route by default. On current CUDA 13.3 RTX 5090 builds this selects the

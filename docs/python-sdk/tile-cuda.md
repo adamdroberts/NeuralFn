@@ -2969,13 +2969,12 @@ CE+dlogits kernel with vec8 BF16 loads and streaming vec8 stores, and runtime
 JSON reports `lm_head_ce_no_loss_llmk_style_specialized_requested`,
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
-no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep this route
-diagnostic-only: the CUDA 13.3.33 dedicated RTX 5090 2026-06-27 5-step,
-2-sample rerun after rebuilding the native selector failed the strict
-default-vs-legacy gate at `1.000256x` train-loop wall and `0.999750x` train
-tokens/sec. A separate parity rerun with the route active still failed
-full-trainer parity at `1.002592x` train-loop wall and `1.002692x`
-steady-state event time.
+no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. This route is
+the default no-loss CE/dlogits path: the CUDA 13.3.33 dedicated RTX 5090
+2026-06-28 post-reinstall 3-step, 2-sample default-vs-legacy rerun measured
+`0.999943x` train-loop wall, `0.999902x` steady-state CUDA-event wall,
+`1.000056x` train tokens/sec, `0.997023x` candidate-over-llm.kittens train-loop
+wall, and `1.002670x` candidate-over-llm.kittens tokens/sec.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,

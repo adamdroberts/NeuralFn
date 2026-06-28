@@ -3432,6 +3432,12 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "bgrad_first_write_direct_mlp_fc_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,3072,65536,N,T",
         "bgrad_first_write_direct_mlp_proj_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=3072,768,65536,N,T",
     }
+    assert "post-reinstall current-default 3-step, 2-sample no-stage rerun" in bench_source
+    assert "train_loop_wall_ms_per_step=0.999943x" in bench_source
+    assert "train_loop_cuda_event_steady_state_wall_ms_per_step=0.999902x" in bench_source
+    assert "train_tokens_per_second=1.000056x" in bench_source
+    assert "candidate-over-llm.kittens train_loop_wall_ms_per_step=0.997023x" in bench_source
+    assert "candidate-over-llm.kittens train_tokens_per_second=1.002670x" in bench_source
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source

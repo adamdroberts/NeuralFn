@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: rechecked the default no-loss llm.kittens-style
+  LM-head CE/dlogits route after the CUDA reinstall. The default-vs-legacy
+  3-step, 2-sample gate passed with `0.999943x` train-loop wall, `0.999902x`
+  steady-state CUDA-event wall, `1.000056x` train tokens/sec, `0.997023x`
+  candidate-over-llm.kittens train-loop wall, and `1.002670x`
+  candidate-over-llm.kittens tokens/sec. This keeps
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` as the default
+  CE/dlogits route.
+
 - Native GPT benchmarking: rechecked the strict true-fused LM-head candidate
   after the CUDA reinstall on the dedicated RTX 5090. The trainer-chunk focused
   run still proves `strict-true-fused-tile-kernel`, but the 32x32 body remains
