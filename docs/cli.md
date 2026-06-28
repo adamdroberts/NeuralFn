@@ -186,10 +186,12 @@ supplied. The implicit GPT3 batch size is 32, preserving the default
 `nfn-native-train --list-models --json` reports dense GPT coverage with
 capability-specific fields: `transformer_lm_status`, `token_lm_status`, and
 `geometry_status`. `gpt`, `gpt2`, `gpt3`, and `nanogpt` are implemented aliases
-of the same native transformer trainer. NanoGPT full-transformer training adds
-`--template-name nanogpt` and uses the selected 320-wide/5-head/5-layer dense
-GPT geometry; explicit `--train-token-lm` remains implemented for token-LM
-diagnostics.
+of the same native transformer trainer and all report
+`geometry_status: "dense-gpt-template-geometry"` because the selected template
+or custom graph, not the family label, chooses the effective architecture.
+NanoGPT full-transformer training adds `--template-name nanogpt` and uses the
+selected 320-wide/5-head/5-layer dense GPT geometry; explicit `--train-token-lm`
+remains implemented for token-LM diagnostics.
 Plan and runtime JSON include `architecture_source`,
 `architecture_contract`, `model_family_context_policy`, and
 `resolved_native_template_name` so a run makes clear that the graph/template,

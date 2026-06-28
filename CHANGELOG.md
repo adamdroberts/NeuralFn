@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT SDK: corrected the unified native model registry so dense GPT
+  selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`) all report
+  `geometry_status: "dense-gpt-template-geometry"` in both the compiled
+  `nfn-native-train --list-models --json` registry and the no-Torch SDK static
+  fallback. This removes the stale fixed GPT-2-compatible wording and makes the
+  public registry match the universal GPT native trainer contract: the selected
+  template name or custom graph chooses the architecture. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "native_train_model_registry"`.
+
 - Native GPT benchmarking: refreshed the current stage-timed SM120 parity
   profile against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` on
   the dedicated RTX 5090. The diagnostic run selected the display-disabled

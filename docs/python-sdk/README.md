@@ -268,9 +268,12 @@ generic C++ binding reject Python and shell launcher executables such as
 diagnostic command-resolution tests; real training should cross directly into a
 compiled C++ trainer or unified native frontend.
 That registry includes `transformer_lm_status`, `token_lm_status`, and
-`geometry_status`; `nanogpt` is `implemented` because the shared dense GPT
-transformer loop uses the selected NanoGPT 320-wide/5-head/5-layer geometry,
-while its explicit token-LM path remains available for diagnostics.
+`geometry_status`; dense GPT selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`)
+all report `dense-gpt-template-geometry` because the selected template or
+custom graph chooses the effective architecture. `nanogpt` is `implemented`
+because the shared dense GPT transformer loop uses the selected NanoGPT
+320-wide/5-head/5-layer geometry, while its explicit token-LM path remains
+available for diagnostics.
 If an older local `neuralfn._native_train` extension shadows the rebuilt one,
 binding discovery skips it unless it exposes both `run_train` and
 `resolve_command`, then probes the remaining package search path before falling

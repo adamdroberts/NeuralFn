@@ -42,7 +42,7 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "native_target": "nfn_gpt_native_train",
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
-        "geometry_status": "gpt2-compatible-fixed-dense-transformer",
+        "geometry_status": "dense-gpt-template-geometry",
         "notes": (
             "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; "
             "template/custom graph selection decides the GPT architecture."
@@ -54,8 +54,12 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "native_target": "nfn_gpt_native_train",
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
-        "geometry_status": "gpt2-compatible-fixed-dense-transformer",
-        "notes": "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
+        "geometry_status": "dense-gpt-template-geometry",
+        "notes": (
+            "GPT-2 is a dense GPT template selector on the NeuralFn Tile-CUDA "
+            "transformer-LM loop; template/custom graph selection decides the "
+            "effective architecture."
+        ),
     },
     {
         "name": "gpt3",
@@ -63,7 +67,7 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "native_target": "nfn_gpt_native_train",
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
-        "geometry_status": "gpt2-compatible-fixed-dense-transformer-with-gpt3-context",
+        "geometry_status": "dense-gpt-template-geometry",
         "notes": (
             "GPT-3-style dense decoder training uses the same GPT native target; "
             "context/window and width come from the selected template or custom graph."

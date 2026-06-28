@@ -49,7 +49,7 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "nfn_gpt_native_train",
         "native-transformer-lm",
         "not-applicable",
-        "gpt2-compatible-fixed-dense-transformer",
+        "dense-gpt-template-geometry",
         "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
     },
     {
@@ -58,8 +58,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "nfn_gpt_native_train",
         "native-transformer-lm",
         "not-applicable",
-        "gpt2-compatible-fixed-dense-transformer",
-        "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
+        "dense-gpt-template-geometry",
+        "GPT-2 is a dense GPT template selector on the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the effective architecture.",
     },
     {
         "gpt3",
@@ -67,7 +67,7 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "nfn_gpt_native_train",
         "native-transformer-lm",
         "not-applicable",
-        "gpt2-compatible-fixed-dense-transformer-with-gpt3-context",
+        "dense-gpt-template-geometry",
         "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
     {

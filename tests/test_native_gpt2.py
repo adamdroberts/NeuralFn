@@ -5639,7 +5639,10 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["llama"]["status"] == "missing-native-trainer"
 
 
-def test_native_train_model_registry_static_names_match_cpp_registry() -> None:
+def test_native_train_model_registry_static_names_match_cpp_registry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root = Path(__file__).resolve().parents[1]
     cpp_source = (root / "neuralfn" / "csrc" / "native_train" / "nfn_native_train.cpp").read_text(
         encoding="utf-8"
@@ -5647,6 +5650,19 @@ def test_native_train_model_registry_static_names_match_cpp_registry() -> None:
     for entry in native_train_module._NATIVE_TRAIN_MODEL_REGISTRY:
         assert f'"{entry["name"]}"' in cpp_source
         assert f'"{entry["native_target"]}"' in cpp_source
+
+    monkeypatch.setattr(
+        native_train_module,
+        "DEFAULT_NATIVE_TRAIN_CLI",
+        str(tmp_path / "missing_nfn_native_train"),
+    )
+    registry_payload = native_train_model_registry()
+    registry = {entry["name"]: entry for entry in registry_payload["models"]}
+    for name in ("gpt", "gpt2", "gpt3", "nanogpt"):
+        assert registry[name]["geometry_status"] == "dense-gpt-template-geometry"
+        assert registry[name]["native_target"] == "nfn_gpt_native_train"
+        assert registry[name]["transformer_lm_status"] == "native-transformer-lm"
+    assert "gpt2-compatible-fixed-dense-transformer" not in cpp_source
 
 
 def test_native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli(
