@@ -19,13 +19,13 @@ import tomllib
 REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt_native_train"),
     Path("build/libnfn_native_train_tile_ops.so"),
+    Path("build/nfn_gpt_native_train_linked"),
+    Path("build/nfn_gpt2_native_train"),
+    Path("build/nfn_train_gpt"),
+    Path("build/nfn_train_gpt_sm120"),
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_native_train"),
-    Path("build/nfn_train_gpt"),
-    Path("build/nfn_train_gpt_sm120"),
-    Path("build/nfn_gpt_native_train_linked"),
-    Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_gpt2_evo_native_train"),
     Path("build/nfn_nanogpt_native_train"),
     Path("build/nfn_llama_native_train"),

@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native verifier: promoted the compiled dense GPT launch surface from optional
+  to required in `tools/check_native_no_torch_deps.py`. The no-Torch gate now
+  fails if `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,
+  `build/nfn_train_gpt`, or `build/nfn_train_gpt_sm120` is missing or stale,
+  in addition to the existing native GPT trainer and Tile ops library checks.
+  This makes the fast no-Bash/no-Python workstation path part of the required
+  setup evidence instead of a best-effort optional artifact.
+
 - Bench: refreshed the current no-stage SM120 parity gate after reverting the
   fused padded token initializer to opt-in. The dedicated RTX 5090 run passed
   the median llm.kittens gates with NeuralFn at `0.997292x` median train-loop

@@ -2296,9 +2296,12 @@ stays out of default dependencies and the aggregate `.[all]` extra, it also
 checks generated `neuralfn.egg-info` metadata when present so stale generated
 package files cannot re-advertise default dependencies or a `torch` extra. It
 runs `ldd` checks for Torch/c10/Python runtime libraries on the required
-compiled GPT trainer and Tile ops library plus optional compiled native
-frontends/per-family trainers already present in `build/` and built SDK binding
-modules matching `neuralfn/_native*.so`, then runs `cli/scripts/train_gpt.py`,
+dense GPT fast-path artifacts: `build/nfn_gpt_native_train`,
+`build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,
+`build/nfn_train_gpt`, `build/nfn_train_gpt_sm120`, and
+`build/libnfn_native_train_tile_ops.so`. Optional per-family trainers already
+present in `build/` and built SDK binding modules matching `neuralfn/_native*.so`
+are scanned as additional evidence, then the verifier runs `cli/scripts/train_gpt.py`,
 `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,

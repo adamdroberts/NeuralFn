@@ -79,6 +79,13 @@ Real training tensors must not pass through graph editor node objects.
   `strict_native_command=False` for diagnostics. The no-Torch dependency gate
   exercises this default so native SDK handoff regressions cannot silently route
   through Torch-era scripts.
+- [x] Require compiled GPT fast-path artifacts in the no-Torch verifier. The
+  default `tools/check_native_no_torch_deps.py` artifact set now fails if
+  `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,
+  `build/nfn_train_gpt`, or `build/nfn_train_gpt_sm120` is missing or stale,
+  alongside the native GPT trainer and Tile ops library. This makes the
+  no-Bash/no-Python workstation launch path required evidence instead of an
+  optional convenience binary.
 - [x] Enforce optimized native GPT kernel routes by default. Dense GPT runtime
   JSON now reports `optimized_kernel_contract_*` fields and fails normal
   training if the optimized AdamW ABI is missing, attention falls back to

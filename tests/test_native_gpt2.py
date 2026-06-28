@@ -331,7 +331,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "smoke-dweight" in shell_entrypoints["bench_native_gpt_linear_hot_matrix_dry_run"]["stdout"]
 
 
-def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts() -> None:
+def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -> None:
     root = Path(__file__).resolve().parents[1]
     module_path = root / "tools" / "check_native_no_torch_deps.py"
     spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
@@ -353,8 +353,17 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     ]
     assert all(path in artifacts for path in present_optional)
     assert all(path.relative_to(root) in artifacts for path in present_optional_globs)
+    assert Path("build/nfn_gpt_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/libnfn_native_train_tile_ops.so") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt_native_train_linked") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt2_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_train_gpt") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_train_gpt_sm120") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
-    assert Path("build/nfn_train_gpt_sm120") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_train_gpt_sm120") not in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_train_gpt") not in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt_native_train_linked") not in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt2_native_train") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/linear_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
