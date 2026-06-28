@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT benchmarks: dense GPT runtime JSON and paired-speed summaries now
+  report explicit launch counters for the default-off block-backward concurrent
+  schedules:
+  `block_backward_mlp_fc_concurrent_dinput_dweight_count`,
+  `block_backward_qkv_concurrent_dinput_dweight_count`, and
+  `block_backward_attn_proj_concurrent_dinput_dweight_count`. The paired
+  route-change gate treats those as hot-route evidence, and the SM120 candidate
+  sweep writes the deltas into `summary.tsv`, so same-script benchmark runs can
+  prove whether the alternate side-stream schedule actually launched under the
+  same external GPU load. Verification: focused paired-speed and native GPT
+  route-counter tests, shell syntax checks, C++ linked trainer build/help smoke,
+  and `git diff --check`.
+
 - Native GPT startup: normal SDK, CLI, checkpoint-sampler, and SM120 workstation
   launchers now default `CUDA_VISIBLE_DEVICES` to ordinal `0` instead of the
   `dedicated` selector. This avoids spawning `nvidia-smi` on the regular

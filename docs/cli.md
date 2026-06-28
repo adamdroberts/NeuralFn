@@ -1758,7 +1758,8 @@ sweep includes `qkv_dinput_ln128`, `lm_head_graph_prewarm`,
 `lm_head_loss_bins`, and `cublaslt_grouped_probe`, and its `summary.tsv`
 reports the route deltas for QKV dInput-before-dWeight, LM-head loss bins,
 LM-head graph replay, cooperative LM-head sequence launches, cuBLASLt BGRADB
-direct/accumulate paths, and grouped cuBLASLt probes.
+direct/accumulate paths, grouped cuBLASLt probes, and the QKV/MLP-FC/attention
+projection concurrent dInput/dWeight launch counters.
 Real runs of known rejected named profiles fail fast unless
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run plan
 expansion still works without that opt-in. The current guard covers
@@ -1774,6 +1775,12 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
+The paired route-change gate treats
+`block_backward_qkv_concurrent_dinput_dweight_count`,
+`block_backward_mlp_fc_concurrent_dinput_dweight_count`, and
+`block_backward_attn_proj_concurrent_dinput_dweight_count` as hot-route proof,
+so same-script runs can distinguish an actual alternate schedule from timing
+noise caused by external GPU load.
 The cuBLASLt plan-cache bisection profile `cublaslt_plan_prewarm_off` compares
 the current full plan prewarm baseline against
 `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It stays rejected by default: the

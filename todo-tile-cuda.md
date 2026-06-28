@@ -415,6 +415,15 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
+  - 2026-06-28 added explicit hot-route launch counters for the default-off
+    block-backward concurrent schedules:
+    `block_backward_qkv_concurrent_dinput_dweight_count`,
+    `block_backward_mlp_fc_concurrent_dinput_dweight_count`, and
+    `block_backward_attn_proj_concurrent_dinput_dweight_count`. The dense GPT
+    JSON, paired metric extractor, route-change gate, and sweep `summary.tsv`
+    now expose those deltas, so side-stream candidates must prove real kernel
+    schedule changes inside the same script instead of relying on booleans or
+    standalone timings.
   - 2026-06-25 added first-step versus steady-state stage aggregation to the
     native GPT CUDA-event timing JSON and paired benchmark extractor. The
     rebuilt linked trainer's 3-step TinyStories native-only diagnostic measured

@@ -10718,8 +10718,11 @@ int run_transformer_lm_training_json(
     std::int64_t block_backward_mlp_proj_dinput_before_dweight_count = 0;
     std::int64_t block_backward_mlp_proj_concurrent_dinput_dweight_count = 0;
     std::int64_t block_backward_mlp_fc_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_mlp_fc_concurrent_dinput_dweight_count = 0;
     std::int64_t block_backward_attn_proj_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_attn_proj_concurrent_dinput_dweight_count = 0;
     std::int64_t block_backward_qkv_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_qkv_concurrent_dinput_dweight_count = 0;
     std::int64_t block_backward_attn_proj_first_step_concurrent_dinput_dweight_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
@@ -19873,6 +19876,7 @@ int run_transformer_lm_training_json(
                         error = cuda_error(status, "cudaStreamWaitEvent block_backward_dweight");
                         return;
                     }
+                    block_backward_mlp_fc_concurrent_dinput_dweight_count += 1;
                     run_mlp_fc_dinput_body(block_backward_dinput_stream);
                     run_mlp_fc_dweight_bias_body(block_backward_dweight_stream);
                     status = cuda_stream_synchronize(block_backward_dinput_stream);
@@ -20075,9 +20079,6 @@ int run_transformer_lm_training_json(
                 (block_attn_proj_first_step_concurrent_dinput_dweight_enabled &&
                  optimizer_step == 1);
             if (run_attn_proj_concurrent) {
-                if (!block_attn_proj_concurrent_dinput_dweight_enabled) {
-                    block_backward_attn_proj_first_step_concurrent_dinput_dweight_count += 1;
-                }
                 run_timed_stage("block_backward.attn_proj.dinput_dweight_concurrent", [&]() {
                     int status = cuda_event_record(block_backward_pair_ready_event, nullptr);
                     if (status != 0) {
@@ -20093,6 +20094,11 @@ int run_transformer_lm_training_json(
                     if (status != 0) {
                         error = cuda_error(status, "cudaStreamWaitEvent block_backward_dweight");
                         return;
+                    }
+                    if (!block_attn_proj_concurrent_dinput_dweight_enabled) {
+                        block_backward_attn_proj_first_step_concurrent_dinput_dweight_count += 1;
+                    } else {
+                        block_backward_attn_proj_concurrent_dinput_dweight_count += 1;
                     }
                     run_attn_proj_dinput_body(block_backward_dinput_stream);
                     run_attn_proj_dweight_bias_body(block_backward_dweight_stream);
@@ -20449,6 +20455,7 @@ int run_transformer_lm_training_json(
                         error = cuda_error(status, "cudaStreamWaitEvent block_backward_dweight");
                         return;
                     }
+                    block_backward_qkv_concurrent_dinput_dweight_count += 1;
                     run_qkv_dinput_body(block_backward_dinput_stream);
                     run_qkv_dweight_bias_body(block_backward_dweight_stream);
                     status = cuda_stream_synchronize(block_backward_dinput_stream);
@@ -23585,10 +23592,14 @@ int run_transformer_lm_training_json(
         << (block_backward_pair_streams_available ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_fc_concurrent_dinput_dweight_enabled\": "
         << (block_mlp_fc_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_concurrent_dinput_dweight_count\": "
+        << block_backward_mlp_fc_concurrent_dinput_dweight_count << ",\n"
         << "  \"block_backward_qkv_concurrent_dinput_dweight_requested\": "
         << (block_qkv_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_qkv_concurrent_dinput_dweight_enabled\": "
         << (block_qkv_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_qkv_concurrent_dinput_dweight_count\": "
+        << block_backward_qkv_concurrent_dinput_dweight_count << ",\n"
         << "  \"block_backward_qkv_dinput_before_dweight_enabled\": "
         << (qkv_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_qkv_dinput_before_dweight_count\": "
@@ -23597,6 +23608,8 @@ int run_transformer_lm_training_json(
         << (block_attn_proj_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_concurrent_dinput_dweight_enabled\": "
         << (block_attn_proj_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_attn_proj_concurrent_dinput_dweight_count\": "
+        << block_backward_attn_proj_concurrent_dinput_dweight_count << ",\n"
         << "  \"block_backward_attn_proj_first_step_concurrent_dinput_dweight_requested\": "
         << (block_attn_proj_first_step_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_first_step_concurrent_dinput_dweight_enabled\": "
