@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: refreshed the optional
+  `NFN_SM120_CUDA13_RUN_BENCH=1` benchmark contract to match the current native
+  dense-GPT defaults. The contract now requires the promoted
+  llm.kittens-style no-loss LM-head CE route, an active QKV
+  dInput-before-dWeight backward route, and the 128-row LayerNorm affine
+  reducer, in addition to the existing no-Torch, no graph-editor tensor flow,
+  no train-loss host D2H, Tile AdamW, and CUDA Graph LM-head wrapper checks.
+
+  Verification: reran the focused default-vs-legacy speed proof on the
+  dedicated RTX 5090 with CUDA 13.3:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln128
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=0
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_qkv_ln128_recheck_20260628.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`. The route gate passed, moved
+  `block_backward_qkv_dinput_before_dweight_count` from `0` to `288`, kept the
+  LayerNorm chunk at `128`, and measured `0.998136x` train-loop wall,
+  `0.998234x` steady-state CUDA-event step time, `1.001870x` tokens/sec, and
+  `0.998136x` candidate-over-llm.kittens train-loop wall.
+
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now runs
   `tools/check_native_no_torch_deps.py --rebuild-stale --json` by default, so
   CUDA-toolkit reinstalls and local C++/CUDA edits rebuild known stale native

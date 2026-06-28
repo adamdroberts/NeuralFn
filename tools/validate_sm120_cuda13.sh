@@ -214,8 +214,8 @@ checks = [
     ),
     (
         value("lm_head_ce_kernel_strategy")
-        == "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores",
-        "LM-head CE must stay on the current promoted no-loss vec8 normal-store BF16/u16 Tile route",
+        == "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores",
+        "LM-head CE must stay on the promoted llm.kittens-style no-loss BF16/u16 Tile route",
     ),
     (
         metric_mean("lm_head_fused_graph_prewarm_success_count") is not None
@@ -229,6 +229,15 @@ checks = [
     (
         value("block_backward_input_linear_strategy") == "tk-sm120-bf16-dinput",
         "block backward dInput must stay on the SM120 TK BF16 route",
+    ),
+    (
+        metric_mean("block_backward_qkv_dinput_before_dweight_count") is not None
+        and metric_mean("block_backward_qkv_dinput_before_dweight_count") > 0.0,
+        "QKV backward must keep the promoted dInput-before-dWeight route active",
+    ),
+    (
+        metric_mean("block_state_layout.layer_norm_backward_affine_row_chunk_size") == 128.0,
+        "LayerNorm affine backward must keep the promoted 128-row reduction chunk",
     ),
     (
         value("block_backward_weight_linear_strategy")

@@ -877,12 +877,16 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "lm_head_classifier_backward_path_class" in source
     assert "diagnostic-cuda-graph-wrapper" in source
     assert "lm_head_ce_kernel_strategy" in source
-    assert "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores" in source
-    assert "current promoted no-loss vec8 normal-store BF16/u16 Tile route" in source
+    assert "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores" in source
+    assert "promoted llm.kittens-style no-loss BF16/u16 Tile route" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
     assert "block_backward_input_linear_strategy" in source
     assert "tk-sm120-bf16-dinput" in source
+    assert "block_backward_qkv_dinput_before_dweight_count" in source
+    assert "QKV backward must keep the promoted dInput-before-dWeight route active" in source
+    assert "block_state_layout.layer_norm_backward_affine_row_chunk_size" in source
+    assert "LayerNorm affine backward must keep the promoted 128-row reduction chunk" in source
     assert "block_backward_weight_linear_strategy" in source
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source
     assert "token_weight_init_strategy" in source

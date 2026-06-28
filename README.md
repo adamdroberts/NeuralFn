@@ -4182,7 +4182,8 @@ validation fails when the emitted JSON no longer reports the promoted CUDA Tile
 dense-GPT route contract, including `graph_editor_tensor_flow=false`,
 `torch_required=false`, `optimized_kernel_contract_passed=true`, zero train-loss
 host D2H copies, the fused Tile AdamW optimizer route, the CUDA Graph LM-head
-wrapper, and the current no-loss vec8 normal-store BF16/u16 CE kernel. Set
+wrapper, the llm.kittens-style no-loss BF16/u16 CE kernel, QKV
+dInput-before-dWeight backward, and the 128-row LayerNorm affine reducer. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only when intentionally collecting a
 drifted diagnostic run. Set `NFN_SM120_CUDA13_RUN_PARITY=1` to add the direct
 llm.kittens parity gate when the reference binary/runtime path itself needs
