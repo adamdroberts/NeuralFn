@@ -7,6 +7,19 @@ Future updates should append new entries here rather than replacing older notes.
 ## Unreleased
 
 - Bench: added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_mlp_blocks11` profile. The CUDA
+  13.3.33 dedicated RTX 5090 3-step, one-sample no-stage probe cut stored MLP
+  activation blocks from 12 to 11, reducing `uint16_arena_allocated_bytes` to
+  `0.960036x`, `activation_storage_bytes` to `0.949561x`, and `setup_wall_ms`
+  to `0.967554x`, but rejected default promotion because
+  `train_loop_wall_ms_per_step` regressed to `2.659262x`,
+  `startup_plus_first_step_wall_ms` to `2.278714x`, `train_tokens_per_second`
+  to `0.376043x`, and `float_arena_allocated_bytes` to `1.351300x` from extra
+  recompute storage. Verification: GPU-visible paired wrapper probe on the
+  dedicated RTX 5090, focused native GPT candidate-wrapper source test, dry-run
+  expansion, and `git diff --check`.
+
+- Bench: added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=store_packed_attention_ln1_bf16_off`
   profile. The CUDA 13.3.33 dedicated RTX 5090 3-step, one-sample no-stage
   probe disabled the saved packed-attention LN1 BF16 tape and reduced
