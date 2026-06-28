@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the rejected `layernorm_affine_row_chunk_64` route after the
+  CUDA 13.3.33 dedicated RTX 5090 reinstall. The same-script 3-step, 2-sample
+  native/reference gate still proves the route by changing
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `128` to
+  `64` and improves setup wall to `0.978586x`, but it remains default-off
+  because train-loop wall regressed to `1.000214x`, steady-state CUDA-event
+  timing to `1.000232x`, block backward to `1.000290x`, MLP projection to
+  `1.001836x`, LM-head backward to `1.000143x`, and candidate-over-llm.kittens
+  train-loop wall to `1.001641x`.
+
+  Verification: `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES=1
+  NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_64
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1
+  NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1
+  NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_layernorm64_recheck_20260628.json bash
+  tools/bench_native_gpt_sm120_candidate.sh`, which intentionally failed the
+  rejection ratio gate after writing the measured JSON.
+
 - CUDA 13 SM120 validation: the default `tools/validate_sm120_cuda13.sh` flow now
   runs the focused LM-head backward same-script benchmark before pytest. The new
   step uses `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`, writes

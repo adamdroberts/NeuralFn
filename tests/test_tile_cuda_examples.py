@@ -1420,7 +1420,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128" in text
     assert "layernorm_affine_row_chunk_64" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64" in text
-    assert "stage.block_backward.mlp_proj.total_ms to 1.004276x" in text
+    assert "candidate-over-llm.kittens train-loop wall to 1.001641x" in text
     assert "layernorm_affine_row_chunk_96" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=96" in text
     assert "stage.block_backward.mlp_proj.total_ms to 1.000296x" in text
@@ -1567,7 +1567,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "token_weight_threaded" in text
     assert "token_weight_bf16_pattern" in text
     assert "setup.token_weight_init.total_ms regressed to 1.006804x" in text
-    assert "token init itself also regressed to 1.070588x" in text
+    assert "token_weight_padded_init" in text
+    assert "passed candidate/reference gates at median train_loop_wall_ms_per_step=0.998418x" in text
     assert "setup.token_weight_init.total_ms to 1.025016x" in text
     assert "setup.token_weight_init.total_ms to 1.015463x" in text
     assert "token_weight_fast_int32" in text

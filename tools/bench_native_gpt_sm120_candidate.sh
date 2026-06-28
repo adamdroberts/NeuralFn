@@ -333,7 +333,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "layernorm_affine_row_chunk_64"|"layernorm-affine-row-chunk-64"|"ln_affine_row_chunk_64"|"ln-affine-row-chunk-64")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 5-step, 3-sample stage-timed gate changed the LayerNorm affine route from 128 to 64 rows and improved train_loop_wall_ms_per_step to 0.998045x, but regressed stage.block_backward.mlp_proj.total_ms to 1.004276x and stage.lm_head_backward.total_ms to 1.000446x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample stage-timed same-script recheck changed the LayerNorm affine route from 128 to 64 rows and improved setup_wall_ms to 0.978586x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.000214x, steady-state CUDA-event timing to 1.000232x, stage.block_backward.total_ms to 1.000290x, stage.block_backward.mlp_proj.total_ms to 1.001836x, stage.lm_head_backward.total_ms to 1.000143x, and candidate-over-llm.kittens train-loop wall to 1.001641x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64"
     ;;
   "layernorm_affine_row_chunk_96"|"layernorm-affine-row-chunk-96"|"ln_affine_row_chunk_96"|"ln-affine-row-chunk-96")
