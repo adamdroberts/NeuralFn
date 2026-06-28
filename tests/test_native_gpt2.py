@@ -1111,6 +1111,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
+    assert "NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=\"${NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH-/usr/local/cuda/lib64:/usr/lib/wsl/lib}\"" in parity_bench
+    assert "REFERENCE_ENV_RAW=\"$(env_or_alias3 NFN_SM120_NATIVE_REFERENCE_ENV NFN_SM120_PARITY_REFERENCE_ENV NFN_SM120_REFERENCE_ENV \"\")\"" in parity_bench
+    assert 'paired_args+=(--baseline-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
@@ -1152,6 +1155,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "--min-candidate-reference-ratio" in candidate_bench
     assert "--max-candidate-reference-ratio" in paired_speed
     assert "--min-candidate-reference-ratio" in paired_speed
+    assert "NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=\"${NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH-/usr/local/cuda/lib64:/usr/lib/wsl/lib}\"" in candidate_bench
+    assert "REFERENCE_ENV_RAW=\"$(env_or_alias5 NFN_SM120_NATIVE_REFERENCE_ENV NFN_SM120_NATIVE_CANDIDATE_REFERENCE_ENV NFN_SM120_CANDIDATE_REFERENCE_ENV NFN_SM120_PARITY_REFERENCE_ENV NFN_SM120_REFERENCE_ENV \"\")\"" in candidate_bench
+    assert 'paired_args+=(--reference-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in candidate_bench
     assert "candidate_reference_metric_ratio_gates" in paired_speed
     assert 'ratio_key="candidate_over_reference_native_metrics"' in paired_speed
     assert "DEFAULT_VS_LEGACY_PROFILE=0" in candidate_bench

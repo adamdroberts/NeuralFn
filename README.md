@@ -3689,6 +3689,13 @@ The llm.kittens parity wrapper `tools/bench_native_gpt_sm120_parity.sh` uses the
 same linked NeuralFn default: it compares `train_gpt2cu` against
 `build/nfn_gpt_native_train_linked --tile-ops-lib linked` when the linked
 trainer exists, and falls back to the dynamic trainer only when needed.
+Both SM120 wrappers default the llm.kittens reference command to
+`LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/wsl/lib` via
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH`, preventing a conda/Torch
+`libcudart.so` from shadowing the installed CUDA 13.3 runtime during reference
+timing. Set that variable empty to disable the override, or use
+`NFN_SM120_PARITY_REFERENCE_ENV` / `NFN_SM120_NATIVE_REFERENCE_ENV` for
+additional reference-only environment.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
 `linked_tile_ops`) to compare `build/nfn_gpt_native_train` against
 `build/nfn_gpt_native_train_linked` in the same paired wrapper. The profile

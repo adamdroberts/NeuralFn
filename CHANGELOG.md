@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 parity workflow: the llm.kittens reference side of
+  `tools/bench_native_gpt_sm120_parity.sh` and optional reference side of
+  `tools/bench_native_gpt_sm120_candidate.sh` now default
+  `LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/wsl/lib` through
+  `NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH`. This keeps same-script reference
+  comparisons on the installed CUDA 13.3 runtime plus WSL driver shim instead
+  of accidentally resolving `libcudart.so` from a conda/Torch environment,
+  which can surface as `CUDA driver version is insufficient for CUDA runtime
+  version` even when `nvidia-smi` reports the RTX 5090 and CUDA 13.3 correctly.
+  Set `NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=` to disable the default, and
+  use `NFN_SM120_PARITY_REFERENCE_ENV`, `NFN_SM120_NATIVE_REFERENCE_ENV`, or
+  candidate-specific reference env aliases for additional overrides.
+
+  Verification: `nvidia-smi` showed an idle RTX 5090 with CUDA UMD 13.3;
+  `/usr/local/cuda/bin/nvcc --version` reported CUDA 13.3.33; running
+  `train_gpt2cu` with
+  `LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/wsl/lib` completed a 1-step
+  TinyStories probe; `bash -n tools/bench_native_gpt_sm120_parity.sh`;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; and the focused native
+  wrapper static test.
+
 - Native GPT inference: explicit `nfn infer --runtime native-cuda` now fails
   fast unless `--checkpoint`, `--native-checkpoint`, or `--weights` resolves to
   a native `model_*.bin` checkpoint, or `--checkpoint` resolves to a directory

@@ -1431,6 +1431,14 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+The llm.kittens side defaults `LD_LIBRARY_PATH` to
+`/usr/local/cuda/lib64:/usr/lib/wsl/lib` through
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH`, so reference timings use the
+installed CUDA toolkit/runtime and WSL driver shim instead of accidentally
+resolving `libcudart.so` from a Torch environment. Set
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=` to disable this default, or append
+extra reference-only environment with `NFN_SM120_PARITY_REFERENCE_ENV` /
+`NFN_SM120_NATIVE_REFERENCE_ENV`.
 When `NFN_SM120_PARITY_ENFORCE_GATE=1`, the default pass criteria allow a
 bounded workstation parity band: `train_loop_wall_ms_per_step=1.003`, and
 `train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when train-loop
@@ -1752,7 +1760,12 @@ with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the shorter
 `NFN_SM120_NATIVE_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
 `NFN_SM120_CANDIDATE_INCLUDE_LLMK_REFERENCE`,
 `NFN_SM120_PARITY_INCLUDE_LLMK_REFERENCE`, and
-`NFN_SM120_INCLUDE_LLMK_REFERENCE` are also accepted. Use repeatable
+`NFN_SM120_INCLUDE_LLMK_REFERENCE` are also accepted. The wrapper forwards
+`NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH` as reference-only `LD_LIBRARY_PATH`
+by default, and accepts `NFN_SM120_NATIVE_REFERENCE_ENV`,
+`NFN_SM120_NATIVE_CANDIDATE_REFERENCE_ENV`, or
+`NFN_SM120_CANDIDATE_REFERENCE_ENV` for extra reference-only overrides. Use
+repeatable
 `--max-candidate-ratio [STAT:]METRIC=RATIO` gates for hot metrics that must not
 regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
 must stay at or above baseline, such as `train_tokens_per_second` or required
