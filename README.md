@@ -2196,7 +2196,12 @@ slightly better at `0.998752x`, but LM-head backward regressed to `1.001151x`
 and MLP projection total to `1.020829x`, so the stage gates failed. The matching
 `max_waves` recheck also failed, with train-loop wall time at `1.010956x`,
 LM-head backward at `1.007568x`, block backward at `1.025454x`, and attention
-projection dWeight+bias at `1.400435x`.
+projection dWeight+bias at `1.400435x`. A 2026-06-28 current no-stage 5-step,
+2-sample rerun keeps `min_waves` rejected without relying on stage timing:
+it changed the cuBLASLt selected heuristics but regressed current native
+train-loop wall time to `1.005895x`, steady-state CUDA-event timing to
+`1.005848x`, startup-plus-train-loop wall time to `1.006503x`, and tokens/sec
+to `0.994138x`.
 Shape-specific cuBLASLt overrides
 also remain diagnostic-only: overriding LM-head dWeight
 `768,50304,32768,N,T` from heuristic `1` to `0` was nearly neutral but failed

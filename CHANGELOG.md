@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: refreshed the CUDA 13.3.33 dedicated-RTX-5090 no-stage parity and
+  cuBLASLt waves-policy evidence after the latest native defaults. The canonical
+  llm.kittens parity wrapper passed with `graph_editor_tensor_flow=false`,
+  `torch_required=false`, `optimized_kernel_contract_passed=true`, and
+  `train_loss_host_d2h_count=0`; the 5-step, 2-sample no-stage run measured
+  NeuralFn at `1.000345x` llm.kittens train-loop wall time and `0.999421x`
+  tokens/sec, inside the strict parity tolerance. A same-script
+  `cublaslt_min_waves` rerun changed cuBLASLt selected heuristics but regressed
+  current native train-loop wall time to `1.005895x`, steady-state CUDA-event
+  timing to `1.005848x`, startup-plus-train-loop wall time to `1.006503x`, and
+  tokens/sec to `0.994138x`, so the profile remains rejected/default-off.
+  Verification: ran `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=1 ... tools/bench_native_gpt_sm120_parity.sh`, ran
+  the rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_min_waves`
+  candidate wrapper with the same no-stage shape, and ran
+  `python tools/check_native_no_torch_deps.py --max-entrypoint-seconds 2`.
+
 - Bench: `tools/paired_kernel_speed.py` now includes
   `train_loss_host_d2h_count=0` in the native runtime contract gate, alongside
   `graph_editor_tensor_flow=false`, `torch_required=false`, and

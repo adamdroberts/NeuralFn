@@ -570,7 +570,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "cublaslt_min_waves"|"cublaslt-min-waves")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script recheck changed cuBLASLt selected heuristics but failed stage gates: train_loop_wall_ms_per_step was 0.998752x, but LM-head backward regressed to 1.001151x and MLP projection total to 1.020829x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 current no-stage 5-step, 2-sample same-script rerun changed cuBLASLt selected heuristics but regressed train_loop_wall_ms_per_step to 1.005895x, steady-state CUDA-event timing to 1.005848x, startup_plus_train_loop_wall_ms to 1.006503x, and train_tokens_per_second to 0.994138x. Keep the default heuristic selector; min_waves is still diagnostic-only."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves"
     ;;
   "cublaslt_max_waves"|"cublaslt-max-waves")
