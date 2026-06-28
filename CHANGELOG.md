@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 parity evidence: reran the canonical CUDA 13.3.33 dedicated RTX 5090
+  NeuralFn-vs-llm.kittens gate after pageable token staging and startup
+  cleanup. The 5-step, 3-sample no-stage run passed with NeuralFn at
+  `2464.626667 ms/step` and `212725.333333` tokens/sec versus llm.kittens at
+  `2470.271333 ms/step` and `212317.533333` tokens/sec. Candidate-over-baseline
+  ratios were `0.997730x` mean train-loop wall, `0.995590x` median train-loop
+  wall, `0.999206x` mean steady-state CUDA-event step time, `0.997555x` median
+  steady-state CUDA-event step time, and `1.001932x` mean tokens/sec. The native
+  runtime contract also passed with `graph_editor_tensor_flow=false`,
+  `torch_required=false`, `optimized_kernel_contract_passed=true`, and
+  `train_loss_host_d2h_count=0`. Verification:
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=3 NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_current_5x3_after_pageable_20260628.json NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_sm120_parity_current_5x3_after_pageable_profiles_20260628 bash tools/bench_native_gpt_sm120_parity.sh`.
+
 - Native GPT / SM120: added a compile-time-specialized strided padded
   token-weight initializer diagnostic in
   `neuralfn/csrc/tile_cuda/kernels.cu`, but kept the older runtime-flag kernel

@@ -105,16 +105,16 @@ only for a narrow CUDA-only bisection after the no-Torch gate has already
 passed.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
-sample. A fresh 2026-06-28 3-step, 3-sample check without stage timing measured
-NeuralFn at `2446.557 ms/step` and `214297` tokens/sec versus llm.kittens at
-`2447.491 ms/step` and `214252` tokens/sec (`0.999639x` mean train-loop wall
-time, `0.999637x` mean steady-state CUDA-event timing, `1.000228x` tokens/sec;
-median gates were `0.998426x` and `0.997491x`). Treat stage-timed parity as an
+sample. A fresh 2026-06-28 5-step, 3-sample check without stage timing measured
+NeuralFn at `2464.627 ms/step` and `212725` tokens/sec versus llm.kittens at
+`2470.271 ms/step` and `212318` tokens/sec (`0.997730x` mean train-loop wall
+time, `0.999206x` mean steady-state CUDA-event timing, `1.001932x` tokens/sec;
+median gates were `0.995590x` and `0.997555x`). Treat stage-timed parity as an
 attribution run: the same-day 3-step, one-sample stage-timed diagnostic
 measured `1.011556x` train-loop wall and `1.010723x` steady-state timing while
 changing no hot route counters. Stage timing is useful for bucket selection,
 but it should not override the stronger no-stage training-loop comparison. The
-same JSON still reports the LM-head classifier
+same 5-step JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
@@ -2584,8 +2584,8 @@ initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
 padded-vocab initializer. The kernel writes public vocab BF16 shadow rows through the same
 conversion-based vector4 path and still zeroes padded rows in the same launch.
 The current CUDA 13.3.33 dedicated RTX 5090 full 5-step, 3-sample llm.kittens
-parity gate passed at median train-loop `0.998418x`, median steady-state
-CUDA-event `0.998668x`, and median tokens/sec `1.001805x`.
+parity gate passed at median train-loop `0.995590x`, median steady-state
+CUDA-event `0.997555x`, and median tokens/sec `1.003306x`.
 `combined_device_arena` is also rejected by default: the CUDA 13.3.33
 startup-only 5-sample recheck regressed setup wall time to `1.031475x`,
 `setup.uint16_arena_materialize.total_ms` to `2.339592x`, and
