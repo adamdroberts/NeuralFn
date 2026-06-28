@@ -21,10 +21,12 @@ else
 fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
 PARITY_JSON="${NFN_SM120_CUDA13_PARITY_JSON_OUT:-/tmp/nfn_sm120_cuda13_parity.json}"
+LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head_backward.json}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
 PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-3}"
 PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-2}"
 PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-0}"
+LM_HEAD_TILE_OPS_LIB="${NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 if [[ -n "${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE:-}" ]]; then
   PARITY_ENFORCE_GATE="${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE}"
 elif [[ "${PARITY_STEPS}" =~ ^[0-9]+$ && "${PARITY_STEPS}" -lt 2 ]]; then
@@ -52,6 +54,27 @@ if [[ "${TILE_OPS_LIB}" != "linked" && ! -f "${TILE_OPS_LIB}" ]]; then
   echo "Build it with: bash tools/rebuild_native_sm120.sh" >&2
   exit 2
 fi
+
+case "${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-1}" in
+  1|true|TRUE|yes|YES|on|ON)
+    if [[ ! -x "${ROOT_DIR}/build/lm_head_backward_bench" ]]; then
+      echo "Missing LM-head backward benchmark: ${ROOT_DIR}/build/lm_head_backward_bench" >&2
+      echo "Build it with: bash tools/rebuild_native_sm120.sh" >&2
+      exit 2
+    fi
+    if [[ ! -f "${LM_HEAD_TILE_OPS_LIB}" ]]; then
+      echo "Missing LM-head Tile ops library: ${LM_HEAD_TILE_OPS_LIB}" >&2
+      echo "Build it with: bash tools/rebuild_native_sm120.sh" >&2
+      exit 2
+    fi
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH}" >&2
+    exit 2
+    ;;
+esac
 
 case "${NFN_SM120_CUDA13_RUN_NO_TORCH:-1}" in
   1|true|TRUE|yes|YES|on|ON)
@@ -89,6 +112,20 @@ run_step \
   --tinystories \
   --smoke-transformer-lm-step \
   --tile-ops-lib "${TILE_OPS_LIB}"
+
+case "${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-1}" in
+  1|true|TRUE|yes|YES|on|ON)
+    run_step env \
+      NFN_LM_HEAD_BACKWARD_BENCH_BIN="${ROOT_DIR}/build/lm_head_backward_bench" \
+      NFN_NATIVE_TILE_OPS_LIB="${LM_HEAD_TILE_OPS_LIB}" \
+      NFN_LM_HEAD_BACKWARD_PROFILE="${NFN_SM120_CUDA13_LM_HEAD_PROFILE:-trainer-chunk}" \
+      NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-0}" \
+      NFN_LM_HEAD_BACKWARD_JSON_OUT="${LM_HEAD_JSON}" \
+      bash "${ROOT_DIR}/tools/bench_lm_head_backward_candidate.sh"
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+esac
 
 case "${NFN_SM120_CUDA13_RUN_PYTEST:-1}" in
   1|true|TRUE|yes|YES|on|ON)

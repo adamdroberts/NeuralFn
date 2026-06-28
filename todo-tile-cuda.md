@@ -71,6 +71,16 @@ Real training tensors must not pass through graph editor node objects.
   artifacts, SDK bindings, or fast Python wrappers regain Torch/c10/Python
   runtime links or slow import paths. Set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
   only for narrow CUDA-only bisections after the no-Torch gate already passed.
+- [x] Add the focused LM-head backward candidate/current microbench to the
+  default CUDA 13.3 SM120 validator. `tools/validate_sm120_cuda13.sh` now runs
+  `tools/bench_lm_head_backward_candidate.sh` with the `trainer-chunk` profile
+  and writes `/tmp/nfn_sm120_cuda13_lm_head_backward.json`, using a real Tile
+  ops shared object for the standalone `dlopen` benchmark even when the trainer
+  smoke path uses the linked binary. The validator defaults this focused slice
+  to zero warmup so graph capture body counters are present in timed JSON
+  instead of hidden behind graph-cache hits. This keeps CUDA-reinstall
+  validation tied to the current LM-head migration blocker without treating the
+  diagnostic CUDA Graph wrapper as strict true-fused completion.
 - [x] Make canonical llm.kittens parity runs median-based by default. After the
   CUDA 13.3 WSL reinstall, one-sample runs could fail at sub-percent jitter
   even with zero compute processes on the dedicated RTX 5090; the parity

@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: the default `tools/validate_sm120_cuda13.sh` flow now
+  runs the focused LM-head backward same-script benchmark before pytest. The new
+  step uses `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`, writes
+  `/tmp/nfn_sm120_cuda13_lm_head_backward.json` by default, and keeps the
+  trainer-linked smoke path separate from the standalone benchmark's real
+  `dlopen` Tile ops library through `NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB`.
+  It defaults `NFN_SM120_CUDA13_LM_HEAD_WARMUP=0` so graph capture body
+  counters remain visible in the validation JSON instead of being hidden by
+  warmup-created graph cache hits.
+  Use `NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0` only for narrow CUDA smoke runs
+  after this LM-head gate has already passed. This validates the promoted
+  graph-wrapper LM-head route against the older/current candidate comparison;
+  strict true-fused LM-head completion still requires the separate strict
+  candidate gates.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_warmup0_check.json bash
+  tools/bench_lm_head_backward_candidate.sh`, which passed and reported
+  graph-body Tile fallback counters; `git diff --check`.
+
 - SM120 LM-head diagnostics: added a rejected-by-default 24x24 strict
   true-fused LM-head profile for the Tile CUDA trainer path. Tile CUDA now
   accepts `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24`, the CE row-thread

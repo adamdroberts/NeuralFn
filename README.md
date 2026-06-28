@@ -4149,8 +4149,23 @@ smoke, and `tests/test_native_gpt2.py` (`107 passed, 1 skipped`).
 For the CUDA-facing SM120 health gate, run `bash tools/validate_sm120_cuda13.sh`.
 It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
-transformer-LM smoke, and then runs `python -m pytest tests/test_native_gpt2.py
--q`. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` for a fast CUDA-only pass, or
+transformer-LM smoke, runs the focused LM-head backward candidate/current
+microbench, and then runs `python -m pytest tests/test_native_gpt2.py -q`.
+The LM-head step defaults to
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`, writes
+`/tmp/nfn_sm120_cuda13_lm_head_backward.json`, and uses the real Tile ops shared
+library because the standalone benchmark `dlopen`s its candidate ABI. Override
+it with `NFN_SM120_CUDA13_LM_HEAD_PROFILE`,
+`NFN_SM120_CUDA13_LM_HEAD_JSON_OUT`, or
+`NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB`. The validator also defaults
+`NFN_SM120_CUDA13_LM_HEAD_WARMUP=0` so the graph capture body remains visible
+in the timed JSON counters; otherwise a warmup capture can leave only graph
+cache hits in the measured section. Set
+`NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH=0` only for a narrow CUDA smoke after the
+LM-head gate has already passed. This check still validates the promoted
+diagnostic CUDA Graph wrapper against the older/current route; it is not a
+strict true-fused completion signal. Set `NFN_SM120_CUDA13_RUN_PYTEST=0` for a
+fast CUDA-only pass, or
 `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
 benchmark JSON at `/tmp/nfn_sm120_cuda13_baseline.json`. Bench-enabled
 validation fails when the emitted JSON no longer reports the promoted CUDA Tile

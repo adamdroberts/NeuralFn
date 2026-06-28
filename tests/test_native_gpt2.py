@@ -845,6 +845,15 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "tests/test_native_gpt2.py -q" in source
     assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
     assert "NFN_SM120_CUDA13_RUN_BENCH" in source
+    assert "NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH" in source
+    assert "NFN_SM120_CUDA13_LM_HEAD_JSON_OUT" in source
+    assert "NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB" in source
+    assert "NFN_SM120_CUDA13_LM_HEAD_PROFILE" in source
+    assert "NFN_SM120_CUDA13_LM_HEAD_WARMUP" in source
+    assert 'NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-0}"' in source
+    assert "build/lm_head_backward_bench" in source
+    assert "bench_lm_head_backward_candidate.sh" in source
+    assert "trainer-chunk" in source
     assert "NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT" in source
     assert "bench_native_gpt_sm120_candidate.sh" in source
     assert "NFN_SM120_CUDA13_RUN_PARITY" in source
