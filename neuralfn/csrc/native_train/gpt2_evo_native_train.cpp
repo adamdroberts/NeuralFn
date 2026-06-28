@@ -492,6 +492,12 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
                 ? "native NVFP4 activation packing required, but dense GPT delegate currently records nvfp4 as intent only"
                 : "")
         << "\",\n"
+        << "    \"native_activation_packing_next_required_kernels\": [\n"
+        << "      \"packed-nvfp4-activation-arena\",\n"
+        << "      \"projection-fp4-gemm-forward-backward\",\n"
+        << "      \"attention-qkv-fp4-gemm-forward-backward\",\n"
+        << "      \"lm-head-fp4-gemm-forward-backward\"\n"
+        << "    ],\n"
         << "    \"activation_dtype_status\": \""
         << (plan.require_native_nvfp4_activation_packing && plan.tile_activation_dtype == "nvfp4"
                 ? "required-nvfp4-native-packing-missing"
@@ -1125,6 +1131,11 @@ int main(int argc, char** argv) {
     }
     if (print_plan || dry_run) {
         print_plan_json(plan);
+    }
+    if ((print_plan || dry_run) &&
+        plan.require_native_nvfp4_activation_packing &&
+        plan.tile_activation_dtype == "nvfp4") {
+        return 2;
     }
     if (print_plan && !dry_run) {
         return 0;

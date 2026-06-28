@@ -8815,7 +8815,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert evo_required_nvfp4.returncode == 0, evo_required_nvfp4.stderr
+    assert evo_required_nvfp4.returncode == 2, evo_required_nvfp4.stderr
     evo_required_nvfp4_plan = json.loads(evo_required_nvfp4.stdout)
     assert evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_required"] is True
     assert (
@@ -8823,6 +8823,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         == "required-nvfp4-native-packing-missing"
     )
     assert "intent only" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
+    assert evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_next_required_kernels"] == [
+        "packed-nvfp4-activation-arena",
+        "projection-fp4-gemm-forward-backward",
+        "attention-qkv-fp4-gemm-forward-backward",
+        "lm-head-fp4-gemm-forward-backward",
+    ]
 
     bad_evo_optimizer = subprocess.run(
         [str(gpt2_evo), "--print-plan", "--optimizer-profile", "sm120_adamw"],

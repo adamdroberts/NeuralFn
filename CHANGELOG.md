@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Breaking changes: native GPT NVFP4 preflight is stricter. Dense GPT and
+  GPT-2-evo native `--print-plan` / `--dry-run` JSON now return exit code `2`
+  when `--require-native-nvfp4-activation-packing` is set while the dense GPT
+  trainer still records NVFP4 as intent-only activation storage. Previously the
+  plan JSON reported `required-nvfp4-native-packing-missing` but exited `0`,
+  which let automation accept a path that was not a real packed-NVFP4 trainer.
+  The JSON still prints before dataset resolution and now includes
+  `tile_cuda.native_activation_packing_next_required_kernels` with the remaining
+  native storage/GEMM work: packed activation arenas, projection FP4 GEMM,
+  attention QKV FP4 GEMM, and LM-head FP4 GEMM. Command-only inspection with
+  `--native-cuda-print-command` remains non-failing because it does not claim
+  the delegate can execute.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches
+  -q`; `git diff --check`.
+
 - CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now writes a
   top-level validation summary JSON even when the optional paired native
   benchmark is disabled. In the default flow, `NFN_SM120_CUDA13_JSON_OUT`

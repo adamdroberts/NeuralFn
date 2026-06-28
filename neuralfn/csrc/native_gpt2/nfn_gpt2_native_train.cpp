@@ -1588,6 +1588,12 @@ std::string native_tile_cuda_activation_json(const Config& cfg) {
         << ",\"native_activation_packing_error\":\""
         << json_escape(nvfp4_requirement_error)
         << "\""
+        << ",\"native_activation_packing_next_required_kernels\":["
+        << "\"packed-nvfp4-activation-arena\","
+        << "\"projection-fp4-gemm-forward-backward\","
+        << "\"attention-qkv-fp4-gemm-forward-backward\","
+        << "\"lm-head-fp4-gemm-forward-backward\""
+        << "]"
         << ",\"activation_dtype_status\":\""
         << (!nvfp4_requirement_error.empty()
                 ? "required-nvfp4-native-packing-missing"
@@ -26312,8 +26318,7 @@ int main(int argc, char** argv) {
                 return 2;
             }
         }
-        if (!cfg.print_plan &&
-            !cfg.smoke_transformer_lm_step &&
+        if (!cfg.smoke_transformer_lm_step &&
             !cfg.smoke_embedding_lm_step &&
             !cfg.checkpoint_metadata_smoke &&
             cfg.train_transformer_lm) {
