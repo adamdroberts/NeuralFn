@@ -6013,7 +6013,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "available_native_kernels"
     ]
     assert tile_payload["required_native_work"] == []
-    assert any("SM120 throughput gap" in item for item in tile_payload["remaining_validation"])
+    assert any("llm.kittens parity green" in item for item in tile_payload["remaining_validation"])
+    assert any("startup/setup time" in item for item in tile_payload["remaining_validation"])
+    assert any("strict true-fused Tile kernel" in item for item in tile_payload["remaining_validation"])
     assert tile_payload["schedule"]["sample_every_steps"] == 20000
     assert tile_payload["schedule"]["generate_tokens"] == 144
     assert tile_payload["schedule"]["checkpoint_every_steps"] == 200

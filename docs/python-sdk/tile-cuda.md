@@ -2349,8 +2349,10 @@ gate.
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. SDK callers should treat
-`remaining_validation` as the current work to close the measured SM120
-throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
+`remaining_validation` as the current work to keep llm.kittens parity green,
+reduce native startup/setup arena materialization time, and replace the
+diagnostic CUDA Graph LM-head classifier wrapper with a strict true-fused Tile
+kernel; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
 5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
 passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
 the reference `-d 524288` batch-token contract instead of relying on a default.

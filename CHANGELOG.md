@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: updated dense GPT `--dry-run` / `--print-plan`
+  `remaining_validation` now that the 28672-row default has a current green
+  llm.kittens parity gate. The plan no longer says the outstanding work is to
+  close the measured SM120 throughput gap; it now names the actual remaining
+  work: keep current-default parity green after native Tile-CUDA changes,
+  reduce startup/setup time by cutting or deferring the large CUDA arena
+  materialization path, and replace the diagnostic CUDA Graph LM-head
+  classifier wrapper with a strict true-fused Tile kernel. Verification:
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=3
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PROFILE_DIR=none
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_current_default_28672_parity_20260628.json
+  bash tools/bench_native_gpt_sm120_parity.sh` passed with median NeuralFn over
+  llm.kittens train-loop `0.997812x` and steady-state CUDA-event `0.998082x`;
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup ...` remained rejected at
+  `0.999423x` mean setup and `1.002925x` median setup, so startup remains open.
+
 - Native trainer: promoted the 28672-row tied LM-head row chunk as the default
   for the GPT Tile-CUDA transformer-LM path, replacing the previous 32768-row
   default in the C++ trainer, Python SDK run config, and compiled CLI wrapper.

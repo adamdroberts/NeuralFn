@@ -5018,7 +5018,9 @@ bool print_tile_plan(
     std::cout
         << "  ],\n"
         << "  \"remaining_validation\": [\n"
-        << "    \"close the measured SM120 throughput gap against /mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh; use tools/bench_native_gpt_sm120_parity.sh for same-script RTX 5090 comparisons\"\n"
+        << "    \"keep current-default llm.kittens parity green with tools/bench_native_gpt_sm120_parity.sh after native Tile-CUDA changes\",\n"
+        << "    \"reduce native startup/setup time by cutting or deferring the large float and uint16 CUDA arena materialization path\",\n"
+        << "    \"replace the diagnostic CUDA Graph LM-head classifier wrapper with a strict true-fused Tile kernel path\"\n"
         << "  ]";
     if (include_symbol_check) {
         std::cout << ",\n"
