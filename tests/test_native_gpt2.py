@@ -2966,6 +2966,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "bf16_persistent_block_outputs6": "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_COUNT=6",
         "bf16_persistent_block_outputs_last6": "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUT_PLACEMENT=tail",
         "lm_head_row_chunk_65536": "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1",
+        "lm_head_row_chunk_16384": "--lm-head-row-chunk-size 16384",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
         "cublaslt_plan_prewarm_lm_head_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=lm_head_only",
         "cublaslt_plan_prewarm_off": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0",
@@ -3056,6 +3057,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "--lm-head-row-chunk-size 65536" in bench_source
     assert "changed lm_head_classifier_last_rows from 32768 to 65536" in bench_source
     assert "train_loop_wall_ms_per_step regressed to 7.368793x" in bench_source
+    assert '"lm_head_row_chunk_16384"|"lm-head-row-chunk-16384"' in bench_source
+    assert "halved lm_head_bf16_logit_bytes to 0.500000x" in bench_source
+    assert "setup_wall_ms to 0.931740x" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 1.001777x" in bench_source
+    assert "startup_plus_first_step_wall_ms=1.000" in bench_source
     assert "8.037520x versus llm.kittens" in bench_source
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms collapsed to 63.207371x" in bench_source
     assert "changed attention_backward_tk_batch_cap from 64 to 96" in bench_source

@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench: added an explicit rejected `lm_head_row_chunk_16384` SM120 candidate
+  profile. The CUDA 13.3.33 dedicated RTX 5090 3-step, one-sample no-stage
+  probe halved `lm_head_bf16_logit_bytes` to `0.500000x` and improved
+  `setup_wall_ms` to `0.931740x`, but rejected default promotion because
+  `train_loop_wall_ms_per_step` regressed to `1.001777x`,
+  `train_tokens_per_second` fell to `0.998226x`, and LM-head graph replay
+  counts doubled when `lm_head_classifier_last_rows` moved from `32768` to
+  `16384`. The profile is available for memory/startup diagnostics only.
+  Verification: GPU-visible same-script probe on the dedicated RTX 5090,
+  focused native GPT candidate-wrapper source test, dry-run expansion, and
+  `git diff --check`.
+
 - Bench: `tools/paired_kernel_speed.py --dry-run-plan` now prints configured
   metric-ratio gates in addition to the baseline/candidate/reference command
   expansion. This makes SM120 profile policy review visible without launching

@@ -123,6 +123,11 @@ current linked native baseline or change any hot route counters. The MLP
 projection dInput-before-dWeight route improved short-run wall time but
 regressed steady-state timing and MLP projection dInput attribution. Keep both
 off by default unless a later same-script gate proves a current-native win.
+The lower-memory `lm_head_row_chunk_16384` profile is also rejected by default:
+it halves `lm_head_bf16_logit_bytes` and improved one-sample startup wall time
+to `0.931740x`, but it doubled LM-head chunk/graph replay counts and regressed
+the real train loop to `1.001777x` wall time / `0.998226x` tokens/sec versus
+the current 32768-row default. Use it only for memory/startup diagnostics.
 The CUDA module-loading bisection is also pinned as a rejected diagnostic:
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` compares the default
 `CUDA_MODULE_LOADING=LAZY` wrapper route against `CUDA_MODULE_LOADING=EAGER`.
