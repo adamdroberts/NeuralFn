@@ -41,6 +41,7 @@ case "${PROFILE}" in
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=0
+    DEFAULT_REQUIRE_GRAPH_BODY_TILE=1
     ;;
   trainer-chunk-strict|trainer_chunk_strict|strict-trainer-chunk|strict_trainer_chunk)
     DEFAULT_ROWS=28672
@@ -209,6 +210,7 @@ MAX_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGI
 MAX_CUBLASLT_REFERENCE_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_GAP_MS:-}"
 MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_GAP_MS:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
+REQUIRE_GRAPH_BODY_TILE="${NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE:-${DEFAULT_REQUIRE_GRAPH_BODY_TILE:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
 ALLOW_REJECTED_PROFILE="${NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE:-0}"
@@ -736,6 +738,35 @@ candidate = data.get("candidate", {})
 true_fused_launch_count = int(candidate.get("true_fused_launch_count", 0) or 0)
 if true_fused_launch_count <= 0:
     raise SystemExit("candidate_true_fused_capability is true but candidate.true_fused_launch_count is zero")
+' "${JSON_OUT}"
+    ;;
+esac
+
+case "${REQUIRE_GRAPH_BODY_TILE,,}" in
+  1|true|yes|on)
+    python -c 'import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+candidate = data.get("candidate") or {}
+graph_replay_success_count = int(candidate.get("graph_replay_success_count", 0) or 0)
+graph_fallback_count = int(candidate.get("graph_fallback_count", 0) or 0)
+cublaslt_dhidden = int(candidate.get("graph_body_cublaslt_dhidden_launch_count", 0) or 0)
+cublaslt_dweight = int(candidate.get("graph_body_cublaslt_dweight_launch_count", 0) or 0)
+tile_dhidden = int(candidate.get("graph_body_tile_dhidden_fallback_count", 0) or 0)
+tile_dweight = int(candidate.get("graph_body_tile_dweight_fallback_count", 0) or 0)
+if graph_replay_success_count <= 0:
+    raise SystemExit("candidate graph-body Tile gate failed: graph_replay_success_count is zero")
+if graph_fallback_count != 0:
+    raise SystemExit(f"candidate graph-body Tile gate failed: graph_fallback_count={graph_fallback_count}")
+if cublaslt_dhidden != 0 or cublaslt_dweight != 0:
+    raise SystemExit(
+        "candidate graph-body Tile gate failed: cuBLASLt diagnostic body ran "
+        f"(dhidden={cublaslt_dhidden}, dweight={cublaslt_dweight})"
+    )
+if tile_dhidden <= 0 or tile_dweight <= 0:
+    raise SystemExit(
+        "candidate graph-body Tile gate failed: Tile graph-body counters missing "
+        f"(dhidden={tile_dhidden}, dweight={tile_dweight})"
+    )
 ' "${JSON_OUT}"
     ;;
 esac

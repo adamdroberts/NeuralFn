@@ -882,6 +882,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       dWeight. Future candidate runs must use these counters with graph replay
       counters to prove the measured body is the optimized Tile classifier
       route and not a diagnostic cuBLASLt/fallback path.
+    - 2026-06-28 made the focused `trainer-chunk` LM-head profile require that
+      proof by default via `NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE=1`.
+      The profile now fails if the candidate misses graph replay, falls back
+      out of the graph, uses cuBLASLt for dHidden/dWeight, or does not increment
+      both Tile graph-body counters.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

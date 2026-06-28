@@ -611,7 +611,11 @@ Each baseline/candidate JSON block also reports
 `graph_body_tile_dhidden_fallback_count`, and
 `graph_body_tile_dweight_fallback_count`, so same-script LM-head runs can prove
 whether the CUDA Graph body used the optimized Tile classifier matmuls or a
-diagnostic cuBLASLt/fallback route.
+diagnostic cuBLASLt/fallback route. The `trainer-chunk` focused profile enables
+`NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE=1` by default and fails if the
+candidate does not replay the graph, falls back out of the graph, uses the
+cuBLASLt diagnostic body, or misses the Tile dHidden/dWeight graph-body
+counters.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` to compare that same
 optimizer chunk against the cuBLASLt cooperative candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss

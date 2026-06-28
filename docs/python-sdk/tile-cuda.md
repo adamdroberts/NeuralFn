@@ -673,7 +673,11 @@ route proof on each baseline/candidate variant as
 `graph_body_tile_dweight_fallback_count`. Use these fields with
 `graph_replay_success_count` and `graph_fallback_count` when deciding whether a
 candidate measured the optimized Tile classifier body or a diagnostic cuBLASLt
-or fallback path.
+or fallback path. The focused `trainer-chunk` wrapper profile sets
+`NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE=1` by default, so it rejects a
+candidate that misses graph replay, falls back out of the graph, uses cuBLASLt
+for the graph body, or fails to increment both Tile dHidden/dWeight graph-body
+counters.
 The strict cooperative true-fused route has its own launch counter:
 `nfn_native_tile_lm_head_classifier_true_fused_launch_count()`. Focused
 LM-head benchmark JSON mirrors it as `true_fused_launch_count` on each variant,

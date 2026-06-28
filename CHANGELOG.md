@@ -11,16 +11,21 @@ Future updates should append new entries here rather than replacing older notes.
   dHidden and dWeight inside each baseline/candidate variant. This makes
   same-script LM-head candidate runs prove whether the CUDA Graph body measured
   the optimized Tile classifier matmuls or a diagnostic cuBLASLt/fallback route.
-  README, Tile-CUDA SDK docs, and the Tile-CUDA todo were updated with the new
-  interpretation guidance.
+  The focused `trainer-chunk` profile now requires that proof by default via
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_GRAPH_BODY_TILE=1`, rejecting candidates that
+  miss graph replay, fall back out of the graph, use cuBLASLt for the graph
+  body, or fail to increment both Tile dHidden/dWeight graph-body counters.
+  README, Tile-CUDA SDK docs, and the Tile-CUDA todo were updated with the
+  new interpretation and gate guidance.
 
   Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py::test_native_gpt_lm_head_backward_microbench_compares_strict_symbol
-  -q`; `bash tools/build_lm_head_backward_bench.sh`; `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+  -q`; `bash tools/build_lm_head_backward_bench.sh`;
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
   NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
-  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_graph_body_counters.json
-  bash tools/bench_lm_head_backward_candidate.sh`, which passed on the
-  dedicated RTX 5090 and reported candidate
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_backward_graph_body_tile_gate.json
+  bash tools/bench_lm_head_backward_candidate.sh`, which passed the new
+  graph-body Tile gate on the dedicated RTX 5090 and reported candidate
   `graph_body_tile_dhidden_fallback_count=1`,
   `graph_body_tile_dweight_fallback_count=1`, and `graph_fallback_count=0`.
 
