@@ -400,9 +400,18 @@ from the implemented native activation storage. `--tile-cuda-activation-dtype
 nvfp4` sets `tile_cuda.requested_activation_dtype` and keeps the request visible
 through GPT2-evo delegation, but `tile_cuda.effective_activation_dtype`,
 `tile_cuda.native_activation_packing_active`, and
-`tile_cuda.activation_dtype_status` are the runtime truth. Until FP4 packing is
-wired into the dense C++ projection and attention inputs, NVFP4 requests report
-effective `bf16-float32-mixed` storage with native activation packing inactive.
+`tile_cuda.activation_dtype_status` are the runtime truth. NVFP4 requests now
+pack LN1 activations into an NVFP4 sidecar for the transformer-block QKV
+dweight update when the raw Tile ABI symbols are available; runtime JSON
+reports `block_backward_nvfp4_qkv_dweight_requested`,
+`block_backward_nvfp4_qkv_dweight_available`,
+`block_backward_nvfp4_qkv_dweight_pack_count`,
+`block_backward_nvfp4_qkv_dweight_count`, and
+`block_backward_qkv_dweight_strategy:
+"packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias"`. Full dense GPT
+activation storage is still not end-to-end packed FP4, so NVFP4 requests report
+effective `bf16-float32-mixed` storage with native activation packing inactive
+until attention forward/dinput and LM-head FP4 routes are wired.
 The `--smoke-nvfp4-pack` preflight now reports
 `packed_nvfp4_activation_arena_ready`,
 `native_activation_packing_prerequisite_status`, and

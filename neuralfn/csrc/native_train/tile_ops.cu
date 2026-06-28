@@ -955,6 +955,12 @@ void launch_linear_backward_bias_accumulate_float32(
     std::int64_t rows,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream);
 void launch_gelu_float32(
     const float* x,
     float* out,
@@ -4685,6 +4691,17 @@ int nfn_native_tile_linear_backward_bias_accumulate_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_backward_bias_accumulate_float32(
         grad_out, grad_bias, rows, output_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_bias_accumulate_bf16_bits_float32(
+        grad_out_bf16_bits, grad_bias, rows, output_dim, as_stream(cuda_stream));
     return launch_status();
 }
 

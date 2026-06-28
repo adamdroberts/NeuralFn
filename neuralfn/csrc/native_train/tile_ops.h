@@ -1236,6 +1236,13 @@ int nfn_native_tile_linear_backward_bias_accumulate_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_gelu_float32(
     const float* x,
     float* out,

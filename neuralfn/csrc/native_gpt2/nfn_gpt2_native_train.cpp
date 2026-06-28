@@ -1559,10 +1559,10 @@ std::string native_nvfp4_activation_packing_requirement_error(const Config& cfg)
         native_nvfp4_activation_packing_active(cfg)) {
         return std::string();
     }
-    return "native NVFP4 activation packing required, but the dense GPT C++ trainer "
-           "does not yet route dense training activations through packed NVFP4 storage; "
-           "required next step: wire attention QKV and LM-head FP4 routes before "
-           "using this run as an NVFP4 training path";
+    return "native NVFP4 activation packing required, but dense GPT C++ training "
+           "currently packs NVFP4 only for the QKV dweight LN1 sidecar; required "
+           "next step: wire attention forward/dinput and LM-head FP4 routes before "
+           "using this run as an end-to-end NVFP4 training path";
 }
 
 std::string native_tile_cuda_activation_json(const Config& cfg) {
@@ -4294,6 +4294,13 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_BF16_QKV_DWEIGHT"}),
             true);
+    const bool nvfp4_qkv_dweight_requested =
+        cfg.tile_cuda_activation_dtype == "nvfp4" &&
+        bf16_qkv_dweight_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT",
+                              "NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT"}),
+            true);
     const bool fuse_qkv_bias_tk_gemm_enabled =
         packed_qkv_attention_enabled &&
             env_flag_enabled_or_default(
@@ -4794,6 +4801,7 @@ bool print_tile_plan(
         << json_escape(optimized_kernel_contract_error) << "\",\n"
         << "  \"attention_forward_row_launch_auto_disable_enabled\": true,\n"
         << "  \"packed_qkv_attention_enabled\": " << (packed_qkv_attention_enabled ? "true" : "false") << ",\n"
+        << "  \"nvfp4_qkv_dweight_requested\": " << (nvfp4_qkv_dweight_requested ? "true" : "false") << ",\n"
         << "  \"packed_qkv_attention_bf16_elements\": " << packed_qkv_attention_bf16_elements << ",\n"
         << "  \"packed_qkv_attention_bf16_bytes\": " << packed_qkv_attention_bf16_bytes << ",\n"
         << "  \"packed_qkv_float_attention_tape_elided\": "
@@ -11827,6 +11835,8 @@ int run_transformer_lm_training_json(
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
     using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using Float32ToBf16BitsFn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
+    using Float32ToNvfp4PackedFn = int (*)(
+        const float*, std::uint8_t*, std::uint8_t*, float, std::int64_t, void*);
     using StoreMlpActivationsBf16Fn =
         int (*)(const float*, const float*, const float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
     using Float32ToBf16BitsManyFn =
@@ -12016,12 +12026,17 @@ int run_transformer_lm_training_json(
     using LinearBackwardWeightAccumulateBf16BitsBf16BitsStridedBetaFn = int (*)(
         const std::uint16_t*, const std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using LinearBackwardWeightAccumulateNvfp4InputBf16GradFn = int (*)(
+        const std::uint8_t*, const std::uint8_t*, float, const std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, void*);
     using LinearBackwardWeightBiasAccumulateFloat32Bf16BitsFn = int (*)(
         const float*, const std::uint16_t*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightBiasAccumulateFloat32Bf16BitsBetaFn = int (*)(
         const float*, const std::uint16_t*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using LinearBackwardBiasAccumulateBf16BitsFn = int (*)(
+        const std::uint16_t*, float*, std::int64_t, std::int64_t, void*);
     using GeluAddBiasBf16ActFn =
         int (*)(const float*, const float*, float*, float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
     using GeluBackwardInplaceFn = int (*)(const float*, float*, std::int64_t, void*);
@@ -12245,6 +12260,7 @@ int run_transformer_lm_training_json(
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
+    Float32ToNvfp4PackedFn float32_to_nvfp4_packed = nullptr;
     StoreMlpActivationsBf16Fn store_mlp_activations_bf16 = nullptr;
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
@@ -12335,10 +12351,13 @@ int run_transformer_lm_training_json(
         linear_backward_weight_accumulate_bf16_bits_bf16_bits_beta = nullptr;
     LinearBackwardWeightAccumulateBf16BitsBf16BitsStridedBetaFn
         linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_beta = nullptr;
+    LinearBackwardWeightAccumulateNvfp4InputBf16GradFn
+        linear_backward_weight_accumulate_nvfp4_input_bf16_grad = nullptr;
     LinearBackwardWeightBiasAccumulateFloat32Bf16BitsFn
         linear_backward_weight_bias_accumulate_float32_bf16_bits = nullptr;
     LinearBackwardWeightBiasAccumulateFloat32Bf16BitsBetaFn
         linear_backward_weight_bias_accumulate_float32_bf16_bits_beta = nullptr;
+    LinearBackwardBiasAccumulateBf16BitsFn linear_backward_bias_accumulate_bf16_bits = nullptr;
     GeluAddBiasBf16ActFn gelu_add_bias_bf16_act = nullptr;
     GeluBackwardInplaceFn gelu_backward_inplace = nullptr;
     GeluBackwardInplaceBf16BitsFn gelu_backward_inplace_bf16_bits = nullptr;
@@ -12675,6 +12694,8 @@ int run_transformer_lm_training_json(
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
                 float32_to_bf16_bits =
                     load_symbol<Float32ToBf16BitsFn>(tile_handle, "nfn_native_tile_float32_to_bf16_bits");
+                float32_to_nvfp4_packed =
+                    load_symbol<Float32ToNvfp4PackedFn>(tile_handle, "nfn_native_tile_float32_to_nvfp4_packed");
                 store_mlp_activations_bf16 = load_symbol<StoreMlpActivationsBf16Fn>(
                     tile_handle, "nfn_native_tile_store_mlp_activations_bf16_float32");
                 float32_to_bf16_bits_many = load_symbol<Float32ToBf16BitsManyFn>(
@@ -12869,6 +12890,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LinearBackwardWeightAccumulateBf16BitsBf16BitsStridedBetaFn>(
                         tile_handle,
                         "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta");
+                linear_backward_weight_accumulate_nvfp4_input_bf16_grad =
+                    load_symbol<LinearBackwardWeightAccumulateNvfp4InputBf16GradFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta");
                 linear_backward_weight_bias_accumulate_float32_bf16_bits =
                     load_symbol<LinearBackwardWeightBiasAccumulateFloat32Bf16BitsFn>(
                         tile_handle, "nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits");
@@ -12876,6 +12901,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LinearBackwardWeightBiasAccumulateFloat32Bf16BitsBetaFn>(
                         tile_handle,
                         "nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta");
+                linear_backward_bias_accumulate_bf16_bits =
+                    load_symbol<LinearBackwardBiasAccumulateBf16BitsFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32");
                 gelu_add_bias_bf16_act =
                     load_symbol<GeluAddBiasBf16ActFn>(tile_handle, "nfn_native_tile_gelu_add_bias_bf16_act_float32");
                 gelu_backward_inplace = load_symbol<GeluBackwardInplaceFn>(
@@ -13634,6 +13663,13 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_BF16_QKV_DWEIGHT"}),
+            true);
+    const bool nvfp4_qkv_dweight_requested =
+        cfg.tile_cuda_activation_dtype == "nvfp4" &&
+        bf16_qkv_dweight_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT",
+                              "NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT"}),
             true);
     const bool bf16_block_dweight_staging_enabled =
         (bf16_mlp_grad_handoff_enabled || bf16_qkv_dweight_enabled) &&
@@ -14710,6 +14746,7 @@ int run_transformer_lm_training_json(
     std::vector<float*> float_ptrs;
     std::vector<std::int64_t*> int_ptrs;
     std::vector<std::uint16_t*> uint16_ptrs;
+    std::vector<std::uint8_t*> uint8_ptrs;
     std::vector<std::uint16_t*> pinned_uint16_ptrs;
     std::vector<std::uint16_t*> pageable_uint16_ptrs;
     std::vector<void*> token_device_ptrs;
@@ -15492,6 +15529,12 @@ int run_transformer_lm_training_json(
     std::uint16_t* mlp_forward_act_bf16 = nullptr;
     std::int64_t mlp_forward_act_bf16_elements = 0;
     std::int64_t mlp_forward_act_bf16_bytes = 0;
+    std::uint8_t* nvfp4_qkv_dweight_ln1_packed = nullptr;
+    std::uint8_t* nvfp4_qkv_dweight_ln1_scales = nullptr;
+    std::int64_t nvfp4_qkv_dweight_ln1_packed_bytes = 0;
+    std::int64_t nvfp4_qkv_dweight_ln1_scale_bytes = 0;
+    std::int64_t nvfp4_qkv_dweight_pack_count = 0;
+    std::int64_t nvfp4_qkv_dweight_count = 0;
     std::int64_t lazy_validation_mlp_float_scratch_elements = 0;
     std::int64_t lazy_validation_mlp_float_scratch_bytes = 0;
     std::int64_t lazy_validation_mlp_float_scratch_cuda_malloc_count = 0;
@@ -16031,6 +16074,43 @@ int run_transformer_lm_training_json(
             block_tapes[i].packed_attn_out_bf16 = base + offset + activation_elements + qkv_activation_elements;
         }
     };
+    auto allocate_nvfp4_qkv_dweight_scratch = [&]() {
+        if (!error.empty() || !nvfp4_qkv_dweight_requested) {
+            return;
+        }
+        if (activation_elements <= 0) {
+            error = "NVFP4 QKV dweight LN1 scratch allocation requires positive hidden elements";
+            return;
+        }
+        const std::int64_t packed_bytes = (activation_elements + 1) / 2;
+        const std::int64_t scale_bytes = (activation_elements + 15) / 16;
+        if (packed_bytes <= 0 || scale_bytes <= 0) {
+            error = "NVFP4 QKV dweight LN1 scratch allocation byte size overflow";
+            return;
+        }
+        if (nvfp4_qkv_dweight_ln1_packed == nullptr) {
+            void* raw = nullptr;
+            const int status = device_malloc(&raw, static_cast<std::size_t>(packed_bytes));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc nvfp4_qkv_dweight_ln1_packed");
+                return;
+            }
+            nvfp4_qkv_dweight_ln1_packed = static_cast<std::uint8_t*>(raw);
+            uint8_ptrs.push_back(nvfp4_qkv_dweight_ln1_packed);
+        }
+        if (nvfp4_qkv_dweight_ln1_scales == nullptr) {
+            void* raw = nullptr;
+            const int status = device_malloc(&raw, static_cast<std::size_t>(scale_bytes));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc nvfp4_qkv_dweight_ln1_scales");
+                return;
+            }
+            nvfp4_qkv_dweight_ln1_scales = static_cast<std::uint8_t*>(raw);
+            uint8_ptrs.push_back(nvfp4_qkv_dweight_ln1_scales);
+        }
+        nvfp4_qkv_dweight_ln1_packed_bytes = packed_bytes;
+        nvfp4_qkv_dweight_ln1_scale_bytes = scale_bytes;
+    };
     auto allocate_attention_grad_out_bf16 = [&]() {
         if (!error.empty() ||
             (!bf16_attention_grad_out_handoff_enabled &&
@@ -16549,6 +16629,9 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.packed_qkv_attention_scratch", [&]() {
         allocate_packed_qkv_attention_scratch();
+    });
+    run_setup_timed("setup.nvfp4_qkv_dweight_scratch", [&]() {
+        allocate_nvfp4_qkv_dweight_scratch();
     });
     run_setup_timed("setup.attention_grad_out_bf16", [&]() {
         allocate_attention_grad_out_bf16();
@@ -21031,7 +21114,60 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         if (bf16_qkv_dweight_enabled) {
                             if (error.empty() && ln1_bf16_for_dweight != nullptr) {
-                                if (bf16_block_dweight_staging_enabled &&
+                                const bool use_nvfp4_qkv_dweight =
+                                    nvfp4_qkv_dweight_requested &&
+                                    !bf16_block_dweight_staging_enabled &&
+                                    float32_to_nvfp4_packed != nullptr &&
+                                    linear_backward_weight_accumulate_nvfp4_input_bf16_grad != nullptr &&
+                                    linear_backward_bias_accumulate_bf16_bits != nullptr &&
+                                    nvfp4_qkv_dweight_ln1_packed != nullptr &&
+                                    nvfp4_qkv_dweight_ln1_scales != nullptr &&
+                                    tape.ln1_out != nullptr;
+                                if (use_nvfp4_qkv_dweight) {
+                                    run(float32_to_nvfp4_packed(
+                                            tape.ln1_out,
+                                            nvfp4_qkv_dweight_ln1_packed,
+                                            nvfp4_qkv_dweight_ln1_scales,
+                                            1.0f,
+                                            active_activation_elements,
+                                            stream),
+                                        label + ".attn.qkv.ln1_out.to_nvfp4_packed");
+                                    if (error.empty()) {
+                                        nvfp4_qkv_dweight_pack_count += 1;
+                                        run(linear_backward_weight_accumulate_nvfp4_input_bf16_grad(
+                                                nvfp4_qkv_dweight_ln1_packed,
+                                                nvfp4_qkv_dweight_ln1_scales,
+                                                1.0f,
+                                                active_qkv_grad_bf16,
+                                                block.accum_grad_qkv_weight,
+                                                active_rows,
+                                                kDim,
+                                                kQkvDim,
+                                                dweight_beta,
+                                                stream),
+                                            label + ".attn.qkv.backward_weight.beta.nvfp4_ln1_bf16_grad");
+                                    }
+                                    if (error.empty() && dweight_beta == 0.0f) {
+                                        run(fill(
+                                                block.accum_grad_qkv_bias,
+                                                kQkvDim,
+                                                0.0f,
+                                                stream),
+                                            label + ".attn.qkv.bias_grad.zero_for_nvfp4_beta");
+                                    }
+                                    if (error.empty()) {
+                                        run(linear_backward_bias_accumulate_bf16_bits(
+                                                active_qkv_grad_bf16,
+                                                block.accum_grad_qkv_bias,
+                                                active_rows,
+                                                kQkvDim,
+                                                stream),
+                                            label + ".attn.qkv.backward_bias.accumulate.bf16_grad_for_nvfp4");
+                                    }
+                                    if (error.empty()) {
+                                        nvfp4_qkv_dweight_count += 1;
+                                    }
+                                } else if (bf16_block_dweight_staging_enabled &&
                                     block.accum_grad_qkv_weight_bf16 != nullptr) {
                                     run(linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits(
                                             ln1_bf16_for_dweight,
@@ -23015,6 +23151,9 @@ int run_transformer_lm_training_json(
     for (std::uint16_t* ptr : uint16_ptrs) {
         device_free(ptr, "cudaFree transformer_lm_u16_buffer");
     }
+    for (std::uint8_t* ptr : uint8_ptrs) {
+        device_free(ptr, "cudaFree transformer_lm_u8_buffer");
+    }
     for (std::uint16_t* ptr : pinned_uint16_ptrs) {
         if (ptr != nullptr && cuda_free_host != nullptr) {
             const int status = cuda_free_host(ptr);
@@ -24415,8 +24554,28 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"block_backward_bf16_qkv_dweight_enabled\": "
         << (bf16_qkv_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_requested\": "
+        << (nvfp4_qkv_dweight_requested ? "true" : "false") << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_available\": "
+        << (float32_to_nvfp4_packed != nullptr &&
+                    linear_backward_weight_accumulate_nvfp4_input_bf16_grad != nullptr &&
+                    linear_backward_bias_accumulate_bf16_bits != nullptr &&
+                    nvfp4_qkv_dweight_ln1_packed != nullptr &&
+                    nvfp4_qkv_dweight_ln1_scales != nullptr
+                ? "true"
+                : "false") << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_pack_count\": "
+        << nvfp4_qkv_dweight_pack_count << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_count\": "
+        << nvfp4_qkv_dweight_count << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_packed_bytes\": "
+        << nvfp4_qkv_dweight_ln1_packed_bytes << ",\n"
+        << "  \"block_backward_nvfp4_qkv_dweight_scale_bytes\": "
+        << nvfp4_qkv_dweight_ln1_scale_bytes << ",\n"
         << "  \"block_backward_qkv_dweight_strategy\": \""
-        << (bf16_qkv_dweight_enabled
+        << (nvfp4_qkv_dweight_count > 0
+                ? "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias"
+                : bf16_qkv_dweight_enabled
                 ? (dweight_first_microbatch_beta_zero_enabled
                        ? "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-first-write-then-accumulate"
                        : "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate")

@@ -489,12 +489,10 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << (plan.require_native_nvfp4_activation_packing ? "true" : "false") << ",\n"
         << "    \"native_activation_packing_error\": \""
         << (plan.require_native_nvfp4_activation_packing && plan.tile_activation_dtype == "nvfp4"
-                ? "native NVFP4 activation packing required, but dense GPT delegate currently records nvfp4 as intent only"
+                ? "native NVFP4 activation packing required, but dense GPT delegate currently packs NVFP4 only for the QKV dweight LN1 sidecar; required next step: wire attention forward/dinput and LM-head FP4 routes before using this run as an end-to-end NVFP4 training path"
                 : "")
         << "\",\n"
         << "    \"native_activation_packing_next_required_kernels\": [\n"
-        << "      \"packed-nvfp4-activation-arena\",\n"
-        << "      \"projection-fp4-gemm-forward-backward\",\n"
         << "      \"attention-qkv-fp4-gemm-forward-backward\",\n"
         << "      \"lm-head-fp4-gemm-forward-backward\"\n"
         << "    ],\n"
@@ -502,7 +500,7 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << (plan.require_native_nvfp4_activation_packing && plan.tile_activation_dtype == "nvfp4"
                 ? "required-nvfp4-native-packing-missing"
                 : plan.tile_activation_dtype == "nvfp4"
-                ? "requested-nvfp4-not-yet-packed-native-dense-gpt"
+                ? "requested-nvfp4-projection-primitives-only-native-dense-gpt"
                 : "native-dense-gpt-bf16-float32-activation-storage")
         << "\",\n"
         << "    \"strict_required\": true\n"

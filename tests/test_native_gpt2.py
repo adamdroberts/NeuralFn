@@ -2247,8 +2247,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in tile_ops_source
+    assert "launch_linear_backward_bias_accumulate_bf16_bits_float32" in tile_ops_source
+    assert "launch_linear_backward_bias_accumulate_bf16_bits_float32" in kernels_source
     assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_header
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in tile_ops_header
+    assert "nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32" in tile_ops_header
     assert "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM" in source
     assert "lm_head_public_vocab_strided_gemm_requested" in source
@@ -8748,6 +8751,15 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "native_tile_cuda_activation_json" in dense_gpt_source
     assert "requested-nvfp4-projection-primitives-only-native-dense-gpt" in dense_gpt_source
     assert "json_escape(cfg.tile_cuda_activation_dtype)" in dense_gpt_source
+    assert "nfn_native_tile_float32_to_nvfp4_packed" in dense_gpt_source
+    assert "nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta" in dense_gpt_source
+    assert "nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32" in dense_gpt_source
+    assert "setup.nvfp4_qkv_dweight_scratch" in dense_gpt_source
+    assert "block_backward_nvfp4_qkv_dweight_requested" in dense_gpt_source
+    assert "block_backward_nvfp4_qkv_dweight_available" in dense_gpt_source
+    assert "block_backward_nvfp4_qkv_dweight_pack_count" in dense_gpt_source
+    assert "block_backward_nvfp4_qkv_dweight_count" in dense_gpt_source
+    assert "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias" in dense_gpt_source
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
     fake_gpt.chmod(0o755)
@@ -8775,6 +8787,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "attention-qkv-fp4-gemm-forward-backward",
         "lm-head-fp4-gemm-forward-backward",
     ]
+    assert dense_required_nvfp4_plan["nvfp4_qkv_dweight_requested"] is True
 
     unified_evo_delegate = subprocess.run(
         [
@@ -9000,7 +9013,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         evo_required_nvfp4_plan["tile_cuda"]["activation_dtype_status"]
         == "required-nvfp4-native-packing-missing"
     )
-    assert "does not yet route dense training activations" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
+    assert "currently packs NVFP4 only for the QKV dweight LN1 sidecar" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
+    assert "wire attention forward/dinput and LM-head FP4 routes" in evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_error"]
     assert evo_required_nvfp4_plan["tile_cuda"]["native_activation_packing_next_required_kernels"] == [
         "attention-qkv-fp4-gemm-forward-backward",
         "lm-head-fp4-gemm-forward-backward",

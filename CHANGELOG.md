@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Native GPT: NVFP4 activation requests now reach the real dense trainer QKV
+  dweight path. When `--tile-cuda-activation-dtype nvfp4` is selected and the
+  raw Tile ABI is available, the transformer block backward pass packs LN1
+  activations through `nfn_native_tile_float32_to_nvfp4_packed`, computes QKV
+  dweight with
+  `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta`,
+  and accumulates QKV bias from BF16 grad output through
+  `nfn_native_tile_linear_backward_bias_accumulate_bf16_bits_float32`.
+  Runtime JSON reports `block_backward_nvfp4_qkv_dweight_requested`,
+  `block_backward_nvfp4_qkv_dweight_available`,
+  `block_backward_nvfp4_qkv_dweight_pack_count`,
+  `block_backward_nvfp4_qkv_dweight_count`, packed/scale byte counts, and
+  `block_backward_qkv_dweight_strategy:
+  "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias"` when the route is
+  used. This is still not full end-to-end packed activation storage:
+  `tile_cuda.native_activation_packing_active` remains false until attention
+  forward/dinput and LM-head FP4 routes are wired. Verification: `git diff
+  --check`; `bash tools/build_native_train_tile_ops.sh`; `bash
+  tools/build_native_gpt_cli_linked.sh`; linked `--smoke-nvfp4-pack`; native
+  plan with `nvfp4_qkv_dweight_requested: true`; and a one-step CUDA
+  `--template-name nanogpt --train-seq-len 64 --train-batch-tokens 64`
+  training contract showing `block_backward_nvfp4_qkv_dweight_count: 5` and
+  `passed: true`.
+
 - Native GPT: the dense trainer's `--smoke-nvfp4-pack` JSON now separates the
   verified packed activation-arena and projection prerequisites from
   the remaining FP4 GEMM training work. The smoke output reports

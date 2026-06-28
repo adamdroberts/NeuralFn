@@ -19417,6 +19417,21 @@ void launch_linear_backward_bias_accumulate_float32(
       grad_out, grad_bias, output_dim, rows, kRowChunkSize, row_chunks);
 }
 
+void launch_linear_backward_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const int threads = linear_backward_bias_threads_per_block();
+  const int blocks = static_cast<int>((output_dim + threads - 1) / threads);
+  const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
+      grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
+}
+
 void launch_gelu_float32(
     const float* x,
     float* out,
