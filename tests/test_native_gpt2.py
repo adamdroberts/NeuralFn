@@ -820,6 +820,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "diagnostic-cuda-graph-wrapper" in source
     assert "lm_head_ce_kernel_strategy" in source
     assert "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores" in source
+    assert "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores" in source
     assert "lm_head_fused_graph_prewarm_success_count" in source
     assert "lm_head_fused_graph_prewarm_duplicate_skip_count" in source
     assert "block_backward_input_linear_strategy" in source
@@ -827,7 +828,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "block_backward_weight_linear_strategy" in source
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source
     assert "token_weight_init_strategy" in source
-    assert "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero" in source
+    assert "device-vector4-strided-power2-deterministic-fused-bf16-shadow" in source
     assert "SM120 CUDA 13.3 benchmark contract passed" in source
     assert "CUDA 13.3 SM120 validation passed." in source
 

@@ -198,7 +198,10 @@ When `NFN_SM120_CUDA13_RUN_BENCH=1` is enabled, the health gate also parses the
 paired benchmark JSON and verifies the promoted dense-GPT CUDA Tile route
 contract: fused Tile AdamW, TK BF16 block dInput, cuBLASLt BGRADB
 dWeight+bias, specialized BF16/u16 LM-head CE, CUDA Graph LM-head prewarm
-telemetry, and fused padded token-weight initialization. Set
+telemetry, and the default vector4-strided BF16-shadow token-weight
+initialization. The fused padded token-weight initializer stays opt-in behind
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` until it passes full
+throughput gates. Set
 `NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT=0` only for ad-hoc diagnostics where you
 want benchmark output even if a default route has drifted.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:

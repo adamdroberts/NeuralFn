@@ -25,6 +25,18 @@ Future updates should append new entries here rather than replacing older notes.
   `bash tools/rebuild_native_sm120.sh` or the individual native build helpers
   before running the verifier.
 
+- CUDA 13 validation: corrected the optional benchmark-contract expectations in
+  `tools/validate_sm120_cuda13.sh` to match the current promoted dense-GPT
+  routes. The contract now accepts the default no-loss LM-head CE vec8
+  normal-store strategy and requires the default vector4-strided BF16-shadow
+  token-weight initializer, while keeping the fused padded token-weight
+  initializer as an explicit opt-in diagnostic until full throughput gates pass.
+  Verification: reran the exact failed LM-head source-contract pytest, the full
+  CUDA 13.3 SM120 validator, the focused validator source-contract test, and
+  `NFN_SM120_CUDA13_RUN_PYTEST=0 NFN_SM120_CUDA13_RUN_BENCH=1
+  bash tools/validate_sm120_cuda13.sh`, which now passes the optional benchmark
+  contract on the dedicated RTX 5090.
+
 - Native verifier: promoted the compiled dense GPT launch surface from optional
   to required in `tools/check_native_no_torch_deps.py`. The no-Torch gate now
   fails if `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,

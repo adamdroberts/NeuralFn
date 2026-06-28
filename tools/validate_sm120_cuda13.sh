@@ -129,6 +129,7 @@ checks = [
         in {
             "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores",
             "no-loss-specialized-dlogits-vec8-loads-scalar-stores",
+            "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores",
             "default-specialized-loss-bins-vec8-loads-scalar-stores",
         },
         "LM-head CE must use a promoted specialized BF16/u16 Tile route",
@@ -153,8 +154,8 @@ checks = [
     ),
     (
         value("token_weight_init_strategy")
-        == "device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero",
-        "token-weight init must stay on the fused padded strided BF16-shadow CUDA Tile route",
+        == "device-vector4-strided-power2-deterministic-fused-bf16-shadow",
+        "token-weight init must stay on the default vector4-strided BF16-shadow CUDA Tile route",
     ),
 ]
 
