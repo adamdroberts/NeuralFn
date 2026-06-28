@@ -2510,6 +2510,11 @@ Use `--require-native-route-change` to make that condition a hard failure. The
 SM120 candidate wrapper enables the gate automatically for measured candidate
 changes, and `NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE=0` disables it only for
 explicit diagnostics.
+Use `--require-native-strategy-value-change NAME`, or
+`NFN_SM120_NATIVE_REQUIRE_STRATEGY_VALUE_CHANGES="NAME"` through
+`tools/bench_native_gpt_sm120_candidate.sh`, when the route proof must be a
+categorical native strategy field such as allocator mode rather than a numeric
+hot route counter.
 The lower-level hot linear matrix wrapper follows the same rule for raw Tile C
 ABI symbol sweeps. `NFN_LINEAR_HOT_MATRIX_REQUIRE_ROUTE_CHANGE=1` forwards the
 per-profile symbol-change guard, and aggregate JSON reports

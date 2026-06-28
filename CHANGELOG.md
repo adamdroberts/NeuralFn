@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Bench tooling: `tools/paired_kernel_speed.py` now supports
+  `--require-native-strategy-value-change NAME` for candidates whose route proof
+  is a categorical native strategy field instead of a numeric hot route
+  counter. The native route-change gate reports required and missing strategy
+  value changes separately, and `tools/bench_native_gpt_sm120_candidate.sh`
+  forwards `NFN_SM120_NATIVE_REQUIRE_STRATEGY_VALUE_CHANGES` /
+  `NFN_SM120_CANDIDATE_REQUIRE_STRATEGY_VALUE_CHANGES` into that gate. This
+  keeps same-script candidate-vs-older benchmarks strict for allocator and
+  launch-policy bisections without abusing the hot-counter gate.
+
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`,
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, `python -m pytest
+  tests/test_native_gpt2.py::test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles
+  -q`, a CPU-only synthetic `tools/paired_kernel_speed.py` run requiring
+  `transformer_device_arena_enabled` to change while both commands printed
+  native-runtime contract JSON, and `git diff --check`.
+
 - CLI startup: made `cli/nfn_impl.py` import-light by replacing eager imports of
   Torch, NumPy, `TorchTrainer`, `TorchTrainConfig`, semantic helpers,
   parameter-golf Torch helpers, `server.dataset_manager`, graph ops, and

@@ -1809,6 +1809,11 @@ For stricter checks, pass
 SM120 candidate wrapper adds that automatically for the concurrent
 dInput/dWeight profiles so a profile cannot satisfy route proof via an
 unrelated strategy or adjacent counter.
+For categorical native strategy changes such as allocator mode or launch
+policy, pass
+`tools/paired_kernel_speed.py --require-native-strategy-value-change NAME` or
+set `NFN_SM120_NATIVE_REQUIRE_STRATEGY_VALUE_CHANGES="NAME"` on
+`tools/bench_native_gpt_sm120_candidate.sh`.
 The cuBLASLt plan-cache bisection profile `cublaslt_plan_prewarm_off` compares
 the current full plan prewarm baseline against
 `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`. It stays rejected by default: the

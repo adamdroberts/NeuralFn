@@ -1698,6 +1698,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--require-native-strategy-value-change",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "Fail after measurement unless NAME appears in the native strategy-value "
+            "changes. Repeat for candidates that intentionally change categorical "
+            "runtime strategy fields, such as allocation mode or launch policy, rather "
+            "than numeric hot route counters."
+        ),
+    )
+    parser.add_argument(
         "--require-native-lm-head-true-fused",
         action="store_true",
         help=(
@@ -2684,6 +2696,7 @@ def evaluate_native_route_change_gate(
     *,
     required: bool,
     required_hot_route_counters: Sequence[str] = (),
+    required_strategy_value_changes: Sequence[str] = (),
     route_changes: dict[str, object],
     strategy_changes: dict[str, object],
     linear_shape_stats: dict[str, object],
@@ -2701,7 +2714,16 @@ def evaluate_native_route_change_gate(
     missing_required_counters = [
         name for name in required_counter_names if name not in hot_changed
     ]
-    route_change_required = bool(required or required_counter_names)
+    required_strategy_names = [
+        str(name).strip() for name in required_strategy_value_changes if str(name).strip()
+    ]
+    strategy_changed = strategy_changes.get("changed")
+    if not isinstance(strategy_changed, dict):
+        strategy_changed = {}
+    missing_required_strategy_values = [
+        name for name in required_strategy_names if name not in strategy_changed
+    ]
+    route_change_required = bool(required or required_counter_names or required_strategy_names)
     general_change_passed = (
         not route_change_required
         or has_hot_route_counter_change
@@ -2710,13 +2732,19 @@ def evaluate_native_route_change_gate(
         or has_plan_cache_change
     )
     specific_counters_passed = not missing_required_counters
-    passed = general_change_passed and specific_counters_passed
+    specific_strategy_values_passed = not missing_required_strategy_values
+    passed = general_change_passed and specific_counters_passed and specific_strategy_values_passed
     if passed:
         failure_reason = ""
     elif missing_required_counters:
         failure_reason = (
             "candidate-native-metrics-missing-required-hot-route-counter:"
             + ",".join(missing_required_counters)
+        )
+    elif missing_required_strategy_values:
+        failure_reason = (
+            "candidate-native-metrics-missing-required-strategy-value-change:"
+            + ",".join(missing_required_strategy_values)
         )
     else:
         failure_reason = "candidate-native-metrics-did-not-change-route-strategy-or-plan"
@@ -2725,6 +2753,8 @@ def evaluate_native_route_change_gate(
         "passed": bool(passed),
         "required_hot_route_counters": required_counter_names,
         "missing_required_hot_route_counters": missing_required_counters,
+        "required_strategy_value_changes": required_strategy_names,
+        "missing_required_strategy_value_changes": missing_required_strategy_values,
         "has_route_counter_change": bool(has_route_counter_change),
         "has_hot_route_counter_change": bool(has_hot_route_counter_change),
         "has_strategy_value_change": bool(has_strategy_value_change),
@@ -4712,6 +4742,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
         required_hot_route_counters=args.require_native_hot_route_counter,
+        required_strategy_value_changes=args.require_native_strategy_value_change,
         route_changes=native_route_counter_changes,
         strategy_changes=native_strategy_value_changes,
         linear_shape_stats=native_linear_shape_stats,
@@ -5040,6 +5071,18 @@ def print_text(payload: dict[str, object]) -> None:
         missing_counters = route_gate.get("missing_required_hot_route_counters")
         if isinstance(missing_counters, list) and missing_counters:
             print("    missing_required_hot_route_counters: " + ", ".join(map(str, missing_counters)))
+        required_strategy_values = route_gate.get("required_strategy_value_changes")
+        if isinstance(required_strategy_values, list) and required_strategy_values:
+            print(
+                "    required_strategy_value_changes: "
+                + ", ".join(map(str, required_strategy_values))
+            )
+        missing_strategy_values = route_gate.get("missing_required_strategy_value_changes")
+        if isinstance(missing_strategy_values, list) and missing_strategy_values:
+            print(
+                "    missing_required_strategy_value_changes: "
+                + ", ".join(map(str, missing_strategy_values))
+            )
         failure_reason = route_gate.get("failure_reason")
         if failure_reason:
             print(f"    failure_reason: {failure_reason}")

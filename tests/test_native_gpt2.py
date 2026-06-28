@@ -3024,6 +3024,17 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "concurrent_arena_materialize_count" in speed_source
     assert "baseline_env: {json.dumps(baseline_env, sort_keys=True)}" in speed_source
     assert "candidate_env: {json.dumps(candidate_env, sort_keys=True)}" in speed_source
+    assert "--require-native-strategy-value-change" in speed_source
+    assert "required_strategy_value_changes" in speed_source
+    assert "missing_required_strategy_value_changes" in speed_source
+    assert (
+        "candidate-native-metrics-missing-required-strategy-value-change:"
+        in speed_source
+    )
+    assert "REQUIRED_STRATEGY_VALUE_CHANGES_RAW=" in bench_source
+    assert "NFN_SM120_NATIVE_REQUIRE_STRATEGY_VALUE_CHANGES" in bench_source
+    assert "NFN_SM120_CANDIDATE_REQUIRE_STRATEGY_VALUE_CHANGES" in bench_source
+    assert "--require-native-strategy-value-change" in bench_source
 
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
