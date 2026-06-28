@@ -475,15 +475,18 @@ The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
 `--dry-run` / `--print-plan` reports `shape.padded_vocab_size: 50304`.
-The tied LM-head row chunk defaults to 32768 rows on the dedicated RTX
+The tied LM-head row chunk defaults to 28672 rows on the dedicated RTX
 5090/CUDA 13.3 workstation route and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 49152
-only when reproducing the rejected larger-chunk route, or 8192 when reproducing
-the older lower-memory route. The named same-script profile
+only when reproducing the rejected larger-chunk route, 32768 when reproducing
+the legacy pre-promotion route, or 8192 when reproducing the older lower-memory
+route. The named same-script profile
 `lm_head_row_chunk_49152` is rejected by default for real benchmark launches
 after the CUDA 13.3 dedicated RTX 5090 confirmation regressed train-loop wall
-time and block-backward timing versus 32768 rows; set
+time and block-backward timing versus 32768 rows; the promoted
+`lm_head_row_chunk_28672` profile compares 32768 rows against 28672 rows under
+the same external GPU load. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
 diagnostics. Effective chunks above 49152 rows require
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` for explicit diagnostics.
@@ -1913,7 +1916,7 @@ Use `lm_head_logits_bf16_fallback_49152` only for the rejected historical
 49152-row fallback route.
 `lm_head_tk_dweight_32768` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T` for the current
-32768-row LM-head dWeight bucket. Runtime JSON reports
+legacy 32768-row LM-head dWeight bucket. Runtime JSON reports
 `linear_tk_dweight_gemm_count`; the dedicated RTX 5090 5-step, 3-sample
 same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
 the route at `1.022262x` train-loop wall time and `1.279309x`
@@ -1921,7 +1924,7 @@ the route at `1.022262x` train-loop wall time and `1.279309x`
 `lm_head_cublaslt_dhidden_32768` expands to
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and heuristic `0` for the
-current 32768-row LM-head dHidden bucket. It is rejected by default: the CUDA
+legacy 32768-row LM-head dHidden bucket. It is rejected by default: the CUDA
 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed gate moved 48 calls from
 BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
 `1.000199x` LM-head dHidden, and `1.001504x` block backward.

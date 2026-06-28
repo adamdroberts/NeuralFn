@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native trainer: promoted the 28672-row tied LM-head row chunk as the default
+  for the GPT Tile-CUDA transformer-LM path, replacing the previous 32768-row
+  default in the C++ trainer, Python SDK run config, and compiled CLI wrapper.
+  The profile reduces resident LM-head BF16 logits to `0.875000x` and total
+  uint16 arena bytes to `0.981822x` while improving the 5-step, 3-sample
+  same-script gate to `0.998291x` train-loop wall time, `0.998019x`
+  steady-state CUDA-event step time, and `1.001714x` train tokens/sec versus
+  the prior NeuralFn default; it also beats the llm.kittens reference at
+  `0.993920x` train-loop wall time and `1.006138x` tokens/sec. Setup-only wall
+  time regressed to `1.012147x`, so this is documented as a throughput/memory
+  default rather than a setup-only optimization. Use
+  `--lm-head-row-chunk-size 32768` or
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768` to reproduce the
+  legacy route. Verification:
+  `NFN_SM120_NATIVE_BASELINE_EXTRA_ARGS='--lm-head-row-chunk-size 32768'
+  NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS='--lm-head-row-chunk-size 28672'
+  NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_lm_head_row_chunk_28672_5step_3sample_20260628.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Native launcher: the direct `train_gpt.py` / `train_gpt2.py` compiled-CLI
   fast path now defaults unset `CUDA_VISIBLE_DEVICES` to the `dedicated`
   display-disabled NVIDIA GPU selector instead of ordinal `0`, matching the

@@ -423,10 +423,11 @@ unset: `CUDA_VISIBLE_DEVICES=""`, `CUDA_DEVICE_MAX_CONNECTIONS=""`, and
 workstation path. Existing non-empty user-provided CUDA environment values
 still take precedence.
 
-`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 32768 and forwards
-`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 49152 to
-reproduce the rejected larger-chunk route, or pass 8192, 6144, or 4096
-explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
+`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 28672 and forwards
+`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 32768 to
+reproduce the legacy pre-promotion route, pass 49152 to reproduce the rejected
+larger-chunk route, or pass 8192, 6144, or 4096 explicitly to reproduce older
+smaller-workspace profiles. The C++ transformer-LM
 loop uses that bounded full-vocab tied LM-head workspace and reduces CE loss
 partials on device with `nfn_native_tile_sum_partials_float32`, so training and
 validation loss copy one device scalar to the host instead of copying once per
@@ -883,12 +884,13 @@ fallback probes. Both are rejected on CUDA 13.3 RTX 5090: QKV fallback reduced
 TK forward calls but regressed `stage.block_forward.attention.qkv.total_ms` to
 `1.143374x`, while MLP FC fallback did not change tracked route counters and
 regressed train-loop wall to `1.016916x`.
-The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 32768 rows for
+The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 28672 rows for
 the local RTX 5090/CUDA 13.3 workstation profile. This keeps the default
-LM-head chunk count at 2 and uses about 3.30GB of resident BF16 logit
-workspace at the 64x1024 shape. Set `lm_head_row_chunk_size=49152` or pass
-`--lm-head-row-chunk-size 49152` only to reproduce the rejected larger-chunk
-route. Set `lm_head_row_chunk_size=8192` only for rejected low-memory
+LM-head chunk count at 3 and uses about 2.88GB of resident BF16 logit
+workspace at the 64x1024 shape. Set `lm_head_row_chunk_size=32768` only to
+reproduce the legacy two-chunk route, or set `lm_head_row_chunk_size=49152` /
+pass `--lm-head-row-chunk-size 49152` only to reproduce the rejected
+larger-chunk route. Set `lm_head_row_chunk_size=8192` only for rejected low-memory
 diagnostics: the CUDA 13.3 dedicated RTX 5090 same-script gate improved
 startup-only setup to `0.847026x` and cut BF16 logit chunk bytes to `0.25x`,
 but the 3-step training gate regressed train-loop wall time to `1.000927x` and
@@ -2661,7 +2663,7 @@ the matching `*_DISABLE_SHAPE` aliases can exclude one shape when the broad
 switch is enabled. The LM-head dHidden shape `768,8192,50304,N,N` remains
 diagnostic-only because the RTX 5090 paired benchmark measured it slower than
 the GEMMEx default.
-For the current 32768-row LM-head chunk route, the SM120 candidate wrapper has
+For the legacy 32768-row LM-head chunk route, the SM120 candidate wrapper has
 named profile shortcuts so the route can be retested after CUDA or driver
 changes without hand-writing env strings:
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` expands to

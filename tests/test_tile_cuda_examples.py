@@ -1543,9 +1543,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_row_chunk_49152" in text
     assert "--lm-head-row-chunk-size 49152" in text
     assert "regressed train_loop_wall_ms_per_step to 1.012983x" in text
+    assert "lm_head_row_chunk_28672" in text
+    assert "--lm-head-row-chunk-size 28672" in text
+    assert "train_loop_wall_ms_per_step to 0.998291x" in text
     assert "lm_head_row_chunk_32768" in text
     assert "--lm-head-row-chunk-size 32768" in text
-    assert "Tile-CUDA default is 32768 LM-head rows again" in text
+    assert "Tile-CUDA default is now 28672 LM-head rows" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
@@ -1563,7 +1566,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_bf16_pattern" in text
-    assert "setup.token_weight_init.total_ms to 1.006804x" in text
+    assert "setup.token_weight_init.total_ms regressed to 1.006804x" in text
+    assert "token init itself also regressed to 1.070588x" in text
     assert "setup.token_weight_init.total_ms to 1.025016x" in text
     assert "setup.token_weight_init.total_ms to 1.015463x" in text
     assert "token_weight_fast_int32" in text
@@ -3148,37 +3152,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         row_loss_sum_rejected.stderr
     )
 
-    row_chunk_32768_output_path = tmp_path / "candidate-row-chunk-32768-dry-run.json"
-    row_chunk_32768_env = os.environ.copy()
-    row_chunk_32768_env.update(
+    row_chunk_28672_output_path = tmp_path / "candidate-row-chunk-28672-dry-run.json"
+    row_chunk_28672_env = os.environ.copy()
+    row_chunk_28672_env.update(
         {
             "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
             "NFN_SM120_NATIVE_PROFILE_DIR": "none",
             "NFN_SM120_NATIVE_STAGE_TIMING": "1",
             "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
-            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_32768",
-            "NFN_SM120_NATIVE_JSON_OUT": str(row_chunk_32768_output_path),
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_28672",
+            "NFN_SM120_NATIVE_JSON_OUT": str(row_chunk_28672_output_path),
         }
     )
 
-    row_chunk_32768_dry_run = subprocess.run(
+    row_chunk_28672_dry_run = subprocess.run(
         ["bash", str(script)],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        env=row_chunk_32768_env,
+        env=row_chunk_28672_env,
     )
 
-    assert row_chunk_32768_dry_run.returncode == 0, row_chunk_32768_dry_run.stderr
-    row_chunk_32768_payload = json.loads(
-        row_chunk_32768_output_path.read_text(encoding="utf-8")
+    assert row_chunk_28672_dry_run.returncode == 0, row_chunk_28672_dry_run.stderr
+    row_chunk_28672_payload = json.loads(
+        row_chunk_28672_output_path.read_text(encoding="utf-8")
     )
-    assert "--lm-head-row-chunk-size" in row_chunk_32768_payload["baseline_command"]
-    assert "49152" in row_chunk_32768_payload["baseline_command"]
-    assert "--lm-head-row-chunk-size" in row_chunk_32768_payload["candidate_command"]
-    assert "32768" in row_chunk_32768_payload["candidate_command"]
-    assert row_chunk_32768_payload["metric_ratio_gates"]["enabled"] is False
+    assert "--lm-head-row-chunk-size" in row_chunk_28672_payload["baseline_command"]
+    assert "32768" in row_chunk_28672_payload["baseline_command"]
+    assert "--lm-head-row-chunk-size" in row_chunk_28672_payload["candidate_command"]
+    assert "28672" in row_chunk_28672_payload["candidate_command"]
+    assert row_chunk_28672_payload["metric_ratio_gates"]["enabled"] is False
 
     row_chunk_32768_rejected_env = os.environ.copy()
     row_chunk_32768_rejected_env.update(
@@ -3203,7 +3207,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_row_chunk_32768 is a rejected SM120 candidate" in (
         row_chunk_32768_rejected.stderr
     )
-    assert "Tile-CUDA default is 32768 LM-head rows again" in (
+    assert "Tile-CUDA default is now 28672 LM-head rows" in (
         row_chunk_32768_rejected.stderr
     )
 
