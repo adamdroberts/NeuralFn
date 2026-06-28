@@ -145,6 +145,24 @@ Real training tensors must not pass through graph editor node objects.
     and `0.998004x` tokens/sec. The same JSON reports
     `diagnostic-cuda-graph-wrapper`, `true_fused_capability=false`, and
     `graph_body_nodes_per_replay=3`, so keep the strict goal open.
+  - 2026-06-28 post-reinstall 3-step, 1-sample no-stage rerun on the dedicated
+    display-disabled RTX 5090 kept the runtime contract clean but failed the
+    stricter same-script parity gate at `1.005160x` train-loop wall,
+    `1.005216x` steady-state CUDA-event step time, and `0.994889x`
+    tokens/sec versus llm.kittens. The paired guard observed zero selected-GPU
+    compute processes before and after each sample, so the miss is not
+    attributable to external GPU load.
+  - 2026-06-28 matching stage-timed diagnostic showed the old QKV first-use
+    startup hypothesis is no longer the active target:
+    `stage.block_forward.attention.qkv.first_step_avg_ms=1.079890` versus
+    `stage.block_forward.attention.qkv.steady_state_avg_ms=1.085080`, with
+    `linear_tk_qkv_first_use_prewarm_success_count=1`. The hot buckets are
+    instead `stage.block_backward.total_ms=2501.180`,
+    `stage.lm_head_backward.total_ms=1139.930`,
+    `stage.train.model_forward.total_ms=1221.670`, and
+    `stage.block_forward.total_ms=1214.110` over the 2-step diagnostic. Keep
+    the open implementation target on real LM-head classifier backward fusion
+    and block-backward kernel work, not more QKV prewarm relocation.
 - [x] Preserve rejected heavy cuBLASLt plan retunes as named profiles instead of
   implicit defaults. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_heavy_shape_flip`
   now records the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample
@@ -576,6 +594,13 @@ Real training tensors must not pass through graph editor node objects.
     `1.239921x` and total wall to `1.000981x`. Treat it as evidence that the
     first-step QKV gap is first-use setup work; the real fix needs to remove or
     lower that cost, not move it earlier.
+  - 2026-06-28 reran the same stage-timed diagnostic after the default
+    full-shape QKV prewarm path was already active. Forward-QKV first-step and
+    steady-state timing are now flat (`1.079890 ms` vs `1.085080 ms`), so QKV
+    prewarm is no longer a current parity explanation. Continue measuring every
+    candidate in the paired wrappers, but spend implementation time on the
+    LM-head CUDA Graph wrapper replacement and block-backward kernels that still
+    dominate the timed profile.
   - 2026-06-26 added
     `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` plus the rejected
     `tk_qkv_forward_prewarm_1row` profile. The one-row route proved the row cap

@@ -3750,6 +3750,20 @@ than a numeric hot counter. The SM120 wrapper forwards
 
 Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU driver access. If `nvidia-smi` reports "GPU access blocked by the operating system" or the native JSON reports `cudaDriverGetVersion` as `0`, the result is an execution-environment failure rather than a kernel result; rerun the same command with GPU-visible execution before accepting or rejecting a candidate. `tools/paired_kernel_speed.py` now also takes a per-selected-GPU lock at `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` for measured runs, so two same-GPU paired benchmarks cannot overlap and contaminate each other before `nvidia-smi` observes a compute process. The default lock fails fast; pass `--gpu-benchmark-lock-timeout-seconds N` to wait, or `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements. The utilization guard still rejects active compute load immediately, but it now retries transient high `nvidia-smi` utilization samples on an otherwise idle selected GPU; tune this with `--selected-gpu-utilization-retries` and `--selected-gpu-utilization-retry-interval-seconds` when a WSL/NVML idle poll spikes without compute processes.
 
+The current CUDA 13.3 dedicated RTX 5090 parity miss is a hot-kernel gap, not
+a graph-editor, Torch, host-loss-copy, or QKV first-use issue. A 2026-06-28
+no-stage same-script sample kept `graph_editor_tensor_flow=false`,
+`torch_required=false`, `optimized_kernel_contract_passed=true`, and
+`train_loss_host_d2h_count=0`, but still measured NeuralFn at `1.005160x`
+train-loop wall and `1.005216x` steady-state CUDA-event time versus
+llm.kittens. The matching stage-timed diagnostic kept
+`linear_tk_qkv_first_use_prewarm_success_count=1` and showed forward-QKV
+first-step timing flat with steady state (`1.079890 ms` versus `1.085080 ms`).
+The remaining implementation work should therefore target the LM-head
+classifier-backward CUDA Graph wrapper replacement and block-backward kernels
+that dominate `native_hot_stage_ratios`, rather than moving more work into QKV
+prewarm.
+
 `tools/build_native_gpt_cli_linked.sh` relinks the native GPT trainer against
 `build/libnfn_native_train_tile_ops.so`. It now rebuilds that Tile ops library
 automatically when `kernels.cu`, `tile_ops.cu`, or `tile_ops.h` is newer than

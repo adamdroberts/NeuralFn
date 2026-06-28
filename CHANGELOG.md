@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- SM120 parity evidence: refreshed the CUDA 13.3 dedicated RTX 5090 parity
+  tracker after the latest no-stage and stage-timed same-script runs. The
+  no-stage sample kept the native runtime contract clean
+  (`graph_editor_tensor_flow=false`, `torch_required=false`,
+  `optimized_kernel_contract_passed=true`, `train_loss_host_d2h_count=0`) and
+  observed zero selected-GPU compute processes before and after each measured
+  sample, but still missed strict parity at `1.005160x` train-loop wall,
+  `1.005216x` steady-state CUDA-event time, and `0.994889x` tokens/sec versus
+  llm.kittens. The matching stage-timed diagnostic showed QKV first-use is no
+  longer the active blocker (`stage.block_forward.attention.qkv.first_step_avg_ms=1.079890`
+  versus `stage.block_forward.attention.qkv.steady_state_avg_ms=1.085080`,
+  with `linear_tk_qkv_first_use_prewarm_success_count=1`); the hot buckets are
+  block backward, LM-head backward, model forward, and block forward. This
+  keeps the next implementation work pointed at the real LM-head classifier
+  backward Tile replacement and block-backward kernels rather than additional
+  QKV prewarm relocation.
+
 - Native LM-head diagnostics: `tools/bench_lm_head_backward_candidate.sh` can
   now gate strict true-fused LM-head candidates by section-level device-cycle
   attribution. Set
