@@ -5,20 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-/home/adam/miniconda3/envs/NeuralFn/bin/python}"
 LINKED_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
 DYNAMIC_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train"
-if [[ -n "${NFN_NATIVE_GPT_TRAIN_BIN:-}" ]]; then
-  TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN}"
-elif [[ -x "${LINKED_TRAIN_BIN}" ]]; then
-  TRAIN_BIN="${LINKED_TRAIN_BIN}"
-else
-  TRAIN_BIN="${DYNAMIC_TRAIN_BIN}"
-fi
-if [[ -n "${NFN_NATIVE_TILE_OPS_LIB:-}" ]]; then
-  TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB}"
-elif [[ "$(basename "${TRAIN_BIN}")" == "nfn_gpt_native_train_linked" ]]; then
-  TILE_OPS_LIB="linked"
-else
-  TILE_OPS_LIB="${ROOT_DIR}/build/libnfn_native_train_tile_ops.so"
-fi
 BENCH_JSON="${NFN_SM120_CUDA13_JSON_OUT:-/tmp/nfn_sm120_cuda13_baseline.json}"
 PARITY_JSON="${NFN_SM120_CUDA13_PARITY_JSON_OUT:-/tmp/nfn_sm120_cuda13_parity.json}"
 LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head_backward.json}"
@@ -56,6 +42,56 @@ run_step() {
   "$@"
 }
 
+select_train_artifacts() {
+  if [[ -n "${NFN_NATIVE_GPT_TRAIN_BIN:-}" ]]; then
+    TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN}"
+  elif [[ -x "${LINKED_TRAIN_BIN}" ]]; then
+    TRAIN_BIN="${LINKED_TRAIN_BIN}"
+  else
+    TRAIN_BIN="${DYNAMIC_TRAIN_BIN}"
+  fi
+  if [[ -n "${NFN_NATIVE_TILE_OPS_LIB:-}" ]]; then
+    TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB}"
+  elif [[ "$(basename "${TRAIN_BIN}")" == "nfn_gpt_native_train_linked" ]]; then
+    TILE_OPS_LIB="linked"
+  else
+    TILE_OPS_LIB="${ROOT_DIR}/build/libnfn_native_train_tile_ops.so"
+  fi
+}
+
+NO_TORCH_GATE_RAN=0
+run_no_torch_gate() {
+  if [[ "${NO_TORCH_GATE_RAN}" == "1" ]]; then
+    return
+  fi
+  NO_TORCH_GATE_RAN=1
+  case "${NFN_SM120_CUDA13_RUN_NO_TORCH:-1}" in
+    1|true|TRUE|yes|YES|on|ON)
+      case "${REBUILD_STALE}" in
+        1|true|TRUE|yes|YES|on|ON)
+          run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --rebuild-stale --json
+          ;;
+        0|false|FALSE|no|NO|off|OFF)
+          run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --json
+          ;;
+        *)
+          echo "Unsupported NFN_SM120_CUDA13_REBUILD_STALE=${REBUILD_STALE}" >&2
+          exit 2
+          ;;
+      esac
+      ;;
+    0|false|FALSE|no|NO|off|OFF)
+      ;;
+    *)
+      echo "Unsupported NFN_SM120_CUDA13_RUN_NO_TORCH=${NFN_SM120_CUDA13_RUN_NO_TORCH}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+run_no_torch_gate
+select_train_artifacts
+
 if [[ ! -x "${TRAIN_BIN}" ]]; then
   echo "Missing native GPT trainer: ${TRAIN_BIN}" >&2
   echo "Build it with: bash tools/rebuild_native_sm120.sh" >&2
@@ -89,28 +125,7 @@ case "${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-1}" in
     ;;
 esac
 
-case "${NFN_SM120_CUDA13_RUN_NO_TORCH:-1}" in
-  1|true|TRUE|yes|YES|on|ON)
-    case "${REBUILD_STALE}" in
-      1|true|TRUE|yes|YES|on|ON)
-        run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --rebuild-stale --json
-        ;;
-      0|false|FALSE|no|NO|off|OFF)
-        run_step "${PYTHON_BIN}" tools/check_native_no_torch_deps.py --json
-        ;;
-      *)
-        echo "Unsupported NFN_SM120_CUDA13_REBUILD_STALE=${REBUILD_STALE}" >&2
-        exit 2
-        ;;
-    esac
-    ;;
-  0|false|FALSE|no|NO|off|OFF)
-    ;;
-  *)
-    echo "Unsupported NFN_SM120_CUDA13_RUN_NO_TORCH=${NFN_SM120_CUDA13_RUN_NO_TORCH}" >&2
-    exit 2
-    ;;
-esac
+run_no_torch_gate
 
 run_step \
   "${TRAIN_BIN}" \

@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- CUDA 13 SM120 validation: `tools/validate_sm120_cuda13.sh` now runs the
+  no-Torch native dependency gate before selecting the linked/dynamic native GPT
+  trainer or checking for missing Tile artifacts. The default
+  `--rebuild-stale` path can therefore refresh known stale native binaries
+  after a CUDA toolkit reinstall before the validator decides whether to run the
+  linked trainer, while explicit `NFN_NATIVE_GPT_TRAIN_BIN` and
+  `NFN_NATIVE_TILE_OPS_LIB` overrides still fail fast if the caller points them
+  at missing files.
+
+  Verification: `bash -n tools/validate_sm120_cuda13.sh`;
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_sm120_cuda13_validator_covers_native_cuda_smokes
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`; `git diff --check`.
+
 - SM120 startup evidence: refreshed the rejected split-arena concurrent
   materialization profile after pageable token staging. The rerun still moved
   `concurrent_arena_materialize_count` from `0` to `1`, but rejected default

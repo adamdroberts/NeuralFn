@@ -99,10 +99,12 @@ green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass. The
-CUDA 13.3 SM120 validator now runs `tools/check_native_no_torch_deps.py --json`
-by default before the CUDA smoke steps; set `NFN_SM120_CUDA13_RUN_NO_TORCH=0`
-only for a narrow CUDA-only bisection after the no-Torch gate has already
-passed.
+CUDA 13.3 SM120 validator now runs
+`tools/check_native_no_torch_deps.py --rebuild-stale --json` by default before
+selecting the linked/dynamic trainer and before the CUDA smoke steps; this
+first refreshes stale native artifacts through their mapped build scripts. Set
+`NFN_SM120_CUDA13_RUN_NO_TORCH=0` only for a narrow CUDA-only bisection after
+the no-Torch gate has already passed.
 The current post-reinstall paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
 sample. A fresh 2026-06-28 5-step, 3-sample check without stage timing measured
@@ -4209,7 +4211,8 @@ After a CUDA toolkit reinstall or local C++/CUDA edit, run
 `bash tools/validate_sm120_cuda13.sh`; the validator now runs
 `python tools/check_native_no_torch_deps.py --rebuild-stale --json` by default,
 so known stale native artifacts are rebuilt with their mapped `tools/build_*.sh`
-scripts before the same no-Torch dependency/import gate continues. Set
+scripts before the validator selects `build/nfn_gpt_native_train_linked` versus
+the dynamic trainer and before missing-artifact checks run. Set
 `NFN_SM120_CUDA13_REBUILD_STALE=0` only when intentionally checking that stale
 artifact detection fails without rebuilding. Keep `--skip-stale-artifacts` for
 deliberate dependency-only audits, not training readiness.

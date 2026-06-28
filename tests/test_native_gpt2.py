@@ -890,6 +890,12 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "NFN_SM120_CUDA13_REBUILD_STALE" in source
     assert "tools/check_native_no_torch_deps.py --rebuild-stale --json" in source
     assert "tools/check_native_no_torch_deps.py --json" in source
+    assert "select_train_artifacts()" in source
+    assert "run_no_torch_gate()" in source
+    assert "NO_TORCH_GATE_RAN=0" in source
+    assert source.index("run_no_torch_gate\nselect_train_artifacts") < source.index(
+        'if [[ ! -x "${TRAIN_BIN}" ]]'
+    )
     assert "tests/test_native_gpt2.py -q" in source
     assert "NFN_SM120_CUDA13_RUN_PYTEST" in source
     assert "NFN_SM120_CUDA13_RUN_BENCH" in source
