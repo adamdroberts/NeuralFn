@@ -4300,7 +4300,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT"}),
-            true);
+            false);
     const bool fuse_qkv_bias_tk_gemm_enabled =
         packed_qkv_attention_enabled &&
             env_flag_enabled_or_default(
@@ -13670,7 +13670,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT"}),
-            true);
+            false);
     const bool bf16_block_dweight_staging_enabled =
         (bf16_mlp_grad_handoff_enabled || bf16_qkv_dweight_enabled) &&
             env_flag_enabled_or_default(

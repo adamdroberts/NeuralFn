@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT: kept the current NVFP4 QKV dweight sidecar off the default
+  throughput path after same-script SM120 parity showed it regressed
+  `train_loop_wall_ms_per_step` to `2.688127x` llm.kittens and reduced
+  throughput to `0.371962x`. The route remains available for kernel work with
+  `NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1` /
+  `NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT=1`, and default plan/runtime JSON now
+  reports `nvfp4_qkv_dweight_requested: false` unless that opt-in is set.
+  Verification: a 3-step, 2-sample parity isolation run with only
+  `NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=0` changed passed at
+  `0.993177x` train-loop wall and `1.006994x` tokens/sec versus
+  llm.kittens.
+
 - Native GPT: NVFP4 activation requests now reach the real dense trainer QKV
   dweight path. When `--tile-cuda-activation-dtype nvfp4` is selected and the
   raw Tile ABI is available, the transformer block backward pass packs LN1
@@ -21,10 +33,10 @@
   forward/dinput and LM-head FP4 routes are wired. Verification: `git diff
   --check`; `bash tools/build_native_train_tile_ops.sh`; `bash
   tools/build_native_gpt_cli_linked.sh`; linked `--smoke-nvfp4-pack`; native
-  plan with `nvfp4_qkv_dweight_requested: true`; and a one-step CUDA
-  `--template-name nanogpt --train-seq-len 64 --train-batch-tokens 64`
-  training contract showing `block_backward_nvfp4_qkv_dweight_count: 5` and
-  `passed: true`.
+  opt-in plan with `NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1` and
+  `nvfp4_qkv_dweight_requested: true`; and a one-step CUDA `--template-name
+  nanogpt --train-seq-len 64 --train-batch-tokens 64` training contract
+  showing `block_backward_nvfp4_qkv_dweight_count: 5` and `passed: true`.
 
 - Native GPT: the dense trainer's `--smoke-nvfp4-pack` JSON now separates the
   verified packed activation-arena and projection prerequisites from

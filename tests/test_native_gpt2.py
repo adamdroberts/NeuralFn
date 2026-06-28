@@ -8760,6 +8760,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "block_backward_nvfp4_qkv_dweight_pack_count" in dense_gpt_source
     assert "block_backward_nvfp4_qkv_dweight_count" in dense_gpt_source
     assert "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias" in dense_gpt_source
+    assert 'env_or_empty_any({"NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT",' in dense_gpt_source
+    assert '                              "NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT"}),\n            false);' in dense_gpt_source
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
     fake_gpt.chmod(0o755)
@@ -8787,7 +8789,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "attention-qkv-fp4-gemm-forward-backward",
         "lm-head-fp4-gemm-forward-backward",
     ]
-    assert dense_required_nvfp4_plan["nvfp4_qkv_dweight_requested"] is True
+    assert dense_required_nvfp4_plan["nvfp4_qkv_dweight_requested"] is False
 
     unified_evo_delegate = subprocess.run(
         [
