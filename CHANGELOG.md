@@ -9,10 +9,15 @@ Future updates should append new entries here rather than replacing older notes.
 - Native GPT startup: stage-timed `--startup-only` probes now skip CUDA
   event-pool preallocation and report
   `stage_timing_prealloc_event_pairs_requested: 0`, because no optimizer step
-  can emit stage timing events before the process exits. Normal training stage
-  timing keeps the existing preallocated event pool. Verification: focused
-  native GPT source test, linked trainer build/help, GPU-visible stage-timed
-  startup smoke, and `git diff --check`.
+  can emit stage timing events before the process exits. Short stage-timed
+  training probes now default the pool to `4096 * max_steps`, capped by
+  `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`, instead of always reserving 16,384
+  event pairs; explicit `NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS` values
+  still win. A GPU-visible one-step stage-timed smoke used 3,987 events from a
+  4,096-pair pool with zero drops or hot creates, and measured
+  `setup.stage_timing_event_pool=1.561 ms`. Verification: focused native GPT
+  source/runtime tests, linked trainer build/help, GPU-visible stage-timed
+  startup and one-step smokes, and `git diff --check`.
 
 - Native GPT startup: `nfn_gpt_native_train` now accepts `--fast-startup` /
   `--native-cuda-fast-startup`, and `NativeTrainRunConfig` plus the

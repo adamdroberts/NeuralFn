@@ -119,6 +119,13 @@ Real training tensors must not pass through graph editor node objects.
   reports `stage_timing_prealloc_event_pairs_requested: 0` and does not create
   thousands of CUDA events that cannot be consumed before exit. Normal
   stage-timed training still preallocates the event pool for hot-loop timing.
+  Short stage-timed training probes now default the pool to
+  `4096 * max_steps`, capped by `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`,
+  instead of always reserving 16,384 event pairs; explicit
+  `NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS` overrides still win. The
+  2026-06-28 GPU-visible one-step smoke used 3,987 events from a 4,096-pair
+  pool with zero dropped events and zero hot-created pairs, reducing
+  `setup.stage_timing_event_pool` to `1.561 ms` for that probe.
 - [x] Prefer the installed CUDA 13 runtime path in native C++ startup when no
   explicit `--cuda-runtime-lib` / `NFN_CUDA_RUNTIME_LIB` is supplied. The
   resolver now checks `/usr/local/cuda/lib64/libcudart.so.13` and adjacent

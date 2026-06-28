@@ -184,6 +184,10 @@ runtime policy reporting
 Stage-timed startup-only probes also elide the CUDA event-pool preallocation
 because no optimizer step can consume those events before exit; runtime JSON
 reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.
+For short stage-timed profiling runs, the default event pool is now
+step-proportional (`4096 * max_steps`, capped by
+`NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`) instead of always reserving 16,384
+pairs, so 1-2 step probes do less CUDA event setup before the hot loop.
 Fast startup remains a startup/preflight policy, not the default full-training
 policy. The `fast_startup_full` probe ran real optimizer steps with
 `NFN_NATIVE_GPT_FAST_STARTUP=1` and improved setup wall time to `0.655522x`,

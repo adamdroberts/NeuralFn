@@ -2313,6 +2313,11 @@ When `NFN_NATIVE_GPT_STAGE_TIMING=1` is set on a startup-only probe, the native
 trainer now reports `stage_timing_prealloc_event_pairs_requested: 0` and skips
 the CUDA event-pool preallocation because no optimizer step will consume the
 events before exit.
+For short stage-timed training probes, the default event-pool size is
+step-proportional (`4096 * max_steps`, capped by
+`NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`) instead of a fixed 16,384 pairs; set
+`NFN_NATIVE_GPT_STAGE_TIMING_PREALLOC_EVENTS` when a run needs an explicit pool
+size.
 
 `fast_startup_full` is the matching rejected full-training probe. It runs real
 optimizer steps with `NFN_NATIVE_GPT_FAST_STARTUP=1` to check whether skipped

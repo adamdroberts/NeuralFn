@@ -13885,8 +13885,17 @@ int run_transformer_lm_training_json(
         env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS",
                                 "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS"},
                                20000));
+    constexpr std::int64_t kDefaultStageTimingEventsPerOptimizerStep = 4096;
+    const std::int64_t stage_timing_default_steps =
+        std::max<std::int64_t>(1, static_cast<std::int64_t>(cfg.max_steps));
     const std::int64_t default_stage_timing_prealloc_events =
-        std::min<std::int64_t>(stage_timing_max_events, 16384);
+        std::min<std::int64_t>(
+            stage_timing_max_events,
+            std::max<std::int64_t>(
+                1024,
+                stage_timing_default_steps > stage_timing_max_events / kDefaultStageTimingEventsPerOptimizerStep
+                    ? stage_timing_max_events
+                    : stage_timing_default_steps * kDefaultStageTimingEventsPerOptimizerStep));
     const std::int64_t stage_timing_prealloc_event_pairs_requested =
         cfg.startup_only
             ? 0
