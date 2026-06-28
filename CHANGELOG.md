@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native GPT inference: explicit `nfn infer --runtime native-cuda` now fails
+  fast unless `--checkpoint`, `--native-checkpoint`, or `--weights` resolves to
+  a native `model_*.bin` checkpoint, or `--checkpoint` resolves to a directory
+  containing native checkpoints. This prevents `.pt/.json` graph artifacts from
+  silently falling through to the graph-backed chat/runtime path after the
+  caller requested native CUDA. Migration: use
+  `nfn infer --runtime native-cuda --checkpoint /path/to/model_00020000.bin` or
+  pass the native checkpoint directory; keep `.pt/.json` artifacts on
+  `nfn infer --graph ... --weights ...` without `--runtime native-cuda`.
+
+  Verification: `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_nfn_infer_native_runtime_rejects_graph_weights_without_importing_runtime
+  -q`; `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`.
+
 - SM120 candidate workflow: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async_float_arena` to capture
   the rejected allocator threshold between the promoted small-async route and

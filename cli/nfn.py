@@ -188,6 +188,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --checkpoint-tokenizer PATH
           --native-info
           --native-sampler-script PATH (deprecated for native .bin prompts)
+          --runtime {auto,native-cuda,graph}
           --prompt TEXT
           --prompt-tokens IDS
           --max-new-tokens N
@@ -200,6 +201,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
         examples:
           nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2 --native-info
+          nfn infer --runtime native-cuda --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
@@ -402,6 +404,16 @@ def _native_infer_checkpoint_arg(argv: list[str]) -> str | None:
     return _arg_value(argv, "--native-checkpoint", "--checkpoint", "--weights")
 
 
+def _native_infer_artifact_arg(argv: list[str]) -> str | None:
+    if not argv or argv[0] != "infer":
+        return None
+    return _arg_value(argv, "--native-checkpoint", "--checkpoint", "--weights", "--graph")
+
+
+def _native_infer_requested_runtime(argv: list[str]) -> str:
+    return (_arg_value(argv, "--runtime") or "auto").strip().lower().replace("_", "-")
+
+
 def _resolve_native_infer_checkpoint(argv: list[str]) -> Path | None:
     raw_checkpoint = _native_infer_checkpoint_arg(argv)
     if not raw_checkpoint:
@@ -421,6 +433,30 @@ def _resolve_native_infer_checkpoint(argv: list[str]) -> Path | None:
 
 def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
     return _resolve_native_infer_checkpoint(argv) is not None
+
+
+def _is_invalid_native_gpt_infer(argv: list[str]) -> bool:
+    if not argv or argv[0] != "infer" or _has_any(argv, "-h", "--help", "--plan", "--plan-auto"):
+        return False
+    runtime = _native_infer_requested_runtime(argv)
+    if runtime not in {"native-cuda", "tile-cuda", "cuda", "native"}:
+        return False
+    return _resolve_native_infer_checkpoint(argv) is None
+
+
+def _invalid_native_gpt_infer_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    artifact = _native_infer_artifact_arg(tokens)
+    target = f" for {artifact}" if artifact else ""
+    print(
+        "Native GPT inference requires a native model_*.bin checkpoint or a directory "
+        f"containing native checkpoints{target}. Exported .pt/.json graph artifacts use "
+        "the legacy graph-backed runtime and are not accepted with --runtime native-cuda. "
+        "Use --checkpoint /path/to/model_00020000.bin, or train with native checkpoint "
+        "export enabled.",
+        file=sys.stderr,
+    )
+    return 2
 
 
 def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
@@ -1009,6 +1045,8 @@ def main(
             return _lightweight_kernels_list_main(tokens)
         if _is_lightweight_native_gpt_infer(tokens):
             return _lightweight_native_gpt_infer_main(tokens)
+        if _is_invalid_native_gpt_infer(tokens):
+            return _invalid_native_gpt_infer_main(tokens)
         if _is_legacy_graph_train(tokens):
             return _legacy_graph_train_main(tokens)
     impl = _load_full_impl()
@@ -1027,6 +1065,8 @@ if __name__ == "__main__":
         from train_gpt_native import main as main
     elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
         main = _lightweight_native_gpt_infer_main
+    elif _is_invalid_native_gpt_infer(sys.argv[1:]):
+        main = _invalid_native_gpt_infer_main
     elif _is_lightweight_root_help(sys.argv[1:]):
         main = _lightweight_root_main
     elif _is_lightweight_command_help(sys.argv[1:]):

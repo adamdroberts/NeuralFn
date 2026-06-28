@@ -1131,6 +1131,13 @@ Torch, graph-backed inference helpers, NumPy, tiktoken, or dataset managers.
 `PATH` may be either a native `model_########.bin` file or a native training
 output directory containing `DONE_########` markers; directory input resolves to
 the latest completed native checkpoint before the sampler runs.
+When `--runtime native-cuda` is explicit, `nfn infer` enforces this native
+checkpoint boundary. `--checkpoint`, `--native-checkpoint`, or `--weights` must
+point at a native `model_*.bin` checkpoint, or `--checkpoint` must point at a
+directory containing native checkpoints. Exported `.pt` weights and `.json`
+graph artifacts remain graph-backed only; passing them with
+`--runtime native-cuda` exits before importing the graph runtime and prints the
+native `.bin` checkpoint requirement.
 Use `--prompt-tokens` for the no-tokenizer path; text `--prompt` inference may
 still import tiktoken locally to encode GPT-2 prompt text before calling the
 same native sampler only when `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` is set.
@@ -2854,6 +2861,9 @@ C++ capture binding and falls back to the compiled
 `nfn_gpt_native_train --sample-checkpoint` path when needed. The wrapper
 forwards `--temperature`, `--top-k`, `--repetition-penalty`, and `--seed` to
 the native sampler instead of silently using greedy-only generation.
+Explicit `--runtime native-cuda` inference fails fast for graph `.pt/.json`
+artifacts so the CLI cannot silently fall through to the graph-backed
+chat/runtime path after the user requested native CUDA.
 The canonical wrapper preserves its own argparse program name, so
 `python cli/scripts/infer_gpt.py --help` prints `usage: infer_gpt.py`; the
 compatibility `infer_gpt2.py` name is reserved for direct compatibility-script
@@ -2939,6 +2949,7 @@ python cli/scripts/infer_gpt.py --native-checkpoint ~/NeuralFn/artifacts/gpt2/mo
 nfn_gpt_native_train --native-info --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 nfn infer --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
+nfn infer --runtime native-cuda --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3
 nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0

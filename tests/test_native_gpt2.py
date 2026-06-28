@@ -590,6 +590,37 @@ def test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint(tmp_path: 
     assert "Traceback" not in proc.stderr
 
 
+def test_nfn_infer_native_runtime_rejects_graph_weights_without_importing_runtime(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    weights = tmp_path / "gpt2_evo.pt"
+    weights.write_bytes(b"not-a-native-checkpoint")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "infer",
+            "--runtime",
+            "native-cuda",
+            "--weights",
+            str(weights),
+            "--prompt",
+            "Once upon a time",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 2
+    assert proc.stdout == ""
+    assert "Native GPT inference requires a native model_*.bin checkpoint" in proc.stderr
+    assert "Exported .pt/.json graph artifacts use the legacy graph-backed runtime" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
 def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
