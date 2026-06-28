@@ -3768,6 +3768,10 @@ which removes parent aggregates such as `stage.block_backward.total_ms` and
 `setup_wall_ms` when deeper timed child buckets are available. Use that leaf
 view to choose the next CUDA Tile kernel to edit; keep the parent
 `top_candidate_total_ms` view for understanding total section cost.
+When the baseline is llm.kittens and therefore has no NeuralFn stage timings,
+use the candidate-only `candidate_native_leaf_hot_stages` section instead; it
+ranks the deepest timed NeuralFn setup/stage buckets without requiring a
+baseline ratio.
 
 `tools/build_native_gpt_cli_linked.sh` relinks the native GPT trainer against
 `build/libnfn_native_train_tile_ops.so`. It now rebuilds that Tile ops library

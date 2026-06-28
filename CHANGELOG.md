@@ -12,7 +12,10 @@ Future updates should append new entries here rather than replacing older notes.
   `stage.block_backward.total_ms` and `setup_wall_ms` when deeper timed child
   buckets exist, so candidate-vs-baseline runs point at the concrete leaf CUDA
   Tile bucket to edit next while preserving the existing parent
-  `top_candidate_total_ms` summary for total-cost context.
+  `top_candidate_total_ms` summary for total-cost context. The tool also emits
+  `candidate_native_leaf_hot_stages.top_leaf_candidate_total_ms`, a
+  candidate-only ranking for llm.kittens parity runs where the reference has no
+  NeuralFn stage timings to ratio against.
 
 - SM120 parity evidence: refreshed the CUDA 13.3 dedicated RTX 5090 parity
   tracker after the latest no-stage and stage-timed same-script runs. The

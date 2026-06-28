@@ -5091,6 +5091,22 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
         row["metric"] != "stage.block_backward.total_ms"
         for row in hot_stage_ratios["top_leaf_candidate_total_ms"]
     )
+    candidate_leaf_stages = payload["candidate_native_leaf_hot_stages"]
+    assert candidate_leaf_stages["enabled"] is True
+    assert candidate_leaf_stages["top_leaf_candidate_total_ms"][0]["metric"] == (
+        "stage.lm_head_backward.total_ms"
+    )
+    assert candidate_leaf_stages["top_leaf_candidate_total_ms"][1]["metric"] == (
+        "stage.block_backward.mlp_proj.total_ms"
+    )
+    assert all(
+        row["metric"] != "stage.block_backward.total_ms"
+        for row in candidate_leaf_stages["top_leaf_candidate_total_ms"]
+    )
+    assert all(
+        row["metric"] != "setup_wall_ms"
+        for row in candidate_leaf_stages["top_leaf_candidate_total_ms"]
+    )
     assert all(
         row["metric"] != "setup_wall_ms"
         for row in hot_stage_ratios["top_leaf_candidate_total_ms"]
@@ -5123,6 +5139,7 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "native_hot_stage_ratios:" in proc.stdout
     assert "top_candidate_total_ms:" in proc.stdout
     assert "top_leaf_candidate_total_ms:" in proc.stdout
+    assert "candidate_native_leaf_hot_stages:" in proc.stdout
     assert "top_reference_gaps:" in proc.stdout
     assert "top_regressions:" in proc.stdout
     assert "candidate_over_baseline_mean=1.030928x" in proc.stdout

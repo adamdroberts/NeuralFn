@@ -3770,6 +3770,64 @@ def summarize_native_hot_stage_ratios(
     }
 
 
+def summarize_candidate_native_leaf_hot_stages(
+    candidate_summary: dict[str, dict[str, float]],
+    *,
+    limit: int = 12,
+) -> dict[str, object]:
+    rows: list[dict[str, object]] = []
+    row_bases: dict[str, str] = {}
+    for key, stats in candidate_summary.items():
+        if key.startswith("stage.") and key.endswith(".total_ms"):
+            base = key[: -len(".total_ms")]
+        elif key.startswith("setup.") and key.endswith(".total_ms"):
+            base = key[: -len(".total_ms")]
+        else:
+            continue
+        if not isinstance(stats, dict):
+            continue
+        mean_value = stats.get("mean")
+        if not isinstance(mean_value, (int, float)) or isinstance(mean_value, bool):
+            continue
+        row = {
+            "metric": key,
+            "candidate_mean_ms": float(mean_value),
+        }
+        avg_value = stats.get("avg_ms_mean")
+        if isinstance(avg_value, (int, float)) and not isinstance(avg_value, bool):
+            row["candidate_avg_ms"] = float(avg_value)
+        count_value = stats.get("count_mean")
+        if isinstance(count_value, (int, float)) and not isinstance(count_value, bool):
+            row["candidate_count"] = float(count_value)
+        rows.append(row)
+        row_bases[key] = base
+
+    def is_leaf(row: dict[str, object]) -> bool:
+        metric = row.get("metric")
+        if not isinstance(metric, str):
+            return False
+        base = row_bases.get(metric)
+        if base is None:
+            return False
+        for other_metric, other_base in row_bases.items():
+            if other_metric == metric:
+                continue
+            if other_base.startswith(base + "."):
+                return False
+        return True
+
+    leaf_rows = [row for row in rows if is_leaf(row)]
+    return {
+        "enabled": bool(leaf_rows),
+        "limit": int(limit),
+        "top_leaf_candidate_total_ms": sorted(
+            leaf_rows,
+            key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
+            reverse=True,
+        )[:limit],
+    }
+
+
 def _print_native_hot_stage_ratio_row(row: object) -> None:
     if not isinstance(row, dict):
         return
@@ -3814,6 +3872,19 @@ def print_native_hot_stage_ratios(payload: dict[str, object]) -> None:
         print(f"    {label}:")
         for row in rows:
             _print_native_hot_stage_ratio_row(row)
+
+
+def print_candidate_native_leaf_hot_stages(payload: dict[str, object]) -> None:
+    summary = payload.get("candidate_native_leaf_hot_stages")
+    if not isinstance(summary, dict) or not summary.get("enabled"):
+        return
+    rows = summary.get("top_leaf_candidate_total_ms")
+    if not isinstance(rows, list) or not rows:
+        return
+    print("  candidate_native_leaf_hot_stages:")
+    print("    top_leaf_candidate_total_ms:")
+    for row in rows:
+        _print_native_hot_stage_ratio_row(row)
 
 
 def _first_metric_value(
@@ -4834,6 +4905,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         candidate_over_baseline_native_metrics,
         candidate_over_reference_native_metrics if reference is not None else None,
     )
+    payload["candidate_native_leaf_hot_stages"] = summarize_candidate_native_leaf_hot_stages(
+        candidate_native_metrics
+    )
     payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
     payload["candidate_reference_metric_ratio_gates"] = evaluate_metric_ratio_limits(
         payload,
@@ -5059,6 +5133,7 @@ def print_text(payload: dict[str, object]) -> None:
         )
     print_native_hot_summary(payload)
     print_native_hot_stage_ratios(payload)
+    print_candidate_native_leaf_hot_stages(payload)
     print_lm_head_true_fused_target(payload)
     print_lm_head_true_fused_gate(payload)
     print_native_runtime_contract_gate(payload)
