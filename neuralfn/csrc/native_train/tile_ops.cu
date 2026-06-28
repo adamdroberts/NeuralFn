@@ -6672,6 +6672,15 @@ const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class(
                : "diagnostic-cuda-graph-wrapper";
 }
 
+const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class() {
+    if (lm_head_true_fused_cooperative_enabled()) {
+        return "scalar-cooperative-tile-diagnostic";
+    }
+    return lm_head_graph_body_serial_enabled()
+               ? "diagnostic-cuda-graph-wrapper-serial-body"
+               : "diagnostic-cuda-graph-wrapper";
+}
+
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {
     return 3;
 }

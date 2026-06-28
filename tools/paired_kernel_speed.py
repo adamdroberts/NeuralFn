@@ -1090,6 +1090,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_cooperative_backward_graph_prewarm_enabled",
     "lm_head_cooperative_backward_sequence_wrapper_enabled",
     "lm_head_cooperative_backward_fused_kernel_abi_path_class",
+    "lm_head_cooperative_backward_fused_kernel_abi_implementation_class",
     "lm_head_classifier_backward_path_class",
     "lm_head_ce_row_loss_reduction_enabled",
     "lm_head_ce_row_loss_sum_accumulate_enabled",
@@ -1301,6 +1302,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_cooperative_backward_graph_prewarm_enabled",
     "lm_head_cooperative_backward_sequence_wrapper_enabled",
     "lm_head_cooperative_backward_fused_kernel_abi_path_class",
+    "lm_head_cooperative_backward_fused_kernel_abi_implementation_class",
     "lm_head_classifier_backward_path_class",
     "lm_head_classifier_chunk_kernel_available",
     "lm_head_classifier_chunk_kernel_enabled",
@@ -3987,6 +3989,13 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         _first_metric_value(values, "lm_head_cooperative_backward_fused_kernel_abi_path_class")
         or ""
     )
+    abi_implementation_class = (
+        _first_metric_value(
+            values,
+            "lm_head_cooperative_backward_fused_kernel_abi_implementation_class",
+        )
+        or ""
+    )
     true_fused_capability = _observed_bool(
         values,
         "lm_head_cooperative_backward_fused_kernel_capability_available",
@@ -4172,6 +4181,7 @@ def summarize_lm_head_true_fused_target(payload: dict[str, object]) -> dict[str,
         "status": status,
         "path_class": path_class,
         "abi_path_class": abi_path_class,
+        "abi_implementation_class": abi_implementation_class,
         "true_fused_capability": true_fused_capability,
         "symbol_available": symbol_available,
         "graph_wrapper_active": graph_wrapper_active,
@@ -4286,6 +4296,7 @@ def evaluate_lm_head_true_fused_gate(
         failure_reason = (
             "candidate native LM-head backward is not strict true-fused Tile "
             f"(status={status}, path_class={target.get('path_class', '')}, "
+            f"abi_implementation_class={target.get('abi_implementation_class', '')}, "
             f"true_fused_capability={target.get('true_fused_capability')}, "
             f"true_fused_launch_mean={target.get('true_fused_launch_mean')})"
         )

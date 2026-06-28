@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Native GPT Tile ABI: added
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class()`
+  beside the existing LM-head fused path-class ABI. Dense GPT plan/runtime JSON
+  now reports
+  `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, paired
+  kernel speed summaries preserve that field, and the optimized-kernel contract
+  rejects launches of the current `scalar-cooperative-tile-diagnostic`
+  true-fused body so it cannot be mistaken for a production optimized Tile
+  kernel. The diagnostic CUDA Graph wrapper remains the current promoted
+  route; strict true-fused LM-head parity is still an open kernel task.
+  Verification: `bash tools/build_native_train_tile_ops.sh`,
+  `bash tools/build_native_gpt2_all.sh`,
+  `nm -D build/libnfn_native_train_tile_ops.so | rg
+  "nfn_native_tile_lm_head_classifier_backward_fused_kernel_(implementation_class|path_class)"`,
+  `build/nfn_gpt_native_train --print-plan --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_cooperative_abi or
+  native_train_model_registry or paired_speed_benchmark"`, and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`; the full
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q` module also passed with `113 passed, 2
+  skipped`.
+
 - Native GPT SDK: corrected the unified native model registry so dense GPT
   selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`) all report
   `geometry_status: "dense-gpt-template-geometry"` in both the compiled

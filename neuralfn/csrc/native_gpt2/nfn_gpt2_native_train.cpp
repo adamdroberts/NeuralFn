@@ -139,6 +139,8 @@ constexpr const char* kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused";
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedPathClassSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class";
+constexpr const char* kLmHeadCooperativeBackwardTrueFusedImplementationClassSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class";
 constexpr const char* kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count";
 constexpr const char* kLmHeadCooperativeBackwardGraphBodyCeNodeCountSymbol =
@@ -4477,6 +4479,7 @@ bool print_tile_plan(
     bool linear_tk_sm120_fast_dgelu_enabled = false;
     bool linear_tk_sm120_approx_dgelu_tanh_enabled = false;
     std::string cooperative_lm_head_backward_fused_kernel_abi_path_class = "missing";
+    std::string cooperative_lm_head_backward_fused_kernel_abi_implementation_class = "missing";
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     const std::vector<std::string> optimizer_contract_symbols =
@@ -4511,11 +4514,19 @@ bool print_tile_plan(
             auto true_fused_path_class =
                 reinterpret_cast<LmHeadFusedKernelPathClassFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardTrueFusedPathClassSymbol));
+            auto true_fused_implementation_class =
+                reinterpret_cast<LmHeadFusedKernelPathClassFn>(
+                    dlsym(handle, kLmHeadCooperativeBackwardTrueFusedImplementationClassSymbol));
             auto llmk_parity_capability =
                 reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
                     dlsym(handle, kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol));
             if (true_fused_path_class != nullptr && true_fused_path_class() != nullptr) {
                 cooperative_lm_head_backward_fused_kernel_abi_path_class = true_fused_path_class();
+            }
+            if (true_fused_implementation_class != nullptr &&
+                true_fused_implementation_class() != nullptr) {
+                cooperative_lm_head_backward_fused_kernel_abi_implementation_class =
+                    true_fused_implementation_class();
             }
             cooperative_lm_head_backward_true_fused_kernel_capable =
                 cooperative_lm_head_backward_true_fused_kernel_found &&
@@ -4710,6 +4721,8 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_true_fused_kernel_capable ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
         << json_escape(cooperative_lm_head_backward_fused_kernel_abi_path_class) << "\",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\": \""
+        << json_escape(cooperative_lm_head_backward_fused_kernel_abi_implementation_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
         << (cooperative_lm_head_backward_llmk_parity_capable ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
@@ -12556,6 +12569,7 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_true_fused_capability = nullptr;
     LmHeadFusedKernelPathClassFn lm_head_classifier_backward_true_fused_path_class = nullptr;
+    LmHeadFusedKernelPathClassFn lm_head_classifier_backward_true_fused_implementation_class = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_node_count_fn = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_ce_node_count_fn = nullptr;
     LmHeadTrueFusedCapabilityFn lm_head_classifier_backward_graph_body_dhidden_node_count_fn = nullptr;
@@ -13367,6 +13381,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadFusedKernelPathClassFn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardTrueFusedPathClassSymbol);
+                lm_head_classifier_backward_true_fused_implementation_class =
+                    load_symbol<LmHeadFusedKernelPathClassFn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardTrueFusedImplementationClassSymbol);
                 lm_head_classifier_backward_graph_body_node_count_fn =
                     load_symbol<LmHeadTrueFusedCapabilityFn>(
                         tile_handle,
@@ -14309,6 +14327,11 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_true_fused_path_class != nullptr &&
                 lm_head_classifier_backward_true_fused_path_class() != nullptr
             ? std::string(lm_head_classifier_backward_true_fused_path_class())
+            : std::string("missing");
+    const std::string lm_head_cooperative_backward_fused_kernel_abi_implementation_class =
+        lm_head_classifier_backward_true_fused_implementation_class != nullptr &&
+                lm_head_classifier_backward_true_fused_implementation_class() != nullptr
+            ? std::string(lm_head_classifier_backward_true_fused_implementation_class())
             : std::string("missing");
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
@@ -23187,6 +23210,14 @@ int run_transformer_lm_training_json(
                 "basic TF32/SGEMM linear fallback launched " +
                 std::to_string(linear_sgemm_count) + " time(s)");
         }
+        if (lm_head_classifier_true_fused_launch_count > 0 &&
+            lm_head_cooperative_backward_fused_kernel_abi_implementation_class ==
+                "scalar-cooperative-tile-diagnostic") {
+            violations.push_back(
+                "scalar diagnostic LM-head true-fused body launched " +
+                std::to_string(lm_head_classifier_true_fused_launch_count) +
+                " time(s)");
+        }
         if (!violations.empty()) {
             optimized_kernel_contract_passed = false;
             std::ostringstream out;
@@ -24246,6 +24277,8 @@ int run_transformer_lm_training_json(
         << (lm_head_true_fused_cooperative_production_ready ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_fused_kernel_abi_path_class\": \""
         << json_escape(lm_head_cooperative_backward_fused_kernel_abi_path_class) << "\",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\": \""
+        << json_escape(lm_head_cooperative_backward_fused_kernel_abi_implementation_class) << "\",\n"
         << "  \"lm_head_llmk_classifier_matmul_parity_available\": "
         << (lm_head_llmk_classifier_matmul_parity_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "

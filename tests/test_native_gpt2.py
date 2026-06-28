@@ -2352,6 +2352,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in source
     assert "lm_head_classifier_backward_path_class" in source
     assert "lm_head_cooperative_backward_fused_kernel_abi_path_class" in source
+    assert "lm_head_cooperative_backward_fused_kernel_abi_implementation_class" in source
+    assert '\\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\\"' in source
+    assert "scalar diagnostic LM-head true-fused body launched" in source
     assert "strict-true-fused-tile-kernel" in source
     assert "diagnostic-cuda-graph-wrapper" in source
     assert "diagnostic-cublaslt-sequence-wrapper" in source
@@ -2419,6 +2422,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class" in tile_ops_header
+    assert "scalar-cooperative-tile-diagnostic" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_true_fused_launch_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_true_fused_ce_cycles" in tile_ops_source
@@ -2449,6 +2455,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_dweight_node_count" in tile_ops_header
     assert "kLmHeadCooperativeBackwardTrueFusedPathClassSymbol" in source
+    assert "kLmHeadCooperativeBackwardTrueFusedImplementationClassSymbol" in source
     assert "kLmHeadCooperativeBackwardGraphBodyNodeCountSymbol" in source
     assert "candidate_symbol_abi_path_class" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
     assert "true_fused_ce_cycles_per_block" in (root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp").read_text(encoding="utf-8")
@@ -2554,6 +2561,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class() {\n"
         "    if (lm_head_true_fused_cooperative_enabled()) {\n"
         '        return "strict-true-fused-tile-kernel";'
+    ) in tile_ops_source
+    assert (
+        "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class() {\n"
+        "    if (lm_head_true_fused_cooperative_enabled()) {\n"
+        '        return "scalar-cooperative-tile-diagnostic";'
     ) in tile_ops_source
     assert '"diagnostic-cuda-graph-wrapper"' in tile_ops_source
     assert (
@@ -2842,6 +2854,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
     assert "lm_head_classifier_backward_path_class" in speed_tool
     assert "lm_head_cooperative_backward_fused_kernel_abi_path_class" in speed_tool
+    assert "lm_head_cooperative_backward_fused_kernel_abi_implementation_class" in speed_tool
+    assert "abi_implementation_class" in speed_tool
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
     assert "lm_head_prob_only_target_correction_threads" in speed_tool
@@ -11304,8 +11318,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--require-optimized-kernels" in gpt2_source_text
     assert "optimized native GPT kernel contract failed" in gpt2_source_text
     assert "basic TF32/SGEMM linear fallback launched" in gpt2_source_text
+    assert "scalar diagnostic LM-head true-fused body launched" in gpt2_source_text
     assert '\\"optimized_kernel_contract_required\\"' in gpt2_source_text
     assert '\\"optimized_kernel_contract_passed\\"' in gpt2_source_text
+    assert '\\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\\"' in gpt2_source_text
     assert "--allow-scalar-attention-fallback" in gpt2_source_text
     assert "optimized attention required, but scalar attention fallback launched" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text

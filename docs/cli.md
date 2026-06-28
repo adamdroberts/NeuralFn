@@ -842,11 +842,17 @@ Dense GPT-2-compatible selectors, including `gpt2_modern`, report
 Normal dense GPT native training requires the optimized CUDA Tile contract by
 default. The compiled trainer fails instead of silently using basic routes when
 the optimized AdamW ABI is missing, attention row/scalar fallbacks launch, or
-the linear path uses TF32/SGEMM fallback. Plan and runtime JSON expose
+the linear path uses TF32/SGEMM fallback. It also fails if the LM-head
+true-fused launch counter is nonzero while the Tile ops ABI identifies the
+implementation as `scalar-cooperative-tile-diagnostic`; that diagnostic body is
+not an optimized production kernel. Plan and runtime JSON expose
 `optimized_kernel_contract_required`,
 `optimized_kernel_contract_basic_fallback_allowed`,
 `optimized_kernel_contract_passed`, and
-`optimized_kernel_contract_error`. Use `--allow-basic-kernel-fallback` only for
+`optimized_kernel_contract_error`, plus
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class` beside
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`. Use
+`--allow-basic-kernel-fallback` only for
 diagnostic runs or same-script rejected-candidate bisection.
 Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to
 verify the raw evo mutate/select/adopt ABI on CUDA device buffers without
@@ -1271,8 +1277,13 @@ still fails until a real fused capability replaces the graph wrapper.
 The companion ABI function
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_path_class()` returns
 `diagnostic-cuda-graph-wrapper` on current builds. Runtime JSON reports that as
-`lm_head_cooperative_backward_fused_kernel_abi_path_class`, and the focused
-LM-head backward benchmark reports the same value as
+`lm_head_cooperative_backward_fused_kernel_abi_path_class`. The companion
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class()`
+ABI reports `diagnostic-cuda-graph-wrapper`,
+`diagnostic-cuda-graph-wrapper-serial-body`, or
+`scalar-cooperative-tile-diagnostic`; runtime JSON mirrors it as
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, and the
+focused LM-head backward benchmark reports the path class as
 `candidate_symbol_abi_path_class`.
 Strict true-fused cooperative smoke profiles additionally report
 `true_fused_launch_count` for each focused LM-head benchmark variant. The field

@@ -1188,7 +1188,12 @@ LM-head Tile ops graph and true-fused diagnostic flags are sampled once per
 process after loading the Tile ops library, so set graph upload, prewarm thread
 cache, serial graph body, cuBLASLt graph body, and true-fused cooperative flags
 before launching native training rather than mutating the process environment
-mid-run.
+mid-run. The same Tile ops ABI exports
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class()`;
+runtime JSON mirrors it as
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class` so SDK and
+CLI callers can distinguish diagnostic CUDA Graph wrappers from the
+`scalar-cooperative-tile-diagnostic` body.
 For SDK launches through `NativeGpt2RunConfig` or the generic
 `NativeGptRunConfig`, `batch_size_explicit`, `seq_len_explicit`, and
 `num_layers_explicit` control whether the compiled CLI receives those shape
@@ -2488,6 +2493,8 @@ emitted paired benchmark JSON for the promoted dense-GPT route contract:
 `train_loss_host_d2h_count: 0`,
 `optimizer_tile_strategy: "tile-size-1024-sumsq-scale-adamw"`,
 `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`, a
+non-scalar
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, a
 current promoted no-loss vec8 normal-store BF16/u16
 `lm_head_ce_kernel_strategy:
 "no-loss-specialized-dlogits-vec8-loads-normal-vec8-stores"`, successful
@@ -2707,6 +2714,8 @@ confirm default changes with no-stage multi-sample runs. Both runs kept
 `graph_editor_tensor_flow=false` and `torch_required=false`. The strict
 single-kernel LM-head target is still open: the same JSON reports
 `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class:
+"diagnostic-cuda-graph-wrapper"`,
 `graph_body_nodes_per_replay_mean: 3`, and `true_fused_capability: false`, so
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still needs
 a bounded true-fused Tile body before `--require-native-lm-head-true-fused`
@@ -2719,7 +2728,11 @@ can become a production gate. The paired speed summary also reports
 `graph_body_cublaslt_launch_mean` and `graph_body_tile_fallback_mean` from the
 dHidden/dWeight graph-body route counters, so a CUDA Tile candidate can
 distinguish setup/capture movement, cuBLASLt graph-body experiments, and
-default Tile fallback work in the same JSON block.
+default Tile fallback work in the same JSON block. The paired helper also
+promotes
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class`, and its
+strict true-fused failure message includes `abi_implementation_class` when a
+candidate still routes through a diagnostic implementation.
 The historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
 is rejected by default for real candidate-wrapper launches after the CUDA
 13.3 dedicated RTX 5090 confirmation changed the route but missed strict train-loop,
