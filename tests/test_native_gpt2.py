@@ -2536,10 +2536,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "candidate_true_fused_production_env="
         "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1"
     ) in bench_source
-    assert "focused trainer-chunk preflight proved the default 32x32 strict body" in bench_source
-    assert "6.708146x candidate/current-wrapper" in bench_source
-    assert "22.033921x candidate/reference-summed time" in bench_source
-    assert "753.913597 ms slower than the reference CE+dHidden+dWeight components" in bench_source
+    assert "focused trainer-chunk preflight at the current 28672-row LM-head chunk" in bench_source
+    assert "6.155991x candidate/current-wrapper" in bench_source
+    assert "22.242162x candidate/reference-summed time" in bench_source
+    assert "658.998471 ms slower than the reference CE+dHidden+dWeight components" in bench_source
     assert "full-loop gate also regressed train_loop_wall_ms_per_step to 5.991992x" in bench_source
     assert "stage.lm_head_backward.total_ms to 22.660619x" in bench_source
     assert "must remain rejected until it passes the promotion gate" in bench_source

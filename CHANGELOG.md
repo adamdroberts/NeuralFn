@@ -511,19 +511,21 @@ Future updates should append new entries here rather than replacing older notes.
   bash tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090.
 
 - Bench: refreshed the focused strict true-fused LM-head evidence for the
-  default 32x32 diagnostic body. The current CUDA 13.3.33 dedicated RTX 5090
-  trainer-chunk preflight still proves the strict ABI route with
+  default 32x32 diagnostic body at the current 28672-row trainer chunk. The
+  current CUDA 13.3.33 dedicated RTX 5090 trainer-chunk preflight still proves
+  the strict ABI route with
   `candidate_true_fused_capability=true` and
   `candidate_path_class=strict-true-fused-tile-kernel`, but rejects it at
-  `6.708146x` candidate/current-wrapper time and `22.033921x`
-  candidate/reference-summed time, with the strict body `753.913597 ms` slower
+  `6.155991x` candidate/current-wrapper time and `22.242162x`
+  candidate/reference-summed time, with the strict body `658.998471 ms` slower
   than the reference CE+dHidden+dWeight components. The LM-head focused wrapper,
-  SM120 full-loop candidate wrapper, and CUDA Tile tracker now carry that
-  current rejection evidence so the diagnostic body is not mistaken for a
-  promotable production kernel. Verification: ran
+  SM120 full-loop candidate wrapper, and CUDA Tile tracker now carry the
+  corrected-shape rejection evidence so the diagnostic body is not mistaken for
+  a promotable production kernel. Verification: ran
   `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused
   NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1
   NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_true_fused_28672_probe.json
   bash tools/bench_lm_head_backward_candidate.sh` on the dedicated RTX 5090.
 
 - Native CLI: `tools/train_gpt_sm120.sh` now keeps its explicit Bash fallback in
