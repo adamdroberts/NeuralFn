@@ -2654,6 +2654,19 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `candidate_to_baseline_ms_per_iter_ratio: 0.999499` at 28672 rows and kept
     `graph_fallback_count: 0`, so the benchmark-shape change preserves the
     current wrapper while making future strict-body probes honest.
+  - 2026-06-28 continuation probe after the CUDA 13.3 reinstall and latest
+    validator updates: a one-step, one-sample stage-timed same-script run
+    (`/tmp/nfn_sm120_stage_probe_continue_20260628.json`) selected the
+    display-disabled RTX 5090 with no compute processes and measured
+    llm.kittens at `2449.760 ms/step` versus NeuralFn at
+    `2579.740 ms/step` (`1.053058x` train-loop wall,
+    `0.949616x` tokens/sec). NeuralFn remained native-only with no route
+    counter changes; the current hot buckets were `stage.block_backward` at
+    about `1314 ms` and `stage.lm_head_backward` at about `572 ms`
+    (`logits` about `177 ms`, cooperative graph body about `394 ms`). This
+    keeps the next implementation target on real LM-head/block-backward hot
+    kernels, not startup, graph-editor tensor flow, Torch fallback, or external
+    GPU load.
   - 2026-06-23 added the dedicated linear-backward microbench to keep the next
     kernel work honest: candidate dInput/dWeight symbols for block backward and
     LM-head can now be timed against the current C ABI without dataset loading,
