@@ -2817,7 +2817,11 @@ the same defaults. Use either for the lowest-overhead workstation path:
 `build/nfn_train_gpt_sm120` or `NFN_NATIVE_SM120_CLI` is executable, so the
 shell path does not re-parse the SM120 defaults before the native handoff. Set
 `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser for
-diagnostics. When `CUDA_VISIBLE_DEVICES` is unset, both the compiled launcher
+diagnostics; that fallback now resolves the same
+`NFN_NATIVE_GPT_*`, `NFN_SM120_NATIVE_*`, and `NFN_SM120_*` aliases for
+shape, eval/sample/checkpoint cadence, optimizer schedule, train-loss logging,
+template/model selection, graph path, output directory, and dataset alias before
+forwarding the native command. When `CUDA_VISIBLE_DEVICES` is unset, both the compiled launcher
 and the shell fallback resolve `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES`,
 defaulting to ordinal `0` so the normal workstation path does not spawn

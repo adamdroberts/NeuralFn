@@ -4708,6 +4708,77 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert generic_args[generic_args.index("--train-batch-tokens") + 1] == "524288"
 
 
+def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    fake_native = tmp_path / "nfn_gpt_native_train"
+    observed = tmp_path / "native-argv.txt"
+    fake_native.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n",
+        encoding="utf-8",
+    )
+    fake_native.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_USE_COMPILED_LAUNCHER": "0",
+            "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
+            "NFN_TEST_NATIVE_GPT_ARGV": str(observed),
+            "NFN_NATIVE_GPT_DATASET_ALIAS": "/tmp/native-cache",
+            "NFN_NATIVE_GPT_MODEL_FAMILY": "gpt3",
+            "NFN_NATIVE_GPT_TEMPLATE_NAME": "gpt3",
+            "NFN_NATIVE_GPT_BATCH_SIZE": "32",
+            "NFN_NATIVE_GPT_TRAIN_SEQ_LEN": "2048",
+            "NFN_SM120_NATIVE_EVAL_EVERY_STEPS": "1000",
+            "NFN_SM120_NATIVE_EVAL_BATCHES": "7",
+            "NFN_SM120_NATIVE_SAMPLE_EVERY": "0",
+            "NFN_SM120_NATIVE_GENERATE_TOKENS": "32",
+            "NFN_SM120_NATIVE_CHECKPOINT_EVERY": "0",
+            "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS": "262144",
+            "NFN_SM120_NATIVE_LEARNING_RATE": "0.0003",
+            "NFN_SM120_NATIVE_FINAL_LR_FRACTION": "0.1",
+            "NFN_SM120_NATIVE_WEIGHT_DECAY": "0.2",
+            "NFN_SM120_NATIVE_WARMUP_STEPS": "12",
+            "NFN_SM120_NATIVE_MAX_STEPS": "123",
+            "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS": "50",
+        }
+    )
+    proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh")],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    args = observed.read_text(encoding="utf-8").splitlines()
+    expected_pairs = {
+        "--model-family": "gpt3",
+        "--template-name": "gpt3",
+        "--dataset-alias": "/tmp/native-cache",
+        "--eval-every-steps": "1000",
+        "--eval-batches": "7",
+        "--native-cuda-sample-every": "0",
+        "--native-cuda-generate-tokens": "32",
+        "--native-cuda-checkpoint-every": "0",
+        "--train-batch-tokens": "262144",
+        "--learning-rate": "0.0003",
+        "--final-lr-fraction": "0.1",
+        "--weight-decay": "0.2",
+        "--warmup-steps": "12",
+        "--max-steps": "123",
+        "--train-loss-every-steps": "50",
+        "--batch-size": "32",
+        "--train-seq-len": "2048",
+    }
+    for flag, value in expected_pairs.items():
+        assert args[args.index(flag) + 1] == value
+    assert "--train-transformer-lm" in args
+
+
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
     cfg = build_native_train_run_config(
         "gpt",

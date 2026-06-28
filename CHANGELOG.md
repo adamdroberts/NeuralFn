@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native CLI: `tools/train_gpt_sm120.sh` now keeps its explicit Bash fallback in
+  lockstep with the compiled `nfn_train_gpt_sm120` launcher. When
+  `NFN_SM120_USE_COMPILED_LAUNCHER=0` is set for diagnostics, the fallback
+  resolves the same `NFN_NATIVE_GPT_*`, `NFN_SM120_NATIVE_*`, and
+  `NFN_SM120_*` aliases for shape, validation/sample/checkpoint cadence,
+  train-loss logging, optimizer schedule, model/template selectors, graph path,
+  dataset alias, and output directory before execing the native CUDA Tile
+  trainer. This prevents the diagnostic shell path from silently reverting to
+  hardcoded llm.kittens defaults when the compiled no-Python launcher is
+  disabled. Verification: focused SM120 launcher pytest coverage plus shell
+  syntax and no-Torch entrypoint checks.
+
 - Bench: refreshed the CUDA 13.3.33 dedicated-RTX-5090 no-stage parity and
   cuBLASLt waves-policy evidence after the latest native defaults. The canonical
   llm.kittens parity wrapper passed with `graph_editor_tensor_flow=false`,
