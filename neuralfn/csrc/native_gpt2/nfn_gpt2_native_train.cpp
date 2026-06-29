@@ -23476,6 +23476,29 @@ int run_transformer_lm_training_json(
                 "basic TF32/SGEMM linear fallback launched " +
                 std::to_string(linear_sgemm_count) + " time(s)");
         }
+        const bool lm_head_optimized_route_required =
+            !cfg.startup_only && steps_completed > 0;
+        if (lm_head_optimized_route_required &&
+            lm_head_bf16_logits_enabled &&
+            lm_head_logits_tk_gemm_count <= 0 &&
+            lm_head_logits_cublaslt_gemm_count <= 0) {
+            violations.push_back(
+                "LM-head logits did not use TK SM120 or cuBLASLt BF16 GEMM");
+        }
+        if (lm_head_optimized_route_required &&
+            lm_head_ce_no_loss_runtime_enabled &&
+            !lm_head_ce_no_loss_llmk_style_specialized_runtime_enabled) {
+            violations.push_back(
+                "LM-head no-loss CE did not use the llm.kittens-style specialized dlogits kernel");
+        }
+        if (lm_head_optimized_route_required && !lm_head_prepack_bf16_hidden_enabled) {
+            violations.push_back(
+                "LM-head dWeight did not use full-microbatch BF16 hidden prepack");
+        }
+        if (lm_head_optimized_route_required && !lm_head_bf16_dweight_enabled) {
+            violations.push_back(
+                "LM-head dWeight did not use the BF16 dlogit/dWeight route");
+        }
         if (lm_head_classifier_true_fused_launch_count > 0 &&
             lm_head_cooperative_backward_fused_kernel_abi_implementation_class ==
                 "scalar-cooperative-tile-diagnostic") {

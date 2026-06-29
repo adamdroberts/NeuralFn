@@ -842,10 +842,14 @@ Dense GPT-2-compatible selectors, including `gpt2_modern`, report
 Normal dense GPT native training requires the optimized CUDA Tile contract by
 default. The compiled trainer fails instead of silently using basic routes when
 the optimized AdamW ABI is missing, attention row/scalar fallbacks launch, or
-the linear path uses TF32/SGEMM fallback. It also fails if the LM-head
-true-fused launch counter is nonzero while the Tile ops ABI identifies the
-implementation as `scalar-cooperative-tile-diagnostic`; that diagnostic body is
-not an optimized production kernel. Plan and runtime JSON expose
+the linear path uses TF32/SGEMM fallback. It also fails real training runs if
+the LM-head logits route does not use TK SM120 or cuBLASLt BF16 GEMM, if the
+accepted no-loss CE path is not the llm.kittens-style specialized dlogits
+kernel, or if the default BF16 hidden-prepack/BF16 dWeight route is disabled.
+It also fails if the LM-head true-fused launch counter is nonzero while the
+Tile ops ABI identifies the implementation as
+`scalar-cooperative-tile-diagnostic`; that diagnostic body is not an optimized
+production kernel. Plan and runtime JSON expose
 `optimized_kernel_contract_required`,
 `optimized_kernel_contract_basic_fallback_allowed`,
 `optimized_kernel_contract_passed`, and

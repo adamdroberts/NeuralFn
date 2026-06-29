@@ -3893,6 +3893,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         encoding="utf-8"
     )
     speed_source = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
+    native_source = (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
     assert "NATIVE_HOT_SUMMARY_METRIC_KEYS" in speed_source
     assert "float_arena_cuda_malloc_wall_ms" in speed_source
     assert "float_arena_pointer_assign_wall_ms" in speed_source
@@ -3909,6 +3912,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "train_steady_state_tokens_per_second" in speed_source
     assert "setup_amortized_train_tokens_per_second" in speed_source
     assert "projected_20k_setup_amortized_tokens_per_second" in speed_source
+    assert "LM-head logits did not use TK SM120 or cuBLASLt BF16 GEMM" in native_source
+    assert (
+        "LM-head no-loss CE did not use the llm.kittens-style specialized dlogits kernel"
+        in native_source
+    )
+    assert "LM-head dWeight did not use full-microbatch BF16 hidden prepack" in native_source
+    assert "LM-head dWeight did not use the BF16 dlogit/dWeight route" in native_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
     assert "USER_SAMPLES_SET=0" in bench_source
     assert "DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0" in bench_source
@@ -12341,6 +12351,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--require-optimized-kernels" in gpt2_source_text
     assert "optimized native GPT kernel contract failed" in gpt2_source_text
     assert "basic TF32/SGEMM linear fallback launched" in gpt2_source_text
+    assert "LM-head logits did not use TK SM120 or cuBLASLt BF16 GEMM" in gpt2_source_text
+    assert (
+        "LM-head no-loss CE did not use the llm.kittens-style specialized dlogits kernel"
+        in gpt2_source_text
+    )
+    assert "LM-head dWeight did not use full-microbatch BF16 hidden prepack" in gpt2_source_text
+    assert "LM-head dWeight did not use the BF16 dlogit/dWeight route" in gpt2_source_text
     assert "scalar diagnostic LM-head true-fused body launched" in gpt2_source_text
     assert '\\"optimized_kernel_contract_required\\"' in gpt2_source_text
     assert '\\"optimized_kernel_contract_passed\\"' in gpt2_source_text

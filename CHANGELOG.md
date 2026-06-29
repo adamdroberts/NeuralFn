@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT optimized-kernel contract: real dense GPT training runs that
+  require optimized kernels now fail if the LM-head logits route does not use
+  TK SM120 or cuBLASLt BF16 GEMM, if no-loss CE misses the accepted
+  llm.kittens-style specialized dlogits kernel, or if the BF16 hidden-prepack /
+  BF16 dWeight route is disabled. This tightens the default native trainer
+  contract so basic LM-head fallback routes cannot pass as optimized training.
+  Verification: focused native GPT source-contract pytest, native rebuild, and
+  CUDA smoke with `optimized_kernel_contract_passed=true`.
+
 - Native GPT timing metrics: dense GPT native training JSON now emits
   `train_loop_wall_ms_per_step`, `train_first_step_tokens_per_second`,
   `train_steady_state_tokens_per_second`, `setup_plus_train_loop_wall_ms`,

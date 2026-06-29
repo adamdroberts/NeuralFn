@@ -168,7 +168,10 @@ metrics when testing startup shortcuts: a route that reduces `setup_wall_ms`
 but increases the first optimizer step should fail the combined metric instead
 of hiding the cost shift. Native benchmark promotion also requires
 `optimized_kernel_contract_passed=true`, so scalar/basic fallback routes cannot
-pass as kernel improvements. The built-in `fast_startup_full`,
+pass as kernel improvements. The optimized contract now also guards real
+training runs against LM-head fallback by requiring TK SM120 or cuBLASLt BF16
+logits GEMM, the accepted llm.kittens-style no-loss CE/dlogits kernel, and the
+default BF16 hidden-prepack/BF16 dWeight route. The built-in `fast_startup_full`,
 `tk_qkv_forward_prewarm`, cuBLASLt plan-prewarm bisections, and default-on
 `lm_head_graph_prewarm` profile gate `startup_plus_first_step_wall_ms=1.000`
 by default. `--dry-run-plan` output also prints the configured metric-ratio

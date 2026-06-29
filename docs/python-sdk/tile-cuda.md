@@ -2473,7 +2473,11 @@ including `graph_editor_tensor_flow`, `torch_required`,
 `optimized_kernel_contract_passed`,
 `attention_backward_dprep_default_warps_per_block`, `sm120_memory_block_size`,
 and `sm120_layernorm_bwd_blocks_per_sm`, so stale binaries cannot pass the
-artifact check after native contract fields change. It also budget-checks direct
+artifact check after native contract fields change. Real optimized-kernel runs
+also fail if the LM-head logits route misses TK SM120/cuBLASLt BF16 GEMM, the
+accepted no-loss CE/dlogits path misses the llm.kittens-style specialized
+kernel, or the default BF16 hidden-prepack/BF16 dWeight route is disabled. It
+also budget-checks direct
 native trainer metadata startup through
 `build/nfn_gpt_native_train_linked --list-templates`,
 `build/nfn_gpt2_native_train --list-templates`, and
