@@ -318,7 +318,10 @@ handoff is disabled, the 128-row LayerNorm or 512-thread bias reducers change,
 the LM-head chunk leaves the promoted 28672-row schedule, thresholded
 `cudaMallocAsync` falls back, pageable token staging is lost, the padded
 BF16-pattern token initializer changes, or fused token-weight BF16 shadow AdamW
-refresh stops running.
+refresh stops running. It also fails if root-level startup/train timing fields
+such as `setup_wall_ms`, `setup_timing_record_count`, `train_loop_wall_ms`, or
+`total_wall_ms` disappear from runtime or paired benchmark JSON, so performance
+automation can gate those metrics without nested-field fallback logic.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
 the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
 gates, but was still flat/slightly slower versus the current linked native

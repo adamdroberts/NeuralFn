@@ -188,6 +188,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 payload = json.loads(path.read_text(encoding="utf-8"))
 block_state = payload.get("block_state_layout") or {}
+timing = payload.get("timing") or {}
 
 checks = [
     (
@@ -205,6 +206,39 @@ checks = [
     (
         payload.get("train_loss_host_d2h_count") == 0,
         "runtime contract must keep train_loss_host_d2h_count=0",
+    ),
+    (
+        isinstance(payload.get("setup_wall_ms"), (int, float))
+        and payload.get("setup_wall_ms") == timing.get("setup_wall_ms"),
+        "runtime contract must expose setup_wall_ms at the JSON root",
+    ),
+    (
+        isinstance(payload.get("setup_timing_accounted_ms"), (int, float))
+        and payload.get("setup_timing_accounted_ms")
+        == timing.get("setup_timing_accounted_ms"),
+        "runtime contract must expose setup_timing_accounted_ms at the JSON root",
+    ),
+    (
+        isinstance(payload.get("setup_timing_unattributed_ms"), (int, float))
+        and payload.get("setup_timing_unattributed_ms")
+        == timing.get("setup_timing_unattributed_ms"),
+        "runtime contract must expose setup_timing_unattributed_ms at the JSON root",
+    ),
+    (
+        isinstance(payload.get("setup_timing_record_count"), int)
+        and payload.get("setup_timing_record_count")
+        == timing.get("setup_timing_record_count"),
+        "runtime contract must expose setup_timing_record_count at the JSON root",
+    ),
+    (
+        isinstance(payload.get("train_loop_wall_ms"), (int, float))
+        and payload.get("train_loop_wall_ms") == timing.get("train_loop_wall_ms"),
+        "runtime contract must expose train_loop_wall_ms at the JSON root",
+    ),
+    (
+        isinstance(payload.get("total_wall_ms"), (int, float))
+        and payload.get("total_wall_ms") == timing.get("total_wall_ms"),
+        "runtime contract must expose total_wall_ms at the JSON root",
     ),
     (
         payload.get("native_auto_fast_startup_short_run") is True,
@@ -379,6 +413,30 @@ checks = [
     (
         metric_mean("train_loss_host_d2h_count") == 0.0,
         "training loss accumulation must stay device-resident with train_loss_host_d2h_count=0",
+    ),
+    (
+        metric_mean("setup_wall_ms") is not None,
+        "native benchmark JSON must surface root setup_wall_ms",
+    ),
+    (
+        metric_mean("setup_timing_accounted_ms") is not None,
+        "native benchmark JSON must surface root setup_timing_accounted_ms",
+    ),
+    (
+        metric_mean("setup_timing_unattributed_ms") is not None,
+        "native benchmark JSON must surface root setup_timing_unattributed_ms",
+    ),
+    (
+        metric_mean("setup_timing_record_count") is not None,
+        "native benchmark JSON must surface root setup_timing_record_count",
+    ),
+    (
+        metric_mean("train_loop_wall_ms") is not None,
+        "native benchmark JSON must surface root train_loop_wall_ms",
+    ),
+    (
+        metric_mean("total_wall_ms") is not None,
+        "native benchmark JSON must surface root total_wall_ms",
     ),
     (
         value("optimizer_tile_strategy") == "tile-size-1024-sumsq-scale-adamw",

@@ -13000,7 +13000,11 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
         "\"train_loss_host_d2h_count\":0,"
-        "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
+        "\"setup_wall_ms\":0.1,"
+        "\"setup_timing_accounted_ms\":0.08,"
+        "\"setup_timing_unattributed_ms\":0.02,"
+        "\"setup_timing_record_count\":3,"
+        "\"train_loop_wall_ms\":1,\"total_wall_ms\":1.2,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )
     baseline.chmod(0o755)
@@ -13035,6 +13039,9 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert "torch_required: expected=false observed=false passed=true" in passing.stdout
     assert "optimized_kernel_contract_passed: expected=true observed=true passed=true" in passing.stdout
     assert "train_loss_host_d2h_count: expected=0 observed=0 passed=true" in passing.stdout
+    assert "setup_wall_ms: expected=present observed=0.1 passed=true" in passing.stdout
+    assert "setup_timing_record_count: expected=present observed=3.0 passed=true" in passing.stdout
+    assert "total_wall_ms: expected=present observed=1.2 passed=true" in passing.stdout
 
     candidate.write_text(
         "#!/bin/sh\n"
@@ -13042,6 +13049,11 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "\"graph_editor_tensor_flow\":true,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
         "\"train_loss_host_d2h_count\":1,"
+        "\"setup_wall_ms\":0.1,"
+        "\"setup_timing_accounted_ms\":0.08,"
+        "\"setup_timing_unattributed_ms\":0.02,"
+        "\"setup_timing_record_count\":3,"
+        "\"total_wall_ms\":1.2,"
         "\"train_loop_wall_ms\":1,\"steps_completed\":1}'\n",
         encoding="utf-8",
     )

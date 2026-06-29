@@ -44,7 +44,7 @@ class MetricRatioLimit:
 
 NATIVE_METRIC_PATHS = (
     ("steps_completed", ("steps_completed",)),
-    ("train_loop_wall_ms", ("timing", "train_loop_wall_ms")),
+    ("train_loop_wall_ms", ("train_loop_wall_ms",)),
     (
         "train_loop_cuda_event_wall_ms",
         ("timing", "train_loop_cuda_event_wall_ms"),
@@ -73,7 +73,10 @@ NATIVE_METRIC_PATHS = (
         "train_loop_cuda_event_timing_enabled",
         ("timing", "train_loop_cuda_event_timing_enabled"),
     ),
-    ("setup_wall_ms", ("timing", "setup_wall_ms")),
+    ("setup_wall_ms", ("setup_wall_ms",)),
+    ("setup_timing_accounted_ms", ("setup_timing_accounted_ms",)),
+    ("setup_timing_unattributed_ms", ("setup_timing_unattributed_ms",)),
+    ("setup_timing_record_count", ("setup_timing_record_count",)),
     (
         "setup_cuda_event_timing_requested",
         ("timing", "setup_cuda_event_timing_requested"),
@@ -110,8 +113,8 @@ NATIVE_METRIC_PATHS = (
         "stage_timing_event_pair_unused_destroy_count",
         ("timing", "stage_timing_event_pair_unused_destroy_count"),
     ),
-    ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
-    ("total_wall_ms", ("timing", "total_wall_ms")),
+    ("checkpoint_wall_ms", ("checkpoint_wall_ms",)),
+    ("total_wall_ms", ("total_wall_ms",)),
     ("train_tokens_per_second", ("timing", "train_tokens_per_second")),
     ("train_loss_host_d2h_count", ("train_loss_host_d2h_count",)),
     (
@@ -4464,6 +4467,25 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                 "passed": train_loss_host_d2h_mean == 0.0,
             }
         )
+        for timing_metric in (
+            "setup_wall_ms",
+            "setup_timing_accounted_ms",
+            "setup_timing_unattributed_ms",
+            "setup_timing_record_count",
+            "train_loop_wall_ms",
+            "total_wall_ms",
+        ):
+            timing_mean = _metric_mean(metrics, timing_metric)
+            results.append(
+                {
+                    "metric": timing_metric,
+                    "expected": ["present"],
+                    "observed": (
+                        [str(timing_mean)] if timing_mean is not None else []
+                    ),
+                    "passed": timing_mean is not None,
+                }
+            )
     failed = [item for item in results if item.get("passed") is False]
     return {
         "enabled": enabled,
@@ -4474,7 +4496,7 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             if not failed
             else "candidate native training must report graph_editor_tensor_flow=false "
             "and torch_required=false and optimized_kernel_contract_passed=true "
-            "and train_loss_host_d2h_count=0"
+            "and train_loss_host_d2h_count=0 with root setup/train timing metrics"
         ),
     }
 

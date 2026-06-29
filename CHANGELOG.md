@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native CUDA 13.3 validation gates: `tools/validate_sm120_cuda13.sh` and the
+  reusable `tools/paired_kernel_speed.py` native runtime contract now require
+  root-level setup/train timing metrics (`setup_wall_ms`,
+  `setup_timing_*`, `train_loop_wall_ms`, and `total_wall_ms`) in addition to
+  the existing no-Torch, no-graph-editor, optimized-kernel, and train-loss
+  host-copy checks. This keeps startup/performance automation from passing when
+  timing fields silently fall back to nested-only JSON.
+
 - Native GPT startup timing JSON: transformer-LM runtime JSON now mirrors
   `setup_wall_ms`, `setup_timing_accounted_ms`,
   `setup_timing_unattributed_ms`, `setup_timing_record_count`,
