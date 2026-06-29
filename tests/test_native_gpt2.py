@@ -2986,8 +2986,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_graph_body_tile_dweight_fallback_count" in speed_tool
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DHIDDEN=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT=1" in bench_source
-    assert "1.075566x train-loop wall" in bench_source
-    assert "1.328682x LM-head backward" in bench_source
+    assert "lm_head_graph_body_cublaslt_dhidden_launch_count from 0 to 4" in bench_source
+    assert "1.073852x train-loop wall" in bench_source
+    assert "1.314851x LM-head backward" in bench_source
+    assert "1.100897x candidate-over-llm.kittens train-loop wall" in bench_source
     assert "1.001673x train-loop wall" in bench_source
     assert "1.002494x steady-state CUDA-event timing" in bench_source
     assert "lm_head_graph_body_cublaslt_dhidden_requested" in source

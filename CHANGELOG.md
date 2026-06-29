@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: refreshed the rejected
+  `lm_head_graph_body_cublaslt_dhidden` profile after the CUDA 13.3.33 WSL
+  reinstall on the dedicated RTX 5090. The route now changes as intended
+  (`lm_head_graph_body_cublaslt_dhidden_launch_count` moved from 0 to 4 and
+  Tile dHidden fallback dropped from 4 to 1), but the same-script 5-step,
+  2-sample stage-timed gate still rejects it: train-loop wall regressed to
+  `1.073852x`, steady-state CUDA-event timing to `1.075869x`, LM-head backward
+  to `1.314851x`, cooperative LM-head substage time to `1.449433x`, train
+  tokens/sec to `0.931229x`, and candidate-over-llm.kittens train-loop wall to
+  `1.100897x`. The profile remains diagnostic-only.
+
 - Native training defaults: GPT-family and 5090-oriented wrapper scripts now
   default `warmup_steps` to 600 instead of 60 for quality-oriented AdamW runs.
   Explicit `--warmup-steps N` and `WARMUP_STEPS=N` still win, and the

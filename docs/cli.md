@@ -1262,10 +1262,14 @@ Those profiles set only
 runtime JSON reports the corresponding `*_requested` booleans plus the existing
 cuBLASLt launch/fallback counters.
 Keep both split profiles diagnostic-only unless a fresh same-script gate proves
-otherwise. The CUDA 13.3.33 dedicated RTX 5090 3-step stage-timed checks
-rejected dHidden-only at `1.075566x` train-loop wall / `1.328682x` LM-head
-backward and dWeight-only at `1.001673x` train-loop wall / `1.002494x`
-steady-state CUDA-event timing.
+otherwise. The CUDA 13.3.33 dedicated RTX 5090 post-reinstall rerun proved the
+dHidden-only route changed (`lm_head_graph_body_cublaslt_dhidden_launch_count`
+moved from 0 to 4), but rejected it at `1.073852x` train-loop wall,
+`1.075869x` steady-state CUDA-event timing, `1.314851x` LM-head backward,
+`1.449433x` cooperative LM-head substage time, `0.931229x` train tokens/sec,
+and `1.100897x` candidate-over-llm.kittens train-loop wall. The dWeight-only
+check stayed closer but still missed the strict gate at `1.001673x` train-loop
+wall / `1.002494x` steady-state CUDA-event timing.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from

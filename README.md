@@ -613,10 +613,14 @@ The cached LM-head graph-body cuBLASLt bisection can now isolate each GEMM with
 fallback counters, so same-script tests can separate the rejected all-on route
 into dHidden-only and dWeight-only evidence before any default is changed.
 Both split profiles are currently rejected on the CUDA 13.3.33 dedicated RTX
-5090 gate: dHidden-only regressed train-loop wall to `1.075566x`, LM-head
-backward to `1.328682x`, and cooperative LM-head time to `1.475505x`;
-dWeight-only stayed closer but still missed the strict gate at `1.001673x`
-train-loop wall and `1.002494x` steady-state CUDA-event timing.
+5090 gate. The post-reinstall dHidden-only rerun proved the route changed
+(`lm_head_graph_body_cublaslt_dhidden_launch_count` moved from 0 to 4), but it
+regressed train-loop wall to `1.073852x`, steady-state CUDA-event timing to
+`1.075869x`, LM-head backward to `1.314851x`, cooperative LM-head time to
+`1.449433x`, train tokens/sec to `0.931229x`, and candidate-over-llm.kittens
+train-loop wall to `1.100897x`. dWeight-only stayed closer but still missed the
+strict gate at `1.001673x` train-loop wall and `1.002494x` steady-state
+CUDA-event timing.
 Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
