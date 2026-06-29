@@ -36,7 +36,7 @@ LLAMA_DEFAULTS = {
     "train_log_every": 1,
     "eval_every_steps": 1000,
     "max_wallclock_seconds": 0.0,
-    "warmup_steps": 60,
+    "warmup_steps": 600,
     "warmdown_fraction": 0.0,
     "vocab_size": 1_024,
     "num_layers": 5,

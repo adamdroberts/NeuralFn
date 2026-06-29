@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native training defaults: GPT-family and 5090-oriented wrapper scripts now
+  default `warmup_steps` to 600 instead of 60 for quality-oriented AdamW runs.
+  Explicit `--warmup-steps N` and `WARMUP_STEPS=N` still win, and the
+  llm.kittens benchmark wrappers keep their external reference `-u 60` so
+  same-script parity measurements remain comparable. Updated README and SDK/CLI
+  docs with the new default and override guidance.
+
 - Native GPT benchmarking: added the rejected
   `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV
   first-use prewarm and LM-head CUDA Graph prewarm back on for short-run

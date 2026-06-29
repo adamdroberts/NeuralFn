@@ -46,7 +46,7 @@ NATIVE_GPT_DEFAULTS = {
     "train_seq_len": 1_024,
     "batch_size": 64,
     "train_batch_tokens": 524_288,
-    "warmup_steps": 60,
+    "warmup_steps": 600,
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
     "eval_every_steps": 1000,
