@@ -2535,6 +2535,11 @@ uint16 arena materialization `125.478 ms`, and token-weight initialization
 `151.345 ms`. LM-head backward still reports `diagnostic-cuda-graph-wrapper`;
 SDK strict cooperative guards should therefore still be treated as future
 true-fused-kernel validation, not as a currently passing production route.
+Native no-Torch artifact checks and paired speed runtime-contract gates now
+require `lm_head_classifier_backward_path_class` and
+`lm_head_cooperative_backward_fused_kernel_abi_implementation_class` in GPT
+trainer outputs, so benchmark evidence must identify the LM-head route that
+actually ran.
 It also passes `--train-loss-every-steps 0` to the NeuralFn side by default so
 short parity runs measure the training loop rather than the compiled trainer's
 raw-C++ default periodic train-loss accumulation path; set

@@ -204,6 +204,8 @@ NATIVE_GPT_RUNTIME_CONTRACT_MARKERS = (
     b'"torch_required"',
     b'"optimized_kernel_contract_required"',
     b'"optimized_kernel_contract_passed"',
+    b'"lm_head_classifier_backward_path_class"',
+    b'"lm_head_cooperative_backward_fused_kernel_abi_implementation_class"',
     b'"attention_backward_dprep_default_warps_per_block"',
     b'"sm120_memory_block_size"',
     b'"sm120_layernorm_bwd_blocks_per_sm"',

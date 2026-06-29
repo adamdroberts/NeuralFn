@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT runtime contract: the no-Torch native artifact verifier and paired
+  speed runtime gate now require LM-head route attribution fields
+  (`lm_head_classifier_backward_path_class` and
+  `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`). This
+  keeps stale binaries and benchmark payloads from passing while hiding whether
+  the run used the diagnostic graph wrapper or a strict Tile kernel.
+  Verification: focused native GPT source-contract pytest.
+
 - Native GPT startup evidence: refreshed `linked_startup` on the dedicated RTX
   5090 with a 3-sample startup-only paired gate. The linked GPT trainer remains
   the preferred SDK/CLI/native wrapper path; the current gate measured

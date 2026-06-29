@@ -625,6 +625,8 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
         '"torch_required"',
         '"optimized_kernel_contract_required"',
         '"optimized_kernel_contract_passed"',
+        '"lm_head_classifier_backward_path_class"',
+        '"lm_head_cooperative_backward_fused_kernel_abi_implementation_class"',
         '"attention_backward_dprep_default_warps_per_block"',
         '"sm120_memory_block_size"',
         '"sm120_layernorm_bwd_blocks_per_sm"',
@@ -690,6 +692,8 @@ def test_native_no_torch_dependency_verifier_requires_runtime_contract_markers(
     missing = module.missing_artifact_string_markers(artifact, tmp_path)
 
     assert '"optimized_kernel_contract_passed"' in missing
+    assert '"lm_head_classifier_backward_path_class"' in missing
+    assert '"lm_head_cooperative_backward_fused_kernel_abi_implementation_class"' in missing
     assert '"attention_backward_dprep_default_warps_per_block"' in missing
     assert '"sm120_memory_block_size"' in missing
     assert '"sm120_layernorm_bwd_blocks_per_sm"' in missing
@@ -13501,6 +13505,8 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
+        "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
+        "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"train_loss_host_d2h_count\":0,"
         "\"setup_wall_ms\":0.1,"
         "\"setup_timing_accounted_ms\":0.08,"
@@ -13540,6 +13546,14 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert "graph_editor_tensor_flow: expected=false observed=false passed=true" in passing.stdout
     assert "torch_required: expected=false observed=false passed=true" in passing.stdout
     assert "optimized_kernel_contract_passed: expected=true observed=true passed=true" in passing.stdout
+    assert (
+        "lm_head_classifier_backward_path_class: "
+        "expected=present observed=diagnostic-cuda-graph-wrapper passed=true"
+    ) in passing.stdout
+    assert (
+        "lm_head_cooperative_backward_fused_kernel_abi_implementation_class: "
+        "expected=present observed=diagnostic-cuda-graph-wrapper passed=true"
+    ) in passing.stdout
     assert "train_loss_host_d2h_count: expected=0 observed=0 passed=true" in passing.stdout
     assert "setup_wall_ms: expected=present observed=0.1 passed=true" in passing.stdout
     assert "setup_timing_record_count: expected=present observed=3.0 passed=true" in passing.stdout
@@ -13550,6 +13564,8 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
+        "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
+        "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
         "\"linear_tk_qkv_first_use_prewarm_success_count\":0,"
         "\"lm_head_fused_graph_prewarm_success_count\":0,"

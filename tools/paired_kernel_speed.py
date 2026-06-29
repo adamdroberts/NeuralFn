@@ -4555,6 +4555,20 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                     "passed": passed,
                 }
             )
+        for key in (
+            "lm_head_classifier_backward_path_class",
+            "lm_head_cooperative_backward_fused_kernel_abi_implementation_class",
+        ):
+            observed = values.get(key)
+            passed = isinstance(observed, list) and bool(observed)
+            results.append(
+                {
+                    "metric": key,
+                    "expected": ["present"],
+                    "observed": observed if isinstance(observed, list) else [],
+                    "passed": passed,
+                }
+            )
         train_loss_host_d2h_mean = _metric_mean(metrics, "train_loss_host_d2h_count")
         results.append(
             {
@@ -4621,7 +4635,8 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             if not failed
             else "candidate native training must report graph_editor_tensor_flow=false "
             "and torch_required=false and optimized_kernel_contract_passed=true "
-            "and train_loss_host_d2h_count=0 with root setup/train timing metrics; "
+            "and expose the LM-head path/implementation class and "
+            "train_loss_host_d2h_count=0 with root setup/train timing metrics; "
             "long-run deferred-prewarm candidates must also report zero QKV and LM-head "
             "graph prewarm successes"
         ),
