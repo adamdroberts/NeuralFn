@@ -3837,6 +3837,15 @@ Native GPT-family training wrappers now default to 600 LR warmup steps for
 quality runs. Use `--warmup-steps N` or `WARMUP_STEPS=N` to reproduce a shorter
 warmup such as the 60-step llm.kittens reference benchmark.
 
+The compiled GPT launchers (`nfn_train_gpt` and `nfn_train_gpt_sm120`) now use
+the generated `SHIPPED_GPT_TEMPLATE_PRESETS` C++ catalog for template
+selection. Passing `--base-model <preset>` with any shipped GPT template name
+forwards the selected preset via `--template-name`; non-family presets normalize
+the runtime family to `gpt`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain
+direct model-family names. Unsupported graph shapes still report
+native-trainer-missing from the compiled trainer instead of falling back to
+Torch or graph-editor data flow.
+
 Persistent transformer block outputs in the compiled GPT trainer are written directly from each non-final block's MLP residual-add stage into the per-layer backward-recompute buffer. That removes the previous post-block `nfn_native_tile_copy_float32` preservation launch while keeping the scratch-recompute tape layout. The final block output copy is still elided because final LayerNorm consumes that tensor before backward recomputation starts; the default 12-layer run reports `persistent_block_outputs: 11`, `persistent_block_output_write_strategy: "direct-residual2-output"`, `persistent_block_output_copy_elided_count`, and `final_block_output_copy_elided: true`.
 
 Validation forwards in the compiled GPT-2 trainer do not preserve block outputs into the persistent training-backward buffers. Training forwards still save earlier block outputs for backward recomputation, while validation streams through the scratch tape because no backward pass follows; JSON reports `validation_persistent_block_outputs: 0` and `validation_block_output_copies_elided: true`.

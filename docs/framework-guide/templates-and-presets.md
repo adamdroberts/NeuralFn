@@ -120,6 +120,11 @@ automatically. Structurally different presets and custom
 graphs are selected and reported by the compiled frontend, then fail with
 `selected-graph-native-trainer-missing` until their graph-specific C++ Tile
 trainer plans are implemented; they do not fall back to Torch by default.
+The compiled `nfn_train_gpt` / `nfn_train_gpt_sm120` launchers use the generated
+C++ copy of `SHIPPED_GPT_TEMPLATE_PRESETS`, so `--base-model <preset>` accepts
+the same shipped template names as `--template-name <preset>`. Non-family
+presets rewrite to `--model-family gpt --template-name <preset>` before
+dispatch, while `gpt2` and `nanogpt` remain direct dense family selectors.
 Use `nfn train --base-model gpt --list-templates`, raw
 `nfn_gpt_native_train --list-templates`, or wrapper alias
 `--native-cuda-list-templates` to inspect the compiled support catalog without

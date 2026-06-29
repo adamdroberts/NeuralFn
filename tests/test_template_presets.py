@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 import inspect
 import importlib.util
+import os
+import subprocess
 import textwrap
 import uuid
 from pathlib import Path
@@ -268,6 +270,49 @@ def test_train_gpt_fast_path_accepts_every_gpt_template_name() -> None:
         assert "--model-family" in argv
         assert argv[argv.index("--model-family") + 1] == "gpt"
         assert "--template-name" in argv
+        assert argv[argv.index("--template-name") + 1] == preset
+
+
+def test_compiled_gpt_launcher_accepts_every_shipped_template_name(tmp_path: Path) -> None:
+    launcher = tmp_path / "nfn_train_gpt"
+    build = subprocess.run(
+        ["bash", str(ROOT / "tools" / "build_train_gpt_cli.sh"), str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    fake_native = tmp_path / "fake-native"
+    observed = tmp_path / "observed-argv.txt"
+    fake_native.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"${NFN_TEST_NATIVE_GPT_ARGV}\"\n",
+        encoding="utf-8",
+    )
+    fake_native.chmod(0o755)
+    env = {
+        **os.environ,
+        "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
+        "NFN_TEST_NATIVE_GPT_ARGV": str(observed),
+        "CUDA_VISIBLE_DEVICES": "",
+    }
+    for preset in PRESETS:
+        proc = subprocess.run(
+            [str(launcher), "--base-model", preset, "--dataset-alias", "/tmp/native-cache", "--dry-run"],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert proc.returncode == 0, f"{preset}: {proc.stderr}"
+        argv = observed.read_text(encoding="utf-8").splitlines()
+        expected_family = preset if preset in {"gpt2", "nanogpt"} else "gpt"
+        assert argv[argv.index("--model-family") + 1] == expected_family
         assert argv[argv.index("--template-name") + 1] == preset
 
 

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT launcher template catalog: compiled `nfn_train_gpt` and
+  `nfn_train_gpt_sm120` now validate template selectors against the generated
+  C++ copy of `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` instead of a
+  hand-written subset. Passing `--base-model <preset>` with any shipped GPT
+  template name now forwards `--template-name <preset>`; non-family presets
+  rewrite to the dense `gpt` runtime family, while direct dense family aliases
+  such as `gpt2` and `nanogpt` remain direct family selections. Structurally
+  unsupported presets reach the compiled trainer's native-trainer-missing
+  reporting path instead of being rejected by the launcher. The launcher build
+  scripts now rebuild when the generated template-catalog header changes.
+
 - Native SDK GPT architecture selection: `NativeTrainRunConfig`,
   `build_native_train_run_config()`, `build_native_sm120_gpt_run_config()`, and
   `build_native_gpt_launcher_run_config()` now accept `template_name=` and

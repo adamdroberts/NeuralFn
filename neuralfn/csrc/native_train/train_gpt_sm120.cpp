@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <vector>
 
+#include "shipped_gpt_template_presets.h"
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -59,12 +61,11 @@ bool is_dense_gpt_model_family(const std::string& name) {
 }
 
 bool is_dense_gpt_template_selector(const std::string& name) {
-    return is_dense_gpt_model_family(name) ||
-        name == "gpt2_modern" ||
-        name == "gpt2_megakernel" ||
-        name == "gpt2_moa" ||
-        name == "nanogpt_modern" ||
-        name == "nanogpt_megakernel";
+    if (is_dense_gpt_model_family(name)) {
+        return true;
+    }
+    const auto& presets = neuralfn_native::shipped_gpt_template_presets();
+    return std::find(presets.begin(), presets.end(), name) != presets.end();
 }
 
 std::string trim(std::string value) {
