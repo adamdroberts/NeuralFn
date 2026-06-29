@@ -1,12 +1,28 @@
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .graph import NeuronGraph
-from .torch_backend import CompiledTorchGraph
+
+if TYPE_CHECKING:
+    import torch
+    from .torch_backend import CompiledTorchGraph
+
+
+@lru_cache(maxsize=1)
+def _load_torch_inference_stack():
+    try:
+        import torch
+        from .torch_backend import CompiledTorchGraph
+    except ImportError as exc:
+        raise ImportError(
+            "neuralfn.inference is importable in the lean native SDK, but "
+            "legacy .pt checkpoint export/import and InferenceCache require "
+            "PyTorch to be installed explicitly."
+        ) from exc
+    return torch, CompiledTorchGraph
 
 
 def _checkpoint_metadata_for_graph(graph: NeuronGraph) -> dict[str, Any]:
@@ -23,8 +39,9 @@ def _checkpoint_metadata_for_graph(graph: NeuronGraph) -> dict[str, Any]:
 def load_pt_checkpoint(
     path: str | Path,
     *,
-    map_location: str | torch.device | None = "cpu",
-) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+    map_location: str | "torch.device" | None = "cpu",
+) -> tuple[dict[str, "torch.Tensor"], dict[str, Any]]:
+    torch, _CompiledTorchGraph = _load_torch_inference_stack()
     checkpoint = torch.load(path, map_location=map_location, weights_only=False)
     if isinstance(checkpoint, dict) and isinstance(checkpoint.get("state_dict"), dict):
         return dict(checkpoint["state_dict"]), dict(checkpoint.get("checkpoint_metadata", {}) or {})
@@ -35,6 +52,7 @@ def load_pt_checkpoint(
 
 def export_to_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Export the weights of a compiled or uncompiled torch-based NeuronGraph to a .pt file."""
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     compiled = CompiledTorchGraph(graph)
     state_dict = compiled.state_dict()
     checkpoint = {
@@ -46,6 +64,7 @@ def export_to_pt(graph: NeuronGraph, path: str | Path) -> None:
 
 def import_from_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Import weights from a .pt file into a NeuronGraph's module_state."""
+    _torch, CompiledTorchGraph = _load_torch_inference_stack()
     state_dict, _checkpoint_metadata = load_pt_checkpoint(path)
     compiled = CompiledTorchGraph(graph)
     compiled.load_state_dict(state_dict)
@@ -78,6 +97,7 @@ def save_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
     checkpoint — typically a few MB even for large bases — because the frozen
     base weights are assumed to live in a separate ``base_checkpoint`` file.
     """
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     compiled = CompiledTorchGraph(graph)
     full_state = compiled.state_dict()
     adapter_state = {key: tensor for key, tensor in full_state.items() if _is_adapter_key(key)}
@@ -95,6 +115,7 @@ def save_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
 
 def load_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
     """Load an adapter-only checkpoint (from ``save_adapter_checkpoint``) into ``graph``."""
+    _torch, CompiledTorchGraph = _load_torch_inference_stack()
     state_dict, _meta = load_pt_checkpoint(path)
     compiled = CompiledTorchGraph(graph)
     compiled.load_state_dict(state_dict, strict=False)
@@ -112,6 +133,7 @@ def merge_adapter_into_base(
     a standard checkpoint with no adapter state, suitable for ordinary
     inference with no runtime LoRA dispatch.
     """
+    torch, _CompiledTorchGraph = _load_torch_inference_stack()
     base_state, base_meta = load_pt_checkpoint(base_path)
     adapter_state, adapter_meta = load_pt_checkpoint(adapter_path)
 
@@ -164,15 +186,16 @@ def merge_adapter_into_base(
 # Quantized export / import
 # ---------------------------------------------------------------------------
 
-def _quantize_int8(tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _quantize_int8(tensor: "torch.Tensor") -> tuple["torch.Tensor", "torch.Tensor"]:
     """Per-channel int8 quantization: returns (quantized_int8, scale_fp32)."""
+    torch, _CompiledTorchGraph = _load_torch_inference_stack()
     amax = tensor.abs().amax(dim=-1, keepdim=True).clamp(min=1e-7)
     scale = amax / 127.0
     quantized = torch.round(tensor / scale).clamp(-128, 127).to(torch.int8)
     return quantized, scale.squeeze(-1)
 
 
-def _dequantize_int8(quantized: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+def _dequantize_int8(quantized: "torch.Tensor", scale: "torch.Tensor") -> "torch.Tensor":
     return quantized.float() * scale.unsqueeze(-1)
 
 
@@ -187,12 +210,11 @@ def export_quantized_pt(
       - ``"int8"``: per-channel int8 with scale factors for every ``nn.Linear`` weight.
       - ``"ternary"``: bake ternary {-1, 0, 1} weights for BitLinearTernary models.
     """
-    from .torch_backend import BitLinearTernaryStage
-
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     compiled = CompiledTorchGraph(graph)
     state_dict = compiled.state_dict()
-    quant_sd: dict[str, torch.Tensor] = {}
-    scales: dict[str, torch.Tensor] = {}
+    quant_sd: dict[str, "torch.Tensor"] = {}
+    scales: dict[str, "torch.Tensor"] = {}
 
     for key, param in state_dict.items():
         is_embedding_weight = any(part in key for part in ("token_embedding", "position_embedding", "pos_embedding"))
@@ -221,13 +243,14 @@ def export_quantized_pt(
 
 def import_quantized_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Import quantized weights, dequantizing them back to float for execution."""
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     checkpoint = torch.load(path, weights_only=False)
     quant_sd = checkpoint["state_dict"]
     meta = checkpoint["quant_metadata"]
     scheme = meta["scheme"]
     scales = meta["scales"]
 
-    restored: dict[str, torch.Tensor] = {}
+    restored: dict[str, "torch.Tensor"] = {}
     for key, param in quant_sd.items():
         if key in scales:
             if scheme == "ternary":
@@ -261,12 +284,13 @@ class InferenceCache:
     """
 
     def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
+        torch, CompiledTorchGraph = _load_torch_inference_stack()
         self.compiled = CompiledTorchGraph(graph)
         self.compiled.eval()
         resolved = device or str(graph.torch_config.get("device", "cuda"))
         self.device = torch.device(resolved)
         self.compiled.to(self.device)
-        self._cache: dict[str, torch.Tensor] = {}
+        self._cache: dict[str, "torch.Tensor"] = {}
 
         self._n_inputs = len(graph.interface_input_layout())
         self._vocab_size: int = 0
@@ -276,8 +300,7 @@ class InferenceCache:
     def reset(self) -> None:
         self._cache.clear()
 
-    @torch.no_grad()
-    def step(self, token_ids: torch.Tensor) -> torch.Tensor:
+    def step(self, token_ids: "torch.Tensor") -> "torch.Tensor":
         """Run one autoregressive step, returning the first output tensor.
 
         ``token_ids`` shape ``(batch, seq)`` -- on the first call this is the
@@ -287,12 +310,14 @@ class InferenceCache:
         For training graphs (tokens + targets -> loss) dummy targets are
         generated automatically.
         """
-        token_ids = token_ids.to(self.device)
-        if self._n_inputs >= 2:
-            dummy_targets = torch.zeros_like(token_ids)
-            outputs = self.compiled(token_ids, dummy_targets)
-        else:
-            outputs = self.compiled(token_ids)
+        torch, _CompiledTorchGraph = _load_torch_inference_stack()
+        with torch.no_grad():
+            token_ids = token_ids.to(self.device)
+            if self._n_inputs >= 2:
+                dummy_targets = torch.zeros_like(token_ids)
+                outputs = self.compiled(token_ids, dummy_targets)
+            else:
+                outputs = self.compiled(token_ids)
         logits = outputs[0]
         return logits[:, -1, :] if logits.ndim == 3 else logits
 
@@ -306,20 +331,22 @@ class SemanticInferenceCache(InferenceCache):
 
     def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
         super().__init__(graph, device)
-        self._last_semantic_vec: torch.Tensor | None = None
+        self._last_semantic_vec: "torch.Tensor" | None = None
 
     @property
-    def last_semantic_vec(self) -> torch.Tensor | None:
+    def last_semantic_vec(self) -> "torch.Tensor" | None:
         return self._last_semantic_vec
 
-    @torch.no_grad()
-    def step(self, token_ids: torch.Tensor) -> torch.Tensor:
-        logits = super().step(token_ids)
-        return logits
+    def step(self, token_ids: "torch.Tensor") -> "torch.Tensor":
+        torch, _CompiledTorchGraph = _load_torch_inference_stack()
+        with torch.no_grad():
+            logits = super().step(token_ids)
+            return logits
 
 
 def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
     """Experimental: export semantic routing and legacy decoder lookup tables."""
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     compiled = CompiledTorchGraph(graph)
     state = compiled.state_dict()
     semantic_keys = {k: v for k, v in state.items() if "decoder" in k or "hasher" in k or "sem_router" in k}
@@ -328,6 +355,7 @@ def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
 
 def import_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
     """Experimental: import semantic routing and legacy decoder lookup tables."""
+    torch, CompiledTorchGraph = _load_torch_inference_stack()
     checkpoint = torch.load(path, weights_only=True)
     compiled = CompiledTorchGraph(graph)
     tables = checkpoint.get("semantic_tables", {})

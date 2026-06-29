@@ -146,6 +146,48 @@ else:
     assert "OPTIONAL_ERROR True" in proc.stdout
 
 
+def test_inference_module_import_is_lean_without_torch() -> None:
+    code = r'''
+import importlib.abc
+import sys
+
+class BlockTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".", 1)[0] == "torch":
+            raise ImportError(f"blocked optional dependency: {fullname}")
+        return None
+
+sys.meta_path.insert(0, BlockTorch())
+from neuralfn.inference import InferenceCache, export_to_pt, load_pt_checkpoint
+
+print("CACHE", InferenceCache.__name__)
+print("EXPORT_CALLABLE", callable(export_to_pt))
+print("LOAD_CALLABLE", callable(load_pt_checkpoint))
+print("TORCH_LOADED", "torch" in sys.modules)
+try:
+    load_pt_checkpoint("/tmp/does-not-matter.pt")
+except ImportError as exc:
+    print("OPTIONAL_ERROR", "require PyTorch" in str(exc))
+else:
+    raise SystemExit("load_pt_checkpoint unexpectedly succeeded")
+'''
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "CACHE InferenceCache" in proc.stdout
+    assert "EXPORT_CALLABLE True" in proc.stdout
+    assert "LOAD_CALLABLE True" in proc.stdout
+    assert "TORCH_LOADED False" in proc.stdout
+    assert "OPTIONAL_ERROR True" in proc.stdout
+
+
 def test_no_torch_verifier_rejects_stale_egg_info(tmp_path: Path) -> None:
     module_path = Path("tools/check_native_no_torch_deps.py")
     spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)

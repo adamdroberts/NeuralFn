@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Lean inference import boundary: `neuralfn.inference` no longer imports Torch
+  or `CompiledTorchGraph` at module import time. Importing `.pt` checkpoint
+  helper names or `InferenceCache` now works on the default native/core SDK
+  install, while legacy checkpoint export/import, quantized checkpoints,
+  semantic table helpers, and `InferenceCache` execution lazily load PyTorch
+  and raise a clear `ImportError` if it is not installed. Verification: focused
+  native dependency tests, direct blocked-import smoke check, and native
+  no-Torch dependency verifier.
+
 - Lean surrogate trainer import boundary: `neuralfn.trainer` no longer imports
   Torch, NumPy, or `neuralfn.surrogate` at module import time. Importing
   `TrainConfig` or constructing `SurrogateTrainer` now works on the default

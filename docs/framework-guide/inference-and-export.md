@@ -2,6 +2,12 @@
 
 After training a torch-backed graph, NeuralFn provides tools for saving weights, quantizing checkpoints, and running autoregressive generation with KV caching.
 
+The inference module itself is import-safe on the lean native/core SDK: imports
+such as `from neuralfn.inference import export_to_pt, InferenceCache` do not
+load Torch. The actual `.pt` checkpoint operations, quantized export/import,
+semantic table helpers, and `InferenceCache` execution are legacy
+Torch-backed workflows and require PyTorch to be installed explicitly.
+
 ## Weight export and import
 
 ### Full-precision export

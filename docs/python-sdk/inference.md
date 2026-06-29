@@ -2,6 +2,13 @@
 
 Weight export/import, adapter checkpoint helpers, quantized export/import, and autoregressive inference with KV caching.
 
+`neuralfn.inference` is safe to import from the lean native/core SDK. Importing
+checkpoint helper names or `InferenceCache` does not import Torch. Calling the
+legacy `.pt` checkpoint helpers, quantized export/import helpers, semantic
+table helpers, or `InferenceCache` methods still requires PyTorch to be
+installed explicitly; missing PyTorch raises an `ImportError` before the
+operation starts.
+
 ---
 
 ## export_to_pt
@@ -168,7 +175,6 @@ Clear all cached KV state. Call between independent sequences.
 #### `step(token_ids: Tensor) -> Tensor`
 
 ```python
-@torch.no_grad()
 def step(self, token_ids: torch.Tensor) -> torch.Tensor
 ```
 
