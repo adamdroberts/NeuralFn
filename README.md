@@ -7,9 +7,12 @@ NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph
 Native training entrypoints prefer direct compiled C++ binaries on the
 workstation path. Dense GPT aliases use the linked
 `nfn_gpt_native_train_linked --model-family ...` binary when it exists, falling
-back to `nfn_gpt_native_train`; other compiled families such as `gpt2-evo`,
-`llama`, `mixllama`, `jepa`, `semantic-router-moe`, and `deepseek-v4` use their
-matching `nfn_<family>_native_train` binary when present or when
+back to `nfn_gpt_native_train`. The compiled `nfn-native train` command now
+uses that same direct dense-GPT route for `gpt`, `gpt2`, `gpt3`, and `nanogpt`
+before falling back to the unified `nfn_native_train` dispatcher. Other
+compiled families such as `gpt2-evo`, `llama`, `mixllama`, `jepa`,
+`semantic-router-moe`, and `deepseek-v4` use their matching
+`nfn_<family>_native_train` binary when present or when
 `NFN_NATIVE_<FAMILY>_CLI` is set. Set `NFN_NATIVE_TRAIN_CLI` only when you
 intentionally want to force the unified `nfn_native_train --base-model ...`
 frontend. For direct family binaries, `nfn train --base-model ... --dry-run
@@ -1960,6 +1963,14 @@ compiled-loop runnable. NanoGPT aliases are recognized as dense GPT templates
 but still report a geometry-mismatch native work item until the shared loop is
 made shape-dynamic; custom graph files report explicit native planner work
 instead of routing tensors through Torch or editor graph nodes.
+The top-level compiled `nfn-native train` shim now performs the same dense GPT
+normalization itself when `NFN_NATIVE_TRAIN_CLI` is unset. For GPT/GPT-2/GPT-3
+and NanoGPT it execs `nfn_gpt_native_train_linked` or `nfn_gpt_native_train`
+directly with `--train-transformer-lm`, `--backend tile-cuda`, dataset aliases,
+template/custom-graph selectors, and GPT-3's 2048-token context default already
+expanded. This removes the extra unified-dispatcher process from common native
+GPT training startup while keeping `NFN_NATIVE_TRAIN_CLI` as an explicit escape
+to test or force the dispatcher.
 
 Native dense-GPT plan and runtime JSON now include
 `lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity

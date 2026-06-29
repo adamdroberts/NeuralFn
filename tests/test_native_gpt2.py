@@ -13719,6 +13719,65 @@ def test_native_nfn_cli_dispatches_train_and_infer_without_python(tmp_path: Path
         "/tmp/native-cache",
     ]
 
+    direct_env = os.environ.copy()
+    direct_env["NFN_NATIVE_GPT_CLI"] = str(fake_gpt)
+    direct_env["NFN_TEST_GPT_ARGV"] = str(observed_gpt)
+    observed_gpt.unlink(missing_ok=True)
+
+    direct_print = subprocess.run(
+        [
+            str(native_nfn),
+            "train",
+            "--base-model",
+            "gpt3",
+            "--dataset",
+            "tinystories",
+            "--dry-run",
+            "--print-command",
+        ],
+        env=direct_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert direct_print.returncode == 0, direct_print.stderr
+    assert str(fake_gpt) in direct_print.stdout
+    assert "nfn_native_train" not in direct_print.stdout
+    assert "--model-family gpt3" in direct_print.stdout
+    assert "--tinystories" in direct_print.stdout
+    assert "--train-transformer-lm" in direct_print.stdout
+    assert "--backend tile-cuda" in direct_print.stdout
+    assert "--train-seq-len 2048" in direct_print.stdout
+
+    direct_exec = subprocess.run(
+        [
+            str(native_nfn),
+            "train",
+            "--base-model",
+            "nanogpt",
+            "--dataset-alias",
+            "/tmp/native-cache",
+        ],
+        env=direct_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert direct_exec.returncode == 0, direct_exec.stderr
+    assert observed_gpt.read_text(encoding="utf-8").splitlines() == [
+        "--model-family",
+        "gpt",
+        "--template-name",
+        "nanogpt",
+        "--dataset-alias",
+        "/tmp/native-cache",
+        "--train-transformer-lm",
+        "--backend",
+        "tile-cuda",
+    ]
+
     ckpt_dir = tmp_path / "ckpts"
     ckpt_dir.mkdir()
     (ckpt_dir / "model_00000020.bin").write_bytes(b"old")

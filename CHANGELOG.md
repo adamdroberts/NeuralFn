@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Top-level native GPT train dispatch: `nfn-native train --base-model gpt`,
+  `gpt2`, `gpt3`, and `nanogpt` now bypass the generic `nfn_native_train`
+  frontend when `NFN_NATIVE_TRAIN_CLI` is unset and exec the linked dense GPT
+  trainer directly. The compiled shim normalizes the common wrapper flags
+  itself, including `--dataset tinystories`, `--template` / `--preset`,
+  `--graph`, `--kernel-backend`, `--native-cuda-*`, NanoGPT's template selector,
+  and GPT-3's 2048-token context default. Explicit `NFN_NATIVE_TRAIN_CLI`
+  overrides still force the unified dispatcher for tests or diagnostics.
+  Verification: rebuilt `build/nfn-native`, inspected direct GPT/GPT-3/NanoGPT
+  dry-run delegates, and added focused native CLI regression coverage.
+
 - Native CLI local build aliases: `tools/build_native_train_cli.sh` and
   `tools/build_native_nfn_cli.sh` now create same-directory hyphenated aliases
   (`build/nfn-native-train` and `build/nfn-native`) when run with their default
