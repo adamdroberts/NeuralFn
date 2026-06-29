@@ -2,6 +2,12 @@
 
 Genetic-algorithm optimizer for edge weights (and optionally topology).
 
+`neuralfn.evolutionary` is safe to import from the lean native/core SDK.
+Importing `EvoConfig` or constructing `EvolutionaryTrainer` does not import
+NumPy. Calling `EvolutionaryTrainer.train()` still requires NumPy for random
+population generation and fitness reduction; missing NumPy raises an
+`ImportError` before training starts.
+
 ---
 
 ## EvoConfig

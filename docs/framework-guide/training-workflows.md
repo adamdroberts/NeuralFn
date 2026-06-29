@@ -11,6 +11,13 @@ NeuralFn supports four training methods, each suited to different graph types. T
 
 For hierarchical graphs with mixed training methods, `HybridTrainer` orchestrates training across subgraph boundaries.
 
+The scalar trainer modules are import-safe on the lean native/core SDK:
+importing `TrainConfig`, `EvoConfig`, `SurrogateTrainer`, or
+`EvolutionaryTrainer` and constructing trainer instances does not load NumPy or
+Torch. Actual scalar training still needs the legacy numerical stack:
+surrogate training requires NumPy plus PyTorch, while evolutionary training
+requires NumPy.
+
 Default CLI training now requires a compiled native CUDA/C++ entrypoint. Dense
 GPT has that path through `nfn train --base-model gpt`; `gpt2` and `gpt3` are
 aliases for the same native trainer, and `gpt3` only changes the default

@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Callable
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 from .graph import Edge, NeuronGraph, NeuronInstance
 from .neuron import NeuronDef
+
+
+@lru_cache(maxsize=1)
+def _load_numpy():
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ImportError(
+            "neuralfn.evolutionary is importable in the lean native SDK, but "
+            "EvolutionaryTrainer training requires NumPy to be installed explicitly."
+        ) from exc
+    return np
 
 
 @dataclass
@@ -37,17 +51,17 @@ class EvolutionaryTrainer:
         self.neuron_library = neuron_library or []
         self._stop = False
         self.loss_history: list[float] = []
-        self._rng = np.random.default_rng(self.config.seed)
+        self._rng: Any | None = None
 
     def stop(self) -> None:
         self._stop = True
 
     def train(
         self,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
         *,
-        fitness_fn: Callable[[np.ndarray, np.ndarray], float] | None = None,
+        fitness_fn: Callable[["np.ndarray", "np.ndarray"], float] | None = None,
         on_generation: Callable[[int, float], None] | None = None,
     ) -> list[float]:
         """Run the evolutionary optimisation loop.
@@ -57,6 +71,7 @@ class EvolutionaryTrainer:
         self._stop = False
         self.loss_history = []
         cfg = self.config
+        self._rng_instance()
 
         if fitness_fn is None:
             fitness_fn = _mse_fitness
@@ -102,11 +117,18 @@ class EvolutionaryTrainer:
 
     # ── internals ─────────────────────────────────────────────────────
 
+    def _rng_instance(self):
+        if self._rng is None:
+            np = _load_numpy()
+            self._rng = np.random.default_rng(self.config.seed)
+        return self._rng
+
     def _init_population(self, base: list[float]) -> list[list[float]]:
         pop: list[list[float]] = [list(base)]
+        rng = self._rng_instance()
         for _ in range(self.config.population_size - 1):
             ind = [
-                v + self._rng.normal(0, self.config.mutation_scale)
+                v + rng.normal(0, self.config.mutation_scale)
                 for v in base
             ]
             pop.append(ind)
@@ -115,10 +137,11 @@ class EvolutionaryTrainer:
     def _evaluate(
         self,
         params: list[float],
-        inputs: np.ndarray,
-        targets: np.ndarray,
-        fitness_fn: Callable[[np.ndarray, np.ndarray], float],
+        inputs: "np.ndarray",
+        targets: "np.ndarray",
+        fitness_fn: Callable[["np.ndarray", "np.ndarray"], float],
     ) -> float:
+        np = _load_numpy()
         self.graph.set_edge_params(params)
         preds = []
         for i in range(len(inputs)):
@@ -137,25 +160,29 @@ class EvolutionaryTrainer:
         return fitness_fn(np.array(preds, dtype=np.float32), targets)
 
     def _tournament(self, scores: list[float], pop: list[list[float]]) -> list[float]:
-        idxs = self._rng.choice(len(pop), size=self.config.tournament_size, replace=False)
+        rng = self._rng_instance()
+        idxs = rng.choice(len(pop), size=self.config.tournament_size, replace=False)
         best_idx = min(idxs, key=lambda i: scores[i])
         return list(pop[best_idx])
 
     def _crossover(self, p1: list[float], p2: list[float]) -> list[float]:
         child: list[float] = []
+        rng = self._rng_instance()
         for a, b in zip(p1, p2):
-            if self._rng.random() < self.config.crossover_rate:
+            if rng.random() < self.config.crossover_rate:
                 child.append(b)
             else:
                 child.append(a)
         return child
 
     def _mutate(self, ind: list[float]) -> list[float]:
+        rng = self._rng_instance()
         for i in range(len(ind)):
-            if self._rng.random() < self.config.mutation_rate:
-                ind[i] += self._rng.normal(0, self.config.mutation_scale)
+            if rng.random() < self.config.mutation_rate:
+                ind[i] += rng.normal(0, self.config.mutation_scale)
         return ind
 
 
-def _mse_fitness(preds: np.ndarray, targets: np.ndarray) -> float:
+def _mse_fitness(preds: "np.ndarray", targets: "np.ndarray") -> float:
+    np = _load_numpy()
     return float(np.mean((preds - targets) ** 2))

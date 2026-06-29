@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Lean evolutionary trainer import boundary: `neuralfn.evolutionary` no longer
+  imports NumPy at module import or trainer construction time. Importing
+  `EvoConfig` or constructing `EvolutionaryTrainer` now works on the default
+  native/core SDK install, while `train()` lazily loads NumPy and raises a clear
+  `ImportError` if it is not installed. Verification: focused native dependency
+  tests and existing evolutionary trainer coverage.
+
 - Lean inference import boundary: `neuralfn.inference` no longer imports Torch
   or `CompiledTorchGraph` at module import time. Importing `.pt` checkpoint
   helper names or `InferenceCache` now works on the default native/core SDK
