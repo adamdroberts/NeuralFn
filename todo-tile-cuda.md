@@ -118,7 +118,7 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Make canonical llm.kittens parity runs median-based by default. After the
   CUDA 13.3 WSL reinstall, one-sample runs could fail at sub-percent jitter
   even with zero compute processes on the dedicated RTX 5090; the parity
-  wrapper now defaults to three measured samples plus one warmup sample so the
+  wrapper now defaults to three measured samples plus two warmup samples so the
   existing `median:` default gate is used unless a quick smoke explicitly sets
   `NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0`.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
@@ -217,6 +217,18 @@ Real training tensors must not pass through graph editor node objects.
     tokens/sec versus llm.kittens. The paired guard observed zero selected-GPU
     compute processes before and after each sample, so the miss is not
     attributable to external GPU load.
+  - 2026-06-29 post-reinstall rerun with the repo-default benchmark warmup
+    (`NFN_SM120_PARITY_WARMUP=2`) passed the strict same-script parity gate on
+    the dedicated display-disabled RTX 5090. The 5-step, 2-sample no-stage
+    run measured NeuralFn at `1.001937x` median train-loop wall,
+    `1.002473x` median steady-state CUDA-event time, and `0.997940x`
+    tokens/sec versus llm.kittens, with zero selected-GPU compute processes
+    before and after samples. The runtime contract remained clean:
+    `graph_editor_tensor_flow=false`, `torch_required=false`,
+    `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`.
+    The strict LM-head fused-kernel work remains open because this passing run
+    still reports `diagnostic-cuda-graph-wrapper`, `true_fused_capability=false`,
+    and three graph body nodes per replay.
   - 2026-06-28 matching stage-timed diagnostic showed the old QKV first-use
     startup hypothesis is no longer the active target:
     `stage.block_forward.attention.qkv.first_step_avg_ms=1.079890` versus
