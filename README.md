@@ -1475,13 +1475,14 @@ first `N` rows and reports
 `linear_tk_qkv_first_use_prewarm_effective_rows` in native GPT JSON. The
 `tk_qkv_forward_prewarm_1row` profile uses this to test whether a tiny setup
 launch can pay TK first-use overhead without the full-row setup regression; it
-remains rejected. The corrected 2026-06-27 CUDA 13.3.33 dedicated RTX 5090
-current-default comparison showed `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1`
-regressed train-loop wall to `1.001366x`, steady-state CUDA-event timing to
-`1.000877x`, tokens/sec to `0.998636x`, and forward-QKV first-step timing to
-`1.075029x` versus the promoted full-shape prewarm default. The strict
-llm.kittens reference gates still failed at `1.006153x` train-loop wall,
-`1.006227x` steady-state timing, and `0.993913x` tokens/sec.
+remains rejected. The 2026-06-29 long-run deferred-prewarm rerun improved
+train-loop wall to `0.978921x`, first-step CUDA-event timing to `0.941562x`,
+steady-state CUDA-event timing to `0.999721x`, and train tokens/sec to
+`1.021530x` versus the current no-QKV-prewarm baseline, but failed the startup
+contract at `1.380026x` setup wall, `1.008787x` startup-plus-first-step, and
+`1.063530x` startup-plus-steady-state. Candidate-over-llm.kittens steady-state
+timing passed at `0.997438x`, but train tokens/sec trailed the reference at
+`0.990832x`.
 The `tk_qkv_forward_prewarm_32768` profile is also rejected: its 2026-06-27
 CUDA 13.3.33 dedicated RTX 5090 3-step, 1-sample stage-timed probe improved
 setup wall time to `0.961917x`, but regressed train-loop wall to `1.002107x`,

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmark diagnostics: refreshed the rejected
+  `tk_qkv_forward_prewarm_1row` evidence against the current long-run
+  deferred-prewarm baseline. A 7-warmup, 3-step, 2-sample same-script rerun
+  improved train-loop wall to `0.978921x`, first-step CUDA-event timing to
+  `0.941562x`, steady-state CUDA-event timing to `0.999721x`, and train
+  tokens/sec to `1.021530x`, but kept the profile rejected because setup wall
+  regressed to `1.380026x`, startup-plus-first-step to `1.008787x`,
+  startup-plus-steady-state to `1.063530x`, and train tokens/sec versus
+  llm.kittens to `0.990832x`. Verification: same-script candidate/reference
+  benchmark, no-Torch dependency verifier, focused native GPT source-contract
+  pytest, shell syntax check, and diff check.
+
 - Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now writes
   `native_candidate_attribution` to paired JSON and prints a compact text
   summary showing whether a candidate is `kernel-route-attributed`,
