@@ -8,8 +8,11 @@
   SM120 launchers now forward `beta1`, `beta2`, `adam_eps`, and
   `grad_clip_norm` to the compiled CUDA Tile trainer. The SM120 launchers also
   accept `NFN_NATIVE_GPT_*`, `NFN_SM120_NATIVE_*`, and `NFN_SM120_*` aliases for
-  those AdamW controls. Verification: focused SDK argv, CLI wrapper, SM120
-  launcher content, native no-Torch dependency, and diff checks.
+  those AdamW controls. The no-Torch verifier now exercises non-default SM120
+  AdamW beta/epsilon/clip values through shell and compiled launcher entrypoints
+  so forwarding regressions fail during startup validation. Verification:
+  focused SDK argv, CLI wrapper, SM120 launcher content, native no-Torch
+  dependency, and diff checks.
 
 - Native dense GPT AdamW overrides: `nfn_gpt_native_train` now owns parsed
   `--beta1`, `--beta2`, `--adam-eps`, and `--grad-clip-norm` fields, uses them

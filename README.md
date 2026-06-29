@@ -4504,6 +4504,9 @@ native frontend, raw Tile ops library, and SDK binding modules
 `neuralfn/_native_train.*.so`), plus any optional per-family trainer binaries
 already present in `build/`; explicitly supplied artifact paths remain strict
 and must exist.
+The shell-entrypoint portion also runs the generic and SM120 compiled launchers
+with non-default AdamW beta/epsilon/clip settings so optimizer flag forwarding
+regressions fail the no-Torch gate instead of reaching a long training run.
 The gate also imports the top-level native SDK exports such as
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `native_gpt_kernel_backend()`, `native_gpt_parameter_count()`,

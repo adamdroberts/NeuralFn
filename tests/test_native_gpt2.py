@@ -355,6 +355,10 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
     assert "--batch-size 64" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
     assert "--train-seq-len 1024" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--beta1 0.87" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--beta2 0.98" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--adam-eps 1e-8" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
+    assert "--grad-clip-norm 0.75" in shell_entrypoints["train_gpt_sm120_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["passed"] is True
     assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_gpt3_dry_run"]["stdout"]
@@ -371,6 +375,10 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--batch-size 64" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--train-seq-len 1024" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--beta1 0.87" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--beta2 0.98" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--adam-eps 1e-8" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--grad-clip-norm 0.75" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["passed"] is True
     assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
@@ -5538,6 +5546,10 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
             "NFN_SM120_NATIVE_LEARNING_RATE": "0.0003",
             "NFN_SM120_NATIVE_FINAL_LR_FRACTION": "0.1",
             "NFN_SM120_NATIVE_WEIGHT_DECAY": "0.2",
+            "NFN_SM120_NATIVE_BETA1": "0.87",
+            "NFN_SM120_NATIVE_BETA2": "0.98",
+            "NFN_SM120_NATIVE_ADAM_EPS": "1e-8",
+            "NFN_SM120_NATIVE_GRAD_CLIP_NORM": "0.75",
             "NFN_SM120_NATIVE_WARMUP_STEPS": "12",
             "NFN_SM120_NATIVE_MAX_STEPS": "123",
             "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS": "50",
@@ -5568,6 +5580,10 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         "--learning-rate": "0.0003",
         "--final-lr-fraction": "0.1",
         "--weight-decay": "0.2",
+        "--beta1": "0.87",
+        "--beta2": "0.98",
+        "--adam-eps": "1e-8",
+        "--grad-clip-norm": "0.75",
         "--warmup-steps": "12",
         "--max-steps": "123",
         "--train-loss-every-steps": "50",
@@ -5787,6 +5803,10 @@ def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None
             "NFN_SM120_NATIVE_LEARNING_RATE": "0.0003",
             "NFN_SM120_NATIVE_FINAL_LR_FRACTION": "0.1",
             "NFN_SM120_NATIVE_WEIGHT_DECAY": "0.2",
+            "NFN_SM120_NATIVE_BETA1": "0.87",
+            "NFN_SM120_NATIVE_BETA2": "0.98",
+            "NFN_SM120_NATIVE_ADAM_EPS": "1e-8",
+            "NFN_SM120_NATIVE_GRAD_CLIP_NORM": "0.75",
             "NFN_SM120_NATIVE_WARMUP_STEPS": "12",
             "NFN_SM120_NATIVE_MAX_STEPS": "123",
             "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS": "50",
@@ -5818,6 +5838,10 @@ def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None
         "--learning-rate": "0.0003",
         "--final-lr-fraction": "0.1",
         "--weight-decay": "0.2",
+        "--beta1": "0.87",
+        "--beta2": "0.98",
+        "--adam-eps": "1e-8",
+        "--grad-clip-norm": "0.75",
         "--warmup-steps": "12",
         "--max-steps": "123",
         "--train-loss-every-steps": "50",

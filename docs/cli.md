@@ -2657,6 +2657,9 @@ native C++ before Torch, NumPy, tokenizer, dataset-manager, `infer_gpt`,
 `train_gpt_native`, or `nfn_impl` imports. It also imports the native-only GPT-2-evo, NanoGPT,
 LLaMA fast/megakernel, MixLLaMA, semantic-router MoE, and DeepSeek-V4 shim modules under that same blocker so import-time
 regressions are caught.
+The shell-entrypoint checks also run generic and SM120 launchers with
+non-default AdamW beta, epsilon, and gradient-clip settings so optimizer flag
+forwarding regressions fail before long CUDA training runs.
 The direct native wrappers keep CUDA-visible-device default resolution local to
 the script, so `nfn train`, `cli/scripts/train_gpt.py`, and
 `native_training_guard.py` no longer import `neuralfn.native_cuda_device`

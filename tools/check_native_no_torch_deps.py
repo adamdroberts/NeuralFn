@@ -865,7 +865,12 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--dry-run",
             "--no-checkpoint",
         ),
-        {},
+        {
+            "NFN_SM120_NATIVE_BETA1": "0.87",
+            "NFN_SM120_NATIVE_BETA2": "0.98",
+            "NFN_SM120_NATIVE_ADAM_EPS": "1e-8",
+            "NFN_SM120_NATIVE_GRAD_CLIP_NORM": "0.75",
+        },
     ),
     (
         "train_gpt_sm120_gpt3_dry_run",
@@ -943,7 +948,12 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--dry-run",
             "--no-checkpoint",
         ),
-        {},
+        {
+            "NFN_SM120_NATIVE_BETA1": "0.87",
+            "NFN_SM120_NATIVE_BETA2": "0.98",
+            "NFN_SM120_NATIVE_ADAM_EPS": "1e-8",
+            "NFN_SM120_NATIVE_GRAD_CLIP_NORM": "0.75",
+        },
     ),
     (
         "train_gpt_sm120_compiled_gpt3_dry_run",
