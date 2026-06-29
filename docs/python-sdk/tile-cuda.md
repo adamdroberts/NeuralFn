@@ -903,6 +903,8 @@ names and the short `NFN_SM120_CANDIDATE_*` names; for example,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, and
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` now affect the paired
 workload instead of falling back to the default 10-step/3-sample run.
+Without an explicit warmup override, the native candidate wrapper now uses five
+warmup pairs before the measured candidate/current/reference samples.
 For non-Lt cuBLAS initialization bisection, use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm`. The profile keeps
 baseline and candidate on the same native command while setting

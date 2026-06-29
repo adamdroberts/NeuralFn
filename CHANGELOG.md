@@ -30,12 +30,13 @@
   Verification: focused native verifier tests.
 
 - Native SM120 candidate benchmark warmup: `tools/bench_native_gpt_sm120_candidate.sh`
-  now defaults to three warmup pairs for candidate-vs-current/reference speed
+  now defaults to five warmup pairs for candidate-vs-current/reference speed
   gates unless the caller overrides `NFN_SM120_NATIVE_WARMUP`,
   `NFN_SM120_NATIVE_CANDIDATE_WARMUP`, `NFN_SM120_CANDIDATE_WARMUP`,
   `NFN_SM120_PARITY_WARMUP`, or `NFN_SM120_WARMUP`. The parity wrapper keeps
   its separate two-warmup default. Verification: focused native wrapper source
-  test, shell syntax check, dry-run wrapper plan, and diff check.
+  test, shell syntax check, smoke CUDA validation, dry-run wrapper plan, and
+  diff check.
 
 - Native GPT SM120 build-contract telemetry: the Tile ops C ABI now exposes
   the effective packed-attention data-prep default warps, SM120 memory block

@@ -1499,7 +1499,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in parity_bench
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
-    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 3)\"" in candidate_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 5)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert (
         'COMMON_ENV_RAW="${COMMON_ENV_RAW:+$COMMON_ENV_RAW }'
