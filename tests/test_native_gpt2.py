@@ -1302,6 +1302,25 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "cudaMalloc transformer_lm_combined_device_arena" in source
 
 
+def test_native_gpt_cpp_defaults_to_transformer_lm_training() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "bool train_transformer_lm = true;" in source
+    assert (
+        "--train-transformer-lm            Run the dense GPT transformer/LM training loop "
+        "with validation JSON (default)"
+    ) in source
+    assert 'arg == "--no-train-transformer-lm"' in source
+    assert "Omit --no-train-transformer-lm for the default dense GPT transformer trainer" in source
+    assert "Use --train-transformer-lm for the current NeuralFn-owned Tile trainer path" not in source
+
+
 def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (

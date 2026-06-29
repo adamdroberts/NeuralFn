@@ -27459,9 +27459,9 @@ int main(int argc, char** argv) {
             return run_transformer_lm_training_json(cfg, dataset, argv[0]);
         }
         std::cerr
-            << "nfn_gpt_native_train: NeuralFn Tile CUDA dense GPT trainer loop is not implemented yet.\n"
-            << "Use --train-transformer-lm for the current NeuralFn-owned Tile trainer path, or --print-plan / "
-            << "--check-tile-ops to inspect the Tile trainer requirements.\n";
+            << "nfn_gpt_native_train: no Tile CUDA action selected after --no-train-transformer-lm.\n"
+            << "Omit --no-train-transformer-lm for the default dense GPT transformer trainer, or use "
+            << "--print-plan / --check-tile-ops to inspect the Tile trainer requirements.\n";
         return 2;
     }
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT CLI default contract: clarified the compiled `nfn_gpt_native_train`
+  no-action error so it no longer tells users to add `--train-transformer-lm`;
+  the dense GPT transformer-LM loop is already the default unless
+  `--no-train-transformer-lm` is passed for plan/check/debug flows. README
+  startup-smoke wording now describes the current native smoke directly.
+  Verification: focused native GPT source-contract pytest and C++ syntax
+  build.
+
 - Native GPT SDK catalog helper: added `native_gpt_template_catalog()` and the
   compatibility `native_gpt2_template_catalog()` public SDK helpers. They run
   the compiled C++ `--list-templates` action, parse the returned JSON, and
