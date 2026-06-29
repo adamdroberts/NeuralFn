@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- SM120 candidate benchmark long-run policy alignment:
+  `tools/bench_native_gpt_sm120_candidate.sh` now applies
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to both default no-profile
+  baseline and candidate runs unless the caller or named profile already sets a
+  prewarm policy. This makes the default short same-script candidate benchmark
+  exercise the deferred-prewarm branch used by real long-training runs while
+  preserving named bisection profiles and an opt-out via
+  `NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM=0`. Verification: shell
+  syntax, dry-run expansion checks, focused native benchmark-wrapper tests, and
+  a one-sample same-script native/llm.kittens benchmark.
+
 - Native no-Torch artifact contract gate: `tools/check_native_no_torch_deps.py`
   now requires compiled GPT trainer binaries to contain the runtime JSON markers
   that prove the native gate can observe graph-editor tensor flow, Torch usage,

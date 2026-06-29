@@ -2495,7 +2495,14 @@ The current CUDA 13.3 dedicated RTX 5090 checkpoint after padded token-weight
 initialization became default passed that gate at median NeuralFn over
 llm.kittens train-loop `0.999041x`, steady-state CUDA-event `0.999342x`, and
 tokens/sec `1.001718x`, with the native runtime contract green and no
-graph-editor/Torch data path. The same JSON shows the remaining setup cost:
+graph-editor/Torch data path. The default no-profile
+`tools/bench_native_gpt_sm120_candidate.sh` path applies
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to both the baseline and candidate
+unless an explicit prewarm policy is already present, so short same-script
+candidate runs exercise the same deferred-prewarm branch as long training runs;
+set `NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM=0` only when intentionally
+reproducing the older short-run eager-prewarm benchmark. The same JSON shows the
+remaining setup cost:
 median `setup_wall_ms` `714.306 ms`, float arena materialization `181.658 ms`,
 uint16 arena materialization `125.478 ms`, and token-weight initialization
 `151.345 ms`. LM-head backward still reports `diagnostic-cuda-graph-wrapper`;
