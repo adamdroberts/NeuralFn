@@ -42,7 +42,9 @@ Real training tensors must not pass through graph editor node objects.
   `nfn train`, the native training guard, `tools/train_gpt_sm120.sh`, and the
   compiled SM120 launcher now avoid the `dedicated` selector unless explicitly
   requested, so the regular workstation path does not spawn `nvidia-smi` before
-  launching CUDA Tile training. Benchmark wrappers keep their explicit
+  launching CUDA Tile training. The compiled and shell SM120 launchers preserve
+  the selector as an opt-in via `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES=dedicated`
+  (or `auto` / `dedicated-auto`), and benchmark wrappers keep their explicit
   `dedicated` defaults when they need selected-GPU load evidence.
 - [x] Add a generic compiled dense GPT launcher. `tools/build_train_gpt_cli.sh`
   builds `build/nfn_train_gpt`, `tools/build_native_gpt2_all.sh` and

@@ -5354,7 +5354,7 @@ def test_sm120_shell_fallback_honors_native_env_defaults(tmp_path: Path) -> None
     assert "--train-transformer-lm" in args
 
 
-def test_compiled_and_shell_sm120_launchers_default_to_dedicated_gpu_selector(
+def test_compiled_and_shell_sm120_launchers_default_to_cuda_ordinal_zero_with_selector_opt_in(
     tmp_path: Path,
 ) -> None:
     if shutil.which("c++") is None:
@@ -5416,7 +5416,23 @@ def test_compiled_and_shell_sm120_launchers_default_to_dedicated_gpu_selector(
         check=False,
     )
     assert compiled_proc.returncode == 0, compiled_proc.stderr
-    assert compiled_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
+    assert compiled_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=0"
+
+    compiled_dedicated_env_out = tmp_path / "compiled-dedicated-env.txt"
+    compiled_dedicated_env = base_env.copy()
+    compiled_dedicated_env["NFN_TEST_NATIVE_GPT_ENV"] = str(compiled_dedicated_env_out)
+    compiled_dedicated_env["NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES"] = "dedicated"
+    compiled_dedicated_proc = subprocess.run(
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=compiled_dedicated_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compiled_dedicated_proc.returncode == 0, compiled_dedicated_proc.stderr
+    assert compiled_dedicated_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
 
     shell_env = base_env.copy()
     shell_env["NFN_TEST_NATIVE_GPT_ENV"] = str(shell_env_out)
@@ -5431,7 +5447,24 @@ def test_compiled_and_shell_sm120_launchers_default_to_dedicated_gpu_selector(
         check=False,
     )
     assert shell_proc.returncode == 0, shell_proc.stderr
-    assert shell_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
+    assert shell_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=0"
+
+    shell_dedicated_env_out = tmp_path / "shell-dedicated-env.txt"
+    shell_dedicated_env = base_env.copy()
+    shell_dedicated_env["NFN_TEST_NATIVE_GPT_ENV"] = str(shell_dedicated_env_out)
+    shell_dedicated_env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
+    shell_dedicated_env["NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES"] = "dedicated"
+    shell_dedicated_proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh"), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=shell_dedicated_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert shell_dedicated_proc.returncode == 0, shell_dedicated_proc.stderr
+    assert shell_dedicated_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
 
 
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:

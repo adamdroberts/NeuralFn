@@ -214,6 +214,17 @@
   NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_long_run_defer_prewarm_tight_gate_cuda133_3s2.json
   bash tools/bench_native_gpt_sm120_candidate.sh`.
 
+- Native GPT startup: restored the normal SM120 compiled and shell launcher
+  default to CUDA ordinal `0` instead of the `dedicated` selector. This removes
+  the `nvidia-smi` subprocess from the default no-Python workstation launch
+  path while keeping selector routing available through
+  `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES=dedicated` (or `auto` /
+  `dedicated-auto`). The paired benchmark wrappers still default to dedicated
+  GPU selection when they need selected-GPU load evidence. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "sm120_launchers_default_to_cuda_ordinal_zero"`.
+
 - Native GPT validation: `tools/validate_sm120_cuda13.sh` now runs the direct
   llm.kittens parity gate by default instead of leaving it opt-in. Set
   `NFN_SM120_CUDA13_RUN_PARITY=0` only for fast CUDA-only smoke checks that
