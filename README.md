@@ -4187,6 +4187,13 @@ GPT-2-compatible SDPA forward now attempts a dense causal full-head row-vector T
 GPT-2-compatible SDPA backward now uses the same query-row score reuse contract for `qk_dim <= 64`, `value_dim <= 64`, and sequence lengths up to 1024. The native Tile launcher zeros Q/K/V gradient buffers, then launches one query-row CTA that computes the row softmax once, writes the full 64-channel `dQ`, and atomically accumulates `dK`/`dV` for every attended key row. This replaces the old scalar-output backward CTAs and avoids the key-row implementation that repeated a full query softmax scan per key row. Native plan/training JSON reports `attention_backward_strategy: "query-row-atomic-tile-score-reuse"`, `attention_backward_row_count`, `attention_backward_scalar_output_count`, `attention_backward_score_reuse_dim: 64`, and `attention_backward_scalar_cta_elision_factor: 192`.
 
 Compiled GPT-2 `--train-transformer-lm` results include a `timing` block with host wall-clock phase timers: `setup_wall_ms`, `train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`, `post_train_sample_wall_ms`, `cleanup_wall_ms`, `checkpoint_wall_ms`, `total_wall_ms`, `optimizer_steps_per_second`, and `train_tokens_per_second`. The train-loop timer ends after an explicit end-of-loop device synchronization and before the diagnostic device-to-host sample copies used for status JSON; `--startup-only` elides those diagnostic sample copies and reports `post_train_diagnostic_samples_elided: true`. Cleanup is reported separately so startup-only probes distinguish readiness to train from teardown of large CUDA arenas.
+Direct compiled trainer invocations also auto-enable `--fast-startup` for short
+debug/smoke runs when `max_steps` is at or below
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) and no explicit
+fast-startup flag or env var was provided. Long quality runs keep the deferred
+long-run prewarm policy. Runtime JSON reports
+`native_auto_fast_startup_short_run` and `native_fast_startup_explicit` so
+benchmarks can distinguish auto preflight behavior from caller intent.
 
 When BF16-primary block weights are enabled and checkpoint export is disabled
 with `--no-checkpoint` or suppressed by `--startup-only`, the dense native GPT

@@ -2359,6 +2359,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "native_fast_startup_prewarm_default" in source
     assert "cfg.fast_startup ||" in source
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS" in source
+    assert "auto_fast_startup_short_run" in source
+    assert "fast_startup_env_explicit" in source
+    assert "native_auto_fast_startup_short_run" in source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
     assert "!native_long_run_defer_prewarm_enabled" in source
     assert "long-run-defer-throughput-prewarms-by-default" in source

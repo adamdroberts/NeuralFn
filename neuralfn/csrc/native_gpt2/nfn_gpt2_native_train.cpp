@@ -225,6 +225,8 @@ struct Config {
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
     bool fast_startup = false;
+    bool fast_startup_explicit = false;
+    bool auto_fast_startup_short_run = false;
     bool require_optimized_attention = true;
     bool require_optimized_kernels = true;
     bool require_cooperative_lm_head_backward = false;
@@ -25451,6 +25453,10 @@ int run_transformer_lm_training_json(
         << "  \"startup_only\": " << (cfg.startup_only ? "true" : "false") << ",\n"
         << "  \"native_fast_startup_requested\": "
         << (native_fast_startup_requested ? "true" : "false") << ",\n"
+        << "  \"native_fast_startup_explicit\": "
+        << (cfg.fast_startup_explicit ? "true" : "false") << ",\n"
+        << "  \"native_auto_fast_startup_short_run\": "
+        << (cfg.auto_fast_startup_short_run ? "true" : "false") << ",\n"
         << "  \"native_long_run_defer_prewarm_after_steps\": "
         << native_long_run_defer_prewarm_after_steps << ",\n"
         << "  \"native_long_run_defer_prewarm_enabled\": "
@@ -26803,6 +26809,7 @@ int main(int argc, char** argv) {
             cfg.train_transformer_lm = true;
         } else if (arg == "--fast-startup" || arg == "--native-cuda-fast-startup") {
             cfg.fast_startup = true;
+            cfg.fast_startup_explicit = true;
         } else if (arg == "--no-train-transformer-lm") {
             cfg.train_transformer_lm = false;
         } else if (arg == "--no-checkpoint" || arg == "--native-cuda-no-checkpoint") {
@@ -27104,6 +27111,25 @@ int main(int argc, char** argv) {
         normalize_tile_cuda_activation_dtype(cfg.tile_cuda_activation_dtype);
     cfg.template_name = normalize_template_name(cfg.template_name);
     apply_template_activation_defaults(cfg);
+    const bool fast_startup_env_explicit =
+        std::getenv("NFN_NATIVE_GPT_FAST_STARTUP") != nullptr ||
+        std::getenv("NFN_NATIVE_GPT2_FAST_STARTUP") != nullptr ||
+        std::getenv("NFN_TILE_CUDA_FAST_STARTUP") != nullptr;
+    const std::int64_t auto_fast_startup_after_steps =
+        env_nonnegative_i64_or(
+            {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
+             "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
+             "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
+            1024);
+    cfg.auto_fast_startup_short_run =
+        !cfg.fast_startup_explicit &&
+        !fast_startup_env_explicit &&
+        auto_fast_startup_after_steps > 0 &&
+        cfg.max_steps > 0 &&
+        cfg.max_steps <= auto_fast_startup_after_steps;
+    if (cfg.auto_fast_startup_short_run) {
+        cfg.fast_startup = true;
+    }
     if (!valid_activation(cfg.activation)) {
         std::cerr << "Invalid activation: " << cfg.activation << "\n";
         return 2;

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Native GPT startup: direct `nfn_gpt_native_train` /
+  `nfn_gpt2_native_train` invocations now apply the same short-run
+  fast-startup policy as the compiled GPT launchers. When `max_steps` is at or
+  below `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) and the
+  caller did not set an explicit fast-startup flag or env var, the C++ trainer
+  marks `cfg.fast_startup` itself and skips throughput-only setup prewarms.
+  Long quality runs remain unchanged. Runtime JSON now reports
+  `native_fast_startup_explicit` and `native_auto_fast_startup_short_run`.
+  The dedicated RTX 5090 paired direct-trainer gate against
+  `NFN_NATIVE_GPT_FAST_STARTUP=0` measured setup at `0.561478x`; the expected
+  first-step deferred-prewarm cost made `startup_plus_train_loop_wall_ms`
+  noise-flat at `0.997909x`, so this is a startup/preflight consistency change
+  rather than a long-run throughput promotion.
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`, and a
+  dedicated RTX 5090 one-step direct native GPT smoke.
+
 - Native GPT startup/memory: BF16-primary dense GPT training now elides the
   FP32 master copies of the four large block weight matrices when final
   checkpoint export is disabled (`--no-checkpoint`) or suppressed by
