@@ -3323,9 +3323,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `1.073852x` train-loop wall, `1.075869x` steady-state CUDA-event timing,
     `1.314851x` LM-head backward, `1.449433x` cooperative LM-head time,
     `0.931229x` train tokens/sec, and `1.100897x` candidate-over-llm.kittens
-    train-loop wall. dWeight-only was closer on the previous split check but
-    still missed strict promotion at `1.001673x` train-loop wall, `1.002494x`
-    steady-state CUDA-event timing, `1.000210x` LM-head backward, and
-    `1.000161x` cooperative LM-head time. Do not promote either split; the
-    remaining work needs real fused/cooperative block or LM-head kernels rather
-    than cuBLASLt graph-body policy changes.
+    train-loop wall. The post-reinstall dWeight-only recheck also stayed
+    rejected: the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed
+    gate moved
+    `lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count: 0 -> 4`,
+    proving the dWeight graph-body route, but failed at `1.004190x`
+    candidate-over-llm.kittens train-loop wall, `1.004443x` steady-state
+    CUDA-event timing, and `0.995824x` train tokens/sec. Do not promote either
+    split; the remaining work needs real fused/cooperative block or LM-head
+    kernels rather than cuBLASLt graph-body policy changes.
