@@ -105,6 +105,47 @@ print("TORCH_LOADED", "torch" in sys.modules)
     assert "TORCH_LOADED False" in proc.stdout
 
 
+def test_surrogate_trainer_module_import_is_lean_without_torch_numpy() -> None:
+    code = r'''
+import importlib.abc
+import sys
+
+class BlockOptional(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".", 1)[0] in {"torch", "numpy"}:
+            raise ImportError(f"blocked optional dependency: {fullname}")
+        return None
+
+sys.meta_path.insert(0, BlockOptional())
+from neuralfn.trainer import SurrogateTrainer, TrainConfig
+
+trainer = SurrogateTrainer(object(), TrainConfig(epochs=1))
+print("TRAINER", type(trainer).__name__)
+print("TORCH_LOADED", "torch" in sys.modules)
+print("NUMPY_LOADED", "numpy" in sys.modules)
+try:
+    trainer.build_surrogates()
+except ImportError as exc:
+    print("OPTIONAL_ERROR", "optional legacy graph/Torch stack" in str(exc))
+else:
+    raise SystemExit("build_surrogates unexpectedly succeeded")
+'''
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "TRAINER SurrogateTrainer" in proc.stdout
+    assert "TORCH_LOADED False" in proc.stdout
+    assert "NUMPY_LOADED False" in proc.stdout
+    assert "OPTIONAL_ERROR True" in proc.stdout
+
+
 def test_no_torch_verifier_rejects_stale_egg_info(tmp_path: Path) -> None:
     module_path = Path("tools/check_native_no_torch_deps.py")
     spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Lean surrogate trainer import boundary: `neuralfn.trainer` no longer imports
+  Torch, NumPy, or `neuralfn.surrogate` at module import time. Importing
+  `TrainConfig` or constructing `SurrogateTrainer` now works on the default
+  native/core SDK install, while `build_surrogates()` and `train()` lazily load
+  the legacy NumPy/PyTorch surrogate stack and raise a clear `ImportError` if it
+  is not installed. Verification: focused native dependency tests, direct
+  blocked-import smoke check, and native no-Torch dependency verifier.
+
 - Top-level native GPT train dispatch: `nfn-native train --base-model gpt`,
   `gpt2`, `gpt3`, and `nanogpt` now bypass the generic `nfn_native_train`
   frontend when `NFN_NATIVE_TRAIN_CLI` is unset and exec the linked dense GPT

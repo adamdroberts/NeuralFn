@@ -1,14 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
-
-import numpy as np
-import torch
-import torch.nn as nn
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable
 
 from .graph import NeuronGraph
-from .surrogate import SurrogateModel, build_surrogates
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
+    from .surrogate import SurrogateModel
+
+
+@lru_cache(maxsize=1)
+def _load_surrogate_training_stack():
+    try:
+        import numpy as np
+        import torch
+        import torch.nn as nn
+        from .surrogate import SurrogateModel, build_surrogates
+    except ImportError as exc:
+        raise ImportError(
+            "neuralfn.trainer is importable in the lean native SDK, but "
+            "SurrogateTrainer training requires the optional legacy graph/Torch "
+            "stack. Install NumPy and PyTorch explicitly before calling "
+            "build_surrogates() or train()."
+        ) from exc
+    return np, torch, nn, SurrogateModel, build_surrogates
 
 
 @dataclass
@@ -28,7 +46,7 @@ class SurrogateTrainer:
     def __init__(self, graph: NeuronGraph, config: TrainConfig | None = None) -> None:
         self.graph = graph
         self.config = config or TrainConfig()
-        self.surrogates: dict[str, SurrogateModel] = {}
+        self.surrogates: dict[str, Any] = {}
         self._stop = False
         self.loss_history: list[float] = []
 
@@ -36,6 +54,7 @@ class SurrogateTrainer:
         self._stop = True
 
     def build_surrogates(self) -> None:
+        _np, _torch, _nn, _SurrogateModel, build_surrogates = _load_surrogate_training_stack()
         self.surrogates = build_surrogates(
             self.graph,
             n_samples=self.config.surrogate_samples,
@@ -48,8 +67,8 @@ class SurrogateTrainer:
 
     def train(
         self,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
         *,
         on_epoch: Callable[[int, float], None] | None = None,
     ) -> list[float]:
@@ -63,6 +82,7 @@ class SurrogateTrainer:
         Returns:
             List of per-epoch losses.
         """
+        _np, torch, nn, _SurrogateModel, _build_surrogates = _load_surrogate_training_stack()
         if not self.surrogates:
             self.build_surrogates()
 
@@ -121,12 +141,13 @@ class SurrogateTrainer:
 
     def _forward(
         self,
-        inputs: torch.Tensor,
-        params: torch.Tensor,
+        inputs: "torch.Tensor",
+        params: "torch.Tensor",
         edge_ids: list[str],
         topo: list[str],
-    ) -> torch.Tensor:
+    ) -> "torch.Tensor":
         """Differentiable forward pass through the surrogate graph."""
+        _np, torch, _nn, _SurrogateModel, _build_surrogates = _load_surrogate_training_stack()
         batch = inputs.size(0)
         node_vals: dict[str, torch.Tensor] = {}
 
@@ -174,7 +195,8 @@ class SurrogateTrainer:
             return torch.zeros(batch, 1)
         return torch.cat(parts, dim=1)
 
-    def _write_params_back(self, params: torch.Tensor, edge_ids: list[str]) -> None:
+    def _write_params_back(self, params: "torch.Tensor", edge_ids: list[str]) -> None:
+        _np, torch, _nn, _SurrogateModel, _build_surrogates = _load_surrogate_training_stack()
         with torch.no_grad():
             for i, eid in enumerate(edge_ids):
                 self.graph.edges[eid].weight = params[i * 2].item()

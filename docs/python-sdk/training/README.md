@@ -2,6 +2,11 @@
 
 NeuralFn supports three scalar-graph training methods and one torch-runtime trainer. Each method optimizes different aspects of a `NeuronGraph`.
 
+The lean native/core SDK can import the public training configuration surface
+without Torch or NumPy. Surrogate training execution still relies on the legacy
+NumPy/PyTorch surrogate stack, so install those packages explicitly before
+calling `SurrogateTrainer.build_surrogates()` or `SurrogateTrainer.train()`.
+
 ## Overview
 
 | Method | Module | Optimizes | Runtime | Use Case |
@@ -13,7 +18,7 @@ NeuralFn supports three scalar-graph training methods and one torch-runtime trai
 
 ## When to Use Each
 
-**Surrogate training** (`SurrogateTrainer`) is the default for scalar graphs. It probes each neuron to build a differentiable MLP surrogate, then backpropagates through the surrogate chain to optimize edge weights/biases. Best for small-to-medium graphs where neurons are continuous functions.
+**Surrogate training** (`SurrogateTrainer`) is the default for scalar graphs. It probes each neuron to build a differentiable MLP surrogate, then backpropagates through the surrogate chain to optimize edge weights/biases. Best for small-to-medium graphs where neurons are continuous functions. Importing the trainer module and constructing the trainer are lean; the probe/training calls require the optional legacy NumPy/PyTorch stack.
 
 **Evolutionary training** (`EvolutionaryTrainer`) uses a genetic algorithm with tournament selection, crossover, and mutation. It evaluates the actual neuron functions (not surrogates) so it works with any neuron type, including discontinuous or noisy functions. Slower but more robust.
 

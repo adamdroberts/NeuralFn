@@ -2,6 +2,13 @@
 
 Gradient-based training of edge weights/biases through differentiable surrogates.
 
+`neuralfn.trainer` is safe to import from the lean native/core SDK. Importing
+`TrainConfig` or constructing `SurrogateTrainer` does not import Torch or NumPy.
+The actual surrogate training operations (`build_surrogates()` and `train()`)
+still use the legacy surrogate stack and require NumPy plus PyTorch to be
+installed explicitly. If those optional packages are missing, the training
+methods raise an `ImportError` before doing work.
+
 ---
 
 ## TrainConfig
@@ -58,7 +65,7 @@ Trains edge weights and biases by backpropagating through differentiable surroga
 |-----------|------|-------------|
 | `graph` | `NeuronGraph` | The source graph |
 | `config` | `TrainConfig` | Training configuration |
-| `surrogates` | `dict[str, SurrogateModel]` | Built surrogate models (populated by `build_surrogates`) |
+| `surrogates` | `dict[str, Any]` | Built surrogate models (populated by `build_surrogates`; concrete values are legacy `SurrogateModel` instances when the optional stack is installed) |
 | `loss_history` | `list[float]` | Per-epoch loss values |
 
 ### Methods
