@@ -3987,12 +3987,14 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "candidate-over-llm.kittens train_loop_wall_ms_per_step=0.997023x" in bench_source
     assert "candidate-over-llm.kittens train_tokens_per_second=1.002670x" in bench_source
     assert "long-run deferred-prewarm policy as the full-training default" in bench_source
-    assert "setup_wall_ms to 0.673973x" in bench_source
-    assert "startup_plus_steady_state_step_wall_ms to 0.926006x" in bench_source
-    assert "steady-state CUDA-event step time inside the native gate at 1.000609x" in bench_source
-    assert "llm.kittens reference steady-state CUDA-event step at 0.998998x" in bench_source
-    assert "deferred first-step cost remains visible at 1.095859x" in bench_source
-    assert "1.086035x versus llm.kittens" in bench_source
+    assert "7-warmup, 3-step, 2-sample same-script llm.kittens reference rerun" in bench_source
+    assert "native_candidate_attribution.status=kernel-route-attributed" in bench_source
+    assert "setup_wall_ms to 0.438830x" in bench_source
+    assert "startup_plus_steady_state_step_wall_ms to 0.650744x" in bench_source
+    assert "steady-state CUDA-event step time inside the native gate at 1.000196x" in bench_source
+    assert "llm.kittens reference steady-state CUDA-event step at 0.777842x" in bench_source
+    assert "steady-state tokens/sec at 1.267382x" in bench_source
+    assert "deferred first-step cost remains visible in train-loop wall timing" in bench_source
     assert "setup.token_weight_init.total_ms regressed to 1.020863x" in bench_source
     assert "setup_wall_ms regressed to 1.008041x" in bench_source
     assert "setup.token_weight_init.total_ms regressed to 1.003813x" in bench_source
