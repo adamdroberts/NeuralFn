@@ -54,7 +54,7 @@ from neuralfn import (
     NativeGptCheckpointInfo, NativeGptRunConfig, NativeGptRunnerStatus,
     NativeGpt2CheckpointInfo, NativeGpt2RunConfig, NativeGpt2RunnerStatus,
     build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, is_native_gpt_checkpoint,
-    NativeTrainRunConfig, NativeTrainRunnerStatus,
+    NativeTrainCaptureResult, NativeTrainRunConfig, NativeTrainRunnerStatus,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, is_native_gpt2_checkpoint,
     build_native_train_run_config, exec_native_gpt, exec_native_gpt2, exec_native_train,
     latest_native_gpt_checkpoint, native_gpt_parameter_count,
@@ -66,7 +66,7 @@ from neuralfn import (
     resolve_native_gpt_launcher, resolve_native_gpt_token_shards, run_native_gpt,
     resolve_native_gpt2_cli, resolve_native_gpt2_executable,
     resolve_native_gpt2_launcher, resolve_native_gpt2_token_shards, run_native_gpt2,
-    resolve_native_train_cli, run_native_train,
+    resolve_native_train_cli, run_native_train, capture_native_train,
     write_native_gpt_run_config,
     write_native_gpt2_run_config,
 )
@@ -260,8 +260,13 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_gpt_binding_command(config)`,
 `resolve_native_gpt2_binding_command(config)`, or
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
-compiled binding will spawn, and use `native_train_model_registry()` to inspect
-the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+compiled binding will spawn. Use `capture_native_train(config)` for native
+preflight/listing commands that need stdout/stderr without routing through
+Python `subprocess.run`; rebuilt generic bindings expose `capture_train` /
+`capture_native_train` and return `NativeTrainCaptureResult`. The
+`native_train_model_registry()` helper also uses that C++ capture path when the
+binding is available before falling back to Python subprocess or static
+no-Torch metadata.
 For shell workflows that should avoid Python entirely, build
 `build/nfn_native` with `bash tools/build_native_nfn_cli.sh` or install it as
 `nfn-native`: `nfn-native train ...` execs the unified compiled trainer, and

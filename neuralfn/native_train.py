@@ -252,6 +252,26 @@ class NativeTrainRunConfig:
         return tuple(resolved_args)
 
 
+@dataclass(frozen=True)
+class NativeTrainCaptureResult:
+    """Captured output from a compiled native training command."""
+
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+    argv: tuple[str, ...] = ()
+    runner: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "returncode": int(self.returncode),
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "argv": list(self.argv),
+            "runner": self.runner,
+        }
+
+
 def _native_train_args_have_option(args: Sequence[str], *names: str) -> bool:
     option_names = set(names)
     for arg in args:
@@ -596,6 +616,30 @@ def resolve_native_train_binding_command(config: NativeTrainRunConfig) -> list[s
     return [str(item) for item in resolver(config.launch_dict())]
 
 
+def _load_native_train_capture_binding():
+    module_name, _runner, _resolver = _load_native_train_binding()
+    module = importlib.import_module(module_name)
+    capture = getattr(module, "capture_train", None) or getattr(module, "capture_native_train", None)
+    if not callable(capture):
+        raise ImportError(f"{module_name}: missing capture_train(config_dict)/capture_native_train(config_dict)")
+    return module_name, capture
+
+
+def _native_train_binding_capture_config(
+    argv: Sequence[str],
+    *,
+    cuda_visible_devices: str = "0",
+    cuda_device_max_connections: str = "1",
+    strict_native_command: bool = True,
+) -> dict[str, Any]:
+    return {
+        "argv": [str(item) for item in argv],
+        "cuda_visible_devices": resolve_cuda_visible_devices_value(cuda_visible_devices),
+        "cuda_device_max_connections": str(cuda_device_max_connections),
+        "strict_native_command": bool(strict_native_command),
+    }
+
+
 def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]:
     env = os.environ.copy()
     _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(config.cuda_visible_devices))
@@ -632,6 +676,48 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
     return int(proc.returncode)
 
 
+def capture_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> NativeTrainCaptureResult:
+    """Run a compiled native trainer and capture stdout/stderr.
+
+    The default runner uses the C++ binding when available so SDK preflight and
+    JSON-listing calls can avoid Python subprocess orchestration on the native
+    path. It falls back to ``subprocess.run`` only when the binding is absent or
+    the caller explicitly requests ``runner="compiled-cli"`` / ``"subprocess"``.
+    """
+
+    status = native_train_runner_status(runner)
+    argv = config.argv()
+    if status.resolved == "binding":
+        if not status.available:
+            raise RuntimeError(f"Native train binding requested but unavailable: {status.reason}")
+        _module_name, capture = _load_native_train_capture_binding()
+        payload = capture(config.launch_dict())
+        return NativeTrainCaptureResult(
+            returncode=int(payload.get("returncode", 126)),
+            stdout=str(payload.get("stdout", "")),
+            stderr=str(payload.get("stderr", "")),
+            argv=tuple(str(item) for item in payload.get("argv", argv)),
+            runner="binding",
+        )
+    if not status.available and not _native_train_command_available(argv):
+        raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
+    proc = subprocess.run(
+        argv,
+        env=_native_train_subprocess_env(config),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return NativeTrainCaptureResult(
+        returncode=int(proc.returncode),
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        argv=tuple(argv),
+        runner=status.resolved,
+    )
+
+
 def exec_native_train(config: NativeTrainRunConfig, *, runner: str = "compiled-cli") -> int:
     """Replace the current Python process with the compiled native trainer."""
 
@@ -653,6 +739,26 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
     ]
     if not str(native_train_cli or "").strip() and not _native_train_command_available(command[:1]):
         return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
+    try:
+        _module_name, capture = _load_native_train_capture_binding()
+    except ImportError:
+        capture = None
+    if capture is not None:
+        payload = capture(
+            _native_train_binding_capture_config(
+                command,
+                strict_native_command=True,
+            )
+        )
+        returncode = int(payload.get("returncode", 126))
+        if returncode == 0:
+            return json.loads(str(payload.get("stdout", "")))
+        if not str(native_train_cli or "").strip():
+            return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
+        raise RuntimeError(
+            "native train registry command failed with exit "
+            f"{returncode}: {str(payload.get('stderr', '')).strip()}"
+        )
     proc = subprocess.run(
         command,
         text=True,

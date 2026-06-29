@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native SDK C++ capture binding: extended `neuralfn._native_train` with
+  `capture_train` / `capture_native_train`, implemented with POSIX
+  `posix_spawnp()` plus stdout/stderr pipes, and added the public
+  `NativeTrainCaptureResult` / `capture_native_train()` SDK API. Native
+  preflight/listing calls can now stay on the generic C++ binding path when
+  they need captured JSON instead of falling back to Python `subprocess.run`.
+  `native_train_model_registry()` prefers the same binding capture route before
+  subprocess or static no-Torch metadata fallback. Verification: rebuilt the
+  native train binding, ran focused native SDK capture tests, and ran
+  `git diff --check`.
+
 - Native GPT token-weight startup bisection: added rejected
   `token_weight_strided_blocks1024` and `token_weight_strided_blocks2048`
   candidate profiles to the SM120 paired wrapper. Both force the baseline to the

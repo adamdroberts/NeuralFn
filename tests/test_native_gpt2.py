@@ -9,6 +9,7 @@ import subprocess
 import sys
 import sysconfig
 import struct
+import types
 from types import SimpleNamespace
 
 import neuralfn
@@ -59,10 +60,12 @@ from neuralfn.native_gpt2 import (
     write_native_gpt2_run_config,
 )
 from neuralfn.native_train import (
+    NativeTrainCaptureResult,
     NativeTrainRunnerStatus,
     build_native_gpt_launcher_run_config,
     build_native_sm120_gpt_run_config,
     build_native_train_run_config,
+    capture_native_train,
     exec_native_train,
     native_train_model_registry,
     native_train_runner_status,
@@ -142,6 +145,81 @@ def _write_native_checkpoint(path: Path, *, step: int | None = None, version: in
     if step is not None:
         (path.parent / f"DONE_{step:08d}").write_text("", encoding="utf-8")
     return path
+
+
+def test_native_train_sdk_capture_uses_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = types.ModuleType("fake_native_train_binding")
+
+    def resolve_command(config: dict[str, object]) -> list[str]:
+        return [str(item) for item in config["argv"]]  # type: ignore[index]
+
+    def run_train(config: dict[str, object]) -> int:
+        assert config["strict_native_command"] is True
+        return 0
+
+    def capture_train(config: dict[str, object]) -> dict[str, object]:
+        argv = resolve_command(config)
+        assert argv[0] == "/tmp/nfn_gpt_native_train"
+        assert config["cuda_device_max_connections"] == "1"
+        return {
+            "returncode": 0,
+            "stdout": "{\"status\":\"ok\"}\n",
+            "stderr": "",
+            "argv": argv,
+        }
+
+    module.resolve_command = resolve_command  # type: ignore[attr-defined]
+    module.run_train = run_train  # type: ignore[attr-defined]
+    module.capture_train = capture_train  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_native_train_binding", module)
+    monkeypatch.setattr(native_train_module, "NATIVE_TRAIN_BINDING_MODULES", ("fake_native_train_binding",))
+
+    config = build_native_train_run_config(
+        "gpt",
+        ["--print-plan", "--json"],
+        native_train_cli="/tmp/nfn_gpt_native_train",
+    )
+    result = capture_native_train(config)
+
+    assert isinstance(result, NativeTrainCaptureResult)
+    assert result.runner == "binding"
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["status"] == "ok"
+    assert result.argv[:3] == ("/tmp/nfn_gpt_native_train", "--base-model", "gpt")
+
+
+def test_native_train_model_registry_prefers_cpp_binding_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = types.ModuleType("fake_native_train_registry_binding")
+    calls: list[list[str]] = []
+
+    def resolve_command(config: dict[str, object]) -> list[str]:
+        return [str(item) for item in config["argv"]]  # type: ignore[index]
+
+    def run_train(_config: dict[str, object]) -> int:
+        return 0
+
+    def capture_train(config: dict[str, object]) -> dict[str, object]:
+        argv = resolve_command(config)
+        calls.append(argv)
+        return {
+            "returncode": 0,
+            "stdout": json.dumps({"models": [{"name": "gpt", "status": "implemented"}]}),
+            "stderr": "",
+            "argv": argv,
+        }
+
+    module.resolve_command = resolve_command  # type: ignore[attr-defined]
+    module.run_train = run_train  # type: ignore[attr-defined]
+    module.capture_train = capture_train  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_native_train_registry_binding", module)
+    monkeypatch.setattr(native_train_module, "NATIVE_TRAIN_BINDING_MODULES", ("fake_native_train_registry_binding",))
+    monkeypatch.setattr(native_train_module, "resolve_native_train_cli", lambda value=None: "/tmp/nfn_native_train")
+    monkeypatch.setattr(native_train_module, "_native_train_command_available", lambda argv: True)
+
+    registry = native_train_model_registry()
+
+    assert registry["models"] == [{"name": "gpt", "status": "implemented"}]
+    assert calls == [["/tmp/nfn_native_train", "--list-models", "--json"]]
 
 
 def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None:
