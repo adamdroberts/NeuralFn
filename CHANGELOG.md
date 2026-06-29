@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmark diagnostics: refreshed the rejected
+  `lm_head_true_fused_tile16_wmma` profile text in both the focused LM-head
+  wrapper and the full native candidate wrapper so CLI output reports the
+  current multi-warp WMMA evidence (`94.806450 ms/iter`, `4.041717x`
+  candidate/current-wrapper, `2.850141x` candidate/reference-summed) instead
+  of older single-worker measurements. The active focused strict-body rejection
+  reason now uses current-route wording. Verification: focused native GPT
+  source-contract pytest and shell syntax checks for both wrappers.
+
 - Native GPT LM-head diagnostics: the default-off tile16 WMMA strict
   true-fused classifier-backward candidate now assigns CE rows and
   dHidden/dWeight tiles per warp inside the cooperative block, instead of

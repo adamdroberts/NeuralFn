@@ -3215,6 +3215,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-serial-graph-body\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16\"" in bench_source
+    assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16-wmma\"" in bench_source
+    assert "4.041717x candidate/current-wrapper" in bench_source
+    assert "2.850141x candidate/reference-summed" in bench_source
+    assert "94.806450 ms/iter" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16-wmma-warp32\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16-wmma-exp2-ce\"" in bench_source
     assert "11.873753x candidate/current-wrapper" in bench_source

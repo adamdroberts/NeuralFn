@@ -3062,11 +3062,11 @@ strict selector is active. The named profiles
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma` run this
 candidate through the focused and full-loop wrappers. This is still opt-in and
 rejected: the 2026-06-29 dedicated RTX 5090 focused trainer-chunk preflight
-proved the strict Tile path but measured `11.780666x`
-candidate/current-wrapper, `8.303748x` candidate/reference-summed, and
-`6.416973x` candidate/reference-summed-with-logits time. The strict body took
-`276.307454` ms/iteration, with dHidden and dWeight dominating at
-`306649471.146405` and `492286394.807190` cycles/block.
+proved the strict Tile path but measured `4.041717x`
+candidate/current-wrapper, `2.850141x` candidate/reference-summed, and
+`2.202791x` candidate/reference-summed-with-logits time. The strict body took
+`94.806450` ms/iteration, with CE, dHidden, and dWeight still slower than the
+reference components.
 Add `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1` to that tile16 WMMA build
 to isolate the strict body's CE math through the shared exp2 softmax helper.
 The ABI implementation class reports
