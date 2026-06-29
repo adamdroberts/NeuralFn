@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native SM120 launcher CUDA selector precedence: `build/nfn_train_gpt_sm120`
+  and the `tools/train_gpt_sm120.sh` Bash fallback now treat
+  `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
+  and `NFN_SM120_CUDA_VISIBLE_DEVICES` as explicit per-run device selectors.
+  When one is set, it overrides an inherited `CUDA_VISIBLE_DEVICES` mask before
+  the C++ trainer starts; when none is set, the launchers preserve an inherited
+  mask or default unset masks to ordinal `0` as before. This prevents a display
+  GPU shell mask from silently overriding `dedicated` on the no-Python SM120
+  training path. Verification: rebuilt the compiled SM120 launcher in the
+  focused regression test and checked both compiled and shell paths with an
+  inherited ambient mask.
+
 - Native GPT Python shim CUDA device precedence: `cli/scripts/train_gpt_native.py`
   now writes the resolved native GPT config `CUDA_VISIBLE_DEVICES` and
   `CUDA_DEVICE_MAX_CONNECTIONS` values into the compiled C++ trainer environment

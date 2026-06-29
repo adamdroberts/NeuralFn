@@ -41,6 +41,16 @@ std::string env_first(std::initializer_list<const char*> names, std::string fall
     return fallback;
 }
 
+bool env_any_nonempty(std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        const char* value = std::getenv(name);
+        if (value != nullptr && value[0] != '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -221,7 +231,18 @@ int main(int argc, char** argv) {
         native_bin = executable(linked) ? linked.string() : (root / "build" / "nfn_gpt_native_train").string();
     }
 
-    setenv_default_if_empty("CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_default());
+    const bool cuda_visible_devices_selector_explicit = env_any_nonempty(
+        {"NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES", "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "NFN_SM120_CUDA_VISIBLE_DEVICES"});
+    const std::string cuda_visible_devices_value = resolve_cuda_visible_devices_default();
+    if (cuda_visible_devices_selector_explicit) {
+        if (cuda_visible_devices_value.empty()) {
+            unsetenv("CUDA_VISIBLE_DEVICES");
+        } else {
+            setenv("CUDA_VISIBLE_DEVICES", cuda_visible_devices_value.c_str(), 1);
+        }
+    } else {
+        setenv_default_if_empty("CUDA_VISIBLE_DEVICES", cuda_visible_devices_value);
+    }
     setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
     setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
 

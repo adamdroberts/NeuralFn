@@ -464,6 +464,10 @@ normal workstation path does not spawn `nvidia-smi` before CUDA setup. Set
 or `NFN_SM120_CUDA_VISIBLE_DEVICES` to `dedicated`, `auto`, or
 `dedicated-auto` when a run should resolve a display-disabled GPU through the
 selector, or to an explicit ordinal when a run should pin a different device.
+Those NeuralFn selector variables are treated as explicit run config and now
+override an inherited `CUDA_VISIBLE_DEVICES` mask in the compiled SM120 launcher
+and the Bash fallback. If no NeuralFn selector is set, an existing
+`CUDA_VISIBLE_DEVICES` value is still preserved.
 The diagnostic `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_corrections`
 profile is available for reproducing the probability-only LM-head CE route. It
 sets `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1`, writes probability-only
@@ -3136,10 +3140,12 @@ forwarding the native command. When `CUDA_VISIBLE_DEVICES` is unset, the direct 
 and shell fallback resolve `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, or `NFN_SM120_CUDA_VISIBLE_DEVICES`,
 defaulting to ordinal `0` so normal compiled launches do not spawn
-`nvidia-smi`. Set one of those variables, or `CUDA_VISIBLE_DEVICES` itself, to
+`nvidia-smi`. Set one of the NeuralFn selector variables to override an
+inherited `CUDA_VISIBLE_DEVICES` mask for a specific run, or set
+`CUDA_VISIBLE_DEVICES` itself when no NeuralFn selector is active. Use
 `dedicated`, `auto`, or `dedicated-auto` when a run should resolve a
-display-disabled GPU through the selector, or to an explicit ordinal when it
-should pin a different device.
+display-disabled GPU through the selector, or an explicit ordinal when it should
+pin a different device.
 `tools/build_native_gpt2_all.sh` builds this launcher alongside the linked GPT
 trainer, and `tools/check_native_no_torch_deps.py` dry-runs the compiled GPT,
 GPT3, and custom-graph variants so they cannot drift back into Python or Torch

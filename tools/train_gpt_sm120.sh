@@ -88,10 +88,17 @@ env_or_alias3() {
   fi
 }
 
-if [[ -z "${CUDA_VISIBLE_DEVICES-}" ]]; then
+CUDA_VISIBLE_DEVICES_SELECTOR_EXPLICIT=0
+if [[ -n "${NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES-}" || -n "${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES-}" || -n "${NFN_SM120_CUDA_VISIBLE_DEVICES-}" ]]; then
+  CUDA_VISIBLE_DEVICES_SELECTOR_EXPLICIT=1
+fi
+if [[ "${CUDA_VISIBLE_DEVICES_SELECTOR_EXPLICIT}" == "1" || -z "${CUDA_VISIBLE_DEVICES-}" ]]; then
   CUDA_VISIBLE_DEVICES_DEFAULT="${NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES:-${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-0}}}"
   case "${CUDA_VISIBLE_DEVICES_DEFAULT,,}" in
     ""|"none"|"off")
+      if [[ "${CUDA_VISIBLE_DEVICES_SELECTOR_EXPLICIT}" == "1" ]]; then
+        unset CUDA_VISIBLE_DEVICES
+      fi
       ;;
     "auto"|"dedicated"|"dedicated-auto")
       export CUDA_VISIBLE_DEVICES="$(select_auto_cuda_device)"

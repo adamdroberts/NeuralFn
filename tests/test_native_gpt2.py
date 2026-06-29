@@ -1342,7 +1342,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_GPT_MODEL_FAMILY" in train_sm120_cpp
     assert "NFN_NATIVE_GPT_TEMPLATE_NAME" in train_sm120_cpp
     assert "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS" in train_sm120_cpp
-    assert 'setenv_default_if_empty("CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_default())' in train_sm120_cpp
+    assert "cuda_visible_devices_selector_explicit" in train_sm120_cpp
+    assert 'setenv("CUDA_VISIBLE_DEVICES", cuda_visible_devices_value.c_str(), 1)' in train_sm120_cpp
     assert "build/nfn_gpt_native_train_linked" in train_sm120
     assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
     assert "build_native_gpt_cli_linked.sh" in train_sm120
@@ -5873,6 +5874,23 @@ def test_compiled_and_shell_sm120_launchers_default_to_cuda_ordinal_zero_with_se
     assert compiled_dedicated_proc.returncode == 0, compiled_dedicated_proc.stderr
     assert compiled_dedicated_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
 
+    compiled_dedicated_ambient_env_out = tmp_path / "compiled-dedicated-ambient-env.txt"
+    compiled_dedicated_ambient_env = base_env.copy()
+    compiled_dedicated_ambient_env["CUDA_VISIBLE_DEVICES"] = "busy-display-gpu"
+    compiled_dedicated_ambient_env["NFN_TEST_NATIVE_GPT_ENV"] = str(compiled_dedicated_ambient_env_out)
+    compiled_dedicated_ambient_env["NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES"] = "dedicated"
+    compiled_dedicated_ambient_proc = subprocess.run(
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=compiled_dedicated_ambient_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compiled_dedicated_ambient_proc.returncode == 0, compiled_dedicated_ambient_proc.stderr
+    assert compiled_dedicated_ambient_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
+
     shell_env = base_env.copy()
     shell_env["NFN_TEST_NATIVE_GPT_ENV"] = str(shell_env_out)
     shell_env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
@@ -5904,6 +5922,24 @@ def test_compiled_and_shell_sm120_launchers_default_to_cuda_ordinal_zero_with_se
     )
     assert shell_dedicated_proc.returncode == 0, shell_dedicated_proc.stderr
     assert shell_dedicated_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
+
+    shell_dedicated_ambient_env_out = tmp_path / "shell-dedicated-ambient-env.txt"
+    shell_dedicated_ambient_env = base_env.copy()
+    shell_dedicated_ambient_env["CUDA_VISIBLE_DEVICES"] = "busy-display-gpu"
+    shell_dedicated_ambient_env["NFN_TEST_NATIVE_GPT_ENV"] = str(shell_dedicated_ambient_env_out)
+    shell_dedicated_ambient_env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
+    shell_dedicated_ambient_env["NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES"] = "dedicated"
+    shell_dedicated_ambient_proc = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh"), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=shell_dedicated_ambient_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert shell_dedicated_ambient_proc.returncode == 0, shell_dedicated_ambient_proc.stderr
+    assert shell_dedicated_ambient_env_out.read_text(encoding="utf-8").strip() == "CUDA_VISIBLE_DEVICES=2"
 
 
 def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
