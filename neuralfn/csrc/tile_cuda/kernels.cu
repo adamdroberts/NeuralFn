@@ -9111,6 +9111,43 @@ __tile_global__ void token_position_embedding_residual_u16_float32_kernel(
   ct::store_masked(out + idx, token_value + scale_tile * position_value, mask);
 }
 
+__tile_global__ void token_position_embedding_residual_u16_bf16_weight_float32_kernel(
+    const std::uint16_t* __restrict__ token_weight_bf16,
+    const std::uint16_t* __restrict__ token_ids,
+    const float* __restrict__ position_weight,
+    const float* __restrict__ scale,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t model_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  auto* token_weight =
+      ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(token_weight_bf16), 16_ic);
+  token_ids = ct::assume_aligned(token_ids, 16_ic);
+  position_weight = ct::assume_aligned(position_weight, 16_ic);
+  scale = ct::assume_aligned(scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(model_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto d = idx % dim_tile;
+  auto token_offset = idx / dim_tile;
+  auto s = token_offset % seq_tile;
+  auto token_u16 = ct::load_masked(token_ids + token_offset, mask);
+  auto token = ct::element_cast<std::int64_t>(token_u16);
+  auto token_value =
+      ct::element_cast<float>(ct::load_masked(token_weight + token * dim_tile + d, mask));
+  auto position_value = ct::load_masked(position_weight + s * dim_tile + d, mask);
+  auto scale_tile = ct::full<decltype(token_value)>(*scale);
+  ct::store_masked(out + idx, token_value + scale_tile * position_value, mask);
+}
+
 __tile_global__ void token_embedding_backward_weight_float32_kernel(
     const std::int64_t* __restrict__ token_ids,
     const float* __restrict__ grad_out,
@@ -17228,6 +17265,22 @@ void launch_token_position_embedding_residual_u16_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   token_position_embedding_residual_u16_float32_kernel<<<blocks, 1, 0, stream>>>(
       token_weight, token_ids, position_weight, scale, out, n, seq_len, model_dim);
+}
+
+void launch_token_position_embedding_residual_u16_bf16_weight_float32(
+    const std::uint16_t* token_weight_bf16,
+    const std::uint16_t* token_ids,
+    const float* position_weight,
+    const float* scale,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * model_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  token_position_embedding_residual_u16_bf16_weight_float32_kernel<<<blocks, 1, 0, stream>>>(
+      token_weight_bf16, token_ids, position_weight, scale, out, n, seq_len, model_dim);
 }
 
 void launch_token_embedding_backward_weight_float32(

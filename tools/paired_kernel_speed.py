@@ -385,6 +385,18 @@ NATIVE_METRIC_PATHS = (
         ("concurrent_parameter_init_count",),
     ),
     (
+        "embedding_bf16_shadow_requested",
+        ("embedding_bf16_shadow_requested",),
+    ),
+    (
+        "embedding_bf16_shadow_enabled",
+        ("embedding_bf16_shadow_enabled",),
+    ),
+    (
+        "embedding_bf16_shadow_kernel_loaded",
+        ("embedding_bf16_shadow_kernel_loaded",),
+    ),
+    (
         "lm_head_overlap_last_dweight_queue_count",
         ("lm_head_overlap_last_dweight_queue_count",),
     ),
@@ -1224,6 +1236,10 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "concurrent_parameter_init_requested",
     "concurrent_parameter_init_enabled",
     "concurrent_parameter_init_count",
+    "embedding_bf16_shadow_requested",
+    "embedding_bf16_shadow_enabled",
+    "embedding_bf16_shadow_kernel_loaded",
+    "embedding_residual_strategy",
     "adamw_bf16_shadow_refresh_strategy",
 )
 NATIVE_TEXT_METRIC_KEYS = (

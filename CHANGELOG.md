@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native GPT embedding diagnostics: added an opt-in CUDA Tile fused
+  direct-u16 token/position/residual embedding kernel that can read the
+  maintained BF16 token-weight shadow, plus
+  `NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=embedding_bf16_shadow` route coverage.
+  Runtime JSON now reports `embedding_bf16_shadow_requested`,
+  `embedding_bf16_shadow_enabled`, `embedding_bf16_shadow_kernel_loaded`, and
+  the embedding residual strategy; paired benchmark extraction can gate on
+  those fields. The profile remains diagnostic-only: the 2026-06-29 dedicated
+  RTX 5090 3-sample, 10-step native-only paired run rejected default promotion
+  because train-loop wall time regressed to `1.003130x`, steady-state
+  CUDA-event step time regressed to `1.003195x`, and tokens/sec fell to
+  `0.996880x`, despite setup wall improving to `0.991337x`.
+  Verification: Tile-ops build, linked C++ trainer build, shell syntax,
+  focused native GPT source-contract pytest, dry-run profile check, and live
+  native-only paired candidate benchmark.
+
 - Native GPT startup diagnostics: added the opt-in
   `NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1` route and
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init` benchmark

@@ -227,6 +227,18 @@ off by default because the latest paired gate rejected startup promotion even
 though startup wall time improved; the same run showed a small training-loop
 regression.
 
+For embedding-route bisection,
+`NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1` switches the native fused direct-u16
+token/position/residual embedding kernel to read the maintained BF16
+token-weight shadow instead of the FP32 token table. Runtime JSON reports
+`embedding_bf16_shadow_requested`, `embedding_bf16_shadow_enabled`,
+`embedding_bf16_shadow_kernel_loaded`, and `embedding_residual_strategy`; the
+paired SM120 wrapper exposes the same route as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=embedding_bf16_shadow`. It is off by
+default because the latest paired gate rejected default promotion: setup wall
+time improved, but train-loop wall time, steady-state CUDA-event step time, and
+tokens/sec regressed.
+
 For long CUDA runs, `on_step` is usually the right hook for live CLI progress because it fires once per warmup step and once per optimizer step instead of waiting for epoch boundaries.
 
 For the experimental semantic routing presets, dataset-backed training resolves a three-role flat input contract: `(tokens, targets, sem_targets)`. `semantic_router_moe` uses that contract for an AR-only router-control experiment, `jepa_semantic_hybrid` adds JEPA loss on top of the same routed branch, `semantic_dense_jepa_evo` keeps the chunk-level semantic planner with dense FFNs, and `semantic_moe_jepa_evo` routes at chunk granularity with a shared + semantic + free expert bank. `semantic_data_source` generates categorical vocab-topic targets from the active semantic vocabulary reference; inactive dimensions use `-100` ignore sentinels, and the first `NUM_VOCAB_DIMS` positions line up with the semantic expert map. When only semantic data is available, the trainer synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding `sem_targets` into the embedding path.

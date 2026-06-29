@@ -3154,6 +3154,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "concurrent_parameter_init_enabled" in bench_source
     assert "setup_wall_ms improving to 0.983885x" in bench_source
     assert "startup_plus_first_step_wall_ms=0.998" in bench_source
+    assert '"embedding_bf16_shadow"|"embedding-bf16-shadow"' in bench_source
+    assert "NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1" in bench_source
+    assert "embedding_bf16_shadow_enabled embedding_residual_strategy" in bench_source
     assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert "lm_head_fused_graph_upload_success_count from 3 to 0" in bench_source
@@ -3194,6 +3197,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"adamw_bf16_param_bf16_grad_kernel_launches"' in paired_speed_source
     assert '"block_weight_bf16_gradient_storage_strategy"' in paired_speed_source
     assert '"concurrent_parameter_init_enabled"' in paired_speed_source
+    assert '"embedding_bf16_shadow_enabled"' in paired_speed_source
     assert (
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4 "
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32"
@@ -12250,6 +12254,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert '\\"concurrent_parameter_init_requested\\"' in gpt2_source_text
     assert '\\"concurrent_parameter_init_enabled\\"' in gpt2_source_text
     assert '\\"concurrent_parameter_init_count\\"' in gpt2_source_text
+    assert "NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_EMBEDDING_BF16_SHADOW" in gpt2_source_text
+    assert "nfn_native_tile_token_position_embedding_residual_u16_bf16_weight_float32" in gpt2_source_text
+    assert "embedding.residual_fused.u16_bf16_shadow" in gpt2_source_text
+    assert '\\"embedding_bf16_shadow_enabled\\"' in gpt2_source_text
     assert "--allow-scalar-attention-fallback" in gpt2_source_text
     assert "optimized attention required, but scalar attention fallback launched" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text

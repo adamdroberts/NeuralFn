@@ -198,6 +198,16 @@ The 2026-06-29 dedicated RTX 5090 paired gate kept it off by default:
 setup wall improved to `0.983885x` and startup-plus-first-step to `0.995546x`,
 but train-loop wall regressed to `1.001353x`, steady-state step time to
 `1.001590x`, and tokens/sec fell to `0.998651x`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=embedding_bf16_shadow` is another
+diagnostic-only profile. It toggles
+`NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1`, making the fused direct-u16
+token/position/residual embedding kernel read the maintained BF16 token-weight
+shadow instead of the FP32 token table. The 2026-06-29 dedicated RTX 5090
+native-only gate rejected it for default promotion: setup wall improved to
+`0.991337x`, but train-loop wall regressed to `1.003130x`, steady-state
+CUDA-event step time regressed to `1.003195x`, and tokens/sec fell to
+`0.996880x`. Keep the default FP32-token fused embedding route enabled unless a
+later same-script gate proves a current-native win.
 The `lm_head_row_chunk_28672` profile is the current LM-head row-chunk default:
 the CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample gate beat the prior
 32768-row route at `0.998291x` train-loop wall time, `0.998019x` steady-state
