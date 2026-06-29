@@ -565,8 +565,9 @@ step time, and `0.997519x` tokens/sec. Runtime JSON still reports
 `true_fused_capability: false`, and `graph_body_nodes_per_replay: 3`, so the
 next implementation target remains a reference-aligned LM-head classifier path
 rather than another setup or wrapper default.
-SM120 GPT launchers default unset `CUDA_VISIBLE_DEVICES` to ordinal `0` so the
-normal workstation path does not spawn `nvidia-smi` before CUDA setup. Set
+SM120 GPT launchers and the canonical `cli/scripts/train_gpt.py` compiled-CLI
+fast path default unset `CUDA_VISIBLE_DEVICES` to ordinal `0` so the normal
+workstation path does not spawn `nvidia-smi` before CUDA setup. Set
 `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 or `NFN_SM120_CUDA_VISIBLE_DEVICES` to `dedicated`, `auto`, or
 `dedicated-auto` when a run should resolve a display-disabled GPU through the

@@ -474,7 +474,13 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     if command is None:
         return None
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("dedicated"))
+    cuda_visible_devices_default = (
+        os.environ.get("NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES", "").strip()
+        or os.environ.get("NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES", "").strip()
+        or os.environ.get("NFN_SM120_CUDA_VISIBLE_DEVICES", "").strip()
+        or "0"
+    )
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(cuda_visible_devices_default))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in _NATIVE_METADATA_ACTION_FLAGS):

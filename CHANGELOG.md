@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT launcher startup: `cli/scripts/train_gpt.py` now matches the SM120
+  launchers by defaulting the compiled-CLI fast path to CUDA ordinal `0` instead
+  of resolving the `dedicated` selector. This avoids a pre-exec `nvidia-smi`
+  subprocess on normal workstation launches while still honoring
+  `CUDA_VISIBLE_DEVICES`, `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
+  `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`, and `NFN_SM120_CUDA_VISIBLE_DEVICES`
+  for explicit ordinals or `dedicated` / `auto` selector routing. Verification:
+  focused native GPT source-contract pytest, direct compiled-CLI dry-run
+  expansion, and `git diff --check`.
+
 - Native GPT benchmark warmup policy: raised the SM120 native candidate wrapper
   default and long-run deferred-prewarm warmup floor from 10 to 20 paired
   warmup order samples. This keeps full-training performance gates focused on
