@@ -266,6 +266,9 @@ deferred policy.
 The `long_run_defer_prewarm` SM120 candidate profile also keeps the
 same-script llm.kittens reference enabled and gates steady-state CUDA-event
 step time against that reference at `<=1.003x`.
+The CUDA 13.3.33 dedicated RTX 5090 same-script rerun on 2026-06-29 passed:
+steady-state CUDA-event step time measured `0.998998x` versus llm.kittens,
+while setup measured `0.673973x` versus the old eager native route.
 Set the threshold higher than `max_steps`, or force the individual prewarm env
 vars, when a long run must use the old eager-prewarm setup. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the old

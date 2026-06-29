@@ -417,6 +417,14 @@
   steady-state CUDA-event step time against that same-script reference at
   `<=1.003x`. Profile-specific candidate/reference gates are preserved instead
   of being overwritten by the generic auto-reference gate block.
+- Native GPT benchmarking: reran `long_run_defer_prewarm` on the dedicated RTX
+  5090 against the same-script llm.kittens reference after enabling that
+  reference leg. The profile passed: setup measured `0.673973x` versus the old
+  eager native route, startup plus steady-state step measured `0.926006x`,
+  steady-state CUDA-event step measured `1.000609x` versus old native and
+  `0.998998x` versus llm.kittens. The deferred first-step cost remains visible
+  at `1.095859x` versus old native and `1.086035x` versus llm.kittens, so the
+  profile continues to gate steady-state separately from first-step timing.
 
 - Native GPT benchmarking: added the rejected
   `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV
