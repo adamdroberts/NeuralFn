@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT startup timing JSON: transformer-LM runtime JSON now mirrors
+  `setup_wall_ms`, `setup_timing_accounted_ms`,
+  `setup_timing_unattributed_ms`, `setup_timing_record_count`,
+  `train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`,
+  `checkpoint_wall_ms`, `cleanup_wall_ms`, and `total_wall_ms` at the root
+  object while keeping the existing nested `timing` block. Startup-only and
+  parity scripts can now gate startup regressions from top-level fields without
+  silently missing nested timing data. Verified with the focused native source
+  pytest and `git diff --check`.
+
 - Native GPT launcher template catalog: compiled `nfn_train_gpt` and
   `nfn_train_gpt_sm120` now validate template selectors against the generated
   C++ copy of `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` instead of a

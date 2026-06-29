@@ -1109,6 +1109,19 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "setup_timing_accounted_ms" in source
     assert "setup_timing_unattributed_ms" in source
     assert "setup_timing_record_count" in source
+    assert (
+        '<< "  \\"torch_required\\": false,\\n"\n'
+        '        << "  \\"setup_wall_ms\\": " << setup_wall_ms << ",\\n"\n'
+        '        << "  \\"setup_timing_accounted_ms\\": " << setup_timing_accounted_ms << ",\\n"\n'
+        '        << "  \\"setup_timing_unattributed_ms\\": " << setup_timing_unattributed_ms << ",\\n"\n'
+        '        << "  \\"setup_timing_record_count\\": " << setup_timing_records.size() << ",\\n"'
+        in source
+    )
+    assert (
+        '<< "  \\"total_wall_ms\\": " << total_wall_ms << ",\\n"\n'
+        '        << "  \\"timing\\": {\\n"'
+        in source
+    )
     assert "setup.load_tile_ops" in source
     assert "setup.load_cuda_runtime" in source
     assert "setup.cuda_runtime_symbols" in source
