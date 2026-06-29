@@ -1500,6 +1500,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "candidate_reference_metric_ratio_gates" in paired_speed
     assert 'ratio_key="candidate_over_reference_native_metrics"' in paired_speed
     assert "DEFAULT_VS_LEGACY_PROFILE=0" in candidate_bench
+    assert '"$AUTO_DISABLE_METRIC_RATIO_GATES" == "0"' in candidate_bench
     assert "candidate_gate_scope=default-vs-legacy" in candidate_bench
     assert "filter_generated_candidate_ratio_gates" in candidate_bench
     assert 'MAX_CANDIDATE_RATIO_RAW=""' in candidate_bench

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmark telemetry gates: capability-only SM120 candidate
+  profiles that set `AUTO_DISABLE_METRIC_RATIO_GATES=1` now also suppress the
+  automatically generated candidate-vs-reference throughput gates when an
+  llm.kittens reference command is present. This keeps
+  `cublaslt_grouped_probe` useful for grouped-layout/grouped-matmul status
+  telemetry while `cublaslt_grouped_probe_required` still enforces its explicit
+  grouped status check. Verification: focused native wrapper tests, shell
+  syntax check, diff check, and a dedicated grouped-probe rerun.
+
 - Native GPT SDK and launcher AdamW propagation: `NativeGptRunConfig` /
   `NativeGpt2RunConfig`, `build_native_gpt*_run_config()`, the Python native
   GPT wrappers, the no-import `train_gpt.py` fast path, `nfn train`, and both

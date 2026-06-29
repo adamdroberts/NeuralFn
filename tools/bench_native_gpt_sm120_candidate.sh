@@ -1989,6 +1989,7 @@ if [[ -n "${reference_paired_args[*]-}" &&
       -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" &&
       -z "$MAX_CANDIDATE_REFERENCE_RATIO_RAW" &&
       -z "$MIN_CANDIDATE_REFERENCE_RATIO_RAW" &&
+      "$AUTO_DISABLE_METRIC_RATIO_GATES" == "0" &&
       "$DEFAULT_VS_LEGACY_PROFILE" != "1" ]]; then
   has_reference_candidate_change=0
   if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||

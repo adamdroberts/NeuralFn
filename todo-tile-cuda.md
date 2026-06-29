@@ -1818,6 +1818,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `linear_cublaslt_grouped_matmul_probe_status` are `0`. Use the normal
     profile for telemetry and the required profile only when grouped execution
     is a hard dependency for a candidate patch.
+  - 2026-06-29 hardened the telemetry-only grouped probe wrapper path:
+    `AUTO_DISABLE_METRIC_RATIO_GATES=1` now suppresses generated
+    candidate-vs-reference throughput gates as well as the normal candidate
+    timing gates. The required grouped profile still performs its explicit
+    post-run status check; current RTX 5090 telemetry remains grouped-layout
+    status `0` and grouped-matmul status `15`.
   - 2026-06-24 added the reproducible rejected wrapper profile
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`.
     It compares the default aligned padded-vocab LM-head dHidden/dWeight GEMMs
