@@ -3848,6 +3848,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_mlp_blocks9": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=9",
         "store_mlp_blocks9_tail": "NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail",
+        "store_mlp_blocks10_tail": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=10",
         "store_mlp_blocks11": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=11",
         "store_mlp_blocks6_tail": "NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail",
         "store_packed_attention_blocks6": "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=6",

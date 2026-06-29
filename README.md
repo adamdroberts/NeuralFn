@@ -419,7 +419,8 @@ is available only as a rejected diagnostic: cutting stored MLP blocks from 12
 to 6 improved startup-only timing, but the paired training gate regressed
 steady-state throughput and MLP projection time, so full stored activation
 coverage remains the default. The matching `store_mlp_blocks3`,
-`store_mlp_blocks9`, `store_mlp_blocks9_tail`, and `store_mlp_blocks11`
+`store_mlp_blocks9`, `store_mlp_blocks9_tail`, `store_mlp_blocks10_tail`, and
+`store_mlp_blocks11`
 profiles are also rejected: the
 2026-06-27 and 2026-06-28 dedicated RTX 5090 gates reduced stored MLP
 activation bytes by different amounts, but still regressed train-loop wall
@@ -437,12 +438,16 @@ compare the same six stored blocks at `head` versus `tail` placement with
 `stored_mlp_activation_block_start` and
 `stored_packed_attention_block_start` in native JSON and remain unpromoted
 until the same-script training gate beats the head layout. The
-`store_mlp_blocks9_tail` diagnostic fills the gap between the rejected nine-block
-head profile and the rejected six-block tail profile before any smaller MLP
-tape is promoted; a 2026-06-29 one-step dedicated RTX 5090 run kept it
+`store_mlp_blocks9_tail` and `store_mlp_blocks10_tail` diagnostics fill the gap
+between the rejected nine-block head profile and the rejected six-block tail
+profile before any smaller MLP tape is promoted; a 2026-06-29 one-step
+dedicated RTX 5090 run kept `store_mlp_blocks9_tail`
 rejected because setup improved to `0.908788x`, while train-loop wall regressed
 to `1.091603x`, startup-plus-first-step regressed to `1.051818x`, and
-tokens/sec fell to `0.916083x`. A 2026-06-28
+tokens/sec fell to `0.916083x`. A matching `store_mlp_blocks10_tail` run also
+stayed rejected: setup improved to `0.950708x`, but train-loop wall regressed
+to `1.058712x`, startup-plus-first-step regressed to `1.035125x`, and
+tokens/sec fell to `0.944542x`. A 2026-06-28
 dedicated RTX 5090 run kept `store_mlp_blocks6_tail` rejected: setup improved
 to `0.957064x`, but train-loop wall regressed to `1.010155x` versus six-block
 head placement and the candidate stayed `1.197974x` slower than llm.kittens.
