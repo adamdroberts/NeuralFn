@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT shell launcher startup: `tools/train_gpt.sh` and
+  `tools/train_gpt_sm120.sh` now default to existing compiled launchers without
+  running rebuild checks before exec. Set `NFN_NATIVE_GPT_AUTO_REBUILD=1` or
+  `NFN_SM120_AUTO_REBUILD=1` when a development run should refresh the
+  repo-owned launcher and linked native trainer first. Direct compiled launcher
+  and trainer stale-binary guards remain in place, so normal workstation runs
+  avoid the shell rebuild probes while stale native artifacts still fail before
+  CUDA work starts. Verification: focused native GPT source-contract pytest,
+  shell syntax checks, dry-run command checks, and the no-Torch verifier.
+
 - Native GPT direct wrapper startup: `cli/scripts/train_gpt_native.py` now
   builds the default compiled-CLI command locally for cached-shard runs and
   execs the compiled C++ trainer before importing `neuralfn.native_gpt`.

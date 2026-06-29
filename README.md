@@ -3261,10 +3261,10 @@ the same defaults. Use either for the lowest-overhead workstation path:
 `tools/train_gpt.sh` now defaults to `build/nfn_train_gpt`, and
 `tools/train_gpt_sm120.sh` defaults to `build/nfn_train_gpt_sm120` when
 available, so these shell paths do not re-parse defaults before the native
-handoff. For repo-owned default launcher paths, the shell helpers first refresh
-their compiled launcher and the linked native GPT trainer when C++/CUDA inputs
-are newer; set `NFN_NATIVE_GPT_AUTO_REBUILD=0` or `NFN_SM120_AUTO_REBUILD=0`
-only when intentionally inspecting existing artifacts. Direct
+handoff. For repo-owned default launcher paths, the shell helpers no longer run
+rebuild checks on the normal launch path; set `NFN_NATIVE_GPT_AUTO_REBUILD=1`
+or `NFN_SM120_AUTO_REBUILD=1` when you intentionally want development-time
+refreshes before exec. Direct
 `build/nfn_train_gpt ...` and `build/nfn_train_gpt_sm120 ...` invocations reject
 stale native trainer binaries before launching; set
 `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` only for stale-artifact diagnostics.

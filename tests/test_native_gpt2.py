@@ -2532,12 +2532,12 @@ def test_sm120_compiled_launcher_rejects_stale_native_trainer() -> None:
         root / "neuralfn" / "csrc" / "native_train" / "train_gpt_sm120.cpp"
     ).read_text(encoding="utf-8")
 
-    assert "AUTO_REBUILD_NATIVE=" in generic_shell_source
+    assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-0}"' in generic_shell_source
     assert "tools/build_train_gpt_cli.sh" in generic_shell_source
     assert "tools/build_native_gpt_cli_linked.sh" in generic_shell_source
     assert "ensure_default_compiled_launcher_current" in generic_shell_source
     assert "ensure_default_native_trainer_current" in generic_shell_source
-    assert "AUTO_REBUILD_NATIVE=" in shell_source
+    assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-${NFN_SM120_AUTO_REBUILD:-0}}"' in shell_source
     assert "tools/build_train_gpt_sm120_cli.sh" in shell_source
     assert "tools/build_native_gpt_cli_linked.sh" in shell_source
     assert "ensure_default_compiled_launcher_current" in shell_source

@@ -1140,7 +1140,10 @@ shell fallback resolve `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`,
 defaulting to ordinal `0` so normal launches do not spawn `nvidia-smi` before
 CUDA setup. Set one of those variables to `dedicated`, `auto`, or
 `dedicated-auto` when a run should resolve a display-disabled GPU through the
-selector, or to an explicit ordinal when it should pin a different device.
+selector, or to an explicit ordinal when it should pin a different device. The
+shell helpers default to existing compiled launchers without running rebuild
+checks; set `NFN_NATIVE_GPT_AUTO_REBUILD=1` or `NFN_SM120_AUTO_REBUILD=1` for
+development-time refreshes before exec.
 
 Native dense GPT validation defaults to 20 validation batches per periodic
 evaluation. Use `--eval-batches N` or `--eval-batch-size N` to shrink validation

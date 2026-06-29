@@ -379,9 +379,9 @@ from a non-default path. The launcher mirrors `tools/train_gpt_sm120.sh`, and
 the shell helper now execs the SM120 compiled launcher by default when it is
 present. `tools/train_gpt.sh` does the same for the generic
 `build/nfn_train_gpt` launcher. For repo-owned defaults, both shell helpers
-refresh their compiled launcher and the linked native GPT trainer when C++/CUDA
-inputs are newer before the exec handoff; set `NFN_NATIVE_GPT_AUTO_REBUILD=0`
-or `NFN_SM120_AUTO_REBUILD=0` only for existing artifact diagnostics. Direct
+skip rebuild checks on the normal launch path; set
+`NFN_NATIVE_GPT_AUTO_REBUILD=1` or `NFN_SM120_AUTO_REBUILD=1` when you
+intentionally want development-time refreshes before the exec handoff. Direct
 compiled launcher invocations reject stale native trainer binaries before CUDA
 setup, unless `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` is set for
 stale-artifact diagnostics.
