@@ -671,9 +671,9 @@ def native_gpt2_checkpoint_sampler_env(
 
     env = os.environ.copy()
     if str(cuda_visible_devices or "").strip():
-        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(cuda_visible_devices))
+        env["CUDA_VISIBLE_DEVICES"] = resolve_cuda_visible_devices_value(cuda_visible_devices)
     if str(cuda_device_max_connections or "").strip():
-        _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(cuda_device_max_connections))
+        env["CUDA_DEVICE_MAX_CONNECTIONS"] = str(cuda_device_max_connections)
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
 

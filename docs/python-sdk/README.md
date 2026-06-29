@@ -108,7 +108,10 @@ the C++ binding, the binding executes `compiled_cli_argv` instead of the raw ext
 inspect/check or run the NeuralFn-owned raw Tile GPT plan. Native GPT configs
 and native checkpoint sampling default `cuda_visible_devices="0"` and
 `cuda_device_max_connections="1"` before launching subprocess, launcher,
-compiled-CLI, or binding runs; the C++ binding uses `posix_spawnp()` instead of
+compiled-CLI, or binding runs. The resolved SDK config value wins over an
+ambient `CUDA_VISIBLE_DEVICES` or `CUDA_DEVICE_MAX_CONNECTIONS` setting, so a
+caller can launch a specific native run on device `"2"` from a shell already
+pinned to device `"0"`. The C++ binding uses `posix_spawnp()` instead of
 `fork()` and defaults `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
 The generic `NativeTrainRunConfig` builders also accept `template_name=` and
 `graph_file=` for dense GPT families, appending `--template-name` and
@@ -306,11 +309,13 @@ should append `--fast-startup` and skip throughput-only setup prewarms without
 using environment variables. Normal training defaults keep those prewarms on,
 and the SDK suppresses duplicate `--fast-startup` /
 `--native-cuda-fast-startup` argv entries.
-The CLI subprocess fallback also defaults to CUDA ordinal `0` and sets
-`CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
-environment variables; set `NativeTrainRunConfig.cuda_visible_devices` to
-`"dedicated"` for the opt-in display-disabled GPU probe, use another explicit
-ordinal, or set the environment to target another CUDA GPU. Use
+The CLI subprocess fallback also defaults to CUDA ordinal `0` and
+`CUDA_DEVICE_MAX_CONNECTIONS=1` from `NativeTrainRunConfig`; those config values
+override ambient shell values for the spawned native process. Set
+`NativeTrainRunConfig.cuda_visible_devices` to `"dedicated"` for the opt-in
+display-disabled GPU probe, use another explicit ordinal, or set that config
+field to match the environment when you intentionally want environment-driven
+selection. Use
 `exec_native_train(config)` when a
 generic SDK launcher should `execvpe` the selected compiled native trainer and
 remove the Python parent process entirely; keep `run_native_train(...)` when you

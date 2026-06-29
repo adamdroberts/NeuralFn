@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SDK CUDA device precedence: `native_gpt2_checkpoint_sampler_env()` and
+  the generic native-train subprocess launcher now write the resolved
+  `cuda_visible_devices` and `cuda_device_max_connections` config values into
+  the child environment instead of treating them as fill-only defaults. This is
+  a behavior change for callers that launch SDK native runs from a shell with
+  `CUDA_VISIBLE_DEVICES` already set: pass the desired per-run config value
+  explicitly, or pass the same value as the shell when you want to preserve it.
+  Verification: focused native GPT SDK env tests and the CUDA 13.3 validation
+  pytest failures that exposed the ambient-device mismatch.
+
 - Native GPT CLI help: corrected the compiled dense GPT trainer usage text so
   it no longer claims the native quality defaults exactly match
   `llm.kittens/train-sm120.sh -u 60`. The runtime default remains the current

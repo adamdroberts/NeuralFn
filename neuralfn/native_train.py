@@ -642,8 +642,10 @@ def _native_train_binding_capture_config(
 
 def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]:
     env = os.environ.copy()
-    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(config.cuda_visible_devices))
-    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    if str(config.cuda_visible_devices or "").strip():
+        env["CUDA_VISIBLE_DEVICES"] = resolve_cuda_visible_devices_value(config.cuda_visible_devices)
+    if str(config.cuda_device_max_connections or "").strip():
+        env["CUDA_DEVICE_MAX_CONNECTIONS"] = str(config.cuda_device_max_connections)
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
 

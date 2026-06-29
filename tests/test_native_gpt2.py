@@ -3139,8 +3139,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "1.073852x train-loop wall" in bench_source
     assert "1.314851x LM-head backward" in bench_source
     assert "1.100897x candidate-over-llm.kittens train-loop wall" in bench_source
-    assert "1.001673x train-loop wall" in bench_source
-    assert "1.002494x steady-state CUDA-event timing" in bench_source
+    assert "1.004190x" in bench_source
+    assert "steady-state CUDA-event timing was 1.004443x" in bench_source
     assert "lm_head_graph_body_cublaslt_dhidden_requested" in source
     assert "lm_head_graph_body_cublaslt_dweight_requested" in source
     assert "lm_head_graph_body_cublaslt_dhidden_enabled" in tile_ops_source

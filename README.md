@@ -139,6 +139,12 @@ or `build/nfn_gpt_native_train`; the binary resolves the selector through
 display-disabled NVIDIA GPU, while `auto` falls back to the first parseable GPU
 if no display-disabled candidate is found. Numeric masks such as
 `CUDA_VISIBLE_DEVICES=0` are passed through unchanged.
+SDK launch helpers resolve CUDA device config explicitly. When
+`NativeTrainRunConfig.cuda_visible_devices`, native GPT run configs, or native
+checkpoint sampler calls specify a CUDA device, that resolved value is written
+into the spawned native process environment even if the parent shell already had
+`CUDA_VISIBLE_DEVICES` set. This keeps per-run SDK device selection reliable on
+the workstation with a dedicated compute GPU.
 The paired benchmark also reports `startup_plus_first_step_wall_ms`,
 `startup_plus_steady_state_step_wall_ms`, and
 `startup_plus_train_loop_wall_ms` for native runs with setup timing. Use those
