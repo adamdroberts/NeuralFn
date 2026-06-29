@@ -3304,12 +3304,15 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     cuBLASLt launch/fallback counters as route proof. These profiles remain
     rejected until a same-script RTX 5090 gate proves one split beats the
     default cached graph body.
-  - 2026-06-28 measured those split profiles with the dedicated display-disabled
-    RTX 5090 using 3-step, 1-sample stage-timed gates. dHidden-only proved the
-    route but failed badly at `1.075566x` train-loop wall, `1.074314x`
-    steady-state CUDA-event timing, `1.328682x` LM-head backward, and
-    `1.475505x` cooperative LM-head time. dWeight-only was closer but still
-    missed strict promotion at `1.001673x` train-loop wall, `1.002494x`
+  - 2026-06-29 refreshed the dHidden-only split profile after the CUDA 13.3.33
+    WSL reinstall with a dedicated RTX 5090 5-step, 2-sample stage-timed gate.
+    The route changed as intended (`lm_head_graph_body_cublaslt_dhidden_launch_count:
+    0 -> 4`, Tile dHidden fallback `4 -> 1`), but it still failed badly at
+    `1.073852x` train-loop wall, `1.075869x` steady-state CUDA-event timing,
+    `1.314851x` LM-head backward, `1.449433x` cooperative LM-head time,
+    `0.931229x` train tokens/sec, and `1.100897x` candidate-over-llm.kittens
+    train-loop wall. dWeight-only was closer on the previous split check but
+    still missed strict promotion at `1.001673x` train-loop wall, `1.002494x`
     steady-state CUDA-event timing, `1.000210x` LM-head backward, and
     `1.000161x` cooperative LM-head time. Do not promote either split; the
     remaining work needs real fused/cooperative block or LM-head kernels rather
