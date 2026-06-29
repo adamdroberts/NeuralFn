@@ -33,16 +33,16 @@
   now reports async stream create/null, launch, wait, sync, and failure
   counters; `tools/paired_kernel_speed.py` tracks them and the profile requires
   `linear_tk_qkv_first_use_prewarm_async_wait_count` as a hot route counter. A
-  2026-06-29 dedicated RTX 5090 1-step same-script probe moved async stream
-  create/launch/wait/sync counters `0->1` and passed candidate-vs-native gates
-  at `0.940953x` train-loop wall, `0.940941x` first-step CUDA-event timing,
-  `0.989545x` startup-plus-train-loop, and `1.062750x` train tokens/sec, but
-  kept the profile rejected because candidate-over-llm.kittens train-loop wall
-  was `1.030835x`, first-step CUDA-event timing was `1.030348x`, and train
-  tokens/sec was `0.970091x`. Verification: focused native GPT and Tile CUDA
-  pytest subsets, shell syntax and Python compile checks, native SM120 rebuild,
-  one-step async CUDA smoke, and the same-script candidate/native/reference GPU
-  benchmark.
+  2026-06-30 20-warmup, 3-step, 1-sample same-script probe moved async stream
+  create/launch/wait/sync counters `0->1` and improved candidate-vs-native
+  train-loop wall to `0.979430x`, first-step CUDA-event timing to `0.941747x`,
+  and train tokens/sec to `1.021003x`, but kept the profile rejected because
+  startup-plus-train-loop missed the native gate at `1.000201x`,
+  candidate-over-llm.kittens train-loop wall was `1.009695x`, first-step
+  CUDA-event timing was `1.029339x`, and train tokens/sec was `0.990453x`.
+  Verification: focused native GPT and Tile CUDA pytest subsets, shell syntax
+  and Python compile checks, native SM120 rebuild, async CUDA smoke, and the
+  same-script candidate/native/reference GPU benchmark.
 
 - Native GPT benchmark warmup policy: the SM120 native candidate wrapper now
   defaults to 10 warmup order pairs, and measured default long-run

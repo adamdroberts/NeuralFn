@@ -1537,12 +1537,13 @@ real QKV stage. Native GPT JSON reports the route through
 `linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
 `linear_tk_qkv_first_use_prewarm_async_launch_count`,
 `linear_tk_qkv_first_use_prewarm_async_wait_count`, and
-`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-29 1-step
-same-script probe moved all four counters `0->1` and passed native baseline
-gates at `0.940953x` train-loop wall, `0.989545x` startup-plus-train-loop, and
-`1.062750x` train tokens/sec, but it remains rejected because
-candidate-over-llm.kittens train-loop wall was `1.030835x` and train tokens/sec
-was `0.970091x`.
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 20-warmup,
+3-step same-script probe moved all four counters `0->1` and improved the
+native baseline comparison to `0.979430x` train-loop wall, `0.941747x`
+first-step CUDA-event timing, and `1.021003x` train tokens/sec, but it remains
+rejected because startup-plus-train-loop missed the native gate at `1.000201x`,
+candidate-over-llm.kittens train-loop wall was `1.009695x`, and train tokens/sec
+was `0.990453x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.
