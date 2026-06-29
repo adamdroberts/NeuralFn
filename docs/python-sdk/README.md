@@ -273,12 +273,15 @@ Python `subprocess.run`; rebuilt generic bindings expose `capture_train` /
 binding is available before falling back to Python subprocess or static
 no-Torch metadata.
 For shell workflows that should avoid Python entirely, build
-`build/nfn_native` with `bash tools/build_native_nfn_cli.sh` or install it as
-`nfn-native`: `nfn-native train ...` execs the unified compiled trainer, and
-`nfn-native infer --checkpoint PATH --prompt-tokens IDS` execs the native GPT
-sampler against `model_*.bin` checkpoints. Passing a checkpoint directory picks
-the highest-step `model_########.bin`; graph-backed `.pt/.json` inference
-continues to use the Python `nfn infer` command.
+`build/nfn_native` plus its local `build/nfn-native` alias with
+`bash tools/build_native_nfn_cli.sh`, or install it as `nfn-native`:
+`nfn-native train ...` execs the unified compiled trainer, and `nfn-native infer
+--checkpoint PATH --prompt-tokens IDS` execs the native GPT sampler against
+`model_*.bin` checkpoints. `bash tools/build_native_train_cli.sh` likewise
+emits both `build/nfn_native_train` and `build/nfn-native-train` for direct
+native training. Passing a checkpoint directory picks the highest-step
+`model_########.bin`; graph-backed `.pt/.json` inference continues to use the
+Python `nfn infer` command.
 If that generic dispatcher binary is absent, the SDK returns the same registry
 from static no-Torch metadata so lean installs with only direct family trainers
 can still discover native coverage.

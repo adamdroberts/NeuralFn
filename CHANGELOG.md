@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native CLI local build aliases: `tools/build_native_train_cli.sh` and
+  `tools/build_native_nfn_cli.sh` now create same-directory hyphenated aliases
+  (`build/nfn-native-train` and `build/nfn-native`) when run with their default
+  underscore output names. This keeps local no-Python shell workflows aligned
+  with the documented and installed command names, and the no-Torch dependency
+  checker now treats both aliases as required default artifacts. Verification:
+  focused native CLI build/dispatch tests, native no-Torch artifact check, and
+  direct dry-run command inspection through `build/nfn-native`.
+
 - Native GPT long-run deferred prewarm gate: marked
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` as an accepted
   current-default comparison after a CUDA 13.3.33 dedicated RTX 5090 5-step,

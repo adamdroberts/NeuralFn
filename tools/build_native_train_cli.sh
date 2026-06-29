@@ -9,3 +9,12 @@ CXX_BIN="${CXX:-c++}"
 mkdir -p "$(dirname "${OUT}")"
 "${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic "${SRC}" -o "${OUT}"
 printf '%s\n' "${OUT}"
+
+OUT_DIR="$(dirname "${OUT}")"
+OUT_BASE="$(basename "${OUT}")"
+if [[ "${OUT_BASE}" == "nfn_native_train" ]]; then
+  ALIAS="${OUT_DIR}/nfn-native-train"
+  rm -f "${ALIAS}"
+  ln -s "${OUT_BASE}" "${ALIAS}"
+  printf '%s\n' "${ALIAS}"
+fi

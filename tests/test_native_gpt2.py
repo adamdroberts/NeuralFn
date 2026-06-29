@@ -13452,6 +13452,9 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_native_train.returncode == 0, build_native_train.stderr
+    default_native_train_alias = tmp_path / "nfn-native-train"
+    assert default_native_train_alias.is_symlink()
+    assert default_native_train_alias.resolve() == native_train_cli
     build_native_nfn = subprocess.run(
         ["bash", str(root / "tools" / "build_native_nfn_cli.sh"), str(native_nfn_cli)],
         cwd=root,
@@ -13461,6 +13464,9 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_native_nfn.returncode == 0, build_native_nfn.stderr
+    default_native_nfn_alias = tmp_path / "nfn-native"
+    assert default_native_nfn_alias.is_symlink()
+    assert default_native_nfn_alias.resolve() == native_nfn_cli
     build_launcher = subprocess.run(
         ["bash", str(root / "tools" / "build_native_gpt2_launcher.sh"), str(launcher)],
         cwd=root,

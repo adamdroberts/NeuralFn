@@ -24,7 +24,9 @@ REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_train_gpt"),
     Path("build/nfn_train_gpt_sm120"),
     Path("build/nfn_native_train"),
+    Path("build/nfn-native-train"),
     Path("build/nfn_native"),
+    Path("build/nfn-native"),
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt2_evo_native_train"),
@@ -82,7 +84,15 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/nfn_native_train.cpp"),
         Path("tools/build_native_train_cli.sh"),
     ),
+    Path("build/nfn-native-train"): (
+        Path("neuralfn/csrc/native_train/nfn_native_train.cpp"),
+        Path("tools/build_native_train_cli.sh"),
+    ),
     Path("build/nfn_native"): (
+        Path("neuralfn/csrc/native_train/nfn_native.cpp"),
+        Path("tools/build_native_nfn_cli.sh"),
+    ),
+    Path("build/nfn-native"): (
         Path("neuralfn/csrc/native_train/nfn_native.cpp"),
         Path("tools/build_native_nfn_cli.sh"),
     ),
@@ -159,7 +169,9 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_train_gpt_sm120"): ("bash", "tools/build_train_gpt_sm120_cli.sh"),
     Path("build/nfn_gpt2_native_train"): ("bash", "tools/build_native_gpt2_cli.sh"),
     Path("build/nfn_native_train"): ("bash", "tools/build_native_train_cli.sh"),
+    Path("build/nfn-native-train"): ("bash", "tools/build_native_train_cli.sh"),
     Path("build/nfn_native"): ("bash", "tools/build_native_nfn_cli.sh"),
+    Path("build/nfn-native"): ("bash", "tools/build_native_nfn_cli.sh"),
     Path("build/nfn_gpt2_evo_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_nanogpt_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
