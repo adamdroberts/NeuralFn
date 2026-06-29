@@ -1677,7 +1677,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "setup.token_weight_init.total_ms to 1.005229x" in candidate_bench
     assert "mlp_fc_dinput_before_dweight" in candidate_bench
     assert "block_backward_mlp_fc_dinput_before_dweight_count from 0 to 288" in candidate_bench
-    assert "post-reinstall recheck proved the route" in candidate_bench
+    assert "3-step, 2-sample recheck proved the route" in candidate_bench
     assert "steady-state CUDA-event timing regressed to 1.001167x" in candidate_bench
     assert "The native default is restored to dWeight+bias before dInput" in candidate_bench
     assert '"mlp_proj_concurrent_dinput_dweight"|"mlp-proj-concurrent-dinput-dweight"' in candidate_bench
@@ -3916,7 +3916,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "bgrad_first_write_direct_mlp_fc_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=768,3072,65536,N,T",
         "bgrad_first_write_direct_mlp_proj_65536": "NFN_NATIVE_LINEAR_BGRAD_FIRST_WRITE_DIRECT_ENABLE_SHAPE=3072,768,65536,N,T",
     }
-    assert "post-reinstall current-default 3-step, 2-sample no-stage rerun" in bench_source
+    assert "current-default 3-step, 2-sample no-stage rerun" in bench_source
     assert "train_loop_wall_ms_per_step=0.999943x" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=0.999902x" in bench_source
     assert "train_tokens_per_second=1.000056x" in bench_source
