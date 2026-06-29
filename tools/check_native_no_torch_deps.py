@@ -64,10 +64,12 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
     ),
     Path("build/nfn_train_gpt_sm120"): (
         Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
+        Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
         Path("tools/build_train_gpt_sm120_cli.sh"),
     ),
     Path("build/nfn_train_gpt"): (
         Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
+        Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
         Path("tools/build_train_gpt_cli.sh"),
     ),
     Path("build/nfn_gpt2_native_train"): (

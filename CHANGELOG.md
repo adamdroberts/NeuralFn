@@ -11,7 +11,9 @@
   such as `gpt2` and `nanogpt` remain direct family selections. Structurally
   unsupported presets reach the compiled trainer's native-trainer-missing
   reporting path instead of being rejected by the launcher. The launcher build
-  scripts now rebuild when the generated template-catalog header changes.
+  scripts now rebuild when the generated template-catalog header changes, and
+  the no-Torch artifact verifier now tracks that header as a source dependency
+  for both compiled launcher shims.
 
 - Native SDK GPT architecture selection: `NativeTrainRunConfig`,
   `build_native_train_run_config()`, `build_native_sm120_gpt_run_config()`, and

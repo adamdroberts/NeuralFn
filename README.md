@@ -4464,7 +4464,11 @@ It defaults to the dedicated display-disabled NVIDIA GPU, checks the native Tile
 symbols, launches the Tile fill smoke, runs the cached TinyStories
 transformer-LM smoke, runs a one-step native runtime-contract probe, runs the
 focused LM-head backward candidate/current microbench, and then runs
-`python -m pytest tests/test_native_gpt2.py -q`. The runtime-contract probe is
+`python -m pytest tests/test_native_gpt2.py -q`. The no-Torch artifact verifier
+also tracks the generated GPT template catalog
+header for both compiled launcher shims, so `nfn_train_gpt` and
+`nfn_train_gpt_sm120` rebuild when shipped template selectors change.
+The runtime-contract probe is
 enabled by default with `NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT=1`, writes
 `NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT` (default
 `/tmp/nfn_sm120_cuda13_runtime_contract.json`), and fails if promoted dense-GPT

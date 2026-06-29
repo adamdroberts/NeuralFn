@@ -590,6 +590,27 @@ def test_native_no_torch_dependency_verifier_maps_optional_family_sources() -> N
     assert Path("tools/build_native_missing_trainers.sh") in llama_dependencies
 
 
+def test_native_no_torch_dependency_verifier_maps_gpt_launcher_catalog_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    generic_dependencies = module.artifact_source_dependencies(root / "build" / "nfn_train_gpt", root)
+    sm120_dependencies = module.artifact_source_dependencies(root / "build" / "nfn_train_gpt_sm120", root)
+
+    assert Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp") in generic_dependencies
+    assert Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp") in sm120_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in generic_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in sm120_dependencies
+    assert Path("tools/build_train_gpt_cli.sh") in generic_dependencies
+    assert Path("tools/build_train_gpt_sm120_cli.sh") in sm120_dependencies
+
+
 def test_native_no_torch_dependency_verifier_maps_sdk_bindings() -> None:
     root = Path(__file__).resolve().parents[1]
     module_path = root / "tools" / "check_native_no_torch_deps.py"
