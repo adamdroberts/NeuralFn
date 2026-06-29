@@ -4674,7 +4674,10 @@ names, and `nfn-native-train` into the active Python scripts
 directory. Pass `./install.sh --no-native` to skip native artifact builds. The
 compiled SM120 launcher accepts the same `NFN_SM120_NATIVE_*` cadence, shape,
 optimizer, sample, checkpoint, and train-loss env controls as the benchmark
-wrappers, with `NFN_SM120_*` fallbacks, before it execs the native GPT trainer.
+wrappers, with `NFN_SM120_*` fallbacks, before it execs the native GPT trainer;
+the optimizer controls include `NFN_NATIVE_GPT_BETA1`, `NFN_NATIVE_GPT_BETA2`,
+`NFN_NATIVE_GPT_ADAM_EPS`, and `NFN_NATIVE_GPT_GRAD_CLIP_NORM` plus their
+`NFN_SM120_NATIVE_*` and `NFN_SM120_*` aliases.
 The generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
 configs; alias-only GPT configs prefer `compiled_cli_argv` so dataset aliases
 stay on the compiled C++ resolver instead of raw external trainer paths. The

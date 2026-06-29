@@ -356,9 +356,12 @@ public-vocab LM-head loss path instead of the older float logits workspace.
 Dense GPT native AdamW uses `beta1=0.9`, `beta2=0.95`, `adam_eps=1e-8`, and
 `grad_clip_norm=1.0` by default. The compiled CUDA Tile trainer accepts
 `--beta1`, `--beta2`, `--adam-eps`, and `--grad-clip-norm`, reports the
-effective `optimizer` object in plan/runtime JSON, and the GPT-2-evo native
-delegate forwards those values to the dense GPT layer-evo trainer without
-rounding scientific-notation values such as `1e-8` to zero.
+effective `optimizer` object in plan/runtime JSON, and `NativeGptRunConfig` /
+`NativeGpt2RunConfig` include matching `beta1`, `beta2`, `adam_eps`, and
+`grad_clip_norm` fields for compiled-CLI handoff. The Python wrappers, generic
+`nfn train` dispatch, SM120 shell helper, compiled SM120 launcher, and GPT-2-evo
+native delegate forward those values without rounding scientific-notation
+values such as `1e-8` to zero.
 
 For workstation runs that should avoid both Python and Bash startup before the
 native exec boundary, build `build/nfn_train_gpt` with

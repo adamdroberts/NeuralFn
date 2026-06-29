@@ -96,6 +96,10 @@ class NativeGpt2RunConfig:
     warmup_steps: int
     weight_decay: float
     max_steps: int
+    beta1: float = 0.9
+    beta2: float = 0.95
+    adam_eps: float = 1e-8
+    grad_clip_norm: float = 1.0
     eval_batches: int = 1
     eval_batch_size: int = 0
     train_loss_every_steps: int = 0
@@ -238,6 +242,14 @@ class NativeGpt2RunConfig:
             str(float(self.final_lr_fraction)),
             "--weight-decay",
             str(float(self.weight_decay)),
+            "--beta1",
+            str(float(self.beta1)),
+            "--beta2",
+            str(float(self.beta2)),
+            "--adam-eps",
+            str(float(self.adam_eps)),
+            "--grad-clip-norm",
+            str(float(self.grad_clip_norm)),
             "--warmup-steps",
             str(int(self.warmup_steps)),
             "--max-steps",
@@ -903,6 +915,10 @@ def build_native_gpt2_run_config(
     max_steps: int,
     num_layers: int,
     activation: str,
+    beta1: float = 0.9,
+    beta2: float = 0.95,
+    adam_eps: float = 1e-8,
+    grad_clip_norm: float = 1.0,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
     train_loss_every_steps: int = 0,
@@ -972,6 +988,10 @@ def build_native_gpt2_run_config(
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
+        beta1=float(beta1),
+        beta2=float(beta2),
+        adam_eps=float(adam_eps),
+        grad_clip_norm=float(grad_clip_norm),
         activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=native_gpt2_kernel_backend(kernel_backend),
@@ -1022,6 +1042,10 @@ def build_native_gpt2_compiled_cli_run_config(
     max_steps: int,
     num_layers: int,
     activation: str,
+    beta1: float = 0.9,
+    beta2: float = 0.95,
+    adam_eps: float = 1e-8,
+    grad_clip_norm: float = 1.0,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
     train_loss_every_steps: int = 0,
@@ -1086,6 +1110,10 @@ def build_native_gpt2_compiled_cli_run_config(
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
+        beta1=float(beta1),
+        beta2=float(beta2),
+        adam_eps=float(adam_eps),
+        grad_clip_norm=float(grad_clip_norm),
         activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=resolved_kernel_backend,

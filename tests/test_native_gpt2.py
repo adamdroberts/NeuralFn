@@ -1971,6 +1971,10 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
         min_lr=None,
         warmup_steps=60,
         weight_decay=0.1,
+        beta1=0.88,
+        beta2=0.97,
+        adam_eps=2e-8,
+        grad_clip_norm=0.5,
         max_steps=20000,
         num_layers=12,
         activation="sd_prelu",
@@ -2010,6 +2014,10 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         min_lr=None,
         warmup_steps=60,
         weight_decay=0.1,
+        beta1=0.87,
+        beta2=0.98,
+        adam_eps=1e-8,
+        grad_clip_norm=0.75,
         max_steps=20000,
         num_layers=12,
         activation="gelu",
@@ -2048,6 +2056,10 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     ]
     assert "--target" not in argv
     assert argv[argv.index("--train-batch-tokens") + 1] == "524288"
+    assert argv[argv.index("--beta1") + 1] == "0.87"
+    assert argv[argv.index("--beta2") + 1] == "0.98"
+    assert argv[argv.index("--adam-eps") + 1] == "1e-08"
+    assert argv[argv.index("--grad-clip-norm") + 1] == "0.75"
     assert argv[argv.index("--tile-ops-lib") + 1] == "/opt/nfn/libnfn_native_train_tile_ops.so"
     assert "--smoke-tile-ops" in argv
     assert "--smoke-nvfp4-pack" in argv
@@ -2090,6 +2102,10 @@ def test_build_native_gpt2_compiled_cli_config_can_defer_shape_to_graph_metadata
         min_lr=None,
         warmup_steps=60,
         weight_decay=0.1,
+        beta1=0.88,
+        beta2=0.97,
+        adam_eps=2e-8,
+        grad_clip_norm=0.5,
         max_steps=20000,
         num_layers=12,
         activation="gelu",
@@ -3991,6 +4007,10 @@ def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path
         min_lr=None,
         warmup_steps=60,
         weight_decay=0.1,
+        beta1=0.88,
+        beta2=0.97,
+        adam_eps=2e-8,
+        grad_clip_norm=0.5,
         max_steps=20000,
         num_layers=12,
         activation="gelu",
@@ -4007,6 +4027,10 @@ def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path
     assert cfg.template_name == "gpt2_megakernel"
     assert cfg.graph_file == "/tmp/custom-gpt.json"
     assert argv[:3] == ["/opt/nfn/nfn_gpt_native_train", "--model-family", "gpt"]
+    assert argv[argv.index("--beta1") + 1] == "0.88"
+    assert argv[argv.index("--beta2") + 1] == "0.97"
+    assert argv[argv.index("--adam-eps") + 1] == "2e-08"
+    assert argv[argv.index("--grad-clip-norm") + 1] == "0.5"
     assert argv[argv.index("--template-name") + 1] == "gpt2_megakernel"
     assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-gpt.json"
     assert normalize_native_gpt_encoding_name("tokgpt2") == "gpt2"

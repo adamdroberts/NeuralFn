@@ -276,6 +276,14 @@ int main(int argc, char** argv) {
         env_first({"NFN_NATIVE_GPT_FINAL_LR_FRACTION", "NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION"}, "0.0");
     std::string weight_decay =
         env_first({"NFN_NATIVE_GPT_WEIGHT_DECAY", "NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY"}, "0.1");
+    std::string beta1 =
+        env_first({"NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1"}, "0.9");
+    std::string beta2 =
+        env_first({"NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2"}, "0.95");
+    std::string adam_eps =
+        env_first({"NFN_NATIVE_GPT_ADAM_EPS", "NFN_SM120_NATIVE_ADAM_EPS", "NFN_SM120_ADAM_EPS"}, "1e-8");
+    std::string grad_clip_norm =
+        env_first({"NFN_NATIVE_GPT_GRAD_CLIP_NORM", "NFN_SM120_NATIVE_GRAD_CLIP_NORM", "NFN_SM120_GRAD_CLIP_NORM"}, "1.0");
     std::string warmup_steps =
         env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "600");
     std::string max_steps =
@@ -466,6 +474,10 @@ int main(int argc, char** argv) {
     append_pair(out, "--learning-rate", learning_rate);
     append_pair(out, "--final-lr-fraction", final_lr_fraction);
     append_pair(out, "--weight-decay", weight_decay);
+    append_pair(out, "--beta1", beta1);
+    append_pair(out, "--beta2", beta2);
+    append_pair(out, "--adam-eps", adam_eps);
+    append_pair(out, "--grad-clip-norm", grad_clip_norm);
     append_pair(out, "--warmup-steps", warmup_steps);
     append_pair(out, "--native-cuda-checkpoint-every", checkpoint_every);
     append_pair(out, "--max-steps", max_steps);

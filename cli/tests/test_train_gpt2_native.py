@@ -205,6 +205,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--eval-every-steps=1000",
+                    "--beta1=0.87",
+                    "--beta2=0.98",
+                    "--adam-eps=1e-8",
+                    "--grad-clip-norm=0.75",
                 ],
                 stdin_isatty=False,
                 stdout_isatty=False,
@@ -232,6 +236,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--beta1=0.87", proc.stdout)
+        self.assertIn("--beta2=0.98", proc.stdout)
+        self.assertIn("--adam-eps=1e-8", proc.stdout)
+        self.assertIn("--grad-clip-norm=0.75", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
         self.assertIn("--print-command", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
@@ -2625,10 +2633,22 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_SM120_LEARNING_RATE 0.0006)", content)
         self.assertIn("WEIGHT_DECAY=\"$(env_or_alias3 NFN_NATIVE_GPT_WEIGHT_DECAY", content)
         self.assertIn("NFN_SM120_WEIGHT_DECAY 0.1)", content)
+        self.assertIn("BETA1=\"$(env_or_alias3 NFN_NATIVE_GPT_BETA1", content)
+        self.assertIn("NFN_SM120_BETA1 0.9)", content)
+        self.assertIn("BETA2=\"$(env_or_alias3 NFN_NATIVE_GPT_BETA2", content)
+        self.assertIn("NFN_SM120_BETA2 0.95)", content)
+        self.assertIn("ADAM_EPS=\"$(env_or_alias3 NFN_NATIVE_GPT_ADAM_EPS", content)
+        self.assertIn("NFN_SM120_ADAM_EPS 1e-8)", content)
+        self.assertIn("GRAD_CLIP_NORM=\"$(env_or_alias3 NFN_NATIVE_GPT_GRAD_CLIP_NORM", content)
+        self.assertIn("NFN_SM120_GRAD_CLIP_NORM 1.0)", content)
         self.assertIn("WARMUP_STEPS=\"$(env_or_alias3 NFN_NATIVE_GPT_WARMUP_STEPS", content)
         self.assertIn("NFN_SM120_WARMUP_STEPS 600)", content)
         self.assertIn('--learning-rate "${LEARNING_RATE}"', content)
         self.assertIn('--weight-decay "${WEIGHT_DECAY}"', content)
+        self.assertIn('--beta1 "${BETA1}"', content)
+        self.assertIn('--beta2 "${BETA2}"', content)
+        self.assertIn('--adam-eps "${ADAM_EPS}"', content)
+        self.assertIn('--grad-clip-norm "${GRAD_CLIP_NORM}"', content)
         self.assertIn('--warmup-steps "${WARMUP_STEPS}"', content)
         self.assertIn("MAX_STEPS=\"$(env_or_alias3 NFN_NATIVE_GPT_MAX_STEPS", content)
         self.assertIn("NFN_SM120_MAX_STEPS 20000)", content)
@@ -2647,6 +2667,23 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("train_gpt2cu", content)
         self.assertNotIn("--max-wallclock-seconds", content)
         self.assertNotIn("TorchTrainer", content)
+
+    def test_compiled_sm120_gpt_helper_forwards_adamw_defaults(self) -> None:
+        content = (NEURALFN_ROOT / "neuralfn" / "csrc" / "native_train" / "train_gpt_sm120.cpp").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1"', content)
+        self.assertIn('"NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2"', content)
+        self.assertIn('"NFN_NATIVE_GPT_ADAM_EPS", "NFN_SM120_NATIVE_ADAM_EPS", "NFN_SM120_ADAM_EPS"', content)
+        self.assertIn(
+            '"NFN_NATIVE_GPT_GRAD_CLIP_NORM", "NFN_SM120_NATIVE_GRAD_CLIP_NORM", "NFN_SM120_GRAD_CLIP_NORM"',
+            content,
+        )
+        self.assertIn('append_pair(out, "--beta1", beta1);', content)
+        self.assertIn('append_pair(out, "--beta2", beta2);', content)
+        self.assertIn('append_pair(out, "--adam-eps", adam_eps);', content)
+        self.assertIn('append_pair(out, "--grad-clip-norm", grad_clip_norm);', content)
 
     def test_nfn_train_gpt2_rejects_torch_runtime_without_importing_torch(self) -> None:
         code = textwrap.dedent(

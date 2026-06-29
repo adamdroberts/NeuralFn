@@ -1112,10 +1112,12 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 Dense GPT native AdamW defaults are `beta1=0.9`, `beta2=0.95`,
 `adam_eps=1e-8`, and `grad_clip_norm=1.0`, matching the SM120 quality profile.
 Pass `--beta1`, `--beta2`, `--adam-eps`, or `--grad-clip-norm` to override
-them on the compiled CUDA Tile trainer. Plan and runtime JSON report the
-effective `optimizer` object, and the GPT-2-evo native delegate forwards the
-same values when it execs the dense GPT `--train-transformer-lm --layer-evo`
-path.
+them on the compiled CUDA Tile trainer. `train_gpt.py`, `train_gpt2.py`,
+`train_gpt_native.py`, `nfn train`, and the `tools/train_gpt_sm120.sh` /
+`nfn_train_gpt_sm120` launchers forward those overrides to the compiled
+frontend. Plan and runtime JSON report the effective `optimizer` object, and
+the GPT-2-evo native delegate forwards the same values when it execs the dense
+GPT `--train-transformer-lm --layer-evo` path.
 
 Runtime JSON now emits `checkpoint_export_enabled` beside the older
 `final_checkpoint_export_enabled` alias; benchmark and CI automation should use

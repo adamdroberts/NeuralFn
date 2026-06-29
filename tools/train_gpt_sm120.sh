@@ -127,6 +127,10 @@ TRAIN_BATCH_TOKENS="$(env_or_alias3 NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS NFN_SM120_
 LEARNING_RATE="$(env_or_alias3 NFN_NATIVE_GPT_LEARNING_RATE NFN_SM120_NATIVE_LEARNING_RATE NFN_SM120_LEARNING_RATE 0.0006)"
 FINAL_LR_FRACTION="$(env_or_alias3 NFN_NATIVE_GPT_FINAL_LR_FRACTION NFN_SM120_NATIVE_FINAL_LR_FRACTION NFN_SM120_FINAL_LR_FRACTION 0.0)"
 WEIGHT_DECAY="$(env_or_alias3 NFN_NATIVE_GPT_WEIGHT_DECAY NFN_SM120_NATIVE_WEIGHT_DECAY NFN_SM120_WEIGHT_DECAY 0.1)"
+BETA1="$(env_or_alias3 NFN_NATIVE_GPT_BETA1 NFN_SM120_NATIVE_BETA1 NFN_SM120_BETA1 0.9)"
+BETA2="$(env_or_alias3 NFN_NATIVE_GPT_BETA2 NFN_SM120_NATIVE_BETA2 NFN_SM120_BETA2 0.95)"
+ADAM_EPS="$(env_or_alias3 NFN_NATIVE_GPT_ADAM_EPS NFN_SM120_NATIVE_ADAM_EPS NFN_SM120_ADAM_EPS 1e-8)"
+GRAD_CLIP_NORM="$(env_or_alias3 NFN_NATIVE_GPT_GRAD_CLIP_NORM NFN_SM120_NATIVE_GRAD_CLIP_NORM NFN_SM120_GRAD_CLIP_NORM 1.0)"
 WARMUP_STEPS="$(env_or_alias3 NFN_NATIVE_GPT_WARMUP_STEPS NFN_SM120_NATIVE_WARMUP_STEPS NFN_SM120_WARMUP_STEPS 600)"
 MAX_STEPS="$(env_or_alias3 NFN_NATIVE_GPT_MAX_STEPS NFN_SM120_NATIVE_MAX_STEPS NFN_SM120_MAX_STEPS 20000)"
 TRAIN_LOSS_EVERY_STEPS="$(env_or_alias3 NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS NFN_SM120_TRAIN_LOSS_EVERY_STEPS "")"
@@ -149,7 +153,8 @@ to use the legacy shell parser, which prefers build/nfn_gpt_native_train_linked,
 falls back to build/nfn_gpt_native_train, and uses the same core defaults as
 llm.kittens/train-sm120.sh, with NeuralFn quality defaults for validation and warmup:
   eval=1000 sample=20000 generate=144 batch=64 seq=1024 tokens/step=524288
-  weight_decay=0.1 lr=0.0006 final_lr_fraction=0 warmup=600 checkpoint=200
+  weight_decay=0.1 beta1=0.9 beta2=0.95 adam_eps=1e-8 grad_clip_norm=1.0
+  lr=0.0006 final_lr_fraction=0 warmup=600 checkpoint=200
   max_steps=20000 activation=gelu CUDA_DEVICE_MAX_CONNECTIONS=1
 
 Options:
@@ -371,6 +376,10 @@ exec "${NATIVE_GPT_TRAIN_BIN}" \
   --learning-rate "${LEARNING_RATE}" \
   --final-lr-fraction "${FINAL_LR_FRACTION}" \
   --weight-decay "${WEIGHT_DECAY}" \
+  --beta1 "${BETA1}" \
+  --beta2 "${BETA2}" \
+  --adam-eps "${ADAM_EPS}" \
+  --grad-clip-norm "${GRAD_CLIP_NORM}" \
   --warmup-steps "${WARMUP_STEPS}" \
   --native-cuda-checkpoint-every "${CHECKPOINT_EVERY}" \
   --max-steps "${MAX_STEPS}" \

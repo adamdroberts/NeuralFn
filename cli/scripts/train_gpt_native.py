@@ -49,6 +49,10 @@ NATIVE_GPT_DEFAULTS = {
     "warmup_steps": 600,
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "adam_eps": 1e-8,
+    "grad_clip_norm": 1.0,
     "eval_every_steps": 1000,
     "eval_batches": 20,
     "train_loss_every_steps": 0,
@@ -260,6 +264,10 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         min_lr=args.min_lr,
         warmup_steps=int(args.warmup_steps),
         weight_decay=float(args.weight_decay),
+        beta1=float(args.beta1),
+        beta2=float(args.beta2),
+        adam_eps=float(args.adam_eps),
+        grad_clip_norm=float(args.grad_clip_norm),
         max_steps=int(args.max_steps),
         num_layers=int(args.num_layers),
         activation=str(args.native_cuda_activation),
@@ -368,6 +376,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=env_float("LEARNING_RATE", NATIVE_GPT_DEFAULTS["learning_rate"]))
     parser.add_argument("--min-lr", type=float, default=None)
     parser.add_argument("--weight-decay", type=float, default=env_float("WEIGHT_DECAY", NATIVE_GPT_DEFAULTS["weight_decay"]))
+    parser.add_argument("--beta1", type=float, default=env_float("BETA1", NATIVE_GPT_DEFAULTS["beta1"]))
+    parser.add_argument("--beta2", type=float, default=env_float("BETA2", NATIVE_GPT_DEFAULTS["beta2"]))
+    parser.add_argument("--adam-eps", type=float, default=env_float("ADAM_EPS", NATIVE_GPT_DEFAULTS["adam_eps"]))
+    parser.add_argument(
+        "--grad-clip-norm",
+        type=float,
+        default=env_float("GRAD_CLIP_NORM", NATIVE_GPT_DEFAULTS["grad_clip_norm"]),
+    )
     parser.add_argument("--warmup-steps", type=int, default=env_int("WARMUP_STEPS", NATIVE_GPT_DEFAULTS["warmup_steps"]))
     parser.add_argument("--eval-every-steps", type=int, default=env_int("EVAL_EVERY_STEPS", NATIVE_GPT_DEFAULTS["eval_every_steps"]))
     parser.add_argument("--eval-batches", type=int, default=env_int("EVAL_BATCHES", NATIVE_GPT_DEFAULTS["eval_batches"]))
@@ -575,6 +591,10 @@ def main(argv: list[str] | None = None) -> int:
             min_lr=args.min_lr,
             warmup_steps=int(args.warmup_steps),
             weight_decay=float(args.weight_decay),
+            beta1=float(args.beta1),
+            beta2=float(args.beta2),
+            adam_eps=float(args.adam_eps),
+            grad_clip_norm=float(args.grad_clip_norm),
             max_steps=int(args.max_steps),
             num_layers=int(args.num_layers),
             activation=str(args.native_cuda_activation),
