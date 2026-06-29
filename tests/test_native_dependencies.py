@@ -360,6 +360,7 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
     sdk_entry = python_entries["native_sdk_public_exports"]
     assert sdk_entry["passed"] is True
     assert "native-sdk-public-exports-ok" in str(sdk_entry["stdout"])
+    assert "lean-sdk-public-exports-ok" in str(sdk_entry["stdout"])
 
     sm120_gpt3_entry = shell_entries["train_gpt_sm120_gpt3_dry_run"]
     assert sm120_gpt3_entry["passed"] is True

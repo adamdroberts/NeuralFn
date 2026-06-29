@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native no-Torch verifier SDK coverage: `tools/check_native_no_torch_deps.py`
+  now includes the public lean scalar trainer and inference exports in its
+  `native_sdk_public_exports` entrypoint. The gate imports and constructs
+  `SurrogateTrainer`, `EvolutionaryTrainer`, `HybridTrainer`, `TrainConfig`,
+  `EvoConfig`, `HybridConfig`, `GraphScope`, and imports `InferenceCache` /
+  checkpoint helper names under the existing Torch/NumPy/tiktoken import
+  blocker, so future regressions in the lean SDK boundary fail the default
+  native dependency check. Verification: focused native dependency tests and
+  full native no-Torch dependency verifier.
+
 - Lean hybrid trainer import boundary: `neuralfn.hybrid` no longer imports
   NumPy, Torch, or `neuralfn.surrogate` at module import time. Importing
   `HybridConfig` / `GraphScope` or constructing `HybridTrainer` now works on
