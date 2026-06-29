@@ -3321,10 +3321,15 @@ pairs and records `long_run_defer_prewarm_min_warmup_applied` in paired JSON
 metadata, keeping low-warmup reproductions opt-in through
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`.
 A 2026-06-29 no-profile parity rerun with two warmup order pairs measured
-NeuralFn over llm.kittens at `0.999098x` steady-state CUDA-event step time and
-`1.001006x` steady-state tokens/sec. The full 3-step train-loop wall ratio was
-`1.034260x` because the first optimizer step intentionally pays deferred
-throughput prewarms.
+NeuralFn over llm.kittens at `0.998700x` steady-state CUDA-event step time and
+`1.001354x` steady-state tokens/sec. The full 3-step train-loop wall ratio was
+`1.033204x` because the first optimizer step intentionally pays deferred
+throughput prewarms. The no-profile parity wrapper now gates both steady-state
+CUDA-event step time and `train_steady_state_tokens_per_second` when that
+deferred-prewarm policy is auto-applied; override
+`NFN_SM120_PARITY_MIN_CANDIDATE_RATIO` or
+`NFN_SM120_PARITY_MIN_STEADY_STATE_TOKENS_RATIO` only for deliberate threshold
+changes.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

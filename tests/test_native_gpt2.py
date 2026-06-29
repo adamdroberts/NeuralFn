@@ -1539,6 +1539,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
+    assert "MIN_CANDIDATE_RATIO_RAW=\"$(env_or_alias3 NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO NFN_SM120_PARITY_MIN_CANDIDATE_RATIO NFN_SM120_MIN_CANDIDATE_RATIO \"\")\"" in parity_bench
+    assert "DEFAULT_MIN_STEADY_STATE_TOKENS_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MIN_STEADY_STATE_TOKENS_RATIO NFN_SM120_PARITY_MIN_STEADY_STATE_TOKENS_RATIO NFN_SM120_MIN_STEADY_STATE_TOKENS_RATIO 1.000)\"" in parity_bench
     assert "MAX_CANDIDATE_RATIO_EXPLICIT=0" in parity_bench
     assert "candidate-only diagnostic instrumentation; skipping default metric-ratio gates" in parity_bench
     assert "default_metric_ratio_gate=disabled_for_candidate_only_stage_timing" in parity_bench
@@ -1547,8 +1549,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'paired_args+=(--baseline-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in parity_bench
     assert 'if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
+    assert 'MIN_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_steady_state_tokens_per_second=${DEFAULT_MIN_STEADY_STATE_TOKENS_RATIO}"' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
+    assert 'paired_args+=(--min-candidate-ratio "$item")' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
     assert "CANDIDATE_PROFILE_RAW=\"$(env_or_alias4 NFN_SM120_NATIVE_CANDIDATE_PROFILE NFN_SM120_NATIVE_PARITY_PROFILE NFN_SM120_PARITY_CANDIDATE_PROFILE NFN_SM120_PARITY_PROFILE \"\")\"" in parity_bench
     assert "NFN_SM120_NATIVE_CANDIDATE_PROFILE/NFN_SM120_PARITY_CANDIDATE_PROFILE/NFN_SM120_PARITY_PROFILE is not supported" in parity_bench

@@ -90,8 +90,10 @@ if [[ -n "${NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO-}" ||
       -n "${NFN_SM120_MAX_CANDIDATE_RATIO-}" ]]; then
   MAX_CANDIDATE_RATIO_EXPLICIT=1
 fi
+MIN_CANDIDATE_RATIO_RAW="$(env_or_alias3 NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO NFN_SM120_PARITY_MIN_CANDIDATE_RATIO NFN_SM120_MIN_CANDIDATE_RATIO "")"
 DEFAULT_MAX_TRAIN_LOOP_RATIO="$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)"
 DEFAULT_MAX_STEADY_STATE_RATIO="$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)"
+DEFAULT_MIN_STEADY_STATE_TOKENS_RATIO="$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MIN_STEADY_STATE_TOKENS_RATIO NFN_SM120_PARITY_MIN_STEADY_STATE_TOKENS_RATIO NFN_SM120_MIN_STEADY_STATE_TOKENS_RATIO 1.000)"
 ENFORCE_GATE="$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)"
 DEFAULT_RATIO_GATE_SKIPPED_FOR_STAGE_TIMING=0
 case "${ENFORCE_GATE,,}:${STAGE_TIMING,,}:$MAX_CANDIDATE_RATIO_EXPLICIT" in
@@ -164,6 +166,31 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
       ;;
   esac
 fi
+if [[ -z "$MIN_CANDIDATE_RATIO_RAW" ]]; then
+  case "${DRY_RUN_PLAN,,}" in
+    "1"|"true"|"yes"|"on")
+      ;;
+    *)
+      case "${ENFORCE_GATE,,}" in
+        "1"|"true"|"yes"|"on")
+          case "${STAGE_TIMING,,}" in
+            "1"|"true"|"yes"|"on")
+              ;;
+            *)
+              gate_stat_prefix=""
+              if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -gt 1 ]]; then
+                gate_stat_prefix="median:"
+              fi
+              if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then
+                MIN_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_steady_state_tokens_per_second=${DEFAULT_MIN_STEADY_STATE_TOKENS_RATIO}"
+              fi
+              ;;
+          esac
+          ;;
+      esac
+      ;;
+  esac
+fi
 
 profile_args=()
 case "${PROFILE_DIR_RAW,,}" in
@@ -198,6 +225,9 @@ if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then
 fi
 for item in $MAX_CANDIDATE_RATIO_RAW; do
   paired_args+=(--max-candidate-ratio "$item")
+done
+for item in $MIN_CANDIDATE_RATIO_RAW; do
+  paired_args+=(--min-candidate-ratio "$item")
 done
 case "${TRAIN_LOOP_EVENT_TIMING,,}" in
   "1"|"true"|"yes"|"on")
