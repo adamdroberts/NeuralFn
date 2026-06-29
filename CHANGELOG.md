@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmark metrics: `tools/paired_kernel_speed.py` now reports
+  `train_steady_state_tokens_per_second` for native JSON and llm.kittens step
+  logs when steady-state CUDA-event step timing is available. The metric uses
+  explicit native batch-token fields when present and otherwise infers
+  tokens-per-step from the existing full-loop throughput and per-step timing,
+  making long-run deferred-prewarm comparisons report throughput without
+  folding in the intentional first-step prewarm cost. Verification: focused
+  paired-kernel parser tests and diff check.
+
 - SM120 parity benchmark policy: `tools/bench_native_gpt_sm120_parity.sh` now
   applies `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to the NeuralFn leg by
   default when no explicit startup/prewarm policy is present, matching the

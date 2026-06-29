@@ -44,6 +44,9 @@ class MetricRatioLimit:
 
 NATIVE_METRIC_PATHS = (
     ("steps_completed", ("steps_completed",)),
+    ("train_batch_tokens", ("train_batch_tokens",)),
+    ("requested_train_batch_tokens", ("requested_train_batch_tokens",)),
+    ("effective_train_batch_tokens", ("effective_train_batch_tokens",)),
     ("train_loop_wall_ms", ("train_loop_wall_ms",)),
     (
         "train_loop_cuda_event_wall_ms",
@@ -1221,7 +1224,11 @@ NATIVE_TEXT_METRIC_KEYS = (
     "startup_plus_steady_state_step_wall_ms",
     "startup_plus_train_loop_wall_ms",
     "steps_completed",
+    "train_batch_tokens",
+    "requested_train_batch_tokens",
+    "effective_train_batch_tokens",
     "train_tokens_per_second",
+    "train_steady_state_tokens_per_second",
     "llm_kittens_bf16_mfu_pct",
     "llm_kittens_last_step_wall_ms",
     "llm_kittens_last_step_tokens_per_second",
@@ -1898,6 +1905,35 @@ def value_at_path(payload: dict[str, Any], path: Sequence[str]) -> Any:
     return current
 
 
+def numeric_metric(metrics: dict[str, float | int | str | bool], key: str) -> float | None:
+    value = metrics.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def add_steady_state_throughput_metric(metrics: dict[str, float | int | str | bool]) -> None:
+    steady_state_ms = numeric_metric(metrics, "train_loop_cuda_event_steady_state_wall_ms_per_step")
+    if steady_state_ms is None or steady_state_ms <= 0.0:
+        return
+    tokens_per_step = (
+        numeric_metric(metrics, "effective_train_batch_tokens")
+        or numeric_metric(metrics, "train_batch_tokens")
+        or numeric_metric(metrics, "requested_train_batch_tokens")
+    )
+    if tokens_per_step is None:
+        train_tokens_per_second = numeric_metric(metrics, "train_tokens_per_second")
+        loop_ms_per_step = (
+            numeric_metric(metrics, "train_loop_cuda_event_wall_ms_per_step")
+            or numeric_metric(metrics, "train_loop_wall_ms_per_step")
+        )
+        if train_tokens_per_second is not None and loop_ms_per_step is not None:
+            tokens_per_step = train_tokens_per_second * loop_ms_per_step / 1000.0
+    if tokens_per_step is None or tokens_per_step <= 0.0:
+        return
+    metrics["train_steady_state_tokens_per_second"] = tokens_per_step * 1000.0 / steady_state_ms
+
+
 def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | int | str | bool]:
     metrics: dict[str, float | int | str | bool] = {}
     for name, path in NATIVE_METRIC_PATHS:
@@ -1940,6 +1976,14 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
             metrics["startup_plus_train_loop_wall_ms"] = setup_wall + float(train_loop_ms)
     timing = payload.get("timing")
     if isinstance(timing, dict):
+        for key in (
+            "train_loop_wall_ms",
+            "setup_wall_ms",
+            "train_tokens_per_second",
+        ):
+            value = timing.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                metrics.setdefault(key, value)
         setup_timing = timing.get("setup_timing")
         if isinstance(setup_timing, list):
             for stage in setup_timing:
@@ -1998,6 +2042,48 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
                     value = stage.get(source_key)
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         metrics[f"{metric_name}.{suffix}"] = value
+    train_loop_ms = metrics.get("train_loop_wall_ms")
+    steps_completed = metrics.get("steps_completed")
+    if (
+        "train_loop_wall_ms_per_step" not in metrics
+        and isinstance(train_loop_ms, (int, float))
+        and not isinstance(train_loop_ms, bool)
+        and isinstance(steps_completed, (int, float))
+        and not isinstance(steps_completed, bool)
+        and float(steps_completed) > 0.0
+    ):
+        metrics["train_loop_wall_ms_per_step"] = float(train_loop_ms) / float(steps_completed)
+    setup_wall_ms = metrics.get("setup_wall_ms")
+    first_step_wall_ms = metrics.get("train_loop_cuda_event_first_step_wall_ms")
+    train_loop_wall_ms_per_step = metrics.get("train_loop_wall_ms_per_step")
+    steady_state_wall_ms_per_step = metrics.get("train_loop_cuda_event_steady_state_wall_ms_per_step")
+    if isinstance(setup_wall_ms, (int, float)) and not isinstance(setup_wall_ms, bool):
+        setup_wall = float(setup_wall_ms)
+        if (
+            "startup_plus_first_step_wall_ms" not in metrics
+            and isinstance(first_step_wall_ms, (int, float))
+            and not isinstance(first_step_wall_ms, bool)
+        ):
+            metrics["startup_plus_first_step_wall_ms"] = setup_wall + float(first_step_wall_ms)
+        elif (
+            "startup_plus_first_step_wall_ms" not in metrics
+            and isinstance(train_loop_wall_ms_per_step, (int, float))
+            and not isinstance(train_loop_wall_ms_per_step, bool)
+        ):
+            metrics["startup_plus_first_step_wall_ms"] = setup_wall + float(train_loop_wall_ms_per_step)
+        if (
+            "startup_plus_steady_state_step_wall_ms" not in metrics
+            and isinstance(steady_state_wall_ms_per_step, (int, float))
+            and not isinstance(steady_state_wall_ms_per_step, bool)
+        ):
+            metrics["startup_plus_steady_state_step_wall_ms"] = setup_wall + float(steady_state_wall_ms_per_step)
+        if (
+            "startup_plus_train_loop_wall_ms" not in metrics
+            and isinstance(train_loop_ms, (int, float))
+            and not isinstance(train_loop_ms, bool)
+        ):
+            metrics["startup_plus_train_loop_wall_ms"] = setup_wall + float(train_loop_ms)
+    add_steady_state_throughput_metric(metrics)
     return metrics
 
 
@@ -2266,6 +2352,12 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
             metrics["train_loop_cuda_event_steady_state_wall_ms"] = sum(steady_state_values)
             metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] = mean(steady_state_values)
         metrics["train_tokens_per_second"] = mean(tok_s_values)
+        tokens_per_step_values = [
+            tok_s * step_ms / 1000.0 for tok_s, step_ms in zip(tok_s_values, step_ms_values, strict=True)
+        ]
+        if tokens_per_step_values:
+            metrics["effective_train_batch_tokens"] = mean(tokens_per_step_values)
+        add_steady_state_throughput_metric(metrics)
         metrics["llm_kittens_bf16_mfu_pct"] = mean(mfu_values)
         metrics["llm_kittens_last_step_wall_ms"] = step_ms_values[-1]
         metrics["llm_kittens_last_step_tokens_per_second"] = tok_s_values[-1]

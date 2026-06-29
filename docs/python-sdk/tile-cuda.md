@@ -3295,7 +3295,10 @@ prewarms once `max_steps` exceeds `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm`; the profile gates
 setup improvement, steady-state CUDA-event step neutrality, and
 startup-plus-steady-state improvement separately from the intentional first
-optimizer-step prewarm cost.
+optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
+`train_steady_state_tokens_per_second` beside the existing full-loop
+`train_tokens_per_second` metric so SDK benchmark reports can judge long-run
+throughput without folding in that first optimizer step.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

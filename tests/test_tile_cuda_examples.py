@@ -5894,6 +5894,8 @@ step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 4
     assert metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] == 2400.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 2600.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 2600.0
+    assert metrics["effective_train_batch_tokens"] == 538000.0
+    assert metrics["train_steady_state_tokens_per_second"] == pytest.approx(206923.076923)
     assert metrics["train_tokens_per_second"] == 215000.0
     assert metrics["llm_kittens_bf16_mfu_pct"] == 41.0
     assert metrics["llm_kittens_last_step_wall_ms"] == 2600.0
@@ -6057,6 +6059,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
             {
                 "status": "native-sidecar-test",
                 "steps_completed": 4,
+                "effective_train_batch_tokens": 64.0,
                 "timing": {
                     "train_loop_wall_ms": 20.0,
                     "train_loop_cuda_event_wall_ms": 18.0,
@@ -6177,6 +6180,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["native_metrics_source"] == "json-out"
     assert metrics["status"] == "native-sidecar-test"
     assert metrics["steps_completed"] == 4
+    assert metrics["effective_train_batch_tokens"] == 64.0
     assert metrics["train_loop_wall_ms"] == 20.0
     assert metrics["train_loop_wall_ms_per_step"] == 5.0
     assert metrics["train_loop_cuda_event_wall_ms"] == 18.0
@@ -6191,6 +6195,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["startup_plus_steady_state_step_wall_ms"] == 6.0
     assert metrics["startup_plus_train_loop_wall_ms"] == 22.0
     assert metrics["train_tokens_per_second"] == 123.0
+    assert metrics["train_steady_state_tokens_per_second"] == 16000.0
     assert metrics["linear_tk_gemm_count"] == 8
     assert metrics["linear_cublaslt_gemm_count"] == 11
     assert metrics["linear_bf16_gemm_count"] == 13

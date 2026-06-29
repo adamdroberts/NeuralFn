@@ -277,6 +277,10 @@ eager-prewarm setup against the deferred long-run policy in the paired native
 benchmark wrapper. That profile now gates setup time, steady-state CUDA-event
 step time, and startup-plus-steady-state timing separately, because the first
 optimizer step intentionally pays the deferred QKV/LM-head prewarm cost. The
+paired benchmark JSON and stdout also report
+`train_steady_state_tokens_per_second`, derived from the measured steady-state
+CUDA-event step time, so long-run comparisons do not reuse the first-step
+prewarm cost in throughput gates.
 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun kept the
 policy accepted: setup wall fell to `0.666989x`,
 startup-plus-steady-state-step timing fell to `0.925514x`, and steady-state
