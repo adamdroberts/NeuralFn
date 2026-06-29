@@ -13080,6 +13080,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     linked_native_cli = tmp_path / "nfn_gpt_native_train_linked"
     compat_native_cli = tmp_path / "nfn_gpt2_native_train"
     native_train_cli = tmp_path / "nfn_native_train"
+    native_nfn_cli = tmp_path / "nfn_native"
     launcher = tmp_path / "nfn_gpt2_tile_train"
     missing_dir = tmp_path / "missing"
 
@@ -13120,6 +13121,15 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_native_train.returncode == 0, build_native_train.stderr
+    build_native_nfn = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_nfn_cli.sh"), str(native_nfn_cli)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build_native_nfn.returncode == 0, build_native_nfn.stderr
     build_launcher = subprocess.run(
         ["bash", str(root / "tools" / "build_native_gpt2_launcher.sh"), str(launcher)],
         cwd=root,
@@ -13167,6 +13177,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     env["NFN_TEST_DYNAMIC_NATIVE_CLI"] = str(native_cli)
     env["NFN_NATIVE_GPT2_CLI"] = str(compat_native_cli)
     env["NFN_NATIVE_TRAIN_CLI"] = str(native_train_cli)
+    env["NFN_NATIVE_NFN_CLI"] = str(native_nfn_cli)
     env["NFN_NATIVE_GPT2_LAUNCHER"] = str(launcher)
     env["NFN_NATIVE_GPT_TRAIN_CLI"] = str(generic_sm120_launcher)
     env["NFN_NATIVE_SM120_CLI"] = str(sm120_launcher)
@@ -13188,6 +13199,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     linked_gpt_train = bin_dir / "nfn-gpt-native-train"
     linked_gpt2_compat = bin_dir / "nfn-gpt2-native-compat"
     linked_unified = bin_dir / "nfn-native-train"
+    linked_native_nfn = bin_dir / "nfn-native"
     linked_launcher = bin_dir / "nfn-gpt2-tile-launcher"
     linked_gpt_launcher = bin_dir / "nfn-train-gpt"
     linked_gpt_launcher_alias = bin_dir / "nfn-gpt-train"
@@ -13201,6 +13213,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt_train.is_symlink()
     assert linked_gpt2_compat.is_symlink()
     assert linked_unified.is_symlink()
+    assert linked_native_nfn.is_symlink()
     assert linked_launcher.is_symlink()
     assert linked_gpt_launcher.is_symlink()
     assert linked_gpt_launcher_alias.is_symlink()
@@ -13214,6 +13227,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_gpt_train.resolve() == linked_native_cli
     assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
+    assert linked_native_nfn.resolve() == native_nfn_cli
     assert linked_launcher.resolve() == launcher
     assert linked_gpt_launcher.resolve() == generic_sm120_launcher
     assert linked_gpt_launcher_alias.resolve() == generic_sm120_launcher
@@ -13241,6 +13255,16 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert unified_help.returncode == 0, unified_help.stderr
     assert "Unified no-Python NeuralFn native training frontend" in unified_help.stdout
+
+    native_nfn_help = subprocess.run(
+        [str(linked_native_nfn), "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert native_nfn_help.returncode == 0, native_nfn_help.stderr
+    assert "Compiled NeuralFn native CLI shim" in native_nfn_help.stdout
 
     sm120_help = subprocess.run(
         [str(linked_sm120), "--help"],
@@ -13304,3 +13328,98 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert "--train-token-lm" in installed_print_command.stdout
     assert "--dry-run" in installed_print_command.stdout
     assert "--print-command" in installed_print_command.stdout
+
+
+def test_native_nfn_cli_dispatches_train_and_infer_without_python(tmp_path: Path) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    native_nfn = tmp_path / "nfn-native"
+    build = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_nfn_cli.sh"), str(native_nfn)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    fake_train = tmp_path / "nfn_native_train"
+    fake_gpt = tmp_path / "nfn_gpt_native_train"
+    observed_train = tmp_path / "train-argv.txt"
+    observed_gpt = tmp_path / "gpt-argv.txt"
+    fake_train.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$NFN_TEST_TRAIN_ARGV\"\n",
+        encoding="utf-8",
+    )
+    fake_gpt.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$NFN_TEST_GPT_ARGV\"\n",
+        encoding="utf-8",
+    )
+    fake_train.chmod(0o755)
+    fake_gpt.chmod(0o755)
+
+    env = os.environ.copy()
+    env["NFN_NATIVE_TRAIN_CLI"] = str(fake_train)
+    env["NFN_NATIVE_GPT_CLI"] = str(fake_gpt)
+    env["NFN_TEST_TRAIN_ARGV"] = str(observed_train)
+    env["NFN_TEST_GPT_ARGV"] = str(observed_gpt)
+
+    train_proc = subprocess.run(
+        [str(native_nfn), "train", "--base-model", "gpt", "--dataset-alias", "/tmp/native-cache"],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert train_proc.returncode == 0, train_proc.stderr
+    assert observed_train.read_text(encoding="utf-8").splitlines() == [
+        "--base-model",
+        "gpt",
+        "--dataset-alias",
+        "/tmp/native-cache",
+    ]
+
+    ckpt_dir = tmp_path / "ckpts"
+    ckpt_dir.mkdir()
+    (ckpt_dir / "model_00000020.bin").write_bytes(b"old")
+    (ckpt_dir / "model_00001000.bin").write_bytes(b"new")
+    infer_print = subprocess.run(
+        [
+            str(native_nfn),
+            "infer",
+            "--checkpoint",
+            str(ckpt_dir),
+            "--prompt-tokens",
+            "50256",
+            "--max-new-tokens",
+            "4",
+            "--print-command",
+        ],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert infer_print.returncode == 0, infer_print.stderr
+    assert str(ckpt_dir / "model_00001000.bin") in infer_print.stdout
+    assert "--sample-checkpoint" in infer_print.stdout
+    assert "--prompt-tokens 50256" in infer_print.stdout
+
+    info_proc = subprocess.run(
+        [str(native_nfn), "infer", "--native-checkpoint", str(ckpt_dir), "--native-info"],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert info_proc.returncode == 0, info_proc.stderr
+    assert observed_gpt.read_text(encoding="utf-8").splitlines() == [
+        "--native-info",
+        "--native-checkpoint",
+        str(ckpt_dir / "model_00001000.bin"),
+    ]

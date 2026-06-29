@@ -12,6 +12,7 @@ GPT_TRAIN_CLI_OUT="${NFN_NATIVE_GPT_TRAIN_CLI_OUT:-}"
 SM120_CLI_OUT="${NFN_NATIVE_SM120_CLI_OUT:-}"
 CLI_OUT="${NFN_NATIVE_GPT2_CLI_OUT:-}"
 NATIVE_TRAIN_OUT="${NFN_NATIVE_TRAIN_CLI_OUT:-}"
+NATIVE_NFN_OUT="${NFN_NATIVE_NFN_CLI_OUT:-}"
 MISSING_TRAINERS_OUT_DIR="${NFN_NATIVE_MISSING_TRAINERS_OUT_DIR:-}"
 NATIVE_TILE_OPS_OUT="${NFN_NATIVE_TRAIN_TILE_OPS_OUT:-}"
 
@@ -79,6 +80,12 @@ if [[ -n "${NATIVE_TRAIN_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_cli.sh" "${NATIVE_TRAIN_OUT}"
 else
   bash "${ROOT_DIR}/tools/build_native_train_cli.sh"
+fi
+
+if [[ -n "${NATIVE_NFN_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_nfn_cli.sh" "${NATIVE_NFN_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_native_nfn_cli.sh"
 fi
 
 if [[ -n "${MISSING_TRAINERS_OUT_DIR}" ]]; then

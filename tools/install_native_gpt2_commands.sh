@@ -15,6 +15,7 @@ else
 fi
 COMPAT_NATIVE_CLI="${NFN_NATIVE_GPT2_CLI:-${ROOT_DIR}/build/nfn_gpt2_native_train}"
 NATIVE_TRAIN_CLI="${NFN_NATIVE_TRAIN_CLI:-${ROOT_DIR}/build/nfn_native_train}"
+NATIVE_NFN_CLI="${NFN_NATIVE_NFN_CLI:-${ROOT_DIR}/build/nfn_native}"
 LAUNCHER="${NFN_NATIVE_GPT2_LAUNCHER:-${ROOT_DIR}/build/nfn_gpt2_tile_train}"
 GPT_TRAIN_LAUNCHER="${NFN_NATIVE_GPT_TRAIN_CLI:-${ROOT_DIR}/build/nfn_train_gpt}"
 SM120_LAUNCHER="${NFN_NATIVE_SM120_CLI:-${ROOT_DIR}/build/nfn_train_gpt_sm120}"
@@ -40,6 +41,12 @@ fi
 if [[ ! -x "${NATIVE_TRAIN_CLI}" ]]; then
   echo "Unified native train CLI not found or not executable: ${NATIVE_TRAIN_CLI}" >&2
   echo "Run: bash ${ROOT_DIR}/tools/build_native_train_cli.sh" >&2
+  exit 2
+fi
+
+if [[ ! -x "${NATIVE_NFN_CLI}" ]]; then
+  echo "Native nfn CLI shim not found or not executable: ${NATIVE_NFN_CLI}" >&2
+  echo "Run: bash ${ROOT_DIR}/tools/build_native_nfn_cli.sh" >&2
   exit 2
 fi
 
@@ -69,6 +76,7 @@ if [[ -x "${COMPAT_NATIVE_CLI}" ]]; then
   ln -sfn "${COMPAT_NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-compat"
 fi
 ln -sfn "${NATIVE_TRAIN_CLI}" "${BIN_DIR}/nfn-native-train"
+ln -sfn "${NATIVE_NFN_CLI}" "${BIN_DIR}/nfn-native"
 ln -sfn "${LAUNCHER}" "${BIN_DIR}/nfn-gpt2-tile-launcher"
 ln -sfn "${GPT_TRAIN_LAUNCHER}" "${BIN_DIR}/nfn-train-gpt"
 ln -sfn "${GPT_TRAIN_LAUNCHER}" "${BIN_DIR}/nfn-gpt-train"
@@ -89,6 +97,7 @@ if [[ -L "${BIN_DIR}/nfn-gpt2-native-compat" ]]; then
   printf '%s\n' "${BIN_DIR}/nfn-gpt2-native-compat"
 fi
 printf '%s\n' "${BIN_DIR}/nfn-native-train"
+printf '%s\n' "${BIN_DIR}/nfn-native"
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-tile-launcher"
 printf '%s\n' "${BIN_DIR}/nfn-train-gpt"
 printf '%s\n' "${BIN_DIR}/nfn-gpt-train"

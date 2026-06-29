@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Native CLI startup: added a compiled `nfn-native` shim for the native-only
+  train and GPT checkpoint inference surfaces. `nfn-native train ...` execs the
+  unified `nfn_native_train` binary with the native CUDA defaults before Python
+  or Torch can start, while `nfn-native infer --checkpoint PATH --prompt-tokens
+  IDS` and `--native-info` dispatch to `nfn_gpt_native_train` for native
+  `model_*.bin` checkpoints. Directory checkpoints resolve to the highest-step
+  `model_########.bin`. `tools/build_native_gpt2_all.sh`,
+  `tools/install_native_gpt2_commands.sh`, `cli/install.sh`, and the no-Torch
+  stale-artifact checker now build, install, and verify the shim alongside the
+  existing native GPT commands. Graph-backed `.pt/.json` inference remains on
+  the Python `nfn infer` path. Verification: `bash
+  tools/build_native_nfn_cli.sh /tmp/nfn_native_test`,
+  `/tmp/nfn_native_test --help`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with
+  21/21 native artifacts, 67/67 Python entrypoints, 20/20 shell entrypoints,
+  and 4/4 native template catalogs,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_nfn_cli_dispatches_train_and_infer_without_python
+  -q`, and `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_gpt2_command_installer_links_temp_bin
+  -q`.
+
 - Native GPT benchmarking: refreshed the rejected
   `lm_head_graph_body_cublaslt_dhidden` profile after the CUDA 13.3.33 WSL
   reinstall on the dedicated RTX 5090. The route now changes as intended

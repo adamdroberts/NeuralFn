@@ -258,6 +258,13 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+For shell workflows that should avoid Python entirely, build
+`build/nfn_native` with `bash tools/build_native_nfn_cli.sh` or install it as
+`nfn-native`: `nfn-native train ...` execs the unified compiled trainer, and
+`nfn-native infer --checkpoint PATH --prompt-tokens IDS` execs the native GPT
+sampler against `model_*.bin` checkpoints. Passing a checkpoint directory picks
+the highest-step `model_########.bin`; graph-backed `.pt/.json` inference
+continues to use the Python `nfn infer` command.
 If that generic dispatcher binary is absent, the SDK returns the same registry
 from static no-Torch metadata so lean installs with only direct family trainers
 can still discover native coverage.

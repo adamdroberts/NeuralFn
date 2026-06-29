@@ -20,10 +20,11 @@ source .venv/bin/activate
 ```
 
 The installer keeps Torch optional, registers the `nfn` entrypoint, builds the
-native GPT C++ binding, launcher, no-Python cached-shard CLI, and unified
-native training frontend, then links `nfn-gpt-native`,
+native GPT C++ binding, launcher, no-Python cached-shard CLI, unified
+native training frontend, and the compiled native `nfn-native` train/infer
+shim, then links `nfn-gpt-native`,
 `nfn-gpt-native-train`, compatibility `nfn-gpt2-native` names,
-`nfn-native-train`, and `nfn-gpt2-tile-launcher` into
+`nfn-native-train`, `nfn-native`, and `nfn-gpt2-tile-launcher` into
 the active Python scripts directory. Use `./install.sh --no-native` to skip C++
 artifact builds.
 
@@ -265,7 +266,14 @@ trainer with `--template-name nanogpt`, while explicit `--train-token-lm`
 still reaches the NanoGPT token-only native target. Use
 `nfn-native-train --base-model gpt ...` when you
 want the compiled top-level training command, and `nfn-native-train
---list-models --json` to inspect native coverage. Default `nfn train` commands
+--list-models --json` to inspect native coverage. Build the compiled
+top-level native shim with `bash tools/build_native_nfn_cli.sh`; installed
+`nfn-native train ...` execs `nfn_native_train` before Python can start, and
+`nfn-native infer --checkpoint artifacts/gpt/model_00020000.bin --prompt-tokens
+50256,464` or `nfn-native infer --checkpoint artifacts/gpt --native-info`
+execs `nfn_gpt_native_train` against native `model_*.bin` checkpoints. Checkpoint
+directories resolve to the highest-step `model_########.bin`; graph-backed
+`.pt/.json` inference remains on the Python `nfn infer` path. Default `nfn train` commands
 hand off to this compiled frontend before graph-backed Python can start; dense
 GPT and NanoGPT are implemented through the dense GPT target, and LLaMA,
 GPT-2 evo, JEPA, semantic/MoE, and DeepSeek

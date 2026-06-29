@@ -17,6 +17,7 @@ Usage: cli/install.sh [--no-native]
 
 Installs NeuralFn in editable mode without installing Torch by default, then
 builds native C++ bindings, the GPT launcher/CLI, the unified native frontend,
+the compiled native nfn train/infer shim,
 the compiled SM120 GPT launcher, the raw CUDA Tile trainer ops shared library,
 and compiled per-family native trainer entrypoints.
 
