@@ -3906,6 +3906,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
     assert "setup.parameter_initialization.total_ms" in speed_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
+    assert "USER_SAMPLES_SET=0" in bench_source
+    assert "DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0" in bench_source
+    assert "default_startup_only_sample_floor_applied=5" in bench_source
     assert '"setup.cuda_event.token_weight_init.total_ms"' in speed_source
     assert "concurrent_arena_materialize_requested" in speed_source
     assert "concurrent_arena_materialize_enabled" in speed_source

@@ -2082,6 +2082,12 @@ so a short parity command can be reused for native bisection without falling
 back to the wrapper defaults.
 If both names are set for one control, the canonical `NFN_SM120_NATIVE_*` value
 wins.
+When a profile resolves to startup-only and no samples alias is set, the
+wrapper raises the measured sample count from the generic default of 3 to 5 and
+records `default_startup_only_sample_floor_applied=5` in paired benchmark
+metadata. Explicit `NFN_SM120_NATIVE_SAMPLES`,
+`NFN_SM120_NATIVE_CANDIDATE_SAMPLES`, `NFN_SM120_CANDIDATE_SAMPLES`,
+`NFN_SM120_PARITY_SAMPLES`, or `NFN_SM120_SAMPLES` values are left unchanged.
 Known route-bisection profiles are exposed through
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE`. For example,
 `qkv_forward_bf16_fallback_65536` expands to

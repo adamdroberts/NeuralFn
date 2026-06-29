@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT benchmark accuracy: startup-only SM120 native candidate profiles
+  now raise the measured sample count from the generic default of 3 to 5 when
+  no `NFN_SM120_*SAMPLES` alias is set. Explicit sample overrides still win,
+  and paired benchmark metadata records
+  `default_startup_only_sample_floor_applied=5` when the floor changes the run
+  shape. This makes allocator-heavy setup comparisons less sensitive to single
+  noisy order pairs while preserving short explicit smoke commands.
+  Verification: shell syntax, focused native GPT source-contract pytest, and
+  startup-only dry-run expansion.
+
 - Native GPT benchmark metrics: paired native extraction now derives
   `setup.parameter_initialization.total_ms` from
   `setup.token_weight_init.total_ms`,
