@@ -24039,6 +24039,47 @@ int run_transformer_lm_training_json(
         stored_packed_attention_ln1_stats_arena_bytes +
         stored_packed_attention_ln1_bf16_arena_bytes +
         stored_packed_attention_lse_arena_bytes;
+    const double train_loop_wall_ms_per_step =
+        steps_completed > 0
+            ? train_loop_wall_ms / static_cast<double>(steps_completed)
+            : 0.0;
+    const double first_step_wall_ms_per_step =
+        train_loop_cuda_event_first_step_count > 0
+            ? train_loop_cuda_event_first_step_wall_ms /
+                  static_cast<double>(train_loop_cuda_event_first_step_count)
+            : 0.0;
+    const double steady_state_wall_ms_per_step =
+        train_loop_cuda_event_steady_state_step_count > 0
+            ? train_loop_cuda_event_steady_state_wall_ms /
+                  static_cast<double>(train_loop_cuda_event_steady_state_step_count)
+            : 0.0;
+    const double first_step_tokens_per_second =
+        first_step_wall_ms_per_step > 0.0
+            ? static_cast<double>(effective_train_batch_tokens) * 1000.0 /
+                  first_step_wall_ms_per_step
+            : 0.0;
+    const double steady_state_tokens_per_second =
+        steady_state_wall_ms_per_step > 0.0
+            ? static_cast<double>(effective_train_batch_tokens) * 1000.0 /
+                  steady_state_wall_ms_per_step
+            : 0.0;
+    const double setup_plus_train_loop_wall_ms = setup_wall_ms + train_loop_wall_ms;
+    const double setup_amortized_train_tokens_per_second =
+        setup_plus_train_loop_wall_ms > 0.0
+            ? static_cast<double>(tokens_processed) * 1000.0 /
+                  setup_plus_train_loop_wall_ms
+            : 0.0;
+    const double projected_20k_train_wall_ms =
+        steady_state_wall_ms_per_step > 0.0
+            ? train_loop_cuda_event_first_step_wall_ms +
+                  steady_state_wall_ms_per_step * 19999.0
+            : 0.0;
+    const double projected_20k_setup_amortized_tokens_per_second =
+        projected_20k_train_wall_ms > 0.0 &&
+                projected_20k_train_wall_ms + setup_wall_ms > 0.0
+            ? static_cast<double>(effective_train_batch_tokens) * 20000.0 * 1000.0 /
+                  (projected_20k_train_wall_ms + setup_wall_ms)
+            : 0.0;
 
     std::cout
         << "{\n"
@@ -24068,6 +24109,14 @@ int run_transformer_lm_training_json(
         << "  \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
         << "  \"setup_timing_record_count\": " << setup_timing_records.size() << ",\n"
         << "  \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
+        << "  \"train_loop_wall_ms_per_step\": " << train_loop_wall_ms_per_step << ",\n"
+        << "  \"train_first_step_tokens_per_second\": " << first_step_tokens_per_second << ",\n"
+        << "  \"train_steady_state_tokens_per_second\": " << steady_state_tokens_per_second << ",\n"
+        << "  \"setup_plus_train_loop_wall_ms\": " << setup_plus_train_loop_wall_ms << ",\n"
+        << "  \"setup_amortized_train_tokens_per_second\": " << setup_amortized_train_tokens_per_second << ",\n"
+        << "  \"projected_20k_train_wall_ms\": " << projected_20k_train_wall_ms << ",\n"
+        << "  \"projected_20k_setup_amortized_tokens_per_second\": "
+        << projected_20k_setup_amortized_tokens_per_second << ",\n"
         << "  \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "  \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
         << "  \"checkpoint_wall_ms\": " << checkpoint_wall_ms << ",\n"
@@ -24085,6 +24134,7 @@ int run_transformer_lm_training_json(
         << host_descriptor_reserve_count << ",\n"
         << setup_cuda_timing_json.str()
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
+        << "    \"train_loop_wall_ms_per_step\": " << train_loop_wall_ms_per_step << ",\n"
         << "    \"train_loop_cuda_event_timing_requested\": "
         << (train_loop_cuda_event_timing_requested ? "true" : "false") << ",\n"
         << "    \"train_loop_cuda_event_timing_enabled\": "
@@ -24101,21 +24151,19 @@ int run_transformer_lm_training_json(
         << "    \"train_loop_cuda_event_first_step_count\": "
         << train_loop_cuda_event_first_step_count << ",\n"
         << "    \"train_loop_cuda_event_first_step_wall_ms_per_step\": "
-        << (train_loop_cuda_event_first_step_count > 0
-                ? (train_loop_cuda_event_first_step_wall_ms /
-                   static_cast<double>(train_loop_cuda_event_first_step_count))
-                : 0.0)
+        << first_step_wall_ms_per_step
         << ",\n"
+        << "    \"train_first_step_tokens_per_second\": "
+        << first_step_tokens_per_second << ",\n"
         << "    \"train_loop_cuda_event_steady_state_wall_ms\": "
         << train_loop_cuda_event_steady_state_wall_ms << ",\n"
         << "    \"train_loop_cuda_event_steady_state_step_count\": "
         << train_loop_cuda_event_steady_state_step_count << ",\n"
         << "    \"train_loop_cuda_event_steady_state_wall_ms_per_step\": "
-        << (train_loop_cuda_event_steady_state_step_count > 0
-                ? (train_loop_cuda_event_steady_state_wall_ms /
-                   static_cast<double>(train_loop_cuda_event_steady_state_step_count))
-                : 0.0)
+        << steady_state_wall_ms_per_step
         << ",\n"
+        << "    \"train_steady_state_tokens_per_second\": "
+        << steady_state_tokens_per_second << ",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
         << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"
@@ -24130,6 +24178,12 @@ int run_transformer_lm_training_json(
         << "    \"total_wall_ms\": " << total_wall_ms << ",\n"
         << "    \"optimizer_steps_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(steps_completed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
         << "    \"train_tokens_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(tokens_processed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
+        << "    \"setup_plus_train_loop_wall_ms\": " << setup_plus_train_loop_wall_ms << ",\n"
+        << "    \"setup_amortized_train_tokens_per_second\": "
+        << setup_amortized_train_tokens_per_second << ",\n"
+        << "    \"projected_20k_train_wall_ms\": " << projected_20k_train_wall_ms << ",\n"
+        << "    \"projected_20k_setup_amortized_tokens_per_second\": "
+        << projected_20k_setup_amortized_tokens_per_second << ",\n"
         << setup_timing_json.str()
         << stage_timing_json.str()
         << "  },\n"

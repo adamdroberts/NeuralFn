@@ -1673,10 +1673,15 @@ and the score-reuse factors.
 The compiled GPT-2 trainer also reports host wall-clock timing under `timing`:
 `setup_wall_ms`, `train_loop_wall_ms`, `validation_wall_ms`,
 `train_compute_wall_ms`, `checkpoint_wall_ms`, `total_wall_ms`,
-`optimizer_steps_per_second`, and `train_tokens_per_second`. The train-loop
-measurement ends after an explicit end-of-loop device synchronization and before
-the diagnostic final sample copies from device to host. The same `timing`
-object now includes `setup_timing`, a host-side breakdown of native startup work such as
+`optimizer_steps_per_second`, and `train_tokens_per_second`. CUDA-event timing
+also reports `train_first_step_tokens_per_second`,
+`train_steady_state_tokens_per_second`, `setup_plus_train_loop_wall_ms`,
+`setup_amortized_train_tokens_per_second`, and
+`projected_20k_setup_amortized_tokens_per_second` so SDK callers can separate
+first-step prewarm cost from long-run throughput. The train-loop measurement
+ends after an explicit end-of-loop device synchronization and before the
+diagnostic final sample copies from device to host. The same `timing` object now
+includes `setup_timing`, a host-side breakdown of native startup work such as
 `setup.float_arena_materialize`, `setup.stored_mlp_activation_arena`,
 `setup.zero_init`, and `setup.block_weight_bf16_initial_refresh`; this makes
 allocation and initialization regressions visible without enabling CUDA-event

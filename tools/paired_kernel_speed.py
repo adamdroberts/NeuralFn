@@ -48,6 +48,7 @@ NATIVE_METRIC_PATHS = (
     ("requested_train_batch_tokens", ("requested_train_batch_tokens",)),
     ("effective_train_batch_tokens", ("effective_train_batch_tokens",)),
     ("train_loop_wall_ms", ("train_loop_wall_ms",)),
+    ("train_loop_wall_ms_per_step", ("timing", "train_loop_wall_ms_per_step")),
     (
         "train_loop_cuda_event_wall_ms",
         ("timing", "train_loop_cuda_event_wall_ms"),
@@ -65,12 +66,20 @@ NATIVE_METRIC_PATHS = (
         ("timing", "train_loop_cuda_event_first_step_wall_ms_per_step"),
     ),
     (
+        "train_first_step_tokens_per_second",
+        ("timing", "train_first_step_tokens_per_second"),
+    ),
+    (
         "train_loop_cuda_event_steady_state_wall_ms",
         ("timing", "train_loop_cuda_event_steady_state_wall_ms"),
     ),
     (
         "train_loop_cuda_event_steady_state_wall_ms_per_step",
         ("timing", "train_loop_cuda_event_steady_state_wall_ms_per_step"),
+    ),
+    (
+        "train_steady_state_tokens_per_second",
+        ("timing", "train_steady_state_tokens_per_second"),
     ),
     (
         "train_loop_cuda_event_timing_enabled",
@@ -80,6 +89,16 @@ NATIVE_METRIC_PATHS = (
     ("setup_timing_accounted_ms", ("setup_timing_accounted_ms",)),
     ("setup_timing_unattributed_ms", ("setup_timing_unattributed_ms",)),
     ("setup_timing_record_count", ("setup_timing_record_count",)),
+    ("setup_plus_train_loop_wall_ms", ("timing", "setup_plus_train_loop_wall_ms")),
+    (
+        "setup_amortized_train_tokens_per_second",
+        ("timing", "setup_amortized_train_tokens_per_second"),
+    ),
+    ("projected_20k_train_wall_ms", ("timing", "projected_20k_train_wall_ms")),
+    (
+        "projected_20k_setup_amortized_tokens_per_second",
+        ("timing", "projected_20k_setup_amortized_tokens_per_second"),
+    ),
     (
         "setup_cuda_event_timing_requested",
         ("timing", "setup_cuda_event_timing_requested"),
@@ -1251,15 +1270,20 @@ NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_cuda_event_wall_ms",
     "train_loop_cuda_event_first_step_wall_ms",
     "train_loop_cuda_event_steady_state_wall_ms",
+    "train_first_step_tokens_per_second",
     "startup_plus_first_step_wall_ms",
     "startup_plus_steady_state_step_wall_ms",
     "startup_plus_train_loop_wall_ms",
+    "setup_plus_train_loop_wall_ms",
     "steps_completed",
     "train_batch_tokens",
     "requested_train_batch_tokens",
     "effective_train_batch_tokens",
     "train_tokens_per_second",
     "train_steady_state_tokens_per_second",
+    "setup_amortized_train_tokens_per_second",
+    "projected_20k_train_wall_ms",
+    "projected_20k_setup_amortized_tokens_per_second",
     "llm_kittens_bf16_mfu_pct",
     "llm_kittens_last_step_wall_ms",
     "llm_kittens_last_step_tokens_per_second",
@@ -1539,7 +1563,11 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "startup_plus_steady_state_step_wall_ms",
     "startup_plus_train_loop_wall_ms",
     "train_tokens_per_second",
+    "train_first_step_tokens_per_second",
     "setup_wall_ms",
+    "setup_plus_train_loop_wall_ms",
+    "setup_amortized_train_tokens_per_second",
+    "projected_20k_setup_amortized_tokens_per_second",
     "setup.float_uint16_arena_materialize_concurrent.total_ms",
     "setup.float_arena_materialize.total_ms",
     "float_arena_cuda_malloc_wall_ms",
@@ -1964,7 +1992,7 @@ def add_steady_state_throughput_metric(metrics: dict[str, float | int | str | bo
             tokens_per_step = train_tokens_per_second * loop_ms_per_step / 1000.0
     if tokens_per_step is None or tokens_per_step <= 0.0:
         return
-    metrics["train_steady_state_tokens_per_second"] = tokens_per_step * 1000.0 / steady_state_ms
+    metrics.setdefault("train_steady_state_tokens_per_second", tokens_per_step * 1000.0 / steady_state_ms)
 
 
 def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | int | str | bool]:

@@ -2815,10 +2815,15 @@ Compiled GPT-2 `--train-transformer-lm` training results include a `timing`
 object with host wall-clock phase timers: `setup_wall_ms`,
 `train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`,
 `checkpoint_wall_ms`, `total_wall_ms`, `optimizer_steps_per_second`, and
-`train_tokens_per_second`. The train-loop timer ends after an explicit
-end-of-loop device synchronization and before the diagnostic final sample copies
-from device to host, so short parity runs exclude post-training metadata copy
-overhead.
+`train_tokens_per_second`. CUDA-event timing additionally reports
+`train_first_step_tokens_per_second`, `train_steady_state_tokens_per_second`,
+`setup_plus_train_loop_wall_ms`, `setup_amortized_train_tokens_per_second`, and
+`projected_20k_setup_amortized_tokens_per_second`. Use the steady-state and
+projected fields when checking long-run parity against llm.kittens; the generic
+short-run `train_tokens_per_second` includes intentional first-step prewarm
+cost. The train-loop timer ends after an explicit end-of-loop device
+synchronization and before the diagnostic final sample copies from device to
+host, so short parity runs exclude post-training metadata copy overhead.
 
 The full GPT-2 transformer-LM forward path uses
 `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias while

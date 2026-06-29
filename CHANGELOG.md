@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT timing metrics: dense GPT native training JSON now emits
+  `train_loop_wall_ms_per_step`, `train_first_step_tokens_per_second`,
+  `train_steady_state_tokens_per_second`, `setup_plus_train_loop_wall_ms`,
+  `setup_amortized_train_tokens_per_second`,
+  `projected_20k_train_wall_ms`, and
+  `projected_20k_setup_amortized_tokens_per_second`. The paired benchmark
+  extractor reads these fields directly and preserves native-emitted
+  steady-state throughput instead of recomputing over it. This makes current
+  long-run-deferred runs report the signal that matters for the 20k-step
+  llm.kittens parity target while still exposing first-step prewarm cost.
+  Verification: focused native GPT source-contract pytest, shell syntax check,
+  and native no-Torch artifact verification.
+
 - Native GPT benchmark accuracy: startup-only SM120 native candidate profiles
   now raise the measured sample count from the generic default of 3 to 5 when
   no `NFN_SM120_*SAMPLES` alias is set. Explicit sample overrides still win,

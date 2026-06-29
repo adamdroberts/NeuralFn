@@ -3905,6 +3905,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
     assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
     assert "setup.parameter_initialization.total_ms" in speed_source
+    assert "train_first_step_tokens_per_second" in speed_source
+    assert "train_steady_state_tokens_per_second" in speed_source
+    assert "setup_amortized_train_tokens_per_second" in speed_source
+    assert "projected_20k_setup_amortized_tokens_per_second" in speed_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
     assert "USER_SAMPLES_SET=0" in bench_source
     assert "DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0" in bench_source
@@ -12303,6 +12307,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "train_loop_cuda_event_wall_ms_per_step" in gpt2_source_text
     assert "train_loop_cuda_event_first_step_wall_ms_per_step" in gpt2_source_text
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step" in gpt2_source_text
+    assert "train_first_step_tokens_per_second" in gpt2_source_text
+    assert "train_steady_state_tokens_per_second" in gpt2_source_text
+    assert "setup_plus_train_loop_wall_ms" in gpt2_source_text
+    assert "setup_amortized_train_tokens_per_second" in gpt2_source_text
+    assert "projected_20k_setup_amortized_tokens_per_second" in gpt2_source_text
     assert 'run(cuda_device_synchronize(), "train_loop.complete");' in gpt2_source_text
     assert (
         gpt2_source_text.index('run(cuda_device_synchronize(), "train_loop.complete");')
