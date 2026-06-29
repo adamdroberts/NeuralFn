@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native no-Torch verifier: the JSON output now includes a top-level
+  `summary` object with artifact, Python-entrypoint, shell-entrypoint, and
+  native-template-catalog pass/fail counts. The per-row reports are unchanged,
+  but CI/local audits can now detect a lost native handoff or skipped template
+  catalog check without scanning every entry. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/check_native_no_torch_deps.py`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_no_torch_dependency_verifier_covers_python_entrypoints`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`, and `git diff --check`.
+
 - Native GPT benchmarks: `tools/paired_kernel_speed.py` now adds
   `selected_gpu_max_utilization_pct`,
   `selected_gpu_max_compute_process_count`,

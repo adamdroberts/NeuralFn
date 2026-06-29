@@ -166,6 +166,29 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["passed"] is True
+    assert payload["summary"]["artifacts"] == {
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "missing": 0,
+        "stale": 0,
+        "forbidden": 0,
+    }
+    assert payload["summary"]["python_entrypoints"] == {
+        "total": len(payload["python_entrypoints"]),
+        "passed": len(payload["python_entrypoints"]),
+        "failed": 0,
+    }
+    assert payload["summary"]["shell_entrypoints"] == {
+        "total": len(payload["shell_entrypoints"]),
+        "passed": len(payload["shell_entrypoints"]),
+        "failed": 0,
+    }
+    assert payload["summary"]["native_template_catalogs"] == {
+        "total": len(payload["native_template_catalogs"]["entrypoints"]),
+        "passed": len(payload["native_template_catalogs"]["entrypoints"]),
+        "failed": 0,
+    }
     assert payload["artifacts"] == []
     assert set(payload["forbidden_python_import_roots"]) >= {
         "torch",

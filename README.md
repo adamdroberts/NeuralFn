@@ -2444,6 +2444,9 @@ wrappers in dry-run mode, including `tools/bench_linear_backward_candidate.sh`
 and `tools/bench_native_gpt_linear_hot_matrix.sh`, so performance-gate helpers
 cannot drift into build, CUDA, Python dataset, graph-editor, or Torch startup
 work just to print their resolved native commands. The verifier also records
+top-level JSON `summary` counts for artifacts, Python entrypoints, shell
+entrypoints, and native template catalogs, so CI and local audits can detect
+coverage loss without scraping every individual row. It records
 `elapsed_seconds` for each
 native Python fast-path entrypoint and fails by default if any wrapper takes
 more than 2 seconds before handing off to the compiled path; pass

@@ -1903,6 +1903,45 @@ def native_template_catalog_report(shell_report: list[dict[str, object]]) -> dic
     }
 
 
+def _summary_counts(entries: list[dict[str, object]]) -> dict[str, int]:
+    total = len(entries)
+    passed = sum(1 for entry in entries if bool(entry.get("passed")))
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+    }
+
+
+def artifact_summary_counts(entries: list[dict[str, object]]) -> dict[str, int]:
+    total = len(entries)
+    missing = sum(1 for entry in entries if entry.get("error") == "missing")
+    stale = sum(1 for entry in entries if bool(entry.get("stale_sources")))
+    forbidden = sum(1 for entry in entries if bool(entry.get("forbidden")))
+    passed = total - sum(
+        1
+        for entry in entries
+        if entry.get("error") == "missing"
+        or bool(entry.get("stale_sources"))
+        or bool(entry.get("forbidden"))
+    )
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+        "missing": missing,
+        "stale": stale,
+        "forbidden": forbidden,
+    }
+
+
+def native_template_catalog_summary_counts(report: dict[str, object] | None) -> dict[str, int]:
+    entrypoints = report.get("entrypoints") if isinstance(report, dict) else []
+    if not isinstance(entrypoints, list):
+        entrypoints = []
+    return _summary_counts([entry for entry in entrypoints if isinstance(entry, dict)])
+
+
 def project_dependency_report(repo_root: Path) -> dict[str, object]:
     pyproject = repo_root / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -2141,10 +2180,17 @@ def main() -> int:
         failed = failed or not bool(catalog_report["passed"])
 
     if args.json:
+        summary = {
+            "artifacts": artifact_summary_counts(artifact_report),
+            "python_entrypoints": _summary_counts(python_report),
+            "shell_entrypoints": _summary_counts(shell_report),
+            "native_template_catalogs": native_template_catalog_summary_counts(catalog_report),
+        }
         print(
             json.dumps(
                 {
                     "passed": not failed,
+                    "summary": summary,
                     "forbidden_python_import_roots": list(FORBIDDEN_PYTHON_IMPORT_ROOTS),
                     "artifacts": artifact_report,
                     "project_dependencies": dependency_report,
