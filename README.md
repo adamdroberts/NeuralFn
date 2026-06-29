@@ -2232,10 +2232,16 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_failure_count`,
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
-`lm_head_fused_graph_prewarm_cache_entry_count`. The same JSON now also reports
-`lm_head_fused_graph_prewarm_dedup_enabled` and
+`lm_head_fused_graph_prewarm_cache_entry_count`. Runtime JSON also reports
+`native_fast_startup_prewarm_policy`: one-step auto fast-startup smokes keep
+the `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` policy, while
+multi-step training enables
+`qkv-and-lm-head-graph-prewarm-for-short-training` so the first measured
+optimizer steps do not pay lazy LM-head graph capture. The same JSON now also
+reports `lm_head_fused_graph_prewarm_dedup_enabled` and
 `lm_head_fused_graph_prewarm_duplicate_skip_count`. Graph prewarm is enabled by
-default for real training and captures each unique LM-head graph key once,
+default for real training with at least three optimizer steps and captures each
+unique LM-head graph key once,
 deduplicating only when the chunk pointers, row shape, dWeight beta, and
 cooperative flags match the Tile runtime CUDA Graph cache key. Equal-sized
 row chunks with different logit, target, hidden, or gradient buffer pointers

@@ -3,12 +3,17 @@
 ## Unreleased
 
 - Native short-run prewarm policy: auto fast-startup training now keeps the
-  TK QKV first-use prewarm enabled while continuing to skip the LM-head CUDA
-  Graph prewarm. This splits the old single `native_fast_startup_prewarm_default`
-  into QKV and LM-head graph defaults, and runtime JSON now reports
+  TK QKV first-use prewarm enabled and enables LM-head CUDA Graph prewarm for
+  real multi-step training runs with at least three optimizer steps. One-step
+  runtime-contract smokes still skip the LM-head graph prewarm to keep startup
+  diagnostics lean. This splits the old single
+  `native_fast_startup_prewarm_default` into QKV, multi-step LM-head graph, and
+  final LM-head graph defaults. Runtime JSON reports
   `native_fast_startup_prewarm_policy` as
-  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` for short
-  fast-startup runs. A dedicated RTX 5090 same-script check of
+  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` for one-step
+  fast-startup smokes and
+  `qkv-and-lm-head-graph-prewarm-for-short-training` for short real training.
+  A dedicated RTX 5090 same-script check of
   `tk_qkv_forward_prewarm` on CUDA 13.3.33 improved current-vs-current
   first-step CUDA-event time to `0.939518x`, train-loop wall to `0.979588x`,
   train tokens/sec to `1.020838x`, and startup-plus-first-step to `0.998311x`;
@@ -19,8 +24,19 @@
   `/tmp/nfn_sm120_parity_qkv_fast_startup_default_short.json` with
   candidate-over-llm.kittens ratios of `1.015056x` train-loop wall,
   `1.037628x` first-step CUDA-event time, `1.003414x` steady-state CUDA-event
-  time, and `0.985017x` tokens/sec, so the full objective remains open around
-  LM-head/first-step parity.
+  time, and `0.985017x` tokens/sec. A follow-up
+  `lm_head_graph_prewarm` candidate with QKV prewarm already promoted closed the
+  train-loop gap to `1.000072x` candidate-over-llm.kittens wall,
+  `0.999501x` first-step CUDA-event time, `1.000341x` steady-state CUDA-event
+  time, and `0.999924x` tokens/sec, while setup wall rose by about `81ms`, so
+  the new default applies to multi-step training rather than startup-only smokes.
+  After promotion, an unsandboxed RTX 5090 parity run with two warmup pairs wrote
+  `/tmp/nfn_sm120_parity_adaptive_lm_graph_short_warmup2.json` and passed the
+  llm.kittens gate at `1.001254x` train-loop wall, `1.001162x` steady-state
+  CUDA-event time, and `0.998764x` tokens/sec; the same run reported
+  `qkv-and-lm-head-graph-prewarm-for-short-training`,
+  `lm_head_cooperative_backward_graph_prewarm_enabled=true`, four successful
+  LM-head graph prewarms, and no graph-editor or Torch training path.
 
 - Native parity benchmark accuracy: `tools/bench_native_gpt_sm120_parity.sh`
   now defaults to two warmup pairs instead of one, matching the native candidate

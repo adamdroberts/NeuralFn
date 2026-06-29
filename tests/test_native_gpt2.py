@@ -1719,7 +1719,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
-        "            native_fast_startup_prewarm_default)"
+        "            native_qkv_first_use_prewarm_default)"
     ) in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
@@ -2383,6 +2383,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
     assert "native_qkv_first_use_prewarm_default" in source
+    assert "native_lm_head_graph_training_prewarm_default" in source
     assert "native_lm_head_graph_prewarm_default" in source
     assert "cfg.fast_startup ||" in source
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS" in source
@@ -2393,6 +2394,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "!native_long_run_defer_prewarm_enabled" in source
     assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
+    assert "qkv-and-lm-head-graph-prewarm-for-short-training" in source
+    assert "cfg.max_steps >= 3" in source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
         "            native_qkv_first_use_prewarm_default)"
