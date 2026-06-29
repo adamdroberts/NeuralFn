@@ -3320,6 +3320,11 @@ two warmup pairs for this profile, the wrapper raises benchmark warmup to two
 pairs and records `long_run_defer_prewarm_min_warmup_applied` in paired JSON
 metadata, keeping low-warmup reproductions opt-in through
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`.
+A 2026-06-29 no-profile parity rerun with two warmup order pairs measured
+NeuralFn over llm.kittens at `0.999098x` steady-state CUDA-event step time and
+`1.001006x` steady-state tokens/sec. The full 3-step train-loop wall ratio was
+`1.034260x` because the first optimizer step intentionally pays deferred
+throughput prewarms.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

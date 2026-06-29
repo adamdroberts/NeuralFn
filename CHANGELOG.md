@@ -11,6 +11,14 @@
   passing runtime contract gate. Verification: live linked-startup paired
   benchmark.
 
+- Native GPT parity evidence: reran the no-profile SM120 parity wrapper with two
+  warmup order pairs, two measured samples, and three optimizer steps. The
+  deferred-prewarm default passed the intended steady-state gate at `0.999098x`
+  CUDA-event step time and `1.001006x` steady-state tokens/sec versus
+  llm.kittens, while the expected first-step prewarm cost remained visible at
+  `1.103108x` and full 3-step train-loop wall at `1.034260x`. Verification:
+  live NeuralFn-vs-llm.kittens parity benchmark.
+
 - Native GPT CLI default contract: clarified the compiled `nfn_gpt_native_train`
   no-action error so it no longer tells users to add `--train-transformer-lm`;
   the dense GPT transformer-LM loop is already the default unless
