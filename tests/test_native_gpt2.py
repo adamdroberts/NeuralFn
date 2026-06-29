@@ -5296,6 +5296,53 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert preset_args[preset_args.index("--model-family") + 1] == "gpt"
     assert preset_args[preset_args.index("--template-name") + 1] == "gpt2_moa"
     assert preset_args[preset_args.index("--native-cuda-activation") + 1] == "moa"
+    assert "--fast-startup" in preset_args
+
+    long_run_observed = tmp_path / "long-run-native-argv.txt"
+    long_run_env = env.copy()
+    long_run_env.update(
+        {
+            "NFN_TEST_NATIVE_GPT_ARGV": str(long_run_observed),
+            "NFN_SM120_NATIVE_MAX_STEPS": "20000",
+        }
+    )
+    long_run_proc = subprocess.run(
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=long_run_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert long_run_proc.returncode == 0, long_run_proc.stderr
+    long_run_args = long_run_observed.read_text(encoding="utf-8").splitlines()
+    assert long_run_args[long_run_args.index("--max-steps") + 1] == "20000"
+    assert "--fast-startup" not in long_run_args
+
+    short_arg_observed = tmp_path / "short-arg-native-argv.txt"
+    short_arg_env = long_run_env.copy()
+    short_arg_env["NFN_TEST_NATIVE_GPT_ARGV"] = str(short_arg_observed)
+    short_arg_proc = subprocess.run(
+        [
+            str(sm120_launcher),
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--max-steps",
+            "1",
+        ],
+        cwd=root,
+        env=short_arg_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert short_arg_proc.returncode == 0, short_arg_proc.stderr
+    short_arg_args = short_arg_observed.read_text(encoding="utf-8").splitlines()
+    assert short_arg_args[short_arg_args.index("--max-steps") + 1] == "1"
+    assert short_arg_args.count("--max-steps") == 1
+    assert "--fast-startup" in short_arg_args
 
 
 def test_generic_train_gpt_shell_wrapper_prefers_compiled_launcher_and_falls_back(

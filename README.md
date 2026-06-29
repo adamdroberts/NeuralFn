@@ -248,6 +248,12 @@ eager-prewarm setup against the deferred long-run policy in the paired native
 benchmark wrapper. That profile now gates setup time, steady-state CUDA-event
 step time, and startup-plus-steady-state timing separately, because the first
 optimizer step intentionally pays the deferred QKV/LM-head prewarm cost.
+The compiled GPT launchers (`build/nfn_train_gpt` and
+`build/nfn_train_gpt_sm120`) also auto-append `--fast-startup` for short
+debug/smoke runs when `max_steps` is at or below the same deferred-prewarm
+threshold and no explicit fast-startup env/flag was provided. Full default
+training (`max_steps=20000`) keeps the long-run deferred-prewarm policy instead
+of the smoke-run shortcut.
 Stage-timed startup-only probes also elide the CUDA event-pool preallocation
 because no optimizer step can consume those events before exit; runtime JSON
 reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.

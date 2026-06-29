@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Native GPT startup: the compiled GPT launchers now auto-append
+  `--fast-startup` for short debug/smoke runs when `max_steps` is at or below
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` /
+  `NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
+  `NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS` (default `1024`) and the caller did
+  not explicitly set a fast-startup env/flag. Full default quality runs such as
+  `max_steps=20000` are unchanged and still use the long-run deferred-prewarm
+  policy rather than the smoke-run shortcut. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k compiled_sm120_launcher_honors_native_env_defaults`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`, and a dedicated
+  RTX 5090 one-step compiled SM120 smoke with `seq_len=64`.
+
 - Native GPT launchers: dense GPT template selectors can now be used directly
   as compiled launcher model selectors. `build/nfn_train_gpt` and
   `build/nfn_train_gpt_sm120` accept `--base-model gpt2_moa`,

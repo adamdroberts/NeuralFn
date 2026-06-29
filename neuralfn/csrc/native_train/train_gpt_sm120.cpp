@@ -173,6 +173,18 @@ std::string value_after_equals(const std::string& arg) {
     return pos == std::string::npos ? std::string() : arg.substr(pos + 1);
 }
 
+long long parse_nonnegative_i64_or(const std::string& value, long long fallback) {
+    try {
+        std::size_t consumed = 0;
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed == value.size() && parsed >= 0) {
+            return parsed;
+        }
+    } catch (...) {
+    }
+    return fallback;
+}
+
 [[noreturn]] void usage() {
     std::cout
         << "Usage: nfn_train_gpt [options] [-- extra native args]\n\n"
@@ -251,6 +263,7 @@ int main(int argc, char** argv) {
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
     bool template_explicit = false;
+    bool fast_startup_explicit = false;
     bool activation_explicit =
         std::getenv("NFN_NATIVE_GPT_ACTIVATION") != nullptr || std::getenv("NFN_SM120_ACTIVATION") != nullptr;
     std::vector<std::string> extra_args;
@@ -313,6 +326,10 @@ int main(int argc, char** argv) {
             batch_size = value_after_equals(arg);
             batch_size_explicit = true;
             append(extra_args, arg);
+        } else if (arg == "--max-steps") {
+            max_steps = require_value("--max-steps");
+        } else if (arg.rfind("--max-steps=", 0) == 0) {
+            max_steps = value_after_equals(arg);
         } else if (arg == "--dataset-alias" || arg == "--dataset-path") {
             dataset_alias = require_value(arg.c_str());
         } else if (arg.rfind("--dataset-alias=", 0) == 0 || arg.rfind("--dataset-path=", 0) == 0) {
@@ -322,10 +339,14 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--output-dir=", 0) == 0) {
             output_dir = value_after_equals(arg);
         } else if (arg == "--native-cuda-fast-startup" || arg == "--fast-startup") {
+            fast_startup_explicit = true;
             append(extra_args, "--fast-startup");
         } else if (arg == "--") {
             while (++i < argc) {
                 std::string passthrough = argv[i];
+                if (passthrough == "--native-cuda-fast-startup" || passthrough == "--fast-startup") {
+                    fast_startup_explicit = true;
+                }
                 append(extra_args, passthrough == "--native-cuda-fast-startup" ? "--fast-startup" : passthrough);
             }
             break;
@@ -372,6 +393,24 @@ int main(int argc, char** argv) {
         return 127;
     }
 
+    const bool fast_startup_env_explicit =
+        std::getenv("NFN_NATIVE_GPT_FAST_STARTUP") != nullptr ||
+        std::getenv("NFN_NATIVE_GPT2_FAST_STARTUP") != nullptr ||
+        std::getenv("NFN_TILE_CUDA_FAST_STARTUP") != nullptr;
+    const long long defer_prewarm_after_steps = parse_nonnegative_i64_or(
+        env_first({"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
+                   "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
+                   "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
+                  "1024"),
+        1024);
+    const long long resolved_max_steps = parse_nonnegative_i64_or(max_steps, 0);
+    const bool auto_fast_startup_short_run =
+        !fast_startup_explicit &&
+        !fast_startup_env_explicit &&
+        defer_prewarm_after_steps > 0 &&
+        resolved_max_steps > 0 &&
+        resolved_max_steps <= defer_prewarm_after_steps;
+
     std::vector<std::string> out;
     append(out, native_bin);
     append_pair(out, "--model-family", model_family);
@@ -409,6 +448,9 @@ int main(int argc, char** argv) {
     append_pair(out, "--native-cuda-checkpoint-every", checkpoint_every);
     append_pair(out, "--max-steps", max_steps);
     append_pair(out, "--native-cuda-activation", activation);
+    if (auto_fast_startup_short_run) {
+        append(out, "--fast-startup");
+    }
     if (activation == "moa") {
         append_pair(out, "--native-cuda-moa-interval", moa_interval);
     }
