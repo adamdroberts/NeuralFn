@@ -49,7 +49,7 @@ NATIVE_GPT_DEFAULTS = {
     "warmup_steps": 60,
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
-    "eval_every_steps": 250,
+    "eval_every_steps": 1000,
     "eval_batches": 20,
     "train_loss_every_steps": 0,
     "lm_head_row_chunk_size": 28_672,

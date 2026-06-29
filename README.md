@@ -27,8 +27,8 @@ itself also keeps Torch, NumPy, `server.dataset_manager`, graph ops,
 parameter-golf Torch helpers, and `train_jepa_semantic` lazy until a
 graph-backed command path uses them.
 
-Dense GPT native training defaults to periodic validation loss every 250
-optimizer steps over 20 validation batches. Pass `--eval-every-steps 1000` to
+Dense GPT native training defaults to periodic validation loss every 1000
+optimizer steps over 20 validation batches. Pass `--eval-every-steps N` to
 change the cadence, or `--eval-batches N` / `--eval-batch-size N` to bound the
 validation work for smoke tests. The native trainer also requires optimized
 CUDA Tile routes by default: missing many-tensor AdamW symbols, attention

@@ -26,7 +26,7 @@ GPT2_EVO_DEFAULTS = {
     "train_batch_tokens": 524_288,
     "eval_batches": 20,
     "eval_batch_size": 64,
-    "eval_every_steps": 250,
+    "eval_every_steps": 1000,
     "train_log_every": 10,
     "max_wallclock_seconds": 0.0,
     "warmup_steps": 60,

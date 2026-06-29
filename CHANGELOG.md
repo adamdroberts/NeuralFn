@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native training defaults: dense GPT, GPT-2-evo, NanoGPT, and LLaMA fast
+  5090-oriented shims now default validation loss cadence to every 1000
+  optimizer steps instead of every 250. `--eval-every-steps N` remains the
+  explicit override, and `--eval-every-steps 0` still disables validation shard
+  resolution for timing-only benchmark runs. This aligns the default output
+  with the requested per-1000-step validation loss cadence while keeping
+  train-loss sampling disabled unless `--train-loss-every-steps` is set.
+  Verification: focused wrapper/default tests and dry-run command checks.
+
 - Native GPT benchmarking: dense GPT runtime JSON and paired-speed summaries now
   track `token_weight_vector4_strided_max_blocks`, and the Tile CUDA strided
   token-weight initializer accepts
@@ -5152,7 +5161,7 @@ Future updates should append new entries here rather than replacing older notes.
   compiled `nfn_gpt_native_train` binary directly, prefers llm.kittens
   `TinyStories_train.bin` / `TinyStories_val.bin` token files when present,
   defaults `CUDA_DEVICE_MAX_CONNECTIONS=1` and `CUDA_MODULE_LOADING=LAZY`, and
-  preserves the SM120 schedule defaults: validation every 250 steps, sample
+  preserves the SM120 schedule defaults: validation every 1000 steps, sample
   every 20,000 steps, 144 generated tokens, batch 64, sequence length 1024,
   524,288 train tokens per optimizer step, AdamW weight decay 0.1, learning rate
   0.0006, final LR fraction 0, 60 warmup steps, 200-step checkpoint cadence, and
@@ -7699,7 +7708,7 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Aligned dense GPT native validation defaults across the fast Python wrapper,
   Python native harness, SDK handoff, and compiled C++ trainer. The default
-  validation cadence remains every 250 optimizer steps, but the validation loss
+  validation cadence defaults to every 1000 optimizer steps, but the validation loss
   now averages 20 batches unless callers pass `--eval-batches` or set the SDK
   field explicitly. The no-import `train_gpt.py --native-cuda-dry-run
   --native-cuda-print-command` fast path now emits `--eval-batches 20`, so the
@@ -22601,7 +22610,7 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
-- `cli/scripts/train_gpt2.py` now only supports the native CUDA runtime, so the plain GPT-2 harness resolves cached token shards and launches the compiled CUDA trainer directly instead of constructing a graph and sending real batches through `TorchTrainer`. The default validation cadence is 250 optimizer steps; pass `--eval-every-steps 1000` for validation loss every 1000 steps.
+- `cli/scripts/train_gpt2.py` now only supports the native CUDA runtime, so the plain GPT-2 harness resolves cached token shards and launches the compiled CUDA trainer directly instead of constructing a graph and sending real batches through `TorchTrainer`. The default validation cadence is 1000 optimizer steps; pass `--eval-every-steps 1000` for validation loss every 1000 steps.
 - `cli/scripts/train_gpt2.py` is now a native-only wrapper around `train_gpt2_native.py`. Importing it, building its parser, and resolving native defaults no longer import Torch, `server.dataset_manager`, NumPy, or tiktoken.
 - Direct `python cli/scripts/train_gpt2.py ...` native runs now set up repo/script imports before dispatching to `train_gpt2_native.py`, so the default native CUDA path works without `PYTHONPATH` and still avoids Torch.
 - `cli/scripts/train_gpt2_native.py` now honors `NFN_DATASETS_DIR` for relative dataset aliases, matching the compiled native CLI cache override and avoiding hard-coded home-cache access during native dry-runs.
@@ -22795,7 +22804,7 @@ Future updates should append new entries here rather than replacing older notes.
 - Added `TorchTrainer.active_compiled_graph` during `train()` so long-running harness callbacks can evaluate the current in-memory weights without recompiling stale graph JSON. Added `TorchTrainer.last_compiled_graph` so final validation can reuse the same trained compiled graph after `train()` returns.
 - Updated `TorchTrainConfig.optimizer_profile="adamw"` for RTX 5090/SM120 Tile runs. It uses the single AdamW optimizer path and, when `kernel_backend="tile_cuda"` and callers leave `lr_decay_iters` and `min_lr` unset, defaults to cosine decay across the resolved training step count with `min_lr=0.0`.
 - Fixed the plain-AdamW optimizer branch of `TorchTrainer._build_optimizers` to exclude `requires_grad=False` parameters from its param group (the parameter-golf profile already filtered them).
-- Added `cli/scripts/train_gpt2_evo.py`: a GPT-2 training harness (cloned from `train_gpt2.py`) that builds the `gpt2_evo` spec, defaults to the CUDA Tile kernel backend with new `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict`, `--tile-cuda-report`, `--tile-cuda-activation-dtype {nvfp4,float32,none}`, `--amp-dtype {bfloat16,bf16,float16,fp16,float32,fp32,none}`, and `--eval-every-steps N` flags plumbed into the graph/trainer config, exposes `--evo-layer-index/--evo-layer-interval/--evo-layer-population/--evo-layer-mutation-scale/--evo-layer-seed/--no-layer-evo`, and supports `--tinystories` end-to-end. Defaults now target an RTX 5090-class SM120 AdamW run with NVFP4 activation packing and bf16 AMP: 12 layers, `model_dim=768`, `num_heads=12`, seq len 1024, microbatch 64, 524,288 tokens/step, 20,000 steps, learning rate 0.0006, weight decay 0.1, 60 warmup steps, cosine decay to zero, and validation every 250 steps. Periodic eval prints `Validation eval step ... loss=...` using the retained compiled model when `--eval-every-steps` is positive, and final `Validation loss` uses that same compiled model rather than recompiling graph JSON. The bf16 AMP default avoids routing the full GPT-2 vocabulary projection through the fp32 `cublasSgemm` path that can fail at the default microbatch size.
+- Added `cli/scripts/train_gpt2_evo.py`: a GPT-2 training harness (cloned from `train_gpt2.py`) that builds the `gpt2_evo` spec, defaults to the CUDA Tile kernel backend with new `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict`, `--tile-cuda-report`, `--tile-cuda-activation-dtype {nvfp4,float32,none}`, `--amp-dtype {bfloat16,bf16,float16,fp16,float32,fp32,none}`, and `--eval-every-steps N` flags plumbed into the graph/trainer config, exposes `--evo-layer-index/--evo-layer-interval/--evo-layer-population/--evo-layer-mutation-scale/--evo-layer-seed/--no-layer-evo`, and supports `--tinystories` end-to-end. Defaults now target an RTX 5090-class SM120 AdamW run with NVFP4 activation packing and bf16 AMP: 12 layers, `model_dim=768`, `num_heads=12`, seq len 1024, microbatch 64, 524,288 tokens/step, 20,000 steps, learning rate 0.0006, weight decay 0.1, 60 warmup steps, cosine decay to zero, and validation every 1000 steps. Periodic eval prints `Validation eval step ... loss=...` using the retained compiled model when `--eval-every-steps` is positive, and final `Validation loss` uses that same compiled model rather than recompiling graph JSON. The bf16 AMP default avoids routing the full GPT-2 vocabulary projection through the fp32 `cublasSgemm` path that can fail at the default microbatch size.
 - Changed the CUDA training script defaults (`train_gpt2.py`, `train_gpt2_evo.py`, `train_llama_fast.py`, `train_nanogpt.py`, `train_mixllama_fast.py`, `train_jepa_semantic.py`, `train_semantic_router_moe.py`, `train_semantic_router_moe-overnight.py`, and `train_deepseek_v4.py`) from `parameter_golf` to `adamw`. The `nfn` planner's default gradient optimizer preset also uses `adamw`; `parameter_golf_muon` remains available only as an explicit preset. The 5090 shell helpers now pass `--optimizer-profile adamw` and no longer pass split/Muon parameter-golf knobs. Removed the inherited parameter-golf wallclock cap from CUDA harness defaults by setting `max_wallclock_seconds=0.0`; `--max-wallclock-seconds` remains available as an explicit early-stop override. On `kernel_backend="tile_cuda"`, `adamw` now returns a `TileAdamW` optimizer wrapper that dispatches batched AdamW parameter updates through `tile_adamw_step_batch`, and trainer gradient clipping for that backend dispatches through `tile_gradient_clip_norm`. Explicit `tile-cuda` backend selection now build-loads the CUDA Tile extension instead of requiring `NFN_TILE_CUDA_BUILD=1`.
 - Changed `cli/scripts/train_gpt2.py` to default to strict CUDA Tile execution for RTX 5090 runs: `--kernel-backend tile-cuda`, `--tile-cuda-activation-dtype nvfp4`, and `--amp-dtype bfloat16` are now wired into the graph and `TorchTrainConfig`, matching the GPT-2 evo harness instead of silently using generic PyTorch execution.
 - Added a raw-text `uint16` token-cache path for large training datasets. When the selected tokenizer fits in `uint16`, the first training load streams `data.txt` and optional `val.txt` into `fineweb_train_000000.bin` / `fineweb_val_000000.bin`, updates `meta.json` with `data_format="uint16_shards"` and `token_cache_format="raw_text_uint16_shards"`, and subsequent runs memmap those shards. `estimate_text_schedule()` now reads token counts or shard sizes before falling back to dataset construction, so GPT-2/TinyStories schedule estimation no longer needs to tokenize the full raw text file. Tokenizers with ids outside `uint16` remain on the raw-text path.

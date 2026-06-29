@@ -34,7 +34,7 @@ LLAMA_DEFAULTS = {
     "eval_batches": 20,
     "eval_batch_size": 64,
     "train_log_every": 1,
-    "eval_every_steps": 250,
+    "eval_every_steps": 1000,
     "max_wallclock_seconds": 0.0,
     "warmup_steps": 60,
     "warmdown_fraction": 0.0,
