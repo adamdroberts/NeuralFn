@@ -323,7 +323,7 @@ requires that steady-state throughput metric to meet or beat the llm.kittens
 reference when reference gating is enabled. If a caller sets a lower warmup
 count while using this profile, or while running a measured default long-run
 deferred-prewarm comparison, the wrapper raises benchmark warmup to at least
-ten pairs by default, matching the normal wrapper default. Dry-run plans keep
+twenty pairs by default, matching the normal wrapper default. Dry-run plans keep
 explicit low-warmup aliases literal for command-shape checks. It records
 `long_run_defer_prewarm_min_warmup_applied` for the named
 profile and `default_long_run_defer_prewarm_min_warmup_applied` for the default
@@ -331,6 +331,12 @@ auto policy in paired JSON metadata, so steady-state throughput gates are not
 dominated by first-use timing noise. Set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for an intentional
 low-warmup reproduction.
+The stricter 20-pair floor is based on a 2026-06-29 20-warmup, 3-step,
+1-sample same-script run on the dedicated RTX 5090: selected GPU load stayed
+clean, NeuralFn steady-state CUDA-event step time measured `0.995716x` versus
+llm.kittens, and steady-state tokens/sec measured `1.004435x`; full-loop wall
+remained first-step dominated at `1.027703x`, which is why the long-run gate
+continues to use steady-state metrics.
 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun kept the
 policy accepted: setup wall fell to `0.666989x`,
 startup-plus-steady-state-step timing fell to `0.925514x`, and steady-state

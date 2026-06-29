@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: raised the SM120 native candidate wrapper
+  default and long-run deferred-prewarm warmup floor from 10 to 20 paired
+  warmup order samples. This keeps full-training performance gates focused on
+  steady-state CUDA-event timing instead of the intentionally deferred first
+  optimizer step. A 2026-06-29 20-warmup, 3-step, 1-sample same-script run on
+  the dedicated RTX 5090 kept selected GPU load clean and measured NeuralFn at
+  `0.995716x` steady-state CUDA-event step time plus `1.004435x`
+  steady-state tokens/sec versus llm.kittens, while full-loop wall remained
+  first-step dominated at `1.027703x`. Verification: same-script native
+  candidate/current/reference GPU benchmark, focused native GPT source-contract
+  pytest, shell syntax check, and dry-run expansion.
+
 - Native GPT benchmark diagnostics: added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm`
   profile and native JSON telemetry for async TK QKV first-use prewarm overlap.

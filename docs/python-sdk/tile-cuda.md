@@ -3380,13 +3380,17 @@ optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
 throughput without folding in that first optimizer step. The
 `long_run_defer_prewarm` profile gates that steady-state throughput metric
 against the llm.kittens reference by default. When a caller requests fewer than
-ten warmup pairs for this profile, or for a measured default long-run
-deferred-prewarm comparison, the wrapper raises benchmark warmup to ten pairs.
+twenty warmup pairs for this profile, or for a measured default long-run
+deferred-prewarm comparison, the wrapper raises benchmark warmup to twenty pairs.
 Dry-run plans keep explicit low-warmup aliases literal for command-shape
 checks. The measured path records `long_run_defer_prewarm_min_warmup_applied`
 or `default_long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata,
 keeping low-warmup reproductions opt-in through
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`.
+A 2026-06-29 20-warmup, 3-step, 1-sample same-script run on the dedicated RTX
+5090 kept the selected GPU load clean and measured NeuralFn at `0.995716x`
+steady-state CUDA-event step time and `1.004435x` steady-state tokens/sec versus
+llm.kittens, while full-loop wall stayed first-step dominated at `1.027703x`.
 A 2026-06-29 no-profile parity rerun with two warmup order pairs measured
 NeuralFn over llm.kittens at `0.998700x` steady-state CUDA-event step time and
 `1.001354x` steady-state tokens/sec. The full 3-step train-loop wall ratio was
