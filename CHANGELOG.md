@@ -13,6 +13,13 @@
   Verification: rebuilt `build/nfn-native`, inspected direct GPT/GPT-3/NanoGPT
   dry-run delegates, and added focused native CLI regression coverage.
 
+- Top-level native preflight alias parity: the direct `nfn-native train`
+  dense-GPT bypass now classifies `--native-cuda-smoke-nvfp4-pack` as a smoke
+  action and normalizes the required-NVFP4 packing aliases before execing the
+  dense trainer. The shim no longer appends `--train-transformer-lm` or a
+  default dataset to the NVFP4 smoke preflight. Verification: focused native
+  CLI regression coverage plus direct print-command inspection.
+
 - Native CLI local build aliases: `tools/build_native_train_cli.sh` and
   `tools/build_native_nfn_cli.sh` now create same-directory hyphenated aliases
   (`build/nfn-native-train` and `build/nfn-native`) when run with their default

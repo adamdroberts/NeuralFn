@@ -278,6 +278,8 @@ For shell workflows that should avoid Python entirely, build
 `nfn-native train ...` execs the dense GPT compiled trainer directly for `gpt`,
 `gpt2`, `gpt3`, and `nanogpt` when `NFN_NATIVE_TRAIN_CLI` is unset, and falls
 back to the unified compiled trainer for other families or explicit overrides.
+Direct native preflight aliases, including `--native-cuda-smoke-nvfp4-pack`,
+are normalized before the exec and do not receive the default training action.
 `nfn-native infer --checkpoint PATH --prompt-tokens IDS` execs the native GPT
 sampler against `model_*.bin` checkpoints. `bash tools/build_native_train_cli.sh`
 likewise emits both `build/nfn_native_train` and `build/nfn-native-train` for

@@ -13778,6 +13778,27 @@ def test_native_nfn_cli_dispatches_train_and_infer_without_python(tmp_path: Path
         "tile-cuda",
     ]
 
+    nvfp4_smoke_print = subprocess.run(
+        [
+            str(native_nfn),
+            "train",
+            "--base-model",
+            "gpt",
+            "--native-cuda-smoke-nvfp4-pack",
+            "--native-cuda-print-command",
+        ],
+        env=direct_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert nvfp4_smoke_print.returncode == 0, nvfp4_smoke_print.stderr
+    assert str(fake_gpt) in nvfp4_smoke_print.stdout
+    assert "--smoke-nvfp4-pack" in nvfp4_smoke_print.stdout
+    assert "--train-transformer-lm" not in nvfp4_smoke_print.stdout
+    assert "--dataset-alias" not in nvfp4_smoke_print.stdout
+
     ckpt_dir = tmp_path / "ckpts"
     ckpt_dir.mkdir()
     (ckpt_dir / "model_00000020.bin").write_bytes(b"old")

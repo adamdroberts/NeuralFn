@@ -1970,7 +1970,10 @@ directly with `--train-transformer-lm`, `--backend tile-cuda`, dataset aliases,
 template/custom-graph selectors, and GPT-3's 2048-token context default already
 expanded. This removes the extra unified-dispatcher process from common native
 GPT training startup while keeping `NFN_NATIVE_TRAIN_CLI` as an explicit escape
-to test or force the dispatcher.
+to test or force the dispatcher. Native preflight aliases such as
+`--native-cuda-smoke-nvfp4-pack` stay preflight-only on that direct path, so the
+shim does not append a default training action or dataset when the requested
+operation is a CUDA Tile smoke.
 
 Native dense-GPT plan and runtime JSON now include
 `lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity

@@ -229,6 +229,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-lm-step",
         "--smoke-mlp-step",
         "--smoke-norm-residual-step",
+        "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
         "--smoke-qkv-layout-step",
         "--smoke-tile-ops",
@@ -251,6 +252,12 @@ bool has_native_train_action(const std::vector<std::string>& args) {
 bool has_template_catalog_action(const std::vector<std::string>& args) {
     return has_forwarded_flag(args, "--list-templates") ||
            has_forwarded_flag(args, "--native-cuda-list-templates");
+}
+
+bool has_dataset_free_preflight_action(const std::vector<std::string>& args) {
+    return has_forwarded_flag(args, "--check-tile-ops") ||
+           has_forwarded_flag(args, "--smoke-nvfp4-pack") ||
+           has_forwarded_flag(args, "--smoke-tile-ops");
 }
 
 void append_value_arg(std::vector<std::string>& args, std::string flag, std::string value) {
@@ -479,12 +486,15 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-attention-step" ||
                                arg == "--native-cuda-smoke-mlp-step" ||
                                arg == "--native-cuda-smoke-norm-residual-step" ||
+                               arg == "--native-cuda-smoke-nvfp4-pack" ||
                                arg == "--native-cuda-smoke-transformer-block-step" ||
                                arg == "--native-cuda-smoke-transformer-lm-step" ||
                                arg == "--native-cuda-smoke-embedding-lm-step" ||
                                arg == "--native-cuda-allow-train-val-fallback" ||
                                arg == "--native-cuda-no-checkpoint" ||
                                arg == "--native-cuda-write-checkpoint" ||
+                               arg == "--native-cuda-require-native-nvfp4-activation-packing" ||
+                               arg == "--require-native-nvfp4-activation-packing" ||
                                arg == "--native-cuda-require-cooperative-lm-head-backward" ||
                                arg == "--require-cooperative-lm-head-backward" ||
                                arg == "--native-cuda-startup-only" ||
@@ -509,6 +519,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-mlp-step");
             } else if (arg == "--native-cuda-smoke-norm-residual-step") {
                 forwarded.push_back("--smoke-norm-residual-step");
+            } else if (arg == "--native-cuda-smoke-nvfp4-pack") {
+                forwarded.push_back("--smoke-nvfp4-pack");
             } else if (arg == "--native-cuda-smoke-transformer-block-step") {
                 forwarded.push_back("--smoke-transformer-block-step");
             } else if (arg == "--native-cuda-smoke-transformer-lm-step") {
@@ -521,6 +533,9 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--no-checkpoint");
             } else if (arg == "--native-cuda-write-checkpoint") {
                 forwarded.push_back("--write-checkpoint");
+            } else if (arg == "--native-cuda-require-native-nvfp4-activation-packing" ||
+                       arg == "--require-native-nvfp4-activation-packing") {
+                forwarded.push_back("--require-native-nvfp4-activation-packing");
             } else if (arg == "--native-cuda-require-cooperative-lm-head-backward" ||
                        arg == "--require-cooperative-lm-head-backward") {
                 forwarded.push_back("--require-cooperative-lm-head-backward");
@@ -565,6 +580,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
         append_value_arg(command, "--backend", "tile-cuda");
     }
     if (!has_template_catalog_action(command) &&
+        !has_dataset_free_preflight_action(command) &&
         !has_any_forwarded_value_flag(command, {"--dataset-alias", "--dataset-path", "--train-bin", "--val-bin"}) &&
         !has_forwarded_flag(command, "--tinystories")) {
         append_value_arg(command, "--dataset-alias", env_or_empty("DATASET_ALIAS").empty()
