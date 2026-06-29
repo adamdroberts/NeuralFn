@@ -1340,6 +1340,45 @@ def run_native_gpt2_compiled_cli_capture(
     )
 
 
+def native_gpt2_template_catalog(
+    *,
+    model_family: str = "gpt",
+    backend: str = "tile-cuda",
+    cli: str | None = None,
+    cuda_visible_devices: str = "",
+    cuda_device_max_connections: str = "1",
+    runner: str = "auto",
+) -> dict[str, Any]:
+    """Return the native dense GPT template catalog through the compiled C++ frontend."""
+
+    command = [
+        resolve_native_gpt2_cli(cli),
+        "--model-family",
+        str(model_family or "gpt"),
+        "--backend",
+        native_gpt2_kernel_backend(backend),
+        "--list-templates",
+    ]
+    result = run_native_gpt2_compiled_cli_capture(
+        command,
+        cuda_visible_devices=cuda_visible_devices,
+        cuda_device_max_connections=cuda_device_max_connections,
+        runner=runner,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Native GPT template catalog failed with "
+            f"exit code {result.returncode}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Native GPT template catalog did not return JSON") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Native GPT template catalog JSON must be an object")
+    return payload
+
+
 def exec_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "compiled-cli") -> int:
     """Replace this process with a compiled native GPT runner."""
 

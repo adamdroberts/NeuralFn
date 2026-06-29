@@ -2849,6 +2849,11 @@ not present. The direct `train_gpt.py` wrapper and dense `nfn train`
 metadata/preflight actions use this path for `--print-plan`,
 `--list-templates`, dry-run command inspection, and Tile smoke checks, so those
 no-data actions avoid keeping a Python subprocess in the normal native setup.
+SDK callers that need the dense GPT template support catalog can call
+`native_gpt_template_catalog()` or the compatibility
+`native_gpt2_template_catalog()`; both parse the compiled C++ `--list-templates`
+JSON and prefer the same `run_gpt_capture` binding path before falling back to a
+compiled CLI subprocess.
 
 `native_gpt_runner_status()` returns the resolved mode and diagnostic reason, and `write_native_gpt_run_config()` includes that status in the JSON payload. Set `NFN_NATIVE_GPT_BINDING=0` to test launcher fallback paths even when the compatibility `neuralfn._native_gpt2` binding is built locally; the older `native_gpt2_runner_status()`, `write_native_gpt2_run_config()`, and `NFN_NATIVE_GPT2_BINDING` names remain compatibility fallbacks.
 

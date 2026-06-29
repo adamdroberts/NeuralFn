@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT SDK catalog helper: added `native_gpt_template_catalog()` and the
+  compatibility `native_gpt2_template_catalog()` public SDK helpers. They run
+  the compiled C++ `--list-templates` action, parse the returned JSON, and
+  prefer the existing `run_gpt_capture` C++ binding path before falling back to
+  a compiled CLI subprocess. Top-level `neuralfn.native_gpt_template_catalog`
+  and `neuralfn.native_gpt2_template_catalog` lazy exports are included.
+  Verification: focused SDK binding-capture pytest and py_compile.
+
 - Native GPT benchmark warmup policy: the `long_run_defer_prewarm` SM120
   candidate profile now raises low benchmark warmup counts to at least two
   pairs by default and records

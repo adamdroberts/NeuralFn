@@ -28,6 +28,7 @@ from neuralfn.native_gpt import (
     native_gpt_encoding_vocab_size,
     native_gpt_kernel_backend,
     native_gpt_runner_status,
+    native_gpt_template_catalog,
     normalize_native_gpt_encoding_name,
     read_native_gpt_checkpoint_info,
     resolve_native_gpt_binding_command,
@@ -47,6 +48,7 @@ from neuralfn.native_gpt2 import (
     native_gpt2_parameter_count,
     native_gpt2_prompt_tokens,
     native_gpt2_runner_status,
+    native_gpt2_template_catalog,
     read_native_gpt2_checkpoint_info,
     render_native_gpt2_checkpoint_sampler_text,
     resolve_native_gpt2_cli,
@@ -5290,6 +5292,50 @@ def test_native_gpt_compiled_cli_capture_prefers_cpp_binding(monkeypatch: pytest
     assert generic_result.returncode == 7
     assert calls[0]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--print-plan"]
     assert calls[1]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--list-templates"]
+
+
+def test_native_gpt_template_catalog_prefers_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+    catalog = {
+        "action": "list_templates",
+        "token_shards_resolved": False,
+        "native_dense_gpt_template_selectors": ["gpt", "gpt2"],
+        "templates": [],
+    }
+
+    def fake_capture(payload: dict[str, object]) -> dict[str, object]:
+        calls.append(payload)
+        return {"returncode": 0, "stdout": json.dumps(catalog), "stderr": ""}
+
+    fake_binding = SimpleNamespace(
+        run_gpt=lambda _payload: 0,
+        resolve_native_gpt_command=lambda payload: payload["compiled_cli_argv"],
+        run_gpt_capture=fake_capture,
+    )
+    monkeypatch.setitem(sys.modules, "neuralfn_native_gpt", fake_binding)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
+    monkeypatch.setattr(
+        native_gpt2_module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess fallback should not run")),
+    )
+
+    gpt2_payload = native_gpt2_template_catalog(cli="/tmp/nfn_gpt_native_train", cuda_visible_devices="0")
+    generic_payload = native_gpt_template_catalog(cli="/tmp/nfn_gpt_native_train", cuda_visible_devices="0")
+
+    assert gpt2_payload == catalog
+    assert generic_payload == catalog
+    assert calls[0]["compiled_cli_argv"] == [
+        "/tmp/nfn_gpt_native_train",
+        "--model-family",
+        "gpt",
+        "--backend",
+        "tile-cuda",
+        "--list-templates",
+    ]
+    assert calls[1]["compiled_cli_argv"] == calls[0]["compiled_cli_argv"]
 
 
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(

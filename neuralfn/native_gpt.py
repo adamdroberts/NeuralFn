@@ -19,6 +19,7 @@ from .native_gpt2 import (
     native_gpt2_checkpoint_sampler_argv,
     native_gpt2_checkpoint_sampler_env,
     native_gpt2_prompt_tokens,
+    native_gpt2_template_catalog,
     exec_native_gpt2,
     native_gpt2_activation as native_gpt_activation,
     native_gpt2_encoding_vocab_size as native_gpt_encoding_vocab_size,
@@ -95,6 +96,11 @@ def run_native_gpt_compiled_cli_capture(*args, **kwargs):
     return run_native_gpt2_compiled_cli_capture(*args, **kwargs)
 
 
+def native_gpt_template_catalog(*args, **kwargs):
+    kwargs.setdefault("model_family", "gpt")
+    return native_gpt2_template_catalog(*args, **kwargs)
+
+
 def exec_native_gpt(config: NativeGptRunConfig, *, runner: str = "compiled-cli") -> int:
     return exec_native_gpt2(config, runner=runner)
 
@@ -139,6 +145,7 @@ __all__ = [
     "native_gpt_parameter_count",
     "native_gpt_prompt_tokens",
     "native_gpt_runner_status",
+    "native_gpt_template_catalog",
     "normalize_native_gpt_encoding_name",
     "read_native_gpt_checkpoint_info",
     "render_native_gpt_checkpoint_sampler_text",

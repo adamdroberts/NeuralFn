@@ -60,6 +60,8 @@ _LAZY_EXPORTS = {
     "native_gpt2_prompt_tokens": ("native_gpt2", "native_gpt2_prompt_tokens"),
     "native_gpt_runner_status": ("native_gpt", "native_gpt_runner_status"),
     "native_gpt2_runner_status": ("native_gpt2", "native_gpt2_runner_status"),
+    "native_gpt_template_catalog": ("native_gpt", "native_gpt_template_catalog"),
+    "native_gpt2_template_catalog": ("native_gpt2", "native_gpt2_template_catalog"),
     "native_train_model_registry": ("native_train", "native_train_model_registry"),
     "native_train_runner_status": ("native_train", "native_train_runner_status"),
     "read_native_gpt_checkpoint_info": ("native_gpt", "read_native_gpt_checkpoint_info"),
