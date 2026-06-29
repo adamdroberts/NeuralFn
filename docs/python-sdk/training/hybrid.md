@@ -2,6 +2,12 @@
 
 Per-subgraph training orchestrator for nested graph hierarchies.
 
+`neuralfn.hybrid` is safe to import from the lean native/core SDK. Importing
+`HybridConfig`, `GraphScope`, or constructing `HybridTrainer` does not import
+NumPy or Torch. Calling hybrid training/evaluation paths still requires the
+legacy numerical stack: frozen/evolutionary scopes require NumPy, and surrogate
+scopes require NumPy plus PyTorch.
+
 ---
 
 ## HybridConfig

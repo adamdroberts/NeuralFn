@@ -3,10 +3,10 @@
 NeuralFn supports three scalar-graph training methods and one torch-runtime trainer. Each method optimizes different aspects of a `NeuronGraph`.
 
 The lean native/core SDK can import the public training configuration surface
-without Torch or NumPy. Surrogate and evolutionary trainer construction is also
-lean. Training execution still relies on the legacy NumPy/PyTorch stack as
-needed, so install those packages explicitly before calling the scalar training
-methods.
+without Torch or NumPy. Surrogate, evolutionary, and hybrid trainer construction
+is also lean. Training execution still relies on the legacy NumPy/PyTorch stack
+as needed, so install those packages explicitly before calling the scalar
+training methods.
 
 ## Overview
 
@@ -23,7 +23,7 @@ methods.
 
 **Evolutionary training** (`EvolutionaryTrainer`) uses a genetic algorithm with tournament selection, crossover, and mutation. It evaluates the actual neuron functions (not surrogates) so it works with any neuron type, including discontinuous or noisy functions. Slower but more robust. Importing the module and constructing the trainer are lean; `train()` requires NumPy.
 
-**Hybrid training** (`HybridTrainer`) orchestrates training across nested subgraph hierarchies. Each subgraph can declare its own `training_method` (`"surrogate"`, `"evolutionary"`, or `"frozen"`), and the hybrid trainer walks the graph tree in post-order, training each scope independently while evaluating the root graph for loss.
+**Hybrid training** (`HybridTrainer`) orchestrates training across nested subgraph hierarchies. Each subgraph can declare its own `training_method` (`"surrogate"`, `"evolutionary"`, or `"frozen"`), and the hybrid trainer walks the graph tree in post-order, training each scope independently while evaluating the root graph for loss. Importing and constructing the hybrid trainer are lean; frozen/evolutionary work requires NumPy, and surrogate work requires NumPy plus PyTorch.
 
 **Torch training** (`TorchTrainer`) compiles the graph into a native PyTorch `nn.Module` pipeline and trains with standard GPU-accelerated gradient descent. Required for graphs containing module neurons (transformers, attention, MoE, etc.).
 

@@ -227,6 +227,50 @@ else:
     assert "OPTIONAL_ERROR True" in proc.stdout
 
 
+def test_hybrid_module_import_is_lean_without_torch_numpy() -> None:
+    code = r'''
+import importlib.abc
+import sys
+
+class BlockOptional(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".", 1)[0] in {"torch", "numpy"}:
+            raise ImportError(f"blocked optional dependency: {fullname}")
+        return None
+
+sys.meta_path.insert(0, BlockOptional())
+from neuralfn.hybrid import GraphScope, HybridConfig, HybridTrainer
+
+trainer = HybridTrainer(object(), HybridConfig(outer_rounds=1))
+scope = GraphScope(path=(), graph=object())
+print("TRAINER", type(trainer).__name__)
+print("SCOPE", scope.path)
+print("TORCH_LOADED", "torch" in sys.modules)
+print("NUMPY_LOADED", "numpy" in sys.modules)
+try:
+    trainer._predict_root([])
+except ImportError as exc:
+    print("OPTIONAL_ERROR", "requires NumPy" in str(exc))
+else:
+    raise SystemExit("_predict_root unexpectedly succeeded")
+'''
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "TRAINER HybridTrainer" in proc.stdout
+    assert "SCOPE ()" in proc.stdout
+    assert "TORCH_LOADED False" in proc.stdout
+    assert "NUMPY_LOADED False" in proc.stdout
+    assert "OPTIONAL_ERROR True" in proc.stdout
+
+
 def test_no_torch_verifier_rejects_stale_egg_info(tmp_path: Path) -> None:
     module_path = Path("tools/check_native_no_torch_deps.py")
     spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)

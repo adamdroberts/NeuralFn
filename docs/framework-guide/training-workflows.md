@@ -13,10 +13,11 @@ For hierarchical graphs with mixed training methods, `HybridTrainer` orchestrate
 
 The scalar trainer modules are import-safe on the lean native/core SDK:
 importing `TrainConfig`, `EvoConfig`, `SurrogateTrainer`, or
-`EvolutionaryTrainer` and constructing trainer instances does not load NumPy or
-Torch. Actual scalar training still needs the legacy numerical stack:
-surrogate training requires NumPy plus PyTorch, while evolutionary training
-requires NumPy.
+`EvolutionaryTrainer` and constructing scalar or hybrid trainer instances does
+not load NumPy or Torch. Actual scalar training still needs the legacy
+numerical stack: surrogate training requires NumPy plus PyTorch, evolutionary
+training requires NumPy, and hybrid training inherits those requirements from
+the scopes it executes.
 
 Default CLI training now requires a compiled native CUDA/C++ entrypoint. Dense
 GPT has that path through `nfn train --base-model gpt`; `gpt2` and `gpt3` are

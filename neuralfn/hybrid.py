@@ -1,16 +1,44 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as np
-import torch
-import torch.nn as nn
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 from .evolutionary import EvoConfig
 from .graph import NeuronGraph
-from .surrogate import SurrogateModel, build_surrogates
 from .trainer import TrainConfig
+
+
+@lru_cache(maxsize=1)
+def _load_numpy():
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ImportError(
+            "neuralfn.hybrid is importable in the lean native SDK, but "
+            "HybridTrainer training requires NumPy to be installed explicitly."
+        ) from exc
+    return np
+
+
+@lru_cache(maxsize=1)
+def _load_surrogate_training_stack():
+    try:
+        import torch
+        import torch.nn as nn
+        from .surrogate import build_surrogates
+    except ImportError as exc:
+        raise ImportError(
+            "neuralfn.hybrid is importable in the lean native SDK, but "
+            "HybridTrainer surrogate scopes require the optional legacy "
+            "graph/Torch stack. Install NumPy and PyTorch explicitly before "
+            "training surrogate scopes."
+        ) from exc
+    return torch, nn, build_surrogates
 
 
 @dataclass
@@ -35,7 +63,7 @@ class HybridTrainer:
         self.config = config or HybridConfig()
         self._stop = False
         self.loss_history: list[float] = []
-        self._shadow_cache: dict[tuple[str, ...], dict[str, SurrogateModel]] = {}
+        self._shadow_cache: dict[tuple[str, ...], dict[str, Any]] = {}
         self._topology_cache: dict[tuple[str, ...], list[str]] = {}
 
     def stop(self) -> None:
@@ -43,8 +71,8 @@ class HybridTrainer:
 
     def train(
         self,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
         *,
         on_step: Callable[[dict[str, Any]], None] | None = None,
     ) -> list[float]:
@@ -154,10 +182,11 @@ class HybridTrainer:
         self,
         path: tuple[str, ...],
         graph: NeuronGraph,
-    ) -> dict[str, SurrogateModel]:
+    ) -> dict[str, Any]:
         cached = self._shadow_cache.get(path)
         if cached is not None:
             return cached
+        _torch, _nn, build_surrogates = _load_surrogate_training_stack()
         cfg = self._merged_surrogate_config(graph)
         surrogates = build_surrogates(
             graph,
@@ -179,8 +208,8 @@ class HybridTrainer:
     def _train_surrogate_scope(
         self,
         scope: GraphScope,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
         *,
         round_idx: int,
         on_step: Callable[[dict[str, Any]], None] | None,
@@ -192,6 +221,7 @@ class HybridTrainer:
             return
 
         cfg = self._merged_surrogate_config(graph)
+        torch, nn, _build_surrogates = _load_surrogate_training_stack()
         edge_ids = sorted(graph.edges.keys())
         raw = graph.get_edge_params()
         params = torch.tensor(raw, dtype=torch.float32, requires_grad=True)
@@ -250,14 +280,15 @@ class HybridTrainer:
         self,
         graph: NeuronGraph,
         path: tuple[str, ...],
-        flat_inputs: torch.Tensor,
+        flat_inputs: "torch.Tensor",
         *,
         target_path: tuple[str, ...],
-        target_params: torch.Tensor,
+        target_params: "torch.Tensor",
         target_edge_ids: list[str],
-    ) -> torch.Tensor:
+    ) -> "torch.Tensor":
+        torch, _nn, _build_surrogates = _load_surrogate_training_stack()
         batch = flat_inputs.size(0)
-        node_vals: dict[str, torch.Tensor] = {}
+        node_vals: dict[str, "torch.Tensor"] = {}
         device = flat_inputs.device
 
         input_idx = 0
@@ -323,8 +354,8 @@ class HybridTrainer:
     def _train_evolutionary_scope(
         self,
         scope: GraphScope,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
         *,
         round_idx: int,
         on_step: Callable[[dict[str, Any]], None] | None,
@@ -336,6 +367,7 @@ class HybridTrainer:
             return
 
         cfg = self._merged_evo_config(graph)
+        np = _load_numpy()
         rng = np.random.default_rng(cfg.seed)
         base = graph.get_edge_params()
 
@@ -391,7 +423,7 @@ class HybridTrainer:
         self,
         ranked: list[tuple[float, list[float]]],
         tournament_size: int,
-        rng: np.random.Generator,
+        rng: Any,
     ) -> list[float]:
         idxs = rng.choice(len(ranked), size=min(tournament_size, len(ranked)), replace=False)
         best_idx = min(idxs, key=lambda idx: ranked[idx][0])
@@ -401,8 +433,8 @@ class HybridTrainer:
         self,
         path: tuple[str, ...],
         params: list[float],
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
     ) -> float:
         graph = self._scope_graph(path)
         original = graph.get_edge_params()
@@ -414,9 +446,10 @@ class HybridTrainer:
 
     def _evaluate_root_loss(
         self,
-        train_inputs: np.ndarray,
-        train_targets: np.ndarray,
+        train_inputs: "np.ndarray",
+        train_targets: "np.ndarray",
     ) -> float:
+        np = _load_numpy()
         preds = self._predict_root(train_inputs)
         if self.config.loss_fn == "mse":
             return float(np.mean((preds - train_targets) ** 2))
@@ -427,7 +460,8 @@ class HybridTrainer:
             -np.mean(targets * np.log(preds) + (1.0 - targets) * np.log(1.0 - preds))
         )
 
-    def _predict_root(self, train_inputs: np.ndarray) -> np.ndarray:
+    def _predict_root(self, train_inputs: "np.ndarray") -> "np.ndarray":
+        np = _load_numpy()
         preds: list[list[float]] = []
         for row in train_inputs:
             inputs: dict[str, tuple[float, ...]] = {}

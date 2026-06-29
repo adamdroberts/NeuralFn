@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Lean hybrid trainer import boundary: `neuralfn.hybrid` no longer imports
+  NumPy, Torch, or `neuralfn.surrogate` at module import time. Importing
+  `HybridConfig` / `GraphScope` or constructing `HybridTrainer` now works on
+  the default native/core SDK install, while frozen/evolutionary scope execution
+  lazily loads NumPy and surrogate scope execution lazily loads the legacy
+  graph/Torch stack. Verification: focused native dependency tests, nested
+  graph hybrid coverage, and native no-Torch dependency verifier.
+
 - Lean evolutionary trainer import boundary: `neuralfn.evolutionary` no longer
   imports NumPy at module import or trainer construction time. Importing
   `EvoConfig` or constructing `EvolutionaryTrainer` now works on the default
