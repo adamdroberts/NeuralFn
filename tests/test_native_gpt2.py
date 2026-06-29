@@ -1501,11 +1501,17 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "1.003405x" in parity_bench
     assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 5)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
+    assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert (
         'COMMON_ENV_RAW="${COMMON_ENV_RAW:+$COMMON_ENV_RAW }'
         'NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"'
     ) in candidate_bench
+    assert (
+        'CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }'
+        'NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"'
+    ) in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in candidate_bench
+    assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
@@ -1515,6 +1521,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH=\"${NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH-/usr/local/cuda/lib64:/usr/lib/wsl/lib}\"" in parity_bench
     assert "REFERENCE_ENV_RAW=\"$(env_or_alias3 NFN_SM120_NATIVE_REFERENCE_ENV NFN_SM120_PARITY_REFERENCE_ENV NFN_SM120_REFERENCE_ENV \"\")\"" in parity_bench
     assert 'paired_args+=(--baseline-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in parity_bench
+    assert 'if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then' in parity_bench
+    assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"' in parity_bench
     assert 'MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench

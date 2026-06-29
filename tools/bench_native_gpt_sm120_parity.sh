@@ -76,6 +76,8 @@ ATTENTION_SECTION_TIMING="$(env_or_alias3 NFN_SM120_NATIVE_ATTENTION_SECTION_TIM
 CANDIDATE_ENV_RAW="$(env_or_alias3 NFN_SM120_NATIVE_CANDIDATE_ENV NFN_SM120_PARITY_CANDIDATE_ENV NFN_SM120_CANDIDATE_ENV "")"
 CANDIDATE_PROFILE_RAW="$(env_or_alias4 NFN_SM120_NATIVE_CANDIDATE_PROFILE NFN_SM120_NATIVE_PARITY_PROFILE NFN_SM120_PARITY_CANDIDATE_PROFILE NFN_SM120_PARITY_PROFILE "")"
 REFERENCE_ENV_RAW="$(env_or_alias3 NFN_SM120_NATIVE_REFERENCE_ENV NFN_SM120_PARITY_REFERENCE_ENV NFN_SM120_REFERENCE_ENV "")"
+DEFAULT_LONG_RUN_DEFER_PREWARM="$(env_or_alias3 NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM NFN_SM120_DEFAULT_LONG_RUN_DEFER_PREWARM 1)"
+DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=0
 JSON_OUT="$(env_or_alias3 NFN_SM120_NATIVE_JSON_OUT NFN_SM120_PARITY_JSON_OUT NFN_SM120_JSON_OUT "/tmp/nfn_sm120_parity_${STEPS}step.json")"
 PROFILE_DIR_RAW="$(env_or_alias3 NFN_SM120_NATIVE_PROFILE_DIR NFN_SM120_PARITY_PROFILE_DIR NFN_SM120_PROFILE_DIR "/tmp/nfn_sm120_parity_profiles_${STEPS}step")"
 STAGE_TIMING="$(env_or_alias4 NFN_SM120_NATIVE_STAGE_TIMING NFN_SM120_NATIVE_PARITY_STAGE_TIMING NFN_SM120_PARITY_STAGE_TIMING NFN_SM120_STAGE_TIMING 0)"
@@ -106,6 +108,25 @@ Refusing to run because a parity profile would otherwise be ignored and produce 
 EOF
   exit 2
 fi
+case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
+  "1"|"true"|"yes"|"on")
+    prewarm_policy_text="$CANDIDATE_ENV_RAW"
+    case "$prewarm_policy_text" in
+      *NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=*|*NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS=*|*NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS=*|*NFN_NATIVE_GPT_FAST_STARTUP=*|*NFN_NATIVE_GPT2_FAST_STARTUP=*|*NFN_TILE_CUDA_FAST_STARTUP=*|*NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=*|*NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD=*|*NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD=*|*NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=*|*NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=*)
+        ;;
+      *)
+        CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
+        DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1
+        ;;
+    esac
+    ;;
+  "0"|"false"|"no"|"off"|"")
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM value: $DEFAULT_LONG_RUN_DEFER_PREWARM" >&2
+    exit 2
+    ;;
+esac
 if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
   case "${DRY_RUN_PLAN,,}" in
     "1"|"true"|"yes"|"on")
@@ -124,10 +145,16 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
               if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -gt 1 ]]; then
                 gate_stat_prefix="median:"
               fi
-              MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"
+              if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then
+                MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"
+              else
+                MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"
+              fi
               case "${TRAIN_LOOP_EVENT_TIMING,,}" in
                 "1"|"true"|"yes"|"on")
-                  MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"
+                  if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" != "1" ]]; then
+                    MAX_CANDIDATE_RATIO_RAW+=" ${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"
+                  fi
                   ;;
               esac
               ;;
@@ -166,6 +193,9 @@ case "${STAGE_TIMING,,}" in
     fi
     ;;
 esac
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm=applied")
+fi
 for item in $MAX_CANDIDATE_RATIO_RAW; do
   paired_args+=(--max-candidate-ratio "$item")
 done

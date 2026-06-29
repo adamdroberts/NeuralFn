@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- SM120 parity benchmark policy: `tools/bench_native_gpt_sm120_parity.sh` now
+  applies `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to the NeuralFn leg by
+  default when no explicit startup/prewarm policy is present, matching the
+  no-profile native candidate wrapper and the branch used by long quality runs.
+  In that default mode the parity wrapper gates steady-state CUDA-event step
+  time instead of treating expected first-step deferred-prewarm cost as a
+  train-loop regression. Set `NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM=0`
+  to reproduce the older short-run eager-prewarm parity behavior. Verification:
+  shell syntax, focused native GPT benchmark source test, live short
+  NeuralFn-vs-llm.kittens parity run on the dedicated RTX 5090, and diff check.
+
 - Native GPT launcher freshness: `tools/train_gpt.sh` and
   `tools/train_gpt_sm120.sh` now refresh their repo-owned compiled launcher and
   the linked native GPT trainer before execing the compiled path when C++/CUDA
