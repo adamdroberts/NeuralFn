@@ -216,6 +216,16 @@ For Torch-free native GPT launchers, `neuralfn.native_train.build_native_train_r
 
 For dense GPT startup/preflight probes, pass `fast_startup=True` to the same native SDK helper to append `--fast-startup` once. This skips throughput-only setup prewarms through the native prewarm policy without requiring environment variables; normal training defaults remain unchanged.
 
+For startup bisection, `NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1` enables the
+diagnostic path that launches token-weight initialization and independent
+non-token parameter fill on separate nonblocking CUDA streams, then synchronizes
+before BF16 block-weight refresh and training. Runtime JSON reports
+`concurrent_parameter_init_requested`, `concurrent_parameter_init_enabled`, and
+`concurrent_parameter_init_count`; the paired SM120 wrapper exposes the same
+route as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init`. It is
+off by default because the latest paired gate rejected startup promotion even
+though steady-state training was slightly faster.
+
 For long CUDA runs, `on_step` is usually the right hook for live CLI progress because it fires once per warmup step and once per optimizer step instead of waiting for epoch boundaries.
 
 For the experimental semantic routing presets, dataset-backed training resolves a three-role flat input contract: `(tokens, targets, sem_targets)`. `semantic_router_moe` uses that contract for an AR-only router-control experiment, `jepa_semantic_hybrid` adds JEPA loss on top of the same routed branch, `semantic_dense_jepa_evo` keeps the chunk-level semantic planner with dense FFNs, and `semantic_moe_jepa_evo` routes at chunk granularity with a shared + semantic + free expert bank. `semantic_data_source` generates categorical vocab-topic targets from the active semantic vocabulary reference; inactive dimensions use `-100` ignore sentinels, and the first `NUM_VOCAB_DIMS` positions line up with the semantic expert map. When only semantic data is available, the trainer synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding `sem_targets` into the embedding path.

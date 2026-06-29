@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native GPT startup diagnostics: added the opt-in
+  `NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1` route and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init` benchmark
+  profile. The trainer can launch token-weight initialization and independent
+  non-token parameter fill on separate nonblocking CUDA streams, then
+  synchronize before BF16 block-weight refresh and training. Runtime JSON now
+  reports `concurrent_parameter_init_requested`,
+  `concurrent_parameter_init_enabled`, and `concurrent_parameter_init_count`,
+  and paired benchmark extraction includes those fields for route-change gates.
+  The 2026-06-29 dedicated RTX 5090 3-sample, 10-step paired run kept the
+  profile rejected for default promotion because `setup_wall_ms` regressed to
+  `1.005540x` and `startup_plus_first_step_wall_ms` to `1.001449x`, despite
+  steady-state CUDA-event step time improving to `0.999003x` and
+  candidate/reference steady-state improving to `0.996869x`. Verification:
+  shell syntax, focused native GPT source-contract pytest, linked C++ trainer
+  build, saved-profile parser check, and live paired candidate benchmark.
+
 - Native GPT runtime contract: the no-Torch native artifact verifier and paired
   speed runtime gate now require LM-head route attribution fields
   (`lm_head_classifier_backward_path_class` and

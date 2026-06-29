@@ -188,6 +188,15 @@ current linked native baseline or change any hot route counters. The MLP
 projection dInput-before-dWeight route improved short-run wall time but
 regressed steady-state timing and MLP projection dInput attribution. Keep both
 off by default unless a later same-script gate proves a current-native win.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init` is also a
+diagnostic-only startup profile. It sets
+`NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1`, causing runtime JSON to report
+`concurrent_parameter_init_requested`, `concurrent_parameter_init_enabled`, and
+`concurrent_parameter_init_count` while token-weight initialization and
+independent non-token parameter fill run on separate nonblocking CUDA streams.
+The 2026-06-29 dedicated RTX 5090 paired gate kept it off by default:
+steady-state step time improved to `0.999003x`, but setup wall regressed to
+`1.005540x` and startup-plus-first-step to `1.001449x`.
 The `lm_head_row_chunk_28672` profile is the current LM-head row-chunk default:
 the CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample gate beat the prior
 32768-row route at `0.998291x` train-loop wall time, `0.998019x` steady-state

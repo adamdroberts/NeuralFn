@@ -3149,6 +3149,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "checks deterministic prewarm work rather than setup timing or route-change gates" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
     assert "lm_head_fused_graph_prewarm_success_count=1.000" in bench_source
+    assert '"concurrent_parameter_init"|"concurrent-parameter-init"' in bench_source
+    assert "NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1" in bench_source
+    assert "concurrent_parameter_init_enabled" in bench_source
+    assert "setup_wall_ms regressed to 1.005540x mean" in bench_source
+    assert "startup_plus_first_step_wall_ms=0.998" in bench_source
     assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
     assert "lm_head_fused_graph_upload_success_count from 3 to 0" in bench_source
@@ -3188,6 +3193,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"adamw_bf16_param_bf16_grad_descriptor_count"' in paired_speed_source
     assert '"adamw_bf16_param_bf16_grad_kernel_launches"' in paired_speed_source
     assert '"block_weight_bf16_gradient_storage_strategy"' in paired_speed_source
+    assert '"concurrent_parameter_init_enabled"' in paired_speed_source
     assert (
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4 "
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32"
@@ -12233,6 +12239,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert '\\"optimized_kernel_contract_required\\"' in gpt2_source_text
     assert '\\"optimized_kernel_contract_passed\\"' in gpt2_source_text
     assert '\\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\\"' in gpt2_source_text
+    assert "NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_CONCURRENT_PARAMETER_INIT" in gpt2_source_text
+    assert "initialize_token_weight(token_init_stream)" in gpt2_source_text
+    assert "fill_nonzero_parameters(parameter_fill_stream)" in gpt2_source_text
+    assert '\\"concurrent_parameter_init_requested\\"' in gpt2_source_text
+    assert '\\"concurrent_parameter_init_enabled\\"' in gpt2_source_text
+    assert '\\"concurrent_parameter_init_count\\"' in gpt2_source_text
     assert "--allow-scalar-attention-fallback" in gpt2_source_text
     assert "optimized attention required, but scalar attention fallback launched" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text

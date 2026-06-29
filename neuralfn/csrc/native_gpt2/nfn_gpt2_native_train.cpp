@@ -15053,6 +15053,9 @@ int run_transformer_lm_training_json(
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
     std::int64_t descriptor_arena_suballocation_count = 0;
     std::int64_t descriptor_arena_copy_count = 0;
+    std::int64_t concurrent_parameter_init_requested = 0;
+    std::int64_t concurrent_parameter_init_enabled = 0;
+    std::int64_t concurrent_parameter_init_count = 0;
     constexpr std::int64_t kBaseDescriptorDeviceTableCount = 14;
     constexpr std::int64_t kBf16ParamUpdateDescriptorDeviceTableCount = 24;
     const std::int64_t descriptor_device_table_count =
@@ -15085,6 +15088,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_UINT16_ARENA_FIRST",
                               "NFN_NATIVE_GPT2_UINT16_ARENA_FIRST"}),
             false);
+    const bool concurrent_parameter_init_requested_flag =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT",
+                              "NFN_NATIVE_GPT2_CONCURRENT_PARAMETER_INIT"}),
+            false);
+    concurrent_parameter_init_requested = concurrent_parameter_init_requested_flag ? 1 : 0;
     std::int64_t uint16_arena_first_enabled = 0;
     const bool skip_exit_device_free_enabled =
         env_flag_enabled_or_default(
@@ -17726,7 +17735,7 @@ int run_transformer_lm_training_json(
             }
         }
     });
-    run_setup_cuda_timed("setup.token_weight_init", [&]() {
+    auto initialize_token_weight = [&](void* stream) {
         if (error.empty()) {
             const bool use_padded_token_weight_init =
                 fuse_token_weight_padded_init_requested &&
@@ -17742,7 +17751,7 @@ int run_transformer_lm_training_json(
                         token_weight_bf16,
                         public_token_weight_elements,
                         kTokenWeightElements,
-                        nullptr),
+                        stream),
                     "token_weight.init_device_with_bf16_shadow_padded_zero");
                 if (error.empty()) {
                     token_weight_bf16_refresh_count += 1;
@@ -17760,7 +17769,7 @@ int run_transformer_lm_training_json(
                         token_weight,
                         token_weight_bf16,
                         token_weight_init_elements,
-                        nullptr),
+                        stream),
                     "token_weight.init_device_with_bf16_shadow");
                 if (error.empty()) {
                     token_weight_bf16_refresh_count += 1;
@@ -17771,24 +17780,52 @@ int run_transformer_lm_training_json(
                     legacy_mod17_token_weight_init_enabled
                         ? init_gpt2_token_weight
                         : init_gpt2_token_weight_fast;
-                run(init_without_shadow(token_weight, token_weight_init_elements, nullptr),
+                run(init_without_shadow(token_weight, token_weight_init_elements, stream),
                     "token_weight.init_device");
             }
             if (error.empty() && token_weight_padding_elements > 0 &&
                 !token_weight_padded_init_fusion_enabled) {
-                zero_float_buffer(
-                    token_weight + public_token_weight_elements,
-                    token_weight_padding_elements,
-                    "token_weight.padding.zero");
+                const std::size_t bytes =
+                    sizeof(float) * static_cast<std::size_t>(token_weight_padding_elements);
+                if (startup_cuda_memset_zero_enabled && cuda_memset_async != nullptr) {
+                    const int status = cuda_memset_async(
+                        token_weight + public_token_weight_elements,
+                        0,
+                        bytes,
+                        stream);
+                    if (status == 0) {
+                        startup_cuda_memset_zero_fill_count += 1;
+                    } else {
+                        run(fill(
+                                token_weight + public_token_weight_elements,
+                                token_weight_padding_elements,
+                                0.0f,
+                                stream),
+                            "token_weight.padding.zero");
+                        if (error.empty()) {
+                            startup_tile_zero_fill_count += 1;
+                        }
+                    }
+                } else {
+                    run(fill(
+                            token_weight + public_token_weight_elements,
+                            token_weight_padding_elements,
+                            0.0f,
+                            stream),
+                        "token_weight.padding.zero");
+                    if (error.empty()) {
+                        startup_tile_zero_fill_count += 1;
+                    }
+                }
                 if (error.empty() && token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
                     if (cuda_memset_async != nullptr) {
-                        const std::size_t bytes =
+                        const std::size_t bf16_bytes =
                             sizeof(std::uint16_t) * static_cast<std::size_t>(token_weight_padding_elements);
                         const int status = cuda_memset_async(
                             token_weight_bf16 + public_token_weight_elements,
                             0,
-                            bytes,
-                            nullptr);
+                            bf16_bytes,
+                            stream);
                         if (status == 0) {
                             token_weight_bf16_padding_memset_count += 1;
                             token_weight_bf16_refresh_count += 1;
@@ -17797,7 +17834,7 @@ int run_transformer_lm_training_json(
                                     token_weight + public_token_weight_elements,
                                     token_weight_bf16 + public_token_weight_elements,
                                     token_weight_padding_elements,
-                                    nullptr),
+                                    stream),
                                 "token_weight_bf16.padding.zero_refresh");
                             if (error.empty()) {
                                 token_weight_bf16_refresh_count += 1;
@@ -17808,7 +17845,7 @@ int run_transformer_lm_training_json(
                                 token_weight + public_token_weight_elements,
                                 token_weight_bf16 + public_token_weight_elements,
                                 token_weight_padding_elements,
-                                nullptr),
+                                stream),
                             "token_weight_bf16.padding.zero_refresh");
                         if (error.empty()) {
                             token_weight_bf16_refresh_count += 1;
@@ -17816,6 +17853,11 @@ int run_transformer_lm_training_json(
                     }
                 }
             }
+        }
+    };
+    run_setup_cuda_timed("setup.token_weight_init", [&]() {
+        if (!concurrent_parameter_init_requested_flag) {
+            initialize_token_weight(nullptr);
         }
     });
     auto refresh_token_weight_bf16 = [&](const std::string& name) {
@@ -17833,7 +17875,7 @@ int run_transformer_lm_training_json(
         }
         refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
     });
-    run_setup_cuda_timed("setup.nonzero_parameter_fill", [&]() {
+    auto fill_nonzero_parameters = [&](void* stream) {
         if (error.empty() &&
             parameter_fill_descriptor_count > 0 &&
             bf16_parameter_fill_descriptor_count > 0 &&
@@ -17849,7 +17891,7 @@ int run_transformer_lm_training_json(
                     bf16_parameter_fill_values,
                     bf16_parameter_fill_descriptor_count,
                     bf16_parameter_fill_max_elements,
-                    nullptr),
+                    stream),
                 "nonzero_parameters.fill_many_values_mixed_float32_bf16_bits");
             if (error.empty()) {
                 mixed_parameter_fill_kernel_launches += 1;
@@ -17863,7 +17905,7 @@ int run_transformer_lm_training_json(
                     parameter_fill_values,
                     parameter_fill_descriptor_count,
                     parameter_fill_max_elements,
-                    nullptr),
+                    stream),
                 "nonzero_parameters.fill_many_values");
             if (error.empty()) {
                 parameter_fill_kernel_launches += 1;
@@ -17876,11 +17918,70 @@ int run_transformer_lm_training_json(
                     bf16_parameter_fill_values,
                     bf16_parameter_fill_descriptor_count,
                     bf16_parameter_fill_max_elements,
-                    nullptr),
+                    stream),
                 "nonzero_bf16_parameters.fill_many_values");
             if (error.empty()) {
                 bf16_parameter_fill_kernel_launches += 1;
             }
+        }
+    };
+    run_setup_cuda_timed("setup.nonzero_parameter_fill", [&]() {
+        if (!concurrent_parameter_init_requested_flag) {
+            fill_nonzero_parameters(nullptr);
+        }
+    });
+    run_setup_timed("setup.concurrent_parameter_init", [&]() {
+        if (!concurrent_parameter_init_requested_flag || !error.empty()) {
+            return;
+        }
+        if (cuda_stream_create_with_flags == nullptr ||
+            cuda_stream_synchronize == nullptr ||
+            cuda_stream_destroy == nullptr) {
+            initialize_token_weight(nullptr);
+            fill_nonzero_parameters(nullptr);
+            return;
+        }
+        void* token_init_stream = nullptr;
+        void* parameter_fill_stream = nullptr;
+        int status = cuda_stream_create_with_flags(&token_init_stream, kCudaStreamNonBlocking);
+        if (status != 0) {
+            error = cuda_error(status, "cudaStreamCreateWithFlags token_weight_init");
+            return;
+        }
+        status = cuda_stream_create_with_flags(&parameter_fill_stream, kCudaStreamNonBlocking);
+        if (status != 0) {
+            const int destroy_status = cuda_stream_destroy(token_init_stream);
+            if (destroy_status != 0 && error.empty()) {
+                error = cuda_error(destroy_status, "cudaStreamDestroy token_weight_init");
+            }
+            error = cuda_error(status, "cudaStreamCreateWithFlags nonzero_parameter_fill");
+            return;
+        }
+        concurrent_parameter_init_enabled = 1;
+        initialize_token_weight(token_init_stream);
+        fill_nonzero_parameters(parameter_fill_stream);
+        if (error.empty()) {
+            status = cuda_stream_synchronize(token_init_stream);
+            if (status != 0) {
+                error = cuda_error(status, "cudaStreamSynchronize token_weight_init");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_stream_synchronize(parameter_fill_stream);
+            if (status != 0) {
+                error = cuda_error(status, "cudaStreamSynchronize nonzero_parameter_fill");
+            }
+        }
+        const int token_destroy_status = cuda_stream_destroy(token_init_stream);
+        if (token_destroy_status != 0 && error.empty()) {
+            error = cuda_error(token_destroy_status, "cudaStreamDestroy token_weight_init");
+        }
+        const int parameter_destroy_status = cuda_stream_destroy(parameter_fill_stream);
+        if (parameter_destroy_status != 0 && error.empty()) {
+            error = cuda_error(parameter_destroy_status, "cudaStreamDestroy nonzero_parameter_fill");
+        }
+        if (error.empty()) {
+            concurrent_parameter_init_count += 1;
         }
     });
     auto refresh_block_weight_bf16 = [&](const std::string& name) {
@@ -24078,6 +24179,12 @@ int run_transformer_lm_training_json(
         << (init_gpt2_token_weight_fast_with_bf16_shadow_padded != nullptr ? "true" : "false") << ",\n"
         << "  \"token_weight_padded_init_fusion_enabled\": "
         << (token_weight_padded_init_fusion_enabled ? "true" : "false") << ",\n"
+        << "  \"concurrent_parameter_init_requested\": "
+        << (concurrent_parameter_init_requested != 0 ? "true" : "false") << ",\n"
+        << "  \"concurrent_parameter_init_enabled\": "
+        << (concurrent_parameter_init_enabled != 0 ? "true" : "false") << ",\n"
+        << "  \"concurrent_parameter_init_count\": "
+        << concurrent_parameter_init_count << ",\n"
         << "  \"token_weight_padded_bf16_pattern_enabled\": "
         << (token_weight_padded_bf16_pattern_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_padding_zero_launches_elided\": "

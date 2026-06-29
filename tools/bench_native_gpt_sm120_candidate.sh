@@ -970,6 +970,16 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_PADDED_SPECIALIZED=1"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002}"
     ;;
+  "concurrent_parameter_init"|"concurrent-parameter-init"|"parallel_parameter_init"|"parallel-parameter-init"|"concurrent_token_parameter_init"|"concurrent-token-parameter-init")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 3-sample, 10-step paired gate compared concurrent token-weight initialization plus non-token parameter fill against the current serial setup path and llm.kittens in one interleaved run. It rejected default promotion because setup_wall_ms regressed to 1.005540x mean and startup_plus_first_step_wall_ms regressed to 1.001449x mean, despite steady-state train_loop_cuda_event_steady_state_wall_ms_per_step improving to 0.999003x and candidate/reference steady-state improving to 0.996869x."
+    CANDIDATE_NOTE="Rejected diagnostic that overlaps token-weight initialization with the independent non-token parameter fill on separate nonblocking CUDA streams, then synchronizes before block BF16 refresh and training."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }concurrent_parameter_init_enabled"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.995 startup_plus_first_step_wall_ms=0.998 train_loop_wall_ms_per_step=1.001 train_loop_cuda_event_steady_state_wall_ms_per_step=1.001}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.999}"
+    ;;
   "pageable_token_host"|"pageable-token-host"|"token_host_pageable"|"token-host-pageable"|"token_pinned_host_off"|"token-pinned-host-off")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample full optimizer gate promoted pageable host token staging as the default. It changed token_id_host_staging from pinned to pageable, improved setup.token_arenas.total_ms to 0.790184x mean, kept train_loop_wall_ms_per_step at 1.000252x, steady-state CUDA-event step time at 1.000035x, and train_tokens_per_second at 0.999750x."

@@ -373,6 +373,18 @@ NATIVE_METRIC_PATHS = (
         ("block_backward_nvfp4_qkv_dweight_scale_bytes",),
     ),
     (
+        "concurrent_parameter_init_requested",
+        ("concurrent_parameter_init_requested",),
+    ),
+    (
+        "concurrent_parameter_init_enabled",
+        ("concurrent_parameter_init_enabled",),
+    ),
+    (
+        "concurrent_parameter_init_count",
+        ("concurrent_parameter_init_count",),
+    ),
+    (
         "lm_head_overlap_last_dweight_queue_count",
         ("lm_head_overlap_last_dweight_queue_count",),
     ),
@@ -1209,6 +1221,9 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "token_weight_bf16_padding_memset_count",
     "token_weight_bf16_adamw_refresh_fusion_enabled",
     "token_weight_vector4_strided_max_blocks",
+    "concurrent_parameter_init_requested",
+    "concurrent_parameter_init_enabled",
+    "concurrent_parameter_init_count",
     "adamw_bf16_shadow_refresh_strategy",
 )
 NATIVE_TEXT_METRIC_KEYS = (
