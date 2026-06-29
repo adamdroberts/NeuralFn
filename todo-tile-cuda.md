@@ -1079,10 +1079,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       directly, and the launcher rejects non-aligned row/hidden shapes before
       they can hit the scalar edge-tile path with too few threads. This is still
       diagnostic work; it does not close the true fused
-      classifier/dHidden/dWeight item. The dedicated RTX 5090 focused gate
-      proved the strict ABI and one true-fused launch, but rejected it at
-      `5.354603x` candidate/current-wrapper and `15.347515x`
-      candidate/reference-summed time.
+      classifier/dHidden/dWeight item. The 2026-06-29 focused rerun proved the
+      strict ABI and three true-fused launches, but rejected it at `21.559768x`
+      candidate/current-wrapper, `15.444372x` candidate/reference-summed, and
+      `12.048745x` candidate/reference-summed-with-logits time.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

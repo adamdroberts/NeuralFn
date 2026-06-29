@@ -221,11 +221,11 @@
 
 - Native LM-head true-fused diagnostics: rechecked
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`
-  on the CUDA 13.3.33 dedicated RTX 5090 with the focused trainer-chunk
-  preflight. The candidate proved the strict one-warp WMMA ABI path
+  with the focused trainer-chunk preflight. The candidate proved the strict
+  one-warp WMMA ABI path
   (`wmma-bf16-cooperative-tile-warp32-experimental`) but remains rejected at
-  `21.536283x` candidate/current-wrapper, `15.513484x`
-  candidate/reference-summed, and `12.103075x`
+  `21.559768x` candidate/current-wrapper, `15.444372x`
+  candidate/reference-summed, and `12.048745x`
   candidate/reference-summed-with-logits time. The default CUDA Graph LM-head
   wrapper stays active.
 
@@ -618,10 +618,11 @@
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`.
   Defaults are unchanged; this remains a diagnostic route until focused and
   same-script gates prove it beats the current CUDA Graph wrapper. The
-  dedicated RTX 5090 focused gate intentionally rejects it at `5.354603x`
-  candidate/current-wrapper and `15.347515x` candidate/reference-summed time,
-  with the strict ABI reporting
-  `wmma-bf16-cooperative-tile-warp32-experimental` and one true-fused launch.
+  focused gate intentionally rejects it at `21.559768x`
+  candidate/current-wrapper, `15.444372x` candidate/reference-summed, and
+  `12.048745x` candidate/reference-summed-with-logits time, with the strict ABI
+  reporting `wmma-bf16-cooperative-tile-warp32-experimental` and three
+  true-fused launches.
   Verification:
   `bash -n tools/bench_lm_head_backward_candidate.sh
   tools/bench_native_gpt_sm120_candidate.sh`,
