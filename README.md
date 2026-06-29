@@ -33,8 +33,12 @@ graph-backed command path uses them.
 Dense GPT native training defaults to periodic validation loss every 1000
 optimizer steps over 20 validation batches. Pass `--eval-every-steps N` to
 change the cadence, or `--eval-batches N` / `--eval-batch-size N` to bound the
-validation work for smoke tests. The native trainer also requires optimized
-CUDA Tile routes by default: missing many-tensor AdamW symbols, attention
+validation work for smoke tests. Native AdamW accepts `--beta1`, `--beta2`,
+`--adam-eps`, and `--grad-clip-norm` in addition to learning rate and weight
+decay; plan/runtime JSON reports the effective optimizer object, and the GPT-2
+evo native delegate forwards those values to the dense CUDA Tile trainer. The
+native trainer also requires optimized CUDA Tile routes by default: missing
+many-tensor AdamW symbols, attention
 row/scalar fallbacks, or TF32/SGEMM linear fallback launches fail the run and
 are reported as `optimized_kernel_contract_*` JSON fields. Use
 `--allow-basic-kernel-fallback` only for diagnostics or rejected-candidate

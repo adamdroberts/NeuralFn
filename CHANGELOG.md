@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native dense GPT AdamW overrides: `nfn_gpt_native_train` now owns parsed
+  `--beta1`, `--beta2`, `--adam-eps`, and `--grad-clip-norm` fields, uses them
+  in the CUDA Tile transformer-LM gradient clipping and fused AdamW calls, and
+  reports the effective `optimizer` object in plan/runtime JSON. The existing
+  `--weight-decay` flag now also feeds the transformer-LM optimizer descriptor
+  table instead of relying on the compiled default. The GPT-2-evo native
+  delegate forwards those optimizer knobs to the dense GPT layer-evo trainer
+  and formats floating-point arguments without rounding `1e-8` to zero.
+  Verification: focused native GPT C++ CLI tests, native artifact rebuild, and
+  no-Torch dependency verifier.
+
 - CUDA 13 one-step parity smoke validation: `tools/validate_sm120_cuda13.sh`
   now omits the default steady-state parity ratio gate when
   `NFN_SM120_CUDA13_PARITY_STEPS` is below `2` and the caller did not

@@ -353,6 +353,13 @@ honors `--eval-batch-size` as the active validation forward batch size, bounded
 by the training batch arena, and keeps small validation batches on the BF16
 public-vocab LM-head loss path instead of the older float logits workspace.
 
+Dense GPT native AdamW uses `beta1=0.9`, `beta2=0.95`, `adam_eps=1e-8`, and
+`grad_clip_norm=1.0` by default. The compiled CUDA Tile trainer accepts
+`--beta1`, `--beta2`, `--adam-eps`, and `--grad-clip-norm`, reports the
+effective `optimizer` object in plan/runtime JSON, and the GPT-2-evo native
+delegate forwards those values to the dense GPT layer-evo trainer without
+rounding scientific-notation values such as `1e-8` to zero.
+
 For workstation runs that should avoid both Python and Bash startup before the
 native exec boundary, build `build/nfn_train_gpt` with
 `bash tools/build_train_gpt_cli.sh`. The SM120-labelled alias remains available

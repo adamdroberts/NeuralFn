@@ -202,6 +202,10 @@ struct Config {
     double learning_rate = 0.0006;
     double final_lr_fraction = 0.0;
     double weight_decay = 0.1;
+    double beta1 = 0.9;
+    double beta2 = 0.95;
+    double adam_eps = 1e-8;
+    double grad_clip_norm = 1.0;
     double evo_layer_mutation_scale = 0.02;
     bool allow_train_as_val = false;
     bool dry_run = false;
@@ -635,7 +639,8 @@ void print_usage(const char* program) {
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
         << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --batch-size, --train-seq-len,\n"
-        << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --warmup-steps, and --max-steps.\n"
+        << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --beta1, --beta2, --adam-eps,\n"
+        << "  --grad-clip-norm, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
         << kDefaultLmHeadRowChunkSize << ".\n"
         << "  --layer-evo                      Enable native device-side evo ABI cadence for the selected block\n"
@@ -4773,6 +4778,14 @@ bool print_tile_plan(
         << ", \"generate_tokens\": " << cfg.generate_tokens
         << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
+        << "  \"optimizer\": {\"profile\": \"adamw\""
+        << ", \"learning_rate\": " << cfg.learning_rate
+        << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
+        << ", \"weight_decay\": " << cfg.weight_decay
+        << ", \"beta1\": " << cfg.beta1
+        << ", \"beta2\": " << cfg.beta2
+        << ", \"adam_eps\": " << cfg.adam_eps
+        << ", \"grad_clip_norm\": " << cfg.grad_clip_norm << "},\n"
         << "  \"layer_evo\": {\"enabled\": " << (cfg.layer_evo_enabled ? "true" : "false")
         << ", \"graph_editor_tensor_flow\": false"
         << ", \"target_parameter\": \"block_" << cfg.evo_layer_index << ".ln1.weight\""
@@ -7964,6 +7977,14 @@ int run_embedding_lm_training_json(
         << "  \"tokens_processed\": " << tokens_processed << ",\n"
         << "  \"learning_rate\": " << cfg.learning_rate << ",\n"
         << "  \"weight_decay\": " << cfg.weight_decay << ",\n"
+        << "  \"optimizer\": {\"profile\": \"adamw\""
+        << ", \"learning_rate\": " << cfg.learning_rate
+        << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
+        << ", \"weight_decay\": " << cfg.weight_decay
+        << ", \"beta1\": " << cfg.beta1
+        << ", \"beta2\": " << cfg.beta2
+        << ", \"adam_eps\": " << cfg.adam_eps
+        << ", \"grad_clip_norm\": " << cfg.grad_clip_norm << "},\n"
         << "  \"final_loss_sum\": " << final_loss_sum << ",\n"
         << "  \"final_loss_mean\": " << final_loss_mean << ",\n"
         << "  \"validation\": {\n"
@@ -11094,13 +11115,13 @@ int run_transformer_lm_training_json(
     constexpr float kFcWeight = 0.02f;
     constexpr float kMlpProjWeight = 0.01f;
     constexpr float kResidualScale = 1.0f;
-    constexpr float kBeta1 = 0.9f;
-    constexpr float kBeta2 = 0.95f;
-    constexpr float kEps = 1e-8f;
     constexpr float kNormEps = 1e-5f;
-    constexpr float kWeightDecay = 0.1f;
-    constexpr float kGradClipNorm = 1.0f;
     constexpr float kClipEps = 1e-6f;
+    const float weight_decay = static_cast<float>(cfg.weight_decay);
+    const float beta1 = static_cast<float>(cfg.beta1);
+    const float beta2 = static_cast<float>(cfg.beta2);
+    const float adam_eps = static_cast<float>(cfg.adam_eps);
+    const float grad_clip_norm = static_cast<float>(cfg.grad_clip_norm);
     constexpr std::int64_t kTileSize = 1024;
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
@@ -17137,24 +17158,24 @@ int run_transformer_lm_training_json(
             token_avg,
             token_avg_sq,
             kTokenWeightElements,
-            kWeightDecay,
+            weight_decay,
             token_bf16_shadow_offset);
-        add(position_weight, accum_grad_position_weight, position_avg, position_avg_sq, position_weight_elements, kWeightDecay);
+        add(position_weight, accum_grad_position_weight, position_avg, position_avg_sq, position_weight_elements, weight_decay);
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockParams& block = blocks[i];
             const std::int64_t shadow_base =
                 static_cast<std::int64_t>(i) * kBlockWeightBf16ElementsPerBlock;
             add(block.ln1_weight, block.accum_grad_ln1_weight, block.ln1_weight_avg, block.ln1_weight_avg_sq, kDim, 0.0f);
             add(block.ln1_bias, block.accum_grad_ln1_bias, block.ln1_bias_avg, block.ln1_bias_avg_sq, kDim, 0.0f);
-            add(block.qkv_weight, block.accum_grad_qkv_weight, block.qkv_avg, block.qkv_avg_sq, kQkvWeightElements, kWeightDecay, shadow_base, block.qkv_weight_bf16, block.accum_grad_qkv_weight_bf16);
+            add(block.qkv_weight, block.accum_grad_qkv_weight, block.qkv_avg, block.qkv_avg_sq, kQkvWeightElements, weight_decay, shadow_base, block.qkv_weight_bf16, block.accum_grad_qkv_weight_bf16);
             add(block.qkv_bias, block.accum_grad_qkv_bias, block.qkv_bias_avg, block.qkv_bias_avg_sq, kQkvDim, 0.0f);
-            add(block.attn_proj_weight, block.accum_grad_attn_proj_weight, block.attn_proj_avg, block.attn_proj_avg_sq, kAttnProjWeightElements, kWeightDecay, shadow_base + kQkvWeightElements, block.attn_proj_weight_bf16);
+            add(block.attn_proj_weight, block.accum_grad_attn_proj_weight, block.attn_proj_avg, block.attn_proj_avg_sq, kAttnProjWeightElements, weight_decay, shadow_base + kQkvWeightElements, block.attn_proj_weight_bf16);
             add(block.attn_proj_bias, block.accum_grad_attn_proj_bias, block.attn_proj_bias_avg, block.attn_proj_bias_avg_sq, kDim, 0.0f);
             add(block.ln2_weight, block.accum_grad_ln2_weight, block.ln2_weight_avg, block.ln2_weight_avg_sq, kDim, 0.0f);
             add(block.ln2_bias, block.accum_grad_ln2_bias, block.ln2_bias_avg, block.ln2_bias_avg_sq, kDim, 0.0f);
-            add(block.fc_weight, block.accum_grad_fc_weight, block.fc_avg, block.fc_avg_sq, kFcWeightElements, kWeightDecay, shadow_base + kQkvWeightElements + kAttnProjWeightElements, block.fc_weight_bf16, block.accum_grad_fc_weight_bf16);
+            add(block.fc_weight, block.accum_grad_fc_weight, block.fc_avg, block.fc_avg_sq, kFcWeightElements, weight_decay, shadow_base + kQkvWeightElements + kAttnProjWeightElements, block.fc_weight_bf16, block.accum_grad_fc_weight_bf16);
             add(block.fc_bias, block.accum_grad_fc_bias, block.fc_bias_avg, block.fc_bias_avg_sq, kHidden, 0.0f);
-            add(block.mlp_proj_weight, block.accum_grad_mlp_proj_weight, block.mlp_proj_avg, block.mlp_proj_avg_sq, kMlpProjWeightElements, kWeightDecay, shadow_base + kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements, block.mlp_proj_weight_bf16);
+            add(block.mlp_proj_weight, block.accum_grad_mlp_proj_weight, block.mlp_proj_avg, block.mlp_proj_avg_sq, kMlpProjWeightElements, weight_decay, shadow_base + kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements, block.mlp_proj_weight_bf16);
             add(block.mlp_proj_bias, block.accum_grad_mlp_proj_bias, block.mlp_proj_bias_avg, block.mlp_proj_bias_avg_sq, kDim, 0.0f);
         }
         add(lnf_weight, accum_grad_lnf_weight, lnf_weight_avg, lnf_weight_avg_sq, kDim, 0.0f);
@@ -18379,7 +18400,7 @@ int run_transformer_lm_training_json(
             }
         }
         if (error.empty()) {
-            run(clip_scale(grad_sumsq_partials, grad_clip_scale, gradient_partial_count, kGradClipNorm, kClipEps, nullptr),
+            run(clip_scale(grad_sumsq_partials, grad_clip_scale, gradient_partial_count, grad_clip_norm, kClipEps, nullptr),
                 "gradient_clip_scale");
         }
         stage_end(stage_event, "gradient_clip");
@@ -21991,8 +22012,8 @@ int run_transformer_lm_training_json(
         flush_bf16_block_dweight_staging();
         clip_gradients();
 
-        const float bias_correction1 = 1.0f - std::pow(kBeta1, static_cast<float>(step));
-        const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(kBeta2, static_cast<float>(step)));
+        const float bias_correction1 = 1.0f - std::pow(beta1, static_cast<float>(step));
+        const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(beta2, static_cast<float>(step)));
         if (error.empty()) {
             const std::int64_t stage_event = stage_begin("adamw_update");
             bool token_weight_shadow_refreshed_by_adamw = false;
@@ -22016,9 +22037,9 @@ int run_transformer_lm_training_json(
                                 adamw_float_update_descriptor_count,
                                 adamw_float_update_max_elements,
                                 static_cast<float>(cfg.learning_rate),
-                                kBeta1,
-                                kBeta2,
-                                kEps,
+                                beta1,
+                                beta2,
+                                adam_eps,
                                 bias_correction1,
                                 sqrt_bias_correction2,
                                 nullptr),
@@ -22040,9 +22061,9 @@ int run_transformer_lm_training_json(
                                 adamw_float_update_descriptor_count,
                                 adamw_float_update_max_elements,
                                 static_cast<float>(cfg.learning_rate),
-                                kBeta1,
-                                kBeta2,
-                                kEps,
+                                beta1,
+                                beta2,
+                                adam_eps,
                                 bias_correction1,
                                 sqrt_bias_correction2,
                                 nullptr),
@@ -22065,9 +22086,9 @@ int run_transformer_lm_training_json(
                             adamw_bf16_param_descriptor_count,
                             adamw_bf16_param_max_elements,
                             static_cast<float>(cfg.learning_rate),
-                            kBeta1,
-                            kBeta2,
-                            kEps,
+                            beta1,
+                            beta2,
+                            adam_eps,
                             bias_correction1,
                             sqrt_bias_correction2,
                             nullptr),
@@ -22089,9 +22110,9 @@ int run_transformer_lm_training_json(
                             adamw_bf16_param_bf16_grad_descriptor_count,
                             adamw_bf16_param_bf16_grad_max_elements,
                             static_cast<float>(cfg.learning_rate),
-                            kBeta1,
-                            kBeta2,
-                            kEps,
+                            beta1,
+                            beta2,
+                            adam_eps,
                             bias_correction1,
                             sqrt_bias_correction2,
                             nullptr),
@@ -22115,9 +22136,9 @@ int run_transformer_lm_training_json(
                         adamw_descriptor_count,
                         adamw_max_elements,
                         static_cast<float>(cfg.learning_rate),
-                        kBeta1,
-                        kBeta2,
-                        kEps,
+                        beta1,
+                        beta2,
+                        adam_eps,
                         bias_correction1,
                         sqrt_bias_correction2,
                         nullptr),
@@ -22134,9 +22155,9 @@ int run_transformer_lm_training_json(
                         adamw_descriptor_count,
                         adamw_max_elements,
                         static_cast<float>(cfg.learning_rate),
-                        kBeta1,
-                        kBeta2,
-                        kEps,
+                        beta1,
+                        beta2,
+                        adam_eps,
                         bias_correction1,
                         sqrt_bias_correction2,
                         nullptr),
@@ -26191,7 +26212,7 @@ int run_transformer_lm_training_json(
         << "    \"residual_backward_fused\": true\n"
         << "  },\n"
         << "  \"gradient_partial_count\": " << gradient_partial_count << ",\n"
-        << "  \"gradient_clip_norm\": " << kGradClipNorm << ",\n"
+        << "  \"gradient_clip_norm\": " << cfg.grad_clip_norm << ",\n"
         << "  \"sample_gradient_clip_scale\": " << sampled_clip_scale << ",\n"
         << "  \"final_loss_sum\": " << final_loss_sum << ",\n"
         << "  \"final_loss_mean\": " << final_loss_mean << ",\n"
@@ -27037,6 +27058,14 @@ int main(int argc, char** argv) {
             cfg.final_lr_fraction = parse_double(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--weight-decay") {
             cfg.weight_decay = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--beta1") {
+            cfg.beta1 = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--beta2") {
+            cfg.beta2 = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--adam-eps") {
+            cfg.adam_eps = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--grad-clip-norm") {
+            cfg.grad_clip_norm = parse_double(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--warmup-steps") {
             cfg.warmup_steps = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--max-steps") {

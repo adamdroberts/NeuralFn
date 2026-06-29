@@ -6412,6 +6412,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "--dry-run",
             "--tile-cuda-activation-dtype",
             "nvfp4",
+            "--beta1",
+            "0.87",
+            "--beta2",
+            "0.98",
+            "--adam-eps",
+            "1e-8",
+            "--grad-clip-norm",
+            "0.75",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -6426,6 +6434,16 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["template_name"] == "gpt"
     assert default_payload["schedule"]["eval_every_steps"] == 1000
     assert default_payload["schedule"]["warmup_steps"] == 600
+    assert default_payload["optimizer"] == {
+        "profile": "adamw",
+        "learning_rate": 0.0006,
+        "final_lr_fraction": 0.0,
+        "weight_decay": 0.1,
+        "beta1": 0.87,
+        "beta2": 0.98,
+        "adam_eps": 1e-8,
+        "grad_clip_norm": 0.75,
+    }
     assert default_payload["resolved_native_template_name"] == "gpt2"
     assert default_payload["graph_file"] == ""
     assert default_payload["graph_file_exists"] is False
@@ -10255,6 +10273,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "/tmp/native-cache",
             "--eval-every-steps",
             "1000",
+            "--beta1",
+            "0.87",
+            "--beta2",
+            "0.98",
+            "--adam-eps",
+            "1e-8",
+            "--grad-clip-norm",
+            "0.75",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -10269,6 +10295,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--tile-cuda-activation-dtype nvfp4" in evo_delegate_print_command.stdout
     assert "--dataset-alias /tmp/native-cache" in evo_delegate_print_command.stdout
     assert "--eval-every-steps 1000" in evo_delegate_print_command.stdout
+    assert "--beta1 0.87" in evo_delegate_print_command.stdout
+    assert "--beta2 0.98" in evo_delegate_print_command.stdout
+    assert "--adam-eps 1e-08" in evo_delegate_print_command.stdout
+    assert "--grad-clip-norm 0.75" in evo_delegate_print_command.stdout
     assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
     assert "--startup-only" in evo_delegate_print_command.stdout
     assert "--native-cuda-startup-only" not in evo_delegate_print_command.stdout

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -231,6 +232,12 @@ std::string output_dir_for_dense_delegate(const Gpt2EvoPlan& plan) {
         return output_path.parent_path().string();
     }
     return "artifacts";
+}
+
+std::string format_cli_double(double value) {
+    std::ostringstream out;
+    out << std::setprecision(12) << std::defaultfloat << value;
+    return out.str();
 }
 
 std::vector<std::string> cuda_runtime_candidates(const Gpt2EvoPlan& plan) {
@@ -1043,9 +1050,17 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
     args.push_back("--warmup-steps");
     args.push_back(std::to_string(plan.warmup_steps));
     args.push_back("--learning-rate");
-    args.push_back(std::to_string(plan.learning_rate));
+    args.push_back(format_cli_double(plan.learning_rate));
     args.push_back("--weight-decay");
-    args.push_back(std::to_string(plan.weight_decay));
+    args.push_back(format_cli_double(plan.weight_decay));
+    args.push_back("--beta1");
+    args.push_back(format_cli_double(plan.beta1));
+    args.push_back("--beta2");
+    args.push_back(format_cli_double(plan.beta2));
+    args.push_back("--adam-eps");
+    args.push_back(format_cli_double(plan.adam_eps));
+    args.push_back("--grad-clip-norm");
+    args.push_back(format_cli_double(plan.grad_clip_norm));
     args.push_back("--tile-cuda-activation-dtype");
     args.push_back(plan.tile_activation_dtype);
     if (plan.require_native_nvfp4_activation_packing) {
@@ -1068,7 +1083,7 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
         args.push_back("--evo-layer-population");
         args.push_back(std::to_string(plan.evo_layer_population));
         args.push_back("--evo-layer-mutation-scale");
-        args.push_back(std::to_string(plan.evo_layer_mutation_scale));
+        args.push_back(format_cli_double(plan.evo_layer_mutation_scale));
     } else {
         args.push_back("--no-layer-evo");
     }
