@@ -2978,7 +2978,10 @@ path. They remain diagnostic until they beat the default CUDA Graph wrapper and
 llm.kittens reference gates. The 4x4 full-loop gate on 2026-06-27 proved the
 route (`lm_head_classifier_true_fused_launch_count` `0 -> 16`) but rejected it
 at `30.645660x` train-loop wall time and `129.582841x` LM-head backward time
-versus the CUDA Graph wrapper.
+versus the CUDA Graph wrapper. Unknown
+`NFN_LM_HEAD_BACKWARD_PROFILE` values print the complete focused profile list,
+including the rejected tile4 diagnostic profile, so profile-name mistakes fail
+before building or launching CUDA work.
 
 For the tile16 strict body, add
 `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1` to the same

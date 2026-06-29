@@ -3411,6 +3411,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert '"auto"|"dedicated"|"dedicated-auto")' in wrapper
     assert 'export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
+    assert "PROFILE_CHOICES=" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
     assert "trainer-chunk-serial-graph-body|trainer_chunk_serial_graph_body" in wrapper
     assert "NFN_TILE_CUDA_LM_HEAD_GRAPH_BODY_SERIAL" in wrapper
@@ -3423,6 +3424,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "graph_body_tile_dweight_fallback_count" in wrapper
     assert "trainer-chunk-strict|trainer_chunk_strict" in wrapper
     assert "trainer-chunk-true-fused|trainer_chunk_true_fused" in wrapper
+    assert (
+        "trainer-chunk-true-fused-tile4, true-fused-cooperative-smoke"
+        in wrapper
+    )
     assert "true-fused-cooperative-smoke|true_fused_cooperative_smoke" in wrapper
     assert "strict-true-fused-smoke|strict_true_fused_smoke" in wrapper
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE" in wrapper

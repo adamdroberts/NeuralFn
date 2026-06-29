@@ -25,6 +25,7 @@ DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_fused_kern
 REJECTED_PROFILE=""
 REJECTED_REASON=""
 FORCE_REBUILD_TILE_OPS=0
+PROFILE_CHOICES="smoke, trainer-chunk, trainer-chunk-serial-graph-body, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile16-wmma, trainer-chunk-true-fused-tile16-wmma-warp32, trainer-chunk-true-fused-tile16-wmma-exp2-ce, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, trainer-chunk-true-fused-tile4, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins"
 
 case "${PROFILE}" in
   smoke)
@@ -283,7 +284,7 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-serial-graph-body, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile16-wmma, trainer-chunk-true-fused-tile16-wmma-warp32, trainer-chunk-true-fused-tile16-wmma-exp2-ce, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected ${PROFILE_CHOICES})" >&2
     exit 2
     ;;
 esac

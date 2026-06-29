@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- LM-head benchmark profile diagnostics: `tools/bench_lm_head_backward_candidate.sh`
+  now keeps its unknown-profile error text aligned with the implemented focused
+  profile set, including `trainer-chunk-true-fused-tile4`. This makes mistyped
+  LM-head candidate profiles fail fast with the complete accepted list before
+  building Tile ops or launching CUDA work. Verification: shell syntax, focused
+  native GPT source test, and diff check.
+
 - Native no-Torch full-requirements guard: `tools/check_native_no_torch_deps.py`
   now also scans `requirements-full.txt` for `torch`, `torchvision`, and
   `torchaudio`. The default `requirements.txt` gate still blocks all non-core
