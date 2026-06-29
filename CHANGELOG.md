@@ -427,7 +427,7 @@
   profile continues to gate steady-state separately from first-step timing.
 - Native GPT benchmarking: refreshed the rejected
   `trainer-chunk-true-fused-tile16-wmma-exp2-ce` LM-head preflight on the
-  dedicated RTX 5090 after the CUDA 13.3.33 reinstall. The branch still proves
+  CUDA 13.3.33 dedicated RTX 5090 path. The branch still proves
   `wmma-bf16-cooperative-tile-exp2-ce-experimental` and the strict true-fused
   ABI path, but rejects at `11.873753x` candidate/current-wrapper,
   `8.379202x` candidate/reference-summed, and `6.472768x`

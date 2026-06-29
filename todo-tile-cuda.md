@@ -1059,7 +1059,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       into that focused preflight so known-slow strict sections fail before the
       full paired trainer benchmark starts.
       A 2026-06-29 CUDA 13.3.33 one-iteration focused rerun on the dedicated
-      RTX 5090 reconfirmed the same branch as rejected after the CUDA reinstall:
+      RTX 5090 reconfirmed the same branch as rejected:
       `11.873753x` candidate/current-wrapper, `8.379202x`
       candidate/reference-summed, and `6.472768x`
       candidate/reference-summed-with-logits time. The strict body took

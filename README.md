@@ -100,10 +100,9 @@ and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
 or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed
 artifacts somewhere other than `build/`. After rebuilding, run
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
-to confirm the extension executes GPU tests instead of skipping. After the
-CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
-green for the revisited native and Tile CUDA gates. After reinstalling the WSL
-CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
+to confirm the extension executes GPU tests instead of skipping. The current
+CUDA Toolkit 13.3.33 dedicated RTX 5090 path is correctness green for the
+native and Tile CUDA gates. The GPU-visible full suite passed with
 `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass. The
 CUDA 13.3 SM120 validator now runs
@@ -113,17 +112,16 @@ first refreshes missing or stale native artifacts through their mapped build
 scripts when a builder is registered. Set
 `NFN_SM120_CUDA13_RUN_NO_TORCH=0` only for a narrow CUDA-only bisection after
 the no-Torch gate has already passed. Set `NFN_SM120_CUDA13_SMOKE_ONLY=1` for
-a quick post-install GPU health check that keeps the native CUDA smokes and
+a quick GPU health check that keeps the native CUDA smokes and
 runtime contract but skips the LM-head microbench, full native pytest leg,
 candidate benchmark, and llm.kittens parity run unless those legs are explicitly
-re-enabled. The 2026-06-28 no-Torch rerun after the
-CUDA toolkit refresh first failed because `build/nfn_gpt2_native_train` and
+re-enabled. The 2026-06-28 no-Torch rerun first failed because `build/nfn_gpt2_native_train` and
 `build/libnfn_native_train_tile_ops_tk.so` were stale, then passed with
 `--rebuild-stale` after rebuilding those two artifacts. The standalone focused
 native GPT pytest rerun reported `111 passed, 2 skipped`, and the full
 `tools/validate_sm120_cuda13.sh` gate passed with its pytest leg reporting
 `112 passed, 1 skipped`.
-The current post-reinstall paired llm.kittens parity checks on the
+The current paired llm.kittens parity checks on the
 display-disabled RTX 5090 keep the selected GPU idle before and after each
 sample. A fresh 2026-06-28 5-step, 3-sample check without stage timing measured
 NeuralFn at `2464.627 ms/step` and `212725` tokens/sec versus llm.kittens at
