@@ -165,6 +165,8 @@ class NativeTrainRunConfig:
 
     model_family: str = "gpt"
     args: tuple[str, ...] = ()
+    template_name: str = ""
+    graph_file: str = ""
     native_train_cli: str | None = None
     cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
@@ -221,6 +223,22 @@ class NativeTrainRunConfig:
             raise ValueError(
                 "fast_startup and require_cooperative_lm_head_backward are only supported for dense GPT native train families"
             )
+        if (str(self.template_name or "").strip() or str(self.graph_file or "").strip()) and (
+            normalized_family not in DENSE_GPT_MODEL_FAMILIES
+        ):
+            raise ValueError("template_name and graph_file are only supported for dense GPT native train families")
+        if str(self.template_name or "").strip() and not _native_train_args_have_option(
+            resolved_args,
+            "--template-name",
+            "--native-cuda-template-name",
+        ):
+            resolved_args.extend(["--template-name", str(self.template_name).strip()])
+        if str(self.graph_file or "").strip() and not _native_train_args_have_option(
+            resolved_args,
+            "--graph-file",
+            "--native-cuda-graph-file",
+        ):
+            resolved_args.extend(["--graph-file", str(self.graph_file).strip()])
         if self.fast_startup and (
             "--fast-startup" not in resolved_args
             and "--native-cuda-fast-startup" not in resolved_args
@@ -232,6 +250,17 @@ class NativeTrainRunConfig:
         ):
             resolved_args.append("--require-cooperative-lm-head-backward")
         return tuple(resolved_args)
+
+
+def _native_train_args_have_option(args: Sequence[str], *names: str) -> bool:
+    option_names = set(names)
+    for arg in args:
+        text = str(arg)
+        if text in option_names:
+            return True
+        if any(text.startswith(f"{name}=") for name in option_names):
+            return True
+    return False
 
 
 def normalize_native_model_family(value: str | None) -> str:
@@ -380,6 +409,8 @@ def build_native_train_run_config(
     model_family: str = "gpt",
     args: Sequence[str] | None = None,
     *,
+    template_name: str = "",
+    graph_file: str = "",
     native_train_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
     fast_startup: bool = False,
@@ -388,6 +419,8 @@ def build_native_train_run_config(
     return NativeTrainRunConfig(
         model_family=normalize_native_model_family(model_family),
         args=tuple(str(arg) for arg in (args or ())),
+        template_name=str(template_name or ""),
+        graph_file=str(graph_file or ""),
         native_train_cli=native_train_cli,
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         fast_startup=bool(fast_startup),
@@ -399,6 +432,8 @@ def build_native_sm120_gpt_run_config(
     model_family: str = "gpt",
     args: Sequence[str] | None = None,
     *,
+    template_name: str = "",
+    graph_file: str = "",
     native_sm120_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
     fast_startup: bool = False,
@@ -412,6 +447,8 @@ def build_native_sm120_gpt_run_config(
     return NativeTrainRunConfig(
         model_family=normalized_family,
         args=tuple(str(arg) for arg in (args or ())),
+        template_name=str(template_name or ""),
+        graph_file=str(graph_file or ""),
         native_train_cli=resolve_native_sm120_train_cli(native_sm120_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         fast_startup=bool(fast_startup),
@@ -423,6 +460,8 @@ def build_native_gpt_launcher_run_config(
     model_family: str = "gpt",
     args: Sequence[str] | None = None,
     *,
+    template_name: str = "",
+    graph_file: str = "",
     native_gpt_launcher_cli: str | None = None,
     require_cooperative_lm_head_backward: bool = False,
     fast_startup: bool = False,
@@ -436,6 +475,8 @@ def build_native_gpt_launcher_run_config(
     return NativeTrainRunConfig(
         model_family=normalized_family,
         args=tuple(str(arg) for arg in (args or ())),
+        template_name=str(template_name or ""),
+        graph_file=str(graph_file or ""),
         native_train_cli=resolve_native_gpt_launcher_train_cli(native_gpt_launcher_cli),
         require_cooperative_lm_head_backward=bool(require_cooperative_lm_head_backward),
         fast_startup=bool(fast_startup),

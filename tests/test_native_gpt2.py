@@ -5040,6 +5040,38 @@ def test_native_train_run_config_and_subprocess_runner(
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
+    templated_cfg = build_native_train_run_config(
+        "gpt",
+        ["--tinystories", "--dry-run"],
+        template_name="gpt3",
+        graph_file="/tmp/native-compatible-gpt.json",
+    )
+    templated_argv = templated_cfg.argv()
+    assert "--template-name" in templated_argv
+    assert templated_argv[templated_argv.index("--template-name") + 1] == "gpt3"
+    assert "--graph-file" in templated_argv
+    assert templated_argv[templated_argv.index("--graph-file") + 1] == "/tmp/native-compatible-gpt.json"
+
+    duplicate_template_cfg = build_native_train_run_config(
+        "gpt",
+        ["--template-name", "nanogpt", "--graph-file=/tmp/explicit.json"],
+        template_name="gpt3",
+        graph_file="/tmp/ignored.json",
+    )
+    duplicate_template_argv = duplicate_template_cfg.argv()
+    assert duplicate_template_argv.count("--template-name") == 1
+    assert "gpt3" not in duplicate_template_argv
+    assert "--graph-file" not in duplicate_template_argv
+    assert "--graph-file=/tmp/explicit.json" in duplicate_template_argv
+
+    unsupported_template_cfg = build_native_train_run_config(
+        "llama",
+        ["--dry-run"],
+        template_name="gpt3",
+    )
+    with pytest.raises(ValueError, match="template_name and graph_file"):
+        unsupported_template_cfg.argv()
+
     token_lm_cfg = build_native_train_run_config(
         "nanogpt",
         [
@@ -5078,17 +5110,38 @@ def test_native_sm120_gpt_run_config_uses_compiled_launcher(
     monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
     monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
 
-    cfg = build_native_sm120_gpt_run_config("gpt3", ["--tinystories", "--dry-run"])
+    cfg = build_native_sm120_gpt_run_config(
+        "gpt3",
+        ["--tinystories", "--dry-run"],
+        template_name="gpt3",
+        graph_file="/tmp/gpt3-custom.json",
+    )
 
     assert resolve_native_sm120_train_cli() == str(sm120_cli)
-    assert cfg.argv() == [str(sm120_cli), "--base-model", "gpt3", "--tinystories", "--dry-run"]
+    assert cfg.argv() == [
+        str(sm120_cli),
+        "--base-model",
+        "gpt3",
+        "--tinystories",
+        "--dry-run",
+        "--template-name",
+        "gpt3",
+        "--graph-file",
+        "/tmp/gpt3-custom.json",
+    ]
     assert cfg.to_dict()["model_family"] == "gpt3"
+    assert cfg.to_dict()["template_name"] == "gpt3"
+    assert cfg.to_dict()["graph_file"] == "/tmp/gpt3-custom.json"
     assert run_native_train(cfg, runner="compiled-cli") == 47
     assert output.read_text(encoding="utf-8").splitlines() == [
         "--base-model",
         "gpt3",
         "--tinystories",
         "--dry-run",
+        "--template-name",
+        "gpt3",
+        "--graph-file",
+        "/tmp/gpt3-custom.json",
     ]
 
 
@@ -6000,19 +6053,40 @@ def test_native_train_cpp_binding_builds_and_runs(
     assert binding.exists()
 
     cli = tmp_path / "nfn_native_train"
-    cli.write_text("#!/usr/bin/env bash\nexit 31\n", encoding="utf-8")
+    binding_args = tmp_path / "native-train-binding-args.txt"
+    cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_BINDING_ARGS\"\n"
+        "exit 31\n",
+        encoding="utf-8",
+    )
     cli.chmod(0o755)
     monkeypatch.setattr(neuralfn, "__path__", list(neuralfn.__path__) + [str(package_dir)])
     monkeypatch.delitem(sys.modules, "neuralfn_native_train", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_train", raising=False)
     monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(cli))
-    cfg = build_native_train_run_config("gpt2", ["--dry-run"])
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_BINDING_ARGS", str(binding_args))
+    cfg = build_native_train_run_config(
+        "gpt2",
+        ["--dry-run"],
+        template_name="gpt2_modern",
+        graph_file="/tmp/sdk-native-gpt.json",
+    )
 
     status = native_train_runner_status("auto")
 
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_train"
     assert run_native_train(cfg, runner="auto") == 31
+    assert binding_args.read_text(encoding="utf-8").splitlines() == [
+        "--base-model",
+        "gpt2",
+        "--dry-run",
+        "--template-name",
+        "gpt2_modern",
+        "--graph-file",
+        "/tmp/sdk-native-gpt.json",
+    ]
 
     raw_cli = tmp_path / "raw_train_gpt2cu"
     raw_cli.write_text("#!/usr/bin/env bash\nexit 41\n", encoding="utf-8")

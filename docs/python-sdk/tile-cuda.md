@@ -3303,6 +3303,13 @@ SDK plus generic C++ binding reject Python/shell launchers (`python`, `bash`,
 `strict_native_command=False` only for diagnostic command-resolution tests; real
 training should resolve to a compiled native trainer or the unified C++
 frontend.
+`NativeTrainRunConfig`, `build_native_train_run_config()`,
+`build_native_sm120_gpt_run_config()`, and
+`build_native_gpt_launcher_run_config()` accept `template_name=` and
+`graph_file=` for dense GPT families. The resolved compiled command appends
+`--template-name` and `--graph-file` only when those flags are not already
+present in raw `args`, preserving explicit CLI overrides while making GPT preset
+and native-compatible custom graph selection first-class in the SDK.
 Rebuilt GPT bindings also expose `run_gpt_capture`, `run_gpt2_capture`, and
 `run_infer`, which run a compiled native command through the C++ binding while
 returning captured stdout and stderr for SDK-native checkpoint sampling and

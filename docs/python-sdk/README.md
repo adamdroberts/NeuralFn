@@ -110,6 +110,10 @@ and native checkpoint sampling default `cuda_visible_devices="0"` and
 `cuda_device_max_connections="1"` before launching subprocess, launcher,
 compiled-CLI, or binding runs; the C++ binding uses `posix_spawnp()` instead of
 `fork()` and defaults `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
+The generic `NativeTrainRunConfig` builders also accept `template_name=` and
+`graph_file=` for dense GPT families, appending `--template-name` and
+`--graph-file` to the compiled native command once so SDK callers can select GPT
+presets or compatible custom graphs without manually editing raw CLI args.
 The explicit `dedicated` selector remains available when a benchmark needs
 `nvidia-smi` to choose a display-disabled CUDA GPU, but normal SDK training
 uses ordinal `0` to avoid that startup probe when `CUDA_VISIBLE_DEVICES` is

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native SDK GPT architecture selection: `NativeTrainRunConfig`,
+  `build_native_train_run_config()`, `build_native_sm120_gpt_run_config()`, and
+  `build_native_gpt_launcher_run_config()` now accept `template_name=` and
+  `graph_file=` for dense GPT families. The resolved compiled C++ command
+  appends `--template-name` and `--graph-file` once when raw `args` have not
+  already supplied those options, and rejects those fields for non-dense native
+  families. This makes the universal GPT native trainer selectable from the SDK
+  without routing architecture selection through graph-editor nodes or Torch.
+
 - Native short-run prewarm policy: auto fast-startup training now keeps the
   TK QKV first-use prewarm enabled and enables LM-head CUDA Graph prewarm for
   real multi-step training runs with at least three optimizer steps. One-step
