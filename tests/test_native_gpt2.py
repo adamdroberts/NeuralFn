@@ -3741,6 +3741,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "train_tokens_per_second=1.000056x" in bench_source
     assert "candidate-over-llm.kittens train_loop_wall_ms_per_step=0.997023x" in bench_source
     assert "candidate-over-llm.kittens train_tokens_per_second=1.002670x" in bench_source
+    assert "setup.token_weight_init.total_ms regressed to 1.020863x" in bench_source
+    assert "setup_wall_ms regressed to 1.008041x" in bench_source
+    assert "setup.token_weight_init.total_ms regressed to 1.003813x" in bench_source
+    assert "Total setup wall improved to 0.996409x from allocator noise" in bench_source
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT token-weight startup cap bisection: marked
+  `token_weight_strided_blocks8192` and `token_weight_strided_blocks16384` as
+  rejected SM120 candidate profiles. CUDA 13.3.33 dedicated RTX 5090
+  startup-only 5-sample reruns proved
+  `token_weight_vector4_strided_max_blocks` changed, but the 8192-block cap
+  regressed `setup.token_weight_init.total_ms` to `1.020863x` and
+  `setup_wall_ms` to `1.008041x`; the 16384-block cap still regressed
+  `setup.token_weight_init.total_ms` to `1.003813x` even though total setup
+  wall improved to `0.996409x` from allocator noise. The runtime default
+  remains the current 4096-block cap, and the 600-step training warmup remains
+  the quality default. Verification: same-script dedicated GPU gates above and
+  focused native GPT candidate-profile pytest coverage.
+
 - Native SM120 launcher CUDA selector precedence: `build/nfn_train_gpt_sm120`
   and the `tools/train_gpt_sm120.sh` Bash fallback now treat
   `NFN_NATIVE_GPT_CUDA_VISIBLE_DEVICES`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,

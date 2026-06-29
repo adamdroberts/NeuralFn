@@ -1410,6 +1410,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.000}"
     ;;
   "token_weight_strided_blocks8192"|"token-weight-strided-blocks8192"|"token_weight_vector4_strided_blocks8192"|"token-weight-vector4-strided-blocks8192")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 startup-only 5-sample rerun raised the strided padded token-weight initializer launch cap from 4096 to 8192 and proved token_weight_vector4_strided_max_blocks changed, but rejected default promotion because setup.token_weight_init.total_ms regressed to 1.020863x and setup_wall_ms regressed to 1.008041x. The default cap stays at 4096."
     CANDIDATE_NOTE="Compares the default 4096-block strided padded token-weight initializer against an 8192-block launch cap to reduce startup token table initialization time."
     STARTUP_ONLY=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=4096"
@@ -1418,6 +1420,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.token_weight_init.total_ms=1.000 setup_wall_ms=1.002}"
     ;;
   "token_weight_strided_blocks16384"|"token-weight-strided-blocks16384"|"token_weight_vector4_strided_blocks16384"|"token-weight-vector4-strided-blocks16384")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 startup-only 5-sample rerun raised the strided padded token-weight initializer launch cap from 4096 to 16384 and proved token_weight_vector4_strided_max_blocks changed, but rejected default promotion because setup.token_weight_init.total_ms regressed to 1.003813x. Total setup wall improved to 0.996409x from allocator noise, but the measured initializer bucket did not improve. The default cap stays at 4096."
     CANDIDATE_NOTE="Compares the default 4096-block strided padded token-weight initializer against a 16384-block launch cap to reduce startup token table initialization time."
     STARTUP_ONLY=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=4096"
