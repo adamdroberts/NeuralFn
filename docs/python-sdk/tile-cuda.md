@@ -3354,9 +3354,12 @@ optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
 throughput without folding in that first optimizer step. The
 `long_run_defer_prewarm` profile gates that steady-state throughput metric
 against the llm.kittens reference by default. When a caller requests fewer than
-two warmup pairs for this profile, the wrapper raises benchmark warmup to two
-pairs and records `long_run_defer_prewarm_min_warmup_applied` in paired JSON
-metadata, keeping low-warmup reproductions opt-in through
+ten warmup pairs for this profile, or for a measured default long-run
+deferred-prewarm comparison, the wrapper raises benchmark warmup to ten pairs.
+Dry-run plans keep explicit low-warmup aliases literal for command-shape
+checks. The measured path records `long_run_defer_prewarm_min_warmup_applied`
+or `default_long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata,
+keeping low-warmup reproductions opt-in through
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`.
 A 2026-06-29 no-profile parity rerun with two warmup order pairs measured
 NeuralFn over llm.kittens at `0.998700x` steady-state CUDA-event step time and

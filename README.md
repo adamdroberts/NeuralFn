@@ -321,9 +321,10 @@ CUDA-event step time, so long-run comparisons do not reuse the first-step
 prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
 requires that steady-state throughput metric to meet or beat the llm.kittens
 reference when reference gating is enabled. If a caller sets a lower warmup
-count while using either this profile or the default long-run deferred-prewarm
-auto policy, the wrapper raises benchmark warmup to at least seven pairs by
-default, matching the normal wrapper default. It records
+count while using this profile, or while running a measured default long-run
+deferred-prewarm comparison, the wrapper raises benchmark warmup to at least
+ten pairs by default, matching the normal wrapper default. Dry-run plans keep
+explicit low-warmup aliases literal for command-shape checks. It records
 `long_run_defer_prewarm_min_warmup_applied` for the named
 profile and `default_long_run_defer_prewarm_min_warmup_applied` for the default
 auto policy in paired JSON metadata, so steady-state throughput gates are not
@@ -1503,12 +1504,13 @@ setup wall time to `0.961917x`, but regressed train-loop wall to `1.002107x`,
 steady-state CUDA-event timing to `1.002784x`, block backward to `1.002263x`,
 and candidate-over-llm.kittens train-loop wall to `1.001097x`.
 The `tk_qkv_forward_prewarm_49152` profile is likewise rejected: the 2026-06-29
-post-LM-head-sequence-default rerun improved startup-plus-first-step to
-`0.995515x`, startup-plus-train-loop to `0.998019x`, train-loop wall to
-`0.977976x`, first-step CUDA-event timing to `0.938976x`, forward-QKV
-first-step timing to `0.406568x`, and train tokens/sec to `1.022522x`, but
-regressed setup wall to `1.307975x` and still trailed llm.kittens train
-tokens/sec at `0.991683x`.
+current linked-trainer rerun changed only the prewarm row strategy and kept hot
+route counters unchanged, but regressed train-loop wall to `1.001124x`,
+first-step CUDA-event timing to `1.003118x`, forward-QKV first-step timing to
+`1.075812x`, setup wall to `1.026683x`, startup-plus-first-step to
+`1.007846x`, startup-plus-train-loop to `1.003148x`, and train tokens/sec to
+`0.998875x` versus current native. Candidate-over-llm.kittens train-loop wall
+was `1.010542x` and train tokens/sec was `0.989134x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

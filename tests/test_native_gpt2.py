@@ -1527,9 +1527,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in parity_bench
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
-    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 7)\"" in candidate_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 10)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
+    assert '"$IS_DRY_RUN_PLAN" == "0"' in candidate_bench
     assert (
         'COMMON_ENV_RAW="${COMMON_ENV_RAW:+$COMMON_ENV_RAW }'
         'NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"'
@@ -3290,7 +3291,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1" in bench_source
     assert "native_fast_startup_prewarm_policy" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in bench_source
-    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 7)" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "long_run_defer_prewarm_min_warmup_applied" in bench_source
@@ -4254,10 +4255,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "setup_wall_ms to 0.961917x" in bench_source
     assert "train_loop_wall_ms_per_step to 1.002107x" in bench_source
     assert '"tk_qkv_forward_prewarm_49152"|"tk-qkv-forward-prewarm-49152"' in bench_source
-    assert "startup_plus_first_step_wall_ms to 0.995515x" in bench_source
-    assert "startup_plus_train_loop_wall_ms to 0.998019x" in bench_source
-    assert "setup_wall_ms regressed to 1.307975x" in bench_source
-    assert "overall train tokens/sec still trailed the reference at 0.991683x" in bench_source
+    assert "current linked trainer 7-warmup, 3-step, 2-sample rerun" in bench_source
+    assert "forward-QKV first-step timing to 1.075812x" in bench_source
+    assert "startup_plus_train_loop_wall_ms to 1.003148x" in bench_source
+    assert "Candidate-over-llm.kittens train-loop wall was 1.010542x" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in bench_source
     assert "block backward to 1.011813x" in bench_source

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: the SM120 native candidate wrapper now
+  defaults to 10 warmup order pairs, and measured default long-run
+  deferred-prewarm comparisons also raise lower copied commands to 10 warmup
+  pairs unless
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for an
+  intentional low-warmup diagnostic. Dry-run command-shape plans keep explicit
+  low-warmup aliases literal. This tightens same-script performance evidence
+  after the current linked-trainer rerun of
+  `tk_qkv_forward_prewarm_49152` contradicted older rejection text: the
+  49,152-row QKV prewarm now records the measured regressions
+  (`1.001124x` train-loop wall, `1.003118x` first-step CUDA-event timing,
+  `1.075812x` forward-QKV first-step timing, and `1.010542x`
+  candidate-over-llm.kittens train-loop wall). Verification: focused native
+  GPT source-contract pytest, shell syntax check, dry-run expansion, and the
+  current same-script GPU rerun that failed the rejected profile gates.
+
 - Native GPT optimized-kernel contract: real dense GPT training now also fails
   the optimized-kernel contract when transformer attention forward/backward
   misses the TK SM120 kernels, block-backward dInput misses optimized TK SM120
