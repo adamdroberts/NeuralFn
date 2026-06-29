@@ -3229,6 +3229,14 @@ skips validation shard discovery even when validation cadence is configured,
 because no validation pass can run before the process exits; JSON reports
 `validation_shards_required: false` and leaves `val_shard` empty for train-only
 token caches.
+For long native GPT quality runs, the same native trainer defers throughput
+prewarms once `max_steps` exceeds `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
+(`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
+`NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1024`). Benchmark this with
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm`; the profile gates
+setup improvement, steady-state CUDA-event step neutrality, and
+startup-plus-steady-state improvement separately from the intentional first
+optimizer-step prewarm cost.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

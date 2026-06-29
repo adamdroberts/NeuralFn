@@ -2451,6 +2451,13 @@ back on. The same policy can be requested directly with
 `build_native_train_run_config(..., fast_startup=True)`. Runtime JSON reports
 `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` compares the old
+eager throughput-prewarm setup against this deferred long-run policy in the
+paired selected-GPU benchmark wrapper. Its default gates require
+`setup_wall_ms<=0.900x`,
+`train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`, and
+`startup_plus_steady_state_step_wall_ms<=0.950x`; the profile does not hide
+the expected first-step deferred-prewarm cost.
 Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
 setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.
 Normal training keeps throughput prewarms enabled by default. Set

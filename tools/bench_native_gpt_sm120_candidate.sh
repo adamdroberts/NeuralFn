@@ -249,12 +249,12 @@ case "${CANDIDATE_PROFILE,,}" in
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.995}"
     ;;
   "long_run_defer_prewarm"|"long-run-defer-prewarm"|"defer_prewarm_long_run"|"defer-prewarm-long-run")
-    CANDIDATE_NOTE="Compares the old eager throughput-prewarm setup against the long-run deferred-prewarm policy. The profile sets the candidate threshold to one step so short benchmark runs exercise the same policy branch that default 20k-step quality runs use."
+    CANDIDATE_NOTE="Compares the old eager throughput-prewarm setup against the long-run deferred-prewarm policy. The profile sets the candidate threshold to one step so short benchmark runs exercise the same policy branch that default 20k-step quality runs use, and gates the long-run-relevant steady-state metrics separately from the expected first-step deferred-prewarm cost."
     INCLUDE_LLMK_REFERENCE=0
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.900}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.900 train_loop_cuda_event_steady_state_wall_ms_per_step=1.003 startup_plus_steady_state_step_wall_ms=0.950}"
     ;;
   "lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

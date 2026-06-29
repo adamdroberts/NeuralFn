@@ -245,7 +245,9 @@ Set the threshold higher than `max_steps`, or force the individual prewarm env
 vars, when a long run must use the old eager-prewarm setup. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the old
 eager-prewarm setup against the deferred long-run policy in the paired native
-benchmark wrapper.
+benchmark wrapper. That profile now gates setup time, steady-state CUDA-event
+step time, and startup-plus-steady-state timing separately, because the first
+optimizer step intentionally pays the deferred QKV/LM-head prewarm cost.
 Stage-timed startup-only probes also elide the CUDA event-pool preallocation
 because no optimizer step can consume those events before exit; runtime JSON
 reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.

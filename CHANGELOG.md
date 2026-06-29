@@ -175,9 +175,10 @@
   threshold to `999999999`, pins the candidate threshold to `1`, disables the
   external llm.kittens reference leg, and requires the
   `native_fast_startup_prewarm_policy` strategy value to change. Its default
-  ratio gate checks setup wall time only because short two-step
-  startup-plus-training samples are not the right acceptance metric for a
-  long-run amortization policy. A two-step, two-sample paired run on the
+  ratio gates now check setup wall time, steady-state CUDA-event step time, and
+  startup-plus-steady-state timing separately, so the expected first-step
+  deferred-prewarm cost is visible instead of being hidden by a setup-only
+  gate. A two-step, two-sample paired run on the
   dedicated RTX 5090 passed with `setup_wall_ms=0.634549x`, changed
   `native_fast_startup_prewarm_policy` from `throughput-prewarm-defaults` to
   `long-run-defer-throughput-prewarms-by-default`, and kept
@@ -194,6 +195,23 @@
   NFN_SM120_NATIVE_STEPS=2 NFN_SM120_NATIVE_SAMPLES=2
   NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_PROFILE_DIR=none
   NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_sm120_long_run_defer_profile.json
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
+- Native GPT benchmarking: tightened the `long_run_defer_prewarm` profile after
+  the CUDA 13.3 WSL reinstall so it gates
+  `train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x` and
+  `startup_plus_steady_state_step_wall_ms<=0.950x` in addition to
+  `setup_wall_ms<=0.900x`. A 2026-06-29 dedicated RTX 5090 3-step, 2-sample
+  same-script run measured `setup_wall_ms=0.669249x`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=0.999539x`, and
+  `startup_plus_steady_state_step_wall_ms=0.924607x`; the same report also
+  showed the intentional first-step CUDA-event penalty at `1.091328x` and kept
+  `graph_editor_tensor_flow=false`, `torch_required=false`, and
+  `optimized_kernel_contract_passed=true`. Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_JSON_OUT=/tmp/nfn_long_run_defer_prewarm_tight_gate_cuda133_3s2.json
   bash tools/bench_native_gpt_sm120_candidate.sh`.
 
 - Native GPT validation: `tools/validate_sm120_cuda13.sh` now runs the direct
