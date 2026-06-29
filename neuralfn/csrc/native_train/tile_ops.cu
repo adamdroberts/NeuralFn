@@ -6676,9 +6676,19 @@ const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementat
     if (lm_head_true_fused_cooperative_enabled()) {
 #if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA) && \
     NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16
+#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2) && \
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2
+        return "wmma-bf16-cooperative-tile-exp2-ce-experimental";
+#else
         return "wmma-bf16-cooperative-tile-experimental";
+#endif
+#else
+#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2) && \
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2
+        return "scalar-cooperative-tile-exp2-ce-diagnostic";
 #else
         return "scalar-cooperative-tile-diagnostic";
+#endif
 #endif
     }
     return lm_head_graph_body_serial_enabled()

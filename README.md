@@ -2875,6 +2875,20 @@ candidate through the focused and full-loop wrappers. This is still opt-in and
 rejected: the 2026-06-29 focused trainer-chunk probe improved over the scalar
 strict body but still measured `2.585996x` candidate/current-wrapper and
 `7.777548x` candidate/reference-summed time.
+Add `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1` to that tile16 WMMA build
+to isolate the strict body's CE math through the shared exp2 softmax helper.
+The ABI implementation class reports
+`wmma-bf16-cooperative-tile-exp2-ce-experimental`, and the rejected profiles
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-exp2-ce`
+and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_exp2_ce`
+run the same-script focused/full-loop gates. This is a diagnostic bisection
+only; the default CUDA Graph LM-head wrapper remains active until a strict body
+beats current-wrapper and llm.kittens reference gates.
+The dedicated RTX 5090 focused gate currently rejects this exp2 CE variant at
+`2.658957x` candidate/current-wrapper and `7.842695x`
+candidate/reference-summed time; a relaxed diagnostic rerun confirms the strict
+ABI path at `2.592639x` and `7.863436x`.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
 

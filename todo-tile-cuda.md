@@ -1027,8 +1027,22 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `NFN_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_DWEIGHT_CYCLES_PER_BLOCK`. Each gate
       requires a nonzero strict true-fused launch count and then fails on the
       specific CE, dHidden, or dWeight per-block cycle budget, keeping future
-      Tile kernel work tied to section attribution instead of aggregate timing
-      alone. The SM120 native candidate wrapper forwards the matching
+      Tile kernel work tied to section attribution instead of aggregate timing.
+    - 2026-06-29 added the rejected-by-default
+      `trainer-chunk-true-fused-tile16-wmma-exp2-ce` focused profile and
+      `lm_head_true_fused_tile16_wmma_exp2_ce` SM120 full-loop preflight. The
+      candidate builds the strict body with
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16`,
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1`, and
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1`, then reports
+      `wmma-bf16-cooperative-tile-exp2-ce-experimental` so CE fast-math
+      bisection is visible in the same-script JSON. This is still diagnostic
+      work; it does not close the true fused classifier/dHidden/dWeight item.
+      The dedicated RTX 5090 focused gate intentionally rejects it at
+      `2.658957x` candidate/current-wrapper and `7.842695x`
+      candidate/reference-summed time; a relaxed diagnostic rerun confirms the
+      strict ABI path at `2.592639x` and `7.863436x`. The SM120 native
+      candidate wrapper forwards the matching
       `NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases
       into that focused preflight so known-slow strict sections fail before the
       full paired trainer benchmark starts.

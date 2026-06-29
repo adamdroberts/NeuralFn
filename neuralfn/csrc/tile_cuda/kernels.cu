@@ -207,6 +207,12 @@ static_assert(
 constexpr int kLmHeadTrueFusedMatTile = NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE;
 constexpr int kLmHeadTrueFusedRequiredThreads =
     kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile;
+#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2) && \
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2
+constexpr bool kLmHeadTrueFusedCeExp2 = true;
+#else
+constexpr bool kLmHeadTrueFusedCeExp2 = false;
+#endif
 
 std::int64_t layer_norm_backward_affine_row_chunk_size() {
   static const std::int64_t value = []() {
@@ -13140,7 +13146,8 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
     float thread_max = bf16_row_max_vec8_or_scalar(row_logits, vocab, true);
     const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
 
-    float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, false);
+    float thread_sum =
+        bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, kLmHeadTrueFusedCeExp2);
     const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
     const std::uint16_t target = targets[row];
 
@@ -13160,7 +13167,8 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
       for (int offset = 0; offset < 8; ++offset) {
         const std::int64_t current_col = col + offset;
         const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
-        const float prob = expf(value - row_max) / row_denom;
+        const float prob =
+            cross_entropy_exp_device(value - row_max, kLmHeadTrueFusedCeExp2) / row_denom;
         const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
         grad[offset] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
       }
@@ -13177,7 +13185,8 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
     }
     for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
       const float value = bf16_bits_to_f32_device(row_logits[col]);
-      const float prob = expf(value - row_max) / row_denom;
+      const float prob =
+          cross_entropy_exp_device(value - row_max, kLmHeadTrueFusedCeExp2) / row_denom;
       const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }

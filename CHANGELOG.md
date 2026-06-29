@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: added an opt-in strict true-fused CE fast-math
+  bisection for the tile16 WMMA body. Building Tile ops with
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1` makes the strict body use the
+  shared exp2 softmax helper for CE denominator and dLogits math, and the ABI
+  reports
+  `wmma-bf16-cooperative-tile-exp2-ce-experimental`. The focused wrapper exposes
+  this as
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-exp2-ce`;
+  the SM120 full-loop wrapper exposes it as the rejected preflight profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_exp2_ce`.
+  Defaults are unchanged; this remains a diagnostic route until it beats the
+  current CUDA Graph wrapper and llm.kittens reference gates. On the dedicated
+  RTX 5090, the strict focused gate intentionally rejected the profile at
+  `2.658957x` candidate/current-wrapper and `7.842695x`
+  candidate/reference-summed time; the relaxed diagnostic rerun exited cleanly
+  at `2.592639x` and `7.863436x`, confirming the ABI and strict launch path
+  while keeping the profile rejected. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on`,
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-exp2-ce
+  NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`, an intentional rejected-profile
+  focused GPU run with
+  `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1`, a relaxed focused GPU rerun
+  with wider ratio gates, `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json` reporting `20/20`
+  artifacts, `67/67` Python entrypoints, `18/18` shell entrypoints, and `4/4`
+  native template catalogs passed, and `git diff --check`.
+
 - Native no-Torch verifier: the JSON output now includes a top-level
   `summary` object with artifact, Python-entrypoint, shell-entrypoint, and
   native-template-catalog pass/fail counts. The per-row reports are unchanged,
