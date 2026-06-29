@@ -294,8 +294,9 @@ Tune it with `NFN_SM120_CUDA13_PARITY_STEPS`,
 `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
 `NFN_SM120_CUDA13_PARITY_JSON_OUT`; set `NFN_SM120_CUDA13_RUN_PARITY=0` only for
 fast CUDA-only smoke checks that intentionally skip the reference comparison.
-The default parity leg uses 10 steps, 5 samples, and 1 warmup so the strict
-ratio gate is not dominated by first-step jitter. If
+The default parity leg uses 20 steps, 5 samples, and 2 warmup samples so the
+steady-state ratio is averaged over more real training steps and is not
+dominated by first-step jitter. If
 `NFN_SM120_CUDA13_PARITY_STEPS=1`, the validator disables the parity ratio gate
 by default because one-step smokes do not emit steady-state timing; set
 `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that
@@ -4402,16 +4403,25 @@ enabled by default with `NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT=1`, writes
 `NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT` (default
 `/tmp/nfn_sm120_cuda13_runtime_contract.json`), and fails if promoted dense-GPT
 speed defaults drift: graph-editor tensor flow must stay disabled, Torch must
-stay unnecessary, train-loss D2H copies must stay at zero, TK QKV first-use
-prewarm must run, QKV backward must use the dInput-before-dWeight route,
-LayerNorm affine must use the 128-row reducer, linear bias must use the
-512-thread reducer, and the default LM-head path must remain the diagnostic
-CUDA Graph wrapper until a faster strict true-fused Tile kernel replaces it.
+stay unnecessary, train-loss D2H copies must stay at zero, the one-step direct
+smoke must report the automatic fast-startup policy and skip throughput-only
+QKV prewarm, QKV backward must use the dInput-before-dWeight route, LayerNorm
+affine must use the 128-row reducer, linear bias must use the 512-thread
+reducer, and the default LM-head path must remain the diagnostic CUDA Graph
+wrapper until a faster strict true-fused Tile kernel replaces it.
 The default run also writes a top-level validation summary to
 `NFN_SM120_CUDA13_JSON_OUT` (default `/tmp/nfn_sm120_cuda13_baseline.json`) with
 the resolved trainer, Tile ops library, enabled sub-gates, artifact paths,
 runtime-contract status, and LM-head true-fused blocker fields. When
-`NFN_SM120_CUDA13_RUN_BENCH=1` is set,
+the validator runs its default llm.kittens parity leg, it passes an explicit
+`NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` that gates median steady-state
+CUDA-event step time at `1.003x`; total train-loop wall remains diagnostic in
+this health check because auto fast-startup one-step/short-run policy can move
+throughput prewarm cost out of setup and into early optimizer steps. Use
+`NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO` to override that validator-only
+gate, or run `tools/bench_native_gpt_sm120_parity.sh` directly for the default
+standalone total-wall plus steady-state parity gate.
+When `NFN_SM120_CUDA13_RUN_BENCH=1` is set,
 `NFN_SM120_CUDA13_JSON_OUT` remains the paired native benchmark JSON path and
 the validation summary moves to
 `NFN_SM120_CUDA13_SUMMARY_JSON_OUT` (default

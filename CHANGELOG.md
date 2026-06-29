@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- CUDA 13.3 SM120 validation: updated `tools/validate_sm120_cuda13.sh` for the
+  current direct native one-step runtime contract. The gate now expects
+  `native_auto_fast_startup_short_run=true`,
+  `native_fast_startup_explicit=false`, the
+  `skip-setup-throughput-prewarms-by-default` policy, and zero TK QKV prewarm
+  launches on the auto-fast-start smoke. It still enforces no graph-editor
+  tensor flow, no Torch requirement, zero train-loss host D2H copies, optimized
+  native kernels, the promoted QKV dInput-before-dWeight route, LN128 and
+  512-thread bias reducers, and the diagnostic LM-head CUDA Graph wrapper until
+  a faster true-fused Tile kernel replaces it. Migration note: the old validator
+  expectation that a one-step runtime-contract smoke must eagerly prewarm TK QKV
+  was retired; force the specific prewarm env vars only for prewarm bisections.
+  The validator's default llm.kittens parity leg now passes an explicit
+  steady-state CUDA-event ratio gate (`median:...=1.003`) and leaves total
+  train-loop wall as diagnostic, because auto fast-startup can defer prewarm
+  cost into early short-run optimizer steps. The validator parity default also
+  increases from 10 steps / 1 warmup sample to 20 steps / 2 warmup samples for
+  better measurement accuracy on the dedicated RTX 5090. Standalone
+  `tools/bench_native_gpt_sm120_parity.sh` keeps its default total-wall plus
+  steady-state gates.
+  Verification: focused pytest coverage passed for
+  `test_sm120_cuda13_validator_covers_native_cuda_smokes` and
+  `test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`; a standalone
+  20-step / 5-sample / 2-warmup parity check passed the steady-state gate at
+  `0.999960x`; the full unsandboxed CUDA 13.3 validator passed with
+  `115 passed, 1 skipped` and parity
+  `median:train_loop_cuda_event_steady_state_wall_ms_per_step=1.000534x`.
+
 - Native GPT startup: direct `nfn_gpt_native_train` /
   `nfn_gpt2_native_train` invocations now apply the same short-run
   fast-startup policy as the compiled GPT launchers. When `max_steps` is at or

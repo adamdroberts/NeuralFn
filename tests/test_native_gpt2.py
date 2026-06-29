@@ -993,10 +993,12 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert 'case "${NFN_SM120_CUDA13_RUN_PARITY:-1}"' in source
     assert 'enabled("NFN_SM120_CUDA13_RUN_PARITY", "1")' in source
     assert "NFN_SM120_CUDA13_PARITY_JSON_OUT" in source
-    assert 'PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-10}"' in source
+    assert 'PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-20}"' in source
     assert 'PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-5}"' in source
-    assert 'PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-1}"' in source
+    assert 'PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-2}"' in source
     assert "PARITY_ENFORCE_GATE=0" in source
+    assert "NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO" in source
+    assert "median:train_loop_cuda_event_steady_state_wall_ms_per_step=1.003" in source
     assert "bench_native_gpt_sm120_parity.sh" in source
     assert "NFN_SM120_PARITY_ENFORCE_GATE" in source
     assert "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE" in source
@@ -1028,8 +1030,13 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "block_backward_qkv_dinput_before_dweight_count" in source
     assert "QKV backward must keep the promoted dInput-before-dWeight route active" in source
     assert "block_state_layout.layer_norm_backward_affine_row_chunk_size" in source
+    assert "native_auto_fast_startup_short_run" in source
+    assert "native_fast_startup_explicit" in source
+    assert "native_fast_startup_prewarm_policy" in source
+    assert "skip-setup-throughput-prewarms-by-default" in source
+    assert "linear_tk_qkv_first_use_prewarm_requested" in source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in source
-    assert "promoted TK QKV first-use prewarm active" in source
+    assert "deferred TK QKV prewarm skipped on auto fast-startup smokes" in source
     assert "block_state.get(\"linear_backward_bias_threads_per_block\") == 512" in source
     assert "promoted 512-thread linear-bias reducer" in source
     assert "lm_head_classifier_true_fused_launch_count" in source
@@ -8330,17 +8337,29 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
-            "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
-            "token_weight_bf16_shadow_enabled": True,
-            "token_weight_bf16_refresh_count": 0,
-            "token_weight_bf16_initial_refresh_fusion_enabled": True,
-            "token_weight_bf16_adamw_refresh_fusion_enabled": True,
-            "token_weight_padded_init_fusion_enabled": False,
-            "token_weight_padded_bf16_pattern_enabled": True,
-            "token_weight_padding_zero_launches_elided": 0,
-            "token_weight_bf16_padding_memset_count": 0,
-            "token_weight_bf16_initial_refresh_elided": False,
-            "block_weight_bf16_primary_param_update_enabled": True,
+        "block_fp32_weight_params_elision_requested": train_transformer_payload[
+            "block_fp32_weight_params_elision_requested"
+        ],
+        "block_fp32_weight_params_elided": train_transformer_payload[
+            "block_fp32_weight_params_elided"
+        ],
+        "block_fp32_weight_params_elements_elided": train_transformer_payload[
+            "block_fp32_weight_params_elements_elided"
+        ],
+        "block_fp32_weight_params_bytes_elided": train_transformer_payload[
+            "block_fp32_weight_params_bytes_elided"
+        ],
+        "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
+        "token_weight_bf16_shadow_enabled": True,
+        "token_weight_bf16_refresh_count": 0,
+        "token_weight_bf16_initial_refresh_fusion_enabled": True,
+        "token_weight_bf16_adamw_refresh_fusion_enabled": True,
+        "token_weight_padded_init_fusion_enabled": False,
+        "token_weight_padded_bf16_pattern_enabled": True,
+        "token_weight_padding_zero_launches_elided": 0,
+        "token_weight_bf16_padding_memset_count": 0,
+        "token_weight_bf16_initial_refresh_elided": False,
+        "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
         "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
         "adamw_bf16_param_bf16_grad_kernel_loaded": False,

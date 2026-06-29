@@ -11,9 +11,9 @@ LM_HEAD_JSON="${NFN_SM120_CUDA13_LM_HEAD_JSON_OUT:-/tmp/nfn_sm120_cuda13_lm_head
 RUNTIME_CONTRACT_JSON="${NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT:-/tmp/nfn_sm120_cuda13_runtime_contract.json}"
 SUMMARY_JSON="${NFN_SM120_CUDA13_SUMMARY_JSON_OUT:-${NFN_SM120_CUDA13_VALIDATION_JSON_OUT:-}}"
 CHECK_BENCH_CONTRACT="${NFN_SM120_CUDA13_CHECK_BENCH_CONTRACT:-1}"
-PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-10}"
+PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-20}"
 PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-5}"
-PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-1}"
+PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-2}"
 REBUILD_STALE="${NFN_SM120_CUDA13_REBUILD_STALE:-1}"
 LM_HEAD_TILE_OPS_LIB="${NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 if [[ -n "${NFN_SM120_CUDA13_PARITY_ENFORCE_GATE:-}" ]]; then
@@ -207,8 +207,21 @@ checks = [
         "runtime contract must keep train_loss_host_d2h_count=0",
     ),
     (
-        payload.get("linear_tk_qkv_first_use_prewarm_success_count", 0) >= 1,
-        "runtime contract must keep the promoted TK QKV first-use prewarm active",
+        payload.get("native_auto_fast_startup_short_run") is True,
+        "runtime contract must keep direct one-step smokes on the auto fast-startup path",
+    ),
+    (
+        payload.get("native_fast_startup_explicit") is False,
+        "runtime contract must keep the one-step fast-startup policy automatic, not flag-forced",
+    ),
+    (
+        payload.get("native_fast_startup_prewarm_policy") == "skip-setup-throughput-prewarms-by-default",
+        "runtime contract must keep auto fast-startup smokes from running throughput-only setup prewarms",
+    ),
+    (
+        payload.get("linear_tk_qkv_first_use_prewarm_requested") is False and
+        payload.get("linear_tk_qkv_first_use_prewarm_success_count", 0) == 0,
+        "runtime contract must keep the deferred TK QKV prewarm skipped on auto fast-startup smokes",
     ),
     (
         payload.get("block_backward_qkv_dinput_before_dweight_count", 0) > 0,
@@ -428,6 +441,7 @@ case "${NFN_SM120_CUDA13_RUN_PARITY:-1}" in
       NFN_SM120_PARITY_PROFILE_DIR="${NFN_SM120_CUDA13_PARITY_PROFILE_DIR:-none}" \
       NFN_SM120_PARITY_JSON_OUT="${PARITY_JSON}" \
       NFN_SM120_PARITY_ENFORCE_GATE="${PARITY_ENFORCE_GATE}" \
+      NFN_SM120_PARITY_MAX_CANDIDATE_RATIO="${NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO:-median:train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}" \
       bash "${ROOT_DIR}/tools/bench_native_gpt_sm120_parity.sh"
     ;;
   0|false|FALSE|no|NO|off|OFF)
@@ -530,6 +544,18 @@ if isinstance(runtime_contract, dict):
         "torch_required": runtime_contract.get("torch_required"),
         "optimized_kernel_contract_passed": runtime_contract.get("optimized_kernel_contract_passed"),
         "train_loss_host_d2h_count": runtime_contract.get("train_loss_host_d2h_count"),
+        "native_auto_fast_startup_short_run": runtime_contract.get(
+            "native_auto_fast_startup_short_run"
+        ),
+        "native_fast_startup_explicit": runtime_contract.get(
+            "native_fast_startup_explicit"
+        ),
+        "native_fast_startup_prewarm_policy": runtime_contract.get(
+            "native_fast_startup_prewarm_policy"
+        ),
+        "linear_tk_qkv_first_use_prewarm_requested": runtime_contract.get(
+            "linear_tk_qkv_first_use_prewarm_requested"
+        ),
         "linear_tk_qkv_first_use_prewarm_success_count": runtime_contract.get(
             "linear_tk_qkv_first_use_prewarm_success_count"
         ),
