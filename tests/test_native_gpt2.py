@@ -1963,6 +1963,12 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in gpt_source
+    assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_async_enabled" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_async_stream_create_count" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_async_launch_count" in gpt_source
+    assert "linear_tk_qkv_first_use_prewarm_async_wait_count" in gpt_source
+    assert "cudaStreamSynchronize \" + label + \".tk_qkv_forward_prewarm" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_mode" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
@@ -2000,6 +2006,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_success_count" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_async_enabled" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_async_stream_create_count" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_async_launch_count" in speed_tool
+    assert "linear_tk_qkv_first_use_prewarm_async_wait_count" in speed_tool
     assert "stored_packed_attention_lse_enabled" in speed_tool
     assert "stored_packed_attention_lse_elements" in speed_tool
     assert "stored_packed_attention_lse_bytes" in speed_tool
@@ -4263,6 +4273,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "forced full-row TK QKV first-use prewarm back on while keeping the long-run deferred-prewarm policy" in bench_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in bench_source
     assert "candidate-over-llm.kittens train-loop wall was 1.006696x" in bench_source
+    assert '"long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"' in bench_source
+    assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1" in bench_source
+    assert "linear_tk_qkv_first_use_prewarm_async_wait_count" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in bench_source
     assert "block backward to 1.011813x" in bench_source

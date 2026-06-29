@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Native GPT benchmark diagnostics: added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm`
+  profile and native JSON telemetry for async TK QKV first-use prewarm overlap.
+  The opt-in `NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1` route creates a
+  nonblocking side stream, launches the full-row TK QKV first-use prewarm during
+  setup, and synchronizes that stream at the first real QKV stage. Native JSON
+  now reports async stream create/null, launch, wait, sync, and failure
+  counters; `tools/paired_kernel_speed.py` tracks them and the profile requires
+  `linear_tk_qkv_first_use_prewarm_async_wait_count` as a hot route counter. A
+  2026-06-29 dedicated RTX 5090 1-step same-script probe moved async stream
+  create/launch/wait/sync counters `0->1` and passed candidate-vs-native gates
+  at `0.940953x` train-loop wall, `0.940941x` first-step CUDA-event timing,
+  `0.989545x` startup-plus-train-loop, and `1.062750x` train tokens/sec, but
+  kept the profile rejected because candidate-over-llm.kittens train-loop wall
+  was `1.030835x`, first-step CUDA-event timing was `1.030348x`, and train
+  tokens/sec was `0.970091x`. Verification: focused native GPT and Tile CUDA
+  pytest subsets, shell syntax and Python compile checks, native SM120 rebuild,
+  one-step async CUDA smoke, and the same-script candidate/native/reference GPU
+  benchmark.
+
 - Native GPT benchmark warmup policy: the SM120 native candidate wrapper now
   defaults to 10 warmup order pairs, and measured default long-run
   deferred-prewarm comparisons also raise lower copied commands to 10 warmup

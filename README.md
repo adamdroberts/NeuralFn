@@ -1523,6 +1523,19 @@ setup wall regressed to `1.320458x`, startup-plus-first-step to `1.000868x`,
 startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
 wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
 `0.993879x`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` tests
+the overlap variant. It launches the full-row TK QKV first-use prewarm on a
+nonblocking side stream during setup and synchronizes that stream at the first
+real QKV stage. Native GPT JSON reports the route through
+`linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
+`linear_tk_qkv_first_use_prewarm_async_launch_count`,
+`linear_tk_qkv_first_use_prewarm_async_wait_count`, and
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-29 1-step
+same-script probe moved all four counters `0->1` and passed native baseline
+gates at `0.940953x` train-loop wall, `0.989545x` startup-plus-train-loop, and
+`1.062750x` train tokens/sec, but it remains rejected because
+candidate-over-llm.kittens train-loop wall was `1.030835x` and train tokens/sec
+was `0.970091x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

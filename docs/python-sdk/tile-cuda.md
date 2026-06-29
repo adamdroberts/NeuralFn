@@ -813,6 +813,19 @@ setup wall regressed to `1.320458x`, startup-plus-first-step to `1.000868x`,
 startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
 wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
 `0.993879x`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` to
+test the overlapped version of that route. It uses
+`NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1` to launch the full-row TK QKV
+first-use prewarm on a nonblocking side stream during setup, then synchronizes
+that stream before the first real QKV stage. Native JSON exposes
+`linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
+`linear_tk_qkv_first_use_prewarm_async_launch_count`,
+`linear_tk_qkv_first_use_prewarm_async_wait_count`, and
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-29 1-step
+same-script probe moved all four counters `0->1` and passed candidate-vs-native
+gates at `0.940953x` train-loop wall and `1.062750x` train tokens/sec, but the
+profile remains rejected because candidate-over-llm.kittens train-loop wall was
+`1.030835x` and train tokens/sec was `0.970091x`.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

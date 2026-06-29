@@ -11498,6 +11498,14 @@ int run_transformer_lm_training_json(
     std::int64_t linear_tk_qkv_first_use_prewarm_enabled_count = 0;
     std::int64_t linear_tk_qkv_first_use_prewarm_success_count = 0;
     std::int64_t linear_tk_qkv_first_use_prewarm_failure_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_requested_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_enabled_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_stream_create_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_stream_null_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_launch_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_wait_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_sync_count = 0;
+    std::int64_t linear_tk_qkv_first_use_prewarm_async_failure_count = 0;
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
@@ -13583,29 +13591,35 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.cuda_runtime_symbols", [&]() {
         if (error.empty()) {
             const auto cuda_runtime_symbol_load_start = Clock::now();
-            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
-        cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
-        cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
-        cuda_memcpy_async = load_symbol<CudaMemcpyAsyncFn>(cuda_handle, "cudaMemcpyAsync");
-        cuda_memset_async = load_symbol<CudaMemsetAsyncFn>(cuda_handle, "cudaMemsetAsync");
-        cuda_malloc_async = load_symbol<CudaMallocAsyncFn>(cuda_handle, "cudaMallocAsync");
-        cuda_free_async = load_symbol<CudaFreeAsyncFn>(cuda_handle, "cudaFreeAsync");
-        cuda_host_alloc = load_symbol<CudaHostAllocFn>(cuda_handle, "cudaHostAlloc");
-        cuda_free_host = load_symbol<CudaFreeHostFn>(cuda_handle, "cudaFreeHost");
-        cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
-        cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
-        cuda_runtime_get_version = load_symbol<CudaVersionFn>(cuda_handle, "cudaRuntimeGetVersion");
-        cuda_driver_get_version = load_symbol<CudaVersionFn>(cuda_handle, "cudaDriverGetVersion");
-        cuda_stream_create_with_flags =
-            load_symbol<CudaStreamCreateWithFlagsFn>(cuda_handle, "cudaStreamCreateWithFlags");
-        cuda_stream_destroy = load_symbol<CudaStreamDestroyFn>(cuda_handle, "cudaStreamDestroy");
-        cuda_stream_synchronize = load_symbol<CudaStreamSynchronizeFn>(cuda_handle, "cudaStreamSynchronize");
-        cuda_stream_wait_event = load_symbol<CudaStreamWaitEventFn>(cuda_handle, "cudaStreamWaitEvent");
-        cuda_event_create_with_flags =
-            load_symbol<CudaEventCreateWithFlagsFn>(cuda_handle, "cudaEventCreateWithFlags");
-        cuda_event_record = load_symbol<CudaEventRecordFn>(cuda_handle, "cudaEventRecord");
-        cuda_event_elapsed_time = load_symbol<CudaEventElapsedTimeFn>(cuda_handle, "cudaEventElapsedTime");
-        cuda_event_destroy = load_symbol<CudaEventDestroyFn>(cuda_handle, "cudaEventDestroy");
+            void* cuda_symbol_handle = linked_tile_ops_requested ? RTLD_DEFAULT : cuda_handle;
+            auto load_cuda_symbol = [&](auto*& fn, const char* name) {
+                using Fn = std::remove_reference_t<decltype(fn)>;
+                fn = load_symbol<Fn>(cuda_symbol_handle, name);
+                if (fn == nullptr && cuda_symbol_handle != cuda_handle) {
+                    fn = load_symbol<Fn>(cuda_handle, name);
+                }
+            };
+            load_cuda_symbol(cuda_malloc, "cudaMalloc");
+            load_cuda_symbol(cuda_free, "cudaFree");
+            load_cuda_symbol(cuda_memcpy, "cudaMemcpy");
+            load_cuda_symbol(cuda_memcpy_async, "cudaMemcpyAsync");
+            load_cuda_symbol(cuda_memset_async, "cudaMemsetAsync");
+            load_cuda_symbol(cuda_malloc_async, "cudaMallocAsync");
+            load_cuda_symbol(cuda_free_async, "cudaFreeAsync");
+            load_cuda_symbol(cuda_host_alloc, "cudaHostAlloc");
+            load_cuda_symbol(cuda_free_host, "cudaFreeHost");
+            load_cuda_symbol(cuda_device_synchronize, "cudaDeviceSynchronize");
+            load_cuda_symbol(cuda_get_error_string, "cudaGetErrorString");
+            load_cuda_symbol(cuda_runtime_get_version, "cudaRuntimeGetVersion");
+            load_cuda_symbol(cuda_driver_get_version, "cudaDriverGetVersion");
+            load_cuda_symbol(cuda_stream_create_with_flags, "cudaStreamCreateWithFlags");
+            load_cuda_symbol(cuda_stream_destroy, "cudaStreamDestroy");
+            load_cuda_symbol(cuda_stream_synchronize, "cudaStreamSynchronize");
+            load_cuda_symbol(cuda_stream_wait_event, "cudaStreamWaitEvent");
+            load_cuda_symbol(cuda_event_create_with_flags, "cudaEventCreateWithFlags");
+            load_cuda_symbol(cuda_event_record, "cudaEventRecord");
+            load_cuda_symbol(cuda_event_elapsed_time, "cudaEventElapsedTime");
+            load_cuda_symbol(cuda_event_destroy, "cudaEventDestroy");
             cuda_runtime_symbol_load_wall_ms =
                 elapsed_ms(cuda_runtime_symbol_load_start, Clock::now());
         if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
@@ -14548,6 +14562,8 @@ int run_transformer_lm_training_json(
     void* block_backward_dinput_stream = nullptr;
     void* block_backward_dweight_stream = nullptr;
     void* block_backward_pair_ready_event = nullptr;
+    void* linear_tk_qkv_first_use_prewarm_stream = nullptr;
+    bool linear_tk_qkv_first_use_prewarm_async_pending = false;
     const bool block_backward_pair_streams_available =
         cuda_stream_create_with_flags != nullptr &&
         cuda_stream_destroy != nullptr &&
@@ -14556,6 +14572,20 @@ int run_transformer_lm_training_json(
         cuda_event_create_with_flags != nullptr &&
         cuda_event_record != nullptr &&
         cuda_event_destroy != nullptr;
+    const std::string linear_tk_qkv_first_use_prewarm_async_env =
+        env_or_empty_any({"NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM",
+                          "NFN_NATIVE_GPT2_ASYNC_TK_QKV_FORWARD_PREWARM",
+                          "NFN_TILE_CUDA_ASYNC_TK_QKV_FORWARD_PREWARM"});
+    const bool linear_tk_qkv_first_use_prewarm_async_requested =
+        linear_tk_qkv_first_use_prewarm_requested &&
+        env_flag_enabled_or_default(linear_tk_qkv_first_use_prewarm_async_env, false);
+    const bool linear_tk_qkv_first_use_prewarm_async_available =
+        cuda_stream_create_with_flags != nullptr &&
+        cuda_stream_destroy != nullptr &&
+        cuda_stream_synchronize != nullptr;
+    const bool linear_tk_qkv_first_use_prewarm_async_enabled =
+        linear_tk_qkv_first_use_prewarm_async_requested &&
+        linear_tk_qkv_first_use_prewarm_async_available;
     const bool block_mlp_proj_concurrent_dinput_dweight_enabled =
         block_mlp_proj_concurrent_dinput_dweight_requested &&
         block_backward_pair_streams_available &&
@@ -14647,6 +14677,21 @@ int run_transformer_lm_training_json(
             if (status != 0) {
                 error = cuda_error(status, "cudaEventCreateWithFlags block_backward_pair_ready");
             }
+        }
+    }
+    if (error.empty() && linear_tk_qkv_first_use_prewarm_async_enabled) {
+        int status = cuda_stream_create_with_flags(
+            &linear_tk_qkv_first_use_prewarm_stream,
+            kCudaStreamNonBlocking);
+        if (status != 0) {
+            linear_tk_qkv_first_use_prewarm_async_failure_count += 1;
+            error = cuda_error(status, "cudaStreamCreateWithFlags tk_qkv_forward_prewarm");
+        } else if (linear_tk_qkv_first_use_prewarm_stream == nullptr) {
+            linear_tk_qkv_first_use_prewarm_async_failure_count += 1;
+            linear_tk_qkv_first_use_prewarm_async_stream_null_count += 1;
+            error = "cudaStreamCreateWithFlags tk_qkv_forward_prewarm returned a null stream";
+        } else {
+            linear_tk_qkv_first_use_prewarm_async_stream_create_count += 1;
         }
     }
     const std::int64_t public_token_weight_elements = kVocab * kDim;
@@ -18145,6 +18190,8 @@ int run_transformer_lm_training_json(
         if (error.empty()) {
             linear_tk_qkv_first_use_prewarm_requested_count =
                 linear_tk_qkv_first_use_prewarm_requested ? 1 : 0;
+            linear_tk_qkv_first_use_prewarm_async_requested_count =
+                linear_tk_qkv_first_use_prewarm_async_requested ? 1 : 0;
         }
         if (!linear_tk_qkv_first_use_prewarm_requested ||
             !packed_qkv_attention_enabled ||
@@ -18159,6 +18206,12 @@ int run_transformer_lm_training_json(
             return;
         }
         linear_tk_qkv_first_use_prewarm_enabled_count = 1;
+        const bool linear_tk_qkv_first_use_prewarm_async_launch_enabled =
+            linear_tk_qkv_first_use_prewarm_async_enabled &&
+            linear_tk_qkv_first_use_prewarm_stream != nullptr;
+        if (linear_tk_qkv_first_use_prewarm_async_launch_enabled) {
+            linear_tk_qkv_first_use_prewarm_async_enabled_count = 1;
+        }
         run(linear_bf16_input_weight_bf16_output(
                 block_tapes[0].ln1_out_bf16,
                 blocks[0].qkv_weight_bf16,
@@ -18168,14 +18221,23 @@ int run_transformer_lm_training_json(
                 kDim,
                 kQkvDim,
                 fuse_qkv_bias_tk_gemm_enabled,
-                nullptr),
+                linear_tk_qkv_first_use_prewarm_async_launch_enabled
+                    ? linear_tk_qkv_first_use_prewarm_stream
+                    : nullptr),
             fuse_qkv_bias_tk_gemm_enabled
                 ? "setup.tk_qkv_forward_prewarm.fused_bias"
                 : "setup.tk_qkv_forward_prewarm.no_bias");
+        if (error.empty() && linear_tk_qkv_first_use_prewarm_async_launch_enabled) {
+            linear_tk_qkv_first_use_prewarm_async_launch_count += 1;
+            linear_tk_qkv_first_use_prewarm_async_pending = true;
+        }
         if (error.empty()) {
             linear_tk_qkv_first_use_prewarm_success_count += 1;
         } else {
             linear_tk_qkv_first_use_prewarm_failure_count += 1;
+            if (linear_tk_qkv_first_use_prewarm_async_launch_enabled) {
+                linear_tk_qkv_first_use_prewarm_async_failure_count += 1;
+            }
         }
     });
 
@@ -19834,6 +19896,26 @@ int run_transformer_lm_training_json(
         }
         return &stored_packed_attention_activations[block_index];
     };
+    auto wait_for_tk_qkv_first_use_prewarm = [&](const std::string& label) {
+        if (!linear_tk_qkv_first_use_prewarm_async_pending || !error.empty()) {
+            return;
+        }
+        if (cuda_stream_synchronize == nullptr ||
+            linear_tk_qkv_first_use_prewarm_stream == nullptr) {
+            linear_tk_qkv_first_use_prewarm_async_failure_count += 1;
+            error = label + " missing CUDA stream synchronize support for async TK QKV prewarm";
+            return;
+        }
+        const int status = cuda_stream_synchronize(linear_tk_qkv_first_use_prewarm_stream);
+        if (status != 0) {
+            linear_tk_qkv_first_use_prewarm_async_failure_count += 1;
+            error = cuda_error(status, "cudaStreamSynchronize " + label + ".tk_qkv_forward_prewarm");
+            return;
+        }
+        linear_tk_qkv_first_use_prewarm_async_wait_count += 1;
+        linear_tk_qkv_first_use_prewarm_async_sync_count += 1;
+        linear_tk_qkv_first_use_prewarm_async_pending = false;
+    };
     auto forward_block = [&](TransformerBlockParams& block,
                              TransformerBlockActivations& tape,
                              const float* block_input,
@@ -19889,7 +19971,9 @@ int run_transformer_lm_training_json(
             run_timed_stage(stage_name + ".attention.qkv", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        if (ln1_bf16_qkv_forward_enabled &&
+                        wait_for_tk_qkv_first_use_prewarm(label);
+                        if (error.empty() &&
+                            ln1_bf16_qkv_forward_enabled &&
                             active_ln1_out_bf16 != nullptr &&
                             linear_bf16_input_weight_bf16_output != nullptr) {
                             run(linear_bf16_input_weight_bf16_output(
@@ -19905,7 +19989,7 @@ int run_transformer_lm_training_json(
                                 fuse_qkv_bias_tk_gemm_enabled
                                     ? label + ".attn.qkv.forward.fused_bias.bf16_ln1_bf16_bits"
                                     : label + ".attn.qkv.forward.no_bias.bf16_ln1_bf16_bits");
-                        } else {
+                        } else if (error.empty()) {
                             run(linear_weight_bf16_output(
                                     tape.ln1_out,
                                     block.qkv_weight_bf16,
@@ -23566,6 +23650,17 @@ int run_transformer_lm_training_json(
     }
 
     const auto cleanup_start_time = Clock::now();
+    if (linear_tk_qkv_first_use_prewarm_async_pending &&
+        linear_tk_qkv_first_use_prewarm_stream != nullptr &&
+        cuda_stream_synchronize != nullptr) {
+        const int status = cuda_stream_synchronize(linear_tk_qkv_first_use_prewarm_stream);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaStreamSynchronize tk_qkv_forward_prewarm cleanup");
+        } else if (status == 0) {
+            linear_tk_qkv_first_use_prewarm_async_sync_count += 1;
+            linear_tk_qkv_first_use_prewarm_async_pending = false;
+        }
+    }
     for (void* ptr : descriptor_ptrs) {
         device_free(ptr, "cudaFree transformer_lm_descriptor_buffer");
     }
@@ -23661,6 +23756,12 @@ int run_transformer_lm_training_json(
         const int status = cuda_stream_destroy(block_backward_dweight_stream);
         if (status != 0 && error.empty()) {
             error = cuda_error(status, "cudaStreamDestroy block_backward_dweight");
+        }
+    }
+    if (linear_tk_qkv_first_use_prewarm_stream != nullptr && cuda_stream_destroy != nullptr) {
+        const int status = cuda_stream_destroy(linear_tk_qkv_first_use_prewarm_stream);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaStreamDestroy tk_qkv_forward_prewarm");
         }
     }
     if (cuda_handle != nullptr && !skip_exit_device_free_enabled) {
@@ -25280,6 +25381,30 @@ int run_transformer_lm_training_json(
         << linear_tk_qkv_first_use_prewarm_success_count << ",\n"
         << "  \"linear_tk_qkv_first_use_prewarm_failure_count\": "
         << linear_tk_qkv_first_use_prewarm_failure_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_requested\": "
+        << (linear_tk_qkv_first_use_prewarm_async_requested ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_available\": "
+        << (linear_tk_qkv_first_use_prewarm_async_available ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_enabled\": "
+        << (linear_tk_qkv_first_use_prewarm_async_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_pending\": "
+        << (linear_tk_qkv_first_use_prewarm_async_pending ? "true" : "false") << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_requested_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_requested_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_enabled_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_enabled_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_stream_create_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_stream_create_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_stream_null_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_stream_null_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_launch_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_launch_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_wait_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_wait_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_sync_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_sync_count << ",\n"
+        << "  \"linear_tk_qkv_first_use_prewarm_async_failure_count\": "
+        << linear_tk_qkv_first_use_prewarm_async_failure_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_available\": "
         << (trainer_linear_cublaslt_prewarm_bf16_plan_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_enabled\": "

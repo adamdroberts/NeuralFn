@@ -1478,6 +1478,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "ACCEPTED_CANDIDATE_REASON" in text
     assert "default-vs-legacy proof" in text
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1" in text
+    assert "long_run_qkv_forward_async_prewarm" in text
+    assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1" in text
+    assert "linear_tk_qkv_first_use_prewarm_async_wait_count" in text
     assert "tk_qkv_forward_prewarm_1row" in text
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=1" in text
     assert "stage.block_forward.attention.qkv.first_step_avg_ms=1.000" in text

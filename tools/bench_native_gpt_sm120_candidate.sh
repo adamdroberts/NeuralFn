@@ -486,6 +486,17 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000}"
     MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
+  "long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"|"long_run_qkv_async_prewarm"|"long-run-qkv-async-prewarm")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 1-step, 1-sample same-script probe launched full-row TK QKV first-use prewarm on a nonblocking side stream during setup, then synchronized that stream at the first real QKV stage. The route changed as intended: async stream create, launch, wait, and sync counters all moved 0->1, candidate-vs-native gates passed at 0.940953x train-loop wall, 0.940941x first-step CUDA-event timing, 0.989545x startup-plus-train-loop, and 1.062750x train tokens/sec, but the profile remains rejected because candidate-over-llm.kittens train-loop wall was 1.030835x, first-step CUDA-event timing was 1.030348x, and train tokens/sec was 0.970091x."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_async_wait_count"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_train_loop_wall_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    ;;
   "mlp_fc_forward_bf16_fallback_65536"|"mlp-fc-forward-bf16-fallback-65536"|"mlp_fc_gelu_forward_bf16_fallback_65536"|"mlp-fc-gelu-forward-bf16-fallback-65536")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 2-step, 2-sample stage-timed gate did not change tracked route counters and regressed train_loop_wall_ms_per_step to 1.016916x, block backward to 1.034425x, and the target stage.block_forward.mlp_fc_gelu.total_ms to 1.000722x."
