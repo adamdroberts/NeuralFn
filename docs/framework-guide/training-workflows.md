@@ -223,9 +223,9 @@ before BF16 block-weight refresh and training. Runtime JSON reports
 `concurrent_parameter_init_requested`, `concurrent_parameter_init_enabled`, and
 `concurrent_parameter_init_count`; the paired SM120 wrapper exposes the same
 route as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init`. It is
-off by default because the latest paired gate rejected startup promotion even
-though startup wall time improved; the same run showed a small training-loop
-regression.
+off by default because the latest 7-warmup paired gate rejected startup
+promotion: steady-state timing stayed effectively flat, but setup wall and
+startup-plus-first-step both regressed.
 
 For embedding-route bisection,
 `NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1` switches the native fused direct-u16

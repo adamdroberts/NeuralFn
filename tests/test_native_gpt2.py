@@ -3161,7 +3161,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"concurrent_parameter_init"|"concurrent-parameter-init"' in bench_source
     assert "NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1" in bench_source
     assert "concurrent_parameter_init_enabled" in bench_source
-    assert "setup_wall_ms improving to 0.983885x" in bench_source
+    assert "setup_wall_ms regressed to 1.101579x" in bench_source
+    assert "candidate-over-llm.kittens steady-state timing green at 0.998723x" in bench_source
     assert "startup_plus_first_step_wall_ms=0.998" in bench_source
     assert '"embedding_bf16_shadow"|"embedding-bf16-shadow"' in bench_source
     assert "NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1" in bench_source

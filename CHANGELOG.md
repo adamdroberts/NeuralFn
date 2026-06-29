@@ -118,11 +118,13 @@
   reports `concurrent_parameter_init_requested`,
   `concurrent_parameter_init_enabled`, and `concurrent_parameter_init_count`,
   and paired benchmark extraction includes those fields for route-change gates.
-  The 2026-06-29 dedicated RTX 5090 3-sample, 10-step native-only paired run
-  kept the profile rejected for default promotion because train-loop wall time
-  regressed to `1.001353x`, steady-state CUDA-event step time regressed to
-  `1.001590x`, and tokens/sec fell to `0.998651x`, despite setup wall improving
-  to `0.983885x` and startup-plus-first-step improving to `0.995546x`.
+  The 2026-06-29 dedicated RTX 5090 7-warmup, 3-sample, 10-step same-script
+  rerun kept the profile rejected for default promotion: steady-state
+  CUDA-event timing stayed effectively flat at `1.000017x` and
+  candidate-over-llm.kittens steady-state timing stayed green at `0.998723x`,
+  but setup wall regressed to `1.101579x`, startup-plus-first-step regressed to
+  `1.030042x`, and candidate-over-llm.kittens first-step CUDA-event timing
+  missed at `1.000153x`.
   Verification: shell syntax, focused native GPT source-contract pytest, linked
   C++ trainer build, saved-profile parser check, live paired candidate
   benchmark, and corrected-order native-only paired candidate benchmark.
