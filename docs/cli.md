@@ -2505,7 +2505,11 @@ those gates with clean selected-GPU load: `setup_wall_ms=0.438830x` and
 steady-state CUDA-event step `1.000196x` versus old native and `0.777842x`
 versus llm.kittens, with steady-state tokens/sec at `1.267382x` versus the
 reference. The deferred first-step cost remains visible in train-loop wall
-timing, so the profile gates steady-state separately.
+timing, so the profile gates steady-state separately. If a copied benchmark
+command sets a lower warmup count for this profile or the default long-run
+deferred-prewarm auto policy, the wrapper raises warmup to at least seven
+pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for
+an intentional first-use diagnostic run.
 Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
 setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.
 Normal training keeps throughput prewarms enabled by default. Set

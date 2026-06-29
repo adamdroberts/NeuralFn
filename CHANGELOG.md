@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: aligned the long-run deferred-prewarm
+  warmup floor with the seven-pair SM120 native candidate wrapper default.
+  Copied low-warmup commands for the named `long_run_defer_prewarm` profile or
+  the default no-profile deferred-prewarm path now warm up at least seven
+  candidate/current order pairs before measuring steady-state gates, unless
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for an
+  intentional first-use diagnostic. Verification: focused native GPT
+  source-contract pytest, shell syntax check, and dry-run expansion.
+
 - Native GPT benchmark diagnostics: refreshed the `tk_qkv_forward_prewarm_1row`
   and `tk_qkv_forward_prewarm_49152` rejection evidence after the cooperative
   LM-head sequence wrapper became the default. With LM-head CUDA Graph replay

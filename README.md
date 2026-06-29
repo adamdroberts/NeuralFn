@@ -312,8 +312,9 @@ prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
 requires that steady-state throughput metric to meet or beat the llm.kittens
 reference when reference gating is enabled. If a caller sets a lower warmup
 count while using either this profile or the default long-run deferred-prewarm
-auto policy, the wrapper raises benchmark warmup to at least five pairs by
-default. It records `long_run_defer_prewarm_min_warmup_applied` for the named
+auto policy, the wrapper raises benchmark warmup to at least seven pairs by
+default, matching the normal wrapper default. It records
+`long_run_defer_prewarm_min_warmup_applied` for the named
 profile and `default_long_run_defer_prewarm_min_warmup_applied` for the default
 auto policy in paired JSON metadata, so steady-state throughput gates are not
 dominated by first-use timing noise. Set
