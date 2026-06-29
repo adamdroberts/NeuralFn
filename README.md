@@ -2964,7 +2964,8 @@ compile-time matmul tile for focused bisection. Pass
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16"`
 to pair a 16x16 body with 256 CE threads, use `...=24` to pair a 24x24 body
 with 576 CE threads, use `...=8` to pair an 8x8 body with 64 CE threads, or
-use `...=4` to pair a 4x4 body with 16 CE threads. The rejected profiles
+use `...=4 -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` to pair a 4x4 body
+with one warp and 32 CE threads. The rejected profiles
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16` /
 `trainer-chunk-true-fused-tile24` / `trainer-chunk-true-fused-tile8` /
 `trainer-chunk-true-fused-tile4` and

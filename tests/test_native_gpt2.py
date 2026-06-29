@@ -2924,7 +2924,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-32}"' in wrapper_source
     assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-576}"' in wrapper_source
     assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-64}"' in wrapper_source
-    assert 'NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-16}"' in wrapper_source
+    assert (
+        "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4 "
+        "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32"
+        in wrapper_source
+    )
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile16.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile16_wmma_warp32.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile16_wmma_exp2_ce.so" in wrapper_source
@@ -3110,7 +3114,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8" in bench_source
-    assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4" in bench_source
+    assert (
+        "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4 "
+        "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32"
+        in bench_source
+    )
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-serial-graph-body\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16\"" in bench_source

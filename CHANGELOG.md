@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- LM-head tile4 true-fused profile contract: the focused LM-head microbench and
+  SM120 full-loop candidate wrappers now compile the tile4 strict true-fused
+  diagnostic with `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` and matching
+  32-thread CE settings. This keeps the rejected tile4 profile aligned with
+  the Tile CUDA kernel's warp-multiple thread-count guard instead of advertising
+  a 16-thread body that cannot satisfy the strict selector. Verification: shell
+  syntax, focused native GPT source tests, dry-run profile expansion, a relaxed
+  tiny live tile4 launch on the dedicated RTX 5090 proving
+  `strict-true-fused-tile-kernel` with one true-fused launch, and diff check.
+
 - LM-head benchmark profile diagnostics: `tools/bench_lm_head_backward_candidate.sh`
   now keeps its unknown-profile error text aligned with the implemented focused
   profile set, including `trainer-chunk-true-fused-tile4`. This makes mistyped

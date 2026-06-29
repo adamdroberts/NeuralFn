@@ -3095,9 +3095,13 @@ dHidden, and dWeight matmul stages; the strict true-fused route is an
 experimental promotion gate and remains unavailable until its capability probe
 returns nonzero.
 That capability also requires the CE row-thread setting to resolve to the
-compiled tile body's required thread count: 1024 for the default 32x32 body,
-256 for the 16x16 candidate body, 64 for the 8x8 candidate body, and 16 for the
-4x4 candidate body. Mismatched `NFN_TILE_CUDA_CE_BF16_THREADS`,
+compiled tile body's launch thread count: 1024 for the default 32x32 body, 256
+for the 16x16 candidate body, 64 for the 8x8 candidate body, and 32 for the
+4x4 candidate body. The tile4 profile uses
+`NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` even though the tile has only 16
+outputs, because the true-fused kernel contract requires a warp-multiple
+thread count.
+Mismatched `NFN_TILE_CUDA_CE_BF16_THREADS`,
 `NFN_NATIVE_GPT_CE_BF16_THREADS`, or `NFN_NATIVE_GPT2_CE_BF16_THREADS` values
 keep the ABI on the diagnostic graph-wrapper path.
 Production-sized GPT shapes are protected by a second kernel-side guard:
