@@ -18,6 +18,22 @@
   GPT source-contract pytest, shell syntax check, dry-run expansion, and the
   current same-script GPU rerun that failed the rejected profile gates.
 
+- Native GPT benchmark diagnostics: added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_prewarm` profile for
+  the exact long-run deferred-prewarm first-step hypothesis. It keeps
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` on both sides, forces full-row TK
+  QKV first-use prewarm only for the candidate, and requires the QKV prewarm
+  success counter to move. A 2026-06-29 dedicated RTX 5090 10-warmup, 3-step,
+  1-sample rerun improved train-loop wall to `0.980058x`, first-step
+  CUDA-event timing to `0.943764x`, forward-QKV first-step timing to
+  `0.406062x`, and train tokens/sec to `1.020352x` versus the deferred native
+  baseline, but kept the profile rejected because setup wall regressed to
+  `1.320458x`, startup-plus-train-loop to `1.000371x`,
+  candidate-over-llm.kittens train-loop wall was `1.006696x`, and
+  candidate-over-llm.kittens train tokens/sec was `0.993879x`. Verification:
+  same-script candidate/current/reference GPU benchmark with clean selected-GPU
+  state.
+
 - Native GPT optimized-kernel contract: real dense GPT training now also fails
   the optimized-kernel contract when transformer attention forward/backward
   misses the TK SM120 kernels, block-backward dInput misses optimized TK SM120

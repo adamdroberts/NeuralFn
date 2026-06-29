@@ -4259,6 +4259,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "forward-QKV first-step timing to 1.075812x" in bench_source
     assert "startup_plus_train_loop_wall_ms to 1.003148x" in bench_source
     assert "Candidate-over-llm.kittens train-loop wall was 1.010542x" in bench_source
+    assert '"long_run_qkv_forward_prewarm"|"long-run-qkv-forward-prewarm"' in bench_source
+    assert "forced full-row TK QKV first-use prewarm back on while keeping the long-run deferred-prewarm policy" in bench_source
+    assert "linear_tk_qkv_first_use_prewarm_success_count" in bench_source
+    assert "candidate-over-llm.kittens train-loop wall was 1.006696x" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in bench_source
     assert "block backward to 1.011813x" in bench_source

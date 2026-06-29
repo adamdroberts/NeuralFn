@@ -1511,6 +1511,18 @@ first-step CUDA-event timing to `1.003118x`, forward-QKV first-step timing to
 `1.007846x`, startup-plus-train-loop to `1.003148x`, and train tokens/sec to
 `0.998875x` versus current native. Candidate-over-llm.kittens train-loop wall
 was `1.010542x` and train tokens/sec was `0.989134x`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_prewarm` to test
+the same idea against the actual long-run deferred-prewarm path. That profile
+forces full-row TK QKV first-use prewarm back on for the candidate while both
+sides keep `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1`. The 2026-06-29
+10-warmup rerun proved the route by moving QKV prewarm success `0->1` and
+improved train-loop wall to `0.980058x`, first-step CUDA-event timing to
+`0.943764x`, forward-QKV first-step timing to `0.406062x`, and train tokens/sec
+to `1.020352x` versus the deferred native baseline. It remains rejected because
+setup wall regressed to `1.320458x`, startup-plus-first-step to `1.000868x`,
+startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
+wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
+`0.993879x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.
