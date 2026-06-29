@@ -2527,6 +2527,11 @@ command sets a lower warmup count for this profile or the default long-run
 deferred-prewarm auto policy, the wrapper raises warmup to at least twenty
 pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for
 an intentional first-use diagnostic run.
+Measured long-run deferred-prewarm runs also raise fewer than ten optimizer
+steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
+set for an intentional short reproduction. The JSON metadata records
+`long_run_defer_prewarm_min_steps_applied` or
+`default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
 The 20-pair floor follows a 2026-06-29 20-warmup, 3-step, 1-sample same-script
 run on the dedicated RTX 5090 where selected GPU load stayed clean and NeuralFn
 measured `0.995716x` steady-state CUDA-event step time plus `1.004435x`

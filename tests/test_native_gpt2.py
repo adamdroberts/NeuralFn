@@ -3306,9 +3306,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "native_fast_startup_prewarm_policy" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 20)" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source
+    assert "DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" in bench_source
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
+    assert "default_long_run_defer_prewarm_min_steps_applied" in bench_source
     assert "long_run_defer_prewarm_min_warmup_applied" in bench_source
+    assert "long_run_defer_prewarm_min_steps_applied" in bench_source
     assert "setup_wall_ms=0.900" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003" in bench_source
     assert "startup_plus_steady_state_step_wall_ms=0.950" in bench_source
@@ -3319,7 +3324,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "INCLUDE_LLMK_REFERENCE=0" not in long_run_block
     assert '"$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0' in long_run_block
     assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in long_run_block
+    assert '"$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0' in long_run_block
+    assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in long_run_block
     assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_block
+    assert "full-loop ratios are not dominated by the intentionally deferred first step" in long_run_block
     assert (
         "MAX_CANDIDATE_REFERENCE_RATIO_RAW=\"${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-"
         "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}\""

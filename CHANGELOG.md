@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT benchmark long-run measurement policy: measured default
+  deferred-prewarm runs and the named `long_run_defer_prewarm` profile now raise
+  low optimizer-step requests to at least 10 steps, in addition to the existing
+  20 warmup-pair floor. This keeps long-training ratios from being dominated by
+  the intentionally deferred first optimizer step; use
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for an intentional
+  short reproduction. Paired JSON metadata records
+  `default_long_run_defer_prewarm_min_steps_applied` or
+  `long_run_defer_prewarm_min_steps_applied` when the floor is applied.
+  Verification: focused native GPT source-contract pytest, shell syntax check,
+  dry-run expansion, and `git diff --check`.
+
 - Native GPT CLI defaults: `cli/scripts/train_gpt.py` now expands the same dense
   GPT quality defaults as `tools/train_gpt_sm120.sh` on the compiled-CLI fast
   path before exec or dry-run command printing. Normal direct runs now include

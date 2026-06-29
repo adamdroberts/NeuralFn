@@ -331,6 +331,11 @@ auto policy in paired JSON metadata, so steady-state throughput gates are not
 dominated by first-use timing noise. Set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for an intentional
 low-warmup reproduction.
+Measured long-run deferred-prewarm runs also raise fewer than ten optimizer
+steps to ten by default, recording `long_run_defer_prewarm_min_steps_applied`
+or `default_long_run_defer_prewarm_min_steps_applied`; set
+`NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only when intentionally
+reproducing a short first-step-dominated benchmark.
 The stricter 20-pair floor is based on a 2026-06-29 20-warmup, 3-step,
 1-sample same-script run on the dedicated RTX 5090: selected GPU load stayed
 clean, NeuralFn steady-state CUDA-event step time measured `0.995716x` versus
