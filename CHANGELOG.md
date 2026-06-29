@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native GPT token-weight startup bisection: added rejected
+  `token_weight_strided_blocks1024` and `token_weight_strided_blocks2048`
+  candidate profiles to the SM120 paired wrapper. Both force the baseline to the
+  current 4096-block strided padded token-weight initializer cap, require
+  `token_weight_vector4_strided_max_blocks` to change, and gate
+  `setup.token_weight_init.total_ms` plus `setup_wall_ms`. The 1024-block cap
+  passed a CUDA 13.3.33 dedicated RTX 5090 5-sample startup-only check at
+  `setup.token_weight_init.total_ms=0.991206x` and `setup_wall_ms=0.989264x`,
+  but failed the 3-step, 3-sample training-shaped gate because
+  `setup.token_weight_init.total_ms` regressed to `1.002362x`,
+  candidate-over-reference train-loop wall was `1.000470x`, and
+  candidate-over-reference tokens/sec was `0.999551x`. The 2048-block cap
+  failed the 5-sample startup-only gate because
+  `setup.token_weight_init.total_ms` regressed to `1.026979x`. The runtime
+  default stays at 4096 blocks. Verification: shell syntax validation, focused
+  native GPT candidate-profile pytest coverage, and `git diff --check`.
+
 - Native LM-head true-fused diagnostics: rechecked
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`
   on the CUDA 13.3.33 dedicated RTX 5090 with the focused trainer-chunk

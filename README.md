@@ -4086,16 +4086,23 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. The
 `token_weight_vector4_strided` startup profile is kept as a default-vs-old
 initializer comparison rather than a rejected candidate.
-The `token_weight_strided_blocks8192` and
+The `token_weight_strided_blocks1024`,
+`token_weight_strided_blocks2048`, `token_weight_strided_blocks8192`, and
 `token_weight_strided_blocks16384` startup profiles compare the default
-4096-block strided token-weight initializer cap against larger launch caps and
-require `token_weight_vector4_strided_max_blocks` to change in the paired
+4096-block strided token-weight initializer cap against alternate launch caps
+and require `token_weight_vector4_strided_max_blocks` to change in the paired
 strategy-value gate. They remain diagnostic-only after the CUDA 13.3.33
-dedicated RTX 5090 rerun: with 10 measured samples and 3 warmup samples,
-8192 blocks regressed `setup.token_weight_init.total_ms` to `1.009851x` and
-`setup_wall_ms` to `1.009652x`; the 5-sample 16384 check regressed
-`setup.token_weight_init.total_ms` to `1.012305x` and `setup_wall_ms` to
-`1.010924x`.
+dedicated RTX 5090 reruns. Lowering the cap to 1024 passed the 5-sample
+startup-only gate (`setup.token_weight_init.total_ms=0.991206x`,
+`setup_wall_ms=0.989264x`), but failed the 3-step training-shaped gate because
+`setup.token_weight_init.total_ms` regressed to `1.002362x`,
+candidate/reference train-loop wall was `1.000470x`, and candidate/reference
+tokens/sec was `0.999551x`. The 2048-block check regressed
+`setup.token_weight_init.total_ms` to `1.026979x`. With 10 measured samples and
+3 warmup samples, 8192 blocks regressed `setup.token_weight_init.total_ms` to
+`1.009851x` and `setup_wall_ms` to `1.009652x`; the 5-sample 16384 check
+regressed `setup.token_weight_init.total_ms` to `1.012305x` and
+`setup_wall_ms` to `1.010924x`.
 The sweep `summary.tsv` includes explicit QKV/MLP-FC/attention-projection
 concurrent route deltas so external GPU load cannot hide whether a side-stream
 candidate actually launched the alternate kernel schedule.

@@ -3634,6 +3634,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
         "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",
         "uint16_arena_first": "NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1",
+        "token_weight_strided_blocks1024": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=1024",
+        "token_weight_strided_blocks2048": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=2048",
         "token_weight_strided_blocks8192": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=8192",
         "token_weight_strided_blocks16384": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=16384",
         "store_mlp_blocks3": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=3",
@@ -10539,6 +10541,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_weight_vector4_strided_max_blocks()" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS" in kernels_text
     assert "token_weight_padded_specialized" in candidate_bench_text
+    assert "token_weight_strided_blocks1024" in candidate_bench_text
+    assert "token_weight_strided_blocks2048" in candidate_bench_text
     assert "token_weight_strided_blocks8192" in candidate_bench_text
     assert "token_weight_strided_blocks16384" in candidate_bench_text
     padded_token_init_kernel = kernels_text[
