@@ -2130,23 +2130,19 @@ CE/dlogits default. The strict single-kernel
 classifier/dHidden/dWeight Tile route remains experimental.
 Dense GPT training now requests the non-strict cooperative LM-head backward
 route by default. On current CUDA 13.3 RTX 5090 builds this selects the
-diagnostic CUDA Graph/wrapper path when the strict callable symbol is present:
+cooperative sequence wrapper instead of cached LM-head CUDA Graph replay:
 fused classifier CE/dlogits runs in Tile CUDA, and dHidden plus dWeight remain
 native matmul backward kernels with no Torch or graph-editor tensor flow. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
 the route in the paired benchmark wrapper. Set
-`NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` only for paired
-diagnostics that need to force the older sequence wrapper instead of the
-current strict parity route while keeping the cooperative route requested; the
-reproducible same-script profile is
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only to compare the legacy
+cached CUDA Graph wrapper. The reproducible same-script profile is
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`;
-that profile also sets `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` and
-real reruns require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
-because the stronger confirmation kept the sequence route rejected as a
-default. The
-separate strict callable symbol
+that profile compares graph replay as baseline against the default sequence
+wrapper and keeps promotion gates on train-loop, startup, LM-head, and
+llm.kittens steady-state timing. The separate strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
 for the future fused body, but the current llm.kittens-parity route is not a
 true single-kernel/cooperative implementation. Its capability probe

@@ -3045,17 +3045,17 @@ symbol/capability preflight before cached token-shard discovery or CUDA runtime
 setup, so missing fused-kernel builds fail immediately. Use `--check-tile-ops
 --require-cooperative-lm-head-backward` to inspect the same capability as JSON
 without entering the training path.
-The historical sequence-wrapper candidate route now requires
-`NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1` plus
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`, and the named
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
-sets both variables. That keeps paired diagnostics able to compare the older
-wrapper against the current parity route while preventing graph/sequence knobs
-from silently replacing the strict default. The 2026-06-28 CUDA 13.3.33
-dedicated RTX 5090 rerun kept the sequence wrapper rejected at `1.012109x`
-train-loop wall, `1.005261x` steady-state CUDA-event timing, `1.050922x`
-LM-head backward, and `1.073406x` cooperative LM-head body time versus the
-cached graph route.
+The cooperative LM-head sequence wrapper is now the default native route. The
+named `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
+compares legacy cached CUDA Graph replay (`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1`)
+against the default sequence wrapper
+(`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0`). The 2026-06-29 CUDA
+13.3.33 dedicated RTX 5090 long-run deferred-prewarm rerun accepted the
+sequence route at `0.999005x` train-loop wall, `0.998553x`
+startup-plus-first-step, `0.996796x` LM-head backward, `0.995351x` cooperative
+LM-head body time, and `1.000997x` train tokens/sec versus current native,
+with steady-state CUDA-event timing inside gate versus both current native and
+llm.kittens.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
 is the current no-loss classifier-store diagnostic. It expands to
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps

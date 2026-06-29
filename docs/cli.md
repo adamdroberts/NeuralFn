@@ -1246,9 +1246,10 @@ separately for diagnostics and does not satisfy that strict flag. Direct
 `--native-cuda-require-cooperative-lm-head-backward` and forward it to the same
 compiled flag, so wrapper dry-runs and real runs exercise the same strict
 preflight contract.
-Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired
-diagnostics that need to force the sequence wrapper instead of the cached graph
-wrapper while keeping the cooperative LM-head route requested.
+The cooperative LM-head sequence wrapper is the default native route. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only for paired diagnostics
+that need to compare the legacy cached graph wrapper while keeping the
+cooperative LM-head route requested.
 The standalone LM-head benchmark can also test the explicit cuBLASLt candidate
 without changing trainer defaults:
 `NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16
@@ -2332,14 +2333,13 @@ diagnostic-only: the CUDA 13.3 dedicated RTX 5090 one-step same-script run
 improved LM-head backward to `0.705502x`, but regressed train-loop wall to
 `21.830567x` and block backward to `44.496727x` under the 6.59 GB resident-logit
 footprint.
-`lm_head_cooperative_sequence_wrapper` disables the default LM-head CUDA Graph
-replay and runs the direct cooperative sequence wrapper. It remains rejected:
-the CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample, stage-timed
-rerun regressed train-loop wall to `1.012109x`, steady-state CUDA-event timing
-to `1.005261x`, tokens/sec to `0.988038x`, LM-head backward to `1.050922x`,
-and cooperative LM-head body time to `1.073406x`. Keep the CUDA Graph wrapper
-default until the replacement is a true fused/reference-aligned
-classifier-backward path.
+`lm_head_cooperative_sequence_wrapper` compares the legacy LM-head CUDA Graph
+replay path against the default direct cooperative sequence wrapper. The CUDA
+13.3.33 dedicated RTX 5090 2026-06-29 long-run deferred-prewarm rerun made the
+sequence wrapper the default after it improved train-loop wall to `0.999005x`,
+first-step CUDA-event timing to `0.997003x`, startup-plus-first-step to
+`0.998553x`, LM-head backward to `0.996796x`, cooperative LM-head body time to
+`0.995351x`, and train tokens/sec to `1.000997x` versus current native.
 `cublaslt_grouped_probe` expands to
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
@@ -2391,16 +2391,14 @@ noisy total train-loop improvement but failed the strict CE stage gate at
 available without the opt-in.
 `lm_head_cooperative_backward` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to the candidate command.
-`lm_head_cooperative_sequence_wrapper` compares the cached CUDA Graph
-diagnostic route against the sequence-wrapper diagnostic route by setting
+`lm_head_cooperative_sequence_wrapper` compares the legacy cached CUDA Graph
+diagnostic route against the default sequence-wrapper diagnostic route by setting
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` on the baseline command and
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` on the candidate command.
-It is rejected for real launches unless
-`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; the 2026-06-28
-CUDA 13.3.33 dedicated RTX 5090 stage-timed rerun kept the cached graph route
-as the default after the sequence wrapper regressed train-loop wall to
-`1.012109x`, steady-state CUDA-event timing to `1.005261x`, LM-head backward to
-`1.050922x`, and cooperative LM-head body time to `1.073406x`.
+It is an accepted default-vs-legacy profile. The 2026-06-29 CUDA 13.3.33
+dedicated RTX 5090 long-run deferred-prewarm rerun kept steady-state
+CUDA-event timing inside gate at `1.000114x` versus current native and
+`0.996290x` versus llm.kittens.
 `lm_head_cooperative_backward_required` adds the same environment flag plus
 `--require-cooperative-lm-head-backward`. Use the non-required profile for
 same-script wrapper-symbol timing, and the required profile for preflight

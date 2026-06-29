@@ -2647,6 +2647,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
+    default_off_lm_head_graph = (
+        'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",\n'
+        + '                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),\n'
+        + "            false);"
+    )
+    assert source.count(default_off_lm_head_graph) == 2
     assert "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "static const bool enabled = []() {" in tile_ops_source
@@ -3242,9 +3248,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "run_lm_head_backward_preflight" in bench_source
     assert "tools/bench_lm_head_backward_candidate.sh" in bench_source
     assert "lm_head_cooperative_sequence_wrapper" in bench_source
-    assert "train_loop_wall_ms_per_step regressed to 1.012109x" in bench_source
-    assert "stage.lm_head_backward.cooperative.total_ms regressed to 1.073406x" in bench_source
-    assert "true fused/reference-aligned classifier-backward path" in bench_source
+    assert "train-loop wall to 0.999005x" in bench_source
+    assert "cooperative LM-head body time to 0.995351x" in bench_source
+    assert "Candidate steady-state CUDA-event timing stayed within gate" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=576" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
@@ -3951,8 +3957,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "setup_event_timing": "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1",
         "lm_head_cooperative_sequence_wrapper": (
             "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 "
-            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 "
-            "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
+            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0"
         ),
         "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
         "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",

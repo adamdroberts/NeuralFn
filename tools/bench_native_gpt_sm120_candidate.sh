@@ -1422,10 +1422,14 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000}"
     ;;
   "lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"|"lm_head_cooperative_cuda_graph_off"|"lm-head-cooperative-cuda-graph-off")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 2-sample, stage-timed rerun forced the cooperative LM-head sequence wrapper instead of cached CUDA Graph replay and proved route changes, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.012109x, steady-state CUDA-event timing to 1.005261x, train_tokens_per_second dropped to 0.988038x, stage.lm_head_backward.total_ms regressed to 1.050922x, and stage.lm_head_backward.cooperative.total_ms regressed to 1.073406x. Keep the cached CUDA Graph wrapper default until the replacement is a true fused/reference-aligned classifier-backward path."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 7-warmup, 3-step, 2-sample, stage-timed long-run deferred-prewarm gate made the cooperative LM-head sequence wrapper the default over cached CUDA Graph replay. The route changed by dropping LM-head graph replay counters to zero and increasing lm_head_classifier_chunk_launch_count from 4 to 72, while improving train-loop wall to 0.999005x, first-step CUDA-event timing to 0.997003x, startup-plus-first-step to 0.998553x, LM-head backward to 0.996796x, cooperative LM-head body time to 0.995351x, and train tokens/sec to 1.000997x versus current native. Candidate steady-state CUDA-event timing stayed within gate at 1.000114x versus current native and 0.996290x versus llm.kittens."
+    DEFAULT_VS_LEGACY_PROFILE=1
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1"
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0 NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-startup_plus_first_step_wall_ms=1.000 train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.003 stage.lm_head_backward.total_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}"
     ;;
   "lm_head_cooperative_backward_off"|"lm-head-cooperative-backward-off"|"lm_head_direct_classifier_matmul"|"lm-head-direct-classifier-matmul")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
