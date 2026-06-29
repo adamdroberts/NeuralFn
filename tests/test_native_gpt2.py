@@ -2911,6 +2911,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"lm_head_true_fused_tile16"|"lm-head-true-fused-tile16"' in bench_source
     assert '"lm_head_true_fused_tile16_wmma"|"lm-head-true-fused-tile16-wmma"' in bench_source
     assert "lm_head_true_fused_tile16_wmma_warp32" in bench_source
+    assert "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count from 0 to 4" in bench_source
+    assert (
+        "REQUIRED_HOT_ROUTE_COUNTERS_RAW=\"${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }"
+        "lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count\""
+        in bench_source
+    )
     assert "lm_head_true_fused_tile16_wmma_exp2_ce" in bench_source
     assert '"lm_head_true_fused_tile24"|"lm-head-true-fused-tile24"' in bench_source
     assert '"lm_head_true_fused_tile8"|"lm-head-true-fused-tile8"' in bench_source

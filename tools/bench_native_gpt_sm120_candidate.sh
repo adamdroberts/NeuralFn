@@ -299,9 +299,9 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_graph_body_cublaslt_dweight"|"lm-head-graph-body-cublaslt-dweight"|"lm_head_cooperative_graph_body_cublaslt_dweight"|"lm-head-cooperative-graph-body-cublaslt-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 3-step, 1-sample stage-timed gate routed only the cooperative CUDA graph body dWeight GEMM through the existing strided cuBLASLt kernel while leaving dHidden on the default Tile launcher, but rejected it at 1.001673x train-loop wall, 1.002494x steady-state CUDA-event timing, 1.000210x LM-head backward, and 1.000161x cooperative LM-head substage time."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 post-reinstall 3-step, 2-sample stage-timed gate routed the prewarmed cooperative CUDA graph body dWeight GEMM through the existing strided cuBLASLt kernel while leaving dHidden on the default Tile launcher. The route changed as intended, moving lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count from 0 to 4, but rejected it because candidate-over-llm.kittens train-loop wall was 1.004190x, steady-state CUDA-event timing was 1.004443x, and train tokens/sec was 0.995824x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_GRAPH_BODY_CUBLASLT_DWEIGHT=1"
-    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }lm_head_graph_body_cublaslt_dweight_launch_count"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000 stage.lm_head_backward.cooperative.total_ms=1.000}"
     ;;
   "lm_head_tk_dweight_32768"|"lm-head-tk-dweight-32768")

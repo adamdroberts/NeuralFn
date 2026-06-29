@@ -12,6 +12,15 @@
   candidate/reference-summed-with-logits time. The default CUDA Graph LM-head
   wrapper stays active.
 
+- Native LM-head cuBLASLt graph-body diagnostics: rechecked
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_body_cublaslt_dweight`
+  on the CUDA 13.3.33 dedicated RTX 5090 after the CUDA reinstall. The route
+  now gates the prewarmed graph-body counter that actually changes
+  (`lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count`, 0 to 4)
+  instead of the stale non-prewarm counter. It remains rejected because
+  candidate-over-llm.kittens train-loop wall was `1.004190x`, steady-state
+  CUDA-event timing was `1.004443x`, and train tokens/sec was `0.995824x`.
+
 - Native no-Torch SDK guard: strengthened
   `tools/check_native_no_torch_deps.py` so the native SDK import and public
   export probes assert that Torch, NumPy, and `tiktoken` are not present in

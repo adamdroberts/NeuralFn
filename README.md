@@ -634,9 +634,12 @@ Both split profiles are currently rejected on the CUDA 13.3.33 dedicated RTX
 regressed train-loop wall to `1.073852x`, steady-state CUDA-event timing to
 `1.075869x`, LM-head backward to `1.314851x`, cooperative LM-head time to
 `1.449433x`, train tokens/sec to `0.931229x`, and candidate-over-llm.kittens
-train-loop wall to `1.100897x`. dWeight-only stayed closer but still missed the
-strict gate at `1.001673x` train-loop wall and `1.002494x` steady-state
-CUDA-event timing.
+train-loop wall to `1.100897x`. The post-reinstall dWeight-only recheck stayed
+closer and moved
+`lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count` from 0 to 4,
+but still failed the reference parity gate at `1.004190x`
+candidate-over-llm.kittens train-loop wall, `1.004443x` steady-state
+CUDA-event timing, and `0.995824x` train tokens/sec.
 Future
 single-kernel LM-head candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
