@@ -205,8 +205,22 @@ static_assert(
         NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 32,
     "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE must be 4, 8, 16, 24, or 32");
 constexpr int kLmHeadTrueFusedMatTile = NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE;
-constexpr int kLmHeadTrueFusedRequiredThreads =
-    kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile;
+#ifndef NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS
+#define NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS \
+  (NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE * NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE)
+#endif
+constexpr int kLmHeadTrueFusedRequiredThreads = NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS;
+static_assert(
+    kLmHeadTrueFusedRequiredThreads >= 32 &&
+        kLmHeadTrueFusedRequiredThreads <= 1024 &&
+        kLmHeadTrueFusedRequiredThreads % 32 == 0,
+    "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS must be a warp multiple between 32 and 1024");
+#if !(defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA) && \
+      NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16)
+static_assert(
+    kLmHeadTrueFusedRequiredThreads >= kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile,
+    "non-WMMA true-fused LM-head bodies need at least one thread per tile output");
+#endif
 #if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2) && \
     NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2
 constexpr bool kLmHeadTrueFusedCeExp2 = true;
@@ -255,6 +269,7 @@ int cross_entropy_bf16_threads_per_row() {
     }
     switch (parsed) {
       case 16:
+      case 32:
       case 64:
       case 128:
       case 256:
@@ -13244,14 +13259,18 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
         wmma::store_matrix_sync(&tile_a[0][0], c_frag, 16, wmma::mem_row_major);
       }
       __syncthreads();
-      if (tile_thread) {
-        float sum = tile_a[tile_row][tile_col];
+      for (int elem = threadIdx.x; elem < kMatTile * kMatTile; elem += blockDim.x) {
+        const int out_row = elem / kMatTile;
+        const int out_col = elem - out_row * kMatTile;
+        const std::int64_t store_row = row_tile * kMatTile + out_row;
+        const std::int64_t store_dim = dim_tile * kMatTile + out_col;
+        float sum = tile_a[out_row][out_col];
         const std::int64_t full_vocab = vocab & ~static_cast<std::int64_t>(15);
         for (std::int64_t col_base = full_vocab; col_base < vocab; ++col_base) {
-          sum += bf16_bits_to_f32_device(logits[row * row_stride + col_base]) *
-              bf16_bits_to_f32_device(token_weight_bf16[col_base * hidden_dim + dim]);
+          sum += bf16_bits_to_f32_device(logits[store_row * row_stride + col_base]) *
+              bf16_bits_to_f32_device(token_weight_bf16[col_base * hidden_dim + store_dim]);
         }
-        grad_hidden[row * hidden_dim + dim] += sum;
+        grad_hidden[store_row * hidden_dim + store_dim] += sum;
       }
       __syncthreads();
       continue;
@@ -13323,17 +13342,42 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
         wmma::store_matrix_sync(&tile_a[0][0], c_frag, 16, wmma::mem_row_major);
       }
       __syncthreads();
-      if (tile_thread) {
-        float sum = tile_a[tile_row][tile_col];
+      for (int elem = threadIdx.x; elem < kMatTile * kMatTile; elem += blockDim.x) {
+        const int out_row = elem / kMatTile;
+        const int out_col = elem - out_row * kMatTile;
+        const std::int64_t store_col = vocab_tile * kMatTile + out_row;
+        const std::int64_t store_dim = dim_tile * kMatTile + out_col;
+        float sum = tile_a[out_row][out_col];
         const std::int64_t full_rows = rows & ~static_cast<std::int64_t>(15);
         for (std::int64_t row_base = full_rows; row_base < rows; ++row_base) {
-          sum += bf16_bits_to_f32_device(logits[row_base * row_stride + col]) *
-              bf16_bits_to_f32_device(hidden_bf16[row_base * hidden_dim + dim]);
+          sum += bf16_bits_to_f32_device(logits[row_base * row_stride + store_col]) *
+              bf16_bits_to_f32_device(hidden_bf16[row_base * hidden_dim + store_dim]);
         }
-        const std::int64_t index = col * hidden_dim + dim;
+        const std::int64_t index = store_col * hidden_dim + store_dim;
         grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
       }
       __syncthreads();
+      continue;
+    }
+    if (kLmHeadTrueFusedRequiredThreads < kMatTile * kMatTile &&
+        vocab_tile * kMatTile < vocab &&
+        dim_tile * kMatTile + 15 < hidden_dim) {
+      for (int elem = threadIdx.x; elem < kMatTile * kMatTile; elem += blockDim.x) {
+        const int out_row = elem / kMatTile;
+        const int out_col = elem - out_row * kMatTile;
+        const std::int64_t store_col = vocab_tile * kMatTile + out_row;
+        const std::int64_t store_dim = dim_tile * kMatTile + out_col;
+        if (store_col >= vocab) {
+          continue;
+        }
+        float sum = 0.0f;
+        for (std::int64_t row_base = 0; row_base < rows; ++row_base) {
+          sum += bf16_bits_to_f32_device(logits[row_base * row_stride + store_col]) *
+              bf16_bits_to_f32_device(hidden_bf16[row_base * hidden_dim + store_dim]);
+        }
+        const std::int64_t index = store_col * hidden_dim + store_dim;
+        grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
+      }
       continue;
     }
 #endif
@@ -20391,6 +20435,11 @@ cudaError_t launch_lm_head_classifier_backward_true_fused_cooperative_bf16_bits_
   const bool production_shape =
       rows > 4096 || hidden_dim > 1024 || vocab > 4096 || row_stride > 4096;
   if (production_shape && !lm_head_true_fused_cooperative_allow_production_enabled()) {
+    return cudaErrorNotSupported;
+  }
+  if (kLmHeadTrueFusedRequiredThreads < kLmHeadTrueFusedMatTile * kLmHeadTrueFusedMatTile &&
+      (rows % kLmHeadTrueFusedMatTile != 0 ||
+       hidden_dim % kLmHeadTrueFusedMatTile != 0)) {
     return cudaErrorNotSupported;
   }
 

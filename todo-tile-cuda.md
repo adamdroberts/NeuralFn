@@ -1046,6 +1046,23 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases
       into that focused preflight so known-slow strict sections fail before the
       full paired trainer benchmark starts.
+    - 2026-06-29 added the rejected-by-default
+      `trainer-chunk-true-fused-tile16-wmma-warp32` focused profile and
+      `lm_head_true_fused_tile16_wmma_warp32` SM120 full-loop preflight. The
+      candidate builds the strict body with
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16`,
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1`, and
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32`, then forces
+      `NFN_TILE_CUDA_CE_BF16_THREADS=32`. The WMMA storeback now loops over the
+      whole 16x16 tile so a one-warp block writes every dHidden/dWeight output
+      element, the dWeight phase handles the final partial GPT vocab tile
+      directly, and the launcher rejects non-aligned row/hidden shapes before
+      they can hit the scalar edge-tile path with too few threads. This is still
+      diagnostic work; it does not close the true fused
+      classifier/dHidden/dWeight item. The dedicated RTX 5090 focused gate
+      proved the strict ABI and one true-fused launch, but rejected it at
+      `5.354603x` candidate/current-wrapper and `15.347515x`
+      candidate/reference-summed time.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

@@ -2889,6 +2889,20 @@ The dedicated RTX 5090 focused gate currently rejects this exp2 CE variant at
 `2.658957x` candidate/current-wrapper and `7.842695x`
 candidate/reference-summed time; a relaxed diagnostic rerun confirms the strict
 ABI path at `2.592639x` and `7.863436x`.
+For dHidden/dWeight occupancy bisection, add
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` to the tile16 WMMA build and set
+`NFN_TILE_CUDA_CE_BF16_THREADS=32`. The ABI implementation class reports
+`wmma-bf16-cooperative-tile-warp32-experimental`, and the rejected profiles
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp32` and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`
+run the same focused/full-loop gates. This profile is constrained to aligned
+row and hidden 16x16 production shapes, and handles the final partial GPT vocab
+tile through a direct dWeight tail path so it cannot silently fall into the
+scalar edge-tile path with too few threads.
+The dedicated RTX 5090 focused gate currently rejects this one-warp variant at
+`5.354603x` candidate/current-wrapper and `15.347515x`
+candidate/reference-summed time, so the 256-thread WMMA body remains the better
+strict diagnostic and the default CUDA Graph wrapper remains active.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
 

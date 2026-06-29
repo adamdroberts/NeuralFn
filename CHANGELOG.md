@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: added an opt-in one-warp strict true-fused
+  WMMA body for the tile16 LM-head candidate. Building Tile ops with
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` and
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1` makes the strict body launch 32
+  threads per block, uses looped WMMA storeback so all 16x16 outputs are
+  written, handles the final partial GPT vocab tile through a direct dWeight
+  tail path, and rejects non-aligned row/hidden shapes before they can fall into
+  the scalar edge-tile path. The ABI reports
+  `wmma-bf16-cooperative-tile-warp32-experimental`; the focused wrapper exposes
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp32`,
+  and the SM120 wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`.
+  Defaults are unchanged; this remains a diagnostic route until focused and
+  same-script gates prove it beats the current CUDA Graph wrapper. The
+  dedicated RTX 5090 focused gate intentionally rejects it at `5.354603x`
+  candidate/current-wrapper and `15.347515x` candidate/reference-summed time,
+  with the strict ABI reporting
+  `wmma-bf16-cooperative-tile-warp32-experimental` and one true-fused launch.
+  Verification:
+  `bash -n tools/bench_lm_head_backward_candidate.sh
+  tools/bench_native_gpt_sm120_candidate.sh`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_on`,
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp32
+  NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`, and an intentional
+  rejected-profile focused GPU run with
+  `NFN_LM_HEAD_BACKWARD_ALLOW_REJECTED_PROFILE=1`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json` reporting `20/20`
+  artifacts, `67/67` Python entrypoints, `18/18` shell entrypoints, and `4/4`
+  native template catalogs passed, and `git diff --check`.
+
 - Native GPT LM-head diagnostics: added an opt-in strict true-fused CE fast-math
   bisection for the tile16 WMMA body. Building Tile ops with
   `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1` makes the strict body use the
