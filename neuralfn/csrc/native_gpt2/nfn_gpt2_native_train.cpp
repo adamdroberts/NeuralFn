@@ -13855,6 +13855,12 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT"}),
             true);
+    const std::int64_t token_weight_vector4_strided_max_blocks =
+        env_nonnegative_i64_or(
+            {"NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS",
+             "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS",
+             "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS"},
+            4096);
     const bool token_weight_bf16_pattern_init_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT",
@@ -25597,6 +25603,8 @@ int run_transformer_lm_training_json(
         << (token_weight_vector4_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_vector4_strided_init_requested\": "
         << (token_weight_vector4_strided_init_requested ? "true" : "false") << ",\n"
+        << "  \"token_weight_vector4_strided_max_blocks\": "
+        << token_weight_vector4_strided_max_blocks << ",\n"
         << "  \"token_weight_bf16_pattern_init_requested\": "
         << (token_weight_bf16_pattern_init_requested ? "true" : "false") << ",\n"
         << "  \"token_weight_fast_int32_init_enabled\": "

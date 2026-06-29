@@ -3553,6 +3553,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_cooperative_backward_off": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0",
         "concurrent_arena_materialize": "NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1",
         "uint16_arena_first": "NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1",
+        "token_weight_strided_blocks8192": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=8192",
+        "token_weight_strided_blocks16384": "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=16384",
         "store_mlp_blocks3": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=3",
         "store_mlp_blocks6": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=6",
         "store_mlp_blocks9": "NFN_NATIVE_GPT_STORE_MLP_BLOCKS=9",
@@ -8059,6 +8061,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
     assert train_transformer_payload["token_weight_vector4_init_enabled"] is True
     assert train_transformer_payload["token_weight_vector4_strided_init_requested"] is True
+    assert train_transformer_payload["token_weight_vector4_strided_max_blocks"] == 4096
     assert train_transformer_payload["token_weight_bf16_pattern_init_requested"] is False
     assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
@@ -10336,12 +10339,18 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_weight_bf16_initial_refresh_elided" in gpt2_source_text
     assert "token_weight_padded_init_fusion_enabled" in gpt2_source_text
     assert "token_weight_padding_zero_launches_elided" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS" in gpt2_source_text
+    assert "token_weight_vector4_strided_max_blocks" in gpt2_source_text
     assert "token_weight_bf16.initial_refresh" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in header_text
     assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in source_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel" in kernels_text
     assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_padded_specialized_float32_kernel" in kernels_text
+    assert "token_weight_vector4_strided_max_blocks()" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS" in kernels_text
     assert "token_weight_padded_specialized" in candidate_bench_text
+    assert "token_weight_strided_blocks8192" in candidate_bench_text
+    assert "token_weight_strided_blocks16384" in candidate_bench_text
     padded_token_init_kernel = kernels_text[
         kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel") :
         kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")

@@ -16336,6 +16336,31 @@ bool token_weight_vector4_strided_init_enabled() {
   return enabled;
 }
 
+int token_weight_vector4_strided_max_blocks() {
+  static const int max_blocks = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return 4096;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || parsed <= 0) {
+      return 4096;
+    }
+    if (parsed > 65535) {
+      return 65535;
+    }
+    return static_cast<int>(parsed);
+  }();
+  return max_blocks;
+}
+
 void launch_init_gpt2_token_weight_vector4_strided_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
@@ -16345,9 +16370,9 @@ void launch_init_gpt2_token_weight_vector4_strided_float32(
     return;
   }
   constexpr int kThreads = 256;
-  constexpr int kMaxBlocks = 4096;
+  const int max_blocks = token_weight_vector4_strided_max_blocks();
   const int blocks = std::min<int>(
-      kMaxBlocks,
+      max_blocks,
       static_cast<int>(((n + 3) / 4 + kThreads - 1) / kThreads));
   if (shadow_bf16_bits != nullptr) {
     init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_kernel<<<
@@ -16505,9 +16530,9 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
   constexpr int kThreads = 256;
   const int blocks = static_cast<int>((total_n + (kThreads * 4 - 1)) / (kThreads * 4));
   if (token_weight_vector4_strided_init_enabled()) {
-    constexpr int kMaxBlocks = 4096;
+    const int max_blocks = token_weight_vector4_strided_max_blocks();
     const int strided_blocks = std::min<int>(
-        kMaxBlocks,
+        max_blocks,
         std::max<int>(1, blocks));
     const bool padded_bf16_pattern = token_weight_padded_bf16_pattern_enabled();
     if (!token_weight_padded_specialized_enabled()) {

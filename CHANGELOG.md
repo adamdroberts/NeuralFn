@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: dense GPT runtime JSON and paired-speed summaries now
+  track `token_weight_vector4_strided_max_blocks`, and the Tile CUDA strided
+  token-weight initializer accepts
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS`,
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS`, or
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS` for paired startup
+  bisection. The default remains 4096 blocks. Added
+  `token_weight_strided_blocks8192` and `token_weight_strided_blocks16384`
+  candidate profiles; both force the baseline to 4096 blocks, require
+  `token_weight_vector4_strided_max_blocks` as the strategy-value proof, and
+  gate `setup.token_weight_init.total_ms` plus `setup_wall_ms`.
+  Verification: focused pytest coverage passed for native GPT defaults,
+  candidate-profile expansion, and paired startup strategy reporting; linked
+  Tile ops and the linked native GPT trainer rebuilt with CUDA 13.3.33. On the
+  dedicated RTX 5090, 8192 blocks passed attribution but failed the longer
+  10-sample / 3-warmup startup gate at
+  `setup.token_weight_init.total_ms=1.009851x` and
+  `setup_wall_ms=1.009652x`; 16384 blocks also passed attribution but failed
+  the 5-sample / 1-warmup startup gate at
+  `setup.token_weight_init.total_ms=1.012305x` and
+  `setup_wall_ms=1.010924x`, so neither launch cap was promoted.
+
 - CUDA 13.3 SM120 validation: updated `tools/validate_sm120_cuda13.sh` for the
   current direct native one-step runtime contract. The gate now expects
   `native_auto_fast_startup_short_run=true`,

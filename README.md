@@ -3760,9 +3760,14 @@ unavailable,
 `token_weight_padding_zero_launches_elided`,
 `token_weight_threaded_init_enabled`, `token_weight_vector4_init_enabled`,
 `token_weight_vector4_strided_init_requested`,
+`token_weight_vector4_strided_max_blocks`,
 `token_weight_bf16_pattern_init_requested`,
 `token_weight_fast_int32_init_enabled`, and
 `token_weight_host_materialization: false`.
+The strided vector4 initializer keeps a 4096-block launch cap by default; set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=N` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_MAX_BLOCKS=N` only for paired
+startup bisection against that default.
 The `token_weight_bf16_pattern` startup candidate remains rejected after the
 2026-06-25 dedicated RTX 5090 rerun: total setup wall stayed flat at
 `0.998033x` mean / `1.015865x` median, `setup.token_weight_init.total_ms` was
@@ -4016,6 +4021,16 @@ regressed train-loop wall time, and the ordering-only routes failed route
 detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. The
 `token_weight_vector4_strided` startup profile is kept as a default-vs-old
 initializer comparison rather than a rejected candidate.
+The `token_weight_strided_blocks8192` and
+`token_weight_strided_blocks16384` startup profiles compare the default
+4096-block strided token-weight initializer cap against larger launch caps and
+require `token_weight_vector4_strided_max_blocks` to change in the paired
+strategy-value gate. They remain diagnostic-only after the CUDA 13.3.33
+dedicated RTX 5090 rerun: with 10 measured samples and 3 warmup samples,
+8192 blocks regressed `setup.token_weight_init.total_ms` to `1.009851x` and
+`setup_wall_ms` to `1.009652x`; the 5-sample 16384 check regressed
+`setup.token_weight_init.total_ms` to `1.012305x` and `setup_wall_ms` to
+`1.010924x`.
 The sweep `summary.tsv` includes explicit QKV/MLP-FC/attention-projection
 concurrent route deltas so external GPU load cannot hide whether a side-stream
 candidate actually launched the alternate kernel schedule.

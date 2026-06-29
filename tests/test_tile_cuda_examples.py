@@ -4922,6 +4922,7 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "\\\"token_weight_fast_int32_init_enabled\\\": true, "
         "\\\"token_weight_bf16_initial_refresh_fusion_enabled\\\": true, "
         "\\\"token_weight_bf16_padding_memset_count\\\": 1"
+        ", \\\"token_weight_vector4_strided_max_blocks\\\": 4096"
         "}"
     )
     candidate_json = baseline_json.replace(
@@ -4951,6 +4952,9 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     ).replace(
         "\\\"device-vector4-power2-deterministic-fused-bf16-shadow\\\"",
         "\\\"device-vector4-strided-power2-deterministic-fused-bf16-shadow\\\"",
+    ).replace(
+        "\\\"token_weight_vector4_strided_max_blocks\\\": 4096",
+        "\\\"token_weight_vector4_strided_max_blocks\\\": 8192",
     )
 
     proc = subprocess.run(
@@ -5008,6 +5012,9 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     assert payload["candidate_native_metric_values"]["token_weight_bf16_padding_memset_count"] == [
         "1"
     ]
+    assert payload["candidate_native_metric_values"]["token_weight_vector4_strided_max_blocks"] == [
+        "8192"
+    ]
     assert payload["candidate_native_metrics"]["token_weight_bf16_padding_memset_count"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["startup_stats_reset_count"]["mean"] == 0.0
     strategy_changes = payload["native_strategy_value_changes"]
@@ -5027,6 +5034,10 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "baseline_values": ["false"],
         "candidate_values": ["true"],
     }
+    assert strategy_changes["changed"]["token_weight_vector4_strided_max_blocks"] == {
+        "baseline_values": ["4096"],
+        "candidate_values": ["8192"],
+    }
     assert "tile_ops_library: linked" in proc.stdout
     assert "tile_ops_dlopen_binding_strategy: RTLD_DEFAULT-linked" in proc.stdout
     assert "tile_ops_required_symbol_scan_skipped: true" in proc.stdout
@@ -5037,6 +5048,7 @@ def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
         "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
     ) in proc.stdout
     assert "token_weight_bf16_padding_memset_count: 1" in proc.stdout
+    assert "token_weight_vector4_strided_max_blocks: 8192" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:

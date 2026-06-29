@@ -1188,6 +1188,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "token_weight_bf16_initial_refresh_elided",
     "token_weight_bf16_padding_memset_count",
     "token_weight_bf16_adamw_refresh_fusion_enabled",
+    "token_weight_vector4_strided_max_blocks",
     "adamw_bf16_shadow_refresh_strategy",
 )
 NATIVE_TEXT_METRIC_KEYS = (
