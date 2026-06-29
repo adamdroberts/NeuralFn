@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT benchmark diagnostics: refreshed the `tk_qkv_forward_prewarm_1row`
+  and `tk_qkv_forward_prewarm_49152` rejection evidence after the cooperative
+  LM-head sequence wrapper became the default. With LM-head CUDA Graph replay
+  disabled on both sides, the one-row QKV prewarm still fails startup-plus
+  gates despite improving train-loop wall to `0.978558x`, first-step CUDA-event
+  timing to `0.940367x`, and forward-QKV first-step timing to `0.416249x`.
+  The 49152-row QKV prewarm passes startup-plus-first-step at `0.995515x`,
+  startup-plus-train-loop at `0.998019x`, train-loop wall at `0.977976x`, and
+  forward-QKV first-step timing at `0.406568x`, but remains rejected because
+  setup wall regresses to `1.307975x` and train tokens/sec still trails the
+  llm.kittens reference at `0.991683x`. Verification: same-script
+  candidate/current/reference benchmarks with clean selected-GPU state.
+
 - Native GPT LM-head default: the cooperative LM-head sequence wrapper is now
   the default native route, and cached LM-head CUDA Graph replay is opt-in via
   `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1`. A 7-warmup, 3-step,

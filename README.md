@@ -1475,25 +1475,26 @@ first `N` rows and reports
 `linear_tk_qkv_first_use_prewarm_effective_rows` in native GPT JSON. The
 `tk_qkv_forward_prewarm_1row` profile uses this to test whether a tiny setup
 launch can pay TK first-use overhead without the full-row setup regression; it
-remains rejected. The 2026-06-29 long-run deferred-prewarm rerun improved
-train-loop wall to `0.978921x`, first-step CUDA-event timing to `0.941562x`,
-steady-state CUDA-event timing to `0.999721x`, and train tokens/sec to
-`1.021530x` versus the current no-QKV-prewarm baseline, but failed the startup
-contract at `1.380026x` setup wall, `1.008787x` startup-plus-first-step, and
-`1.063530x` startup-plus-steady-state. Candidate-over-llm.kittens steady-state
-timing passed at `0.997438x`, but train tokens/sec trailed the reference at
-`0.990832x`.
+remains rejected. The 2026-06-29 post-LM-head-sequence-default rerun improved
+train-loop wall to `0.978558x`, first-step CUDA-event timing to `0.940367x`,
+forward-QKV first-step timing to `0.416249x`, and train tokens/sec to
+`1.021912x` versus the current no-QKV-prewarm baseline, but failed the startup
+contract at `1.354220x` setup wall, `1.005108x` startup-plus-first-step, and
+`1.001902x` startup-plus-train-loop. Candidate-over-llm.kittens steady-state
+timing passed at `0.998301x`, but train tokens/sec trailed the reference at
+`0.990679x`.
 The `tk_qkv_forward_prewarm_32768` profile is also rejected: its 2026-06-27
 CUDA 13.3.33 dedicated RTX 5090 3-step, 1-sample stage-timed probe improved
 setup wall time to `0.961917x`, but regressed train-loop wall to `1.002107x`,
 steady-state CUDA-event timing to `1.002784x`, block backward to `1.002263x`,
 and candidate-over-llm.kittens train-loop wall to `1.001097x`.
-The `tk_qkv_forward_prewarm_49152` profile is likewise rejected: the 2026-06-28
-CUDA 13.3.33 dedicated RTX 5090 3-step, 1-sample stage-timed probe improved
-setup wall time to `0.978456x` and startup-plus-first-step wall to `0.998249x`,
-but regressed train-loop wall to `1.002539x`, first-step CUDA-event timing to
-`1.004288x`, forward-QKV first-step timing to `1.063042x`, and tokens/sec to
-`0.997467x`.
+The `tk_qkv_forward_prewarm_49152` profile is likewise rejected: the 2026-06-29
+post-LM-head-sequence-default rerun improved startup-plus-first-step to
+`0.995515x`, startup-plus-train-loop to `0.998019x`, train-loop wall to
+`0.977976x`, first-step CUDA-event timing to `0.938976x`, forward-QKV
+first-step timing to `0.406568x`, and train tokens/sec to `1.022522x`, but
+regressed setup wall to `1.307975x` and still trailed llm.kittens train
+tokens/sec at `0.991683x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

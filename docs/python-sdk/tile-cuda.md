@@ -795,10 +795,11 @@ failed the short-run throughput contract at `1.022429x` train-loop wall,
 `linear_tk_qkv_first_use_prewarm_effective_rows`, and the rejected
 `tk_qkv_forward_prewarm_1row`, `tk_qkv_forward_prewarm_32768`, and
 `tk_qkv_forward_prewarm_49152` SM120 profiles use this as bisection routes. The
-49152-row cap improved setup wall to `0.978456x` on the CUDA 13.3.33 dedicated
-RTX 5090 recheck, but stayed rejected because train-loop wall regressed to
-`1.002539x`, first-step QKV timing to `1.063042x`, and tokens/sec to
-`0.997467x`.
+49152-row cap improved startup-plus-first-step to `0.995515x`,
+startup-plus-train-loop to `0.998019x`, train-loop wall to `0.977976x`, and
+first-step QKV timing to `0.406568x` on the post-LM-head-sequence-default
+recheck, but stayed rejected because setup wall regressed to `1.307975x` and
+train tokens/sec still trailed llm.kittens at `0.991683x`.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

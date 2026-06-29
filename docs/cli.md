@@ -1482,9 +1482,10 @@ setup GEMM to the first `N` rows. Native GPT JSON reports
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm_1row` profile still
 uses a one-row launch to test whether TK first-use overhead can be paid without
 the full-row setup cost. The current long-run deferred-prewarm rerun improved
-first-step CUDA-event timing to `0.941562x` and train-loop wall to `0.978921x`,
-but failed startup-plus-first-step at `1.008787x` and reference train tokens/sec
-at `0.990832x`, so it remains diagnostic-only.
+first-step CUDA-event timing to `0.940367x`, forward-QKV first-step timing to
+`0.416249x`, and train-loop wall to `0.978558x`, but failed setup wall at
+`1.354220x`, startup-plus-first-step at `1.005108x`, and reference train
+tokens/sec at `0.990679x`, so it remains diagnostic-only.
 LM-head graph prewarm is enabled by default for real native GPT training.
 It warms both the no-loss graph key and the active train-loss graph key,
 including loss-bin flags when that route is configured, so the first logged

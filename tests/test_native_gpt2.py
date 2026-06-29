@@ -4180,16 +4180,22 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "steady-state CUDA-event timing regressed to 1.000992x" in bench_source
     assert '"tk_sm120_super_m13"|"tk-sm120-super-m13"' in bench_source
     assert '"tk_qkv_forward_prewarm_1row"|"tk-qkv-forward-prewarm-1row"' in bench_source
-    assert "long-run deferred-prewarm rerun kept the one-row TK QKV first-use prewarm rejected" in bench_source
-    assert "train_loop_wall_ms_per_step to 0.978921x" in bench_source
-    assert "first-step CUDA-event time to 0.941562x" in bench_source
-    assert "setup_wall_ms regressed to 1.380026x" in bench_source
-    assert "startup_plus_first_step_wall_ms to 1.008787x" in bench_source
-    assert "train tokens/sec trailed the reference at 0.990832x" in bench_source
+    assert "post-LM-head-sequence-default 7-warmup" in bench_source
+    assert "train_loop_wall_ms_per_step to 0.978558x" in bench_source
+    assert "first-step CUDA-event time to 0.940367x" in bench_source
+    assert "forward-QKV first-step timing to 0.416249x" in bench_source
+    assert "setup_wall_ms regressed to 1.354220x" in bench_source
+    assert "startup_plus_first_step_wall_ms to 1.005108x" in bench_source
+    assert "train tokens/sec still trailed the reference at 0.990679x" in bench_source
     assert '"tk_qkv_forward_prewarm_32768"|"tk-qkv-forward-prewarm-32768"' in bench_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=32768" in bench_source
     assert "setup_wall_ms to 0.961917x" in bench_source
     assert "train_loop_wall_ms_per_step to 1.002107x" in bench_source
+    assert '"tk_qkv_forward_prewarm_49152"|"tk-qkv-forward-prewarm-49152"' in bench_source
+    assert "startup_plus_first_step_wall_ms to 0.995515x" in bench_source
+    assert "startup_plus_train_loop_wall_ms to 0.998019x" in bench_source
+    assert "setup_wall_ms regressed to 1.307975x" in bench_source
+    assert "overall train tokens/sec still trailed the reference at 0.991683x" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source
     assert "strategy telemetry changed super_m and dinput_super_m from 8 to 13" in bench_source
     assert "block backward to 1.011813x" in bench_source
