@@ -205,8 +205,8 @@ the 32768-row baseline. Use it only for memory/startup diagnostics.
 The CUDA module-loading bisection is also pinned as a rejected diagnostic:
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_module_eager` compares the default
 `CUDA_MODULE_LOADING=LAZY` wrapper route against `CUDA_MODULE_LOADING=EAGER`.
-The CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun after the WSL CUDA
-reinstall left LAZY as the default because EAGER changed no tracked kernel
+The CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun left LAZY as the
+default because EAGER changed no tracked kernel
 route and regressed setup wall time to `3.467504x`, train-loop wall time to
 `1.009903x`, first-step CUDA-event timing to `1.048444x`, and tokens/sec to
 `0.990197x`.
@@ -679,12 +679,12 @@ The cached LM-head graph-body cuBLASLt bisection can now isolate each GEMM with
 fallback counters, so same-script tests can separate the rejected all-on route
 into dHidden-only and dWeight-only evidence before any default is changed.
 Both split profiles are currently rejected on the CUDA 13.3.33 dedicated RTX
-5090 gate. The post-reinstall dHidden-only rerun proved the route changed
+5090 gate. The current dHidden-only rerun proved the route changed
 (`lm_head_graph_body_cublaslt_dhidden_launch_count` moved from 0 to 4), but it
 regressed train-loop wall to `1.073852x`, steady-state CUDA-event timing to
 `1.075869x`, LM-head backward to `1.314851x`, cooperative LM-head time to
 `1.449433x`, train tokens/sec to `0.931229x`, and candidate-over-llm.kittens
-train-loop wall to `1.100897x`. The post-reinstall dWeight-only recheck stayed
+train-loop wall to `1.100897x`. The current dWeight-only recheck stayed
 closer and moved
 `lm_head_fused_graph_prewarm_body_cublaslt_dweight_launch_count` from 0 to 4,
 but still failed the reference parity gate at `1.004190x`
@@ -772,7 +772,7 @@ defaults `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000`,
 fail until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict body uses 32x32 shared-memory tiles for
 the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3.33
-RTX 5090 post-reinstall evidence at the current 28672-row trainer chunk still
+RTX 5090 current evidence at the current 28672-row trainer chunk still
 keeps it rejected: `690.838257 ms`, `32.326054x` slower than the current wrapper
 and `22.231452x` slower than the component reference. Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
@@ -828,7 +828,7 @@ For full-loop production-shape checks, use
 `--require-native-lm-head-true-fused` gate so the opt-in strict body is measured
 against the current full GPT loop and the llm.kittens reference before any
 default promotion. The current strict body is a 32x32 tiled diagnostic kernel,
-but the 2026-06-27 post-toolkit-reinstall full-loop check still rejects it:
+but the 2026-06-27 current full-loop check still rejects it:
 train-loop wall time regressed to `5.991992x`, token throughput fell to
 `0.166890x`, LM-head backward regressed to `22.660619x`, and the cooperative
 LM-head section regressed to `32.243288x` versus the default CUDA Graph wrapper.
@@ -928,7 +928,7 @@ timing to `1.002521x` and `stage.block_backward.attn_sdpa.to_qkv.total_ms` to
 `1.002141x`.
 `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` also applies to matrix runs because the
 matrix delegates each profile to the same lower-level wrapper. A
-post-reinstall wrapper
+current wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
 and the matching `nfn train ... --native-cuda-dry-run --native-cuda-print-command`
@@ -970,7 +970,7 @@ versus candidate `=1`, and native JSON reports
 `token_weight_vector4_strided_init_requested` plus the distinct
 `device-vector4-strided-power2-deterministic-fused-bf16-shadow-padded-zero`
 strategy when padded BF16-shadow fusion is available.
-After the CUDA 13.3 reinstall on the dedicated RTX 5090, the rebuilt 2-sample
+In the current dedicated RTX 5090 validation, the rebuilt 2-sample
 same-script gate passed at `0.989905x` setup wall, `0.987217x` token init, and
 `0.997838x` total wall, with the same no-graph/no-Torch contract.
 The fused padded-vocab BF16-shadow token initializer is the native GPT startup
@@ -1710,8 +1710,8 @@ gate both host train-loop wall time and the native CUDA-event steady-state step
 time. Set `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0`,
 `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0`, or
 `NFN_SM120_TRAIN_LOOP_EVENT_TIMING=0` only for a measurement-only rerun that
-does not need native CUDA-event records. After the CUDA 13.3 reinstall and SM120
-native rebuild, the dedicated idle RTX 5090 3-step parity gate completed cleanly
+does not need native CUDA-event records. After the current SM120 native rebuild,
+the dedicated idle RTX 5090 3-step parity gate completed cleanly
 and measured NeuralFn at about `208k` tokens/sec versus llm.kittens at about
 `216k` tokens/sec, leaving the remaining work as kernel-throughput closing
 rather than CUDA setup or graph/Torch startup.
@@ -1873,7 +1873,7 @@ Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` to run both
 cuBLASLt grouped layout and grouped execution probes through the same native
 paired wrapper as the other SM120 candidates; the current CUDA 13.3 WSL recheck
 still reports layout status `0` and grouped matmul status `15`; a later
-one-step dedicated RTX 5090 rerun after the CUDA reinstall reported the same
+one-step dedicated RTX 5090 rerun reported the same
 `0`/`15` probe result. A CUDA 13.3.33 dedicated RTX 5090 one-step probe again
 reported grouped layout status `0` and grouped matmul status `15`, while the
 separate classic cuBLAS grouped BF16 probe still failed with status `700`.
@@ -2062,7 +2062,7 @@ profile compares that default against
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. A CUDA 13.3.33
-dedicated RTX 5090 2026-06-28 post-reinstall current-default 3-step, 2-sample
+dedicated RTX 5090 2026-06-28 current-default 3-step, 2-sample
 no-stage rerun measured `0.999943x` train-loop wall, `0.999902x` steady-state
 CUDA-event wall, `1.000056x` train tokens/sec, `0.997023x`
 candidate-over-llm.kittens train-loop wall, and `1.002670x`
@@ -2158,7 +2158,7 @@ For optimizer-only steps that do not record train loss, the diagnostic
 CUDA Graph wrapper passes the explicit no-loss cooperative flag and reuses the
 normal BF16/u16 no-loss classifier CE+dlogits kernel instead of forcing the
 row-loss CE path. Validation and train-loss logging still use the row-loss or
-loss-bin routes when requested. After the CUDA Toolkit 13.3 reinstall, the
+loss-bin routes when requested. In the current CUDA Toolkit 13.3 validation, the
 dedicated RTX 5090 3-step, 2-sample same-script rerun measured the default
 graph replay route at `0.989305x` train-loop wall, `1.000461x` steady-state
 CUDA-event timing, and `1.010931x` train tokens/sec versus the previous native
@@ -2730,7 +2730,7 @@ diagnose CUDA runtime/driver mismatches before allocation.
 LM-head row-order bisections can use
 `NFN_SM120_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0` to compare
 the previous forward chunk traversal against the current reverse-row-chunk
-default. After the CUDA 13.3 reinstall on the dedicated RTX 5090, a guarded
+default. In the current dedicated RTX 5090 validation, a guarded
 three-sample same-script gate measured reverse traversal faster on average
 (`0.997183x` train-loop wall time), so it is now the workstation default.
 Set
@@ -2753,7 +2753,7 @@ bisections can use
 `token_weight_two_pass_bf16` instead of spelling out the individual env flags;
 these profiles now force explicit baseline/candidate envs for default-on
 switches and remain diagnostic-only unless the measured gate justifies a
-default change. After the CUDA 13.3 reinstall on the dedicated RTX 5090, the
+default change. In the current dedicated RTX 5090 validation, the
 corrected `token_weight_vector4_strided` profile passed a 2-sample
 startup-only gate (`0.949594x` setup wall, `0.986349x` token init) with a
 strategy-value route change; the rebuilt follow-up gate above promotes it as
@@ -3487,7 +3487,7 @@ Dense GPT transformer training now enables the packed-attention BF16 grad-out ha
 
 `NFN_NATIVE_GPT_BLOCK_MLP_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed alias enable a default-off MLP projection side-stream diagnostic. The native trainer first materializes the shared BF16 projection grad-out, then runs fused projection dInput+dGELU and projection dWeight+bias on non-blocking side streams before synchronizing for the following MLP FC backward stage. Runtime JSON reports `block_backward_mlp_proj_concurrent_dinput_dweight_requested`, `block_backward_mlp_proj_concurrent_dinput_dweight_enabled`, and `block_backward_mlp_proj_concurrent_dinput_dweight_count`; paired benchmark summaries print the same fields. Keep it disabled for normal training: the CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample stage-timed gate moved the route counter from `0` to `288`, but regressed train-loop wall to `1.004101x`, steady-state CUDA-event timing to `1.004144x`, block backward to `1.009823x`, and MLP projection backward to `1.025216x`. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_concurrent_dinput_dweight` is now marked rejected unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 
-`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` enables a diagnostic dense GPT MLP FC backward ordering that runs dInput before dWeight+bias. The default is restored to the older dWeight+bias-before-dInput order because the CUDA 13.3.33 dedicated RTX 5090 post-reinstall gate proved the route (`block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288`) but rejected it at `1.001167x` steady-state CUDA-event timing, `1.001447x` block backward, `1.000127x` LM-head backward, `1.004199x` MLP projection backward, and `1.003817x` MLP FC backward. The route kept train-loop wall slightly faster at `0.998065x`, but that is not enough for a quality default.
+`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` enables a diagnostic dense GPT MLP FC backward ordering that runs dInput before dWeight+bias. The default is restored to the older dWeight+bias-before-dInput order because the CUDA 13.3.33 dedicated RTX 5090 current gate proved the route (`block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288`) but rejected it at `1.001167x` steady-state CUDA-event timing, `1.001447x` block backward, `1.000127x` LM-head backward, `1.004199x` MLP projection backward, and `1.003817x` MLP FC backward. The route kept train-loop wall slightly faster at `0.998065x`, but that is not enough for a quality default.
 
 `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed alias enable a diagnostic two-stream schedule for the MLP FC backward dInput and dWeight+bias pair. The trainer records a CUDA event on the default stream, waits from non-blocking dInput and dWeight streams, launches the independent kernels on those streams, and synchronizes before LayerNorm backward consumes `grad_ln2`. Runtime JSON reports `block_backward_mlp_fc_concurrent_dinput_dweight_requested`, `block_backward_pair_streams_available`, `block_backward_mlp_fc_concurrent_dinput_dweight_enabled`, and `block_backward_mlp_fc_concurrent_dinput_dweight_count`; paired benchmark summaries print those fields. Keep this default-off: a CUDA 13.3.33 dedicated RTX 5090 stage-timed recheck proved the route enabled and moved `block_backward_mlp_fc_dinput_before_dweight_count` from `288` to `0`, but rejected it because `stage.block_backward.mlp_fc.total_ms` regressed to `1.025442x`, block backward to `1.005941x`, LM-head backward to `1.001738x`, steady-state CUDA-event step time to `1.003685x`, and candidate-over-llm.kittens train-loop wall time stayed at `1.028729x`. Current benchmarks should use the explicit concurrent count as the route proof.
 
@@ -3499,7 +3499,7 @@ Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_concurrent_dinput_dweight` to rer
 
 `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic ordering switch for the dense GPT attention projection backward path. It runs attention projection dInput before dWeight+bias to compare against the reference consumer order, while leaving the default dWeight+bias-first order active. Runtime JSON reports `block_backward_attn_proj_dinput_before_dweight_enabled` and `block_backward_attn_proj_dinput_before_dweight_count`; leave it disabled for normal training. The 2026-06-24 CUDA 13.3 dedicated RTX 5090 rebuilt-binary 5-step, 3-sample rerun proved the route counter (`0 -> 480`), but rejected default promotion because train-loop wall regressed to `1.001501x`, LM-head backward to `1.000290x`, block backward to `1.003886x`, MLP projection backward to `1.002417x`, and attention projection backward to `1.081569x`.
 
-`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` is the diagnostic rollback switch for the dense GPT packed-QKV backward path. The default now runs QKV dInput before QKV dWeight+bias together with the 128-row LayerNorm affine reducer because the combined CUDA 13.3 dedicated RTX 5090 gate improved train-loop wall versus the older 256-row/QKV-dWeight-first route. Runtime JSON reports `block_backward_qkv_dinput_before_dweight_enabled` and `block_backward_qkv_dinput_before_dweight_count`. The SM120 candidate wrapper exposes `qkv_dinput_ln128` as an accepted default-vs-legacy comparison profile that reproduces the current default against the old 256-row/QKV-dWeight-first baseline in the same script. The 2026-06-27 current-code 5-step, 2-sample stage-timed rerun after the CUDA Toolkit reinstall measured `0.998609x` train-loop wall time, `1.001400x` train throughput, `0.996347x` block-backward time, `0.999448x` candidate-over-llm.kittens train-loop wall time, and `1.000204x` candidate-over-llm.kittens throughput while moving `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to `128`. The wrapper also exposes rejected standalone `qkv_dinput_before_dweight` and `qkv_dinput_ln64` profiles for the QKV-only and 64-row variants.
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0` is the diagnostic rollback switch for the dense GPT packed-QKV backward path. The default now runs QKV dInput before QKV dWeight+bias together with the 128-row LayerNorm affine reducer because the combined CUDA 13.3 dedicated RTX 5090 gate improved train-loop wall versus the older 256-row/QKV-dWeight-first route. Runtime JSON reports `block_backward_qkv_dinput_before_dweight_enabled` and `block_backward_qkv_dinput_before_dweight_count`. The SM120 candidate wrapper exposes `qkv_dinput_ln128` as an accepted default-vs-legacy comparison profile that reproduces the current default against the old 256-row/QKV-dWeight-first baseline in the same script. The 2026-06-27 current-code 5-step, 2-sample stage-timed rerun measured `0.998609x` train-loop wall time, `1.001400x` train throughput, `0.996347x` block-backward time, `0.999448x` candidate-over-llm.kittens train-loop wall time, and `1.000204x` candidate-over-llm.kittens throughput while moving `block_backward_qkv_dinput_before_dweight_count` from `0` to `480` and `block_state_layout.layer_norm_backward_affine_row_chunk_size` from `256` to `128`. The wrapper also exposes rejected standalone `qkv_dinput_before_dweight` and `qkv_dinput_ln64` profiles for the QKV-only and 64-row variants.
 
 `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT` controls startup-only initialization of the BF16-primary transformer block weights. It defaults on when `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS` is on, initializes QKV/projection/MLP block weights directly with `nfn_native_tile_fill_many_values_bf16_bits_float32`, and skips the initial float32-to-BF16 pack. Set `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT=0` to reproduce the older float32 fill plus `nfn_native_tile_float32_to_bf16_bits_many` startup path while leaving BF16-primary AdamW updates enabled. Runtime JSON reports `direct_bf16_block_weight_initialization_enabled`, `block_weight_bf16_initialization_strategy`, and the split float/BF16 parameter initialization descriptor and launch counts.
 
@@ -3539,7 +3539,7 @@ bisection of that rejected pattern writer. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` to reproduce the previous fast int32
 Tile initializer in paired startup benchmarks. On the CUDA 13.3 dedicated RTX
-5090 startup-only check after the toolkit reinstall, the 5-sample paired gate
+5090 startup-only check, the 5-sample paired gate
 measured explicit vector4 against fast int32 at `0.949565x` mean token-weight
 initialization time, `0.970270x` setup wall time, and `0.970405x` total wall
 time, so vector4 remains the default.
@@ -3698,14 +3698,14 @@ The padded-vocab fused initializer is default-on and uses the conversion-based
 vector4 BF16-shadow writer for public rows, then zeroes the padded rows in the
 same Tile launch. Set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` only for
 paired bisection against the legacy separate padding-zero path.
-The CUDA 13.3.33 post-reinstall retile sweep also rejected the other supported
+The CUDA 13.3.33 current retile sweep also rejected the other supported
 compile-time token-init tile sizes against the 4096 default: 8192 measured
 `1.013697x` token-init time, 2048 measured `1.010289x`, and 1024 measured
 `1.016591x` in startup-only paired runs, so token-init retile work is not the
 next useful startup path.
 
 The 28672-row tied LM-head chunk default remains the current local optimum on
-the dedicated RTX 5090. A CUDA 13.3.33 post-reinstall stage-timed sweep rejected
+the dedicated RTX 5090. A CUDA 13.3.33 current stage-timed sweep rejected
 `--lm-head-row-chunk-size 16384` (`1.016019x` train-loop wall,
 `1.062838x` LM-head backward, with dHidden at `1.244198x`) and
 `--lm-head-row-chunk-size 4096` (`1.004875x` train-loop wall; CE improved to
@@ -4575,7 +4575,7 @@ The direct native wrappers (`nfn train`, `cli/scripts/train_gpt.py`, and
 local to the script, so selecting ordinal `0` or a display-disabled GPU does not
 import `neuralfn.native_cuda_device` before the compiled C++ trainer handoff.
 
-After a CUDA toolkit reinstall or local C++/CUDA edit, run
+After local C++/CUDA edits, run
 `bash tools/validate_sm120_cuda13.sh`; the validator now runs
 `python tools/check_native_no_torch_deps.py --rebuild-stale --json` by default,
 so known missing or stale native artifacts are rebuilt with their mapped

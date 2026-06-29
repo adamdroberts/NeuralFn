@@ -30,7 +30,7 @@ On CUDA Toolkit 13.3+, the generic Python extension and the trainer-facing raw C
 ABI share the same `neuralfn/csrc/tile_cuda/kernels.cu` source. Generic BF16
 conversion, BF16 activation storage, BF16 bias-add, and row-chunked bias
 reduction helpers are available even when the Python extension is compiled
-without the trainer-only TK attention/cuBLAS macros. After reinstalling CUDA,
+without the trainer-only TK attention/cuBLAS macros. After local CUDA/C++ changes,
 use:
 
 ```bash
@@ -689,7 +689,7 @@ check reports probe support instead of setup timing noise. The profile
 deliberately omits the classic cuBLAS
 grouped BF16 probe because the CUDA 13.3 recheck showed it still poisons the
 selected CUDA context before model allocation when unsupported.
-CUDA 13.3.33 post-reinstall paired checks restore 32768 rows as the default.
+CUDA 13.3.33 current paired checks restore 32768 rows as the default.
 The 49152-row confirmation regressed train-loop wall to `1.012983x` and block
 backward to `1.025087x` versus 32768 rows. Retesting
 `--lm-head-row-chunk-size 8192` against the earlier 32768-row route regressed
@@ -1457,7 +1457,7 @@ Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` or
 that try LM-head-sized BF16 shapes with `k > 32768` through cuBLASLt. The
 dedicated RTX 5090 check routed LM-head dHidden to cuBLASLt but measured it
 slower than the default GEMMEx fallback, so this remains default-off. The
-CUDA 13.3.33 WSL recheck after the toolkit reinstall still rejected it:
+CUDA 13.3.33 WSL recheck still rejected it:
 the route moved LM-head dHidden calls to cuBLASLt but measured `1.034147x`
 train-loop wall time and `1.502430x` targeted dHidden time versus the default.
 Set
@@ -1548,7 +1548,7 @@ of timing the current default against itself.
 `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` enables a diagnostic MLP FC
 backward ordering that runs dInput before dWeight+bias. The default is restored
 to the older dWeight+bias-before-dInput order because the CUDA 13.3.33 RTX 5090
-post-reinstall gate proved the route
+current gate proved the route
 (`block_backward_mlp_fc_dinput_before_dweight_count: 0 -> 288`) but rejected it
 at `1.001167x` steady-state CUDA-event timing, `1.001447x` block backward,
 `1.000127x` LM-head backward, `1.004199x` MLP projection backward, and
@@ -1839,7 +1839,7 @@ previous fast int32 Tile initializer. Set
 `NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=0`, or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=0` only when reproducing the older
 int64 Tile-index startup route in a paired benchmark after vector4 is disabled.
-The CUDA 13.3 dedicated RTX 5090 startup-only gate after the toolkit reinstall
+The CUDA 13.3 dedicated RTX 5090 startup-only gate
 measured vector4 against fast int32 at `0.949565x` token-weight init time,
 `0.970270x` setup wall time, and `0.970405x` total wall time. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only when comparing against the
@@ -2302,7 +2302,7 @@ or `2048`; `8192` is also accepted for local candidate builds but remains
 non-default after the dedicated RTX 5090 9-sample startup-only comparison
 measured `1.005585x` token-init time versus the 4096 default. The accepted
 values are `1024`, `2048`, `4096`, and `8192`.
-The CUDA 13.3.33 post-reinstall startup sweep kept the same conclusion:
+The CUDA 13.3.33 current startup sweep kept the same conclusion:
 8192, 2048, and 1024 all regressed the direct token-init timer
 (`1.013697x`, `1.010289x`, and `1.016591x` respectively), so SDK callers should
 leave the default library build unchanged unless they are collecting fresh
@@ -2351,7 +2351,7 @@ rejected-by-default focused true-fused candidate measurement. It also defaults
 nonzero until the strict candidate reaches current-wrapper and same-process
 reference parity. The current strict cooperative body uses 32x32 shared-memory
 tiles for dHidden and dWeight after the CE phase, but the 2026-06-28 CUDA
-13.3.33 RTX 5090 post-reinstall trainer-chunk rerun at the current 28672-row
+13.3.33 RTX 5090 current trainer-chunk rerun at the current 28672-row
 chunk still took `690.838257 ms`: `32.326054x` slower than the current wrapper
 and `22.231452x` slower than the component reference, so it remains rejected by
 default. The resulting
@@ -2488,8 +2488,8 @@ shared libraries, standalone linear/LM-head microbenches, and
 `neuralfn._native_gpt*` / `neuralfn._native_train` SDK extensions, so CUDA Tile
 ABI edits do not accidentally run through stale local binaries. Use
 `--skip-stale-artifacts` only when you intentionally want the dependency/import
-audit without source-mtime enforcement. Use `--rebuild-stale` after a CUDA
-toolkit reinstall or local C++/CUDA edit to rebuild known stale artifacts with
+audit without source-mtime enforcement. Use `--rebuild-stale` after local
+CUDA/C++ edits to rebuild known stale artifacts with
 their mapped `tools/build_*.sh` scripts before rerunning the dependency/import
 gate.
 
@@ -2530,7 +2530,7 @@ short parity runs measure the training loop rather than the compiled trainer's
 raw-C++ default periodic train-loss accumulation path; set
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
 `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` to opt back into timed train-loss logging.
-After a CUDA toolkit or WSL driver reinstall, run
+After local CUDA or C++ changes, run
 `bash tools/validate_sm120_cuda13.sh` before longer SDK or CLI training runs.
 That health gate selects the dedicated GPU by default, validates the native Tile
 library, launches the Tile fill smoke, runs the cached TinyStories
@@ -2738,7 +2738,7 @@ and stage-timed runs additionally gate `stage.lm_head_backward.total_ms`,
 The wrapper also requires a tracked route, strategy, linear-shape, or cuBLASLt
 plan change for measured candidates; timing-only changes with no implementation
 attribution fail even if a coarse wall-time sample happens to improve.
-After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
+In the current CUDA 13.3.33 WSL validation, the dedicated RTX 5090
 pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
 gate (`247` tests), the GPT template preset suite (`26` tests), the full
 CUDA-visible repository suite (`1185` tests, `4` skips, plus `468` subtests), and the
@@ -2756,7 +2756,7 @@ out at 360s while the safe 32768-row baseline completed. The promoted 49152-row
 LM-head chunk route is no longer the default: the 2026-06-24 confirmation
 regressed train-loop wall to `1.012983x` and block backward to `1.025087x`
 versus 32768 rows. The 16384-row candidate regressed at `1.008471x`. The
-current dedicated RTX 5090 parity refresh after the CUDA 13.3.33 reinstall
+current dedicated RTX 5090 parity refresh
 shows the default linked native path is now within measurement noise or ahead
 of the llm.kittens step log in normal training-loop timing. A 2026-06-28
 3-step, 3-sample no-stage run measured NeuralFn at `2446.557 ms/step` and
@@ -3040,7 +3040,7 @@ JSON reports `lm_head_ce_no_loss_llmk_style_specialized_requested`,
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. This route is
 the default no-loss CE/dlogits path: the CUDA 13.3.33 dedicated RTX 5090
-2026-06-28 post-reinstall 3-step, 2-sample default-vs-legacy rerun measured
+2026-06-28 current 3-step, 2-sample default-vs-legacy rerun measured
 `0.999943x` train-loop wall, `0.999902x` steady-state CUDA-event wall,
 `1.000056x` train tokens/sec, `0.997023x` candidate-over-llm.kittens train-loop
 wall, and `1.002670x` candidate-over-llm.kittens tokens/sec.

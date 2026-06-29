@@ -1272,7 +1272,7 @@ Those profiles set only
 runtime JSON reports the corresponding `*_requested` booleans plus the existing
 cuBLASLt launch/fallback counters.
 Keep both split profiles diagnostic-only unless a fresh same-script gate proves
-otherwise. The CUDA 13.3.33 dedicated RTX 5090 post-reinstall rerun proved the
+otherwise. The CUDA 13.3.33 dedicated RTX 5090 current rerun proved the
 dHidden-only route changed (`lm_head_graph_body_cublaslt_dhidden_launch_count`
 moved from 0 to 4), but rejected it at `1.073852x` train-loop wall,
 `1.075869x` steady-state CUDA-event timing, `1.314851x` LM-head backward,
@@ -1379,8 +1379,8 @@ class is a compact route label such as `diagnostic-cuda-graph-wrapper` or
 `strict-true-fused-tile-kernel` for same-script benchmark comparisons.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
-The non-strict route is now the normal dense GPT default after the CUDA Toolkit
-13.3 reinstall: the dedicated RTX 5090 3-step, 2-sample same-script rerun
+The non-strict route is now the normal dense GPT default in the current CUDA
+Toolkit 13.3 validation: the dedicated RTX 5090 3-step, 2-sample same-script rerun
 measured the graph replay route at `0.989305x` train-loop wall,
 `1.000461x` steady-state CUDA-event timing, and `1.010931x` train tokens/sec
 versus the previous native separate-stage route. The strict fused-kernel route
@@ -2588,7 +2588,7 @@ float arena materialization `181.658 ms`, uint16 arena materialization
 `125.478 ms`, and token-weight initialization `151.345 ms`. The LM-head path
 still reports `diagnostic-cuda-graph-wrapper`, so true fused classifier-backward
 work remains separate from route-toggle benchmarking.
-After a CUDA toolkit or WSL driver reinstall, run
+After local CUDA or C++ changes, run
 `bash tools/validate_sm120_cuda13.sh` for the SM120 health gate. It uses the
 dedicated-GPU selector and, by default, validates
 `build/nfn_gpt_native_train_linked` with `--tile-ops-lib linked` when that
