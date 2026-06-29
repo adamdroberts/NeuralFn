@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- Native SM120 launcher freshness: `tools/train_gpt_sm120.sh` now refreshes the
-  repo-owned `build/nfn_train_gpt_sm120` launcher and linked native GPT trainer
-  before execing the compiled path when their C++/CUDA inputs are newer. Direct
+- Native GPT launcher freshness: `tools/train_gpt.sh` and
+  `tools/train_gpt_sm120.sh` now refresh their repo-owned compiled launcher and
+  the linked native GPT trainer before execing the compiled path when C++/CUDA
+  inputs are newer. Direct `build/nfn_train_gpt ...` and
   `build/nfn_train_gpt_sm120 ...` runs now reject stale native trainer binaries
   before launching CUDA work, with `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1`
   reserved for stale-artifact diagnostics. `NFN_NATIVE_GPT_AUTO_REBUILD=0` or

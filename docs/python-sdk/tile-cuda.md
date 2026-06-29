@@ -373,13 +373,14 @@ as `build/nfn_train_gpt_sm120` from `bash tools/build_train_gpt_sm120_cli.sh`.
 `NFN_NATIVE_GPT_TRAIN_CLI` or `NFN_NATIVE_SM120_CLI` when installing a launcher
 from a non-default path. The launcher mirrors `tools/train_gpt_sm120.sh`, and
 the shell helper now execs the SM120 compiled launcher by default when it is
-present. For repo-owned defaults, the shell helper refreshes
-`build/nfn_train_gpt_sm120` and the linked native GPT trainer when their
-C++/CUDA inputs are newer before the exec handoff; set
-`NFN_NATIVE_GPT_AUTO_REBUILD=0` or `NFN_SM120_AUTO_REBUILD=0` only for existing
-artifact diagnostics. Direct compiled launcher invocations reject stale native
-trainer binaries before CUDA setup, unless
-`NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` is set for stale-artifact diagnostics.
+present. `tools/train_gpt.sh` does the same for the generic
+`build/nfn_train_gpt` launcher. For repo-owned defaults, both shell helpers
+refresh their compiled launcher and the linked native GPT trainer when C++/CUDA
+inputs are newer before the exec handoff; set `NFN_NATIVE_GPT_AUTO_REBUILD=0`
+or `NFN_SM120_AUTO_REBUILD=0` only for existing artifact diagnostics. Direct
+compiled launcher invocations reject stale native trainer binaries before CUDA
+setup, unless `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` is set for
+stale-artifact diagnostics.
 Set `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser.
 The compiled launcher prefers `build/nfn_gpt_native_train_linked`,
 injects `--tile-ops-lib linked` for that binary, supports `--base-model`,

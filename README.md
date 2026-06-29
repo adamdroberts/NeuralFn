@@ -3201,15 +3201,15 @@ still builds `build/nfn_train_gpt_sm120` as the workstation-labelled alias with
 the same defaults. Use either for the lowest-overhead workstation path:
 `build/nfn_train_gpt --base-model gpt --dataset-alias PATH_OR_ALIAS` or
 `build/nfn_train_gpt_sm120 --base-model gpt --dataset-alias PATH_OR_ALIAS`.
-`tools/train_gpt_sm120.sh` now defaults to that compiled launcher when
-`build/nfn_train_gpt_sm120` or `NFN_NATIVE_SM120_CLI` is executable, so the
-shell path does not re-parse the SM120 defaults before the native handoff. For
-the repo-owned default launcher path, the shell helper first refreshes
-`build/nfn_train_gpt_sm120` and the linked native GPT trainer when their
-C++/CUDA inputs are newer; set `NFN_NATIVE_GPT_AUTO_REBUILD=0` or
-`NFN_SM120_AUTO_REBUILD=0` only when intentionally inspecting existing
-artifacts. Direct `build/nfn_train_gpt_sm120 ...` invocations reject stale
-native trainer binaries before launching; set
+`tools/train_gpt.sh` now defaults to `build/nfn_train_gpt`, and
+`tools/train_gpt_sm120.sh` defaults to `build/nfn_train_gpt_sm120` when
+available, so these shell paths do not re-parse defaults before the native
+handoff. For repo-owned default launcher paths, the shell helpers first refresh
+their compiled launcher and the linked native GPT trainer when C++/CUDA inputs
+are newer; set `NFN_NATIVE_GPT_AUTO_REBUILD=0` or `NFN_SM120_AUTO_REBUILD=0`
+only when intentionally inspecting existing artifacts. Direct
+`build/nfn_train_gpt ...` and `build/nfn_train_gpt_sm120 ...` invocations reject
+stale native trainer binaries before launching; set
 `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` only for stale-artifact diagnostics.
 Set `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser
 for diagnostics; that fallback now resolves the same

@@ -2486,11 +2486,17 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
 
 def test_sm120_compiled_launcher_rejects_stale_native_trainer() -> None:
     root = Path(__file__).resolve().parents[1]
+    generic_shell_source = (root / "tools" / "train_gpt.sh").read_text(encoding="utf-8")
     shell_source = (root / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
     launcher_source = (
         root / "neuralfn" / "csrc" / "native_train" / "train_gpt_sm120.cpp"
     ).read_text(encoding="utf-8")
 
+    assert "AUTO_REBUILD_NATIVE=" in generic_shell_source
+    assert "tools/build_train_gpt_cli.sh" in generic_shell_source
+    assert "tools/build_native_gpt_cli_linked.sh" in generic_shell_source
+    assert "ensure_default_compiled_launcher_current" in generic_shell_source
+    assert "ensure_default_native_trainer_current" in generic_shell_source
     assert "AUTO_REBUILD_NATIVE=" in shell_source
     assert "tools/build_train_gpt_sm120_cli.sh" in shell_source
     assert "tools/build_native_gpt_cli_linked.sh" in shell_source
