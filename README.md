@@ -4188,6 +4188,18 @@ GPT-2-compatible SDPA backward now uses the same query-row score reuse contract 
 
 Compiled GPT-2 `--train-transformer-lm` results include a `timing` block with host wall-clock phase timers: `setup_wall_ms`, `train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`, `post_train_sample_wall_ms`, `cleanup_wall_ms`, `checkpoint_wall_ms`, `total_wall_ms`, `optimizer_steps_per_second`, and `train_tokens_per_second`. The train-loop timer ends after an explicit end-of-loop device synchronization and before the diagnostic device-to-host sample copies used for status JSON; `--startup-only` elides those diagnostic sample copies and reports `post_train_diagnostic_samples_elided: true`. Cleanup is reported separately so startup-only probes distinguish readiness to train from teardown of large CUDA arenas.
 
+When BF16-primary block weights are enabled and checkpoint export is disabled
+with `--no-checkpoint` or suppressed by `--startup-only`, the dense native GPT
+trainer no longer allocates FP32 master copies of the four large block matrices
+(`qkv`, attention projection, MLP FC, and MLP projection). The BF16 arena stays
+the authoritative parameter store and AdamW continues to use FP32 gradients and
+moments. Runtime JSON reports `block_fp32_weight_params_elided`,
+`block_fp32_weight_params_elements_elided`, and
+`block_fp32_weight_params_bytes_elided`; set
+`NFN_NATIVE_GPT_ELIDE_BF16_PRIMARY_FP32_BLOCK_WEIGHTS=0` (or the GPT-2-prefixed
+compatibility name) to reproduce the older allocation layout for paired
+benchmarks or checkpoint-export debugging.
+
 The full GPT-2 transformer-LM trainer fuses both attention QKV layout directions. `nfn_native_tile_split_qkv_to_heads_add_bias_float32` consumes the no-bias QKV CUBLAS output, applies Q/K/V bias, and writes Q/K/V head-major buffers in one Tile launch per block instead of separate QKV bias add, QKV split, and three reshape launches. `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32` lets TK SDPA backward read the row-major attention-output gradient directly and write row-major `grad_qkv` directly from bf16 head-major gradients, replacing three bf16-to-float gradient conversion launches plus the heads-to-QKV merge launch. The full trainer no longer allocates the three row-major or three head-major Q/K/V gradient scratch buffers for that path. Native plan/training JSON reports `qkv_forward_layout_strategy: "fused-split-to-heads"`, `qkv_bias_layout_strategy: "fused-qkv-bias-split-to-heads"`, `attention_backward_grad_layout_strategy: "merged-grad-out-direct"`, `attention_backward_qkv_bridge_strategy: "fused-bf16-heads-to-row-qkv"`, `qkv_backward_layout_strategy: "fused-heads-to-qkv"`, and the elided layout launches per block.
 
 Forward attention also skips the obsolete row-major Q/K/V scratch tensors in the compiled GPT-2 trainer. The fused QKV split writes head-major `q_heads`, `k_heads`, and `v_heads` directly for attention, so the full 12-layer `64 x 1024` shape no longer reserves three unused activation buffers per tape, reducing the float arena by 150,994,944 elements, about 576 MiB. Native plan/training JSON reports `block_state_layout.forward_row_qkv_scratch_allocated: false` and `block_state_layout.forward_row_qkv_scratch_buffers_elided: 3`.

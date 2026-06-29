@@ -13789,6 +13789,16 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT",
                               "NFN_NATIVE_GPT2_DIRECT_BF16_BLOCK_WEIGHT_INIT"}),
             true);
+    const bool block_fp32_weight_params_elision_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_BF16_PRIMARY_FP32_BLOCK_WEIGHTS",
+                              "NFN_NATIVE_GPT2_ELIDE_BF16_PRIMARY_FP32_BLOCK_WEIGHTS"}),
+            true);
+    const bool block_fp32_weight_params_elided =
+        block_fp32_weight_params_elision_requested &&
+        bf16_block_weight_param_update_enabled &&
+        direct_bf16_block_weight_init_enabled &&
+        (!cfg.write_checkpoint || cfg.startup_only);
     const bool token_weight_bf16_shadow_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW",
@@ -15426,6 +15436,13 @@ int run_transformer_lm_training_json(
         kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
     const std::int64_t kBlockDweightBf16StagingElementsPerBlock =
         kQkvWeightElements + kFcWeightElements;
+    const std::int64_t block_fp32_weight_params_elements_elided =
+        block_fp32_weight_params_elided
+            ? trained_layers * kBlockWeightBf16ElementsPerBlock
+            : 0;
+    const std::int64_t block_fp32_weight_params_bytes_elided =
+        block_fp32_weight_params_elements_elided *
+        static_cast<std::int64_t>(sizeof(float));
     const std::int64_t stored_mlp_activation_block_count =
         store_mlp_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(
@@ -16372,13 +16389,21 @@ int run_transformer_lm_training_json(
             visit(&block.ln1_bias, kDim, prefix + ".ln1.bias");
             visit(&block.ln2_weight, kDim, prefix + ".ln2.weight");
             visit(&block.ln2_bias, kDim, prefix + ".ln2.bias");
-            visit(&block.qkv_weight, kQkvWeightElements, prefix + ".attn.qkv.weight");
+            if (!block_fp32_weight_params_elided) {
+                visit(&block.qkv_weight, kQkvWeightElements, prefix + ".attn.qkv.weight");
+            }
             visit(&block.qkv_bias, kQkvDim, prefix + ".attn.qkv.bias");
-            visit(&block.attn_proj_weight, kAttnProjWeightElements, prefix + ".attn.proj.weight");
+            if (!block_fp32_weight_params_elided) {
+                visit(&block.attn_proj_weight, kAttnProjWeightElements, prefix + ".attn.proj.weight");
+            }
             visit(&block.attn_proj_bias, kDim, prefix + ".attn.proj.bias");
-            visit(&block.fc_weight, kFcWeightElements, prefix + ".mlp.fc.weight");
+            if (!block_fp32_weight_params_elided) {
+                visit(&block.fc_weight, kFcWeightElements, prefix + ".mlp.fc.weight");
+            }
             visit(&block.fc_bias, kHidden, prefix + ".mlp.fc.bias");
-            visit(&block.mlp_proj_weight, kMlpProjWeightElements, prefix + ".mlp.proj.weight");
+            if (!block_fp32_weight_params_elided) {
+                visit(&block.mlp_proj_weight, kMlpProjWeightElements, prefix + ".mlp.proj.weight");
+            }
             visit(&block.mlp_proj_bias, kDim, prefix + ".mlp.proj.bias");
         }
     };
@@ -17023,7 +17048,10 @@ int run_transformer_lm_training_json(
             if (!error.empty()) {
                 return;
             }
-            if (param == nullptr || grad == nullptr || avg == nullptr || avg_sq == nullptr) {
+            const bool uses_bf16_primary_param =
+                bf16_block_weight_param_update_enabled && bf16_param != nullptr;
+            if ((!uses_bf16_primary_param && param == nullptr) ||
+                grad == nullptr || avg == nullptr || avg_sq == nullptr) {
                 error = "null pointer while building fused AdamW descriptors";
                 return;
             }
@@ -17382,6 +17410,10 @@ int run_transformer_lm_training_json(
     });
     auto build_block_weight_bf16_descriptors = [&]() {
         if (!error.empty()) {
+            return;
+        }
+        if (block_fp32_weight_params_elided) {
+            block_weight_bf16_descriptor_count = 0;
             return;
         }
         if (block_weight_bf16_arena == nullptr) {
@@ -24957,6 +24989,14 @@ int run_transformer_lm_training_json(
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
         << "  \"direct_bf16_block_weight_initialization_enabled\": "
         << (direct_bf16_block_weight_init_enabled ? "true" : "false") << ",\n"
+        << "  \"block_fp32_weight_params_elision_requested\": "
+        << (block_fp32_weight_params_elision_requested ? "true" : "false") << ",\n"
+        << "  \"block_fp32_weight_params_elided\": "
+        << (block_fp32_weight_params_elided ? "true" : "false") << ",\n"
+        << "  \"block_fp32_weight_params_elements_elided\": "
+        << block_fp32_weight_params_elements_elided << ",\n"
+        << "  \"block_fp32_weight_params_bytes_elided\": "
+        << block_fp32_weight_params_bytes_elided << ",\n"
         << "  \"block_weight_bf16_gradient_storage_strategy\": "
         << (adamw_bf16_param_bf16_grad_descriptor_count > 0
                 ? "\"qkv-fc-bf16-accumulation-buffer\""
@@ -26073,6 +26113,14 @@ int run_transformer_lm_training_json(
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
         << "    \"direct_bf16_block_weight_initialization_enabled\": "
         << (direct_bf16_block_weight_init_enabled ? "true" : "false") << ",\n"
+        << "    \"block_fp32_weight_params_elision_requested\": "
+        << (block_fp32_weight_params_elision_requested ? "true" : "false") << ",\n"
+        << "    \"block_fp32_weight_params_elided\": "
+        << (block_fp32_weight_params_elided ? "true" : "false") << ",\n"
+        << "    \"block_fp32_weight_params_elements_elided\": "
+        << block_fp32_weight_params_elements_elided << ",\n"
+        << "    \"block_fp32_weight_params_bytes_elided\": "
+        << block_fp32_weight_params_bytes_elided << ",\n"
         << "    \"block_weight_bf16_gradient_storage_strategy\": "
         << (adamw_bf16_param_bf16_grad_descriptor_count > 0
                 ? "\"qkv-fc-bf16-accumulation-buffer\""

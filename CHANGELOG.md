@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Native GPT startup/memory: BF16-primary dense GPT training now elides the
+  FP32 master copies of the four large block weight matrices when final
+  checkpoint export is disabled (`--no-checkpoint`) or suppressed by
+  `--startup-only`. The BF16 block-weight arena remains the authoritative
+  parameter store, while AdamW still uses the FP32 gradients and moments it
+  needs for optimizer quality. Runtime JSON reports
+  `block_fp32_weight_params_elided`,
+  `block_fp32_weight_params_elements_elided`, and
+  `block_fp32_weight_params_bytes_elided`; set
+  `NFN_NATIVE_GPT_ELIDE_BF16_PRIMARY_FP32_BLOCK_WEIGHTS=0` to reproduce the
+  old allocation layout. On the dedicated RTX 5090 one-step TinyStories
+  `seq_len=64` paired gate, the candidate kept the native runtime contract
+  green, reduced float arena bytes to `0.828853x` baseline and total
+  transformer arena bytes to `0.849495x`, and reported
+  `339738624` FP32 block-weight bytes elided. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`,
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1
+  --batch-size 1 --train-seq-len 64 --train-batch-tokens 64
+  --eval-every-steps 0 --native-cuda-sample-every 0
+  --native-cuda-generate-tokens 0 --native-cuda-checkpoint-every 0
+  --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so
+  --profile-json /tmp/nfn_fp32_block_elide_smoke.json`, and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python tools/paired_kernel_speed.py`
+  with the same command as baseline/candidate and baseline env
+  `NFN_NATIVE_GPT_ELIDE_BF16_PRIMARY_FP32_BLOCK_WEIGHTS=0`.
+
 - Native GPT startup: the compiled GPT launchers now auto-append
   `--fast-startup` for short debug/smoke runs when `max_steps` is at or below
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` /
