@@ -649,7 +649,8 @@ void print_usage(const char* program) {
         << "  --require-native-nvfp4-activation-packing\n"
         << "                                     Fail before dataset/GPU work if nvfp4 is requested but native dense GPT cannot pack activations\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
-        << "SM120 defaults match llm.kittens/train-sm120.sh: -v 250 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n";
+        << "SM120 quality defaults follow the train-sm120 shape with 600 warmup steps: -v 1000 -s 20000 -g 144 -n 200 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 600 -x 20000.\n"
+        << "The paired llm.kittens benchmark wrappers keep the external reference at train-sm120.sh -u 60 for comparable timing evidence.\n";
 }
 
 std::string require_value(int argc, char** argv, int* index, const std::string& flag) {

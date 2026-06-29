@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native GPT CLI help: corrected the compiled dense GPT trainer usage text so
+  it no longer claims the native quality defaults exactly match
+  `llm.kittens/train-sm120.sh -u 60`. The runtime default remains the current
+  600-step quality warmup, while the paired benchmark wrappers still keep the
+  external llm.kittens reference command at `-u 60` for timing comparability.
+  Verification: focused source checks and `git diff --check`.
+
 - Native packed-attention batch-cap diagnostics: added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_48` SM120
   profile so the older 48+16 split packed-attention backward plan can be
