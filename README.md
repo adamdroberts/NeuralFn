@@ -1227,6 +1227,11 @@ Native JSON also reports the packed-attention TK backward batch plan as
 `attention_backward_tk_chunk_batch_last`; `tools/paired_kernel_speed.py`
 extracts these fields so native-vs-native runs can prove whether a candidate
 kept the intended full-microbatch chunking.
+Dense GPT runtime JSON also reports
+`attention_backward_dprep_default_warps_per_block`,
+`sm120_memory_block_size`, and `sm120_layernorm_bwd_blocks_per_sm` from the
+loaded Tile ops library so SM120 builds can prove the effective data-prep,
+memory, and LayerNorm backward defaults without shell source inspection.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.

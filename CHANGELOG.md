@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT SM120 build-contract telemetry: the Tile ops C ABI now exposes
+  the effective packed-attention data-prep default warps, SM120 memory block
+  size, and LayerNorm backward blocks-per-SM values. Dense GPT runtime JSON
+  reports them as `attention_backward_dprep_default_warps_per_block`,
+  `sm120_memory_block_size`, and `sm120_layernorm_bwd_blocks_per_sm`, so
+  candidate and linked builds can prove the active train-sm120-aligned defaults
+  from the loaded library. Verification: focused native GPT source tests, shell
+  syntax checks, Tile ops symbol build check, and diff check.
+
 - Native GPT benchmark telemetry gates: capability-only SM120 candidate
   profiles that set `AUTO_DISABLE_METRIC_RATIO_GATES=1` now also suppress the
   automatically generated candidate-vs-reference throughput gates when an

@@ -21,6 +21,9 @@ std::int64_t attention_backward_tk_chunk_batch_max();
 std::int64_t attention_backward_tk_chunk_batch_min();
 std::int64_t attention_backward_tk_chunk_batch_last();
 int attention_backward_tk_block_size();
+std::int64_t tk_packed_attention_dprep_default_warps_per_block();
+std::int64_t tk_sm120_memory_block_size();
+std::int64_t tk_sm120_layernorm_bwd_blocks_per_sm();
 std::int64_t attention_backward_float_hd64_dprep_launch_count();
 std::int64_t attention_backward_dprep_timing_us();
 std::int64_t attention_backward_dprep_timing_count();
@@ -2589,6 +2592,18 @@ std::int64_t nfn_native_tile_attention_backward_tk_chunk_batch_last() {
 
 int nfn_native_tile_attention_backward_tk_block_size() {
     return neuralfn::tile_cuda::attention_backward_tk_block_size();
+}
+
+std::int64_t nfn_native_tile_attention_backward_dprep_default_warps_per_block() {
+    return neuralfn::tile_cuda::tk_packed_attention_dprep_default_warps_per_block();
+}
+
+std::int64_t nfn_native_tile_sm120_memory_block_size() {
+    return neuralfn::tile_cuda::tk_sm120_memory_block_size();
+}
+
+std::int64_t nfn_native_tile_sm120_layernorm_bwd_blocks_per_sm() {
+    return neuralfn::tile_cuda::tk_sm120_layernorm_bwd_blocks_per_sm();
 }
 
 std::int64_t nfn_native_tile_attention_backward_float_hd64_dprep_launch_count() {

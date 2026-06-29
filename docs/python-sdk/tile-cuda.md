@@ -1117,7 +1117,12 @@ profile consumers. The `attention_bwd_block_32` and
 The trainer-facing build mirrors llm.kittens' SM120 NVCC threading,
 host-compiler, data-prep, memory, and LayerNorm tuning flags for those
 ThunderKittens headers while keeping GEMM on NeuralFn's initialized cublasLt
-path.
+path. The Tile ops ABI also exposes
+`nfn_native_tile_attention_backward_dprep_default_warps_per_block()`,
+`nfn_native_tile_sm120_memory_block_size()`, and
+`nfn_native_tile_sm120_layernorm_bwd_blocks_per_sm()`; dense GPT runtime JSON
+mirrors them as `attention_backward_dprep_default_warps_per_block`,
+`sm120_memory_block_size`, and `sm120_layernorm_bwd_blocks_per_sm`.
 
 Trainer-facing linear GEMMs use the same native ABI, and the full dense GPT
 trainer now defaults QKV, attention projection, MLP FC, and MLP projection

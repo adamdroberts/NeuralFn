@@ -21280,6 +21280,36 @@ int trainer_linear_tk_sm120_approx_dgelu_tanh_enabled() {
 #endif
 }
 
+std::int64_t tk_packed_attention_dprep_default_warps_per_block() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_DPREP_WARPS)
+  return LLMK_SM120_DPREP_WARPS;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 3;
+#else
+  return 0;
+#endif
+}
+
+std::int64_t tk_sm120_memory_block_size() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_MEMORY_BLOCK_SIZE)
+  return LLMK_SM120_MEMORY_BLOCK_SIZE;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 1024;
+#else
+  return 0;
+#endif
+}
+
+std::int64_t tk_sm120_layernorm_bwd_blocks_per_sm() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM)
+  return LLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 1;
+#else
+  return 0;
+#endif
+}
+
 std::int64_t trainer_linear_sgemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_sgemm_count.load(std::memory_order_relaxed);

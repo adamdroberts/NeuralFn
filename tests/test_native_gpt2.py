@@ -1394,6 +1394,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS" in rebuild_sm120
     assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in tile_ops_build
     assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in tile_ops_build
+    assert "-DLLMK_SM120_DPREP_WARPS=3" in tile_ops_build
+    assert "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024" in tile_ops_build
+    assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in tile_ops_build
     assert tile_ops_build.index("-DLLMK_SM120_USE_CUBLASLT_GEMM") < tile_ops_build.index(
         "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP"
     )
@@ -3951,6 +3954,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert '"llmk_sm120_reference_flags"|"llmk-sm120-reference-flags"' in bench_source
     assert "-DLLMK_SM120_DWEIGHT_SUPER_M=2" in bench_source
     assert "-DLLMK_SM120_FAST_DGELU=1" in bench_source
+    assert "-DLLMK_SM120_DPREP_WARPS=3" in bench_source
+    assert "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024" in bench_source
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in bench_source
     assert "2026-06-28 3-step, 2-sample, stage-timed rerun" in bench_source
     assert "candidate-over-llm.kittens gates at train_loop_wall_ms_per_step=0.999113x" in bench_source
@@ -12299,16 +12304,28 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_block_size" in gpt2_source_text
+    assert "attention_backward_dprep_default_warps_per_block" in gpt2_source_text
+    assert "sm120_memory_block_size" in gpt2_source_text
+    assert "sm120_layernorm_bwd_blocks_per_sm" in gpt2_source_text
+    assert "nfn_native_tile_attention_backward_dprep_default_warps_per_block" in gpt2_source_text
+    assert "nfn_native_tile_sm120_memory_block_size" in gpt2_source_text
+    assert "nfn_native_tile_sm120_layernorm_bwd_blocks_per_sm" in gpt2_source_text
     assert "attention_backward_dprep_timing_us" in gpt2_source_text
     assert "attention_backward_float_hd64_dprep_launch_count" in gpt2_source_text
     assert "attention_backward_tk_timing_us" in gpt2_source_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_tk_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_tk_block_size" in header_text
+    assert "nfn_native_tile_attention_backward_dprep_default_warps_per_block" in header_text
+    assert "nfn_native_tile_sm120_memory_block_size" in header_text
+    assert "nfn_native_tile_sm120_layernorm_bwd_blocks_per_sm" in header_text
     assert "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in header_text
     assert "nfn_native_tile_attention_backward_tk_timing_us" in header_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in source_text
+    assert "nfn_native_tile_attention_backward_dprep_default_warps_per_block" in source_text
+    assert "nfn_native_tile_sm120_memory_block_size" in source_text
+    assert "nfn_native_tile_sm120_layernorm_bwd_blocks_per_sm" in source_text
     assert "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count" in source_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in source_text
     assert "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING" in kernels_text
