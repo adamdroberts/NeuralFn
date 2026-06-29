@@ -3075,6 +3075,13 @@ thread settings. The 2026-06-27 dedicated RTX 5090 tile4 full-loop gate proved
 the strict route (`lm_head_classifier_true_fused_launch_count` `0 -> 16`) but
 kept it rejected at `30.645660x` train-loop wall time and `129.582841x` LM-head
 backward time versus the CUDA Graph wrapper.
+The tile16 strict body also accepts
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1` in
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS`; this routes the dHidden and dWeight sections
+through BF16 WMMA tensor-core fragments while leaving the body opt-in. When the
+strict selector is active, the implementation-class ABI reports
+`wmma-bf16-cooperative-tile-experimental` so SDK and benchmark callers can
+separate this body from the older `scalar-cooperative-tile-diagnostic` path.
 Dry-run plans for these strict profiles include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
 auditable before any GPU work starts. Focused LM-head benchmark JSON separates

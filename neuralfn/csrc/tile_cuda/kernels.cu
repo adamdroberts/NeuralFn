@@ -3,6 +3,7 @@
 #include <cuda_bf16.h>
 #include <cooperative_groups.h>
 #include <cuda_runtime_api.h>
+#include <mma.h>
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 #include "llmc/tk/attention_sm120.cuh"
 #include "llmc/matmul.cuh"
@@ -29,6 +30,7 @@
 namespace neuralfn::tile_cuda {
 
 namespace cg = cooperative_groups;
+namespace wmma = nvcuda::wmma;
 
 #ifndef NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE
 #define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE 4096
@@ -13207,6 +13209,45 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
     const std::int64_t dim_tile = tile_index - row_tile * hidden_col_tiles;
     const std::int64_t row = row_tile * kMatTile + tile_row;
     const std::int64_t dim = dim_tile * kMatTile + tile_col;
+#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA) && \
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16
+    const bool full_tile = row_tile * kMatTile + 15 < rows && dim_tile * kMatTile + 15 < hidden_dim;
+    if (full_tile) {
+      if (threadIdx.x < 32) {
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, __nv_bfloat16, wmma::row_major> a_frag;
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, __nv_bfloat16, wmma::row_major> b_frag;
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
+        wmma::fill_fragment(c_frag, 0.0f);
+        const auto* logits_bf16 = reinterpret_cast<const __nv_bfloat16*>(logits);
+        const auto* weight_bf16 = reinterpret_cast<const __nv_bfloat16*>(token_weight_bf16);
+        const std::int64_t full_vocab = vocab & ~static_cast<std::int64_t>(15);
+        for (std::int64_t col_base = 0; col_base < full_vocab; col_base += 16) {
+          wmma::load_matrix_sync(
+              a_frag,
+              logits_bf16 + row_tile * kMatTile * row_stride + col_base,
+              static_cast<unsigned>(row_stride));
+          wmma::load_matrix_sync(
+              b_frag,
+              weight_bf16 + col_base * hidden_dim + dim_tile * kMatTile,
+              static_cast<unsigned>(hidden_dim));
+          wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+        }
+        wmma::store_matrix_sync(&tile_a[0][0], c_frag, 16, wmma::mem_row_major);
+      }
+      __syncthreads();
+      if (tile_thread) {
+        float sum = tile_a[tile_row][tile_col];
+        const std::int64_t full_vocab = vocab & ~static_cast<std::int64_t>(15);
+        for (std::int64_t col_base = full_vocab; col_base < vocab; ++col_base) {
+          sum += bf16_bits_to_f32_device(logits[row * row_stride + col_base]) *
+              bf16_bits_to_f32_device(token_weight_bf16[col_base * hidden_dim + dim]);
+        }
+        grad_hidden[row * hidden_dim + dim] += sum;
+      }
+      __syncthreads();
+      continue;
+    }
+#endif
     float sum = 0.0f;
     for (std::int64_t col_base = 0; col_base < vocab; col_base += kMatTile) {
       if (tile_thread) {
@@ -13247,6 +13288,46 @@ __global__ void lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16
     const std::int64_t dim_tile = tile_index - vocab_tile * weight_col_tiles;
     const std::int64_t col = vocab_tile * kMatTile + tile_row;
     const std::int64_t dim = dim_tile * kMatTile + tile_col;
+#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA) && \
+    NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 16
+    const bool full_tile = vocab_tile * kMatTile + 15 < vocab && dim_tile * kMatTile + 15 < hidden_dim;
+    if (full_tile) {
+      if (threadIdx.x < 32) {
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, __nv_bfloat16, wmma::col_major> a_frag;
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, __nv_bfloat16, wmma::row_major> b_frag;
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
+        wmma::fill_fragment(c_frag, 0.0f);
+        const auto* logits_bf16 = reinterpret_cast<const __nv_bfloat16*>(logits);
+        const auto* hidden_bf16_values = reinterpret_cast<const __nv_bfloat16*>(hidden_bf16);
+        const std::int64_t full_rows = rows & ~static_cast<std::int64_t>(15);
+        for (std::int64_t row_base = 0; row_base < full_rows; row_base += 16) {
+          wmma::load_matrix_sync(
+              a_frag,
+              logits_bf16 + row_base * row_stride + vocab_tile * kMatTile,
+              static_cast<unsigned>(row_stride));
+          wmma::load_matrix_sync(
+              b_frag,
+              hidden_bf16_values + row_base * hidden_dim + dim_tile * kMatTile,
+              static_cast<unsigned>(hidden_dim));
+          wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+        }
+        wmma::store_matrix_sync(&tile_a[0][0], c_frag, 16, wmma::mem_row_major);
+      }
+      __syncthreads();
+      if (tile_thread) {
+        float sum = tile_a[tile_row][tile_col];
+        const std::int64_t full_rows = rows & ~static_cast<std::int64_t>(15);
+        for (std::int64_t row_base = full_rows; row_base < rows; ++row_base) {
+          sum += bf16_bits_to_f32_device(logits[row_base * row_stride + col]) *
+              bf16_bits_to_f32_device(hidden_bf16[row_base * hidden_dim + dim]);
+        }
+        const std::int64_t index = col * hidden_dim + dim;
+        grad_weight[index] = dweight_beta == 0.0f ? sum : grad_weight[index] * dweight_beta + sum;
+      }
+      __syncthreads();
+      continue;
+    }
+#endif
     float sum = 0.0f;
     for (std::int64_t row_base = 0; row_base < rows; row_base += kMatTile) {
       if (tile_thread) {

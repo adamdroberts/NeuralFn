@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Native GPT Tile CUDA: added an opt-in BF16 WMMA implementation for the
+  strict true-fused LM-head cooperative body when the Tile ops library is built
+  with `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16
+  -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1`. The CE phase still uses the
+  existing cooperative row kernel, while the dHidden and dWeight sections now
+  use 16x16 WMMA tensor-core fragments instead of the older scalar
+  shared-memory matmul loops. The fused-kernel implementation-class ABI reports
+  `wmma-bf16-cooperative-tile-experimental` when this body is loaded and the
+  strict selector is active. No default trainer path changed; this remains a
+  diagnostic strict-body candidate until focused and same-script gates beat the
+  promoted CUDA Graph wrapper.
+  Verification so far: built `/tmp/libnfn_native_train_tile_ops_true_fused_wmma.so`
+  with `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS='-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16
+  -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1' bash
+  tools/build_native_train_tile_ops.sh
+  /tmp/libnfn_native_train_tile_ops_true_fused_wmma.so`, rebuilt
+  `build/lm_head_backward_bench`, ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "true_fused or lm_head_cooperative_abi"`,
+  and ran an unsandboxed tiny strict-fused GPU smoke with
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1
+  NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1
+  NFN_TILE_CUDA_CE_BF16_THREADS=256 build/lm_head_backward_bench --tile-ops-lib
+  /tmp/libnfn_native_train_tile_ops_true_fused_wmma.so --rows 16 --hidden-dim
+  16 --vocab 32 --row-stride 32 --iterations 1 --warmup 0
+  --require-true-fused-candidate`, which reported
+  `candidate_path_class: "strict-true-fused-tile-kernel"` and
+  `true_fused_launch_count: 1`.
+
 - Native GPT Tile ABI: added
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class()`
   beside the existing LM-head fused path-class ABI. Dense GPT plan/runtime JSON

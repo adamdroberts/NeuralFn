@@ -2849,6 +2849,15 @@ route (`lm_head_classifier_true_fused_launch_count` `0 -> 16`) but rejected it
 at `30.645660x` train-loop wall time and `129.582841x` LM-head backward time
 versus the CUDA Graph wrapper.
 
+For the tile16 strict body, add
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1` to the same
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` value to route the dHidden and dWeight tiles
+through BF16 WMMA tensor-core fragments instead of the scalar shared-memory
+diagnostic loops. The ABI implementation class reports
+`wmma-bf16-cooperative-tile-experimental` when that body is loaded and the
+strict selector is active. This is still opt-in and rejected until the focused
+and same-script gates beat the promoted CUDA Graph wrapper.
+
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
 
 The default scalar-store BF16 classifier path still uses vectorized BF16 reads

@@ -2495,6 +2495,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "return cudaErrorNotSupported;" in kernels_source
     assert "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel" in kernels_source
     assert "cg::this_grid()" in kernels_source
+    assert "#include <mma.h>" in kernels_source
+    assert "namespace wmma = nvcuda::wmma;" in kernels_source
     true_fused_kernel_body = kernels_source.split(
         "lm_head_classifier_backward_true_fused_cooperative_bf16_bits_u16_kernel",
         1,
@@ -2504,6 +2506,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     )[0]
     assert "if (!no_loss && threadIdx.x == 0 && row_losses != nullptr) {\n      const float target_logit" in true_fused_kernel_body
     assert "constexpr int kMatTile = kLmHeadTrueFusedMatTile;" in true_fused_kernel_body
+    assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA" in true_fused_kernel_body
+    assert "wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);" in true_fused_kernel_body
+    assert "wmma::fragment<wmma::matrix_a, 16, 16, 16, __nv_bfloat16, wmma::col_major>" in true_fused_kernel_body
+    assert "wmma-bf16-cooperative-tile-experimental" in tile_ops_source
     assert "#ifndef NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE" in kernels_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 4" in kernels_source
     assert "NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE == 8" in kernels_source
@@ -2568,8 +2574,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert (
         "const char* nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class() {\n"
         "    if (lm_head_true_fused_cooperative_enabled()) {\n"
-        '        return "scalar-cooperative-tile-diagnostic";'
+        "#if defined(NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA)"
     ) in tile_ops_source
+    assert '        return "scalar-cooperative-tile-diagnostic";' in tile_ops_source
     assert '"diagnostic-cuda-graph-wrapper"' in tile_ops_source
     assert (
         "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_graph_body_node_count() {\n"

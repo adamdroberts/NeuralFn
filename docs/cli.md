@@ -1436,6 +1436,14 @@ section is slow instead of relying only on ABI path-class metadata.
 row-thread counts of 256, 576, 64, or 16. All four remain rejected by default
 until same-script gates beat the CUDA Graph wrapper and llm.kittens reference
 paths.
+For the tile16 strict profile, adding
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1` to
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` switches the dHidden/dWeight portions of the
+single cooperative body from scalar shared-memory tiles to BF16 WMMA
+tensor-core fragments. The focused LM-head benchmark reports this as
+`candidate_symbol_abi_implementation_class:
+"wmma-bf16-cooperative-tile-experimental"` when the strict selector is active.
+It is still a diagnostic kernel body, not a promoted default.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` to compare the
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. Set
