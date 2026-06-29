@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Native GPT LM-head WMMA diagnostics: refreshed the rejected
+  `lm_head_true_fused_tile16_wmma` SM120 candidate evidence after the
+  production-shape opt-in gate started reaching the strict Tile body from the
+  trainer path. The focused trainer-chunk preflight proved
+  `candidate_path_class=strict-true-fused-tile-kernel` and
+  `candidate_symbol_abi_implementation_class=wmma-bf16-cooperative-tile-experimental`,
+  but kept the profile rejected at `11.780666x` candidate/current-wrapper,
+  `8.303748x` candidate/reference-summed, and `6.416973x`
+  candidate/reference-summed-with-logits time. The strict body took
+  `276.307454` ms/iteration, with dHidden and dWeight dominating at
+  `306649471.146405` and `492286394.807190` cycles/block. Verification:
+  live rejected-profile focused preflight on the dedicated RTX 5090, shell
+  syntax, focused native GPT source-contract test, and diff check.
+
 - Native GPT LM-head diagnostics: the strict true-fused production-shape
   capability gate now honors
   `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` and its

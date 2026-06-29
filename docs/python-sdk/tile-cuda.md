@@ -3135,9 +3135,13 @@ separate this body from the older `scalar-cooperative-tile-diagnostic` path.
 The wrappers expose it as
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma` and
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma`. The
-2026-06-29 focused trainer-chunk probe proved the WMMA implementation label but
-kept the route rejected at `2.585996x` candidate/current-wrapper and
-`7.777548x` candidate/reference-summed time.
+2026-06-29 dedicated RTX 5090 focused trainer-chunk preflight proved the WMMA
+implementation label and strict Tile path, but kept the route rejected at
+`11.780666x` candidate/current-wrapper, `8.303748x`
+candidate/reference-summed, and `6.416973x`
+candidate/reference-summed-with-logits time. The strict body took
+`276.307454` ms/iteration, with dHidden and dWeight dominating at
+`306649471.146405` and `492286394.807190` cycles/block.
 Dry-run plans for these strict profiles include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
 auditable before any GPU work starts. Focused LM-head benchmark JSON separates
