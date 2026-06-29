@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native no-Torch SDK guard: strengthened
+  `tools/check_native_no_torch_deps.py` so the native SDK import and public
+  export probes assert that Torch, NumPy, and `tiktoken` are not present in
+  `sys.modules` after loading the native helpers. This keeps the no-Torch gate
+  from passing if future SDK exports eagerly import those runtimes before
+  handing off to the compiled CUDA Tile trainer.
+
 - Native SM120 parity warmup policy: kept the parity wrapper and CUDA 13.3
   validator defaults at two warmup pairs after a 2026-06-29 dedicated RTX 5090
   same-script check with three warmup pairs regressed the median steady-state

@@ -2491,7 +2491,10 @@ dispatch with those same template/custom-graph selectors, installed `nfn:main`
 console-entry native inference, and SDK native training handoff surfaces still
 run under an import blocker for
 Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
-`infer_gpt`, and `nfn_impl`. The verifier also covers the native benchmark shell
+`infer_gpt`, and `nfn_impl`. The SDK native import/export checks also assert
+that Torch, NumPy, and `tiktoken` are absent from `sys.modules` after accessing
+the public native training helpers, so cached module pollution cannot hide a
+regression in the native SDK boundary. The verifier also covers the native benchmark shell
 wrappers in dry-run mode, including `tools/bench_linear_backward_candidate.sh`
 and `tools/bench_native_gpt_linear_hot_matrix.sh`, so performance-gate helpers
 cannot drift into build, CUDA, Python dataset, graph-editor, or Torch startup

@@ -3267,6 +3267,10 @@ GPT-2-evo, NanoGPT, explicit
 inference, top-level per-family `nfn train --base-model ...` dispatch,
 installed `nfn:main` console-entry native inference, `neuralfn.native_train`,
 and the public SDK native training exports.
+The SDK import/export probes also assert that Torch, NumPy, and `tiktoken` are
+not present in `sys.modules` after loading the native helpers, so a future eager
+SDK import cannot pass just because the import blocker did not see a fresh
+module load.
 It also executes the guarded legacy training scripts with no native flags
 against stubbed native CLIs, proving their default direct-script path enters
 native C++ before importing Torch or the Python dataset/runtime stack.

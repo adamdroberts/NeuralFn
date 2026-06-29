@@ -518,7 +518,18 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         (
             sys.executable,
             "-c",
-            "import neuralfn; import neuralfn.native_gpt; import neuralfn.native_gpt2; import neuralfn.native_train; print('native-sdk-ok')",
+            "\n".join(
+                [
+                    "import sys",
+                    "import neuralfn",
+                    "import neuralfn.native_gpt",
+                    "import neuralfn.native_gpt2",
+                    "import neuralfn.native_train",
+                    "for name in ('torch', 'numpy', 'tiktoken'):",
+                    "    assert name not in sys.modules, f'{name} loaded during native SDK import'",
+                    "print('native-sdk-ok')",
+                ]
+            ),
         ),
     ),
     (
@@ -530,6 +541,8 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
                 [
                     "import neuralfn",
                     "import sys",
+                    "for name in ('torch', 'numpy', 'tiktoken'):",
+                    "    assert name not in sys.modules, f'{name} loaded before native SDK export access'",
                     "from neuralfn import NativeGptRunConfig, NativeGpt2RunConfig, NativeTrainRunConfig",
                     "from neuralfn import build_native_gpt_compiled_cli_run_config",
                     "from neuralfn import exec_native_gpt, exec_native_gpt2, exec_native_train",
@@ -542,6 +555,8 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
                     "from neuralfn import native_train_model_registry, native_train_runner_status",
                     "from neuralfn import resolve_native_gpt_binding_command, resolve_native_gpt2_binding_command",
                     "from neuralfn import resolve_native_sm120_train_cli, resolve_native_train_binding_command",
+                    "for name in ('torch', 'numpy', 'tiktoken'):",
+                    "    assert name not in sys.modules, f'{name} loaded during native SDK export access'",
                     "assert NativeGptRunConfig.__name__ == 'NativeGptRunConfig'",
                     "assert NativeGpt2RunConfig.__name__ == 'NativeGpt2RunConfig'",
                     "assert NativeTrainRunConfig.__name__ == 'NativeTrainRunConfig'",

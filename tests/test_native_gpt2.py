@@ -149,6 +149,8 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     verifier_source = (root / "tools" / "check_native_no_torch_deps.py").read_text(encoding="utf-8")
     assert 'cli_root = repo_root / "cli"' in verifier_source
     assert "str(cli_root)" in verifier_source
+    assert "loaded during native SDK import" in verifier_source
+    assert "loaded during native SDK export access" in verifier_source
     proc = subprocess.run(
         [
             sys.executable,
