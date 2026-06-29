@@ -73,9 +73,9 @@ NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
 def _compiled_cli_env(config: NativeGptRunConfig) -> dict[str, str]:
     env = os.environ.copy()
     if str(config.cuda_visible_devices or "").strip():
-        _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", str(config.cuda_visible_devices))
+        env["CUDA_VISIBLE_DEVICES"] = str(config.cuda_visible_devices)
     if str(config.cuda_device_max_connections or "").strip():
-        _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
+        env["CUDA_DEVICE_MAX_CONNECTIONS"] = str(config.cuda_device_max_connections)
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
 

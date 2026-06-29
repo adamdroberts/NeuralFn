@@ -144,7 +144,10 @@ SDK launch helpers resolve CUDA device config explicitly. When
 checkpoint sampler calls specify a CUDA device, that resolved value is written
 into the spawned native process environment even if the parent shell already had
 `CUDA_VISIBLE_DEVICES` set. This keeps per-run SDK device selection reliable on
-the workstation with a dedicated compute GPU.
+the workstation with a dedicated compute GPU. The compatibility
+`python cli/scripts/train_gpt_native.py ...` compiled-CLI exec path uses the
+same rule before replacing itself with the C++ trainer, so an ambient display
+GPU mask cannot override the native run config during startup.
 The paired benchmark also reports `startup_plus_first_step_wall_ms`,
 `startup_plus_steady_state_step_wall_ms`, and
 `startup_plus_train_loop_wall_ms` for native runs with setup timing. Use those

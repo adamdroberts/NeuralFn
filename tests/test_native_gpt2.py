@@ -4748,6 +4748,48 @@ def test_native_gpt_exec_handoff_uses_compiled_cli_env(
         assert env["CUDA_MODULE_LOADING"] == "LAZY"
 
 
+def test_train_gpt_native_compiled_cli_env_overrides_ambient_cuda_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_train_gpt_native_script_module()
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "busy-display-gpu")
+    monkeypatch.setenv("CUDA_DEVICE_MAX_CONNECTIONS", "8")
+    monkeypatch.delenv("CUDA_MODULE_LOADING", raising=False)
+    base_cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias=str(tmp_path / "dataset"),
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        max_steps=1,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=600,
+        weight_decay=0.1,
+        num_layers=12,
+        activation="gelu",
+    )
+    cfg = NativeGptRunConfig(
+        **{
+            **base_cfg.__dict__,
+            "cuda_visible_devices": "dedicated-sm120",
+            "cuda_device_max_connections": "1",
+        }
+    )
+
+    env = module._compiled_cli_env(cfg)
+
+    assert env["CUDA_VISIBLE_DEVICES"] == "dedicated-sm120"
+    assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
+    assert env["CUDA_MODULE_LOADING"] == "LAZY"
+
+
 def test_native_gpt2_cpp_launcher_builds_and_execs(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")

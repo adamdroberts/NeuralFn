@@ -111,8 +111,10 @@ and native checkpoint sampling default `cuda_visible_devices="0"` and
 compiled-CLI, or binding runs. The resolved SDK config value wins over an
 ambient `CUDA_VISIBLE_DEVICES` or `CUDA_DEVICE_MAX_CONNECTIONS` setting, so a
 caller can launch a specific native run on device `"2"` from a shell already
-pinned to device `"0"`. The C++ binding uses `posix_spawnp()` instead of
-`fork()` and defaults `CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
+pinned to device `"0"`. The direct `train_gpt_native.py` compiled-CLI shim
+uses the same explicit-config-wins environment handoff before `exec`, while the
+C++ binding uses `posix_spawnp()` instead of `fork()` and defaults
+`CUDA_MODULE_LOADING=LAZY` when the caller has not set it.
 The generic `NativeTrainRunConfig` builders also accept `template_name=` and
 `graph_file=` for dense GPT families, appending `--template-name` and
 `--graph-file` to the compiled native command once so SDK callers can select GPT

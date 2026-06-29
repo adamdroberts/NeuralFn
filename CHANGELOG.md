@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT Python shim CUDA device precedence: `cli/scripts/train_gpt_native.py`
+  now writes the resolved native GPT config `CUDA_VISIBLE_DEVICES` and
+  `CUDA_DEVICE_MAX_CONNECTIONS` values into the compiled C++ trainer environment
+  before `exec`, instead of preserving ambient shell values when they were
+  already set. This keeps the compatibility Python entrypoint aligned with the
+  SDK/native-train handoff and prevents a display-GPU mask from overriding a
+  dedicated RTX 5090 config during startup. Verification: focused
+  `train_gpt_native.py` compiled-CLI env regression test.
+
 - Native SDK CUDA device precedence: `native_gpt2_checkpoint_sampler_env()` and
   the generic native-train subprocess launcher now write the resolved
   `cuda_visible_devices` and `cuda_device_max_connections` config values into
