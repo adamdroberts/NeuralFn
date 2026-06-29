@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native dense GPT catalog contract: the C++ native GPT trainer now has one
+  shared `native_dense_gpt_template_selectors` source for implemented dense GPT
+  selectors and emits that list at the root of `--list-templates` JSON. The
+  no-Torch verifier now fails when the compiled catalog's declared native
+  selector set drifts from the required `gpt`, `gpt2`, `gpt2_modern`, `gpt3`,
+  `gpt2_megakernel`, `gpt2_moa`, `nanogpt`, `nanogpt_modern`, and
+  `nanogpt_megakernel` coverage, in addition to checking each row's native
+  support status and geometry. Verification: focused native GPT no-Torch
+  catalog tests, C++ rebuild, no-Torch verifier, and diff check.
+
 - Native GPT benchmark metrics: `tools/paired_kernel_speed.py` now reports
   `train_steady_state_tokens_per_second` for native JSON and llm.kittens step
   logs when steady-state CUDA-event step timing is available. The metric uses

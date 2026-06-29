@@ -1056,6 +1056,17 @@ DEFAULT_SHELL_ENTRYPOINTS = (
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
+REQUIRED_NATIVE_DENSE_GPT_TEMPLATE_SELECTORS = (
+    "gpt",
+    "gpt2",
+    "gpt2_modern",
+    "gpt3",
+    "gpt2_megakernel",
+    "gpt2_moa",
+    "nanogpt",
+    "nanogpt_modern",
+    "nanogpt_megakernel",
+)
 REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
     "gpt": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
     "gpt2": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
@@ -1919,10 +1930,17 @@ def _validate_native_template_catalog(
     report["shipped_template_catalog_count"] = catalog.get("shipped_template_catalog_count")
     report["selector_count"] = catalog.get("selector_count")
     report["token_shards_resolved"] = catalog.get("token_shards_resolved")
+    native_dense_selectors = catalog.get("native_dense_gpt_template_selectors")
+    report["native_dense_gpt_template_selectors"] = native_dense_selectors
     if catalog.get("action") != "list_templates":
         errors.append(f"action={catalog.get('action')!r}, expected 'list_templates'")
     if catalog.get("token_shards_resolved") is not False:
         errors.append("template catalog listing resolved token shards")
+    if native_dense_selectors != list(REQUIRED_NATIVE_DENSE_GPT_TEMPLATE_SELECTORS):
+        errors.append(
+            "native_dense_gpt_template_selectors="
+            f"{native_dense_selectors!r}, expected {list(REQUIRED_NATIVE_DENSE_GPT_TEMPLATE_SELECTORS)!r}"
+        )
     templates = catalog.get("templates")
     if not isinstance(templates, list):
         errors.append("templates was not a list")

@@ -461,18 +461,21 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     linked_catalog = catalog_entrypoints["native_gpt_linked_list_templates"]
     assert linked_catalog["passed"] is True
     assert linked_catalog["token_shards_resolved"] is False
-    required_dense = linked_catalog["required_dense_templates"]
-    for template_name in (
+    expected_native_dense_selectors = [
         "gpt",
         "gpt2",
         "gpt2_modern",
+        "gpt3",
         "gpt2_megakernel",
         "gpt2_moa",
-        "gpt3",
         "nanogpt",
         "nanogpt_modern",
         "nanogpt_megakernel",
-    ):
+    ]
+    assert linked_catalog["native_dense_gpt_template_selectors"] == expected_native_dense_selectors
+    required_dense = linked_catalog["required_dense_templates"]
+    assert set(required_dense) == set(expected_native_dense_selectors)
+    for template_name in expected_native_dense_selectors:
         assert required_dense[template_name]["passed"] is True
         assert required_dense[template_name]["status"] == "native-transformer-lm"
         assert required_dense[template_name]["native_runnable"] is True

@@ -778,16 +778,36 @@ bool selected_template_is_shipped(const Config& cfg) {
     return std::find(presets.begin(), presets.end(), name) != presets.end();
 }
 
+const std::vector<std::string>& native_dense_gpt_template_selectors() {
+    static const std::vector<std::string> selectors = {
+        "gpt",
+        "gpt2",
+        "gpt2_modern",
+        "gpt3",
+        "gpt2_megakernel",
+        "gpt2_moa",
+        "nanogpt",
+        "nanogpt_modern",
+        "nanogpt_megakernel",
+    };
+    return selectors;
+}
+
+void write_json_string_array(std::ostream& out, const std::vector<std::string>& values) {
+    out << "[";
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index > 0) {
+            out << ",";
+        }
+        out << "\"" << json_escape(values[index]) << "\"";
+    }
+    out << "]";
+}
+
 bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     const std::string name = resolved_native_template_name(cfg.template_name);
-    return name == "gpt2" ||
-        name == "gpt2_modern" ||
-        name == "gpt3" ||
-        name == "gpt2_megakernel" ||
-        name == "gpt2_moa" ||
-        name == "nanogpt" ||
-        name == "nanogpt_modern" ||
-        name == "nanogpt_megakernel";
+    const std::vector<std::string>& selectors = native_dense_gpt_template_selectors();
+    return std::find(selectors.begin(), selectors.end(), name) != selectors.end();
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
@@ -1162,11 +1182,10 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"attention\":\"causal-packed-qkv-sm120-tk-bf16\","
         << "\"mlp\":\"gelu-4x\","
         << "\"dropout_p\":" << geometry.dropout_p << ","
-        << "\"supported_template_selectors\":["
-        << "\"gpt\",\"gpt2\",\"gpt2_modern\",\"gpt3\",\"gpt2_megakernel\",\"gpt2_moa\","
-        << "\"nanogpt\",\"nanogpt_modern\",\"nanogpt_megakernel\""
-        << "],"
-        << "\"unsupported_geometry_next_step\":\"add-native-non-dense-variant-and-non-gpt-vocab-training-plans\""
+        << "\"supported_template_selectors\":";
+    write_json_string_array(out, native_dense_gpt_template_selectors());
+    out
+        << ",\"unsupported_geometry_next_step\":\"add-native-non-dense-variant-and-non-gpt-vocab-training-plans\""
         << "}";
     return out.str();
 }
@@ -1231,6 +1250,10 @@ void print_template_catalog_json(const Config& base_cfg) {
         << "  \"selector_count\": " << selectors.size() << ",\n"
         << "  \"graph_file\": \"" << json_escape(base_cfg.graph_file) << "\",\n"
         << "  \"token_shards_resolved\": false,\n"
+        << "  \"native_dense_gpt_template_selectors\": ";
+    write_json_string_array(std::cout, native_dense_gpt_template_selectors());
+    std::cout
+        << ",\n"
         << "  \"templates\": [\n";
     for (std::size_t index = 0; index < selectors.size(); ++index) {
         Config cfg = base_cfg;

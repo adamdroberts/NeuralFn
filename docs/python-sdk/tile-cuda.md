@@ -2465,7 +2465,13 @@ native trainer metadata startup through
 `build/nfn_gpt_native_train_linked --list-templates`,
 `build/nfn_gpt2_native_train --list-templates`, and
 `build/nfn_native_train --list-models --json`, plus the unified frontend GPT
-catalog actions `--list-templates` and `--native-cuda-list-templates`, then runs `cli/scripts/train_gpt.py`,
+catalog actions `--list-templates` and `--native-cuda-list-templates`. The
+compiled catalog emits `native_dense_gpt_template_selectors`, and the verifier
+fails if that declared native selector set drifts from the required `gpt`,
+`gpt2`, `gpt2_modern`, `gpt3`, `gpt2_megakernel`, `gpt2_moa`, `nanogpt`,
+`nanogpt_modern`, and `nanogpt_megakernel` coverage, or if any listed selector
+no longer reports `native-transformer-lm`, `selected_graph_native_runnable=true`,
+and the expected dense GPT geometry. It then runs `cli/scripts/train_gpt.py`,
 `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
