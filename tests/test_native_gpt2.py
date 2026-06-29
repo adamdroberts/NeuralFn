@@ -3169,8 +3169,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"concurrent_parameter_init"|"concurrent-parameter-init"' in bench_source
     assert "NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1" in bench_source
     assert "concurrent_parameter_init_enabled" in bench_source
-    assert "setup_wall_ms regressed to 1.101579x" in bench_source
-    assert "candidate-over-llm.kittens steady-state timing green at 0.998723x" in bench_source
+    assert "setup.parameter_initialization.total_ms aggregate" in bench_source
+    assert "setup.concurrent_parameter_init.total_ms" in bench_source
+    assert "setup_wall_ms stayed effectively flat at 0.999582x" in bench_source
+    assert "STARTUP_ONLY=1" in bench_source
+    assert "INCLUDE_LLMK_REFERENCE=0" in bench_source
+    assert "setup.parameter_initialization.total_ms=0.990" in bench_source
     assert "startup_plus_first_step_wall_ms=0.998" in bench_source
     assert '"embedding_bf16_shadow"|"embedding-bf16-shadow"' in bench_source
     assert "NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1" in bench_source
@@ -3654,6 +3658,33 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "--baseline-symbol" in wrapper
 
 
+def test_native_paired_metrics_sum_parameter_initialization_buckets() -> None:
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "paired_kernel_speed_for_parameter_init_test",
+        root / "tools" / "paired_kernel_speed.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    metrics = module.native_metrics_from_payload(
+        {
+            "timing": {
+                "setup_timing": [
+                    {"name": "setup.token_weight_init", "total_ms": 151.4},
+                    {"name": "setup.nonzero_parameter_fill", "total_ms": 8.48},
+                    {"name": "setup.concurrent_parameter_init", "total_ms": 0.02},
+                ]
+            }
+        }
+    )
+
+    assert metrics["setup.parameter_initialization.total_ms"] == pytest.approx(159.9)
+
+
 def test_native_gpt_lm_head_true_fused_gate_rejects_slow_strict_kernel() -> None:
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location(
@@ -3871,6 +3902,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "transformer_device_arena_cuda_malloc_wall_ms" in speed_source
     assert "transformer_device_arena_pointer_assign_wall_ms" in speed_source
     assert "setup.float_uint16_arena_materialize_concurrent.total_ms" in speed_source
+    assert "setup.parameter_initialization.total_ms" in speed_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
     assert '"setup.cuda_event.token_weight_init.total_ms"' in speed_source
     assert "concurrent_arena_materialize_requested" in speed_source

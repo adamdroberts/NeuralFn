@@ -974,13 +974,14 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "concurrent_parameter_init"|"concurrent-parameter-init"|"parallel_parameter_init"|"parallel-parameter-init"|"concurrent_token_parameter_init"|"concurrent-token-parameter-init")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 7-warmup, 3-sample, 10-step same-script rerun compared concurrent token-weight initialization plus non-token parameter fill against the current serial setup path. It kept steady-state timing effectively flat at 1.000017x and candidate-over-llm.kittens steady-state timing green at 0.998723x, but rejected default promotion because setup_wall_ms regressed to 1.101579x mean, startup_plus_first_step_wall_ms regressed to 1.030042x mean, and candidate-over-llm.kittens first-step CUDA-event timing missed at 1.000153x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 startup-only 5-sample rerun compared concurrent token-weight initialization plus non-token parameter fill against the current serial setup path with the derived setup.parameter_initialization.total_ms aggregate. The aggregate improved to 0.981495x, but the profile stays rejected because setup_wall_ms stayed effectively flat at 0.999582x mean / 1.001850x median and startup_plus_first_step_wall_ms missed the strict 0.998 gate; the near-zero setup.token_weight_init.total_ms bucket is only work moving into setup.concurrent_parameter_init.total_ms."
     CANDIDATE_NOTE="Rejected diagnostic that overlaps token-weight initialization with the independent non-token parameter fill on separate nonblocking CUDA streams, then synchronizes before block BF16 refresh and training."
+    STARTUP_ONLY=1
+    INCLUDE_LLMK_REFERENCE=0
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1"
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }concurrent_parameter_init_enabled"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.995 startup_plus_first_step_wall_ms=0.998 train_loop_wall_ms_per_step=1.001 train_loop_cuda_event_steady_state_wall_ms_per_step=1.001}"
-    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.999}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.parameter_initialization.total_ms=0.990 setup_wall_ms=0.995 startup_plus_first_step_wall_ms=0.998}"
     ;;
   "embedding_bf16_shadow"|"embedding-bf16-shadow"|"token_embedding_bf16_shadow"|"token-embedding-bf16-shadow"|"bf16_embedding_shadow"|"bf16-embedding-shadow")
     CANDIDATE_NOTE="Compares the default fused embedding residual that reads FP32 token weights against the candidate fused direct-u16 embedding residual that reads the maintained BF16 token-weight shadow."

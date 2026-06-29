@@ -199,12 +199,15 @@ diagnostic-only startup profile. It sets
 `concurrent_parameter_init_requested`, `concurrent_parameter_init_enabled`, and
 `concurrent_parameter_init_count` while token-weight initialization and
 independent non-token parameter fill run on separate nonblocking CUDA streams.
-The 2026-06-29 dedicated RTX 5090 7-warmup rerun kept it off by default:
-steady-state timing stayed effectively flat at `1.000017x` and
-candidate-over-llm.kittens steady-state timing stayed green at `0.998723x`, but
-setup wall regressed to `1.101579x`, startup-plus-first-step regressed to
-`1.030042x`, and candidate-over-llm.kittens first-step CUDA-event timing missed
-at `1.000153x`.
+The paired benchmark derives `setup.parameter_initialization.total_ms` by
+summing `setup.token_weight_init.total_ms`,
+`setup.nonzero_parameter_fill.total_ms`, and
+`setup.concurrent_parameter_init.total_ms`, so this profile is gated on the
+combined parameter-init work instead of a timing bucket rename. The 2026-06-29
+dedicated RTX 5090 startup-only rerun kept it off by default: the aggregate
+improved to `0.981495x`, but setup wall stayed effectively flat at
+`0.999582x` mean / `1.001850x` median and startup-plus-first-step missed the
+strict `0.998x` gate.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=embedding_bf16_shadow` is another
 diagnostic-only profile. It toggles
 `NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1`, making the fused direct-u16

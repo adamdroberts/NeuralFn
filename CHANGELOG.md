@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Native GPT benchmark metrics: paired native extraction now derives
+  `setup.parameter_initialization.total_ms` from
+  `setup.token_weight_init.total_ms`,
+  `setup.nonzero_parameter_fill.total_ms`, and
+  `setup.concurrent_parameter_init.total_ms`. The rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init` profile is now
+  startup-only, skips the llm.kittens reference, and gates on the aggregate
+  parameter-init metric so moving setup work into
+  `setup.concurrent_parameter_init.total_ms` cannot masquerade as a token-init
+  kernel win. A 2026-06-29 dedicated RTX 5090 startup-only 5-sample rerun
+  measured the aggregate at `0.981495x`, but kept the profile rejected because
+  setup wall stayed effectively flat at `0.999582x` mean / `1.001850x` median
+  and startup-plus-first-step missed the strict `0.998x` gate. Verification:
+  focused native GPT pytest coverage, shell syntax check, and dry-run profile
+  expansion.
+
 - Native GPT benchmark warmup policy: aligned the long-run deferred-prewarm
   warmup floor with the seven-pair SM120 native candidate wrapper default.
   Copied low-warmup commands for the named `long_run_defer_prewarm` profile or

@@ -3622,6 +3622,19 @@ pinned-host bisection. Runtime JSON reports `token_id_host_staging`,
 and `token_u16_pageable_arena_malloc_count`.
 
 Set
+`NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1` only for startup profiling. It
+overlaps token-weight initialization with independent non-token parameter fill
+on separate nonblocking CUDA streams and reports
+`concurrent_parameter_init_requested`,
+`concurrent_parameter_init_enabled`, and
+`concurrent_parameter_init_count`. Paired benchmark extraction derives
+`setup.parameter_initialization.total_ms` by summing
+`setup.token_weight_init.total_ms`, `setup.nonzero_parameter_fill.total_ms`,
+and `setup.concurrent_parameter_init.total_ms`, so the SM120 candidate profile
+compares the whole parameter-init path rather than treating renamed setup
+buckets as speedups.
+
+Set
 `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena startup
 profiling. It overlaps the float and uint16 arena `cudaMalloc` calls with host
 `std::thread` workers when the default split-arena `cudaMalloc` path is active,

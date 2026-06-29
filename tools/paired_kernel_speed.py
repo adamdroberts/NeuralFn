@@ -1453,6 +1453,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "setup_wall_ms",
     "setup.float_arena_materialize.total_ms",
     "setup.uint16_arena_materialize.total_ms",
+    "setup.parameter_initialization.total_ms",
     "setup.token_weight_init.total_ms",
     "setup.zero_init.total_ms",
     "setup.block_weight_bf16_initial_refresh.total_ms",
@@ -1555,6 +1556,7 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "arena_materialize_order",
     "transformer_device_arena_cuda_malloc_wall_ms",
     "transformer_device_arena_pointer_assign_wall_ms",
+    "setup.parameter_initialization.total_ms",
     "setup.token_weight_init.total_ms",
     "setup.cublaslt_plan_prewarm.total_ms",
     "stage.train.model_forward.total_ms",
@@ -2032,6 +2034,19 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
                     value = stage.get(source_key)
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         metrics[f"{metric_name}.{suffix}"] = value
+            setup_parameter_init_ms = 0.0
+            setup_parameter_init_seen = False
+            for key in (
+                "setup.token_weight_init.total_ms",
+                "setup.nonzero_parameter_fill.total_ms",
+                "setup.concurrent_parameter_init.total_ms",
+            ):
+                value = metrics.get(key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    setup_parameter_init_ms += float(value)
+                    setup_parameter_init_seen = True
+            if setup_parameter_init_seen:
+                metrics["setup.parameter_initialization.total_ms"] = setup_parameter_init_ms
         setup_cuda_timing = timing.get("setup_cuda_event_timing")
         if isinstance(setup_cuda_timing, list):
             for stage in setup_cuda_timing:
