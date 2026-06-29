@@ -2484,6 +2484,25 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert "subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv()" not in train_gpt_native_source
 
 
+def test_sm120_compiled_launcher_rejects_stale_native_trainer() -> None:
+    root = Path(__file__).resolve().parents[1]
+    shell_source = (root / "tools" / "train_gpt_sm120.sh").read_text(encoding="utf-8")
+    launcher_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "train_gpt_sm120.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "AUTO_REBUILD_NATIVE=" in shell_source
+    assert "tools/build_train_gpt_sm120_cli.sh" in shell_source
+    assert "tools/build_native_gpt_cli_linked.sh" in shell_source
+    assert "ensure_default_compiled_launcher_current" in shell_source
+    assert "ensure_default_native_trainer_current" in shell_source
+    assert 'NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1' in launcher_source
+    assert "native_trainer_stale(root, native_bin_path)" in launcher_source
+    assert "linked_tile_ops_source_newer_than(root, native_bin)" in launcher_source
+    assert "nfn_gpt_native_train_linked" in launcher_source
+    assert "tools/build_native_gpt_cli_linked.sh" in launcher_source
+
+
 def test_native_gpt_lm_smoke_uses_stable_cuda_13_3_expectations() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(

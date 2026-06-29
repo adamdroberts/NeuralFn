@@ -58,12 +58,49 @@ std::string lower(std::string value) {
     return value;
 }
 
+bool env_flag_enabled(const char* name, bool fallback = false) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || value[0] == '\0') {
+        return fallback;
+    }
+    const std::string normalized = lower(value);
+    return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
+}
+
 bool executable(const fs::path& path) {
     std::error_code ec;
     if (!fs::exists(path, ec) || fs::is_directory(path, ec)) {
         return false;
     }
     return access(path.c_str(), X_OK) == 0;
+}
+
+bool path_newer_than(const fs::path& source, const fs::path& target) {
+    std::error_code source_ec;
+    std::error_code target_ec;
+    const fs::file_time_type source_time = fs::last_write_time(source, source_ec);
+    const fs::file_time_type target_time = fs::last_write_time(target, target_ec);
+    return !source_ec && !target_ec && source_time > target_time;
+}
+
+bool native_trainer_source_newer_than(const fs::path& root, const fs::path& target) {
+    return path_newer_than(root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp", target) ||
+           path_newer_than(root / "neuralfn" / "csrc" / "native_train" / "token_shards.cpp", target);
+}
+
+bool linked_tile_ops_source_newer_than(const fs::path& root, const fs::path& target) {
+    return path_newer_than(root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu", target) ||
+           path_newer_than(root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h", target) ||
+           path_newer_than(root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu", target) ||
+           path_newer_than(root / "tools" / "build_native_train_tile_ops.sh", target);
+}
+
+bool native_trainer_stale(const fs::path& root, const fs::path& native_bin) {
+    if (native_trainer_source_newer_than(root, native_bin)) {
+        return true;
+    }
+    return native_bin.filename() == "nfn_gpt_native_train_linked" &&
+           linked_tile_ops_source_newer_than(root, native_bin);
 }
 
 bool is_dense_gpt_model_family(const std::string& name) {
@@ -417,10 +454,21 @@ int main(int argc, char** argv) {
             batch_size = "32";
         }
     }
-    if (!executable(native_bin)) {
+    const fs::path native_bin_path(native_bin);
+    if (!executable(native_bin_path)) {
         std::cerr << "Native GPT trainer is not executable: " << native_bin << "\n"
                   << "Build it with: bash tools/build_native_gpt_cli.sh\n";
         return 127;
+    }
+    if (!env_flag_enabled("NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN") &&
+        native_trainer_stale(root, native_bin_path)) {
+        const bool linked = native_bin_path.filename() == "nfn_gpt_native_train_linked";
+        std::cerr << "Native GPT trainer is older than its C++/CUDA inputs: " << native_bin << "\n"
+                  << "Build it with: bash "
+                  << (linked ? "tools/build_native_gpt_cli_linked.sh" : "tools/build_native_gpt_cli.sh")
+                  << "\n"
+                  << "Set NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1 only for stale-artifact diagnostics.\n";
+        return 126;
     }
 
     const bool fast_startup_env_explicit =

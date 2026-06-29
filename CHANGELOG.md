@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native SM120 launcher freshness: `tools/train_gpt_sm120.sh` now refreshes the
+  repo-owned `build/nfn_train_gpt_sm120` launcher and linked native GPT trainer
+  before execing the compiled path when their C++/CUDA inputs are newer. Direct
+  `build/nfn_train_gpt_sm120 ...` runs now reject stale native trainer binaries
+  before launching CUDA work, with `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1`
+  reserved for stale-artifact diagnostics. `NFN_NATIVE_GPT_AUTO_REBUILD=0` or
+  `NFN_SM120_AUTO_REBUILD=0` keeps the shell helper on existing artifacts for
+  diagnostics. Verification: shell syntax, compiled launcher build, focused
+  native GPT stale-launcher source test, no-Torch stale-artifact verifier, and
+  diff check.
+
 - Native GPT BF16 gradient diagnostics: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_block_dweight_staging` to make the
   opt-in QKV/MLP-FC BF16 dWeight staging route reproducible through the paired
