@@ -3271,7 +3271,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         bench_source.index('"short_run_forced_prewarm"|"short-run-forced-prewarm"')
     ]
     assert "INCLUDE_LLMK_REFERENCE=0" not in long_run_block
-    assert '"WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"' in long_run_block
+    assert '"$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0' in long_run_block
+    assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in long_run_block
     assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_block
     assert (
         "MAX_CANDIDATE_REFERENCE_RATIO_RAW=\"${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-"
@@ -3286,10 +3287,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "expected first-step deferred-prewarm cost" in bench_source
     assert '"short_run_forced_prewarm"|"short-run-forced-prewarm"' in bench_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1" in bench_source
-    assert "setup_wall_ms regressed to 1.504017x" in bench_source
-    assert "startup_plus_train_loop_wall_ms to 1.002755x" in bench_source
-    assert "steady-state CUDA-event time to 1.002916x" in bench_source
-    assert "candidate-over-llm.kittens train-loop wall stayed at 1.002051x" in bench_source
+    assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0" in bench_source
+    assert "corrected off/on 3-step, 2-sample gate" in bench_source
+    assert "The route-change gate passed" in bench_source
+    assert "candidate-over-llm.kittens gates passed at 0.997887x train-loop wall" in bench_source
+    assert "0.997568x first-step CUDA-event time" in bench_source
+    assert "0.998032x steady-state CUDA-event time" in bench_source
+    assert "1.002303x tokens/sec" in bench_source
+    assert "setup_wall_ms regressed to 1.502355x" in bench_source
+    assert "startup_plus_train_loop_wall_ms to 1.000732x" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source

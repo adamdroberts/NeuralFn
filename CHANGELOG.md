@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: `short_run_forced_prewarm` now measures an explicit
+  no-prewarm baseline against a forced-prewarm candidate by setting
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` and
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` on the baseline, then
+  setting both to `1` on the candidate. This keeps the required
+  `lm_head_cooperative_backward_graph_prewarm_enabled` route-change gate tied
+  to the intended off-versus-on comparison even when the default run shape
+  already prewarms. The corrected 3-step, 2-sample live gate passed route
+  change and candidate-over-llm.kittens checks (`0.997887x` train-loop wall,
+  `0.997568x` first-step CUDA-event time, `0.998032x` steady-state CUDA-event
+  time, `1.002303x` tokens/sec) but kept the profile rejected because native
+  setup wall regressed to `1.502355x` and startup-plus-train-loop wall to
+  `1.000732x`. Verification: shell syntax, focused native GPT source-contract
+  pytest, dry-run expansion, and live rejected paired benchmark.
+
 - Benchmark gate safety: dry-run paired SM120 benchmark plans no longer mark
   requested metric-ratio gates as passed when no candidate/baseline/reference
   timings have been measured. Dry-run JSON now reports `measured: false`,

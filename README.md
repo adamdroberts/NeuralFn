@@ -321,13 +321,16 @@ still showed the expected deferred-prewarm cost at `1.093769x`, so do not use
 first-step timing alone to reject the long-run policy.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=short_run_forced_prewarm` only to
 reproduce the rejected short-run escape hatch that also forces LM-head graph
-prewarm back on under auto fast-startup. The 2026-06-29 CUDA 13.3.33
-dedicated RTX 5090 20-step, 3-sample gate improved first-step CUDA-event time
-to `0.910765x` and train-loop wall to `0.997818x`, but rejected default
-promotion because setup wall regressed to `1.504017x`,
-startup-plus-train-loop wall to `1.002755x`, steady-state CUDA-event timing to
-`1.002916x`, and candidate-over-llm.kittens train-loop wall remained
-`1.002051x`.
+prewarm back on under auto fast-startup. The profile explicitly disables the
+TK QKV and LM-head graph prewarms in its baseline and enables both in its
+candidate, so its route-change gate verifies the intended off-versus-on
+comparison instead of inheriting the default run-shape policy. The 2026-06-29
+dedicated RTX 5090 corrected off/on 3-step, 2-sample gate passed the route
+gate and all candidate-over-llm.kittens gates: `0.997887x` train-loop wall,
+`0.997568x` first-step CUDA-event time, `0.998032x` steady-state CUDA-event
+time, and `1.002303x` tokens/sec. It remains rejected for default promotion
+because setup wall regressed to `1.502355x` and startup-plus-train-loop wall
+regressed to `1.000732x`.
 The compiled GPT launchers (`build/nfn_train_gpt` and
 `build/nfn_train_gpt_sm120`) also auto-append `--fast-startup` for short
 debug/smoke runs when `max_steps` is at or below the same deferred-prewarm
