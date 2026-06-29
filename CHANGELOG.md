@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native parity benchmark accuracy: `tools/bench_native_gpt_sm120_parity.sh`
+  now defaults to two warmup pairs instead of one, matching the native candidate
+  wrapper's promoted measurement policy. Explicit `NFN_SM120_NATIVE_WARMUP`,
+  `NFN_SM120_PARITY_WARMUP`, and `NFN_SM120_WARMUP` values still override this,
+  including `0` for cold-start diagnostics. Verified with shell syntax checks,
+  the focused native source-coverage pytest, `git diff --check`, and a dry-run
+  parity plan that reported `warmup: 2`.
+
 - Native runtime validation: strengthened `tools/validate_sm120_cuda13.sh` so
   its one-step runtime-contract smoke now fails on drift from promoted native
   defaults, not just broad no-Torch/no-graph invariants. The contract now

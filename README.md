@@ -2766,7 +2766,7 @@ bounded llm.kittens parity band. The default band is
 `train_loop_wall_ms_per_step=1.003`, plus
 `train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when CUDA-event loop
 timing is enabled. The canonical parity wrapper defaults to 10 steps, 3
-measured samples, and 1 warmup sample, so those default gates use paired median
+measured samples, and 2 warmup samples, so those default gates use paired median
 ratios and avoid failing on a single fast or slow reference sample. Set
 `NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0` only for quick smokes;
 single-sample runs keep the paired speed tool's unqualified mean behavior. Set
