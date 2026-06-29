@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT CLI defaults: `cli/scripts/train_gpt.py` now expands the same dense
+  GPT quality defaults as `tools/train_gpt_sm120.sh` on the compiled-CLI fast
+  path before exec or dry-run command printing. Normal direct runs now include
+  validation/sample/checkpoint cadence, `64 x 1024 -> 524288` token batching,
+  AdamW defaults, 1000 warmup steps, 20,000 max steps, and GELU/MOA activation
+  defaults unless the caller supplies explicit flags or `NFN_NATIVE_GPT_*` /
+  `NFN_SM120_*` overrides. GPT-3 still defaults to `32 x 2048`, and
+  `gpt2_moa` still defaults to MOA activation. Verification: focused native GPT
+  subprocess dry-run tests, direct command inspections, Python compile, and
+  `git diff --check`.
+
 - Native GPT launcher startup: `cli/scripts/train_gpt.py` now matches the SM120
   launchers by defaulting the compiled-CLI fast path to CUDA ordinal `0` instead
   of resolving the `dedicated` selector. This avoids a pre-exec `nvidia-smi`

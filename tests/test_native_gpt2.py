@@ -4796,6 +4796,115 @@ def test_native_gpt_template_catalog_action_reaches_wrappers(
     assert "--eval-batches" not in gpt_args
 
 
+def test_train_gpt_fast_path_expands_quality_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    env = os.environ.copy()
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "train_gpt.py"),
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0
+    command = proc.stdout
+    assert str(native_cli) in command
+    assert "--model-family gpt" in command
+    assert "--backend tile-cuda" in command
+    assert "--eval-every-steps 1000" in command
+    assert "--eval-batches 20" in command
+    assert "--native-cuda-sample-every 20000" in command
+    assert "--native-cuda-generate-tokens 144" in command
+    assert "--native-cuda-checkpoint-every 200" in command
+    assert "--batch-size 64" in command
+    assert "--train-seq-len 1024" in command
+    assert "--train-batch-tokens 524288" in command
+    assert "--learning-rate 0.0006" in command
+    assert "--final-lr-fraction 0.0" in command
+    assert "--weight-decay 0.1" in command
+    assert "--beta1 0.9" in command
+    assert "--beta2 0.95" in command
+    assert "--adam-eps 1e-8" in command
+    assert "--grad-clip-norm 1.0" in command
+    assert "--warmup-steps 1000" in command
+    assert "--max-steps 20000" in command
+    assert "--native-cuda-activation gelu" in command
+    assert "--train-transformer-lm" in command
+
+
+def test_train_gpt_fast_path_preserves_template_specific_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    env = os.environ.copy()
+
+    gpt3 = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "train_gpt.py"),
+            "--base-model",
+            "gpt3",
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    moa = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "train_gpt.py"),
+            "--template-name",
+            "gpt2_moa",
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert gpt3.returncode == 0
+    assert "--model-family gpt3" in gpt3.stdout
+    assert "--train-seq-len 2048" in gpt3.stdout
+    assert "--batch-size 32" in gpt3.stdout
+    assert "--train-batch-tokens 524288" in gpt3.stdout
+    assert moa.returncode == 0
+    assert "--template-name gpt2_moa" in moa.stdout
+    assert "--native-cuda-activation moa" in moa.stdout
+
+
 def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

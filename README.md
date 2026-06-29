@@ -3282,6 +3282,13 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` as a utility module is also lightweight; its shared dataset helper re-exports are lazy wrappers, and Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
 
+Direct `python cli/scripts/train_gpt.py ...` compiled-CLI runs now expand the
+same dense GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or
+dry-run command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` /
+`NFN_SM120_*` overrides are supplied, the resolved command includes validation,
+sample, and checkpoint cadence, `64 x 1024 -> 524288` token batching, AdamW
+defaults, 1000 warmup steps, 20,000 max steps, and GELU/MOA activation defaults.
+
 Default local native CLI builds also create the documented hyphenated command
 names: `bash tools/build_native_train_cli.sh` emits `build/nfn_native_train`
 and `build/nfn-native-train`, while `bash tools/build_native_nfn_cli.sh` emits

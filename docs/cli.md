@@ -2602,6 +2602,12 @@ frontend. The inspection shortcut does not import
 `server.dataset_manager`, NumPy, tiktoken, or Torch and does not materialize
 raw-text token shards before printing the command. The default Tile-CUDA
 command does not include the external `--target train_gpt2cu` bridge argument.
+Normal direct `train_gpt.py` compiled-CLI commands also expand the same dense
+GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or dry-run
+command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` / `NFN_SM120_*`
+overrides are supplied, the resolved command includes validation/sample/checkpoint
+cadence, `64 x 1024 -> 524288` token batching, AdamW defaults, 1000 warmup
+steps, 20,000 max steps, and GELU/MOA activation defaults.
 The compiled Tile-CUDA
 frontend itself treats `--print-command` as a no-data/no-CUDA inspection mode:
 it prints the exact `nfn_gpt_native_train ...` invocation and exits before

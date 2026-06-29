@@ -20,6 +20,100 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 _DEFAULT_EVAL_BATCHES = "20"
+_QUALITY_DEFAULTS = {
+    "--eval-every-steps": (
+        "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
+        "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
+        "NFN_SM120_EVAL_EVERY_STEPS",
+        "1000",
+    ),
+    "--eval-batches": (
+        "NFN_NATIVE_GPT_EVAL_BATCHES",
+        "NFN_SM120_NATIVE_EVAL_BATCHES",
+        "NFN_SM120_EVAL_BATCHES",
+        _DEFAULT_EVAL_BATCHES,
+    ),
+    "--native-cuda-sample-every": (
+        "NFN_NATIVE_GPT_SAMPLE_EVERY",
+        "NFN_SM120_NATIVE_SAMPLE_EVERY",
+        "NFN_SM120_SAMPLE_EVERY",
+        "20000",
+    ),
+    "--native-cuda-generate-tokens": (
+        "NFN_NATIVE_GPT_GENERATE_TOKENS",
+        "NFN_SM120_NATIVE_GENERATE_TOKENS",
+        "NFN_SM120_GENERATE_TOKENS",
+        "144",
+    ),
+    "--native-cuda-checkpoint-every": (
+        "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
+        "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
+        "NFN_SM120_CHECKPOINT_EVERY",
+        "200",
+    ),
+    "--batch-size": (
+        "NFN_NATIVE_GPT_BATCH_SIZE",
+        "NFN_SM120_NATIVE_BATCH_SIZE",
+        "NFN_SM120_BATCH_SIZE",
+        "64",
+    ),
+    "--train-seq-len": (
+        "NFN_NATIVE_GPT_TRAIN_SEQ_LEN",
+        "NFN_SM120_NATIVE_TRAIN_SEQ_LEN",
+        "NFN_SM120_TRAIN_SEQ_LEN",
+        "1024",
+    ),
+    "--train-batch-tokens": (
+        "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_TRAIN_BATCH_TOKENS",
+        "524288",
+    ),
+    "--learning-rate": (
+        "NFN_NATIVE_GPT_LEARNING_RATE",
+        "NFN_SM120_NATIVE_LEARNING_RATE",
+        "NFN_SM120_LEARNING_RATE",
+        "0.0006",
+    ),
+    "--final-lr-fraction": (
+        "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
+        "NFN_SM120_NATIVE_FINAL_LR_FRACTION",
+        "NFN_SM120_FINAL_LR_FRACTION",
+        "0.0",
+    ),
+    "--weight-decay": (
+        "NFN_NATIVE_GPT_WEIGHT_DECAY",
+        "NFN_SM120_NATIVE_WEIGHT_DECAY",
+        "NFN_SM120_WEIGHT_DECAY",
+        "0.1",
+    ),
+    "--beta1": ("NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1", "0.9"),
+    "--beta2": ("NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2", "0.95"),
+    "--adam-eps": (
+        "NFN_NATIVE_GPT_ADAM_EPS",
+        "NFN_SM120_NATIVE_ADAM_EPS",
+        "NFN_SM120_ADAM_EPS",
+        "1e-8",
+    ),
+    "--grad-clip-norm": (
+        "NFN_NATIVE_GPT_GRAD_CLIP_NORM",
+        "NFN_SM120_NATIVE_GRAD_CLIP_NORM",
+        "NFN_SM120_GRAD_CLIP_NORM",
+        "1.0",
+    ),
+    "--warmup-steps": (
+        "NFN_NATIVE_GPT_WARMUP_STEPS",
+        "NFN_SM120_NATIVE_WARMUP_STEPS",
+        "NFN_SM120_WARMUP_STEPS",
+        "1000",
+    ),
+    "--max-steps": (
+        "NFN_NATIVE_GPT_MAX_STEPS",
+        "NFN_SM120_NATIVE_MAX_STEPS",
+        "NFN_SM120_MAX_STEPS",
+        "20000",
+    ),
+}
 _AUTO_CUDA_VISIBLE_DEVICE_VALUES = {"auto", "dedicated", "dedicated-auto"}
 _NATIVE_METADATA_ACTION_FLAGS = {
     "--print-plan",
@@ -118,6 +212,30 @@ def _native_cli_uses_linked_tile_ops(path: str) -> bool:
 
 def _append_value(out: list[str], flag: str, value: str) -> None:
     out.extend([flag, value])
+
+
+def _env_default(names: tuple[str, ...]) -> str:
+    *env_names, fallback = names
+    for name in env_names:
+        value = os.environ.get(name)
+        if value is not None and str(value).strip():
+            return str(value)
+    return fallback
+
+
+def _append_quality_defaults(out: list[str]) -> None:
+    for flag, env_names in _QUALITY_DEFAULTS.items():
+        if not _explicit_arg(out, flag):
+            _append_value(out, flag, _env_default(env_names))
+    if not _has_native_activation(out):
+        activation_default = "moa" if _native_template_name(out) == "gpt2_moa" else "gelu"
+        _append_value(
+            out,
+            "--native-cuda-activation",
+            os.environ.get("NFN_NATIVE_GPT_ACTIVATION")
+            or os.environ.get("NFN_SM120_ACTIVATION")
+            or activation_default,
+        )
 
 
 def _output_dir_from_output(value: str) -> str:
@@ -430,6 +548,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         and not _explicit_arg(out, "--graph-file", "--graph")
     ):
         _append_value(out, "--train-seq-len", "2048")
+    if model_selector == "gpt3" and not _explicit_arg(out, "--batch-size"):
+        _append_value(out, "--batch-size", "32")
     if (
         model_selector == "nanogpt"
         and not _explicit_arg(out, "--template-name", "--template", "--preset")
@@ -447,13 +567,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         raise ValueError("native GPT kernel backend must be tile-cuda")
     if "--backend" not in out:
         _append_value(out, "--backend", "tile-cuda")
-    if not list_templates_only and not _explicit_arg(out, "--eval-batches"):
-        _append_value(out, "--eval-batches", os.environ.get("EVAL_BATCHES", _DEFAULT_EVAL_BATCHES))
     final_lr = _final_lr_fraction(argv)
-    if final_lr is not None and "--final-lr-fraction" not in out:
+    if final_lr is not None and not _explicit_arg(out, "--final-lr-fraction"):
         _append_value(out, "--final-lr-fraction", final_lr)
-    if _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
-        _append_value(out, "--native-cuda-activation", "moa")
+    if not list_templates_only and not any(flag in out for flag in _NATIVE_METADATA_ACTION_FLAGS):
+        _append_quality_defaults(out)
     if _native_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
         _append_value(out, "--tile-ops-lib", "linked")
     if (
