@@ -4999,14 +4999,16 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "native_stage_timing": bool(args.native_stage_timing),
             "metric_ratio_gates": {
                 "enabled": bool(metric_ratio_limits),
-                "passed": True,
+                "measured": False,
+                "passed": not bool(metric_ratio_limits),
                 "results": [
                     ({
                         "metric": limit.metric,
                         "stat": limit.stat,
+                        "actual_ratio": None,
                         "actual_mean_ratio": None,
                         "missing": True,
-                        "passed": True,
+                        "passed": False,
                     }
                     | ({"min_ratio": limit.min_ratio} if limit.min_ratio is not None else {})
                     | ({"max_ratio": limit.max_ratio} if limit.max_ratio is not None else {}))
@@ -5015,14 +5017,16 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             },
             "candidate_reference_metric_ratio_gates": {
                 "enabled": bool(candidate_reference_metric_ratio_limits),
-                "passed": True,
+                "measured": False,
+                "passed": not bool(candidate_reference_metric_ratio_limits),
                 "results": [
                     ({
                         "metric": limit.metric,
                         "stat": limit.stat,
+                        "actual_ratio": None,
                         "actual_mean_ratio": None,
                         "missing": True,
-                        "passed": True,
+                        "passed": False,
                     }
                     | ({"min_ratio": limit.min_ratio} if limit.min_ratio is not None else {})
                     | ({"max_ratio": limit.max_ratio} if limit.max_ratio is not None else {}))
@@ -5950,6 +5954,8 @@ def main() -> int:
         ("candidate_reference_metric_ratio_gates", "candidate reference metric ratio gate"),
     ):
         gates = payload.get(gate_key)
+        if payload.get("dry_run_plan") is True:
+            continue
         if not (
             isinstance(gates, dict)
             and gates.get("enabled") is True

@@ -139,6 +139,11 @@ same 5-step JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
 separate from current throughput parity.
+Benchmark dry-run plans are command plans, not performance evidence. When
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` is set, requested metric gates now report
+`measured: false`, `missing: true`, and `passed: false` for each ratio row, but
+the dry-run command itself still exits successfully so wrappers can inspect the
+baseline/candidate/reference commands before launching CUDA.
 Direct compiled native GPT binaries now accept the same symbolic CUDA device
 selectors as the benchmark wrappers. Set `CUDA_VISIBLE_DEVICES=dedicated`,
 `auto`, or `dedicated-auto` before launching `build/nfn_gpt_native_train_linked`

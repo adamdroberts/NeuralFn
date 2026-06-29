@@ -786,37 +786,43 @@ def test_native_gpt_sm120_candidate_wrapper_auto_gates_llmk_reference_candidate(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     reference_gates = payload["candidate_reference_metric_ratio_gates"]
     assert reference_gates["enabled"] is True
+    assert reference_gates["measured"] is False
+    assert reference_gates["passed"] is False
     limits = reference_gates["results"]
     assert {
         "metric": "train_loop_wall_ms_per_step",
         "stat": "mean",
+        "actual_ratio": None,
         "actual_mean_ratio": None,
         "missing": True,
-        "passed": True,
+        "passed": False,
         "max_ratio": 1.0,
     } in limits
     assert {
         "metric": "train_loop_cuda_event_steady_state_wall_ms_per_step",
         "stat": "mean",
+        "actual_ratio": None,
         "actual_mean_ratio": None,
         "missing": True,
-        "passed": True,
+        "passed": False,
         "max_ratio": 1.0,
     } in limits
     assert {
         "metric": "train_loop_cuda_event_first_step_wall_ms_per_step",
         "stat": "mean",
+        "actual_ratio": None,
         "actual_mean_ratio": None,
         "missing": True,
-        "passed": True,
+        "passed": False,
         "max_ratio": 1.0,
     } in limits
     assert {
         "metric": "train_tokens_per_second",
         "stat": "mean",
+        "actual_ratio": None,
         "actual_mean_ratio": None,
         "missing": True,
-        "passed": True,
+        "passed": False,
         "min_ratio": 1.0,
     } in limits
 

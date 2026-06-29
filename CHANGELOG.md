@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Benchmark gate safety: dry-run paired SM120 benchmark plans no longer mark
+  requested metric-ratio gates as passed when no candidate/baseline/reference
+  timings have been measured. Dry-run JSON now reports `measured: false`,
+  `missing: true`, and `passed: false` for those rows while keeping dry-run
+  commands exit-zero for command inspection. This prevents planned-but-unrun
+  candidate/reference gates from being mistaken for performance evidence.
+  Verification: focused paired-kernel pytest and dry-run JSON check.
+
 - Native GPT embedding diagnostics: added an opt-in CUDA Tile fused
   direct-u16 token/position/residual embedding kernel that can read the
   maintained BF16 token-weight shadow, plus
