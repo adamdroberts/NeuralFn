@@ -1042,7 +1042,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "store_mlp_blocks10_tail"|"store-mlp-blocks10-tail"|"stored_mlp_blocks10_tail"|"stored-mlp-blocks10-tail"|"mlp_activation_blocks10_tail"|"mlp-activation-blocks10-tail")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Unpromoted stored-MLP startup-memory diagnostic: cuts stored MLP activation blocks 12->10 and places the saved blocks at the tail of the transformer. This tests the smallest current tail-placement MLP tape reduction before default promotion."
+    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-29 3-step, 2-sample same-script gate cut stored MLP activation blocks 12->10 at tail placement and reduced uint16_arena_allocated_bytes to 0.918593x, activation_storage_bytes to 0.899121x, setup.token_weight_init.total_ms to 0.861274x, and setup_wall_ms to 0.987921x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.066668x, steady-state CUDA-event step time to 1.067148x, startup_plus_first_step_wall_ms to 1.047358x, train_tokens_per_second to 0.937501x, candidate-over-llm.kittens train-loop wall to 1.064740x, and float arena bytes rose to 1.369483x from recompute storage."
     CANDIDATE_NOTE="Compares the default all-12-block stored MLP tape against a 10-block tail-placement tape to test whether saving one recompute pair is enough to keep startup gains without train-loop regression."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_STORE_MLP_BLOCKS=10 NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail"

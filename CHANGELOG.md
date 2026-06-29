@@ -126,12 +126,14 @@
   `store_mlp_blocks10_tail` as a rejected diagnostic profile. It compares the
   default 12-block stored MLP activation tape against a ten-block tail-placement
   tape so the smallest current tail-placement MLP tape reduction can be measured
-  before promotion. A one-step dedicated RTX 5090 run kept it rejected: setup
-  improved to `0.950708x`, but train-loop wall regressed to `1.058712x`,
-  startup-plus-first-step regressed to `1.035125x`, and tokens/sec fell to
-  `0.944542x`. Verification: shell syntax, focused native GPT source-contract
-  test, dry-run profile expansion, live rejected-profile measurement, and diff
-  check.
+  before promotion. A 3-step, 2-sample same-script rerun kept it rejected:
+  uint16 arena bytes fell to `0.918593x`, activation storage to `0.899121x`,
+  and setup wall to `0.987921x`, but train-loop wall regressed to `1.066668x`,
+  steady-state CUDA-event step time to `1.067148x`,
+  startup-plus-first-step to `1.047358x`, tokens/sec fell to `0.937501x`, and
+  float arena bytes rose to `1.369483x` from recompute storage. Verification:
+  shell syntax, focused native GPT source-contract test, dry-run profile
+  expansion, live rejected-profile measurement, and diff check.
 
 - LM-head tile4 true-fused profile contract: the focused LM-head microbench and
   SM120 full-loop candidate wrappers now compile the tile4 strict true-fused

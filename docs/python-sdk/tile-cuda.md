@@ -3618,9 +3618,12 @@ dedicated RTX 5090 run kept `store_mlp_blocks9_tail` rejected because setup
 improved to `0.908788x`, while train-loop wall regressed to `1.091603x`,
 startup-plus-first-step regressed to `1.051818x`, and tokens/sec fell to
 `0.916083x`. A matching `store_mlp_blocks10_tail` run also stayed rejected:
-setup improved to `0.950708x`, but train-loop wall regressed to `1.058712x`,
-startup-plus-first-step regressed to `1.035125x`, and tokens/sec fell to
-`0.944542x`. A 2026-06-28 dedicated RTX
+the 2026-06-29 3-step, 2-sample same-script rerun reduced uint16 arena bytes
+to `0.918593x`, activation storage to `0.899121x`, and setup wall to
+`0.987921x`, but train-loop wall regressed to `1.066668x`, steady-state
+CUDA-event step time to `1.067148x`, startup-plus-first-step to `1.047358x`,
+tokens/sec fell to `0.937501x`, and float arena bytes rose to `1.369483x`
+from recompute storage. A 2026-06-28 dedicated RTX
 5090 run kept
 `store_mlp_blocks6_tail` rejected: setup improved to `0.957064x`, but
 train-loop wall regressed to `1.010155x` versus six-block head placement and
