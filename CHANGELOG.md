@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: the default no-profile long-run
+  deferred-prewarm path now applies the same low-warmup floor as the named
+  `long_run_defer_prewarm` profile. When the wrapper auto-adds
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` and the requested warmup is
+  below `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP` (default `2`), it
+  raises warmup and records
+  `default_long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata.
+  This keeps no-profile parity runs from treating first-use prewarm noise as
+  steady-state performance. Verification: focused native GPT source-contract
+  pytest, dry-run expansion, and diff check.
+
 - Native GPT benchmarking: `short_run_forced_prewarm` now measures an explicit
   no-prewarm baseline against a forced-prewarm candidate by setting
   `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` and
