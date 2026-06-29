@@ -3517,12 +3517,16 @@ the staged gradients feed
 `nfn_native_tile_sumsq_partials_many_bf16_bits_float32` and
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
 directly, so the old BF16-to-FP32 staging flush is skipped. It remains
-default-off because the paired dedicated-RTX-5090 benchmark measured the direct
-BF16 optimizer candidate at `1.0325x` the default train-loop time, while the
-older flush candidate measured about `1.0245x` slower; runtime JSON reports
+default-off because a one-step dedicated RTX 5090 check proved the route by
+moving BF16-param/BF16-grad descriptor count from `0` to `24`, BF16 GEMM count
+from `605` to `797`, and cuBLASLt bgrad count from `384` to `192`, but rejected
+it at `1.015619x` train-loop wall time and `0.984619x` tokens/sec. Runtime JSON reports
 `block_dweight_bf16_staging_enabled`, `block_dweight_bf16_staging_strategy`,
 staging allocation sizes, zero count, BF16 clip/AdamW descriptor counts, and
-BF16-gradient AdamW launch counts. Set
+BF16-gradient AdamW launch counts. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_block_dweight_staging` to remeasure
+this route; the profile requires paired JSON to show those route counter
+changes before any timing evidence is accepted.
 Dense GPT transformer-LM startup defaults `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`
 with `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC_MAX_BYTES=16777216`. This thresholded
 allocator keeps the large float and uint16 transformer arenas on regular

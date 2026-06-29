@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Native GPT BF16 gradient diagnostics: added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_block_dweight_staging` to make the
+  opt-in QKV/MLP-FC BF16 dWeight staging route reproducible through the paired
+  SM120 wrapper. The profile sets `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`
+  and requires paired JSON to show BF16-param/BF16-grad descriptor count, BF16
+  GEMM count, and cuBLASLt bgrad count changes so no-op benchmark runs fail
+  early. The one-step dedicated RTX 5090 check proved the route by moving
+  `adamw_bf16_param_bf16_grad_descriptor_count` from `0` to `24`,
+  `linear_bf16_gemm_count` from `605` to `797`, and
+  `linear_cublaslt_bgrad_gemm_count` from `384` to `192`, but kept the profile
+  rejected because train-loop wall regressed to `1.015619x` and tokens/sec fell
+  to `0.984619x`. Verification: shell syntax, focused native GPT source test,
+  dry-run profile expansion, live rejected-profile measurement, and diff check.
+
 - Native GPT LM-head WMMA diagnostics: refreshed the rejected
   `lm_head_true_fused_tile16_wmma` SM120 candidate evidence after the
   production-shape opt-in gate started reaching the strict Tile body from the

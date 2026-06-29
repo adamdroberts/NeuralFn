@@ -3114,6 +3114,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24" in bench_source
     assert "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=8" in bench_source
+    assert '"bf16_block_dweight_staging"|"bf16-block-dweight-staging"' in bench_source
+    assert "NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1" in bench_source
+    assert "adamw_bf16_param_bf16_grad_descriptor_count linear_bf16_gemm_count linear_cublaslt_bgrad_gemm_count" in bench_source
+    paired_speed_source = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
+    assert '"block_dweight_bf16_staging_enabled"' in paired_speed_source
+    assert '"block_dweight_bf16_staging_strategy"' in paired_speed_source
+    assert '"adamw_bf16_param_bf16_grad_descriptor_count"' in paired_speed_source
+    assert '"adamw_bf16_param_bf16_grad_kernel_launches"' in paired_speed_source
+    assert '"block_weight_bf16_gradient_storage_strategy"' in paired_speed_source
     assert (
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=4 "
         "-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32"

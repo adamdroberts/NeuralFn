@@ -853,6 +853,16 @@ NATIVE_METRIC_PATHS = (
         "block_state_layout.mlp_residual_next_ln1_strategy",
         ("block_state_layout", "mlp_residual_next_ln1_strategy"),
     ),
+    ("block_dweight_bf16_staging_enabled", ("block_dweight_bf16_staging_enabled",)),
+    ("block_dweight_bf16_staging_strategy", ("block_dweight_bf16_staging_strategy",)),
+    (
+        "block_weight_bf16_gradient_storage_strategy",
+        ("block_weight_bf16_gradient_storage_strategy",),
+    ),
+    (
+        "adamw_bf16_param_bf16_grad_descriptor_count",
+        ("adamw_bf16_param_bf16_grad_descriptor_count",),
+    ),
 )
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",
@@ -914,6 +924,10 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "block_backward_nvfp4_qkv_dweight_count",
     "block_backward_nvfp4_qkv_dweight_packed_bytes",
     "block_backward_nvfp4_qkv_dweight_scale_bytes",
+    "block_dweight_bf16_staging_zero_count",
+    "block_dweight_bf16_staging_convert_kernel_launches",
+    "adamw_bf16_param_bf16_grad_descriptor_count",
+    "adamw_bf16_param_bf16_grad_kernel_launches",
     "lm_head_cooperative_sequence_launch_count",
     "lm_head_cooperative_sequence_ce_launch_count",
     "lm_head_cooperative_sequence_dhidden_launch_count",
