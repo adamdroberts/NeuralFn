@@ -3222,6 +3222,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999" in bench_source
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1" in bench_source
     assert "native_fast_startup_prewarm_policy" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in bench_source
+    assert "long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "setup_wall_ms=0.900" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003" in bench_source
     assert "startup_plus_steady_state_step_wall_ms=0.950" in bench_source
@@ -3230,6 +3232,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         bench_source.index('"short_run_forced_prewarm"|"short-run-forced-prewarm"')
     ]
     assert "INCLUDE_LLMK_REFERENCE=0" not in long_run_block
+    assert '"WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"' in long_run_block
+    assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_block
     assert (
         "MAX_CANDIDATE_REFERENCE_RATIO_RAW=\"${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-"
         "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}\""

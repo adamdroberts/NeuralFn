@@ -282,7 +282,12 @@ paired benchmark JSON and stdout also report
 CUDA-event step time, so long-run comparisons do not reuse the first-step
 prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
 requires that steady-state throughput metric to meet or beat the llm.kittens
-reference when reference gating is enabled.
+reference when reference gating is enabled. If a caller sets a lower warmup
+count for this profile, the wrapper raises benchmark warmup to at least two
+pairs by default and records `long_run_defer_prewarm_min_warmup_applied` in the
+paired JSON metadata, so steady-state throughput gates are not dominated by
+first-use timing noise. Set `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`
+only for an intentional low-warmup reproduction.
 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun kept the
 policy accepted: setup wall fell to `0.666989x`,
 startup-plus-steady-state-step timing fell to `0.925514x`, and steady-state

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: the `long_run_defer_prewarm` SM120
+  candidate profile now raises low benchmark warmup counts to at least two
+  pairs by default and records
+  `long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata when the
+  floor is applied. This keeps steady-state throughput gates from being
+  dominated by first-use timing noise while preserving an explicit
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` escape hatch for
+  low-warmup reproductions. Verification: shell syntax, focused native GPT
+  benchmark source test, and diff check.
+
 - Native dense GPT catalog contract: the C++ native GPT trainer now has one
   shared `native_dense_gpt_template_selectors` source for implemented dense GPT
   selectors and emits that list at the root of `--list-templates` JSON. The

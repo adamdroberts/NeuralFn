@@ -3306,7 +3306,11 @@ optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
 `train_tokens_per_second` metric so SDK benchmark reports can judge long-run
 throughput without folding in that first optimizer step. The
 `long_run_defer_prewarm` profile gates that steady-state throughput metric
-against the llm.kittens reference by default.
+against the llm.kittens reference by default. When a caller requests fewer than
+two warmup pairs for this profile, the wrapper raises benchmark warmup to two
+pairs and records `long_run_defer_prewarm_min_warmup_applied` in paired JSON
+metadata, keeping low-warmup reproductions opt-in through
+`NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that
