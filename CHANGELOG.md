@@ -10,8 +10,10 @@
   `--model-family gpt` while preserving the selected `--template-name`; this
   also applies to env-based `NFN_NATIVE_GPT_MODEL_FAMILY` defaults. MoA
   template selectors still infer `--native-cuda-activation moa` unless the
-  caller explicitly overrides activation. Non-dense families still reject at
-  the launcher and should use their dedicated native trainers or a custom graph.
+  caller explicitly overrides activation. The no-Torch verifier now probes this
+  selector path for both the generic compiled GPT launcher and the SM120
+  labelled launcher. Non-dense families still reject at the launcher and should
+  use their dedicated native trainers or a custom graph.
   Verification:
   `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
   tests/test_native_gpt2.py -q -k compiled_sm120_launcher_honors_native_env_defaults`,

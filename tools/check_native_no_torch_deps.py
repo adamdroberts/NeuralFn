@@ -877,6 +877,18 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         },
     ),
     (
+        "train_gpt_compiled_template_selector_dry_run",
+        (
+            "build/nfn_train_gpt",
+            "--base-model",
+            "gpt2_moa",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
         "train_gpt_sm120_compiled_dry_run",
         (
             "build/nfn_train_gpt_sm120",
@@ -892,6 +904,18 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "build/nfn_train_gpt_sm120",
             "--base-model",
             "gpt3",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "train_gpt_sm120_compiled_template_selector_dry_run",
+        (
+            "build/nfn_train_gpt_sm120",
+            "--base-model",
+            "gpt2_moa",
             "--print-command",
             "--dry-run",
             "--no-checkpoint",

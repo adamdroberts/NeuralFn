@@ -296,6 +296,16 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--batch-size 32" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_sm120_compiled_template_selector_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints[
+        "train_gpt_sm120_compiled_template_selector_dry_run"
+    ]["stdout"]
+    assert "--template-name gpt2_moa" in shell_entrypoints[
+        "train_gpt_sm120_compiled_template_selector_dry_run"
+    ]["stdout"]
+    assert "--native-cuda-activation moa" in shell_entrypoints[
+        "train_gpt_sm120_compiled_template_selector_dry_run"
+    ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_custom_graph_dry_run"]["passed"] is True
     assert "--template-name gpt2_moa" in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
@@ -314,6 +324,16 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
     assert "--batch-size 32" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
     assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_compiled_generic_env_dry_run"]["stdout"]
+    assert shell_entrypoints["train_gpt_compiled_template_selector_dry_run"]["passed"] is True
+    assert "--model-family gpt" in shell_entrypoints[
+        "train_gpt_compiled_template_selector_dry_run"
+    ]["stdout"]
+    assert "--template-name gpt2_moa" in shell_entrypoints[
+        "train_gpt_compiled_template_selector_dry_run"
+    ]["stdout"]
+    assert "--native-cuda-activation moa" in shell_entrypoints[
+        "train_gpt_compiled_template_selector_dry_run"
+    ]["stdout"]
     assert shell_entrypoints["native_gpt_linked_list_templates"]["passed"] is True
     assert shell_entrypoints["native_gpt_linked_list_templates"]["startup_within_budget"] is True
     assert "shipped_template_catalog" in shell_entrypoints["native_gpt_linked_list_templates"]["stdout"]
