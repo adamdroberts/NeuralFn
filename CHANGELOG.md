@@ -8,8 +8,11 @@
   explicit native batch-token fields when present and otherwise infers
   tokens-per-step from the existing full-loop throughput and per-step timing,
   making long-run deferred-prewarm comparisons report throughput without
-  folding in the intentional first-step prewarm cost. Verification: focused
-  paired-kernel parser tests and diff check.
+  folding in the intentional first-step prewarm cost. The
+  `long_run_defer_prewarm` SM120 candidate profile now gates
+  `train_steady_state_tokens_per_second>=1.000` against the llm.kittens
+  reference by default. Verification: focused paired-kernel parser tests,
+  focused native GPT benchmark source test, and diff check.
 
 - SM120 parity benchmark policy: `tools/bench_native_gpt_sm120_parity.sh` now
   applies `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to the NeuralFn leg by

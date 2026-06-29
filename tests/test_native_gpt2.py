@@ -3231,6 +3231,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "MAX_CANDIDATE_REFERENCE_RATIO_RAW=\"${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-"
         "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}\""
     ) in long_run_block
+    assert (
+        "MIN_CANDIDATE_REFERENCE_RATIO_RAW=\"${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-"
+        "train_steady_state_tokens_per_second=1.000}\""
+    ) in long_run_block
     assert '-z "$MAX_CANDIDATE_REFERENCE_RATIO_RAW"' in bench_source
     assert '-z "$MIN_CANDIDATE_REFERENCE_RATIO_RAW"' in bench_source
     assert "expected first-step deferred-prewarm cost" in bench_source

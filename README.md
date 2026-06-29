@@ -280,7 +280,9 @@ optimizer step intentionally pays the deferred QKV/LM-head prewarm cost. The
 paired benchmark JSON and stdout also report
 `train_steady_state_tokens_per_second`, derived from the measured steady-state
 CUDA-event step time, so long-run comparisons do not reuse the first-step
-prewarm cost in throughput gates.
+prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
+requires that steady-state throughput metric to meet or beat the llm.kittens
+reference when reference gating is enabled.
 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun kept the
 policy accepted: setup wall fell to `0.666989x`,
 startup-plus-steady-state-step timing fell to `0.925514x`, and steady-state

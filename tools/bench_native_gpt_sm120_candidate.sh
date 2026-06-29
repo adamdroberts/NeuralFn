@@ -259,6 +259,7 @@ case "${CANDIDATE_PROFILE,,}" in
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.900 train_loop_cuda_event_steady_state_wall_ms_per_step=1.003 startup_plus_steady_state_step_wall_ms=0.950}"
     MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}"
+    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_steady_state_tokens_per_second=1.000}"
     ;;
   "short_run_forced_prewarm"|"short-run-forced-prewarm"|"force_short_run_prewarm"|"force-short-run-prewarm"|"qkv_lm_head_forced_prewarm"|"qkv-lm-head-forced-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

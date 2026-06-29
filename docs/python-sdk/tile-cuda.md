@@ -3298,7 +3298,9 @@ startup-plus-steady-state improvement separately from the intentional first
 optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
 `train_steady_state_tokens_per_second` beside the existing full-loop
 `train_tokens_per_second` metric so SDK benchmark reports can judge long-run
-throughput without folding in that first optimizer step.
+throughput without folding in that first optimizer step. The
+`long_run_defer_prewarm` profile gates that steady-state throughput metric
+against the llm.kittens reference by default.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that
