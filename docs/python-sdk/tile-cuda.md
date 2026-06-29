@@ -3561,13 +3561,20 @@ blocks instead of the default early blocks. Runtime JSON reports
 `stored_mlp_activation_block_start`,
 `stored_packed_attention_block_placement`, and
 `stored_packed_attention_block_start`. The SM120 wrapper profiles
-`store_mlp_blocks3`, `store_mlp_blocks6`, and `store_mlp_blocks9` compare
-reduced MLP activation storage against the default 12-block route; all three
+`store_mlp_blocks3`, `store_mlp_blocks6`, `store_mlp_blocks9`, and
+`store_mlp_blocks9_tail` compare reduced MLP activation storage against the
+default 12-block route; all four
 are rejected until same-script training gates prove that the setup win no
 longer comes with hot-loop regressions. `store_mlp_blocks6_tail` and
 `store_packed_attention_blocks6_tail` compare tail placement against the same
-six-block head placement and are diagnostics only until same-script training
-gates prove a win. A 2026-06-28 dedicated RTX 5090 run kept
+six-block head placement, while `store_mlp_blocks9_tail` tests the less
+aggressive nine-block tail placement before promotion. All remain diagnostics
+only until same-script training gates prove a win. A 2026-06-29 one-step
+dedicated RTX 5090 run kept `store_mlp_blocks9_tail` rejected because setup
+improved to `0.908788x`, while train-loop wall regressed to `1.091603x`,
+startup-plus-first-step regressed to `1.051818x`, and tokens/sec fell to
+`0.916083x`. A 2026-06-28 dedicated RTX
+5090 run kept
 `store_mlp_blocks6_tail` rejected: setup improved to `0.957064x`, but
 train-loop wall regressed to `1.010155x` versus six-block head placement and
 the candidate stayed `1.197974x` slower than llm.kittens. The matching

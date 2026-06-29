@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT startup-memory diagnostics: the SM120 candidate wrapper now exposes
+  `store_mlp_blocks9_tail` as a rejected diagnostic profile. It compares the
+  default 12-block stored MLP activation tape against a nine-block tail-placement
+  tape, filling the gap between the rejected nine-block head and six-block tail
+  profiles before any smaller startup arena is promoted. A one-step dedicated
+  RTX 5090 run kept it rejected: setup improved to `0.908788x`, but train-loop
+  wall regressed to `1.091603x`, startup-plus-first-step regressed to
+  `1.051818x`, and tokens/sec fell to `0.916083x`. Verification: shell syntax,
+  focused native GPT source-contract test, dry-run profile expansion, live
+  rejected-profile measurement, and diff check.
+
 - LM-head tile4 true-fused profile contract: the focused LM-head microbench and
   SM120 full-loop candidate wrappers now compile the tile4 strict true-fused
   diagnostic with `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` and matching
