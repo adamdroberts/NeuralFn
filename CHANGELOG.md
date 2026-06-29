@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: the default-off tile16 WMMA strict
+  true-fused classifier-backward candidate now assigns CE rows and
+  dHidden/dWeight tiles per warp inside the cooperative block, instead of
+  leaving the WMMA specialization with one block-wide tile worker. The profile
+  remains rejected by default because the focused trainer-chunk run still
+  measured `94.806450 ms/iter`, `4.041717x` slower than the current wrapper
+  and `2.850141x` slower than the same-process component reference.
+  Verification: focused native GPT source-contract pytest, default Tile ops
+  build, WMMA diagnostic Tile ops build, and a 2-iteration/3-warmup focused
+  candidate benchmark with clean selected-GPU process state.
+
 - Native GPT benchmark warmup policy: raised the deferred-prewarm paired
   benchmark warmup floor from three to five measured order pairs for both the
   default no-profile long-run path and the named `long_run_defer_prewarm`

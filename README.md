@@ -823,7 +823,13 @@ reference parity. The current strict body uses 32x32 shared-memory tiles for
 the dHidden and dWeight phases inside the cooperative launch, but CUDA 13.3.33
 RTX 5090 current evidence at the current 28672-row trainer chunk still
 keeps it rejected: `690.838257 ms`, `32.326054x` slower than the current wrapper
-and `22.231452x` slower than the component reference. Focused benchmark JSON
+and `22.231452x` slower than the component reference.
+The optional tile16 WMMA strict body now distributes CE rows and dHidden/dWeight
+tiles across every warp in the cooperative block instead of using a single
+block-wide tile worker. It remains rejected by default: a 2026-06-29
+trainer-chunk true-fused WMMA run measured `94.806450 ms/iter`, `4.041717x`
+slower than the current wrapper and `2.850141x` slower than the same-process
+component reference. Focused benchmark JSON
 reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_forced_production_debug`; it only reports
