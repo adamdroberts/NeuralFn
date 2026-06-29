@@ -13308,6 +13308,79 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     candidate.write_text(
         "#!/bin/sh\n"
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
+        "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
+        "\"optimized_kernel_contract_passed\":true,"
+        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"linear_tk_qkv_first_use_prewarm_success_count\":0,"
+        "\"lm_head_fused_graph_prewarm_success_count\":0,"
+        "\"train_loss_host_d2h_count\":0,"
+        "\"setup_wall_ms\":0.1,"
+        "\"setup_timing_accounted_ms\":0.08,"
+        "\"setup_timing_unattributed_ms\":0.02,"
+        "\"setup_timing_record_count\":3,"
+        "\"train_loop_wall_ms\":1,\"total_wall_ms\":1.2,\"steps_completed\":1}'\n",
+        encoding="utf-8",
+    )
+    candidate.chmod(0o755)
+    deferred_passing = subprocess.run(
+        base_cmd,
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert deferred_passing.returncode == 0, deferred_passing.stderr
+    assert (
+        "native_fast_startup_prewarm_policy: "
+        "expected=present observed=long-run-defer-throughput-prewarms-by-default"
+    ) not in deferred_passing.stdout
+    assert (
+        "linear_tk_qkv_first_use_prewarm_success_count: "
+        "expected=0 observed=0 passed=true"
+    ) in deferred_passing.stdout
+    assert (
+        "lm_head_fused_graph_prewarm_success_count: "
+        "expected=0 observed=0 passed=true"
+    ) in deferred_passing.stdout
+
+    candidate.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
+        "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
+        "\"optimized_kernel_contract_passed\":true,"
+        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"linear_tk_qkv_first_use_prewarm_success_count\":1,"
+        "\"lm_head_fused_graph_prewarm_success_count\":0,"
+        "\"train_loss_host_d2h_count\":0,"
+        "\"setup_wall_ms\":0.1,"
+        "\"setup_timing_accounted_ms\":0.08,"
+        "\"setup_timing_unattributed_ms\":0.02,"
+        "\"setup_timing_record_count\":3,"
+        "\"train_loop_wall_ms\":1,\"total_wall_ms\":1.2,\"steps_completed\":1}'\n",
+        encoding="utf-8",
+    )
+    candidate.chmod(0o755)
+    deferred_failing = subprocess.run(
+        base_cmd,
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert deferred_failing.returncode == 1
+    assert "native runtime contract gate failed" in deferred_failing.stderr
+    assert (
+        "linear_tk_qkv_first_use_prewarm_success_count: "
+        "expected=0 observed=1 passed=false"
+    ) in deferred_failing.stdout
+
+    candidate.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":true,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
         "\"train_loss_host_d2h_count\":1,"

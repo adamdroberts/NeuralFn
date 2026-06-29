@@ -403,6 +403,15 @@
   reference `-u 60` so same-script parity measurements remain comparable.
   Updated README and SDK/CLI docs with the new default and override guidance.
 
+- Native GPT benchmarking: the paired native runtime contract gate now enforces
+  the accepted long-run deferred-prewarm startup policy. When candidate metrics
+  report `native_fast_startup_prewarm_policy:
+  "long-run-defer-throughput-prewarms-by-default"`, the gate requires both
+  `linear_tk_qkv_first_use_prewarm_success_count=0` and
+  `lm_head_fused_graph_prewarm_success_count=0`, so long-run benchmark passes
+  cannot accidentally reintroduce the old QKV or LM-head graph prewarm startup
+  cost while keeping the deferred policy label.
+
 - Native GPT benchmarking: added the rejected
   `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV
   first-use prewarm and LM-head CUDA Graph prewarm back on for short-run

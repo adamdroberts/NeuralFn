@@ -4486,6 +4486,25 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                     "passed": timing_mean is not None,
                 }
             )
+        prewarm_policy = values.get("native_fast_startup_prewarm_policy")
+        if prewarm_policy == ["long-run-defer-throughput-prewarms-by-default"]:
+            for metric_name in (
+                "linear_tk_qkv_first_use_prewarm_success_count",
+                "lm_head_fused_graph_prewarm_success_count",
+            ):
+                mean = _metric_mean(metrics, metric_name)
+                results.append(
+                    {
+                        "metric": metric_name,
+                        "expected": ["0"],
+                        "observed": (
+                            [str(int(mean))]
+                            if mean is not None and mean.is_integer()
+                            else ([str(mean)] if mean is not None else [])
+                        ),
+                        "passed": mean == 0.0,
+                    }
+                )
     failed = [item for item in results if item.get("passed") is False]
     return {
         "enabled": enabled,
@@ -4496,7 +4515,9 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             if not failed
             else "candidate native training must report graph_editor_tensor_flow=false "
             "and torch_required=false and optimized_kernel_contract_passed=true "
-            "and train_loss_host_d2h_count=0 with root setup/train timing metrics"
+            "and train_loss_host_d2h_count=0 with root setup/train timing metrics; "
+            "long-run deferred-prewarm candidates must also report zero QKV and LM-head "
+            "graph prewarm successes"
         ),
     }
 

@@ -2476,7 +2476,14 @@ paired selected-GPU benchmark wrapper. Its default gates require
 `setup_wall_ms<=0.900x`,
 `train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`, and
 `startup_plus_steady_state_step_wall_ms<=0.950x`; the profile does not hide
-the expected first-step deferred-prewarm cost.
+the expected first-step deferred-prewarm cost. The paired native runtime
+contract gate also treats this policy specially: if a candidate reports
+`native_fast_startup_prewarm_policy:
+"long-run-defer-throughput-prewarms-by-default"`, then
+`linear_tk_qkv_first_use_prewarm_success_count` and
+`lm_head_fused_graph_prewarm_success_count` must both be zero. That prevents a
+future change from preserving the policy label while silently paying the old
+QKV or LM-head graph prewarm startup cost.
 Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
 setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.
 Normal training keeps throughput prewarms enabled by default. Set
