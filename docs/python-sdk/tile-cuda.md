@@ -3108,7 +3108,10 @@ Production-sized GPT shapes are protected by a second kernel-side guard:
 `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` (or the
 matching `NFN_NATIVE_GPT*_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION`
 alias) must be set in addition to the true-fused selector before the cooperative
-single-kernel body will launch above the smoke-test shape limits. The rejected
+single-kernel body will launch above the smoke-test shape limits. The native
+trainer's strict capability gate now uses that combined shape-allowed result:
+production shapes stay blocked by default, while explicit allow-production
+candidate runs can route through the strict diagnostic body. The rejected
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_cooperative` profile now
 sets both env flags and keeps `--require-native-lm-head-true-fused` enabled, so
 full-loop candidate runs fail if they silently fall back to the diagnostic graph

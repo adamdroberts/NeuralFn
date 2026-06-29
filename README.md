@@ -2133,9 +2133,9 @@ and reports `lm_head_cooperative_backward_fused_kernel_raw_capability_available`
 `lm_head_true_fused_cooperative_shape_allowed`; full trainer integration also
 reports `lm_head_true_fused_cooperative_production_ready`. Production GPT
 shapes keep `lm_head_cooperative_backward_fused_kernel_capability_available=false`
-even when the allow-production debug flag is set, so the slow scalar diagnostic
-body cannot satisfy the optimized training route. The focused LM-head benchmark
-can still force that body for measurement.
+unless the allow-production debug flag is set alongside the true-fused selector,
+so normal training cannot select the slow diagnostic body but explicit paired
+candidate runs can measure it inside the full trainer.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when

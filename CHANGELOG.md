@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT LM-head diagnostics: the strict true-fused production-shape
+  capability gate now honors
+  `NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1` and its
+  `NFN_NATIVE_GPT*_` aliases when the true-fused selector is also set. Default
+  training still blocks production GPT shapes, but explicit paired candidate
+  runs can now measure the diagnostic strict body inside the full native trainer
+  instead of being blocked after parsing the opt-in. Verification: shell syntax,
+  focused native GPT LM-head source-contract tests, focused dense GPT C++ CLI
+  rebuild, and diff check.
+
 - Native GPT startup-memory diagnostics: the SM120 candidate wrapper now exposes
   `store_mlp_blocks9_tail` as a rejected diagnostic profile. It compares the
   default 12-block stored MLP activation tape against a nine-block tail-placement

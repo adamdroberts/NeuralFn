@@ -14386,7 +14386,7 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_true_fused_kernel_available;
     const bool lm_head_cooperative_backward_fused_kernel_capability_available =
         lm_head_cooperative_backward_fused_kernel_raw_capability_available &&
-        lm_head_true_fused_cooperative_production_ready;
+        lm_head_true_fused_cooperative_shape_allowed;
     const bool lm_head_llmk_classifier_matmul_parity_available =
         lm_head_classifier_backward_llmk_parity_available;
     const bool lm_head_cooperative_backward_fused_kernel_available =

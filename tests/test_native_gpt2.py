@@ -2643,7 +2643,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "lm_head_true_fused_cooperative_production_ready" in source
     assert (
         "lm_head_cooperative_backward_fused_kernel_raw_capability_available &&\n"
-        "        lm_head_true_fused_cooperative_production_ready"
+        "        lm_head_true_fused_cooperative_shape_allowed"
     ) in source
     assert "!lm_head_true_fused_cooperative_requested &&" in source
     assert "lm_head_llmk_classifier_matmul_parity_available" in source
@@ -3148,7 +3148,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=576" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
-    assert "NFN_NATIVE_GPT_CE_BF16_THREADS=16" in bench_source
+    assert "NFN_NATIVE_GPT_CE_BF16_THREADS=32" in bench_source
     assert "candidate_true_fused_cooperative_env=NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1" in bench_source
     assert (
         "candidate_true_fused_production_env="
