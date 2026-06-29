@@ -211,11 +211,11 @@ route and regressed setup wall time to `3.467504x`, train-loop wall time to
 `1.009903x`, first-step CUDA-event timing to `1.048444x`, and tokens/sec to
 `0.990197x`.
 The linked native trainer remains the preferred workstation startup path for
-direct `train_gpt_native.py`, SDK, and `nfn train` use. A CUDA 13.3.33
-dedicated RTX 5090 startup-only recheck on 2026-06-26 measured
-`linked_startup` at `0.898449x` setup wall time and `0.898865x` total wall time
-versus the dynamic Tile-ops baseline with zero compute processes before each
-paired sample, and a direct dry run prints
+direct `train_gpt_native.py`, SDK, and `nfn train` use. A 2026-06-29
+dedicated RTX 5090 startup-only recheck measured `linked_startup` at
+`0.856685x` setup wall time and `0.856982x` total wall time versus the dynamic
+Tile-ops baseline with zero compute processes before each paired sample, and a
+direct dry run prints
 `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked` without importing
 Torch or the Python dataset manager. The CUDA 13.3 SM120 health gate also
 prefers `build/nfn_gpt_native_train_linked` and `--tile-ops-lib linked` when
@@ -3415,10 +3415,12 @@ For dedicated workstation runs that should avoid the in-process Tile ops
 `bash tools/build_native_gpt_cli_linked.sh` and run it with
 `--tile-ops-lib linked`. That binary links
 `build/libnfn_native_train_tile_ops.so` directly and resolves required ABI
-symbols through `RTLD_DEFAULT`, while preserving the same explicit symbol scan
-and JSON telemetry. Runtime JSON reports
+symbols through `RTLD_DEFAULT`, skips the redundant full required-symbol scan by
+default, and keeps the same JSON telemetry. Runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` and a near-zero
-`tile_ops_dlopen_wall_ms`. Direct no-data preflight smokes such as
+`tile_ops_dlopen_wall_ms`; the 2026-06-29 same-script startup gate measured the
+linked path at `0.856685x` setup wall time versus the dynamic Tile-ops loader.
+Direct no-data preflight smokes such as
 `--smoke-tile-ops` and `--smoke-optimizer-step`, plus the native GPT
 smoke/training paths that load the raw Tile ABI, also treat `linked` as
 `RTLD_DEFAULT` instead of trying to open a file named `linked`, so the linked
@@ -4152,15 +4154,13 @@ overridden, passes `--tile-ops-lib linked` to the linked candidate, and disables
 the native route-change gate because the only expected change is dynamic
 Tile-ops loading versus the linked Tile-ops path. Override the compared binaries
 with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
-`NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`. A CUDA 13.3 dedicated RTX 5090
-5-sample rerun on 2026-06-24 passed the setup-wall gate again at `0.866699x`
-for the linked candidate, with zero compute processes before each paired sample.
-A CUDA 13.3.33 dedicated RTX 5090 recheck on 2026-06-26 with 3 measured samples
-and no warmup measured the linked candidate at `0.898449x` `setup_wall_ms` and
-`0.898865x` `total_wall_ms`. A 2026-06-27 CUDA 13.3.33 rerun measured
-`0.902683x` mean `setup_wall_ms` and now reports the expected
-`tile_ops_library` / `tile_ops_dlopen_binding_strategy` strategy change from
-dynamic `.so` loading to `RTLD_DEFAULT-linked`.
+`NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`. A 2026-06-29 dedicated RTX
+5090 recheck with 3 measured samples and no warmup measured the linked
+candidate at `0.856685x` `setup_wall_ms`, `0.856982x` `total_wall_ms`, and
+`0.951015x` float-arena materialization time. The paired JSON reports the
+expected `tile_ops_library` / `tile_ops_dlopen_binding_strategy` strategy change
+from dynamic `.so` loading to `RTLD_DEFAULT-linked` and keeps the runtime
+contract gate green.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` measures the
 default-off cuBLAS handle prewarm route by pinning the baseline to
 `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and the candidate to

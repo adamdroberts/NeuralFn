@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT startup evidence: refreshed `linked_startup` on the dedicated RTX
+  5090 with a 3-sample startup-only paired gate. The linked GPT trainer remains
+  the preferred SDK/CLI/native wrapper path; the current gate measured
+  `0.856685x` setup wall time, `0.856982x` total wall time, and `0.951015x`
+  float-arena materialization time versus the dynamic Tile-ops loader, while the
+  paired JSON reported the expected `RTLD_DEFAULT-linked` strategy change and a
+  passing runtime contract gate. Verification: live linked-startup paired
+  benchmark.
+
 - Native GPT CLI default contract: clarified the compiled `nfn_gpt_native_train`
   no-action error so it no longer tells users to add `--train-transformer-lm`;
   the dense GPT transformer-LM loop is already the default unless
