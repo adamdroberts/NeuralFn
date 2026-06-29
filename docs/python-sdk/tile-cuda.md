@@ -3612,18 +3612,22 @@ longer comes with hot-loop regressions. `store_mlp_blocks6_tail` and
 `store_packed_attention_blocks6_tail` compare tail placement against the same
 six-block head placement, while `store_mlp_blocks9_tail` and
 `store_mlp_blocks10_tail` test less aggressive tail placements before promotion.
-All remain diagnostics only until same-script training gates prove a win. A
-2026-06-29 one-step
-dedicated RTX 5090 run kept `store_mlp_blocks9_tail` rejected because setup
-improved to `0.908788x`, while train-loop wall regressed to `1.091603x`,
-startup-plus-first-step regressed to `1.051818x`, and tokens/sec fell to
-`0.916083x`. A matching `store_mlp_blocks10_tail` run also stayed rejected:
-the 2026-06-29 3-step, 2-sample same-script rerun reduced uint16 arena bytes
-to `0.918593x`, activation storage to `0.899121x`, and setup wall to
-`0.987921x`, but train-loop wall regressed to `1.066668x`, steady-state
-CUDA-event step time to `1.067148x`, startup-plus-first-step to `1.047358x`,
-tokens/sec fell to `0.937501x`, and float arena bytes rose to `1.369483x`
-from recompute storage. A 2026-06-28 dedicated RTX
+All remain diagnostics only until same-script training gates prove a win. The
+2026-06-29 3-step, 2-sample same-script `store_mlp_blocks9_tail` rerun reduced
+uint16 arena bytes to `0.877890x`, activation storage to `0.848682x`, stored
+MLP activation bytes to `0.750000x`, token-weight initialization setup time to
+`0.845784x`, and setup wall to `0.988508x`, but train-loop wall regressed to
+`1.098347x`, steady-state CUDA-event step time to `1.098944x`,
+startup-plus-first-step to `1.071780x`, tokens/sec fell to `0.910460x`,
+candidate-over-llm.kittens train-loop was `1.095941x`, and float arena bytes
+rose to `1.369403x` from recompute storage. A matching
+`store_mlp_blocks10_tail` run also stayed rejected: the 2026-06-29 3-step,
+2-sample same-script rerun reduced uint16 arena bytes to `0.918593x`,
+activation storage to `0.899121x`, and setup wall to `0.987921x`, but
+train-loop wall regressed to `1.066668x`, steady-state CUDA-event step time to
+`1.067148x`, startup-plus-first-step to `1.047358x`, tokens/sec fell to
+`0.937501x`, and float arena bytes rose to `1.369483x` from recompute storage.
+A 2026-06-28 dedicated RTX
 5090 run kept
 `store_mlp_blocks6_tail` rejected: setup improved to `0.957064x`, but
 train-loop wall regressed to `1.010155x` versus six-block head placement and

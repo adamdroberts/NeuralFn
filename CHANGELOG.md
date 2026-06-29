@@ -115,12 +115,16 @@
   `store_mlp_blocks9_tail` as a rejected diagnostic profile. It compares the
   default 12-block stored MLP activation tape against a nine-block tail-placement
   tape, filling the gap between the rejected nine-block head and six-block tail
-  profiles before any smaller startup arena is promoted. A one-step dedicated
-  RTX 5090 run kept it rejected: setup improved to `0.908788x`, but train-loop
-  wall regressed to `1.091603x`, startup-plus-first-step regressed to
-  `1.051818x`, and tokens/sec fell to `0.916083x`. Verification: shell syntax,
-  focused native GPT source-contract test, dry-run profile expansion, live
-  rejected-profile measurement, and diff check.
+  profiles before any smaller startup arena is promoted. A 2026-06-29 3-step,
+  2-sample same-script gate kept it rejected: uint16 arena bytes dropped to
+  `0.877890x`, activation storage to `0.848682x`, stored MLP activation bytes to
+  `0.750000x`, token-weight initialization setup time to `0.845784x`, and setup
+  wall to `0.988508x`, but train-loop wall regressed to `1.098347x`,
+  steady-state CUDA-event step time to `1.098944x`, startup-plus-first-step to
+  `1.071780x`, tokens/sec fell to `0.910460x`, candidate-over-llm.kittens
+  train-loop was `1.095941x`, and float arena bytes rose to `1.369403x`.
+  Verification: shell syntax, focused native GPT source-contract test, dry-run
+  profile expansion, live rejected-profile measurement, and diff check.
 
 - Native GPT startup-memory diagnostics: the SM120 candidate wrapper now exposes
   `store_mlp_blocks10_tail` as a rejected diagnostic profile. It compares the
