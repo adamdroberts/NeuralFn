@@ -248,6 +248,15 @@ eager-prewarm setup against the deferred long-run policy in the paired native
 benchmark wrapper. That profile now gates setup time, steady-state CUDA-event
 step time, and startup-plus-steady-state timing separately, because the first
 optimizer step intentionally pays the deferred QKV/LM-head prewarm cost.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=short_run_forced_prewarm` only to
+reproduce the rejected short-run escape hatch that forces TK QKV and LM-head
+graph prewarm back on under auto fast-startup. The 2026-06-29 CUDA 13.3.33
+dedicated RTX 5090 20-step, 3-sample gate improved first-step CUDA-event time
+to `0.910765x` and train-loop wall to `0.997818x`, but rejected default
+promotion because setup wall regressed to `1.504017x`,
+startup-plus-train-loop wall to `1.002755x`, steady-state CUDA-event timing to
+`1.002916x`, and candidate-over-llm.kittens train-loop wall remained
+`1.002051x`.
 The compiled GPT launchers (`build/nfn_train_gpt` and
 `build/nfn_train_gpt_sm120`) also auto-append `--fast-startup` for short
 debug/smoke runs when `max_steps` is at or below the same deferred-prewarm

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Native GPT benchmarking: added the rejected
+  `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV
+  first-use prewarm and LM-head CUDA Graph prewarm back on for short-run
+  auto-fast-start runs. The CUDA 13.3.33 dedicated RTX 5090 20-step, 3-sample
+  gate improved first-step time and short train-loop wall, but failed promotion
+  because setup wall rose to `1.504017x`, startup-plus-train-loop wall to
+  `1.002755x`, steady-state CUDA-event timing to `1.002916x`, and
+  candidate-over-llm.kittens train-loop wall remained `1.002051x`. This keeps
+  the low-startup deferred-prewarm policy and records the measured tradeoff.
+  Verification:
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1
+  NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1'
+  NFN_SM120_NATIVE_STEPS=20 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=1 bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Native training defaults: dense GPT, GPT-2-evo, NanoGPT, and LLaMA fast
   5090-oriented shims now default validation loss cadence to every 1000
   optimizer steps instead of every 250. `--eval-every-steps N` remains the
