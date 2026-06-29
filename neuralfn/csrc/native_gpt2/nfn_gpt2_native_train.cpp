@@ -190,7 +190,7 @@ struct Config {
     int seq_len = 1024;
     int train_batch_tokens = 524288;
     int train_loss_every_steps = 0;
-    int warmup_steps = 600;
+    int warmup_steps = 1000;
     int max_steps = 20000;
     int num_layers = 12;
     int eval_batches = 20;
@@ -654,7 +654,7 @@ void print_usage(const char* program) {
         << "  --require-native-nvfp4-activation-packing\n"
         << "                                     Fail before dataset/GPU work if nvfp4 is requested but native dense GPT cannot pack activations\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
-        << "SM120 quality defaults follow the train-sm120 shape with 600 warmup steps: -v 1000 -s 20000 -g 144 -n 200 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 600 -x 20000.\n"
+        << "SM120 quality defaults follow the train-sm120 shape with 1000 warmup steps: -v 1000 -s 20000 -g 144 -n 200 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 1000 -x 20000.\n"
         << "The paired llm.kittens benchmark wrappers keep the external reference at train-sm120.sh -u 60 for comparable timing evidence.\n";
 }
 

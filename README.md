@@ -3911,9 +3911,10 @@ Token upload buffers use combined arenas too: widened int64 tokens/targets and c
 
 The compiled GPT-2 transformer-LM trainer keeps train-loss sampling disabled by default. Optimizer steps run the forward activations needed for backward, CE gradient generation, gradient clipping, and AdamW only; validation cadence computes validation loss from validation shards according to `--eval-every-steps` without also measuring train loss. Set `--train-loss-every-steps N` only when you want sampled native train loss. When train-loss logging is enabled, CE loss is accumulated in a device scalar across all gradient-accumulation microbatches for the optimizer step and copied to the host once for the logged step. Runtime JSON reports `train_loss_device_accumulation_strategy: "optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope: "once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`, `train_loss_host_d2h_copies_per_logged_step`, and `train_loss_microbatch_host_d2h_copies_elided_per_logged_step` alongside `train_loss_sparse: false`, `train_loss_sampling`, `train_loss_on_validation_steps: false`, `train_loss_eval_count`, and `train_loss_last_step`. With train-loss logging disabled, all three host-copy counters report `0`; with logging enabled at the default eight-microbatch accumulation, each logged optimizer step reports one D2H copy and seven elided microbatch copies. Set `--eval-batch-size N` to reduce validation rows per eval batch; runtime JSON reports the resolved value under `validation.eval_batch_size` and each record token count under `validation.losses[].tokens`. Small validation batches stay on the BF16 public-vocab LM-head loss path instead of falling back to the old float logits workspace.
 
-Native GPT-family training wrappers now default to 600 LR warmup steps for
+Native GPT-family training wrappers now default to 1000 LR warmup steps for
 quality runs. Use `--warmup-steps N` or `WARMUP_STEPS=N` to reproduce a shorter
-warmup such as the 60-step llm.kittens reference benchmark.
+warmup such as the 60-step llm.kittens reference benchmark or the previous
+600-step NeuralFn default.
 
 The compiled GPT launchers (`nfn_train_gpt` and `nfn_train_gpt_sm120`) now use
 the generated `SHIPPED_GPT_TEMPLATE_PRESETS` C++ catalog for template

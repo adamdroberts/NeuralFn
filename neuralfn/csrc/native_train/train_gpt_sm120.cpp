@@ -285,7 +285,7 @@ int main(int argc, char** argv) {
     std::string grad_clip_norm =
         env_first({"NFN_NATIVE_GPT_GRAD_CLIP_NORM", "NFN_SM120_NATIVE_GRAD_CLIP_NORM", "NFN_SM120_GRAD_CLIP_NORM"}, "1.0");
     std::string warmup_steps =
-        env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "600");
+        env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "1000");
     std::string max_steps =
         env_first({"NFN_NATIVE_GPT_MAX_STEPS", "NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
     std::string train_loss_every_steps =

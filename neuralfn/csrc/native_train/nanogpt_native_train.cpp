@@ -110,7 +110,7 @@ struct NanoGptPlan {
     std::int64_t eval_batches = 20;
     std::int64_t eval_batch_size = 64;
     std::int64_t eval_every_steps = 1000;
-    std::int64_t warmup_steps = 600;
+    std::int64_t warmup_steps = 1000;
     std::int64_t vocab_size = 50257;
     std::int64_t num_layers = 5;
     std::int64_t model_dim = 320;

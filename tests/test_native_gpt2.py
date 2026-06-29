@@ -5526,7 +5526,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert default_proc.returncode == 0, default_proc.stderr
     default_args = default_observed.read_text(encoding="utf-8").splitlines()
     assert default_args[default_args.index("--eval-every-steps") + 1] == "1000"
-    assert default_args[default_args.index("--warmup-steps") + 1] == "600"
+    assert default_args[default_args.index("--warmup-steps") + 1] == "1000"
 
     env = os.environ.copy()
     env.update(
@@ -6447,7 +6447,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "compatible dense GPT template_spec metadata can drive native geometry" in help_proc.stdout
     assert "Tile-CUDA smokes/training" in help_proc.stdout
     assert "dense GPT registered parameter layout" in help_proc.stdout
-    assert "600 warmup steps" in help_proc.stdout
+    assert "1000 warmup steps" in help_proc.stdout
     assert "train-sm120.sh -u 60" in help_proc.stdout
 
     dry_run = subprocess.run(
@@ -6481,7 +6481,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt"
     assert default_payload["schedule"]["eval_every_steps"] == 1000
-    assert default_payload["schedule"]["warmup_steps"] == 600
+    assert default_payload["schedule"]["warmup_steps"] == 1000
     assert default_payload["optimizer"] == {
         "profile": "adamw",
         "learning_rate": 0.0006,

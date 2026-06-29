@@ -423,7 +423,7 @@ training schedule before launching native code.
 The CUDA training harnesses default to `--optimizer-profile adamw` for
 RTX 5090/SM120 runs. That profile uses the llm.kittens SM120 AdamW schedule:
 20,000 steps, sequence length 1024, microbatch 64, 524,288 tokens/step,
-learning rate 0.0006, weight decay 0.1, 600 warmup steps, validation cadence
+learning rate 0.0006, weight decay 0.1, 1000 warmup steps, validation cadence
 1000 where supported, and cosine decay to zero when no explicit LR schedule is
 provided. In the native GPT-2 path this schedule is passed straight to
 `train_gpt2cu`; in graph-backed Tile CUDA runs, `adamw` dispatches batched AdamW

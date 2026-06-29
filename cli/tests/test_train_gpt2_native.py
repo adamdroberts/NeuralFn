@@ -2699,7 +2699,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("GRAD_CLIP_NORM=\"$(env_or_alias3 NFN_NATIVE_GPT_GRAD_CLIP_NORM", content)
         self.assertIn("NFN_SM120_GRAD_CLIP_NORM 1.0)", content)
         self.assertIn("WARMUP_STEPS=\"$(env_or_alias3 NFN_NATIVE_GPT_WARMUP_STEPS", content)
-        self.assertIn("NFN_SM120_WARMUP_STEPS 600)", content)
+        self.assertIn("NFN_SM120_WARMUP_STEPS 1000)", content)
         self.assertIn('--learning-rate "${LEARNING_RATE}"', content)
         self.assertIn('--weight-decay "${WEIGHT_DECAY}"', content)
         self.assertIn('--beta1 "${BETA1}"', content)
