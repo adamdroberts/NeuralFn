@@ -215,13 +215,14 @@ checks = [
         "runtime contract must keep the one-step fast-startup policy automatic, not flag-forced",
     ),
     (
-        payload.get("native_fast_startup_prewarm_policy") == "skip-setup-throughput-prewarms-by-default",
-        "runtime contract must keep auto fast-startup smokes from running throughput-only setup prewarms",
+        payload.get("native_fast_startup_prewarm_policy")
+        == "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default",
+        "runtime contract must keep auto fast-startup smokes on QKV first-use prewarm while skipping LM-head graph prewarm",
     ),
     (
-        payload.get("linear_tk_qkv_first_use_prewarm_requested") is False and
-        payload.get("linear_tk_qkv_first_use_prewarm_success_count", 0) == 0,
-        "runtime contract must keep the deferred TK QKV prewarm skipped on auto fast-startup smokes",
+        payload.get("linear_tk_qkv_first_use_prewarm_requested") is True and
+        payload.get("linear_tk_qkv_first_use_prewarm_success_count", 0) > 0,
+        "runtime contract must keep TK QKV first-use prewarm active on auto fast-startup smokes",
     ),
     (
         payload.get("block_backward_qkv_dinput_before_dweight_count", 0) > 0,

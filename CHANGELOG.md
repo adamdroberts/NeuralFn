@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Native short-run prewarm policy: auto fast-startup training now keeps the
+  TK QKV first-use prewarm enabled while continuing to skip the LM-head CUDA
+  Graph prewarm. This splits the old single `native_fast_startup_prewarm_default`
+  into QKV and LM-head graph defaults, and runtime JSON now reports
+  `native_fast_startup_prewarm_policy` as
+  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` for short
+  fast-startup runs. A dedicated RTX 5090 same-script check of
+  `tk_qkv_forward_prewarm` on CUDA 13.3.33 improved current-vs-current
+  first-step CUDA-event time to `0.939518x`, train-loop wall to `0.979588x`,
+  train tokens/sec to `1.020838x`, and startup-plus-first-step to `0.998311x`;
+  candidate-over-llm.kittens steady-state was `1.000384x`, while full 3-step
+  train-loop parity remains incomplete at `1.010343x`. After promoting the
+  policy and rebuilding `build/nfn_gpt_native_train_linked`, a gate-disabled
+  default parity run wrote
+  `/tmp/nfn_sm120_parity_qkv_fast_startup_default_short.json` with
+  candidate-over-llm.kittens ratios of `1.015056x` train-loop wall,
+  `1.037628x` first-step CUDA-event time, `1.003414x` steady-state CUDA-event
+  time, and `0.985017x` tokens/sec, so the full objective remains open around
+  LM-head/first-step parity.
+
 - Native parity benchmark accuracy: `tools/bench_native_gpt_sm120_parity.sh`
   now defaults to two warmup pairs instead of one, matching the native candidate
   wrapper's promoted measurement policy. Explicit `NFN_SM120_NATIVE_WARMUP`,
@@ -135,14 +155,16 @@
   current direct native one-step runtime contract. The gate now expects
   `native_auto_fast_startup_short_run=true`,
   `native_fast_startup_explicit=false`, the
-  `skip-setup-throughput-prewarms-by-default` policy, and zero TK QKV prewarm
-  launches on the auto-fast-start smoke. It still enforces no graph-editor
-  tensor flow, no Torch requirement, zero train-loss host D2H copies, optimized
-  native kernels, the promoted QKV dInput-before-dWeight route, LN128 and
-  512-thread bias reducers, and the diagnostic LM-head CUDA Graph wrapper until
-  a faster true-fused Tile kernel replaces it. Migration note: the old validator
-  expectation that a one-step runtime-contract smoke must eagerly prewarm TK QKV
-  was retired; force the specific prewarm env vars only for prewarm bisections.
+  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` policy, and an
+  active TK QKV first-use prewarm on the auto-fast-start smoke while LM-head
+  graph prewarm stays skipped. It still enforces no graph-editor tensor flow,
+  no Torch requirement, zero train-loss host D2H copies, optimized native
+  kernels, the promoted QKV dInput-before-dWeight route, LN128 and 512-thread
+  bias reducers, and the diagnostic LM-head CUDA Graph wrapper until a faster
+  true-fused Tile kernel replaces it. Migration note: the old validator
+  expectation that a one-step runtime-contract smoke must skip TK QKV prewarm
+  was retired; force `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only for
+  no-prewarm bisections.
   The validator's default llm.kittens parity leg now passes an explicit
   steady-state CUDA-event ratio gate (`median:...=1.003`) and leaves total
   train-loop wall as diagnostic, because auto fast-startup can defer prewarm

@@ -217,14 +217,15 @@ For smoke tests and low-latency startup checks, set
 `train_gpt.py`, or `nfn_gpt_native_train`, or set
 `fast_startup=True` on `NativeTrainRunConfig` / `build_native_train_run_config()`.
 This keeps the long-training default route unchanged, but flips the default
-setup-prewarm policy so the TK QKV first-use prewarm and LM-head CUDA Graph
-prewarm are skipped unless their explicit prewarm env vars force them back on.
+setup-prewarm policy so short training keeps the TK QKV first-use prewarm while
+still skipping the LM-head CUDA Graph prewarm unless its explicit prewarm env
+var forces it back on.
 Native JSON reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
 to compare the startup-only tradeoff in the same selected-GPU window.
-Plain `--startup-only` now also skips throughput-only setup prewarms by
-default, while normal training still keeps them on. Pass
+Plain `--startup-only` skips throughput-only setup prewarms by default, while
+normal training still keeps them on. Pass
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` when a startup-only run must reproduce
 the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
 3-sample A/B measured the new startup-only default at `0.755407x`
@@ -232,15 +233,15 @@ the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
 `linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0` and the
 runtime policy reporting
 `startup-only-skip-throughput-prewarms-by-default`.
-Long native training runs also defer throughput prewarms by default. When
+Long native training runs still defer throughput prewarms by default. When
 `cfg.max_steps` is above `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
 (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
 `NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1024`), the trainer reports
 `native_long_run_defer_prewarm_enabled=true` and
 `native_fast_startup_prewarm_policy` as
 `long-run-defer-throughput-prewarms-by-default`. This keeps short parity and
-smoke runs on the existing prewarmed route while avoiding up-front QKV/LM-head
-graph prewarm cost for 20k-step quality runs where first-use cost is amortized.
+smoke runs on the QKV-prewarmed route while avoiding up-front QKV/LM-head graph
+prewarm cost for 20k-step quality runs where first-use cost is amortized.
 Set the threshold higher than `max_steps`, or force the individual prewarm env
 vars, when a long run must use the old eager-prewarm setup. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the old
@@ -249,8 +250,8 @@ benchmark wrapper. That profile now gates setup time, steady-state CUDA-event
 step time, and startup-plus-steady-state timing separately, because the first
 optimizer step intentionally pays the deferred QKV/LM-head prewarm cost.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=short_run_forced_prewarm` only to
-reproduce the rejected short-run escape hatch that forces TK QKV and LM-head
-graph prewarm back on under auto fast-startup. The 2026-06-29 CUDA 13.3.33
+reproduce the rejected short-run escape hatch that also forces LM-head graph
+prewarm back on under auto fast-startup. The 2026-06-29 CUDA 13.3.33
 dedicated RTX 5090 20-step, 3-sample gate improved first-step CUDA-event time
 to `0.910765x` and train-loop wall to `0.997818x`, but rejected default
 promotion because setup wall regressed to `1.504017x`,
@@ -1339,6 +1340,12 @@ candidate-over-llm.kittens train-loop wall. This remains a required first-use
 default, not final `train-sm120.sh` parity. Set
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` only to reproduce the older no-prewarm
 path.
+The 2026-06-29 CUDA 13.3.33 short-run auto fast-startup recheck promoted the
+same QKV prewarm into that path as well: versus the skipped-prewarm baseline,
+the QKV-only prewarm improved first-step CUDA-event time to `0.939518x`,
+train-loop wall to `0.979588x`, tokens/sec to `1.020838x`, and
+startup-plus-first-step to `0.998311x`, while keeping the LM-head graph prewarm
+skipped.
 `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS=N` limits the setup prewarm to the
 first `N` rows and reports
 `linear_tk_qkv_first_use_prewarm_requested_rows` plus

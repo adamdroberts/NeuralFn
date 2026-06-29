@@ -1033,10 +1033,10 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "native_auto_fast_startup_short_run" in source
     assert "native_fast_startup_explicit" in source
     assert "native_fast_startup_prewarm_policy" in source
-    assert "skip-setup-throughput-prewarms-by-default" in source
+    assert "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default" in source
     assert "linear_tk_qkv_first_use_prewarm_requested" in source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in source
-    assert "deferred TK QKV prewarm skipped on auto fast-startup smokes" in source
+    assert "TK QKV first-use prewarm active on auto fast-startup smokes" in source
     assert "attention_backward_bf16_grad_out_handoff_enabled" in source
     assert "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff" in source
     assert "promoted BF16 attention grad-out handoff route active" in source
@@ -2382,6 +2382,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM" in source
     assert "native_fast_startup_prewarm_default" in source
+    assert "native_qkv_first_use_prewarm_default" in source
+    assert "native_lm_head_graph_prewarm_default" in source
     assert "cfg.fast_startup ||" in source
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS" in source
     assert "auto_fast_startup_short_run" in source
@@ -2392,8 +2394,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert (
+        'linear_tk_qkv_first_use_prewarm_env,\n'
+        "            native_qkv_first_use_prewarm_default)"
+    ) in source
+    assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
-        "            native_fast_startup_prewarm_default)"
+        "            native_lm_head_graph_prewarm_default)"
     ) in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUBLASLT" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUBLASLT" in source

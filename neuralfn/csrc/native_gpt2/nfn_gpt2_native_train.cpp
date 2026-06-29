@@ -11420,6 +11420,11 @@ int run_transformer_lm_training_json(
         !native_fast_startup_requested &&
         !cfg.startup_only &&
         !native_long_run_defer_prewarm_enabled;
+    const bool native_qkv_first_use_prewarm_default =
+        !cfg.startup_only &&
+        !native_long_run_defer_prewarm_enabled;
+    const bool native_lm_head_graph_prewarm_default =
+        native_fast_startup_prewarm_default;
     const std::string linear_tk_qkv_first_use_prewarm_env =
         env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD",
                           "NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD",
@@ -11427,7 +11432,7 @@ int run_transformer_lm_training_json(
     const bool linear_tk_qkv_first_use_prewarm_requested =
         env_flag_enabled_or_default(
             linear_tk_qkv_first_use_prewarm_env,
-            native_fast_startup_prewarm_default);
+            native_qkv_first_use_prewarm_default);
     std::int64_t linear_tk_qkv_first_use_prewarm_requested_rows =
         env_nonnegative_i64_or(
             {"NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD_ROWS",
@@ -14393,7 +14398,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),
-            native_fast_startup_prewarm_default);
+            native_lm_head_graph_prewarm_default);
     const bool lm_head_cooperative_backward_graph_prewarm_enabled =
         lm_head_cooperative_backward_graph_prewarm_requested &&
         lm_head_classifier_backward_fused_graph_prewarm_bf16_u16 != nullptr;
@@ -25469,7 +25474,7 @@ int run_transformer_lm_training_json(
         << (native_long_run_defer_prewarm_enabled ? "true" : "false") << ",\n"
         << "  \"native_fast_startup_prewarm_policy\": \""
         << (native_fast_startup_requested
-                ? "skip-setup-throughput-prewarms-by-default"
+                ? "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default"
                 : native_long_run_defer_prewarm_enabled
                 ? "long-run-defer-throughput-prewarms-by-default"
                 : cfg.startup_only
