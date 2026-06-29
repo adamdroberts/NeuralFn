@@ -4008,6 +4008,17 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         assert profile in bench_source
         assert env_assignment in bench_source
     for profile in (
+        "token_weight_strided_blocks1024",
+        "token_weight_strided_blocks2048",
+        "token_weight_strided_blocks8192",
+        "token_weight_strided_blocks16384",
+    ):
+        block_start = bench_source.index(f'"{profile}"')
+        block_end = bench_source.index(";;", block_start)
+        profile_block = bench_source[block_start:block_end]
+        assert "STARTUP_ONLY=1" in profile_block
+        assert "INCLUDE_LLMK_REFERENCE=0" in profile_block
+    for profile in (
         "cublaslt_plan_prewarm_block_only",
         "cublaslt_plan_prewarm_lm_head_only",
         "cublaslt_plan_prewarm_off",

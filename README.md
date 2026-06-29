@@ -4275,18 +4275,19 @@ The `token_weight_strided_blocks1024`,
 `token_weight_strided_blocks16384` startup profiles compare the default
 4096-block strided token-weight initializer cap against alternate launch caps
 and require `token_weight_vector4_strided_max_blocks` to change in the paired
-strategy-value gate. They remain diagnostic-only after the CUDA 13.3.33
-dedicated RTX 5090 reruns. Lowering the cap to 1024 passed the 5-sample
-startup-only gate (`setup.token_weight_init.total_ms=0.991206x`,
-`setup_wall_ms=0.989264x`), but failed the 3-step training-shaped gate because
-`setup.token_weight_init.total_ms` regressed to `1.002362x`,
-candidate/reference train-loop wall was `1.000470x`, and candidate/reference
-tokens/sec was `0.999551x`. The 2048-block check regressed
-`setup.token_weight_init.total_ms` to `1.026979x`. With 10 measured samples and
-3 warmup samples, 8192 blocks regressed `setup.token_weight_init.total_ms` to
-`1.009851x` and `setup_wall_ms` to `1.009652x`; the 5-sample 16384 check
-regressed `setup.token_weight_init.total_ms` to `1.012305x` and
-`setup_wall_ms` to `1.010924x`.
+strategy-value gate. These startup-only profiles disable the external
+llm.kittens reference inside the wrapper because they exit before the training
+loop and only compare native setup buckets. They remain diagnostic-only after
+the CUDA 13.3.33 dedicated RTX 5090 reruns. Lowering the cap to 1024 improved
+setup wall to `0.986490x`, float-arena materialization to `0.979227x`, and
+uint16-arena materialization to `0.966101x`, but the targeted
+`setup.token_weight_init.total_ms` bucket regressed to `1.011642x`, so the
+default stays at 4096 blocks. The 2048-block check regressed
+`setup.token_weight_init.total_ms` to `1.026979x`; the 8192-block cap regressed
+`setup.token_weight_init.total_ms` to `1.020863x` and `setup_wall_ms` to
+`1.008041x`; and the 16384-block check regressed
+`setup.token_weight_init.total_ms` to `1.003813x` even though total setup wall
+improved to `0.996409x` from allocator noise.
 The sweep `summary.tsv` includes explicit QKV/MLP-FC/attention-projection
 concurrent route deltas so external GPU load cannot hide whether a side-stream
 candidate actually launched the alternate kernel schedule.

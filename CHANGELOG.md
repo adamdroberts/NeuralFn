@@ -551,6 +551,20 @@
   dedicated GPU gate above and focused native GPT candidate-profile pytest
   coverage.
 
+- Native GPT benchmark workflow: startup-only token-weight launch-cap profiles
+  now disable the external llm.kittens reference inside the SM120 candidate
+  wrapper. These profiles exit after native setup, so running a full external
+  training reference in the same script was measuring a different workload.
+  Refreshed `token_weight_strided_blocks1024` after the LM-head sequence-wrapper
+  default: the 7-warmup, 5-sample startup-only rerun improved setup wall to
+  `0.986490x`, float-arena materialization to `0.979227x`, and uint16-arena
+  materialization to `0.966101x`, but kept the profile rejected because
+  `setup.token_weight_init.total_ms` regressed to `1.011642x`. The default
+  token-weight strided launch cap remains 4096 blocks. Verification:
+  same-script startup-only gate, shell syntax validation, dry-run profile
+  expansion, focused native GPT candidate-profile pytest coverage, and
+  `git diff --check`.
+
 - Native GPT token-weight startup cap bisection: marked
   `token_weight_strided_blocks8192` and `token_weight_strided_blocks16384` as
   rejected SM120 candidate profiles. CUDA 13.3.33 dedicated RTX 5090
@@ -634,13 +648,8 @@
   current 4096-block strided padded token-weight initializer cap, require
   `token_weight_vector4_strided_max_blocks` to change, and gate
   `setup.token_weight_init.total_ms` plus `setup_wall_ms`. The 1024-block cap
-  passed a CUDA 13.3.33 dedicated RTX 5090 5-sample startup-only check at
-  `setup.token_weight_init.total_ms=0.991206x` and `setup_wall_ms=0.989264x`,
-  but failed the 3-step, 3-sample training-shaped gate because
-  `setup.token_weight_init.total_ms` regressed to `1.002362x`,
-  candidate-over-reference train-loop wall was `1.000470x`, and
-  candidate-over-reference tokens/sec was `0.999551x`. The 2048-block cap
-  failed the 5-sample startup-only gate because
+  is superseded by the newer post-LM-head-sequence-default rerun above. The
+  2048-block cap failed the 5-sample startup-only gate because
   `setup.token_weight_init.total_ms` regressed to `1.026979x`. The runtime
   default stays at 4096 blocks. Verification: shell syntax validation, focused
   native GPT candidate-profile pytest coverage, and `git diff --check`.

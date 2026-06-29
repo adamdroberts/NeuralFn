@@ -3227,6 +3227,15 @@ matching native GPT token-initializer env flags and are intended for paired
 baseline/candidate envs for default-on switches; for example,
 `token_weight_vector4_strided` compares
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` against candidate `=1`.
+The strided launch-cap profiles
+(`token_weight_strided_blocks1024`, `token_weight_strided_blocks2048`,
+`token_weight_strided_blocks8192`, and `token_weight_strided_blocks16384`) are
+startup-only native setup comparisons and force `INCLUDE_LLMK_REFERENCE=0`
+inside the wrapper, because the native command exits after setup and the
+external llm.kittens training reference would measure a different workload.
+The latest 1024-block rerun kept that profile rejected: setup wall improved to
+`0.986490x`, but the targeted `setup.token_weight_init.total_ms` bucket
+regressed to `1.011642x`, so the default cap remains 4096 blocks.
 Dedicated-GPU benchmark preflight ignores stale WSL/NVML compute-app rows only
 when they are reported as `[Not Found]`/`[N/A]` and the host PID no longer
 exists; live or named compute processes still fail the idle guard before

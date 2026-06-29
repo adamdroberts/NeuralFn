@@ -1867,6 +1867,10 @@ with `NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE=1`; the shorter
 by default, and accepts `NFN_SM120_NATIVE_REFERENCE_ENV`,
 `NFN_SM120_NATIVE_CANDIDATE_REFERENCE_ENV`, or
 `NFN_SM120_CANDIDATE_REFERENCE_ENV` for extra reference-only overrides. Use
+startup-only token-weight launch-cap profiles without a reference; those
+profiles force the wrapper's llm.kittens reference off because the native side
+exits after setup and the external trainer would measure a different workload.
+Use
 repeatable
 `--max-candidate-ratio [STAT:]METRIC=RATIO` gates for hot metrics that must not
 regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
