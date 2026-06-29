@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
     std::string batch_size =
         env_first({"NFN_NATIVE_GPT_BATCH_SIZE", "NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE"}, "64");
     std::string eval_every_steps =
-        env_first({"NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "250");
+        env_first({"NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "1000");
     std::string eval_batches =
         env_first({"NFN_NATIVE_GPT_EVAL_BATCHES", "NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES"}, "20");
     std::string sample_every =
@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
     std::string weight_decay =
         env_first({"NFN_NATIVE_GPT_WEIGHT_DECAY", "NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY"}, "0.1");
     std::string warmup_steps =
-        env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "60");
+        env_first({"NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS"}, "600");
     std::string max_steps =
         env_first({"NFN_NATIVE_GPT_MAX_STEPS", "NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
     std::string train_loss_every_steps =

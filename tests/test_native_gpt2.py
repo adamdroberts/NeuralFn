@@ -5200,6 +5200,41 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
         encoding="utf-8",
     )
     fake_native.chmod(0o755)
+    default_observed = tmp_path / "default-native-argv.txt"
+    default_env = os.environ.copy()
+    default_env.update(
+        {
+            "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
+            "NFN_TEST_NATIVE_GPT_ARGV": str(default_observed),
+            "NFN_TEST_NATIVE_GPT_ENV": str(tmp_path / "default-native-env.txt"),
+            "CUDA_VISIBLE_DEVICES": "",
+            "CUDA_DEVICE_MAX_CONNECTIONS": "",
+            "CUDA_MODULE_LOADING": "",
+        }
+    )
+    for key in (
+        "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
+        "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
+        "NFN_SM120_EVAL_EVERY_STEPS",
+        "NFN_NATIVE_GPT_WARMUP_STEPS",
+        "NFN_SM120_NATIVE_WARMUP_STEPS",
+        "NFN_SM120_WARMUP_STEPS",
+    ):
+        default_env.pop(key, None)
+    default_proc = subprocess.run(
+        [str(sm120_launcher), "--dataset-alias", "/tmp/native-cache"],
+        cwd=root,
+        env=default_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert default_proc.returncode == 0, default_proc.stderr
+    default_args = default_observed.read_text(encoding="utf-8").splitlines()
+    assert default_args[default_args.index("--eval-every-steps") + 1] == "1000"
+    assert default_args[default_args.index("--warmup-steps") + 1] == "600"
+
     env = os.environ.copy()
     env.update(
         {
@@ -6056,8 +6091,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "--target",
             "/bin/echo",
             "--dry-run",
-            "--eval-every-steps",
-            "1000",
             "--tile-cuda-activation-dtype",
             "nvfp4",
         ],
@@ -6072,6 +6105,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["backend"] == "tile-cuda"
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt"
+    assert default_payload["schedule"]["eval_every_steps"] == 1000
+    assert default_payload["schedule"]["warmup_steps"] == 600
     assert default_payload["resolved_native_template_name"] == "gpt2"
     assert default_payload["graph_file"] == ""
     assert default_payload["graph_file_exists"] is False

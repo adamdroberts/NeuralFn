@@ -28,7 +28,7 @@ conda run -n NeuralFn python scripts/train_llama_fast.py \
   --optimizer-profile adamw \
   --learning-rate 0.0006 \
   --weight-decay 0.1 \
-  --warmup-steps 60 \
+  --warmup-steps 600 \
   --warmdown-fraction 0.0 \
   --beta1 0.9 \
   --beta2 0.95 \

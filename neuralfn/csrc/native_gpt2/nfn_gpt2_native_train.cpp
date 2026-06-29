@@ -182,7 +182,7 @@ struct Config {
     std::string graph_file;
     std::string json_out_path;
     int moa_interval = 50;
-    int eval_every_steps = 250;
+    int eval_every_steps = 1000;
     int sample_every_steps = 20000;
     int generate_tokens = 144;
     int checkpoint_every_steps = 200;
@@ -190,7 +190,7 @@ struct Config {
     int seq_len = 1024;
     int train_batch_tokens = 524288;
     int train_loss_every_steps = 0;
-    int warmup_steps = 60;
+    int warmup_steps = 600;
     int max_steps = 20000;
     int num_layers = 12;
     int eval_batches = 20;
