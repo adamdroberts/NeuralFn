@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native LM-head true-fused diagnostics: rechecked
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp32`
+  on the CUDA 13.3.33 dedicated RTX 5090 with the focused trainer-chunk
+  preflight. The candidate proved the strict one-warp WMMA ABI path
+  (`wmma-bf16-cooperative-tile-warp32-experimental`) but remains rejected at
+  `21.536283x` candidate/current-wrapper, `15.513484x`
+  candidate/reference-summed, and `12.103075x`
+  candidate/reference-summed-with-logits time. The default CUDA Graph LM-head
+  wrapper stays active.
+
 - Native no-Torch SDK guard: strengthened
   `tools/check_native_no_torch_deps.py` so the native SDK import and public
   export probes assert that Torch, NumPy, and `tiktoken` are not present in

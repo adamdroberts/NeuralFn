@@ -2954,10 +2954,11 @@ run the same focused/full-loop gates. This profile is constrained to aligned
 row and hidden 16x16 production shapes, and handles the final partial GPT vocab
 tile through a direct dWeight tail path so it cannot silently fall into the
 scalar edge-tile path with too few threads.
-The dedicated RTX 5090 focused gate currently rejects this one-warp variant at
-`5.354603x` candidate/current-wrapper and `15.347515x`
-candidate/reference-summed time, so the 256-thread WMMA body remains the better
-strict diagnostic and the default CUDA Graph wrapper remains active.
+The 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 focused gate currently rejects
+this one-warp variant at `21.536283x` candidate/current-wrapper,
+`15.513484x` candidate/reference-summed, and `12.103075x`
+candidate/reference-summed-with-logits time, so the 256-thread WMMA body remains
+the better strict diagnostic and the default CUDA Graph wrapper remains active.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
 
