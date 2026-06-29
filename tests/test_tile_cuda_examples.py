@@ -486,12 +486,22 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "Unsupported NFN_SM120_PARITY_ATTENTION_SECTION_TIMING value" in text
     assert 'gate_stat_prefix="median:"' in text
     assert (
+        "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 "
+        "NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO "
+        "NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\""
+    ) in text
+    assert (
+        "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 "
+        "NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO "
+        "NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\""
+    ) in text
+    assert (
         'MAX_CANDIDATE_RATIO_RAW="${gate_stat_prefix}'
-        'train_loop_wall_ms_per_step=1.000"'
+        'train_loop_wall_ms_per_step=${DEFAULT_MAX_TRAIN_LOOP_RATIO}"'
     ) in text
     assert (
         'MAX_CANDIDATE_RATIO_RAW+=" '
-        '${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"'
+        '${gate_stat_prefix}train_loop_cuda_event_steady_state_wall_ms_per_step=${DEFAULT_MAX_STEADY_STATE_RATIO}"'
     ) in text
     assert 'case "${ENFORCE_GATE,,}"' in text
     assert "--max-candidate-ratio" in text

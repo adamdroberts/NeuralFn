@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- CUDA 13 one-step parity smoke validation: `tools/validate_sm120_cuda13.sh`
+  now omits the default steady-state parity ratio gate when
+  `NFN_SM120_CUDA13_PARITY_STEPS` is below `2` and the caller did not
+  explicitly set `NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO`. One-step smokes
+  cannot emit `train_loop_cuda_event_steady_state_wall_ms_per_step`, so the
+  validator now matches the documented behavior instead of forwarding an
+  impossible default gate. Verification: focused native wrapper tests and a
+  dedicated RTX 5090 CUDA 13 one-step validation rerun.
+
 - Native no-Torch verifier SDK coverage: `tools/check_native_no_torch_deps.py`
   now includes the public lean scalar trainer and inference exports in its
   `native_sdk_public_exports` entrypoint. The gate imports and constructs

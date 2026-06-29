@@ -329,10 +329,10 @@ same-script gate proves a higher value is better: a 2026-06-29 dedicated RTX
 5090 check with 5 measured steps, 3 samples, and 3 warmup pairs regressed the
 median steady-state CUDA-event ratio to `1.003405x` and failed the existing
 `1.003` parity gate. If
-`NFN_SM120_CUDA13_PARITY_STEPS=1`, the validator disables the parity ratio gate
-by default because one-step smokes do not emit steady-state timing; set
-`NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that
-failure path.
+`NFN_SM120_CUDA13_PARITY_STEPS=1`, the validator omits the default steady-state
+ratio gate by default because one-step smokes do not emit steady-state timing;
+set `NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO=...` only when intentionally
+checking that failure path.
 The runtime-contract leg also protects promoted native defaults on the one-step
 CUDA smoke: it fails if graph-editor tensor flow or Torch becomes required,
 the QKV dInput-before-dWeight route drops out, the BF16 attention grad-out

@@ -1097,6 +1097,8 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert 'PARITY_STEPS="${NFN_SM120_CUDA13_PARITY_STEPS:-20}"' in source
     assert 'PARITY_SAMPLES="${NFN_SM120_CUDA13_PARITY_SAMPLES:-5}"' in source
     assert 'PARITY_WARMUP="${NFN_SM120_CUDA13_PARITY_WARMUP:-2}"' in source
+    assert 'PARITY_MAX_CANDIDATE_RATIO=""' in source
+    assert 'NFN_SM120_PARITY_MAX_CANDIDATE_RATIO="${PARITY_MAX_CANDIDATE_RATIO}"' in source
     assert "PARITY_ENFORCE_GATE=0" in source
     assert "NFN_SM120_CUDA13_PARITY_MAX_CANDIDATE_RATIO" in source
     assert "median:train_loop_cuda_event_steady_state_wall_ms_per_step=1.003" in source
