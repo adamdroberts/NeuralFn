@@ -1443,7 +1443,13 @@ single cooperative body from scalar shared-memory tiles to BF16 WMMA
 tensor-core fragments. The focused LM-head benchmark reports this as
 `candidate_symbol_abi_implementation_class:
 "wmma-bf16-cooperative-tile-experimental"` when the strict selector is active.
-It is still a diagnostic kernel body, not a promoted default.
+Use `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma` for the
+focused preflight or
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma` for the
+full-loop candidate. It is still a rejected diagnostic kernel body, not a
+promoted default; the 2026-06-29 focused trainer-chunk probe remained
+`2.585996x` slower than the current wrapper and `7.777548x` slower than the
+reference component sum.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` to compare the
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. Set

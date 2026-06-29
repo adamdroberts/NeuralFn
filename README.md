@@ -2855,8 +2855,13 @@ For the tile16 strict body, add
 through BF16 WMMA tensor-core fragments instead of the scalar shared-memory
 diagnostic loops. The ABI implementation class reports
 `wmma-bf16-cooperative-tile-experimental` when that body is loaded and the
-strict selector is active. This is still opt-in and rejected until the focused
-and same-script gates beat the promoted CUDA Graph wrapper.
+strict selector is active. The named profiles
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma` and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma` run this
+candidate through the focused and full-loop wrappers. This is still opt-in and
+rejected: the 2026-06-29 focused trainer-chunk probe improved over the scalar
+strict body but still measured `2.585996x` candidate/current-wrapper and
+`7.777548x` candidate/reference-summed time.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
 

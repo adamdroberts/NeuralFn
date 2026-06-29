@@ -3082,6 +3082,12 @@ through BF16 WMMA tensor-core fragments while leaving the body opt-in. When the
 strict selector is active, the implementation-class ABI reports
 `wmma-bf16-cooperative-tile-experimental` so SDK and benchmark callers can
 separate this body from the older `scalar-cooperative-tile-diagnostic` path.
+The wrappers expose it as
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma` and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma`. The
+2026-06-29 focused trainer-chunk probe proved the WMMA implementation label but
+kept the route rejected at `2.585996x` candidate/current-wrapper and
+`7.777548x` candidate/reference-summed time.
 Dry-run plans for these strict profiles include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
 auditable before any GPU work starts. Focused LM-head benchmark JSON separates

@@ -1276,6 +1276,17 @@ case "${CANDIDATE_PROFILE,,}" in
     LM_HEAD_BACKWARD_PREFLIGHT_PROFILE="trainer-chunk-true-fused-tile16"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000}"
     ;;
+  "lm_head_true_fused_tile16_wmma"|"lm-head-true-fused-tile16-wmma"|"lm_head_true_fused_cooperative_tile16_wmma"|"lm-head-true-fused-cooperative-tile16-wmma")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="Unpromoted strict LM-head true-fused WMMA diagnostic: builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16 and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1, forces CE threads to 256, and runs the full GPT loop. CUDA 13.3.33 dedicated RTX 5090 2026-06-29 focused trainer-chunk preflight proved candidate_symbol_abi_implementation_class=wmma-bf16-cooperative-tile-experimental but still rejected it at 2.585996x candidate/current-wrapper and 7.777548x candidate/reference-summed time. Keep rejected until it beats the current CUDA Graph wrapper and llm.kittens reference gates."
+    CANDIDATE_NOTE="Runs the trainer-sized full GPT loop with the opt-in strict true-fused cooperative LM-head body compiled as a 16x16 BF16 WMMA dHidden/dWeight body instead of the scalar diagnostic body."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=0 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE=1 NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_CE_BF16_THREADS=256"
+    CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16 -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1"
+    REQUIRE_NATIVE_LM_HEAD_TRUE_FUSED=1
+    LM_HEAD_BACKWARD_PREFLIGHT_PROFILE="trainer-chunk-true-fused-tile16-wmma"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 stage.lm_head_backward.total_ms=1.000}"
+    ;;
   "lm_head_true_fused_tile24"|"lm-head-true-fused-tile24"|"lm_head_true_fused_cooperative_tile24"|"lm-head-true-fused-cooperative-tile24")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="Unpromoted strict LM-head true-fused diagnostic: builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=24 and forces CE threads to 576 before running the full GPT loop. Keep rejected until it beats the current CUDA Graph wrapper and llm.kittens reference gates."

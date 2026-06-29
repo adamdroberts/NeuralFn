@@ -10,9 +10,14 @@
   use 16x16 WMMA tensor-core fragments instead of the older scalar
   shared-memory matmul loops. The fused-kernel implementation-class ABI reports
   `wmma-bf16-cooperative-tile-experimental` when this body is loaded and the
-  strict selector is active. No default trainer path changed; this remains a
-  diagnostic strict-body candidate until focused and same-script gates beat the
-  promoted CUDA Graph wrapper.
+  strict selector is active. The focused and full-loop wrappers expose this as
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma`. No
+  default trainer path changed; this remains a diagnostic strict-body candidate
+  until focused and same-script gates beat the promoted CUDA Graph wrapper. The
+  2026-06-29 focused trainer-chunk probe improved over the previous scalar
+  strict body but still rejected the WMMA route at `2.585996x`
+  candidate/current-wrapper and `7.777548x` candidate/reference-summed time.
   Verification so far: built `/tmp/libnfn_native_train_tile_ops_true_fused_wmma.so`
   with `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS='-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16
   -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1' bash
