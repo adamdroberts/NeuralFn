@@ -1884,6 +1884,11 @@ The idle-process guard also filters stale WSL/NVML compute-app rows that report
 already exited. Those rows no longer prevent dedicated-GPU runs from starting,
 but any named or still-live compute process continues to fail the guard before
 warmup.
+Saved paired-runner JSON also includes `gpu_sample_summary` with
+`selected_gpu_max_utilization_pct`, `selected_gpu_max_compute_process_count`,
+and `selected_gpu_external_load_clean`, giving each candidate artifact a compact
+machine-readable verdict for whether selected-GPU load stayed clean while the
+old and new kernels were measured in the same script.
 The native candidate wrapper enables that allowance by default through
 `NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`; set it to `0`
 for strict utilization gating. It also enables the trainer CUDA version

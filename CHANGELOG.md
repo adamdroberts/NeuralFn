@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Native GPT benchmarks: `tools/paired_kernel_speed.py` now adds
+  `selected_gpu_max_utilization_pct`,
+  `selected_gpu_max_compute_process_count`,
+  `selected_gpu_compute_process_clean`,
+  `selected_gpu_utilization_clean`,
+  `selected_gpu_stale_utilization_accepted`, and
+  `selected_gpu_external_load_clean` to `gpu_sample_summary`, and prints the
+  external-load verdict in text output. This keeps same-script candidate
+  artifacts self-contained when checking whether unrelated selected-GPU work
+  affected old-vs-new kernel timing; raw per-command `nvidia-smi` snapshots are
+  unchanged. Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m py_compile
+  tools/paired_kernel_speed.py`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k
+  paired_kernel_speed_tool_compiles_and_smokes`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles or
+  native_gpt2_exposes_lm_head_last_dweight_overlap_candidate"`, and
+  `git diff --check`.
+
 - Native GPT operations: added `NFN_SM120_CUDA13_SMOKE_ONLY=1` to
   `tools/validate_sm120_cuda13.sh`. The mode keeps the dedicated-GPU native
   CUDA smoke path and runtime contract check, but defaults off the LM-head

@@ -192,6 +192,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "gpu_after" in payload
     assert "gpu_sample_summary" in payload
     assert payload["gpu_sample_summary"]["selected_cuda_visible_devices"] == "test-device"
+    assert payload["gpu_sample_summary"]["selected_gpu_max_utilization_pct"] == 0.0
+    assert payload["gpu_sample_summary"]["selected_gpu_max_compute_process_count"] == 0.0
+    assert payload["gpu_sample_summary"]["selected_gpu_compute_process_clean"] is True
+    assert payload["gpu_sample_summary"]["selected_gpu_utilization_clean"] is True
+    assert payload["gpu_sample_summary"]["selected_gpu_stale_utilization_accepted"] is False
+    assert payload["gpu_sample_summary"]["selected_gpu_external_load_clean"] is True
     assert "test-device\n1\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.total_ms"]["mean"] == 0.7
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.avg_ms"]["mean"] == 0.7
@@ -245,6 +251,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "compute_processes" in payload["paired_samples"][0]["gpu_before"]
     assert "gpu_compute_processes_per_sample_before:" in proc.stdout
     assert "gpu_sample_summary:" in proc.stdout
+    assert "external_load_clean=True" in proc.stdout
+    assert "max_compute_processes=0.0" in proc.stdout
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5

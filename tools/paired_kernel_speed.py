@@ -3575,6 +3575,9 @@ def snapshot_and_enforce_selected_gpu_guards(
 def summarize_gpu_sample_load(
     rows: Sequence[dict[str, object]],
     cuda_visible_devices: str,
+    *,
+    max_selected_gpu_utilization_pct: float,
+    allow_stale_utilization_without_compute_processes: bool,
 ) -> dict[str, object]:
     before_util: list[float] = []
     after_util: list[float] = []
@@ -3630,6 +3633,36 @@ def summarize_gpu_sample_load(
     for name, values in metric_rows:
         if values:
             summary[name] = summarize(values)
+    max_selected_process_count = max(
+        selected_processes_before + selected_processes_after,
+        default=0.0,
+    )
+    max_selected_utilization_pct = max(before_util + after_util, default=0.0)
+    utilization_gate_enabled = max_selected_gpu_utilization_pct >= 0.0
+    selected_gpu_compute_process_clean = max_selected_process_count == 0.0
+    selected_gpu_utilization_clean = (
+        not utilization_gate_enabled
+        or max_selected_utilization_pct <= max_selected_gpu_utilization_pct
+    )
+    stale_utilization_accepted = (
+        allow_stale_utilization_without_compute_processes
+        and selected_gpu_compute_process_clean
+        and utilization_gate_enabled
+        and not selected_gpu_utilization_clean
+    )
+    summary.update(
+        {
+            "selected_gpu_max_utilization_pct": max_selected_utilization_pct,
+            "selected_gpu_max_compute_process_count": max_selected_process_count,
+            "selected_gpu_compute_process_clean": selected_gpu_compute_process_clean,
+            "selected_gpu_utilization_clean": selected_gpu_utilization_clean,
+            "selected_gpu_stale_utilization_accepted": stale_utilization_accepted,
+            "selected_gpu_external_load_clean": (
+                selected_gpu_compute_process_clean
+                and (selected_gpu_utilization_clean or stale_utilization_accepted)
+            ),
+        }
+    )
     return summary
 
 
@@ -4990,7 +5023,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
         native_cublaslt_plan_cache = summarize_cublaslt_plan_cache(sample_rows)
         native_arena_request_stats = summarize_native_arena_request_stats(sample_rows)
-        gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
+        gpu_sample_summary = summarize_gpu_sample_load(
+            sample_rows,
+            cuda_visible_devices,
+            max_selected_gpu_utilization_pct=max_selected_gpu_utilization_pct,
+            allow_stale_utilization_without_compute_processes=(
+                allow_stale_utilization_without_compute_processes
+            ),
+        )
         candidate_over_baseline_native_metrics = summarize_metric_ratios(
             sample_rows,
             baseline_native_metrics,
@@ -5272,7 +5312,10 @@ def print_text(payload: dict[str, object]) -> None:
         print(
             "  gpu_sample_summary: "
             f"selected_index={gpu_sample_summary.get('selected_gpu_index', '')} "
-            f"selected_uuid={gpu_sample_summary.get('selected_gpu_uuid', '')}"
+            f"selected_uuid={gpu_sample_summary.get('selected_gpu_uuid', '')} "
+            f"external_load_clean={gpu_sample_summary.get('selected_gpu_external_load_clean', '')} "
+            f"max_util_pct={gpu_sample_summary.get('selected_gpu_max_utilization_pct', '')} "
+            f"max_compute_processes={gpu_sample_summary.get('selected_gpu_max_compute_process_count', '')}"
         )
         for key in (
             "selected_gpu_utilization_before_pct",

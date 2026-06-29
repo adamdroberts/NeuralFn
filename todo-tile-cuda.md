@@ -1473,6 +1473,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Preserve explicit zero cadences from SDK/native GPT compiled-CLI configs (`eval_every_steps=0`, `sample_every_steps=0`, and `checkpoint_every_steps=0`) so same-script kernel benchmarks can disable validation, sampling, and checkpoint cadence without the Python handoff clamping them back on.
 - [x] Pin the SM120 parity wrapper's NeuralFn candidate to `--train-batch-tokens 524288`, matching the `llm.kittens/train-sm120.sh` `-d 524288` contract in the same paired script instead of relying on native defaults.
 - [x] Add `tools/bench_native_gpt_sm120_candidate.sh` as the native-vs-native SM120 bisection wrapper: it keeps the dense GPT command shape fixed on both sides, compares the current Tile ops library/default env against `NFN_SM120_NATIVE_CANDIDATE_ENV` or `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB`, preserves the `524288` token-batch contract, and reuses the selected-GPU idle/utilization guards from `tools/paired_kernel_speed.py`.
+  - 2026-06-29 tightened the paired-runner GPU-load evidence by adding
+    `selected_gpu_max_utilization_pct`,
+    `selected_gpu_max_compute_process_count`, and
+    `selected_gpu_external_load_clean` to `gpu_sample_summary`. Same-script
+    candidate artifacts now expose a compact verdict for whether external work
+    touched the selected CUDA GPU while old/new kernels were being measured,
+    while preserving the raw per-command `nvidia-smi` snapshots for audit.
   - 2026-06-22 added named profiles for remaining raw-env diagnostics so every
     native scheduling/attention candidate can be measured through the same
     guarded wrapper instead of ad hoc shell env strings:

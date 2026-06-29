@@ -1076,8 +1076,12 @@ identity, display-active state, utilization, memory, and active compute-process
 rows so kernel-speed notes show which CUDA device was measured and whether
 other compute work was present for a specific command. Text and JSON output also include
 `gpu_sample_summary`, which summarizes selected-GPU utilization, memory, and
-compute-process counts before and after measured samples; use this summary when
-checking that candidate-vs-baseline timing was not skewed by other GPU load.
+compute-process counts before and after measured samples. It also reports
+`selected_gpu_max_utilization_pct`,
+`selected_gpu_max_compute_process_count`, and
+`selected_gpu_external_load_clean`, so saved parity artifacts carry a compact
+verdict for whether candidate-vs-baseline timing was measured without other
+selected-GPU work.
 On WSL/NVML, stale compute-app rows can remain after a native process exits and
 show up as `process_name=[Not Found]` with `used_memory=[N/A]`. The paired
 benchmark guard ignores only those rows when the host PID no longer exists;
