@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Native runtime validation: strengthened `tools/validate_sm120_cuda13.sh` so
+  its one-step runtime-contract smoke now fails on drift from promoted native
+  defaults, not just broad no-Torch/no-graph invariants. The contract now
+  verifies the BF16 attention grad-out handoff, 28672-row LM-head chunk,
+  thresholded `cudaMallocAsync` allocator without fallback, pageable token
+  staging, padded BF16-pattern token-weight initialization, and fused
+  token-weight BF16 shadow AdamW refresh, alongside the existing QKV
+  dInput-before-dWeight, 128-row LayerNorm, 512-thread bias reducer, and
+  diagnostic LM-head CUDA Graph wrapper checks. Verified with
+  `bash -n tools/validate_sm120_cuda13.sh`, the focused native validator source
+  test, `git diff --check`, and a runtime-only CUDA 13.3 validator pass on the
+  RTX 5090 that wrote passed summaries to
+  `/tmp/nfn_sm120_runtime_contract_promoted_defaults_summary.json` and
+  `/tmp/nfn_sm120_runtime_contract_promoted_defaults.json`.
+
 - Native benchmark accuracy: candidate and focused microbench warmup defaults
   now use two warmup rounds instead of one. This applies to
   `tools/bench_native_gpt_sm120_candidate.sh`,

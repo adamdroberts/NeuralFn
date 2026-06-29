@@ -1037,10 +1037,27 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "linear_tk_qkv_first_use_prewarm_requested" in source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in source
     assert "deferred TK QKV prewarm skipped on auto fast-startup smokes" in source
+    assert "attention_backward_bf16_grad_out_handoff_enabled" in source
+    assert "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff" in source
+    assert "promoted BF16 attention grad-out handoff route active" in source
     assert "block_state.get(\"linear_backward_bias_threads_per_block\") == 512" in source
     assert "promoted 512-thread linear-bias reducer" in source
     assert "lm_head_classifier_true_fused_launch_count" in source
+    assert "lm_head_row_chunk_size" in source
+    assert "lm_head_row_chunk_unsafe_override_enabled" in source
+    assert "promoted 28672-row LM-head chunk" in source
     assert "must not report strict true-fused LM-head launches on the default path" in source
+    assert "device_cuda_malloc_async_enabled" in source
+    assert "device_cuda_malloc_async_threshold_skip_count" in source
+    assert "thresholded cudaMallocAsync allocator active without fallback" in source
+    assert "token_id_host_staging" in source
+    assert "direct-sampler-to-pageable-arena" in source
+    assert "pageable token staging on the native sampler path" in source
+    assert "token_weight_bf16_padding_memset_count" in source
+    assert "padded BF16-pattern token-weight initializer" in source
+    assert "token_weight_bf16_fused_adamw_refresh_count" in source
+    assert "elided-block-bf16-primary-token-shadow-fused-adamw" in source
+    assert "fused token-weight BF16 shadow AdamW refresh active" in source
     assert "LayerNorm affine backward must keep the promoted 128-row reduction chunk" in source
     assert "block_backward_weight_linear_strategy" in source
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate" in source

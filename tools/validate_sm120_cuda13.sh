@@ -228,6 +228,12 @@ checks = [
         "runtime contract must keep the promoted QKV dInput-before-dWeight route active",
     ),
     (
+        payload.get("attention_backward_bf16_grad_out_handoff_enabled") is True
+        and payload.get("attention_backward_strategy")
+        == "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff",
+        "runtime contract must keep the promoted BF16 attention grad-out handoff route active",
+    ),
+    (
         block_state.get("layer_norm_backward_affine_row_chunk_size") == 128,
         "runtime contract must keep the promoted 128-row LayerNorm affine reduction chunk",
     ),
@@ -240,8 +246,37 @@ checks = [
         "runtime contract must keep LM-head on the promoted CUDA Graph wrapper until a faster true-fused Tile kernel replaces it",
     ),
     (
+        payload.get("lm_head_row_chunk_size") == 28672
+        and payload.get("lm_head_row_chunk_unsafe_override_enabled") is False,
+        "runtime contract must keep the promoted 28672-row LM-head chunk without unsafe full-batch override",
+    ),
+    (
         payload.get("lm_head_classifier_true_fused_launch_count") == 0,
         "runtime contract must not report strict true-fused LM-head launches on the default path",
+    ),
+    (
+        payload.get("device_cuda_malloc_async_enabled") is True
+        and payload.get("device_cuda_malloc_async_fallback_count") == 0
+        and payload.get("device_cuda_malloc_async_threshold_skip_count", 0) > 0,
+        "runtime contract must keep the thresholded cudaMallocAsync allocator active without fallback",
+    ),
+    (
+        payload.get("token_id_host_staging") == "pageable"
+        and payload.get("token_batch_staging_strategy") == "direct-sampler-to-pageable-arena",
+        "runtime contract must keep pageable token staging on the native sampler path",
+    ),
+    (
+        payload.get("token_weight_init_strategy")
+        == "device-vector4-strided-power2-deterministic-fused-bf16-pattern-shadow-padded-zero"
+        and payload.get("token_weight_bf16_padding_memset_count") == 0,
+        "runtime contract must keep the promoted padded BF16-pattern token-weight initializer",
+    ),
+    (
+        payload.get("token_weight_bf16_adamw_refresh_fusion_enabled") is True
+        and payload.get("token_weight_bf16_fused_adamw_refresh_count", 0) > 0
+        and payload.get("adamw_bf16_shadow_refresh_strategy")
+        == "elided-block-bf16-primary-token-shadow-fused-adamw",
+        "runtime contract must keep fused token-weight BF16 shadow AdamW refresh active",
     ),
 ]
 

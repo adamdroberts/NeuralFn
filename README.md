@@ -310,6 +310,14 @@ dominated by first-step jitter. If
 by default because one-step smokes do not emit steady-state timing; set
 `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that
 failure path.
+The runtime-contract leg also protects promoted native defaults on the one-step
+CUDA smoke: it fails if graph-editor tensor flow or Torch becomes required,
+the QKV dInput-before-dWeight route drops out, the BF16 attention grad-out
+handoff is disabled, the 128-row LayerNorm or 512-thread bias reducers change,
+the LM-head chunk leaves the promoted 28672-row schedule, thresholded
+`cudaMallocAsync` falls back, pageable token staging is lost, the padded
+BF16-pattern token initializer changes, or fused token-weight BF16 shadow AdamW
+refresh stops running.
 The 2026-06-28 reference-flags refresh kept that conclusion in a narrower way:
 the temporary macro-bundle Tile ops build passed candidate-over-llm.kittens
 gates, but was still flat/slightly slower versus the current linked native
