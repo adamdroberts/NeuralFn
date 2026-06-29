@@ -249,6 +249,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=0.995}"
     ;;
   "long_run_defer_prewarm"|"long-run-defer-prewarm"|"defer_prewarm_long_run"|"defer-prewarm-long-run")
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 5-step, 3-sample, 1-warmup rerun keeps the long-run deferred-prewarm policy as the full-training default. It reduced setup_wall_ms to 0.666989x and startup_plus_steady_state_step_wall_ms to 0.925514x while keeping steady-state CUDA-event step time inside the gate at 1.000859x. The expected first-step deferred-prewarm cost remains visible at 1.093769x, so the profile gates steady-state separately from first-step timing."
     CANDIDATE_NOTE="Compares the old eager throughput-prewarm setup against the long-run deferred-prewarm policy. The profile sets the candidate threshold to one step so short benchmark runs exercise the same policy branch that default 20k-step quality runs use, and gates the long-run-relevant steady-state metrics separately from the expected first-step deferred-prewarm cost."
     INCLUDE_LLMK_REFERENCE=0
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999"

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT long-run deferred prewarm gate: marked
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` as an accepted
+  current-default comparison after a CUDA 13.3.33 dedicated RTX 5090 5-step,
+  3-sample, 1-warmup rerun. The profile compares the old eager throughput
+  prewarm route against the default long-run deferred-prewarm policy used by
+  20k-step quality runs. It reduced `setup_wall_ms` to `0.666989x` and
+  `startup_plus_steady_state_step_wall_ms` to `0.925514x`, while keeping
+  steady-state CUDA-event step time inside the gate at `1.000859x`. The
+  expected deferred first-step cost remains visible at `1.093769x`, so the
+  gate continues to measure steady-state separately. Verification: same-script
+  dedicated GPU gate above and focused native GPT candidate-profile pytest
+  coverage.
+
 - Native GPT token-weight startup cap bisection: marked
   `token_weight_strided_blocks8192` and `token_weight_strided_blocks16384` as
   rejected SM120 candidate profiles. CUDA 13.3.33 dedicated RTX 5090
