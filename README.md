@@ -263,6 +263,9 @@ Paired native speed gates verify that label by requiring
 `lm_head_fused_graph_prewarm_success_count=0`, so a long-run benchmark cannot
 silently pay the old throughput-prewarm startup cost while still reporting the
 deferred policy.
+The `long_run_defer_prewarm` SM120 candidate profile also keeps the
+same-script llm.kittens reference enabled and gates steady-state CUDA-event
+step time against that reference at `<=1.003x`.
 Set the threshold higher than `max_steps`, or force the individual prewarm env
 vars, when a long run must use the old eager-prewarm setup. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` to compare the old

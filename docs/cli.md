@@ -2475,8 +2475,11 @@ eager throughput-prewarm setup against this deferred long-run policy in the
 paired selected-GPU benchmark wrapper. Its default gates require
 `setup_wall_ms<=0.900x`,
 `train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`, and
-`startup_plus_steady_state_step_wall_ms<=0.950x`; the profile does not hide
-the expected first-step deferred-prewarm cost. The paired native runtime
+`startup_plus_steady_state_step_wall_ms<=0.950x` against the old eager native
+route, plus
+`candidate_over_reference.train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`
+against the same-script llm.kittens reference. The profile does not hide the
+expected first-step deferred-prewarm cost. The paired native runtime
 contract gate also treats this policy specially: if a candidate reports
 `native_fast_startup_prewarm_policy:
 "long-run-defer-throughput-prewarms-by-default"`, then

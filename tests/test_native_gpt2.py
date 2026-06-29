@@ -3096,6 +3096,17 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "setup_wall_ms=0.900" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003" in bench_source
     assert "startup_plus_steady_state_step_wall_ms=0.950" in bench_source
+    long_run_block = bench_source[
+        bench_source.index('"long_run_defer_prewarm"|"long-run-defer-prewarm"') :
+        bench_source.index('"short_run_forced_prewarm"|"short-run-forced-prewarm"')
+    ]
+    assert "INCLUDE_LLMK_REFERENCE=0" not in long_run_block
+    assert (
+        "MAX_CANDIDATE_REFERENCE_RATIO_RAW=\"${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-"
+        "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}\""
+    ) in long_run_block
+    assert '-z "$MAX_CANDIDATE_REFERENCE_RATIO_RAW"' in bench_source
+    assert '-z "$MIN_CANDIDATE_REFERENCE_RATIO_RAW"' in bench_source
     assert "expected first-step deferred-prewarm cost" in bench_source
     assert '"short_run_forced_prewarm"|"short-run-forced-prewarm"' in bench_source
     assert "NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1" in bench_source
@@ -13406,6 +13417,29 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert "native runtime contract gate failed" in failing.stderr
     assert "graph_editor_tensor_flow: expected=false observed=true passed=false" in failing.stdout
     assert "train_loss_host_d2h_count: expected=0 observed=1 passed=false" in failing.stdout
+
+    dry_run_reference_gate = subprocess.run(
+        base_cmd
+        + [
+            "--reference",
+            str(baseline),
+            "--max-candidate-reference-ratio",
+            "train_loop_cuda_event_steady_state_wall_ms_per_step=1.003",
+            "--dry-run-plan",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert dry_run_reference_gate.returncode == 0, dry_run_reference_gate.stderr
+    assert "reference:" in dry_run_reference_gate.stdout
+    assert (
+        "candidate_reference_metric_ratio_gates: "
+        "max:mean:train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003"
+    ) in dry_run_reference_gate.stdout
 
 
 def test_canonical_infer_gpt_wrapper_reports_generic_program_name() -> None:

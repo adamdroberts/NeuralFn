@@ -5246,6 +5246,32 @@ def print_text(payload: dict[str, object]) -> None:
                     rendered_gates.append(f"min:{stat}:{metric}>={item['min_ratio']}")
             if rendered_gates:
                 print(f"  metric_ratio_gates: {', '.join(rendered_gates)}")
+        candidate_reference_gates = payload.get("candidate_reference_metric_ratio_gates")
+        if (
+            isinstance(candidate_reference_gates, dict)
+            and candidate_reference_gates.get("enabled") is True
+        ):
+            rendered_reference_gates: list[str] = []
+            for item in candidate_reference_gates.get("results", []):
+                if not isinstance(item, dict):
+                    continue
+                metric = str(item.get("metric", ""))
+                stat = str(item.get("stat", "mean"))
+                if not metric:
+                    continue
+                if item.get("max_ratio") is not None:
+                    rendered_reference_gates.append(
+                        f"max:{stat}:{metric}<={item['max_ratio']}"
+                    )
+                if item.get("min_ratio") is not None:
+                    rendered_reference_gates.append(
+                        f"min:{stat}:{metric}>={item['min_ratio']}"
+                    )
+            if rendered_reference_gates:
+                print(
+                    "  candidate_reference_metric_ratio_gates: "
+                    + ", ".join(rendered_reference_gates)
+                )
         order_plan = payload.get("sample_order_plan")
         if isinstance(order_plan, list):
             rendered = [

@@ -252,11 +252,11 @@ case "${CANDIDATE_PROFILE,,}" in
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 5-step, 3-sample, 1-warmup rerun keeps the long-run deferred-prewarm policy as the full-training default. It reduced setup_wall_ms to 0.666989x and startup_plus_steady_state_step_wall_ms to 0.925514x while keeping steady-state CUDA-event step time inside the gate at 1.000859x. The expected first-step deferred-prewarm cost remains visible at 1.093769x, so the profile gates steady-state separately from first-step timing."
     CANDIDATE_NOTE="Compares the old eager throughput-prewarm setup against the long-run deferred-prewarm policy. The profile sets the candidate threshold to one step so short benchmark runs exercise the same policy branch that default 20k-step quality runs use, and gates the long-run-relevant steady-state metrics separately from the expected first-step deferred-prewarm cost."
-    INCLUDE_LLMK_REFERENCE=0
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup_wall_ms=0.900 train_loop_cuda_event_steady_state_wall_ms_per_step=1.003 startup_plus_steady_state_step_wall_ms=0.950}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_cuda_event_steady_state_wall_ms_per_step=1.003}"
     ;;
   "short_run_forced_prewarm"|"short-run-forced-prewarm"|"force_short_run_prewarm"|"force-short-run-prewarm"|"qkv_lm_head_forced_prewarm"|"qkv-lm-head-forced-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
@@ -1987,6 +1987,8 @@ esac
 if [[ -n "${reference_paired_args[*]-}" &&
       -z "$USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW" &&
       -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" &&
+      -z "$MAX_CANDIDATE_REFERENCE_RATIO_RAW" &&
+      -z "$MIN_CANDIDATE_REFERENCE_RATIO_RAW" &&
       "$DEFAULT_VS_LEGACY_PROFILE" != "1" ]]; then
   has_reference_candidate_change=0
   if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||

@@ -412,6 +412,12 @@
   cannot accidentally reintroduce the old QKV or LM-head graph prewarm startup
   cost while keeping the deferred policy label.
 
+- Native GPT benchmarking: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm`
+  now includes the llm.kittens reference leg by default and gates candidate
+  steady-state CUDA-event step time against that same-script reference at
+  `<=1.003x`. Profile-specific candidate/reference gates are preserved instead
+  of being overwritten by the generic auto-reference gate block.
+
 - Native GPT benchmarking: added the rejected
   `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV
   first-use prewarm and LM-head CUDA Graph prewarm back on for short-run
