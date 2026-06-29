@@ -33,6 +33,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             explicit_args = build_parser().parse_args(["--download-if-missing"])
             print("DEFAULT_DOWNLOAD", default_args.download_if_missing)
             print("EXPLICIT_DOWNLOAD", explicit_args.download_if_missing)
+            print("NATIVE_GPT_SDK_LOADED", "neuralfn.native_gpt" in sys.modules)
             print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
             print("TORCH_LOADED", "torch" in sys.modules)
             """
@@ -52,6 +53,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("DEFAULT_DOWNLOAD False", proc.stdout)
         self.assertIn("EXPLICIT_DOWNLOAD True", proc.stdout)
+        self.assertIn("NATIVE_GPT_SDK_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
@@ -873,6 +875,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 else:
                     exit_code = 0
                 print("TORCH_LOADED", "torch" in sys.modules)
+                print("NATIVE_GPT_SDK_LOADED", "neuralfn.native_gpt" in sys.modules)
                 print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
                 raise SystemExit(exit_code)
             """
@@ -898,6 +901,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("--no-checkpoint", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NATIVE_GPT_SDK_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt_alias_default_dispatches_directly_to_compiled_cli(self) -> None:

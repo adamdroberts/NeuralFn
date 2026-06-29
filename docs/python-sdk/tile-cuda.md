@@ -514,9 +514,12 @@ full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
 
 Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions use
-the Python harness for argument resolution, dry runs, and command printing, then
-replace that process with the compiled C++ trainer for non-dry-run actions. The
-handoff applies the same default `CUDA_VISIBLE_DEVICES`,
+the Python harness only for lightweight argument normalization, dry runs, and
+command printing on cached-shard runs. The wrapper builds the compiled trainer
+argv locally and replaces the process with the compiled C++ trainer before
+importing `neuralfn.native_gpt`; `--download-if-missing`, config export, and
+non-compiled runners still use the SDK wrapper. The handoff applies the same
+default `CUDA_VISIBLE_DEVICES`,
 `CUDA_DEVICE_MAX_CONNECTIONS`, and `CUDA_MODULE_LOADING=LAZY` policy as
 `run_native_gpt()`, so legacy script launches do not keep a Python parent alive
 during CUDA Tile training. Unless `--download-if-missing` is set, the handoff

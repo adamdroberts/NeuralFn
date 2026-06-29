@@ -8,23 +8,18 @@ import os
 from pathlib import Path
 import sys
 import uuid
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from cli_utils import artifact_path, create_argument_parser
-from neuralfn.native_gpt import (
-    NativeGptRunConfig,
-    build_native_gpt_compiled_cli_run_config,
-    build_native_gpt_run_config,
-    native_gpt_encoding_vocab_size,
-    native_gpt_runner_status,
-    normalize_native_gpt_encoding_name,
-    run_native_gpt,
-    write_native_gpt_run_config,
-)
+
+if TYPE_CHECKING:
+    from neuralfn.native_gpt import NativeGptRunConfig
 
 
 LOGGER = logging.getLogger("gpt_native_harness")
 DATASETS_DIR = Path(os.environ.get("NFN_DATASETS_DIR", Path.home() / ".cache" / "nfn" / "datasets")).expanduser()
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_ARTIFACT = artifact_path("gpt.pt")
 TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 TINYSTORIES_HF_PATH = "roneneldan/TinyStories"
@@ -74,12 +69,26 @@ NATIVE_GPT_DEFAULTS = {
 NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
 
 
+def _native_gpt_api():
+    from neuralfn import native_gpt
+
+    return native_gpt
+
+
 def _compiled_cli_env(config: NativeGptRunConfig) -> dict[str, str]:
     env = os.environ.copy()
     if str(config.cuda_visible_devices or "").strip():
         env["CUDA_VISIBLE_DEVICES"] = str(config.cuda_visible_devices)
     if str(config.cuda_device_max_connections or "").strip():
         env["CUDA_DEVICE_MAX_CONNECTIONS"] = str(config.cuda_device_max_connections)
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    return env
+
+
+def _compiled_cli_env_from_values() -> dict[str, str]:
+    env = os.environ.copy()
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
     return env
 
@@ -93,6 +102,13 @@ def _exec_compiled_cli(command: list[str], config: NativeGptRunConfig) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     os.execvpe(command[0], command, _compiled_cli_env(config))
+    return 127
+
+
+def _exec_compiled_cli_fast(command: list[str]) -> int:
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execvpe(command[0], command, _compiled_cli_env_from_values())
     return 127
 
 
@@ -167,19 +183,29 @@ def _apply_dataset_shortcuts(args: argparse.Namespace) -> None:
 
 
 def _resolve_tokenizer(args: argparse.Namespace) -> str:
+    selected = _validate_fast_tokenizer_shortcuts(args)
+    native_gpt = _native_gpt_api()
+    normalized = native_gpt.normalize_native_gpt_encoding_name(selected) or selected
+    native_gpt.native_gpt_encoding_vocab_size(normalized)
+    return normalized
+
+
+def _selected_tokenizer_name(args: argparse.Namespace) -> str:
     selected = str(args.tokenizer or "gpt2")
-    legacy_flags = [bool(args.tokgpt2), bool(args.cl100k), bool(args.o200k)]
-    if sum(1 for flag in legacy_flags if flag) > 1:
-        raise ValueError("Tokenizer flags are mutually exclusive.")
     if args.tokgpt2:
         selected = "gpt2"
     if args.cl100k:
         selected = "cl100k_base"
     if args.o200k:
         selected = "o200k_base"
-    normalized = normalize_native_gpt_encoding_name(selected) or selected
-    native_gpt_encoding_vocab_size(normalized)
-    return normalized
+    return selected
+
+
+def _validate_fast_tokenizer_shortcuts(args: argparse.Namespace) -> str:
+    legacy_flags = [bool(args.tokgpt2), bool(args.cl100k), bool(args.o200k)]
+    if sum(1 for flag in legacy_flags if flag) > 1:
+        raise ValueError("Tokenizer flags are mutually exclusive.")
+    return _selected_tokenizer_name(args)
 
 
 def _download_dataset_if_needed(args: argparse.Namespace, encoding_name: str) -> tuple[str, Path, dict[str, Any]]:
@@ -245,7 +271,8 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         if str(args.native_cuda_output_dir or "").strip()
         else Path(args.output).with_suffix("")
     )
-    return build_native_gpt_compiled_cli_run_config(
+    native_gpt = _native_gpt_api()
+    return native_gpt.build_native_gpt_compiled_cli_run_config(
         dataset_alias=str(dataset_arg),
         executable=str(args.native_cuda_executable or "") or None,
         output_dir=output_dir,
@@ -296,6 +323,143 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         seq_len_explicit=bool(getattr(args, "_seq_len_explicit", True)),
         num_layers_explicit=bool(getattr(args, "_num_layers_explicit", True)),
     )
+
+
+def _resolve_native_compiled_cli_path(args: argparse.Namespace) -> str:
+    requested = str(args.native_cuda_executable or "").strip()
+    if requested:
+        return requested
+    for key in ("NFN_NATIVE_GPT_CLI", "NFN_NATIVE_GPT2_CLI"):
+        value = str(os.environ.get(key, "")).strip()
+        if value:
+            return value
+    linked = REPO_ROOT / "build" / "nfn_gpt_native_train_linked"
+    if linked.exists():
+        return str(linked)
+    return str(REPO_ROOT / "build" / "nfn_gpt_native_train")
+
+
+def _compiled_cli_uses_linked_tile_ops(path: str) -> bool:
+    return Path(path).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
+
+
+def _fast_final_lr_fraction(args: argparse.Namespace) -> float:
+    lr = float(args.learning_rate)
+    if args.min_lr is None or lr <= 0.0:
+        return 0.0
+    return max(0.0, min(float(args.min_lr) / lr, 1.0))
+
+
+def _fast_compiled_cli_argv(args: argparse.Namespace, dataset_arg: str | Path) -> list[str]:
+    cli_path = _resolve_native_compiled_cli_path(args)
+    output_dir = (
+        Path(args.native_cuda_output_dir)
+        if str(args.native_cuda_output_dir or "").strip()
+        else Path(args.output).with_suffix("")
+    )
+    template_name = str(args.template_name or "gpt")
+    activation = str(args.native_cuda_activation or "gelu")
+    if template_name.strip().lower().replace("-", "_") == "gpt2_moa" and activation == "gelu":
+        activation = "moa"
+    command = [
+        cli_path,
+        "--model-family",
+        str(args.model_family or DEFAULT_MODEL_FAMILY),
+        "--dataset-alias",
+        str(dataset_arg),
+        "--backend",
+        str(args.native_cuda_kernel_backend),
+        "--output-dir",
+        str(output_dir),
+        "--eval-every-steps",
+        str(int(args.eval_every_steps)),
+        "--eval-batches",
+        str(int(args.eval_batches)),
+        "--eval-batch-size",
+        str(int(args.eval_batch_size)),
+        "--train-loss-every-steps",
+        str(int(args.train_loss_every_steps)),
+        "--lm-head-row-chunk-size",
+        str(int(args.lm_head_row_chunk_size)),
+        "--native-cuda-sample-every",
+        str(int(args.native_cuda_sample_every)),
+        "--native-cuda-generate-tokens",
+        str(int(args.native_cuda_generate_tokens)),
+        "--native-cuda-checkpoint-every",
+        str(int(args.native_cuda_checkpoint_every)),
+        "--train-batch-tokens",
+        str(int(args.train_batch_tokens)),
+        "--learning-rate",
+        str(float(args.learning_rate)),
+        "--final-lr-fraction",
+        str(float(_fast_final_lr_fraction(args))),
+        "--weight-decay",
+        str(float(args.weight_decay)),
+        "--beta1",
+        str(float(args.beta1)),
+        "--beta2",
+        str(float(args.beta2)),
+        "--adam-eps",
+        str(float(args.adam_eps)),
+        "--grad-clip-norm",
+        str(float(args.grad_clip_norm)),
+        "--warmup-steps",
+        str(int(args.warmup_steps)),
+        "--max-steps",
+        str(int(args.max_steps)),
+        "--native-cuda-activation",
+        activation,
+    ]
+    if bool(getattr(args, "_batch_size_explicit", True)):
+        command.extend(["--batch-size", str(int(args.batch_size))])
+    if bool(getattr(args, "_seq_len_explicit", True)):
+        command.extend(["--train-seq-len", str(int(args.train_seq_len))])
+    if bool(getattr(args, "_num_layers_explicit", True)):
+        command.extend(["--num-layers", str(int(args.num_layers))])
+    tile_ops_lib = str(args.native_cuda_tile_ops_lib or "").strip()
+    if tile_ops_lib:
+        command.extend(["--tile-ops-lib", tile_ops_lib])
+    elif _compiled_cli_uses_linked_tile_ops(cli_path):
+        command.extend(["--tile-ops-lib", "linked"])
+    for attr, flag in (
+        ("native_cuda_smoke_tile_ops", "--smoke-tile-ops"),
+        ("native_cuda_smoke_nvfp4_pack", "--smoke-nvfp4-pack"),
+        ("native_cuda_smoke_optimizer_step", "--smoke-optimizer-step"),
+        ("native_cuda_smoke_lm_step", "--smoke-lm-step"),
+        ("native_cuda_smoke_attention_step", "--smoke-attention-step"),
+        ("native_cuda_smoke_mlp_step", "--smoke-mlp-step"),
+        ("native_cuda_smoke_norm_residual_step", "--smoke-norm-residual-step"),
+        ("native_cuda_smoke_transformer_block_step", "--smoke-transformer-block-step"),
+        ("native_cuda_smoke_transformer_lm_step", "--smoke-transformer-lm-step"),
+        ("native_cuda_smoke_embedding_lm_step", "--smoke-embedding-lm-step"),
+        ("train_embedding_lm", "--train-embedding-lm"),
+        ("train_transformer_lm", "--train-transformer-lm"),
+        ("require_cooperative_lm_head_backward", "--require-cooperative-lm-head-backward"),
+    ):
+        if bool(getattr(args, attr, False)):
+            command.append(flag)
+    if bool(args.native_cuda_no_checkpoint):
+        command.append("--no-checkpoint")
+    if str(args.native_cuda_cuda_runtime_lib or "").strip():
+        command.extend(["--cuda-runtime-lib", str(args.native_cuda_cuda_runtime_lib)])
+    if activation == "moa":
+        command.extend(["--native-cuda-moa-interval", str(int(args.native_cuda_moa_interval))])
+    if str(template_name or "").strip():
+        command.extend(["--template-name", template_name])
+    if str(args.graph_file or "").strip():
+        command.extend(["--graph-file", str(args.graph_file)])
+    if bool(args.native_cuda_print_plan):
+        command.append("--print-plan")
+    if bool(args.native_cuda_list_templates):
+        command.append("--list-templates")
+    if bool(args.native_cuda_check_tile_ops):
+        command.append("--check-tile-ops")
+    return command
+
+
+def _fast_compiled_cli_requested(args: argparse.Namespace) -> bool:
+    runner = str(args.native_cuda_runner or "compiled-cli").strip().lower().replace("_", "-")
+    return runner in {"", "auto", "compiled-cli"} and not bool(args.download_if_missing)
 
 
 def _compiled_cli_dataset_arg(args: argparse.Namespace) -> tuple[str, Path, str | Path]:
@@ -530,18 +694,49 @@ def main(argv: list[str] | None = None) -> int:
         args.template_name = "nanogpt"
     args.model_family = "gpt" if model_selector in {"gpt", "gpt2", "gpt3", "nanogpt"} else model_selector
     _apply_dataset_shortcuts(args)
-    encoding_name = _resolve_tokenizer(args)
     if not str(args.output or "").strip():
         args.output = str(DEFAULT_ARTIFACT)
     if args.device != "cuda":
         print("This harness is configured to run on CUDA only.", file=sys.stderr)
         return 1
+    if _fast_compiled_cli_requested(args) and not str(args.native_cuda_config_out or "").strip():
+        dataset_name, dataset_path, dataset_arg = _compiled_cli_dataset_arg(args)
+        command = _fast_compiled_cli_argv(args, dataset_arg)
+        tokenizer_name = _validate_fast_tokenizer_shortcuts(args)
+        print(f"Using dataset: {dataset_name}")
+        print(f"Tokenizer: {tokenizer_name}")
+        print(f"Native CUDA model family: {args.model_family}")
+        print(f"Native CUDA template: {args.template_name}")
+        if str(args.graph_file or "").strip():
+            print(f"Native CUDA graph file: {args.graph_file}")
+        print(f"Native CUDA dataset path: {dataset_path}")
+        print("Native CUDA shard resolution: compiled C++ frontend (deferred)")
+        print(f"Native CUDA validation eval: every {int(args.eval_every_steps)} optimizer steps")
+        print(f"Native CUDA LM-head row chunk size: {int(args.lm_head_row_chunk_size)}")
+        print(f"Native CUDA checkpoint export: {'disabled' if bool(args.native_cuda_no_checkpoint) else 'enabled'}")
+        print(f"Native CUDA runner: compiled-cli (requested={args.native_cuda_runner})")
+        print(f"Native CUDA kernel backend: {args.native_cuda_kernel_backend}")
+        output_dir = (
+            Path(args.native_cuda_output_dir)
+            if str(args.native_cuda_output_dir or "").strip()
+            else Path(args.output).with_suffix("")
+        )
+        print(f"Native CUDA output dir: {output_dir}")
+        if bool(args.native_cuda_print_command) or bool(args.native_cuda_dry_run):
+            import shlex
+
+            print(shlex.join(command))
+        if bool(args.native_cuda_dry_run):
+            return 0
+        return _exec_compiled_cli_fast(command)
+    encoding_name = _resolve_tokenizer(args)
 
     LOGGER.info("Starting GPT native CUDA harness run %s", args.run_id)
     LOGGER.info("CLI started at %s", datetime.now().isoformat(timespec="seconds"))
     LOGGER.info("Resolving dataset alias %s", args.dataset_alias)
 
-    runner_status = native_gpt_runner_status(str(args.native_cuda_runner))
+    native_gpt = _native_gpt_api()
+    runner_status = native_gpt.native_gpt_runner_status(str(args.native_cuda_runner))
     compiled_cli_deferred_dataset = False
     if runner_status.resolved == "compiled-cli" and _compiled_cli_defer_dataset_resolution(args):
         dataset_name, dataset_path, dataset_arg = _compiled_cli_dataset_arg(args)
@@ -570,7 +765,7 @@ def main(argv: list[str] | None = None) -> int:
             if str(args.native_cuda_output_dir or "").strip()
             else Path(args.output).with_suffix("")
         )
-        native_cfg, dataset_meta = build_native_gpt_run_config(
+        native_cfg, dataset_meta = native_gpt.build_native_gpt_run_config(
             dataset_name=dataset_name,
             dataset_path=dataset_path,
             dataset_meta=dataset_meta,
@@ -649,7 +844,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Estimated train rows: {rows}")
     print(f"Native CUDA output dir: {native_cfg.output_dir}")
     if str(args.native_cuda_config_out or "").strip():
-        write_native_gpt_run_config(
+        native_gpt = _native_gpt_api()
+        native_gpt.write_native_gpt_run_config(
             native_cfg,
             Path(args.native_cuda_config_out),
             runner=str(args.native_cuda_runner),
@@ -710,7 +906,8 @@ def main(argv: list[str] | None = None) -> int:
     LOGGER.info("Launching native CUDA GPT trainer")
     if runner_status.resolved == "compiled-cli":
         return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)
-    return run_native_gpt(native_cfg, runner=str(args.native_cuda_runner))
+    native_gpt = _native_gpt_api()
+    return native_gpt.run_native_gpt(native_cfg, runner=str(args.native_cuda_runner))
 
 
 if __name__ == "__main__":

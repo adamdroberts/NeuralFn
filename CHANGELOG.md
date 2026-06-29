@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native GPT direct wrapper startup: `cli/scripts/train_gpt_native.py` now
+  builds the default compiled-CLI command locally for cached-shard runs and
+  execs the compiled C++ trainer before importing `neuralfn.native_gpt`.
+  Dataset downloads, config export, and non-compiled runners still use the SDK
+  wrapper, while the fast path preserves tokenizer shortcut validation and the
+  linked Tile ops preference. Verification: focused startup pytest coverage,
+  direct `train_gpt_native.py` dry-run command inspection, `nfn train
+  --base-model gpt` dry-run command inspection, and Python bytecode
+  compilation.
+
 - Native GPT benchmark diagnostics: refreshed the rejected
   `lm_head_true_fused_tile16_wmma` profile text in both the focused LM-head
   wrapper and the full native candidate wrapper so CLI output reports the
