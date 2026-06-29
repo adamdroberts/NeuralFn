@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Native packed-attention batch-cap diagnostics: added the rejected
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_48` SM120
+  profile so the older 48+16 split packed-attention backward plan can be
+  reproduced through the same native-vs-native plus llm.kittens wrapper. The
+  CUDA 13.3.33 dedicated RTX 5090 3-step, 2-sample attention-section gate
+  proved the route by moving `attention_backward_tk_batch_cap` from `64` to
+  `48`, doubling `attention_backward_tk_launch_count` from `288` to `576`, and
+  setting chunk max/min/last to `48/16/16`. It remains rejected: train-loop
+  wall regressed to `1.008878x`, steady-state CUDA-event timing to
+  `1.008784x`, train tokens/sec fell to `0.991201x`,
+  `attention_backward_tk_timing_us` regressed to `1.063747x`, and
+  candidate-over-llm.kittens train-loop wall was `1.014399x`. The default cap
+  stays at `64`. Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`
+  and the same-script GPU gate above.
+
 - Native SDK C++ capture binding: extended `neuralfn._native_train` with
   `capture_train` / `capture_native_train`, implemented with POSIX
   `posix_spawnp()` plus stdout/stderr pipes, and added the public

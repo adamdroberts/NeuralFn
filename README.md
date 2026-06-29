@@ -3679,6 +3679,16 @@ current/native/reference gate changed `attention_backward_tk_batch_cap` from
 `64` to `96`, but regressed attention `to_qkv` to `1.000638x`, dprep timing to
 `1.000149x`, and still measured the candidate at `1.035674x` train-loop wall
 time versus llm.kittens.
+The older 48+16 split is available as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=packed_attention_bwd_batch_48` and is also
+rejected. The CUDA 13.3.33 dedicated RTX 5090 3-step/2-sample gate changed
+`attention_backward_tk_batch_cap` from `64` to `48`, doubled
+`attention_backward_tk_launch_count` from `288` to `576`, and set chunk
+max/min/last to `48/16/16`. It improved dprep timing to `0.934769x`, but
+regressed train-loop wall time to `1.008878x`, steady-state CUDA-event timing
+to `1.008784x`, train tokens/sec to `0.991201x`, and
+`attention_backward_tk_timing_us` to `1.063747x`; candidate-over-llm.kittens
+train-loop wall was `1.014399x`.
 The wrapper also keeps
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_attn_proj_dweight_h0_65536`
 rejected. It expands to

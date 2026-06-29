@@ -3691,6 +3691,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",
+        "packed_attention_bwd_batch_48": "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48",
         "packed_attention_bwd_batch_96": "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96",
         "cublaslt_grouped_probe_required": "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1",
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
