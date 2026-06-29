@@ -425,6 +425,16 @@
   `0.998998x` versus llm.kittens. The deferred first-step cost remains visible
   at `1.095859x` versus old native and `1.086035x` versus llm.kittens, so the
   profile continues to gate steady-state separately from first-step timing.
+- Native GPT benchmarking: refreshed the rejected
+  `trainer-chunk-true-fused-tile16-wmma-exp2-ce` LM-head preflight on the
+  dedicated RTX 5090 after the CUDA 13.3.33 reinstall. The branch still proves
+  `wmma-bf16-cooperative-tile-exp2-ce-experimental` and the strict true-fused
+  ABI path, but rejects at `11.873753x` candidate/current-wrapper,
+  `8.379202x` candidate/reference-summed, and `6.472768x`
+  candidate/reference-summed-with-logits time. The strict body took
+  `278.149017 ms`; dHidden/dWeight cycles dominate, so the profile remains
+  rejected and future LM-head work should target the matrix body rather than
+  exp2 CE math.
 
 - Native GPT benchmarking: added the rejected
   `short_run_forced_prewarm` SM120 candidate profile, which forces TK QKV

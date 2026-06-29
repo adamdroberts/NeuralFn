@@ -1058,6 +1058,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `NFN_SM120_*_LM_HEAD_BACKWARD_MAX_TRUE_FUSED_*_CYCLES_PER_BLOCK` aliases
       into that focused preflight so known-slow strict sections fail before the
       full paired trainer benchmark starts.
+      A 2026-06-29 CUDA 13.3.33 one-iteration focused rerun on the dedicated
+      RTX 5090 reconfirmed the same branch as rejected after the CUDA reinstall:
+      `11.873753x` candidate/current-wrapper, `8.379202x`
+      candidate/reference-summed, and `6.472768x`
+      candidate/reference-summed-with-logits time. The strict body took
+      `278.149017 ms`, with dHidden and dWeight still dominating at
+      `307486024.709804` and `498988900.996078` cycles/block, so exp2 CE is
+      not the next useful true-fused direction.
     - 2026-06-29 added the rejected-by-default
       `trainer-chunk-true-fused-tile16-wmma-warp32` focused profile and
       `lm_head_true_fused_tile16_wmma_warp32` SM120 full-loop preflight. The

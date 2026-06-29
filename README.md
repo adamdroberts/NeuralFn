@@ -2993,10 +2993,12 @@ and
 run the same-script focused/full-loop gates. This is a diagnostic bisection
 only; the default CUDA Graph LM-head wrapper remains active until a strict body
 beats current-wrapper and llm.kittens reference gates.
-The dedicated RTX 5090 focused gate currently rejects this exp2 CE variant at
-`2.658957x` candidate/current-wrapper and `7.842695x`
-candidate/reference-summed time; a relaxed diagnostic rerun confirms the strict
-ABI path at `2.592639x` and `7.863436x`.
+The dedicated RTX 5090 focused gate rejects this exp2 CE variant. The latest
+CUDA 13.3.33 one-iteration rerun on 2026-06-29 proved the strict ABI path, but
+measured `11.873753x` candidate/current-wrapper, `8.379202x`
+candidate/reference-summed, and `6.472768x`
+candidate/reference-summed-with-logits time; dHidden/dWeight cycles dominated,
+so exp2 CE is not the next useful strict-body direction.
 For dHidden/dWeight occupancy bisection, add
 `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` to the tile16 WMMA build and set
 `NFN_TILE_CUDA_CE_BF16_THREADS=32`. The ABI implementation class reports

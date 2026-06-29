@@ -2862,6 +2862,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile24.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile8.so" in wrapper_source
     assert "nfn_lm_head_backward_tile_ops_true_fused_tile4.so" in wrapper_source
+    assert "11.873753x candidate/current-wrapper" in wrapper_source
+    assert "8.379202x candidate/reference-summed" in wrapper_source
+    assert "6.472768x candidate/reference-summed-with-logits" in wrapper_source
+    assert "307486024.709804 and 498988900.996078 cycles/block" in wrapper_source
     assert "37.738071x candidate/baseline" in wrapper_source
     assert "113.697403x candidate/reference-summed" in wrapper_source
     assert "4510.827989 ms slower" in wrapper_source
@@ -3043,6 +3047,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16-wmma-warp32\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile16-wmma-exp2-ce\"" in bench_source
+    assert "11.873753x candidate/current-wrapper" in bench_source
+    assert "8.379202x candidate/reference-summed" in bench_source
+    assert "6.472768x candidate/reference-summed-with-logits" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile24\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile8\"" in bench_source
     assert "LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=\"trainer-chunk-true-fused-tile4\"" in bench_source
