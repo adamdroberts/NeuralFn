@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native no-Torch full-requirements guard: `tools/check_native_no_torch_deps.py`
+  now also scans `requirements-full.txt` for `torch`, `torchvision`, and
+  `torchaudio`. The default `requirements.txt` gate still blocks all non-core
+  packages, while the full workstation requirements file can keep server,
+  dataset, tokenizer, and graph helpers without reintroducing Torch-family
+  dependencies. Verification: focused native no-Torch dependency test and
+  `--skip-artifacts --json` verifier run.
+
 - SM120 candidate benchmark long-run policy alignment:
   `tools/bench_native_gpt_sm120_candidate.sh` now applies
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` to both default no-profile

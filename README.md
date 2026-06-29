@@ -58,7 +58,10 @@ pip install -e ".[all]"           # full native/server/dataset workstation, with
 `.[all]` intentionally excludes Torch, and there is no `.[torch]` extra. If you
 need to run legacy graph-backed Torch code while it still exists in the tree,
 install PyTorch explicitly in that environment outside NeuralFn's package
-metadata.
+metadata. The no-Torch dependency gate checks both `requirements.txt` and
+`requirements-full.txt`; the full requirements file may include server,
+dataset, tokenizer, and graph helpers, but it must not reintroduce Torch-family
+packages.
 
 CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from
@@ -2550,6 +2553,10 @@ that Torch, NumPy, and `tiktoken` are absent from `sys.modules` after accessing
 the public native training helpers and the lean scalar trainer / inference
 exports (`SurrogateTrainer`, `EvolutionaryTrainer`, `HybridTrainer`,
 `InferenceCache`, and related configs), so cached module pollution cannot hide a
+failure. The dependency portion of the report also checks
+`requirements-full.txt` for `torch`, `torchvision`, and `torchaudio`, so the
+full native/server/dataset workstation install stays free of Torch-family
+packages while still allowing non-default server and dataset dependencies.
 regression in the native SDK boundary. The verifier also covers the native benchmark shell
 wrappers in dry-run mode, including `tools/bench_linear_backward_candidate.sh`
 and `tools/bench_native_gpt_linear_hot_matrix.sh`, so performance-gate helpers

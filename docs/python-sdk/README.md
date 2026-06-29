@@ -79,9 +79,11 @@ when callers access Torch-backed exports such as `TorchTrainer`,
 
 `python tools/check_native_no_torch_deps.py` verifies both sides of that
 contract: it checks `pyproject.toml` so Torch, NumPy, tokenizer, dataset, graph,
-and server packages remain optional-only, checks the compiled native GPT
-artifacts with `ldd` for Torch, c10, or Python runtime libraries, then imports
-the public lean trainer/inference exports (`SurrogateTrainer`,
+and server packages remain optional-only, checks `requirements.txt` for the same
+default-install contract, checks `requirements-full.txt` specifically for
+Torch-family packages, checks the compiled native GPT artifacts with `ldd` for
+Torch, c10, or Python runtime libraries, then imports the public lean
+trainer/inference exports (`SurrogateTrainer`,
 `EvolutionaryTrainer`, `HybridTrainer`, `InferenceCache`, and their lightweight
 configs/helpers) under the same blocker before running the
 default native GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA

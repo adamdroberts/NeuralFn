@@ -316,6 +316,16 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "torchaudio",
         "uvicorn",
     ]
+    requirements_full_dependencies = payload["requirements_full_dependencies"]
+    assert requirements_full_dependencies["name"] == "requirements_full_dependencies"
+    assert requirements_full_dependencies["exists"] is True
+    assert requirements_full_dependencies["passed"] is True
+    assert requirements_full_dependencies["offenders"] == []
+    assert requirements_full_dependencies["forbidden_dependency_prefixes"] == [
+        "torch",
+        "torchvision",
+        "torchaudio",
+    ]
     entrypoints = {entry["name"]: entry for entry in payload["python_entrypoints"]}
     assert entrypoints["train_gpt_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_fast_command"]["elapsed_seconds"] >= 0.0

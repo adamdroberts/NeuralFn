@@ -2430,9 +2430,12 @@ regression.
 
 `tools/check_native_no_torch_deps.py` is the native dependency gate for this
 path. In addition to checking `pyproject.toml` and `requirements.txt` so Torch
-stays out of default dependencies and the aggregate `.[all]` extra, it also
-checks generated `neuralfn.egg-info` metadata when present so stale generated
-package files cannot re-advertise default dependencies or a `torch` extra. It
+stays out of default dependencies and the aggregate `.[all]` extra, it checks
+`requirements-full.txt` for `torch`, `torchvision`, and `torchaudio` so the full
+native/server/dataset workstation install cannot reintroduce Torch-family
+packages. It also checks generated `neuralfn.egg-info` metadata when present so
+stale generated package files cannot re-advertise default dependencies or a
+`torch` extra. It
 runs `ldd` checks for Torch/c10/Python runtime libraries on the required
 dense GPT fast-path artifacts: `build/nfn_gpt_native_train`,
 `build/nfn_gpt_native_train_linked`, `build/nfn_gpt2_native_train`,

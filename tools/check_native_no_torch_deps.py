@@ -2129,8 +2129,13 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
     }
 
 
-def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
-    requirements = repo_root / "requirements.txt"
+def requirements_dependency_report(
+    repo_root: Path,
+    filename: str = "requirements.txt",
+    name: str = "requirements_default_dependencies",
+    forbidden_prefixes: tuple[str, ...] = FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES,
+) -> dict[str, object]:
+    requirements = repo_root / filename
     offenders: list[str] = []
     if requirements.exists():
         for raw_line in requirements.read_text(encoding="utf-8").splitlines():
@@ -2138,7 +2143,7 @@ def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
             if not dependency or dependency.startswith(("-", "--")):
                 continue
             normalized = dependency.lower().replace("_", "-")
-            for prefix in FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES:
+            for prefix in forbidden_prefixes:
                 if (
                     normalized == prefix
                     or normalized.startswith(prefix + ">")
@@ -2150,12 +2155,12 @@ def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
                     offenders.append(raw_line.strip())
                     break
     return {
-        "name": "requirements_default_dependencies",
+        "name": name,
         "path": str(requirements),
         "exists": requirements.exists(),
         "passed": not offenders,
         "offenders": offenders,
-        "forbidden_dependency_prefixes": list(FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES),
+        "forbidden_dependency_prefixes": list(forbidden_prefixes),
     }
 
 
@@ -2285,12 +2290,20 @@ def main() -> int:
     catalog_report: dict[str, object] | None = None
     dependency_report: dict[str, object] | None = None
     requirements_report: dict[str, object] | None = None
+    requirements_full_report: dict[str, object] | None = None
     egg_info_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
         requirements_report = requirements_dependency_report(repo_root)
         failed = failed or not bool(requirements_report["passed"])
+        requirements_full_report = requirements_dependency_report(
+            repo_root,
+            filename="requirements-full.txt",
+            name="requirements_full_dependencies",
+            forbidden_prefixes=("torch", "torchvision", "torchaudio"),
+        )
+        failed = failed or not bool(requirements_full_report["passed"])
         egg_info_report = egg_info_dependency_report(repo_root)
         failed = failed or not bool(egg_info_report["passed"])
         python_report = python_entrypoint_report(
@@ -2322,6 +2335,7 @@ def main() -> int:
                     "artifacts": artifact_report,
                     "project_dependencies": dependency_report,
                     "requirements_dependencies": requirements_report,
+                    "requirements_full_dependencies": requirements_full_report,
                     "egg_info_dependencies": egg_info_report,
                     "python_entrypoints": python_report,
                     "shell_entrypoints": shell_report,
@@ -2383,6 +2397,13 @@ def main() -> int:
             else:
                 print(f"{requirements_report['name']}: failed", file=sys.stderr)
                 for dependency in requirements_report["offenders"]:
+                    print(f"  requirement dependency: {dependency}", file=sys.stderr)
+        if requirements_full_report is not None:
+            if requirements_full_report["passed"]:
+                print(f"{requirements_full_report['name']}: ok")
+            else:
+                print(f"{requirements_full_report['name']}: failed", file=sys.stderr)
+                for dependency in requirements_full_report["offenders"]:
                     print(f"  requirement dependency: {dependency}", file=sys.stderr)
         if egg_info_report is not None:
             if egg_info_report["passed"]:
