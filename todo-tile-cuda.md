@@ -164,7 +164,12 @@ Real training tensors must not pass through graph editor node objects.
   eager-prewarm baseline against the deferred-prewarm candidate by setting
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999` on the baseline and `=1`
   on the candidate, then requiring the `native_fast_startup_prewarm_policy`
-  strategy value to change.
+  strategy value to change. After the CUDA 13.3 WSL reinstall, the same profile
+  also gates `setup_wall_ms<=0.900x`,
+  `train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`, and
+  `startup_plus_steady_state_step_wall_ms<=0.950x`, so the expected deferred
+  first-step prewarm cost remains visible while long-run steady-state evidence
+  is still enforced.
 
 ## Current SM120 parity baseline
 
