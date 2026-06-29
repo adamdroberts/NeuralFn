@@ -306,7 +306,11 @@ Tune it with `NFN_SM120_CUDA13_PARITY_STEPS`,
 fast CUDA-only smoke checks that intentionally skip the reference comparison.
 The default parity leg uses 20 steps, 5 samples, and 2 warmup samples so the
 steady-state ratio is averaged over more real training steps and is not
-dominated by first-step jitter. If
+dominated by first-step jitter. Keep the default at two warmup pairs unless a
+same-script gate proves a higher value is better: a 2026-06-29 dedicated RTX
+5090 check with 5 measured steps, 3 samples, and 3 warmup pairs regressed the
+median steady-state CUDA-event ratio to `1.003405x` and failed the existing
+`1.003` parity gate. If
 `NFN_SM120_CUDA13_PARITY_STEPS=1`, the validator disables the parity ratio gate
 by default because one-step smokes do not emit steady-state timing; set
 `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE=1` only when intentionally checking that

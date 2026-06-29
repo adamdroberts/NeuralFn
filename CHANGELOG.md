@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native SM120 parity warmup policy: kept the parity wrapper and CUDA 13.3
+  validator defaults at two warmup pairs after a 2026-06-29 dedicated RTX 5090
+  same-script check with three warmup pairs regressed the median steady-state
+  CUDA-event ratio to `1.003405x` and failed the existing `1.003` parity gate.
+  The benchmark wrapper now documents that measured rejection beside the default
+  so warmup is not increased to mask the remaining kernel gap.
+
 - Native CUDA 13.3 validation gates: `tools/validate_sm120_cuda13.sh` and the
   reusable `tools/paired_kernel_speed.py` native runtime contract now require
   root-level setup/train timing metrics (`setup_wall_ms`,
