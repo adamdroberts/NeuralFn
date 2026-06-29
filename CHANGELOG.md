@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native no-Torch artifact contract gate: `tools/check_native_no_torch_deps.py`
+  now requires compiled GPT trainer binaries to contain the runtime JSON markers
+  that prove the native gate can observe graph-editor tensor flow, Torch usage,
+  optimized-kernel contract status, and SM120 build-contract telemetry. This
+  catches stale `nfn_gpt_native_train*` artifacts that would otherwise pass
+  `ldd` checks while missing the fields used by native speed gates.
+  Verification: focused native verifier tests.
+
 - Native SM120 candidate benchmark warmup: `tools/bench_native_gpt_sm120_candidate.sh`
   now defaults to three warmup pairs for candidate-vs-current/reference speed
   gates unless the caller overrides `NFN_SM120_NATIVE_WARMUP`,

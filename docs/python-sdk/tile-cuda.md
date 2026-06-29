@@ -2441,7 +2441,13 @@ dense GPT fast-path artifacts: `build/nfn_gpt_native_train`,
 `build/libnfn_native_train_tile_ops.so`, and the SDK C++ bindings
 `neuralfn/_native_gpt.*.so`, `neuralfn/_native_gpt2.*.so`, and
 `neuralfn/_native_train.*.so`. Optional per-family trainers already present in
-`build/` are scanned as additional evidence. It also budget-checks direct
+`build/` are scanned as additional evidence. The GPT trainer artifacts must
+also contain the runtime JSON contract markers used by native speed gates,
+including `graph_editor_tensor_flow`, `torch_required`,
+`optimized_kernel_contract_passed`,
+`attention_backward_dprep_default_warps_per_block`, `sm120_memory_block_size`,
+and `sm120_layernorm_bwd_blocks_per_sm`, so stale binaries cannot pass the
+artifact check after native contract fields change. It also budget-checks direct
 native trainer metadata startup through
 `build/nfn_gpt_native_train_linked --list-templates`,
 `build/nfn_gpt2_native_train --list-templates`, and

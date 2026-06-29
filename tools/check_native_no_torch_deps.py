@@ -199,6 +199,20 @@ FORBIDDEN_LIBRARY_MARKERS = (
     "libc10_cuda",
     "libpython",
 )
+NATIVE_GPT_RUNTIME_CONTRACT_MARKERS = (
+    b'"graph_editor_tensor_flow"',
+    b'"torch_required"',
+    b'"optimized_kernel_contract_required"',
+    b'"optimized_kernel_contract_passed"',
+    b'"attention_backward_dprep_default_warps_per_block"',
+    b'"sm120_memory_block_size"',
+    b'"sm120_layernorm_bwd_blocks_per_sm"',
+)
+REQUIRED_ARTIFACT_STRING_MARKERS = {
+    Path("build/nfn_gpt_native_train"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
+    Path("build/nfn_gpt_native_train_linked"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
+    Path("build/nfn_gpt2_native_train"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
+}
 FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "torch",
     "numpy",
@@ -1241,6 +1255,29 @@ def ldd_output(path: Path) -> str:
     return proc.stdout
 
 
+def required_artifact_string_markers(path: Path, repo_root: Path) -> tuple[bytes, ...]:
+    try:
+        rel_path = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        rel_path = path
+    return REQUIRED_ARTIFACT_STRING_MARKERS.get(rel_path, ())
+
+
+def missing_artifact_string_markers(path: Path, repo_root: Path) -> list[str]:
+    markers = required_artifact_string_markers(path, repo_root)
+    if not markers:
+        return []
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return [f"<read error: {exc}>"]
+    return [
+        marker.decode("utf-8", errors="replace")
+        for marker in markers
+        if marker not in data
+    ]
+
+
 def rebuild_stale_artifact(path: Path, repo_root: Path) -> dict[str, object]:
     command = artifact_rebuild_command(path, repo_root)
     if command is None:
@@ -2209,6 +2246,11 @@ def main() -> int:
                 "artifact": str(path),
                 "exists": path.exists(),
                 "forbidden": [],
+                "required_string_markers": [
+                    marker.decode("utf-8", errors="replace")
+                    for marker in required_artifact_string_markers(path, repo_root)
+                ],
+                "missing_string_markers": [],
                 "source_dependencies": [
                     str(source) for source in artifact_source_dependencies(path, repo_root)
                 ],
@@ -2229,6 +2271,10 @@ def main() -> int:
             ]
             entry["forbidden"] = forbidden
             if forbidden:
+                failed = True
+            missing_markers = missing_artifact_string_markers(path, repo_root)
+            entry["missing_string_markers"] = missing_markers
+            if missing_markers:
                 failed = True
             if stale_sources:
                 failed = True
@@ -2314,6 +2360,10 @@ def main() -> int:
                         print(str(rebuild["stderr"]), file=sys.stderr)
                 for source in entry["stale_sources"]:
                     print(f"  source newer than artifact: {source['source']}", file=sys.stderr)
+            elif entry.get("missing_string_markers"):
+                print(f"{entry['artifact']}: missing native runtime contract markers", file=sys.stderr)
+                for marker in entry["missing_string_markers"]:
+                    print(f"  missing marker: {marker}", file=sys.stderr)
             else:
                 print(f"{entry['artifact']}: ok")
         if dependency_report is not None:

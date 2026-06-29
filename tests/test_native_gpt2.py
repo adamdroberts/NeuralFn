@@ -601,6 +601,27 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
     assert "neuralfn/_native_gpt2.*.so" in module.REQUIRED_DEFAULT_ARTIFACT_GLOBS
     assert "neuralfn/_native_train.*.so" in module.REQUIRED_DEFAULT_ARTIFACT_GLOBS
     assert not module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
+    runtime_markers = {
+        marker.decode("utf-8")
+        for marker in module.NATIVE_GPT_RUNTIME_CONTRACT_MARKERS
+    }
+    assert runtime_markers >= {
+        '"graph_editor_tensor_flow"',
+        '"torch_required"',
+        '"optimized_kernel_contract_required"',
+        '"optimized_kernel_contract_passed"',
+        '"attention_backward_dprep_default_warps_per_block"',
+        '"sm120_memory_block_size"',
+        '"sm120_layernorm_bwd_blocks_per_sm"',
+    }
+    assert module.required_artifact_string_markers(
+        root / "build" / "nfn_gpt_native_train_linked",
+        root,
+    ) == module.NATIVE_GPT_RUNTIME_CONTRACT_MARKERS
+    assert module.required_artifact_string_markers(
+        root / "build" / "nfn_train_gpt",
+        root,
+    ) == ()
 
 
 def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: Path) -> None:
@@ -629,6 +650,34 @@ def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: P
     assert stale_sources
     assert stale_sources[0]["source"] == "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"
     assert stale_sources[0]["exists"] is True
+
+
+def test_native_no_torch_dependency_verifier_requires_runtime_contract_markers(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    artifact = tmp_path / "build" / "nfn_gpt_native_train_linked"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(
+        b'"graph_editor_tensor_flow"\0'
+        b'"torch_required"\0'
+        b'"optimized_kernel_contract_required"\0'
+    )
+
+    missing = module.missing_artifact_string_markers(artifact, tmp_path)
+
+    assert '"optimized_kernel_contract_passed"' in missing
+    assert '"attention_backward_dprep_default_warps_per_block"' in missing
+    assert '"sm120_memory_block_size"' in missing
+    assert '"sm120_layernorm_bwd_blocks_per_sm"' in missing
 
 
 def test_native_no_torch_dependency_verifier_rebuilds_missing_artifacts(tmp_path: Path) -> None:
