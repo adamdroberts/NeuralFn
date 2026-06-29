@@ -2,11 +2,24 @@
 
 ## Unreleased
 
+- Native GPT benchmark warmup policy: raised the deferred-prewarm parity
+  wrapper warmup floor from two to three measured order pairs. Default
+  no-profile and `long_run_defer_prewarm` runs still record
+  `default_long_run_defer_prewarm_min_warmup_applied` or
+  `long_run_defer_prewarm_min_warmup_applied` when the wrapper raises a lower
+  requested warmup. The longer floor keeps first-use/prewarm noise out of the
+  steady-state gate while preserving the explicit
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` escape hatch for
+  first-use diagnostics. Verification: 5-step, 2-sample same-script native
+  vs llm.kittens parity benchmark with 3 warmup pairs passed and reported
+  steady-state CUDA-event timing at `0.997167x` plus steady-state tokens/sec at
+  `1.004182x` versus the reference.
+
 - Native GPT benchmark warmup policy: the default no-profile long-run
   deferred-prewarm path now applies the same low-warmup floor as the named
   `long_run_defer_prewarm` profile. When the wrapper auto-adds
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` and the requested warmup is
-  below `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP` (default `2`), it
+  below `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP`, it
   raises warmup and records
   `default_long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata.
   This keeps no-profile parity runs from treating first-use prewarm noise as
