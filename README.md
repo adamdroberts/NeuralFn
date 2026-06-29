@@ -195,8 +195,9 @@ diagnostic-only startup profile. It sets
 `concurrent_parameter_init_count` while token-weight initialization and
 independent non-token parameter fill run on separate nonblocking CUDA streams.
 The 2026-06-29 dedicated RTX 5090 paired gate kept it off by default:
-steady-state step time improved to `0.999003x`, but setup wall regressed to
-`1.005540x` and startup-plus-first-step to `1.001449x`.
+setup wall improved to `0.983885x` and startup-plus-first-step to `0.995546x`,
+but train-loop wall regressed to `1.001353x`, steady-state step time to
+`1.001590x`, and tokens/sec fell to `0.998651x`.
 The `lm_head_row_chunk_28672` profile is the current LM-head row-chunk default:
 the CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample gate beat the prior
 32768-row route at `0.998291x` train-loop wall time, `0.998019x` steady-state

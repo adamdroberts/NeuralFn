@@ -3152,7 +3152,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"concurrent_parameter_init"|"concurrent-parameter-init"' in bench_source
     assert "NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1" in bench_source
     assert "concurrent_parameter_init_enabled" in bench_source
-    assert "setup_wall_ms regressed to 1.005540x mean" in bench_source
+    assert "setup_wall_ms improving to 0.983885x" in bench_source
     assert "startup_plus_first_step_wall_ms=0.998" in bench_source
     assert '"lm_head_graph_thread_cache_prewarm"|"lm-head-graph-thread-cache-prewarm"' in bench_source
     assert '"lm_head_graph_upload_off"|"lm-head-graph-upload-off"' in bench_source
@@ -12243,6 +12243,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_CONCURRENT_PARAMETER_INIT" in gpt2_source_text
     assert "initialize_token_weight(token_init_stream)" in gpt2_source_text
     assert "fill_nonzero_parameters(parameter_fill_stream)" in gpt2_source_text
+    assert (
+        gpt2_source_text.index("run_setup_timed(\"setup.concurrent_parameter_init\"")
+        < gpt2_source_text.index("run_setup_cuda_timed(\"setup.token_weight_bf16_initial_refresh\"")
+    )
     assert '\\"concurrent_parameter_init_requested\\"' in gpt2_source_text
     assert '\\"concurrent_parameter_init_enabled\\"' in gpt2_source_text
     assert '\\"concurrent_parameter_init_count\\"' in gpt2_source_text

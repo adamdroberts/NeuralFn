@@ -224,7 +224,8 @@ before BF16 block-weight refresh and training. Runtime JSON reports
 `concurrent_parameter_init_count`; the paired SM120 wrapper exposes the same
 route as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init`. It is
 off by default because the latest paired gate rejected startup promotion even
-though steady-state training was slightly faster.
+though startup wall time improved; the same run showed a small training-loop
+regression.
 
 For long CUDA runs, `on_step` is usually the right hook for live CLI progress because it fires once per warmup step and once per optimizer step instead of waiting for epoch boundaries.
 

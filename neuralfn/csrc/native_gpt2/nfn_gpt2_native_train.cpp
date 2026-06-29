@@ -17860,21 +17860,6 @@ int run_transformer_lm_training_json(
             initialize_token_weight(nullptr);
         }
     });
-    auto refresh_token_weight_bf16 = [&](const std::string& name) {
-        if (!token_weight_bf16_shadow_enabled || token_weight_bf16 == nullptr || !error.empty()) {
-            return;
-        }
-        run(float32_to_bf16_bits(token_weight, token_weight_bf16, kTokenWeightElements, nullptr), name);
-        if (error.empty()) {
-            token_weight_bf16_refresh_count += 1;
-        }
-    };
-    run_setup_cuda_timed("setup.token_weight_bf16_initial_refresh", [&]() {
-        if (token_weight_bf16_initial_refresh_elided) {
-            return;
-        }
-        refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
-    });
     auto fill_nonzero_parameters = [&](void* stream) {
         if (error.empty() &&
             parameter_fill_descriptor_count > 0 &&
@@ -17983,6 +17968,21 @@ int run_transformer_lm_training_json(
         if (error.empty()) {
             concurrent_parameter_init_count += 1;
         }
+    });
+    auto refresh_token_weight_bf16 = [&](const std::string& name) {
+        if (!token_weight_bf16_shadow_enabled || token_weight_bf16 == nullptr || !error.empty()) {
+            return;
+        }
+        run(float32_to_bf16_bits(token_weight, token_weight_bf16, kTokenWeightElements, nullptr), name);
+        if (error.empty()) {
+            token_weight_bf16_refresh_count += 1;
+        }
+    };
+    run_setup_cuda_timed("setup.token_weight_bf16_initial_refresh", [&]() {
+        if (token_weight_bf16_initial_refresh_elided) {
+            return;
+        }
+        refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
     });
     auto refresh_block_weight_bf16 = [&](const std::string& name) {
         if (!error.empty()) {

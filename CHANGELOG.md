@@ -11,13 +11,14 @@
   reports `concurrent_parameter_init_requested`,
   `concurrent_parameter_init_enabled`, and `concurrent_parameter_init_count`,
   and paired benchmark extraction includes those fields for route-change gates.
-  The 2026-06-29 dedicated RTX 5090 3-sample, 10-step paired run kept the
-  profile rejected for default promotion because `setup_wall_ms` regressed to
-  `1.005540x` and `startup_plus_first_step_wall_ms` to `1.001449x`, despite
-  steady-state CUDA-event step time improving to `0.999003x` and
-  candidate/reference steady-state improving to `0.996869x`. Verification:
-  shell syntax, focused native GPT source-contract pytest, linked C++ trainer
-  build, saved-profile parser check, and live paired candidate benchmark.
+  The 2026-06-29 dedicated RTX 5090 3-sample, 10-step native-only paired run
+  kept the profile rejected for default promotion because train-loop wall time
+  regressed to `1.001353x`, steady-state CUDA-event step time regressed to
+  `1.001590x`, and tokens/sec fell to `0.998651x`, despite setup wall improving
+  to `0.983885x` and startup-plus-first-step improving to `0.995546x`.
+  Verification: shell syntax, focused native GPT source-contract pytest, linked
+  C++ trainer build, saved-profile parser check, live paired candidate
+  benchmark, and corrected-order native-only paired candidate benchmark.
 
 - Native GPT runtime contract: the no-Torch native artifact verifier and paired
   speed runtime gate now require LM-head route attribution fields
