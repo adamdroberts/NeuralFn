@@ -918,7 +918,7 @@ names and the short `NFN_SM120_CANDIDATE_*` names; for example,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, and
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` now affect the paired
 workload instead of falling back to the default 10-step/3-sample run.
-Without an explicit warmup override, the native candidate wrapper now uses five
+Without an explicit warmup override, the native candidate wrapper now uses seven
 warmup pairs before the measured candidate/current/reference samples.
 For non-Lt cuBLAS initialization bisection, use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm`. The profile keeps
@@ -2677,6 +2677,10 @@ knobs are present but tracked counters, strategy values, and linear-shape plan
 metadata are unchanged, the text output warns that timing-only improvements
 should be treated as noise until a route, strategy, or separate kernel-level
 attribution confirms the candidate.
+Paired JSON also includes `native_candidate_attribution`, a stable summary with
+`status`, `has_kernel_attribution`, and `candidate_differs_from_baseline` so
+automated sweeps can separate real CUDA Tile route evidence from baseline
+self-checks or setup-only/prewarm changes.
 For startup bisections, native metric extraction also derives
 `startup_plus_first_step_wall_ms`, `startup_plus_steady_state_step_wall_ms`, and
 `startup_plus_train_loop_wall_ms` whenever `setup_wall_ms` and the matching

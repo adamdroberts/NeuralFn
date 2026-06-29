@@ -2992,6 +2992,64 @@ def evaluate_native_route_change_gate(
     }
 
 
+def summarize_native_candidate_attribution(
+    *,
+    baseline_command: Sequence[str],
+    candidate_command: Sequence[str],
+    baseline_env: Mapping[str, str],
+    candidate_env: Mapping[str, str],
+    route_changes: dict[str, object],
+    strategy_changes: dict[str, object],
+    linear_shape_stats: dict[str, object],
+    cublaslt_plan_cache: dict[str, object],
+) -> dict[str, object]:
+    has_hot_route_counter_change = route_changes.get("has_hot_route_counter_change") is True
+    has_setup_only_route_counter_change = (
+        route_changes.get("has_setup_only_route_counter_change") is True
+    )
+    has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
+    has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
+    has_plan_cache_change = bool(cublaslt_plan_cache.get("has_plan_cache_change"))
+    has_kernel_attribution = (
+        has_hot_route_counter_change
+        or has_strategy_value_change
+        or has_linear_shape_change
+        or has_plan_cache_change
+    )
+    candidate_differs = list(baseline_command) != list(candidate_command) or dict(
+        baseline_env
+    ) != dict(candidate_env)
+    if has_kernel_attribution:
+        status = "kernel-route-attributed"
+        timing_interpretation = (
+            "candidate ratios are attributable to a hot route, strategy, shape, "
+            "or plan-cache change"
+        )
+    elif has_setup_only_route_counter_change:
+        status = "setup-only-attributed"
+        timing_interpretation = (
+            "candidate ratios are setup/prewarm evidence only; do not promote "
+            "throughput changes without hot-route attribution"
+        )
+    else:
+        status = "unattributed"
+        timing_interpretation = (
+            "candidate ratios are measurement-only evidence; treat timing deltas "
+            "as noise until a kernel route is attributed"
+        )
+    return {
+        "status": status,
+        "has_kernel_attribution": bool(has_kernel_attribution),
+        "has_hot_route_counter_change": bool(has_hot_route_counter_change),
+        "has_setup_only_route_counter_change": bool(has_setup_only_route_counter_change),
+        "has_strategy_value_change": bool(has_strategy_value_change),
+        "has_linear_shape_change": bool(has_linear_shape_change),
+        "has_cublaslt_plan_cache_change": bool(has_plan_cache_change),
+        "candidate_differs_from_baseline": bool(candidate_differs),
+        "timing_interpretation": timing_interpretation,
+    }
+
+
 def linear_shape_key(row: dict[str, object]) -> str | None:
     path_name = row.get("path_name")
     m = row.get("m")
@@ -5342,6 +5400,16 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         linear_shape_stats=native_linear_shape_stats,
         cublaslt_plan_cache=native_cublaslt_plan_cache,
     )
+    payload["native_candidate_attribution"] = summarize_native_candidate_attribution(
+        baseline_command=baseline.argv,
+        candidate_command=candidate.argv,
+        baseline_env=baseline.env_overrides,
+        candidate_env=candidate.env_overrides,
+        route_changes=native_route_counter_changes,
+        strategy_changes=native_strategy_value_changes,
+        linear_shape_stats=native_linear_shape_stats,
+        cublaslt_plan_cache=native_cublaslt_plan_cache,
+    )
     return payload
 
 
@@ -5678,6 +5746,21 @@ def print_text(payload: dict[str, object]) -> None:
                 "throughput improvements as setup noise until a hot training "
                 "route, strategy, shape, or plan-cache change confirms the candidate."
             )
+    attribution = payload.get("native_candidate_attribution")
+    if isinstance(attribution, dict):
+        print(
+            "  native_candidate_attribution: "
+            f"status={attribution.get('status', '')} "
+            f"kernel={str(attribution.get('has_kernel_attribution', False)).lower()} "
+            f"hot_route_counter={str(attribution.get('has_hot_route_counter_change', False)).lower()} "
+            f"strategy={str(attribution.get('has_strategy_value_change', False)).lower()} "
+            f"linear_shape={str(attribution.get('has_linear_shape_change', False)).lower()} "
+            f"cublaslt_plan_cache={str(attribution.get('has_cublaslt_plan_cache_change', False)).lower()} "
+            f"candidate_differs={str(attribution.get('candidate_differs_from_baseline', False)).lower()}"
+        )
+        interpretation = attribution.get("timing_interpretation")
+        if isinstance(interpretation, str) and interpretation:
+            print(f"    note: {interpretation}.")
     route_gate = payload.get("native_route_change_gate")
     if isinstance(route_gate, dict) and route_gate.get("enabled") is True:
         print(f"  native_route_change_gate: passed={str(route_gate.get('passed', False)).lower()}")

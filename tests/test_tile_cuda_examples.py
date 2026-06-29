@@ -4164,6 +4164,8 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "passed": True,
         "required_hot_route_counters": [],
         "missing_required_hot_route_counters": [],
+        "required_strategy_value_changes": [],
+        "missing_required_strategy_value_changes": [],
         "has_route_counter_change": False,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
@@ -4175,10 +4177,26 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert strategy_changes["has_strategy_value_change"] is False
     assert strategy_changes["changed_count"] == 0
     assert strategy_changes["tracked_count"] == 0
+    assert payload["native_candidate_attribution"] == {
+        "status": "unattributed",
+        "has_kernel_attribution": False,
+        "has_hot_route_counter_change": False,
+        "has_setup_only_route_counter_change": False,
+        "has_strategy_value_change": False,
+        "has_linear_shape_change": False,
+        "has_cublaslt_plan_cache_change": False,
+        "candidate_differs_from_baseline": True,
+        "timing_interpretation": (
+            "candidate ratios are measurement-only evidence; treat timing deltas "
+            "as noise until a kernel route is attributed"
+        ),
+    }
     assert (
         "native_route_counter_changes: has_route_counter_change=false "
         "has_hot_route_counter_change=false changed_count=0"
     ) in proc.stdout
+    assert "native_candidate_attribution: status=unattributed" in proc.stdout
+    assert "candidate_differs=true" in proc.stdout
     assert "native_strategy_value_changes:" not in proc.stdout
     assert "tracked route counters did not change" in proc.stdout
 

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now writes
+  `native_candidate_attribution` to paired JSON and prints a compact text
+  summary showing whether a candidate is `kernel-route-attributed`,
+  `setup-only-attributed`, or `unattributed`. The summary records hot route
+  counters, strategy changes, linear-shape rows, cuBLASLt plan-cache changes,
+  and whether the candidate command/env actually differs from baseline, so
+  no-op or measurement-only runs are not mistaken for CUDA Tile kernel evidence.
+  The SM120 native candidate wrapper default warmup also increased from five
+  to seven pairs to reduce first-use timing noise in candidate-vs-current-vs-
+  reference sweeps. Verification: focused paired-speed attribution pytest,
+  native GPT source-contract pytest, shell syntax check, and dry-run command
+  inspection.
+
 - Native GPT shell launcher startup: `tools/train_gpt.sh` and
   `tools/train_gpt_sm120.sh` now default to existing compiled launchers without
   running rebuild checks before exec. Set `NFN_NATIVE_GPT_AUTO_REBUILD=1` or

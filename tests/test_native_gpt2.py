@@ -1527,7 +1527,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in parity_bench
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
-    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 5)\"" in candidate_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 7)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert (
@@ -1607,6 +1607,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'paired_args+=(--reference-env "LD_LIBRARY_PATH=$NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH")' in candidate_bench
     assert "candidate_reference_metric_ratio_gates" in paired_speed
     assert 'ratio_key="candidate_over_reference_native_metrics"' in paired_speed
+    assert "native_candidate_attribution" in paired_speed
+    assert "summarize_native_candidate_attribution" in paired_speed
     assert "DEFAULT_VS_LEGACY_PROFILE=0" in candidate_bench
     assert '"$AUTO_DISABLE_METRIC_RATIO_GATES" == "0"' in candidate_bench
     assert "candidate_gate_scope=default-vs-legacy" in candidate_bench
