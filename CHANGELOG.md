@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native GPT launchers: dense GPT template selectors can now be used directly
+  as compiled launcher model selectors. `build/nfn_train_gpt` and
+  `build/nfn_train_gpt_sm120` accept `--base-model gpt2_moa`,
+  `gpt2_modern`, `gpt2_megakernel`, `nanogpt_modern`, and
+  `nanogpt_megakernel` and canonicalize the native trainer handoff to
+  `--model-family gpt` while preserving the selected `--template-name`; this
+  also applies to env-based `NFN_NATIVE_GPT_MODEL_FAMILY` defaults. MoA
+  template selectors still infer `--native-cuda-activation moa` unless the
+  caller explicitly overrides activation. Non-dense families still reject at
+  the launcher and should use their dedicated native trainers or a custom graph.
+  Verification:
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k compiled_sm120_launcher_honors_native_env_defaults`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`, and
+  `git diff --check`.
+
 - Native GPT LM-head diagnostics: added an opt-in one-warp strict true-fused
   WMMA body for the tile16 LM-head candidate. Building Tile ops with
   `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=32` and

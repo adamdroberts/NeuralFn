@@ -54,6 +54,19 @@ bool executable(const fs::path& path) {
     return access(path.c_str(), X_OK) == 0;
 }
 
+bool is_dense_gpt_model_family(const std::string& name) {
+    return name == "gpt" || name == "gpt2" || name == "gpt3" || name == "nanogpt";
+}
+
+bool is_dense_gpt_template_selector(const std::string& name) {
+    return is_dense_gpt_model_family(name) ||
+        name == "gpt2_modern" ||
+        name == "gpt2_megakernel" ||
+        name == "gpt2_moa" ||
+        name == "nanogpt_modern" ||
+        name == "nanogpt_megakernel";
+}
+
 std::string trim(std::string value) {
     const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) {
         return std::isspace(c) != 0;
@@ -324,9 +337,6 @@ int main(int argc, char** argv) {
     model_family = lower(model_family);
     template_name = lower(template_name);
     activation = lower(activation);
-    if (!activation_explicit && template_name.find("moa") != std::string::npos) {
-        activation = "moa";
-    }
     if (!(activation == "gelu" || activation == "relu" || activation == "silu" ||
           activation == "relu2" || activation == "prelu" || activation == "sd-prelu" ||
           activation == "swiglu" || activation == "geglu" || activation == "ensemble" ||
@@ -334,10 +344,19 @@ int main(int argc, char** argv) {
         std::cerr << "Invalid --activation '" << activation << "'\n";
         return 2;
     }
-    if (!(model_family == "gpt" || model_family == "gpt2" || model_family == "gpt3" ||
-          model_family == "nanogpt")) {
-        std::cerr << "Invalid --base-model/--model-family '" << model_family << "'\n";
-        return 2;
+    if (!is_dense_gpt_model_family(model_family)) {
+        if (is_dense_gpt_template_selector(model_family)) {
+            if (!template_explicit) {
+                template_name = model_family;
+            }
+            model_family = "gpt";
+        } else {
+            std::cerr << "Invalid --base-model/--model-family '" << model_family << "'\n";
+            return 2;
+        }
+    }
+    if (!activation_explicit && template_name.find("moa") != std::string::npos) {
+        activation = "moa";
     }
     if (template_name == "gpt3") {
         if (!seq_len_explicit) {

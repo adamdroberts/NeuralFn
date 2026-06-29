@@ -5255,6 +5255,28 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert generic_args[generic_args.index("--eval-every-steps") + 1] == "1000"
     assert generic_args[generic_args.index("--train-batch-tokens") + 1] == "524288"
 
+    preset_proc = subprocess.run(
+        [
+            str(sm120_launcher),
+            "--base-model",
+            "gpt2_moa",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--dry-run",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert preset_proc.returncode == 0, preset_proc.stderr
+    preset_args = observed.read_text(encoding="utf-8").splitlines()
+    assert preset_args[preset_args.index("--model-family") + 1] == "gpt"
+    assert preset_args[preset_args.index("--template-name") + 1] == "gpt2_moa"
+    assert preset_args[preset_args.index("--native-cuda-activation") + 1] == "moa"
+
 
 def test_generic_train_gpt_shell_wrapper_prefers_compiled_launcher_and_falls_back(
     tmp_path: Path,
