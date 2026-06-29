@@ -17,7 +17,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=256
     DEFAULT_GRAD_OUT_ROW_STRIDE=256
     DEFAULT_ITERATIONS=5
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   smoke-dweight|smoke_dweight)
     DEFAULT_OPERATION="dweight-strided"
@@ -26,7 +26,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=256
     DEFAULT_GRAD_OUT_ROW_STRIDE=256
     DEFAULT_ITERATIONS=5
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   mlp-proj-dinput|mlp_proj_dinput)
     DEFAULT_OPERATION="dinput-strided"
@@ -35,7 +35,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=768
     DEFAULT_GRAD_OUT_ROW_STRIDE=768
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   mlp-proj-dweight|mlp_proj_dweight)
     DEFAULT_OPERATION="dweight-strided"
@@ -44,7 +44,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=768
     DEFAULT_GRAD_OUT_ROW_STRIDE=768
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   mlp-fc-dinput|mlp_fc_dinput)
     DEFAULT_OPERATION="dinput-strided"
@@ -53,7 +53,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=3072
     DEFAULT_GRAD_OUT_ROW_STRIDE=3072
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   mlp-fc-dweight|mlp_fc_dweight)
     DEFAULT_OPERATION="dweight-strided"
@@ -62,7 +62,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=3072
     DEFAULT_GRAD_OUT_ROW_STRIDE=3072
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   qkv-dinput|qkv_dinput)
     DEFAULT_OPERATION="dinput-strided"
@@ -71,7 +71,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=2304
     DEFAULT_GRAD_OUT_ROW_STRIDE=2304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   qkv-dweight|qkv_dweight)
     DEFAULT_OPERATION="dweight-strided"
@@ -80,7 +80,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=2304
     DEFAULT_GRAD_OUT_ROW_STRIDE=2304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   attn-proj-dinput|attn_proj_dinput)
     DEFAULT_OPERATION="dinput-strided"
@@ -89,7 +89,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=768
     DEFAULT_GRAD_OUT_ROW_STRIDE=768
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   attn-proj-dweight|attn_proj_dweight)
     DEFAULT_OPERATION="dweight-strided"
@@ -98,7 +98,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=768
     DEFAULT_GRAD_OUT_ROW_STRIDE=768
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   lm-head-dinput|lm_head_dinput)
     DEFAULT_OPERATION="dinput-strided"
@@ -107,7 +107,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   lm-head-dinput-cublaslt|lm_head_dinput_cublaslt)
     DEFAULT_OPERATION="dinput-strided"
@@ -116,7 +116,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32"
     ;;
   lm-head-dweight|lm_head_dweight)
@@ -126,7 +126,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     ;;
   lm-head-dweight-cublaslt|lm_head_dweight_cublaslt)
     DEFAULT_OPERATION="dweight-strided"
@@ -135,7 +135,7 @@ case "${PROFILE}" in
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta"
     ;;
   *)

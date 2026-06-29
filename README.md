@@ -803,6 +803,10 @@ when the selected GPU has active compute processes or sustained utilization
 above `NFN_LM_HEAD_BACKWARD_MAX_SELECTED_GPU_UTILIZATION_PCT` (default `15`);
 set `NFN_LM_HEAD_BACKWARD_REQUIRE_IDLE_SELECTED_GPU=0` or
 `NFN_LM_HEAD_BACKWARD_GPU_BENCHMARK_LOCK=0` only for intentional diagnostics. A
+matching `NFN_LM_HEAD_BACKWARD_WARMUP` override controls the LM-head focused
+microbench, which now defaults to 2 warmup iterations for production-shaped
+profiles so graph capture, cuBLAS/TK setup, and first-use kernel loading do not
+pollute timed candidate comparisons. A
 matching lower-level linear-backward harness is available as
 `bash tools/bench_linear_backward_candidate.sh`. It builds
 `build/linear_backward_bench`, loads `libnfn_native_train_tile_ops.so`, and
@@ -822,7 +826,7 @@ and `1.000576x` dWeight versus the current symbols. Override
 called a different C ABI symbol before timing gates are trusted; JSON reports
 `candidate_symbol_changed`. Add `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the
 candidate must also be no slower than the current symbol. Keep the default
-`NFN_LINEAR_BACKWARD_WARMUP=1` or higher for candidate comparisons so first-call
+`NFN_LINEAR_BACKWARD_WARMUP=2` or higher for candidate comparisons so first-call
 cuBLAS/TK setup is not counted as kernel time. Set
 `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` to rerun a close result with the
 candidate timed before the baseline; JSON reports `run_order` so baseline-first
@@ -3942,7 +3946,7 @@ automatically when `kernels.cu`, `tile_ops.cu`, or `tile_ops.h` is newer than
 the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
-`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 2 warmup pairs. Pass `NFN_SM120_NATIVE_WARMUP=0` or `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0` only for explicit cold-start diagnostics.
 For accepted LM-head CE/default profiles, the candidate wrapper now also
 requires the current CUDA Graph Tile-body contract: candidate metrics must show
 `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,

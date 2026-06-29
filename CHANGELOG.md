@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native benchmark accuracy: candidate and focused microbench warmup defaults
+  now use two warmup rounds instead of one. This applies to
+  `tools/bench_native_gpt_sm120_candidate.sh`,
+  `tools/bench_linear_backward_candidate.sh`, and
+  `tools/bench_lm_head_backward_candidate.sh`; the CUDA 13.3 validator also
+  forwards `NFN_LM_HEAD_BACKWARD_WARMUP=2` by default. Explicit
+  `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CANDIDATE_WARMUP`,
+  `NFN_LINEAR_BACKWARD_WARMUP`, and `NFN_LM_HEAD_BACKWARD_WARMUP` values still
+  override this, including `0` for intentional cold-start diagnostics. This
+  follows the workstation measurement policy of spending a little more warmup
+  time to avoid promoting or rejecting kernels on first-use CUDA/TK/cuBLAS
+  setup noise. Verification: shell syntax checks for the four touched wrappers,
+  focused pytest source coverage, `NFN_SM120_NATIVE_DRY_RUN_PLAN=1 ... bash
+  tools/bench_native_gpt_sm120_candidate.sh` reported `warmup: 2`, and
+  escalated RTX 5090 smoke runs for the linear and LM-head microbench wrappers
+  both completed with JSON `warmup: 2`.
+
 - Native CLI startup: added a compiled `nfn-native` shim for the native-only
   train and GPT checkpoint inference surfaces. `nfn-native train ...` execs the
   unified `nfn_native_train` binary with the native CUDA defaults before Python

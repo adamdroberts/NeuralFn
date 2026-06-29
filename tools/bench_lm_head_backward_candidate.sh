@@ -30,14 +30,14 @@ case "${PROFILE}" in
   smoke)
     DEFAULT_ROWS=2048
     DEFAULT_ITERATIONS=5
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=0
     ;;
   trainer-chunk|trainer_chunk)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=0
@@ -46,7 +46,7 @@ case "${PROFILE}" in
   trainer-chunk-serial-graph-body|trainer_chunk_serial_graph_body|serial-graph-body-trainer-chunk|serial_graph_body_trainer_chunk)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=0
@@ -59,7 +59,7 @@ case "${PROFILE}" in
   trainer-chunk-strict|trainer_chunk_strict|strict-trainer-chunk|strict_trainer_chunk)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -67,7 +67,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused|trainer_chunk_true_fused|true-fused-trainer-chunk|true_fused_trainer_chunk)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -82,7 +82,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile16|trainer_chunk_true_fused_tile16|true-fused-trainer-chunk-tile16|true_fused_trainer_chunk_tile16)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -103,7 +103,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile16-wmma|trainer_chunk_true_fused_tile16_wmma|true-fused-trainer-chunk-tile16-wmma|true_fused_trainer_chunk_tile16_wmma)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -124,7 +124,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile16-wmma-warp32|trainer_chunk_true_fused_tile16_wmma_warp32|true-fused-trainer-chunk-tile16-wmma-warp32|true_fused_trainer_chunk_tile16_wmma_warp32)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -145,7 +145,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile16-wmma-exp2-ce|trainer_chunk_true_fused_tile16_wmma_exp2_ce|true-fused-trainer-chunk-tile16-wmma-exp2-ce|true_fused_trainer_chunk_tile16_wmma_exp2_ce)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -166,7 +166,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile24|trainer_chunk_true_fused_tile24|true-fused-trainer-chunk-tile24|true_fused_trainer_chunk_tile24)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -187,7 +187,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile8|trainer_chunk_true_fused_tile8|true-fused-trainer-chunk-tile8|true_fused_trainer_chunk_tile8)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -208,7 +208,7 @@ case "${PROFILE}" in
   trainer-chunk-true-fused-tile4|trainer_chunk_true_fused_tile4|true-fused-trainer-chunk-tile4|true_fused_trainer_chunk_tile4)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
@@ -247,7 +247,7 @@ case "${PROFILE}" in
   trainer-chunk-cublaslt|trainer_chunk_cublaslt|trainer-cublaslt|trainer_cublaslt)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=0
@@ -258,7 +258,7 @@ case "${PROFILE}" in
   trainer-row-loss-cublaslt|trainer_row_loss_cublaslt)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=0
     DEFAULT_REQUIRE_TRUE_FUSED=0
@@ -269,7 +269,7 @@ case "${PROFILE}" in
   trainer-row-loss|trainer_row_loss)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=0
     DEFAULT_REQUIRE_TRUE_FUSED=0
@@ -277,7 +277,7 @@ case "${PROFILE}" in
   trainer-loss-bins|trainer_loss_bins)
     DEFAULT_ROWS=28672
     DEFAULT_ITERATIONS=3
-    DEFAULT_WARMUP=1
+    DEFAULT_WARMUP=2
     DEFAULT_LOSS_BINS=1024
     DEFAULT_NO_LOSS=0
     DEFAULT_REQUIRE_TRUE_FUSED=0

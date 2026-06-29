@@ -983,7 +983,7 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "NFN_SM120_CUDA13_LM_HEAD_TILE_OPS_LIB" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_PROFILE" in source
     assert "NFN_SM120_CUDA13_LM_HEAD_WARMUP" in source
-    assert 'NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-1}"' in source
+    assert 'NFN_LM_HEAD_BACKWARD_WARMUP="${NFN_SM120_CUDA13_LM_HEAD_WARMUP:-2}"' in source
     assert "build/lm_head_backward_bench" in source
     assert "bench_lm_head_backward_candidate.sh" in source
     assert "trainer-chunk" in source
@@ -1293,6 +1293,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "TRAIN_LOOP_EVENT_TIMING=\"$(env_or_alias3 NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING NFN_SM120_TRAIN_LOOP_EVENT_TIMING 1)\"" in parity_bench
     assert "SAMPLES=\"$(env_or_alias3 NFN_SM120_NATIVE_SAMPLES NFN_SM120_PARITY_SAMPLES NFN_SM120_SAMPLES 3)\"" in parity_bench
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 1)\"" in parity_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in candidate_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
@@ -3138,6 +3139,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REFERENCE_COMPONENT_WARMUP" in wrapper
+    assert "DEFAULT_WARMUP=2" in wrapper
     assert 'BENCH_ARGS+=(--reference-component-warmup "${REFERENCE_COMPONENT_WARMUP}")' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
     assert "select_auto_cuda_device" in wrapper
@@ -3387,6 +3389,7 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "strided_cublaslt_float32" in wrapper
     assert "DEFAULT_ROWS=65536" in wrapper
     assert "DEFAULT_ROWS=32768" in wrapper
+    assert "DEFAULT_WARMUP=2" in wrapper
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper
     assert "NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE" in wrapper
     assert "candidate_symbol_changed is false; candidate and baseline symbols are identical" in wrapper
