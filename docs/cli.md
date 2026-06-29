@@ -1871,8 +1871,9 @@ startup-only token-weight launch-cap profiles without a reference; those
 profiles force the wrapper's llm.kittens reference off because the native side
 exits after setup and the external trainer would measure a different workload.
 The `concurrent_parameter_init` startup profile also runs without a reference
-and gates on the derived `setup.parameter_initialization.total_ms` metric,
-which sums `setup.token_weight_init.total_ms`,
+and defaults to a five-sample zero-step startup comparison. It gates on the
+derived `setup.parameter_initialization.total_ms` metric, which sums
+`setup.token_weight_init.total_ms`,
 `setup.nonzero_parameter_fill.total_ms`, and
 `setup.concurrent_parameter_init.total_ms` so moving setup work between timing
 buckets cannot look like a kernel win.

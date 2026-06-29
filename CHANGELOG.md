@@ -8,8 +8,9 @@
   `setup.nonzero_parameter_fill.total_ms`, and
   `setup.concurrent_parameter_init.total_ms`. The rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init` profile is now
-  startup-only, skips the llm.kittens reference, and gates on the aggregate
-  parameter-init metric so moving setup work into
+  a five-sample zero-step startup-only comparison, skips the llm.kittens
+  reference, and gates on the aggregate parameter-init metric so moving setup
+  work into
   `setup.concurrent_parameter_init.total_ms` cannot masquerade as a token-init
   kernel win. A 2026-06-29 dedicated RTX 5090 startup-only 5-sample rerun
   measured the aggregate at `0.981495x`, but kept the profile rejected because

@@ -203,7 +203,8 @@ The paired benchmark derives `setup.parameter_initialization.total_ms` by
 summing `setup.token_weight_init.total_ms`,
 `setup.nonzero_parameter_fill.total_ms`, and
 `setup.concurrent_parameter_init.total_ms`, so this profile is gated on the
-combined parameter-init work instead of a timing bucket rename. The 2026-06-29
+combined parameter-init work instead of a timing bucket rename. The profile
+defaults to a five-sample zero-step startup comparison. The 2026-06-29
 dedicated RTX 5090 startup-only rerun kept it off by default: the aggregate
 improved to `0.981495x`, but setup wall stayed effectively flat at
 `0.999582x` mean / `1.001850x` median and startup-plus-first-step missed the
