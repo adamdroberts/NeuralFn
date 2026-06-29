@@ -912,6 +912,13 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "--train-loss-every-steps 0" in source
     assert "NFN_SM120_CUDA13_RUN_NO_TORCH" in source
     assert "NFN_SM120_CUDA13_REBUILD_STALE" in source
+    assert "NFN_SM120_CUDA13_SMOKE_ONLY" in source
+    assert 'NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH="${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-0}"' in source
+    assert 'NFN_SM120_CUDA13_RUN_PYTEST="${NFN_SM120_CUDA13_RUN_PYTEST:-0}"' in source
+    assert 'NFN_SM120_CUDA13_RUN_BENCH="${NFN_SM120_CUDA13_RUN_BENCH:-0}"' in source
+    assert 'NFN_SM120_CUDA13_RUN_PARITY="${NFN_SM120_CUDA13_RUN_PARITY:-0}"' in source
+    assert '"smoke_only": enabled("NFN_SM120_CUDA13_SMOKE_ONLY", "0")' in source
+    assert 'lm_head = load_json(lm_head_path) if enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1") else None' in source
     assert "tools/check_native_no_torch_deps.py --rebuild-stale --json" in source
     assert "tools/check_native_no_torch_deps.py --json" in source
     assert "select_train_artifacts()" in source

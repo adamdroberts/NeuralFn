@@ -2490,7 +2490,11 @@ After a CUDA toolkit or WSL driver reinstall, run
 That health gate selects the dedicated GPU by default, validates the native Tile
 library, launches the Tile fill smoke, runs the cached TinyStories
 transformer-LM smoke, and runs the focused native pytest suite. Set
-`NFN_SM120_CUDA13_RUN_PYTEST=0` for CUDA-only validation or
+`NFN_SM120_CUDA13_SMOKE_ONLY=1` for a quick post-install check that keeps the
+native CUDA smokes and runtime contract but skips the LM-head microbench, full
+pytest leg, candidate benchmark, and llm.kittens parity run by default. Set
+`NFN_SM120_CUDA13_RUN_PYTEST=0` for CUDA-only validation,
+`NFN_SM120_CUDA13_RUN_PARITY=0` to skip the llm.kittens parity gate, or
 `NFN_SM120_CUDA13_RUN_BENCH=1` to append a short same-script native baseline
 benchmark.
 When the benchmark leg is enabled, `validate_sm120_cuda13.sh` also checks the

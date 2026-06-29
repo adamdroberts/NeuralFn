@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Native GPT operations: added `NFN_SM120_CUDA13_SMOKE_ONLY=1` to
+  `tools/validate_sm120_cuda13.sh`. The mode keeps the dedicated-GPU native
+  CUDA smoke path and runtime contract check, but defaults off the LM-head
+  microbench, full native pytest leg, same-script candidate benchmark, and
+  llm.kittens parity benchmark unless a caller explicitly re-enables a leg.
+  This makes post-WSL-CUDA-reinstall validation less surprising than setting
+  only `NFN_SM120_CUDA13_RUN_BENCH=0`, which never controlled the separate
+  parity leg. The summary writer now also suppresses stale LM-head/parity JSON
+  references when those legs are skipped. Verification: `bash -n
+  tools/validate_sm120_cuda13.sh`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "sm120_cuda13_validator_covers_native_cuda_smokes"`, `git diff --check`, and
+  an unsandboxed `NFN_SM120_CUDA13_SMOKE_ONLY=1
+  NFN_SM120_CUDA13_RUN_NO_TORCH=0
+  NFN_SM120_CUDA13_SUMMARY_JSON_OUT=/tmp/nfn_sm120_cuda13_smoke_only.json bash
+  tools/validate_sm120_cuda13.sh` followed by summary inspection confirming
+  `smoke_only=true`, skipped benchmark legs, and empty stale benchmark artifact
+  fields.
+
 - Native GPT startup: elided the redundant host-side zero-fill of the packed
   descriptor arena used by AdamW, gradient-zero, gradient-clip, and
   parameter-fill descriptor tables. The compiled trainer now allocates the

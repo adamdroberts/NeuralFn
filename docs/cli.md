@@ -2555,10 +2555,13 @@ startup path used by normal SM120 GPT training. Override
 `NFN_NATIVE_GPT_TRAIN_BIN` or `NFN_NATIVE_TILE_OPS_LIB` only when intentionally
 checking the dynamic Tile library route. The gate launches the Tile fill and
 cached TinyStories transformer-LM smokes, and runs `tests/test_native_gpt2.py`.
-Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the pytest pass or
+Set `NFN_SM120_CUDA13_SMOKE_ONLY=1` for a quick post-install health check that
+keeps the native CUDA smokes and runtime contract but defaults off the LM-head
+microbench, full pytest leg, candidate benchmark, and llm.kittens parity run.
+Set `NFN_SM120_CUDA13_RUN_PYTEST=0` to skip the pytest pass,
 `NFN_SM120_CUDA13_RUN_BENCH=1` to add the short same-script native baseline
-benchmark. Set `NFN_SM120_CUDA13_RUN_PARITY=1` after a CUDA toolkit or WSL
-driver change to add the direct llm.kittens parity gate; tune it with
+benchmark, or `NFN_SM120_CUDA13_RUN_PARITY=0` to skip the direct llm.kittens
+parity gate after it has already passed. Tune parity with
 `NFN_SM120_CUDA13_PARITY_STEPS`, `NFN_SM120_CUDA13_PARITY_SAMPLES`,
 `NFN_SM120_CUDA13_PARITY_WARMUP`, `NFN_SM120_CUDA13_PARITY_PROFILE_DIR`, and
 `NFN_SM120_CUDA13_PARITY_JSON_OUT`. The parity wrapper keeps the llm.kittens

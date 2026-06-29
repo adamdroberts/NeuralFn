@@ -429,6 +429,11 @@ Canonical docs:
   CUDA 13.3 dedicated RTX 5090 startup-only gate overlapped split float/uint16
   arena `cudaMalloc` calls but rejected default promotion because median setup
   wall regressed and uint16 arena allocation became much slower.
+- For a quick post-WSL-CUDA-reinstall health check, use
+  `NFN_SM120_CUDA13_SMOKE_ONLY=1 bash tools/validate_sm120_cuda13.sh`. This
+  keeps the native CUDA smoke path and runtime contract but defaults off the
+  LM-head microbench, full native pytest leg, candidate benchmark, and
+  llm.kittens parity run unless a leg is explicitly re-enabled.
 - `nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib PATH` / wrapper
   `--native-cuda-smoke-tile-ops` launches `nfn_native_tile_fill_float32`
   through dynamically loaded CUDA runtime and verifies copyback without Python,

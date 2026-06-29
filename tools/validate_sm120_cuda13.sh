@@ -37,6 +37,21 @@ fi
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
 export NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES="${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-dedicated}"
 
+case "${NFN_SM120_CUDA13_SMOKE_ONLY:-0}" in
+  1|true|TRUE|yes|YES|on|ON)
+    export NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH="${NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH:-0}"
+    export NFN_SM120_CUDA13_RUN_PYTEST="${NFN_SM120_CUDA13_RUN_PYTEST:-0}"
+    export NFN_SM120_CUDA13_RUN_BENCH="${NFN_SM120_CUDA13_RUN_BENCH:-0}"
+    export NFN_SM120_CUDA13_RUN_PARITY="${NFN_SM120_CUDA13_RUN_PARITY:-0}"
+    ;;
+  0|false|FALSE|no|NO|off|OFF|"")
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_CUDA13_SMOKE_ONLY=${NFN_SM120_CUDA13_SMOKE_ONLY}" >&2
+    exit 2
+    ;;
+esac
+
 run_step() {
   printf '\n==> %s\n' "$*"
   "$@"
@@ -449,7 +464,7 @@ def load_json(path: Path):
     except Exception as exc:
         return {"error": f"failed to parse {path}: {exc}"}
 
-lm_head = load_json(lm_head_path)
+lm_head = load_json(lm_head_path) if enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1") else None
 bench = load_json(bench_path) if enabled("NFN_SM120_CUDA13_RUN_BENCH", "0") else None
 parity = load_json(parity_path) if enabled("NFN_SM120_CUDA13_RUN_PARITY", "1") else None
 runtime_contract = load_json(runtime_contract_path) if enabled("NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT", "1") else None
@@ -461,6 +476,7 @@ summary = {
     "train_bin": train_bin,
     "tile_ops_lib": tile_ops_lib,
     "run_no_torch": enabled("NFN_SM120_CUDA13_RUN_NO_TORCH", "1"),
+    "smoke_only": enabled("NFN_SM120_CUDA13_SMOKE_ONLY", "0"),
     "run_runtime_contract": enabled("NFN_SM120_CUDA13_RUN_RUNTIME_CONTRACT", "1"),
     "run_lm_head_bench": enabled("NFN_SM120_CUDA13_RUN_LM_HEAD_BENCH", "1"),
     "run_pytest": enabled("NFN_SM120_CUDA13_RUN_PYTEST", "1"),
@@ -468,7 +484,7 @@ summary = {
     "run_parity": enabled("NFN_SM120_CUDA13_RUN_PARITY", "1"),
     "artifacts": {
         "summary_json": str(summary_path),
-        "lm_head_json": str(lm_head_path) if lm_head_path.exists() else "",
+        "lm_head_json": str(lm_head_path) if lm_head_path.exists() and lm_head is not None else "",
         "bench_json": str(bench_path) if bench_path.exists() and bench is not None else "",
         "parity_json": str(parity_path) if parity_path.exists() and parity is not None else "",
         "runtime_contract_json": str(runtime_contract_path)

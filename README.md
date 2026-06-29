@@ -105,7 +105,11 @@ selecting the linked/dynamic trainer and before the CUDA smoke steps; this
 first refreshes missing or stale native artifacts through their mapped build
 scripts when a builder is registered. Set
 `NFN_SM120_CUDA13_RUN_NO_TORCH=0` only for a narrow CUDA-only bisection after
-the no-Torch gate has already passed. The 2026-06-28 no-Torch rerun after the
+the no-Torch gate has already passed. Set `NFN_SM120_CUDA13_SMOKE_ONLY=1` for
+a quick post-install GPU health check that keeps the native CUDA smokes and
+runtime contract but skips the LM-head microbench, full native pytest leg,
+candidate benchmark, and llm.kittens parity run unless those legs are explicitly
+re-enabled. The 2026-06-28 no-Torch rerun after the
 CUDA toolkit refresh first failed because `build/nfn_gpt2_native_train` and
 `build/libnfn_native_train_tile_ops_tk.so` were stale, then passed with
 `--rebuild-stale` after rebuilding those two artifacts. The standalone focused
