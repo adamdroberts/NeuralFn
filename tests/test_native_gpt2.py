@@ -1534,6 +1534,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 20)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
+    assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in parity_bench
     assert '"$IS_DRY_RUN_PLAN" == "0"' in candidate_bench
     assert (
         'COMMON_ENV_RAW="${COMMON_ENV_RAW:+$COMMON_ENV_RAW }'
@@ -1545,6 +1548,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ) in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in candidate_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in parity_bench
+    assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0' in parity_bench
+    assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in parity_bench
+    assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_applied=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")' in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench

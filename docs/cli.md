@@ -2532,6 +2532,10 @@ steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
 set for an intentional short reproduction. The JSON metadata records
 `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
+The parity wrapper applies the same ten-step measured-run floor to default
+deferred-prewarm current-vs-llm.kittens runs; set
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
+short first-step-dominated parity reproduction.
 The 20-pair floor follows a 2026-06-29 20-warmup, 3-step, 1-sample same-script
 run on the dedicated RTX 5090 where selected GPU load stayed clean and NeuralFn
 measured `0.995716x` steady-state CUDA-event step time plus `1.004435x`
@@ -2638,6 +2642,10 @@ float arena materialization `181.658 ms`, uint16 arena materialization
 `125.478 ms`, and token-weight initialization `151.345 ms`. The LM-head path
 still reports `diagnostic-cuda-graph-wrapper`, so true fused classifier-backward
 work remains separate from route-toggle benchmarking.
+For measured default deferred-prewarm parity runs, copied low-step commands are
+raised to at least ten optimizer steps unless
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is set. Wrapper dry-runs
+keep the requested step count literal for command-shape checks.
 After local CUDA or C++ changes, run
 `bash tools/validate_sm120_cuda13.sh` for the SM120 health gate. It uses the
 dedicated-GPU selector and, by default, validates

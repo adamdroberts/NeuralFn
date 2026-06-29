@@ -3,11 +3,12 @@
 ## Unreleased
 
 - Native GPT benchmark long-run measurement policy: measured default
-  deferred-prewarm runs and the named `long_run_defer_prewarm` profile now raise
-  low optimizer-step requests to at least 10 steps, in addition to the existing
-  20 warmup-pair floor. This keeps long-training ratios from being dominated by
-  the intentionally deferred first optimizer step; use
-  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for an intentional
+  deferred-prewarm candidate/parity runs and the named `long_run_defer_prewarm`
+  profile now raise low optimizer-step requests to at least 10 steps, in
+  addition to the existing 20 warmup-pair floor. This keeps long-training ratios
+  from being dominated by the intentionally deferred first optimizer step; use
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` or
+  `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for an intentional
   short reproduction. Paired JSON metadata records
   `default_long_run_defer_prewarm_min_steps_applied` or
   `long_run_defer_prewarm_min_steps_applied` when the floor is applied.
