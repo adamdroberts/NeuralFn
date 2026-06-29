@@ -1215,7 +1215,10 @@ passing kernel result.
 group so a slow native candidate does not leave child GPU work running after the
 sample is recorded. Interrupting the helper also terminates the active command
 process group before re-raising, so aborted memory-heavy candidates do not keep
-running on the selected GPU. Pass `--require-idle-selected-gpu` for dedicated
+running on the selected GPU. Real runs print each warmup and measured child
+command start/done/timeout event to stderr, which makes long reference-included
+benchmarks visibly bounded; pass `--quiet-progress` only when a wrapper needs
+silent stderr. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
 the selected CUDA GPU before each warmup or measured command. The idle check is scoped
 to the selected GPU UUID, so a separate display GPU can still be active. Pass

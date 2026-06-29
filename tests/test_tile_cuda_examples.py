@@ -173,8 +173,13 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
 
     assert proc.returncode == 0, proc.stderr
     assert "paired_interleaved_commands" in proc.stdout
+    assert "[paired-kernel-speed] sample 1/1 baseline start" in proc.stderr
+    assert "[paired-kernel-speed] sample 1/1 baseline done" in proc.stderr
+    assert "[paired-kernel-speed] sample 1/1 candidate start" in proc.stderr
+    assert "[paired-kernel-speed] sample 1/1 candidate done" in proc.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["measurement"] == "paired_interleaved_commands"
+    assert payload["progress_enabled"] is True
     assert payload["cuda_visible_devices"] == "test-device"
     assert payload["cuda_device_max_connections"] == "1"
     assert payload["require_idle_selected_gpu"] is False
@@ -7093,6 +7098,7 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     )
 
     assert proc.returncode == 0, proc.stderr
+    assert "[paired-kernel-speed] sample 1/1 candidate timeout" in proc.stderr
     assert "command_timeouts: baseline=0 candidate=1" in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     sample = payload["paired_samples"][0]

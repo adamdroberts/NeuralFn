@@ -890,7 +890,11 @@ utilization gating; active compute processes still fail immediately. The
 llm.kittens parity wrapper mirrors this behavior with
 `NFN_SM120_PARITY_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`, so
 native-vs-native and native-vs-reference runs share the same selected-GPU idle
-policy.
+policy. The paired helper now prints each warmup and measured child command
+start/done/timeout event to stderr, so reference-included benchmarks show which
+side is currently running and how long completed children took. Use
+`--quiet-progress` only for automation that intentionally requires silent
+stderr.
 For candidate-only native CLI flags, use
 `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short

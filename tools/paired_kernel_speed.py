@@ -1709,6 +1709,11 @@ def parse_args() -> argparse.Namespace:
         help="Record failed commands instead of stopping at the first nonzero exit.",
     )
     parser.add_argument(
+        "--quiet-progress",
+        action="store_true",
+        help="Do not print per-command warmup/sample progress to stderr.",
+    )
+    parser.add_argument(
         "--dry-run-plan",
         action="store_true",
         help=(
@@ -2494,6 +2499,28 @@ def kill_timed_out_process(proc: subprocess.Popen[str]) -> int:
     return terminate_process_group(proc, first_signal=signal.SIGKILL)
 
 
+def emit_command_progress(
+    *,
+    enabled: bool,
+    phase: str,
+    command_name: str,
+    event: str,
+    seconds: float | None = None,
+    timeout_seconds: float | None = None,
+    returncode: int | None = None,
+) -> None:
+    if not enabled:
+        return
+    parts = [f"[paired-kernel-speed] {phase}", command_name, event]
+    if seconds is not None:
+        parts.append(f"elapsed={seconds:.3f}s")
+    if timeout_seconds is not None:
+        parts.append(f"timeout={timeout_seconds:.3f}s")
+    if returncode is not None:
+        parts.append(f"returncode={returncode}")
+    print(" ".join(parts), file=sys.stderr, flush=True)
+
+
 def run_once(
     command: TimedCommand,
     *,
@@ -2502,6 +2529,8 @@ def run_once(
     timeout_seconds: float | None,
     profile_json_dir: Path | None,
     native_stage_timing: bool,
+    progress_enabled: bool = False,
+    progress_phase: str = "",
     gpu_before: dict[str, object] | None = None,
 ) -> dict[str, object]:
     start = time.perf_counter()
@@ -2514,6 +2543,14 @@ def run_once(
         command,
         env=env,
         native_stage_timing=native_stage_timing,
+    )
+    phase = progress_phase or "command"
+    emit_command_progress(
+        enabled=progress_enabled,
+        phase=phase,
+        command_name=command.name,
+        event="start",
+        timeout_seconds=timeout_seconds,
     )
     try:
         proc = subprocess.Popen(
@@ -2528,6 +2565,14 @@ def run_once(
         stdout, stderr = proc.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         seconds = time.perf_counter() - start
+        emit_command_progress(
+            enabled=progress_enabled,
+            phase=phase,
+            command_name=command.name,
+            event="timeout",
+            seconds=seconds,
+            timeout_seconds=timeout_seconds,
+        )
         stdout = timeout_output_to_text(exc.stdout)
         stderr = timeout_output_to_text(exc.stderr)
         process_returncode = -1
@@ -2577,6 +2622,14 @@ def run_once(
         raise
     seconds = time.perf_counter() - start
     returncode = proc.returncode if proc.returncode is not None else -1
+    emit_command_progress(
+        enabled=progress_enabled,
+        phase=phase,
+        command_name=command.name,
+        event="done",
+        seconds=seconds,
+        returncode=returncode,
+    )
     native_metrics = native_metrics_from_command_output(run_argv, stdout)
     native_linear_shape_stats = native_linear_shape_stats_from_command_output(run_argv, stdout)
     native_cublaslt_plan_cache = native_cublaslt_plan_cache_from_command_output(run_argv, stdout)
@@ -5098,6 +5151,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "reference_env": reference.env_overrides if reference is not None else {},
             "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
             "native_stage_timing": bool(args.native_stage_timing),
+            "progress_enabled": not bool(args.quiet_progress),
             "metric_ratio_gates": {
                 "enabled": bool(metric_ratio_limits),
                 "measured": False,
@@ -5207,6 +5261,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     timeout_seconds=command_timeout,
                     profile_json_dir=profile_json_dir,
                     native_stage_timing=bool(args.native_stage_timing),
+                    progress_enabled=not bool(args.quiet_progress),
+                    progress_phase=f"warmup {warmup_index + 1}/{warmup}",
                     gpu_before=command_gpu_before,
                 )
 
@@ -5261,6 +5317,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     timeout_seconds=command_timeout,
                     profile_json_dir=profile_json_dir,
                     native_stage_timing=bool(args.native_stage_timing),
+                    progress_enabled=not bool(args.quiet_progress),
+                    progress_phase=f"sample {sample_index + 1}/{samples}",
                     gpu_before=command_gpu_before,
                 )
                 by_name[command.name] = result
@@ -5372,6 +5430,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "reference_env": reference.env_overrides if reference is not None else {},
         "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
         "native_stage_timing": bool(args.native_stage_timing),
+        "progress_enabled": not bool(args.quiet_progress),
         "baseline_seconds": summarize(baseline_seconds),
         "candidate_seconds": summarize(candidate_seconds),
         "candidate_over_baseline": summarize(ratios),

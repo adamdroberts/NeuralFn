@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT benchmark progress: `tools/paired_kernel_speed.py` now prints
+  per-child warmup/sample start, completion, and timeout progress to stderr,
+  and records `progress_enabled` in dry-run and measured JSON. This makes
+  reference-included SM120 runs visibly bounded when they expand into many
+  native/current/reference child commands; use `--quiet-progress` only for
+  automation that intentionally requires silent stderr. Verification: focused
+  paired-kernel progress pytest and GPU candidate-wrapper smoke.
+
 - Native GPT optimized-kernel contract: real dense GPT training runs that
   require optimized kernels now fail if the LM-head logits route does not use
   TK SM120 or cuBLASLt BF16 GEMM, if no-loss CE misses the accepted
