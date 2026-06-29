@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT optimized-kernel contract: real dense GPT training now also fails
+  the optimized-kernel contract when transformer attention forward/backward
+  misses the TK SM120 kernels, block-backward dInput misses optimized TK SM120
+  or cuBLASLt GEMM, or transformer-block dWeight+bias misses fused cuBLASLt
+  BGRADB GEMM. This closes a gap where major block paths could silently fall
+  back while LM-head and scalar/SGEMM checks still passed. Verification:
+  focused native GPT source-contract pytest, native rebuild, and CUDA smoke.
+
 - Native GPT benchmark progress: `tools/paired_kernel_speed.py` now prints
   per-child warmup/sample start, completion, and timeout progress to stderr,
   and records `progress_enabled` in dry-run and measured JSON. This makes

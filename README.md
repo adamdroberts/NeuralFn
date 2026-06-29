@@ -40,7 +40,10 @@ evo native delegate forwards those values to the dense CUDA Tile trainer. The
 native trainer also requires optimized CUDA Tile routes by default: missing
 many-tensor AdamW symbols, attention
 row/scalar fallbacks, or TF32/SGEMM linear fallback launches fail the run and
-are reported as `optimized_kernel_contract_*` JSON fields. Use
+are reported as `optimized_kernel_contract_*` JSON fields. The same contract
+requires real training to hit the TK SM120 attention forward/backward kernels,
+optimized TK SM120 or cuBLASLt block dInput GEMMs, fused cuBLASLt BGRADB
+dWeight+bias GEMMs, and the accepted LM-head optimized routes. Use
 `--allow-basic-kernel-fallback` only for diagnostics or rejected-candidate
 bisection, not normal training.
 

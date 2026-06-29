@@ -23478,6 +23478,24 @@ int run_transformer_lm_training_json(
         }
         const bool lm_head_optimized_route_required =
             !cfg.startup_only && steps_completed > 0;
+        if (lm_head_optimized_route_required && attention_forward_tk_launches <= 0) {
+            violations.push_back(
+                "transformer attention forward did not use the TK SM120 attention kernel");
+        }
+        if (lm_head_optimized_route_required && attention_backward_tk_launches <= 0) {
+            violations.push_back(
+                "transformer attention backward did not use the TK SM120 attention kernel");
+        }
+        if (lm_head_optimized_route_required &&
+            block_backward_dinput_tk_gemm_count <= 0 &&
+            block_backward_dinput_cublaslt_gemm_count <= 0) {
+            violations.push_back(
+                "transformer block backward dInput did not use optimized TK SM120 or cuBLASLt GEMM");
+        }
+        if (lm_head_optimized_route_required && linear_cublaslt_bgrad_gemm_count <= 0) {
+            violations.push_back(
+                "transformer block dWeight+bias did not use fused cuBLASLt BGRADB GEMM");
+        }
         if (lm_head_optimized_route_required &&
             lm_head_bf16_logits_enabled &&
             lm_head_logits_tk_gemm_count <= 0 &&

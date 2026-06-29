@@ -12351,6 +12351,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--require-optimized-kernels" in gpt2_source_text
     assert "optimized native GPT kernel contract failed" in gpt2_source_text
     assert "basic TF32/SGEMM linear fallback launched" in gpt2_source_text
+    assert "transformer attention forward did not use the TK SM120 attention kernel" in gpt2_source_text
+    assert "transformer attention backward did not use the TK SM120 attention kernel" in gpt2_source_text
+    assert (
+        "transformer block backward dInput did not use optimized TK SM120 or cuBLASLt GEMM"
+        in gpt2_source_text
+    )
+    assert "transformer block dWeight+bias did not use fused cuBLASLt BGRADB GEMM" in gpt2_source_text
     assert "LM-head logits did not use TK SM120 or cuBLASLt BF16 GEMM" in gpt2_source_text
     assert (
         "LM-head no-loss CE did not use the llm.kittens-style specialized dlogits kernel"
