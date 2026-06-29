@@ -79,13 +79,17 @@
   SM120 wrapper. The profile sets `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`
   and requires paired JSON to show BF16-param/BF16-grad descriptor count, BF16
   GEMM count, and cuBLASLt bgrad count changes so no-op benchmark runs fail
-  early. The one-step dedicated RTX 5090 check proved the route by moving
-  `adamw_bf16_param_bf16_grad_descriptor_count` from `0` to `24`,
-  `linear_bf16_gemm_count` from `605` to `797`, and
-  `linear_cublaslt_bgrad_gemm_count` from `384` to `192`, but kept the profile
-  rejected because train-loop wall regressed to `1.015619x` and tokens/sec fell
-  to `0.984619x`. Verification: shell syntax, focused native GPT source test,
-  dry-run profile expansion, live rejected-profile measurement, and diff check.
+  early. The 2026-06-29 3-step, 2-sample same-script gate proved the route by
+  moving `adamw_bf16_param_bf16_grad_descriptor_count` from `0` to `24`,
+  `linear_bf16_gemm_count` from `1805` to `2381`,
+  `linear_cublaslt_bgrad_gemm_count` from `1152` to `576`, and
+  `linear_cublaslt_gemm_count` from `1732` to `1156`, but kept the profile
+  rejected because train-loop wall regressed to `1.011269x`, steady-state
+  CUDA-event step time to `1.009759x`, tokens/sec fell to `0.988856x`, setup
+  wall regressed to `1.017694x`, candidate-over-llm.kittens train-loop was
+  `1.009632x`, and candidate-over-llm.kittens tokens/sec was `0.990385x`.
+  Verification: shell syntax, focused native GPT source test, dry-run profile
+  expansion, live rejected-profile measurement, and diff check.
 
 - Native GPT LM-head WMMA diagnostics: refreshed the rejected
   `lm_head_true_fused_tile16_wmma` SM120 candidate evidence after the

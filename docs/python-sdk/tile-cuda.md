@@ -3549,10 +3549,14 @@ the staged gradients feed
 `nfn_native_tile_sumsq_partials_many_bf16_bits_float32` and
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
 directly, so the old BF16-to-FP32 staging flush is skipped. It remains
-default-off because a one-step dedicated RTX 5090 check proved the route by
-moving BF16-param/BF16-grad descriptor count from `0` to `24`, BF16 GEMM count
-from `605` to `797`, and cuBLASLt bgrad count from `384` to `192`, but rejected
-it at `1.015619x` train-loop wall time and `0.984619x` tokens/sec. Runtime JSON reports
+default-off because the 2026-06-29 3-step, 2-sample same-script gate proved the
+route by moving BF16-param/BF16-grad descriptor count from `0` to `24`, BF16
+GEMM count from `1805` to `2381`, cuBLASLt bgrad GEMM count from `1152` to
+`576`, and cuBLASLt GEMM count from `1732` to `1156`, but rejected it because
+train-loop wall regressed to `1.011269x`, steady-state CUDA-event step time to
+`1.009759x`, tokens/sec fell to `0.988856x`, setup wall regressed to
+`1.017694x`, candidate-over-llm.kittens train-loop was `1.009632x`, and
+candidate-over-llm.kittens tokens/sec was `0.990385x`. Runtime JSON reports
 `block_dweight_bf16_staging_enabled`, `block_dweight_bf16_staging_strategy`,
 staging allocation sizes, zero count, BF16 clip/AdamW descriptor counts, and
 BF16-gradient AdamW launch counts. Use
