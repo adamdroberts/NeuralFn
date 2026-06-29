@@ -2940,7 +2940,10 @@ shape initializes those 75 tensors with one mixed descriptor-driven Tile launch.
 The AdamW, gradient-clip, gradient-zero, and parameter-fill descriptor tables
 are suballocated from one device descriptor arena and uploaded from one
 host-packed descriptor arena instead of ten separate small startup allocations
-and ten descriptor H2D copies. JSON reports
+and ten descriptor H2D copies. The host-packed arena is allocated as
+uninitialized byte storage and only the live descriptor regions are copied into
+it before upload; alignment padding is not read by the device descriptor tables.
+JSON reports
 `descriptor_allocation_strategy: "single-device-arena"`,
 `descriptor_arena_cuda_malloc_count`, `descriptor_arena_suballocation_count`,
 `descriptor_upload_strategy: "single-host-packed-arena-copy"`,

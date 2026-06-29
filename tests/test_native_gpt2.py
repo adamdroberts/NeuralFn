@@ -9916,6 +9916,18 @@ def test_packed_attention_ln1_recompute_uses_stats_only_tile_abi() -> None:
     ) in kernels_text
 
 
+def test_native_gpt_descriptor_arena_host_pack_avoids_zero_fill() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt2_source_text = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text()
+
+    assert "DescriptorArenaRequest" in gpt2_source_text
+    assert "host_descriptor_arena" in gpt2_source_text
+    assert "std::make_unique_for_overwrite<unsigned char[]>(descriptor_arena_bytes)" in gpt2_source_text
+    assert "std::vector<unsigned char> host_descriptor_arena(descriptor_arena_bytes, 0)" not in gpt2_source_text
+    assert "cudaMalloc transformer_lm_descriptor_arena" in gpt2_source_text
+    assert "cudaMemcpy transformer_lm_descriptor_arena" in gpt2_source_text
+
+
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     gpt2_source = root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
@@ -10060,6 +10072,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "transformer_device_arena_allocated_bytes" in gpt2_source_text
     assert "DescriptorArenaRequest" in gpt2_source_text
     assert "host_descriptor_arena" in gpt2_source_text
+    assert "std::make_unique_for_overwrite<unsigned char[]>(descriptor_arena_bytes)" in gpt2_source_text
+    assert "std::vector<unsigned char> host_descriptor_arena(descriptor_arena_bytes, 0)" not in gpt2_source_text
     assert "cudaMalloc transformer_lm_descriptor_arena" in gpt2_source_text
     assert "cudaMemcpy transformer_lm_descriptor_arena" in gpt2_source_text
     assert "descriptor_allocation_strategy" in gpt2_source_text

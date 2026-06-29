@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Native GPT startup: elided the redundant host-side zero-fill of the packed
+  descriptor arena used by AdamW, gradient-zero, gradient-clip, and
+  parameter-fill descriptor tables. The compiled trainer now allocates the
+  host-packed descriptor bytes with uninitialized storage, copies only live
+  descriptor regions into their aligned offsets, and uploads the whole arena
+  once; padding bytes are intentionally unused by descriptor pointers. No JSON
+  contract or default kernel path changed. Verification: `bash
+  tools/build_native_gpt_cli.sh`, `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  -m pytest tests/test_native_gpt2.py -q -k
+  "descriptor_arena_host_pack_avoids_zero_fill"`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --rebuild-stale --json`, `git diff
+  --check`, and an unsandboxed `NFN_NATIVE_TILE_CUDA_TEST=1
+  /home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_gpt_cuda_tile_startup_smoke_without_torch -rs`.
+
 - Native GPT Tile CUDA: added an opt-in BF16 WMMA implementation for the
   strict true-fused LM-head cooperative body when the Tile ops library is built
   with `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16

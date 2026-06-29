@@ -2216,7 +2216,10 @@ uses one float32 fill-many launch plus one BF16 fill-many launch at the
 The descriptor tables used by parameter fill, gradient zeroing, gradient
 clipping, and AdamW are suballocated from one device descriptor arena and
 uploaded from one host-packed descriptor arena instead of ten separate small
-startup allocations and ten descriptor H2D copies. JSON reports
+startup allocations and ten descriptor H2D copies. The host-packed arena uses
+uninitialized byte storage and copies only live descriptor regions before the
+single H2D upload; descriptor pointers never read aligned padding bytes. JSON
+reports
 `descriptor_allocation_strategy: "single-device-arena"`,
 `descriptor_arena_cuda_malloc_count`, `descriptor_arena_requested_bytes`,
 `descriptor_arena_bytes`, `descriptor_arena_suballocation_count`,

@@ -17,6 +17,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -17563,15 +17564,16 @@ int run_transformer_lm_training_json(
         descriptor_ptrs.push_back(descriptor_arena);
         descriptor_arena_cuda_malloc_count = 1;
         auto* base = static_cast<unsigned char*>(descriptor_arena);
-        std::vector<unsigned char> host_descriptor_arena(descriptor_arena_bytes, 0);
+        auto host_descriptor_arena =
+            std::make_unique_for_overwrite<unsigned char[]>(descriptor_arena_bytes);
         for (const DescriptorArenaRequest& request : requests) {
             *request.ptr = base + request.offset;
-            std::memcpy(host_descriptor_arena.data() + request.offset, request.host, request.bytes);
+            std::memcpy(host_descriptor_arena.get() + request.offset, request.host, request.bytes);
             descriptor_arena_suballocation_count += 1;
         }
         const int copy_status = cuda_memcpy(
             descriptor_arena,
-            host_descriptor_arena.data(),
+            host_descriptor_arena.get(),
             descriptor_arena_bytes,
             kCudaMemcpyHostToDevice);
         if (copy_status != 0) {
