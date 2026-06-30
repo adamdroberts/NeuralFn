@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- SM120 native rebuild now refreshes the compiled top-level `nfn-native` shim:
+  `tools/rebuild_native_sm120.sh` builds `build/nfn_native` alongside
+  `nfn_native_train`, the dense GPT launchers, bindings, Tile ops libraries, and
+  benchmark binaries. This keeps installable compiled CLI commands fresh after a
+  one-shot native rebuild instead of leaving `nfn-native` stale or missing.
+  Verification: focused native GPT source assertion pytest.
+
 - Native no-Torch compiled custom-graph launcher guard: the no-Torch verifier now
   runs a direct `build/nfn_train_gpt --graph-file ... --print-command` dry-run
   and asserts that the compiled dense GPT helper preserves the custom graph,

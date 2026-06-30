@@ -1618,6 +1618,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
     assert "build_train_gpt_cli.sh" in rebuild_sm120
     assert "build_train_gpt_sm120_cli.sh" in rebuild_sm120
+    assert "build_native_train_cli.sh" in rebuild_sm120
+    assert "build_native_nfn_cli.sh" in rebuild_sm120
     assert rebuild_sm120.index("build_native_gpt_cli_linked.sh") < rebuild_sm120.index(
         "build_train_gpt_cli.sh"
     )
@@ -1626,6 +1628,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     )
     assert rebuild_sm120.index("build_native_gpt_cli_linked.sh") < rebuild_sm120.index(
         "build_train_gpt_sm120_cli.sh"
+    )
+    assert rebuild_sm120.index("build_native_train_cli.sh") < rebuild_sm120.index(
+        "build_native_nfn_cli.sh"
+    )
+    assert rebuild_sm120.index("build_native_nfn_cli.sh") < rebuild_sm120.index(
+        "build_native_gpt2_launcher.sh"
     )
     assert "NFN_NATIVE_REBUILD_BINDINGS" in rebuild_sm120
     assert "build_native_gpt_binding.sh" in rebuild_sm120
