@@ -14486,6 +14486,9 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"train_timing_contract\":\"long-run-deferred-prewarm-steady-state\","
+        "\"train_first_step_deferred_prewarm_diagnostic\":true,"
+        "\"train_steady_state_parity_metric_available\":false,"
         "\"linear_tk_qkv_first_use_prewarm_success_count\":0,"
         "\"lm_head_fused_graph_prewarm_success_count\":0,"
         "\"train_loss_host_d2h_count\":0,"
@@ -14512,6 +14515,18 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "expected=present observed=long-run-defer-throughput-prewarms-by-default"
     ) not in deferred_passing.stdout
     assert (
+        "train_timing_contract: expected=long-run-deferred-prewarm-steady-state "
+        "observed=long-run-deferred-prewarm-steady-state passed=true"
+    ) in deferred_passing.stdout
+    assert (
+        "train_first_step_deferred_prewarm_diagnostic: "
+        "expected=true observed=true passed=true"
+    ) in deferred_passing.stdout
+    assert (
+        "train_steady_state_parity_metric_available: "
+        "expected=false observed=false passed=true"
+    ) in deferred_passing.stdout
+    assert (
         "linear_tk_qkv_first_use_prewarm_success_count: "
         "expected=0 observed=0 passed=true"
     ) in deferred_passing.stdout
@@ -14525,7 +14540,12 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\","
         "\"graph_editor_tensor_flow\":false,\"torch_required\":false,"
         "\"optimized_kernel_contract_passed\":true,"
+        "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
+        "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"train_timing_contract\":\"long-run-deferred-prewarm-steady-state\","
+        "\"train_first_step_deferred_prewarm_diagnostic\":true,"
+        "\"train_steady_state_parity_metric_available\":false,"
         "\"linear_tk_qkv_first_use_prewarm_success_count\":1,"
         "\"lm_head_fused_graph_prewarm_success_count\":0,"
         "\"train_loss_host_d2h_count\":0,"

@@ -55,6 +55,15 @@
   template selector, model family, and `tile-cuda` backend before execing the
   native trainer. Verification: focused no-Torch dependency pytest.
 
+- Native paired benchmark deferred-contract parsing: `tools/paired_kernel_speed.py`
+  now keeps `train_timing_contract`,
+  `train_first_step_deferred_prewarm_diagnostic`, and
+  `train_steady_state_parity_metric_available` in the parsed native strategy
+  values before evaluating the long-run deferred-prewarm runtime contract. This
+  fixes native-vs-llm.kittens runs that emitted the trainer fields correctly but
+  failed the wrapper gate because those keys were discarded during parsing.
+  Verification: focused paired-kernel contract pytest.
+
 - Native no-Torch deferred-timing artifact guard: `tools/check_native_no_torch_deps.py`
   now requires compiled GPT trainer artifacts to contain the deferred-prewarm
   timing-contract JSON markers. This makes stale or incomplete native binaries
