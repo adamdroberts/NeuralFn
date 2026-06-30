@@ -75,8 +75,8 @@
 
 - SM120 parity benchmark warmup policy: default long-run deferred-prewarm
   current-vs-llm.kittens runs in `tools/bench_native_gpt_sm120_parity.sh` now
-  use a twenty warmup-pair floor as well as the
-  existing ten-step measured-run floor. Explicit dry-run plans and explicit
+  use the same forty warmup-pair floor as candidate benchmarking, as well as
+  the existing ten-step measured-run floor. Explicit dry-run plans and explicit
   low-warmup diagnostics remain available; set
   `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only when
   intentionally reproducing first-use timing. Paired JSON records

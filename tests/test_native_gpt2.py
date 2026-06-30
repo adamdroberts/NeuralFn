@@ -1540,7 +1540,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
-    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 20)" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 40)" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in parity_bench
