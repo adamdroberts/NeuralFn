@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Missing-family native preflights: the compiled LLaMA, MixLLaMA, JEPA,
+  semantic-router MoE, and DeepSeek-V4 native binaries now support
+  `--print-plan`, `--dry-run`, and `--check-tile-ops --tile-ops-lib PATH`.
+  These actions emit structured JSON with the parsed schedule,
+  `compiled_native_boundary: true`, `torch_required: false`,
+  `graph_editor_tensor_flow: false`, required raw Tile symbols, and remaining
+  family-specific native work while real training still exits nonzero until
+  each CUDA Tile loop lands. Verification: rebuilt the missing-family native
+  binaries, ran the focused missing-family/native-registry pytest slice, ran
+  the full no-Torch SDK/CLI/artifact guard, shell syntax check, and
+  `git diff --check`.
+
 - Native GPT SDK capture helpers: added `capture_native_gpt(config,
   runner="auto")` and compatibility `capture_native_gpt2(config,
   runner="auto")` for callers that need stdout/stderr/JSON from a full native

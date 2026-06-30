@@ -488,6 +488,14 @@ Tile trainer runs. Arbitrary graph JSON, incompatible metadata, and missing
 graph paths still fail explicitly with `custom-graph-native-trainer-missing` or
 `custom-graph-file-missing` instead of routing batches through graph-editor
 nodes or Torch.
+The compiled missing-family binaries for LLaMA, MixLLaMA, JEPA,
+semantic-router MoE, and DeepSeek-V4 now expose the same native boundary as
+JSON preflights: `--print-plan`, `--dry-run`, and
+`--check-tile-ops --tile-ops-lib PATH` report parsed schedule fields,
+`compiled_native_boundary: true`, `torch_required: false`,
+`graph_editor_tensor_flow: false`, the required raw Tile symbols, and the
+remaining native work for that family. Real training still fails until the
+family-specific CUDA Tile loop is implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

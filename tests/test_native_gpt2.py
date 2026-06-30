@@ -10262,6 +10262,12 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert llama.returncode == 2
     assert "native CUDA Tile trainer for llama is not implemented yet" in llama.stderr
     assert "implement this family's CUDA Tile C++ kernels first" in llama.stderr
+    llama_payload = json.loads(llama.stdout)
+    assert llama_payload["model_family"] == "llama"
+    assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["compiled_native_boundary"] is True
+    assert llama_payload["torch_required"] is False
+    assert llama_payload["graph_editor_tensor_flow"] is False
 
 
 def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tmp_path: Path) -> None:
@@ -10303,6 +10309,43 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert gpt2_evo.exists()
     nanogpt = tmp_path / "nfn_nanogpt_native_train"
     assert nanogpt.exists()
+    llama = tmp_path / "nfn_llama_native_train"
+    assert llama.exists()
+    llama_plan = subprocess.run(
+        [
+            str(llama),
+            "--print-plan",
+            "--check-tile-ops",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "8",
+            "--train-seq-len",
+            "128",
+            "--max-steps",
+            "3",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert llama_plan.returncode == 0, llama_plan.stderr
+    llama_payload = json.loads(llama_plan.stdout)
+    assert llama_payload["model_family"] == "llama"
+    assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["compiled_native_boundary"] is True
+    assert llama_payload["torch_required"] is False
+    assert llama_payload["graph_editor_tensor_flow"] is False
+    assert llama_payload["dataset_alias"] == "cached-shards"
+    assert llama_payload["schedule"]["batch_size"] == 8
+    assert llama_payload["schedule"]["train_seq_len"] == 128
+    assert llama_payload["schedule"]["max_steps"] == 3
+    assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
+    assert llama_payload["tile_ops_check"]["all_required_symbols_found"] is False
+    assert llama_payload["tile_ops_check"]["error"]
     dense_gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
     )
