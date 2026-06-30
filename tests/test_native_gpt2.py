@@ -524,14 +524,23 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--graph-file" in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
     assert "--train-seq-len 2048" not in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
+    assert entrypoints["infer_gpt_native_info"]["missing_stdout_markers"] == []
     assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["passed"] is True
+    assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["missing_stdout_markers"] == []
+    assert "--sample-checkpoint" in entrypoints["infer_gpt_native_sample_prompt_tokens"]["stdout"]
     assert entrypoints["nfn_infer_native_info"]["passed"] is True
+    assert entrypoints["nfn_infer_native_info"]["missing_stdout_markers"] == []
     assert entrypoints["nfn_infer_native_directory_info"]["passed"] is True
+    assert entrypoints["nfn_infer_native_directory_info"]["missing_stdout_markers"] == []
     assert "model_00000020.bin" in entrypoints["nfn_infer_native_directory_info"]["stdout"]
     assert entrypoints["nfn_infer_native_sample_prompt_tokens"]["passed"] is True
+    assert entrypoints["nfn_infer_native_sample_prompt_tokens"]["missing_stdout_markers"] == []
+    assert "--sample-checkpoint" in entrypoints["nfn_infer_native_sample_prompt_tokens"]["stdout"]
     assert entrypoints["nfn_console_infer_native_info"]["passed"] is True
+    assert entrypoints["nfn_console_infer_native_info"]["missing_stdout_markers"] == []
     assert entrypoints["nfn_console_infer_native_info"]["startup_within_budget"] is True
     assert entrypoints["nfn_console_infer_native_sample_prompt_tokens"]["passed"] is True
+    assert entrypoints["nfn_console_infer_native_sample_prompt_tokens"]["missing_stdout_markers"] == []
     assert (
         entrypoints["nfn_console_infer_native_sample_prompt_tokens"]["startup_within_budget"]
         is True

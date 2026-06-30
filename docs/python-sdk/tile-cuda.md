@@ -3456,6 +3456,10 @@ GPT-2-evo, NanoGPT, explicit
 inference, top-level per-family `nfn train --base-model ...` dispatch,
 installed `nfn:main` console-entry native inference, `neuralfn.native_train`,
 and the public SDK native training exports.
+Native inference entries also require stdout markers proving checkpoint
+metadata detection and compiled `--sample-checkpoint` delegation, so a command
+that exits successfully but skips the native sampler handoff still fails the
+gate.
 The SDK import/export probes also assert that Torch, NumPy, and `tiktoken` are
 not present in `sys.modules` after loading the native helpers, so a future eager
 SDK import cannot pass just because the import blocker did not see a fresh

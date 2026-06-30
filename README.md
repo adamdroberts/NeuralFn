@@ -3,6 +3,10 @@
 NeuralFn is a graph-native neural network framework where each neuron can be a built-in primitive or a user-defined Python function with typed I/O ports, connected in arbitrary directed graphs. This repository now combines that core library with an authenticated web platform for multi-project, multi-session editing, training, analytics, and MCP-driven automation.
 
 NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph-backed Torch modules remain in the source tree for old experiments, but Torch is no longer an installable NeuralFn dependency extra. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`. The public `neuralfn.trainer`, `neuralfn.evolutionary`, `neuralfn.hybrid`, and `neuralfn.inference` modules are also lean at import time: importing training configs, constructing scalar trainers, or importing checkpoint/cache helper names does not import Torch or NumPy. Calling scalar training methods still enters the legacy NumPy/PyTorch training stack as needed, and calling legacy `.pt` checkpoint or `InferenceCache` operations still enters the Torch inference stack, so install NumPy and/or PyTorch explicitly for those workflows.
+`python tools/check_native_no_torch_deps.py --skip-artifacts --json` is the
+fast native CLI/SDK guard for that contract. It now treats native inference as
+valid only when checkpoint metadata detection and compiled
+`--sample-checkpoint` delegation are visible in the entrypoint output.
 
 Native training entrypoints prefer direct compiled C++ binaries on the
 workstation path. Dense GPT aliases use the linked

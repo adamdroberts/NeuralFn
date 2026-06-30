@@ -1061,6 +1061,42 @@ DEFAULT_SHELL_ENTRYPOINTS = (
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
+PYTHON_ENTRYPOINT_REQUIRED_STDOUT_MARKERS = {
+    "infer_gpt_native_info": (
+        "Native GPT checkpoint detected",
+        "precision:",
+        "shape:",
+    ),
+    "infer_gpt_native_sample_prompt_tokens": (
+        "--sample-checkpoint",
+        "--prompt-tokens",
+        "1,2,3",
+    ),
+    "nfn_infer_native_info": (
+        "Native GPT checkpoint detected",
+        "precision:",
+        "shape:",
+    ),
+    "nfn_infer_native_directory_info": (
+        "Native GPT checkpoint detected",
+        "model_00000020.bin",
+    ),
+    "nfn_infer_native_sample_prompt_tokens": (
+        "--sample-checkpoint",
+        "--prompt-tokens",
+        "1,2,3",
+    ),
+    "nfn_console_infer_native_info": (
+        "Native GPT checkpoint detected",
+        "precision:",
+        "shape:",
+    ),
+    "nfn_console_infer_native_sample_prompt_tokens": (
+        "--sample-checkpoint",
+        "--prompt-tokens",
+        "1,2,3",
+    ),
+}
 REQUIRED_NATIVE_DENSE_GPT_TEMPLATE_SELECTORS = (
     "gpt",
     "gpt2",
@@ -1784,17 +1820,29 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
             startup_within_budget = (
                 True if startup_budget_seconds <= 0.0 else elapsed_seconds <= startup_budget_seconds
             )
+            stdout = proc.stdout.strip()
+            stderr = proc.stderr.strip()
+            missing_stdout_markers = [
+                marker
+                for marker in PYTHON_ENTRYPOINT_REQUIRED_STDOUT_MARKERS.get(name, ())
+                if marker not in stdout
+            ]
             entries.append(
                 {
                     "name": name,
                     "command": list(command),
                     "returncode": proc.returncode,
-                    "passed": proc.returncode == 0 and startup_within_budget,
+                    "passed": (
+                        proc.returncode == 0
+                        and startup_within_budget
+                        and not missing_stdout_markers
+                    ),
                     "elapsed_seconds": elapsed_seconds,
                     "startup_budget_seconds": startup_budget_seconds,
                     "startup_within_budget": startup_within_budget,
-                    "stdout": proc.stdout.strip(),
-                    "stderr": proc.stderr.strip(),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "missing_stdout_markers": missing_stdout_markers,
                 }
             )
     return entries

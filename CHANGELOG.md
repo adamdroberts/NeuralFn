@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native no-Torch inference guard: `tools/check_native_no_torch_deps.py` now
+  requires native inference entrypoints to print the expected checkpoint
+  metadata and compiled `--sample-checkpoint` delegation markers. A command
+  that exits zero but silently skips the native sampler handoff now fails the
+  verifier through `missing_stdout_markers`. Verification: focused native GPT
+  no-Torch pytest, the skip-artifacts no-Torch verifier, Python compile check,
+  and `git diff --check`.
+
 - Native SM120 benchmark dry-run metadata: parity and candidate wrappers now
   report `default_long_run_defer_prewarm_min_warmup_dry_run_would_apply` and
   `default_long_run_defer_prewarm_min_steps_dry_run_would_apply` when a dry-run
