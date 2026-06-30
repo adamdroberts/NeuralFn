@@ -22503,7 +22503,8 @@ int run_transformer_lm_training_json(
         return record_train_loss ? copy_train_loss_total_to_host("train_loss.loss_copy") : 0.0;
     };
 
-    const bool validation_runtime_enabled = cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
+    const bool validation_runtime_enabled =
+        !cfg.startup_only && cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
     std::optional<neuralfn::native_train::SequentialTokenBatchSampler> val_sampler;
     if (validation_runtime_enabled) {
         val_sampler.emplace(dataset.val_shards, seq_len, eval_batch_size);

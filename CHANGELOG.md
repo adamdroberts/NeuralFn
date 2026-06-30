@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT startup-only validation elision: dense transformer-LM startup-only
+  runs now disable the validation runtime and skip validation sampler
+  construction even when an eval cadence is configured. Startup JSON continues
+  to report `validation_shards_required: false` and now also reports
+  `validation.runtime_enabled: false` plus
+  `validation.sampler_constructed: false`, keeping setup probes focused on CUDA
+  Tile training readiness instead of validation plumbing. Verification: rebuilt
+  the native GPT CLI, ran a startup-only CUDA Tile smoke with eval cadence
+  enabled and confirmed validation runtime/sampler were disabled, ran the
+  focused native source-contract pytest slice, and `git diff --check`.
+
 - Native missing-family kernel status: the unified native model registry and
   compiled missing-family preflights now report `kernel_status` separately from
   `trainer_loop_status`. With the shipped Tile ops library, LLaMA, MixLLaMA,

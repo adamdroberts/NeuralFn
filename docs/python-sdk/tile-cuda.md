@@ -3415,10 +3415,12 @@ checkpoint export even when export was requested; plan/runtime JSON reports
 `checkpoint_export_enabled: false` and
 `checkpoint_export_startup_only_elided: true` for that case. Runtime JSON also
 retains `final_checkpoint_export_enabled` as a compatibility alias. Startup-only also
-skips validation shard discovery even when validation cadence is configured,
-because no validation pass can run before the process exits; JSON reports
-`validation_shards_required: false` and leaves `val_shard` empty for train-only
-token caches.
+skips validation shard discovery and validation sampler construction even when
+validation cadence is configured, because no validation pass can run before the
+process exits; JSON reports `validation_shards_required: false`,
+`validation.runtime_enabled: false`, and
+`validation.sampler_constructed: false`, and leaves `val_shard` empty for
+train-only token caches.
 For long native GPT quality runs, the same native trainer defers throughput
 prewarms once `max_steps` exceeds `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
 (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /

@@ -2753,10 +2753,12 @@ but exits before optimizer steps or checkpoint export with
 `CUDA_MODULE_LOADING=LAZY` by default when the caller has not already set it;
 the master `nfn train` native dispatcher applies the same default before
 executing the compiled trainer. Runtime JSON reports the resolved value as
-`cuda_module_loading`. Startup-only skips validation shard discovery even when
-the configured validation cadence is positive, because no validation pass can
-run in this mode; JSON reports `validation_shards_required: false` and leaves
-`val_shard` empty for train-only token caches. Startup-only JSON also reports
+`cuda_module_loading`. Startup-only skips validation shard discovery and
+validation sampler construction even when the configured validation cadence is
+positive, because no validation pass can run in this mode; JSON reports
+`validation_shards_required: false`, `validation.runtime_enabled: false`, and
+`validation.sampler_constructed: false`, and leaves `val_shard` empty for
+train-only token caches. Startup-only JSON also reports
 top-level `graph_editor_tensor_flow: false` and `torch_required: false`, the
 same no-editor/no-Torch contract fields emitted by normal native training runs.
 

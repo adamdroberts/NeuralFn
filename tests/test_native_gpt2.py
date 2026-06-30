@@ -11294,6 +11294,24 @@ def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> Non
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in payload["kernels"]
 
 
+def test_native_gpt_startup_only_disables_validation_sampler() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt2_source_text = (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text()
+
+    assert (
+        "const bool validation_runtime_enabled =\n"
+        "        !cfg.startup_only && cfg.eval_every_steps > 0 && cfg.eval_batches > 0;"
+    ) in gpt2_source_text
+    assert "if (validation_runtime_enabled) {\n        val_sampler.emplace" in gpt2_source_text
+    assert '"    \\"runtime_enabled\\": " << (validation_runtime_enabled ? "true" : "false")' in gpt2_source_text
+    assert (
+        '"    \\"sampler_constructed\\": " << (validation_sampler_constructed ? "true" : "false")'
+        in gpt2_source_text
+    )
+
+
 def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
@@ -12807,7 +12825,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         < gpt2_source_text.index('"token_weight.sample"')
     )
     assert "validation_wall_ms" in gpt2_source_text
-    assert "const bool validation_runtime_enabled = cfg.eval_every_steps > 0 && cfg.eval_batches > 0;" in gpt2_source_text
+    assert (
+        "const bool validation_runtime_enabled =\n"
+        "        !cfg.startup_only && cfg.eval_every_steps > 0 && cfg.eval_batches > 0;"
+    ) in gpt2_source_text
     assert "std::optional<neuralfn::native_train::SequentialTokenBatchSampler> val_sampler" in gpt2_source_text
     assert "const bool validation_sampler_constructed = val_sampler.has_value();" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
