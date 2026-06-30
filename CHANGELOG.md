@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- SM120 native candidate startup sample floors now preserve stronger explicit
+  sample requests. Profiles such as `concurrent_parameter_init` still run at
+  least five startup samples by default, but `NFN_SM120_NATIVE_SAMPLES=7` or the
+  matching candidate alias no longer gets lowered by the profile block. The
+  `concurrent_parameter_init` catalog entry was refreshed with the current
+  dedicated RTX 5090 rejection: setup wall regressed to `1.008238x` mean and
+  combined parameter initialization regressed to `1.031945x` mean. Verification:
+  focused native GPT source assertion pytest.
+
 - Native no-Torch stale-artifact mapping now treats GPT trainer build scripts as
   source dependencies: `build/nfn_gpt_native_train`,
   `build/nfn_gpt_native_train_linked`, and `build/nfn_gpt2_native_train` fail

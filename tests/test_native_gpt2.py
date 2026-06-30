@@ -3465,10 +3465,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "concurrent_parameter_init_enabled" in bench_source
     assert "setup.parameter_initialization.total_ms aggregate" in bench_source
     assert "setup.concurrent_parameter_init.total_ms" in bench_source
-    assert "setup_wall_ms stayed effectively flat at 0.999582x" in bench_source
+    assert "setup_wall_ms regressed to 1.008238x" in bench_source
     assert "STARTUP_ONLY=1" in bench_source
     assert "STEPS=0" in bench_source
-    assert "SAMPLES=5" in bench_source
+    assert "ensure_samples_at_least 5" in bench_source
+    assert 'if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -lt "$floor" ]]; then' in bench_source
     assert "INCLUDE_LLMK_REFERENCE=0" in bench_source
     assert "setup.parameter_initialization.total_ms=0.990" in bench_source
     assert "startup_plus_first_step_wall_ms=0.998" in bench_source

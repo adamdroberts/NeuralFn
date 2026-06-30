@@ -225,11 +225,11 @@ summing `setup.token_weight_init.total_ms`,
 `setup.nonzero_parameter_fill.total_ms`, and
 `setup.concurrent_parameter_init.total_ms`, so this profile is gated on the
 combined parameter-init work instead of a timing bucket rename. The profile
-defaults to a five-sample zero-step startup comparison. The 2026-06-29
-dedicated RTX 5090 startup-only rerun kept it off by default: the aggregate
-improved to `0.981495x`, but setup wall stayed effectively flat at
-`0.999582x` mean / `1.001850x` median and startup-plus-first-step missed the
-strict `0.998x` gate.
+uses at least a five-sample zero-step startup comparison, while preserving a
+larger explicit `NFN_SM120_NATIVE_SAMPLES` request for stronger reruns. The
+2026-06-30 dedicated RTX 5090 startup-only rerun kept it off by default:
+setup wall regressed to `1.008238x` mean / `1.013698x` median and the combined
+parameter-init aggregate regressed to `1.031945x` mean.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=embedding_bf16_shadow` is another
 diagnostic-only profile. It toggles
 `NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1`, making the fused direct-u16
@@ -1421,6 +1421,12 @@ The common-shape controls also accept the explicit
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT`, so candidate wrapper commands can spell
 the workload consistently without silently falling back to the 10-step,
 3-sample default run.
+Startup profiles that need a minimum sample floor keep that floor for default
+commands but do not lower an explicitly larger sample count. For example,
+`NFN_SM120_NATIVE_SAMPLES=7
+NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_parameter_init ...` now remains a
+seven-sample measured run instead of being collapsed to the profile's five-sample
+floor.
 Measured non-startup candidate profiles inherit the wrapper's long-run
 deferred-prewarm policy unless the profile explicitly sets fast-startup or
 prewarm controls, so route candidates are compared in the same startup mode as

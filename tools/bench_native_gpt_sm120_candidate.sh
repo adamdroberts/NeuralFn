@@ -182,6 +182,12 @@ for sample_env_name in \
     break
   fi
 done
+ensure_samples_at_least() {
+  local floor="$1"
+  if [[ "$SAMPLES" =~ ^[0-9]+$ && "$SAMPLES" -lt "$floor" ]]; then
+    SAMPLES="$floor"
+  fi
+}
 WARMUP="$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 60)"
 USER_WARMUP_SET=0
 for warmup_env_name in \
@@ -1112,11 +1118,11 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "concurrent_parameter_init"|"concurrent-parameter-init"|"parallel_parameter_init"|"parallel-parameter-init"|"concurrent_token_parameter_init"|"concurrent-token-parameter-init")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-29 startup-only 5-sample rerun compared concurrent token-weight initialization plus non-token parameter fill against the current serial setup path with the derived setup.parameter_initialization.total_ms aggregate. The aggregate improved to 0.981495x, but the profile stays rejected because setup_wall_ms stayed effectively flat at 0.999582x mean / 1.001850x median and startup_plus_first_step_wall_ms missed the strict 0.998 gate; the near-zero setup.token_weight_init.total_ms bucket is only work moving into setup.concurrent_parameter_init.total_ms."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-30 startup-only 5-sample rerun with 3 warmup pairs compared concurrent token-weight initialization plus non-token parameter fill against the current serial setup path with the derived setup.parameter_initialization.total_ms aggregate. The profile stays rejected because setup_wall_ms regressed to 1.008238x mean / 1.013698x median and setup.parameter_initialization.total_ms regressed to 1.031945x mean; the near-zero setup.token_weight_init.total_ms bucket is only work moving into setup.concurrent_parameter_init.total_ms."
     CANDIDATE_NOTE="Rejected diagnostic that overlaps token-weight initialization with the independent non-token parameter fill on separate nonblocking CUDA streams, then synchronizes before block BF16 refresh and training."
     STARTUP_ONLY=1
     STEPS=0
-    SAMPLES=5
+    ensure_samples_at_least 5
     INCLUDE_LLMK_REFERENCE=0
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1"
