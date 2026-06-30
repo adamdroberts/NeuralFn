@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT prewarm threshold alignment: direct compiled native GPT training
+  now defaults `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` to `1` across the
+  C++ trainer, SM120 launcher, `train_gpt.py` compiled fast path, and
+  `train_gpt_native.py` compiled-cli environment. This aligns normal native
+  launches with the accepted same-script `long_run_defer_prewarm` benchmark
+  policy: single-step smoke runs keep auto-fast-startup behavior, while
+  multi-step quality runs defer throughput-only QKV/LM-head graph prewarms
+  instead of paying that startup cost up front. Explicit env overrides remain
+  honored. Verification: focused native GPT source/default tests, C++ launcher
+  rebuild, native runtime profile check, and same-GPU one-step benchmark.
+
 - Native SM120 benchmark quick-probe controls: the default long-run
   deferred-prewarm auto policy in `tools/bench_native_gpt_sm120_candidate.sh`
   now honors explicit `NFN_SM120_NATIVE_WARMUP` and

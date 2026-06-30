@@ -11464,7 +11464,7 @@ int run_transformer_lm_training_json(
             {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
              "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
              "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
-            1024);
+            1);
     const bool native_long_run_defer_prewarm_enabled =
         !native_fast_startup_requested &&
         !cfg.startup_only &&
@@ -27707,7 +27707,7 @@ int main(int argc, char** argv) {
             {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
              "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
              "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
-            1024);
+            1);
     cfg.auto_fast_startup_short_run =
         !cfg.fast_startup_explicit &&
         !fast_startup_env_explicit &&

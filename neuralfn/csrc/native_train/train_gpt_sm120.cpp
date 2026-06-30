@@ -479,8 +479,8 @@ int main(int argc, char** argv) {
         env_first({"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
                    "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
                    "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
-                  "1024"),
-        1024);
+                  "1"),
+        1);
     const long long resolved_max_steps = parse_nonnegative_i64_or(max_steps, 0);
     const bool auto_fast_startup_short_run =
         !fast_startup_explicit &&

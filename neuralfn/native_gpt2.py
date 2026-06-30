@@ -1335,6 +1335,7 @@ def run_native_gpt2_compiled_cli_capture(
     if str(cuda_device_max_connections or "").strip():
         _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(cuda_device_max_connections))
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")
     return subprocess.run(
         argv,
         env=env,
@@ -1412,6 +1413,7 @@ def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:
     if str(config.cuda_device_max_connections or "").strip():
         _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")
     return env
 
 

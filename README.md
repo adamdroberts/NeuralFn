@@ -304,12 +304,12 @@ runtime policy reporting
 Long native training runs still defer throughput prewarms by default. When
 `cfg.max_steps` is above `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
 (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
-`NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1024`), the trainer reports
+`NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1`), the trainer reports
 `native_long_run_defer_prewarm_enabled=true` and
 `native_fast_startup_prewarm_policy` as
-`long-run-defer-throughput-prewarms-by-default`. This keeps short parity and
-smoke runs on the QKV-prewarmed route while avoiding up-front QKV/LM-head graph
-prewarm cost for 20k-step quality runs where first-use cost is amortized.
+`long-run-defer-throughput-prewarms-by-default`. This keeps single-step smoke
+runs on the auto-fast-startup route while avoiding up-front QKV/LM-head graph
+prewarm cost for multi-step quality runs where first-use cost is amortized.
 Paired native speed gates verify that label by requiring
 `linear_tk_qkv_first_use_prewarm_success_count=0` and
 `lm_head_fused_graph_prewarm_success_count=0`, so a long-run benchmark cannot
@@ -4615,7 +4615,7 @@ weight/bias cache misses apart from expected mutable activation repacking when
 triaging first-step or per-step BF16 bridge cost.
 Direct compiled trainer invocations also auto-enable `--fast-startup` for short
 debug/smoke runs when `max_steps` is at or below
-`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) and no explicit
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1`) and no explicit
 fast-startup flag or env var was provided. Long quality runs keep the deferred
 long-run prewarm policy. Runtime JSON reports
 `native_auto_fast_startup_short_run` and `native_fast_startup_explicit` so

@@ -601,6 +601,7 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value(cuda_visible_devices_default))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")
     if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in _NATIVE_METADATA_ACTION_FLAGS):
         print(shlex.join(command))
         return 0

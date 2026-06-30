@@ -2004,6 +2004,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "native_long_run_defer_prewarm_enabled" in gpt_source
     assert "native_fast_startup_prewarm_policy" in gpt_source
     assert "cfg.fast_startup ||" in gpt_source
+    assert (
+        '"NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},\n'
+        "            1)"
+    ) in gpt_source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in gpt_source
     assert "!native_long_run_defer_prewarm_enabled" in gpt_source
     assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
@@ -2593,6 +2597,18 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert "os.execvpe(command[0], command, _compiled_cli_env(config))" in train_gpt_native_source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
     assert (
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        in train_gpt_source
+    )
+    assert (
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        in train_gpt_native_source
+    )
+    assert (
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        in native_sdk_source
+    )
+    assert (
         'if runner_status.resolved == "compiled-cli":\n'
         "        return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)"
     ) in train_gpt_native_source
@@ -2748,6 +2764,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "auto_fast_startup_short_run" in source
     assert "fast_startup_env_explicit" in source
     assert "native_auto_fast_startup_short_run" in source
+    assert 'env_nonnegative_i64_or(\n            {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",' in source
+    assert '"NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},\n            1)' in source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
     assert "!native_long_run_defer_prewarm_enabled" in source
     assert "long-run-defer-throughput-prewarms-by-default" in source
@@ -5347,6 +5365,7 @@ def test_native_gpt_exec_handoff_uses_compiled_cli_env(
         assert env["CUDA_VISIBLE_DEVICES"] == "0"
         assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
         assert env["CUDA_MODULE_LOADING"] == "LAZY"
+        assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
 
 
 def test_train_gpt_native_compiled_cli_env_overrides_ambient_cuda_env(
@@ -5389,6 +5408,11 @@ def test_train_gpt_native_compiled_cli_env_overrides_ambient_cuda_env(
     assert env["CUDA_VISIBLE_DEVICES"] == "dedicated-sm120"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
+    assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
+
+    monkeypatch.setenv("NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "7")
+    overridden = module._compiled_cli_env(cfg)
+    assert overridden["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "7"
 
 
 def test_native_gpt2_cpp_launcher_builds_and_execs(tmp_path: Path) -> None:
