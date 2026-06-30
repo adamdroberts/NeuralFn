@@ -768,7 +768,7 @@ int main(int argc, char** argv) {
     }
 
     std::vector<std::string> command;
-    command.push_back(sibling_or_path(argv[0], "NFN_NATIVE_GPT_CLI", kDefaultGptCommand));
+    command.push_back(sibling_gpt_cli(argv[0]));
     if (native_info) {
         command.push_back("--native-info");
         command.push_back("--native-checkpoint");

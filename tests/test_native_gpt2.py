@@ -1366,6 +1366,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     native_train_source = (
         root / "neuralfn" / "csrc" / "native_train" / "nfn_native_train.cpp"
     ).read_text(encoding="utf-8")
+    nfn_native_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "nfn_native.cpp"
+    ).read_text(encoding="utf-8")
     gpt2_evo_source = (
         root / "neuralfn" / "csrc" / "native_train" / "gpt2_evo_native_train.cpp"
     ).read_text(encoding="utf-8")
@@ -1440,6 +1443,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "run_native_gpt_compiled_cli_capture" in nfn_source
     assert "nfn_gpt_native_train_linked" in native_train_source
     assert "linked_local_build" in native_train_source
+    assert "command.push_back(sibling_gpt_cli(argv[0]));" in nfn_native_source
     assert "nfn_gpt_native_train_linked" in gpt2_evo_source
     assert "linked_build_path" in gpt2_evo_source
     assert "NATIVE_GPT_TRAIN_BIN" in train_sm120

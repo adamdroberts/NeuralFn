@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native inference dispatch: the compiled `nfn-native infer` path now uses the
+  same linked-aware GPT resolver as native training for `--native-info` and
+  `--sample-checkpoint` delegation. When `build/nfn_gpt_native_train_linked`
+  exists and no explicit GPT CLI override is set, native checkpoint inference
+  avoids the dynamic Tile ops loader. Verification: compiled native shim build,
+  focused source-contract pytest, no-Torch native verifier, and
+  `git diff --check`.
+
 - Native GPT startup diagnostics: the opt-in split-arena concurrent
   materialization path now refuses to overlap the large float and uint16/BF16
   arena allocations when either arena would be served by thresholded
