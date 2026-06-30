@@ -1266,7 +1266,18 @@ def resolve_native_gpt2_binding_command(config: NativeGpt2RunConfig) -> list[str
     return [str(item) for item in resolver(config.launch_dict())]
 
 
-def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int:
+def run_native_gpt2(
+    config: NativeGpt2RunConfig,
+    *,
+    runner: str = "auto",
+    exec_process: bool = False,
+) -> int:
+    if exec_process:
+        exec_runner = str(runner or "auto").strip().lower().replace("_", "-")
+        if exec_runner == "auto":
+            exec_runner = "compiled-cli"
+        return exec_native_gpt2(config, runner=exec_runner)
+
     status = native_gpt2_runner_status(runner)
     if status.resolved == "binding":
         if not status.available:

@@ -3447,7 +3447,11 @@ Programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` calls that p
 SDK callers that need the same process-replacement handoff can call
 `exec_native_gpt(config)` or compatibility `exec_native_gpt2(config)`; the
 existing `run_native_gpt(...)` helpers still run the compiled path and return
-its exit code.
+its exit code. For long native training runs, `run_native_gpt(config,
+exec_process=True)` and compatibility `run_native_gpt2(config,
+exec_process=True)` now route through the same `execvpe` handoff while keeping
+the familiar run-helper call shape; `runner="auto"` resolves to the compiled CLI
+for that exec path because binding mode cannot replace the Python process.
 
 Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions now
 replace the Python harness with the compiled C++ trainer after command

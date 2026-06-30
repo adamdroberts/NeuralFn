@@ -89,8 +89,13 @@ def read_native_gpt_checkpoint_info(*args, **kwargs) -> NativeGptCheckpointInfo:
     return _generic_checkpoint(read_native_gpt2_checkpoint_info(*args, **kwargs))
 
 
-def run_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto") -> int:
-    return run_native_gpt2(config, runner=runner)
+def run_native_gpt(
+    config: NativeGptRunConfig,
+    *,
+    runner: str = "auto",
+    exec_process: bool = False,
+) -> int:
+    return run_native_gpt2(config, runner=runner, exec_process=exec_process)
 
 
 def capture_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto"):

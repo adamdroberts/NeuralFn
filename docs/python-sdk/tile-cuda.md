@@ -2932,7 +2932,11 @@ can call `exec_native_gpt(config)` or the compatibility
 apply the same CUDA device/max-connection/lazy-module-loading environment as
 `run_native_gpt()`, and then call `execvpe` for `compiled-cli` or `launcher`
 runners. They intentionally reject binding mode because an in-process extension
-cannot replace the Python process.
+cannot replace the Python process. The run helpers also expose this boundary as
+`run_native_gpt(config, exec_process=True)` and
+`run_native_gpt2(config, exec_process=True)` for callers that want one SDK entry
+point for short returned-status probes and long-running process replacement;
+`runner="auto"` maps to the compiled CLI on that exec path.
 
 For dense GPT commands that need captured stdout/stderr instead of process
 replacement, use `run_native_gpt_compiled_cli_capture(argv)` or the

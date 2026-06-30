@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native GPT SDK exec handoff: `run_native_gpt(...)` and compatibility
+  `run_native_gpt2(...)` now accept `exec_process=True`, routing through the
+  same compiled-CLI `execvpe` path as `exec_native_gpt(...)` while preserving the
+  run-helper API shape. `runner="auto"` resolves to `compiled-cli` for this mode
+  because binding runners cannot replace the Python process. Verification:
+  focused native GPT SDK exec-handoff pytest slice and `git diff --check`.
+
 - SM120 long-run benchmark floor overrides: named long-run native GPT candidate
   profiles now honor explicit `NFN_SM120_NATIVE_*_WARMUP` and
   `NFN_SM120_NATIVE_*_STEPS` values instead of always raising them to the
