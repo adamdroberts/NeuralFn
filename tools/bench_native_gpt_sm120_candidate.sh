@@ -1065,6 +1065,8 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-setup.parameter_initialization.total_ms=0.990 setup_wall_ms=0.995 startup_plus_first_step_wall_ms=0.998}"
     ;;
   "embedding_bf16_shadow"|"embedding-bf16-shadow"|"token_embedding_bf16_shadow"|"token-embedding-bf16-shadow"|"bf16_embedding_shadow"|"bf16-embedding-shadow")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 3-step, 1-sample same-script screen changed embedding_bf16_shadow_enabled false->true and embedding_residual_strategy to fused-token-u16-bf16-shadow-position-residual. It improved setup_wall_ms to 0.949391x and setup.token_weight_init.total_ms to 0.975557x, but rejected default promotion because train_loop_wall_ms_per_step regressed to 1.002583x, steady-state CUDA-event timing to 1.003711x, and train_tokens_per_second fell to 0.997423x."
     CANDIDATE_NOTE="Compares the default fused embedding residual that reads FP32 token weights against the candidate fused direct-u16 embedding residual that reads the maintained BF16 token-weight shadow."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_EMBEDDING_BF16_SHADOW=1"

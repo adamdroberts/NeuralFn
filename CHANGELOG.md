@@ -10,6 +10,12 @@
   separately from steady-state CUDA-event throughput. Verification: focused
   paired-speed pytest, Python compile check, and `git diff --check`.
 
+- Native SM120 benchmark profile triage: marked the `embedding_bf16_shadow`
+  candidate profile rejected after a same-script RTX 5090 screen proved the
+  route change but failed train-loop, steady-state CUDA-event, and tokens/sec
+  gates. Verification: live candidate screen, focused profile pytest, shell
+  syntax check, and `git diff --check`.
+
 - Native inference dispatch: the compiled `nfn-native infer` path now uses the
   same linked-aware GPT resolver as native training for `--native-info` and
   `--sample-checkpoint` delegation. When `build/nfn_gpt_native_train_linked`
