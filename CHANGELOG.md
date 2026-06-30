@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- SM120 CUDA validator LM-head contract: `tools/validate_sm120_cuda13.sh` now
+  enforces the current default dense GPT LM-head route, which reports
+  `lm_head_classifier_backward_path_class: diagnostic-sequence-wrapper`,
+  keeps `lm_head_cooperative_backward_sequence_wrapper_enabled=true`, and
+  requires `lm_head_llmk_classifier_matmul_parity_available=true`. Cached CUDA
+  Graph replay remains an explicit diagnostic comparison route instead of the
+  default runtime contract. Verification: live validator rerun on the dedicated
+  RTX 5090, focused validator source test, shell syntax check, and
+  `git diff --check`.
+
 - Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now requires
   an enabled shared native cuBLASLt plan-cache comparison before plan-cache
   differences can satisfy route-change attribution. Candidate-only or

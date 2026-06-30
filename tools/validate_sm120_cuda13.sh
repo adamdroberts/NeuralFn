@@ -284,8 +284,11 @@ checks = [
         "runtime contract must keep the promoted 512-thread linear-bias reducer",
     ),
     (
-        payload.get("lm_head_classifier_backward_path_class") == "diagnostic-cuda-graph-wrapper",
-        "runtime contract must keep LM-head on the promoted CUDA Graph wrapper until a faster true-fused Tile kernel replaces it",
+        payload.get("lm_head_classifier_backward_path_class") == "diagnostic-sequence-wrapper"
+        and payload.get("lm_head_cooperative_backward_sequence_wrapper_enabled") is True
+        and payload.get("lm_head_cooperative_backward_cuda_graph_enabled") is False
+        and payload.get("lm_head_llmk_classifier_matmul_parity_available") is True,
+        "runtime contract must keep the default LM-head route on the cooperative sequence wrapper with llm.kittens parity available; CUDA Graph replay remains an explicit diagnostic route",
     ),
     (
         payload.get("lm_head_row_chunk_size") == 28672
@@ -451,8 +454,8 @@ checks = [
     ),
     (
         value("lm_head_classifier_backward_path_class")
-        == "diagnostic-cuda-graph-wrapper",
-        "LM-head backward must stay on the promoted CUDA Graph wrapper until a faster true-fused Tile kernel replaces it",
+        == "diagnostic-sequence-wrapper",
+        "LM-head backward must stay on the default cooperative sequence wrapper; CUDA Graph replay remains an explicit diagnostic route",
     ),
     (
         true_fused_target.get("status") == "diagnostic-cuda-graph-wrapper"

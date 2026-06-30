@@ -1026,12 +1026,12 @@ def test_native_gpt_dense_modern_template_aliases_are_classified_explicitly() ->
         / "nfn_gpt2_native_train.cpp"
     ).read_text(encoding="utf-8")
 
-    assert 'name == "gpt2_modern"' in source
-    assert 'name == "nanogpt_modern"' in source
-    assert 'name == "nanogpt_megakernel"' in source
-    assert '\\"gpt2_modern\\"' in source
-    assert '\\"nanogpt_modern\\"' in source
-    assert '\\"nanogpt_megakernel\\"' in source
+    assert '"gpt2_modern",' in source
+    assert '"nanogpt_modern",' in source
+    assert '"nanogpt_megakernel",' in source
+    assert '"gpt2_modern"' in source
+    assert '"nanogpt_modern"' in source
+    assert '"nanogpt_megakernel"' in source
     assert 'selector == "nanogpt" || selector == "nanogpt_megakernel" || selector == "nanogpt_modern"' in source
 
 
@@ -1128,6 +1128,10 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "NFN_SM120_CUDA13_RUNTIME_CONTRACT_JSON_OUT" in source
     assert "SM120 CUDA 13.3 runtime contract passed" in source
     assert "runtime_contract_status" in source
+    assert 'payload.get("lm_head_classifier_backward_path_class") == "diagnostic-sequence-wrapper"' in source
+    assert 'payload.get("lm_head_cooperative_backward_sequence_wrapper_enabled") is True' in source
+    assert 'payload.get("lm_head_llmk_classifier_matmul_parity_available") is True' in source
+    assert "CUDA Graph replay remains an explicit diagnostic route" in source
     assert "--max-steps 1" in source
     assert "--train-loss-every-steps 0" in source
     assert "NFN_SM120_CUDA13_RUN_NO_TORCH" in source
@@ -1531,7 +1535,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in parity_bench
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
-    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 20)\"" in candidate_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 40)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
@@ -2018,7 +2022,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert '"train_loss_host_d2h_count"' in speed_tool
     assert "native_runtime_contract_gate" in speed_tool
     assert "candidate native training must report graph_editor_tensor_flow=false" in speed_tool
-    assert "and train_loss_host_d2h_count=0" in speed_tool
+    assert "train_loss_host_d2h_count=0 with root setup/train timing metrics" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_count" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_requested_rows" in speed_tool
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in speed_tool

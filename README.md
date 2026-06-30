@@ -2218,6 +2218,9 @@ true single-kernel/cooperative implementation. Its capability probe
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 therefore returns `0`; callers that require the current native parity route
 should check `lm_head_llmk_classifier_matmul_parity_available` and the active
+`diagnostic-sequence-wrapper` path class. The SM120 CUDA validator enforces that
+default route and treats cached CUDA Graph replay as an explicit diagnostic
+comparison path, not as the default runtime contract.
 route fields such as `lm_head_cooperative_backward_sequence_wrapper_enabled` or
 `lm_head_cooperative_backward_cuda_graph_enabled`, while callers that require a
 future monolithic CE+dHidden+dWeight kernel must check

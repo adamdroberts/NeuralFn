@@ -1259,7 +1259,12 @@ preflight contract.
 The cooperative LM-head sequence wrapper is the default native route. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only for paired diagnostics
 that need to compare the legacy cached graph wrapper while keeping the
-cooperative LM-head route requested.
+cooperative LM-head route requested. The SM120 CUDA validator checks that the
+default runtime reports `lm_head_classifier_backward_path_class:
+diagnostic-sequence-wrapper`,
+`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, and
+`lm_head_llmk_classifier_matmul_parity_available: true`; cached CUDA Graph
+replay is validated only when explicitly selected as a diagnostic route.
 The standalone LM-head benchmark can also test the explicit cuBLASLt candidate
 without changing trainer defaults:
 `NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16
