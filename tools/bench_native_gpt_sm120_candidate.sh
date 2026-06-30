@@ -2027,7 +2027,7 @@ filter_generated_candidate_ratio_gates() {
     metric="${metric#*:}"
     if [[ "$run_is_startup_only" == "1" ]]; then
       case "$metric" in
-        train_loop_*|train_tokens_per_second|stage.*|attention_backward_*|startup_plus_first_step_wall_ms|startup_plus_train_loop_wall_ms|startup_plus_steady_state_step_wall_ms)
+        train_*|stage.*|attention_backward_*|startup_plus_first_step_wall_ms|startup_plus_train_loop_wall_ms|startup_plus_steady_state_step_wall_ms)
           continue
           ;;
       esac
@@ -2053,6 +2053,16 @@ if [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" && "$AUTO_DISABLE_METRIC_RATIO_GATES" =
   MIN_CANDIDATE_RATIO_RAW=""
 elif [[ -z "$USER_MIN_CANDIDATE_RATIO_RAW" ]]; then
   MIN_CANDIDATE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MIN_CANDIDATE_RATIO_RAW")"
+fi
+if [[ -z "$USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW" && "$AUTO_DISABLE_METRIC_RATIO_GATES" == "1" ]]; then
+  MAX_CANDIDATE_REFERENCE_RATIO_RAW=""
+elif [[ -z "$USER_MAX_CANDIDATE_REFERENCE_RATIO_RAW" ]]; then
+  MAX_CANDIDATE_REFERENCE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MAX_CANDIDATE_REFERENCE_RATIO_RAW")"
+fi
+if [[ -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" && "$AUTO_DISABLE_METRIC_RATIO_GATES" == "1" ]]; then
+  MIN_CANDIDATE_REFERENCE_RATIO_RAW=""
+elif [[ -z "$USER_MIN_CANDIDATE_REFERENCE_RATIO_RAW" ]]; then
+  MIN_CANDIDATE_REFERENCE_RATIO_RAW="$(filter_generated_candidate_ratio_gates "$MIN_CANDIDATE_REFERENCE_RATIO_RAW")"
 fi
 
 native_gpt_source_newer_than() {
