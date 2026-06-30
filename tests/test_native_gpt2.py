@@ -1562,14 +1562,14 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias3 NFN_SM120_NATIVE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 2)\"" in parity_bench
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
-    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 40)\"" in candidate_bench
+    assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 60)\"" in candidate_bench
     assert "USER_STEPS_SET=0" in candidate_bench
     assert "USER_WARMUP_SET=0" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
-    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 40)" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 60)" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in parity_bench
@@ -3409,7 +3409,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1" in bench_source
     assert "native_fast_startup_prewarm_policy" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in bench_source
-    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 40)" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 60)" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source

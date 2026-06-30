@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native SM120 benchmark warmup floor: raised the candidate-wrapper default
+  warmup and the long-run deferred-prewarm warmup floor from 40 to 60 pairs,
+  matching the native training LR warmup default so kernel candidate gates use
+  steadier measurements when compared against current native and llm.kittens.
+  The parity wrapper still keeps its plain default at two warmup pairs, but the
+  default long-run deferred-prewarm path now applies the same 60-pair floor.
+  Verification: focused native GPT source-contract tests, shell syntax check,
+  dry-run benchmark metadata check, and `git diff --check`.
+
 - Missing-family native preflights: the compiled LLaMA, MixLLaMA, JEPA,
   semantic-router MoE, and DeepSeek-V4 native binaries now support
   `--print-plan`, `--dry-run`, and `--check-tile-ops --tile-ops-lib PATH`.

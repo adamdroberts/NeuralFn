@@ -307,10 +307,10 @@ Arena families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of
 being collapsed under a generic buffer label.
-The native SM120 candidate wrapper defaults to 40 warmup pairs for
-candidate-vs-current/reference runs and applies the same 40-pair floor to
+The native SM120 candidate wrapper defaults to 60 warmup pairs for
+candidate-vs-current/reference runs and applies the same 60-pair floor to
 long-run deferred-prewarm comparisons. The parity wrapper uses the same
-40-pair long-run floor for current-vs-llm.kittens runs. Set
+60-pair long-run floor for current-vs-llm.kittens runs. Set
 `NFN_SM120_NATIVE_WARMUP=0`,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, or
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for intentional
@@ -1608,8 +1608,8 @@ single-sample runs keep the paired speed tool's unqualified mean behavior. Set
 `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO`, when an exact no-slower-than-reference
 diagnostic run is required. Explicit candidate ratios can use `mean:`,
 `median:`, `min:`, or `max:` prefixes.
-The post-CUDA-13.3 rebuild 2026-06-28 dedicated RTX 5090 3-step, 2-sample
-no-stage refresh passed the default parity gate: NeuralFn measured
+The 2026-06-28 dedicated RTX 5090 3-step, 2-sample no-stage refresh passed
+the default parity gate: NeuralFn measured
 `2438.062 ms/step` and `215043` tokens/sec versus llm.kittens at
 `2433.930 ms/step` and `215431` tokens/sec. The paired median gates were
 `1.001715x` train-loop wall and `1.001653x` steady-state CUDA-event timing,
@@ -1765,7 +1765,7 @@ object with `-Bsymbolic`, so a candidate library loaded by a linked native
 trainer resolves its C ABI wrappers to its own C++ kernel implementations rather
 than the trainer's built-in default Tile symbols.
 The `token_weight_padded_bf16_pattern` startup candidate is now an accepted
-default-vs-legacy profile after the post-CUDA-13.3 dedicated RTX 5090 rerun.
+default-vs-legacy profile after the dedicated RTX 5090 rerun.
 The 3-step, 3-sample, 1-warmup same-script gate promoted the precomputed
 BF16-shadow route with `setup.token_weight_init.total_ms=0.976915x`,
 `setup_wall_ms=0.993685x`, train-loop wall inside the gate at `1.000153x`, and
@@ -2591,7 +2591,7 @@ versus llm.kittens, with steady-state tokens/sec at `1.267382x` versus the
 reference. The deferred first-step cost remains visible in train-loop wall
 timing, so the profile gates steady-state separately. If a copied benchmark
 command sets a lower warmup count for this profile or the default long-run
-deferred-prewarm auto policy, the wrapper raises warmup to at least 40
+deferred-prewarm auto policy, the wrapper raises warmup to at least 60
 pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for
 an intentional first-use diagnostic run.
 Measured long-run deferred-prewarm runs also raise fewer than ten optimizer

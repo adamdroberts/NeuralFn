@@ -3435,8 +3435,8 @@ first-use setup prewarm by default, matching the LM-head graph prewarm skip.
 Pass `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` only when a fast-startup smoke
 or one-step diagnostic needs to reproduce the older eager QKV prewarm setup.
 When a caller requests fewer than
-twenty warmup pairs for this profile, or for a measured default long-run
-deferred-prewarm comparison, the wrapper raises benchmark warmup to twenty pairs.
+60 warmup pairs for this profile, or for a measured default long-run
+deferred-prewarm comparison, the wrapper raises benchmark warmup to 60 pairs.
 Dry-run plans keep explicit low-warmup aliases literal for command-shape
 checks. The measured path records `long_run_defer_prewarm_min_warmup_applied`
 or `default_long_run_defer_prewarm_min_warmup_applied` in paired JSON metadata,
@@ -3447,7 +3447,7 @@ steps to ten and record `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied`; use
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for an intentional
 short first-step-dominated reproduction.
-The parity wrapper shares these twenty-warmup and ten-step measured-run floors
+The parity wrapper shares these 60-warmup and ten-step measured-run floors
 for default deferred-prewarm current-vs-llm.kittens checks; set
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
