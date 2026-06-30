@@ -4881,12 +4881,14 @@ but disables the ratio gate unless `NFN_SM120_CUDA13_PARITY_ENFORCE_GATE` is set
 explicitly.
 
 The native training SDK keeps the same compiled-boundary contract by default.
-`NativeTrainRunConfig.strict_native_command` is `True`, so
-`build_native_train_run_config()` and the generic `neuralfn._native_train`
-binding reject Python and shell launchers such as `python`, `bash`, `*.py`, and
-`*.sh` on the native training path. Pass `strict_native_command=False` only for
-diagnostic command-resolution tests; production training should enter a
-compiled C++ trainer or the unified native frontend directly.
+`NativeTrainRunConfig.strict_native_command`,
+`NativeGptRunConfig.strict_native_command`, and
+`NativeGpt2RunConfig.strict_native_command` are `True`, so the native train,
+GPT, and GPT-2 C++ bindings reject Python and shell launchers such as `python`,
+`bash`, `*.py`, and `*.sh` on the native training path. Pass
+`strict_native_command=False` only for diagnostic command-resolution tests;
+production training should enter a compiled C++ trainer or the unified native
+frontend directly.
 
 For native dense GPT inference, point `nfn infer --checkpoint` at either the
 exact native `model_########.bin` file or the output directory that contains the

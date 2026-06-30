@@ -138,6 +138,7 @@ class NativeGpt2RunConfig:
     template_name: str = "gpt"
     graph_file: str = ""
     model_family: str = "gpt"
+    strict_native_command: bool = True
 
     def argv(self) -> list[str]:
         args = [
@@ -950,6 +951,7 @@ def build_native_gpt2_run_config(
     batch_size_explicit: bool = True,
     seq_len_explicit: bool = True,
     num_layers_explicit: bool = True,
+    strict_native_command: bool = True,
 ) -> tuple[NativeGpt2RunConfig, dict[str, Any]]:
     meta, train_data, val_data = resolve_native_gpt2_token_shards(
         dataset_name,
@@ -1019,6 +1021,7 @@ def build_native_gpt2_run_config(
         template_name=resolved_template_name,
         graph_file=str(graph_file or ""),
         write_checkpoint=bool(write_checkpoint),
+        strict_native_command=bool(strict_native_command),
     )
     return cfg, meta
 
@@ -1076,6 +1079,7 @@ def build_native_gpt2_compiled_cli_run_config(
     batch_size_explicit: bool = True,
     seq_len_explicit: bool = True,
     num_layers_explicit: bool = True,
+    strict_native_command: bool = True,
 ) -> NativeGpt2RunConfig:
     """Build a compiled-CLI handoff without Python-side token shard inspection."""
 
@@ -1141,6 +1145,7 @@ def build_native_gpt2_compiled_cli_run_config(
         template_name=resolved_template_name,
         graph_file=str(graph_file or ""),
         write_checkpoint=bool(write_checkpoint),
+        strict_native_command=bool(strict_native_command),
     )
 
 

@@ -5455,7 +5455,8 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
                 sys.executable,
                 "-c",
                 "import sys; print('native-sampler-ok'); print('native-stderr-ok', file=sys.stderr)",
-            ]
+            ],
+            "strict_native_command": False,
         }
     )
     assert captured == {
@@ -5463,6 +5464,8 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
         "stdout": "native-sampler-ok\n",
         "stderr": "native-stderr-ok\n",
     }
+    with pytest.raises(ValueError, match="requires a compiled C\\+\\+ command"):
+        binding_module.resolve_native_gpt2_command({"compiled_cli_argv": [sys.executable, "-c", "pass"]})
 
 
 def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
@@ -5533,6 +5536,9 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
     assert "STDERR_FILENO" in source
     assert '"run_gpt_capture"' in source
     assert '"run_infer"' in source
+    assert "strict_native_command" in source
+    assert "is_forbidden_native_launcher" in source
+    assert "requires a compiled C++ command" in source
     assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
     assert "fork()" not in source
 
@@ -5615,6 +5621,10 @@ def test_native_gpt_cpp_binding_requires_command_resolver_symbol() -> None:
     assert '"resolve_command"' in binding_source
     assert '"resolve_native_gpt_command"' in binding_source
     assert '"resolve_native_gpt2_command"' in binding_source
+    assert "strict_native_command" in binding_source
+    assert "is_forbidden_native_launcher" in binding_source
+    assert "requires a compiled C++ command" in binding_source
+    assert "strict_native_command: bool = True" in python_source
     assert "command_resolver_available" in python_source
     assert "resolve_native_gpt2_binding_command" in python_source
     assert "resolve_native_gpt_binding_command" in generic_source

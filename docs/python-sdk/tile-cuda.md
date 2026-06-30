@@ -3518,12 +3518,13 @@ per-family binaries built by `tools/build_native_missing_trainers.sh`, including
 the GPT2-evo delegate, NanoGPT native preflight, and placeholder
 LLaMA/MixLLaMA/JEPA/semantic-router/DeepSeek trainers. Use `--rebuild-stale`
 after changing those C++ sources or the shared missing-trainer build script.
-`NativeTrainRunConfig.strict_native_command` defaults to `True`, and the Python
-SDK plus generic C++ binding reject Python/shell launchers (`python`, `bash`,
-`*.py`, `*.sh`) on the native training path. Set
-`strict_native_command=False` only for diagnostic command-resolution tests; real
-training should resolve to a compiled native trainer or the unified C++
-frontend.
+`NativeTrainRunConfig.strict_native_command`,
+`NativeGptRunConfig.strict_native_command`, and
+`NativeGpt2RunConfig.strict_native_command` default to `True`, and the Python
+SDK C++ bindings reject Python/shell launchers (`python`, `bash`, `*.py`,
+`*.sh`) on the native training path. Set `strict_native_command=False` only for
+diagnostic command-resolution tests; real training should resolve to a compiled
+native trainer or the unified C++ frontend.
 `NativeTrainRunConfig`, `build_native_train_run_config()`,
 `build_native_sm120_gpt_run_config()`, and
 `build_native_gpt_launcher_run_config()` accept `template_name=` and

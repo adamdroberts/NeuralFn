@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native GPT binding command contract: `NativeGptRunConfig` and
+  `NativeGpt2RunConfig` now inherit the same `strict_native_command=True`
+  default as generic native training, and the GPT/GPT-2 C++ bindings reject
+  Python or shell launchers unless callers explicitly opt out for diagnostic
+  command-resolution tests. Verification: focused native GPT binding tests,
+  Python compile check, and `git diff --check`.
+
 - Native SM120 BF16 QKV benchmark profile: added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=ln1_bf16_qkv_forward` to
   `tools/bench_native_gpt_sm120_candidate.sh`. The profile compares the legacy
