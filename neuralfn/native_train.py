@@ -716,7 +716,18 @@ def _native_train_command_available(argv: Sequence[str]) -> bool:
     return shutil.which(executable) is not None
 
 
-def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> int:
+def run_native_train(
+    config: NativeTrainRunConfig,
+    *,
+    runner: str = "auto",
+    exec_process: bool = False,
+) -> int:
+    if exec_process:
+        exec_runner = str(runner or "auto").strip().lower().replace("_", "-")
+        if exec_runner == "auto":
+            exec_runner = "compiled-cli"
+        return exec_native_train(config, runner=exec_runner)
+
     status = native_train_runner_status(runner)
     if status.resolved == "binding":
         if not status.available:

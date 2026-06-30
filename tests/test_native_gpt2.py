@@ -6947,6 +6947,39 @@ def test_exec_native_train_replaces_process_with_compiled_cli(
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
 
 
+def test_run_native_train_exec_process_defaults_to_compiled_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = tmp_path / "nfn_native_train"
+    cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(cli))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    monkeypatch.setattr(native_train_module, "resolve_cuda_visible_devices_value", lambda value: "7")
+    observed: dict[str, object] = {}
+
+    def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
+        observed["file"] = file
+        observed["argv"] = argv
+        observed["env"] = env
+        raise SystemExit(0)
+
+    monkeypatch.setattr(native_train_module.os, "execvpe", fake_execvpe)
+    cfg = build_native_train_run_config("gpt", ["--tinystories", "--dry-run"])
+
+    with pytest.raises(SystemExit) as exc:
+        run_native_train(cfg, exec_process=True)
+
+    assert exc.value.code == 0
+    assert observed["file"] == str(cli)
+    assert observed["argv"] == [str(cli), "--base-model", "gpt", "--tinystories", "--dry-run"]
+    env = observed["env"]
+    assert isinstance(env, dict)
+    assert env["CUDA_VISIBLE_DEVICES"] == "7"
+    assert env["CUDA_MODULE_LOADING"] == "LAZY"
+
+
 def test_native_train_run_config_uses_direct_dense_gpt_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

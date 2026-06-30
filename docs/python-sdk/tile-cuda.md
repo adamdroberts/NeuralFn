@@ -3583,7 +3583,10 @@ resolves the same compiled native command as `run_native_train(...,
 runner="compiled-cli")`, sets the CUDA environment defaults, then calls
 `execvpe` so long-running training does not retain a Python parent. The binding
 route remains available through `run_native_train(..., runner="auto")` when the
-caller needs a returned status code.
+caller needs a returned status code. `run_native_train(config,
+exec_process=True)` exposes the same process replacement on the run helper and
+maps `runner="auto"` to the compiled CLI because binding mode cannot replace the
+Python process.
 Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports

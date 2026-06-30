@@ -339,10 +339,11 @@ override ambient shell values for the spawned native process. Set
 display-disabled GPU probe, use another explicit ordinal, or set that config
 field to match the environment when you intentionally want environment-driven
 selection. Use
-`exec_native_train(config)` when a
-generic SDK launcher should `execvpe` the selected compiled native trainer and
-remove the Python parent process entirely; keep `run_native_train(...)` when you
-need the C++ binding route or a returned exit code.
+`exec_native_train(config)` or `run_native_train(config, exec_process=True)`
+when a generic SDK launcher should `execvpe` the selected compiled native
+trainer and remove the Python parent process entirely; keep
+`run_native_train(...)` without `exec_process` when you need the C++ binding
+route or a returned exit code.
 
 ## Modules
 

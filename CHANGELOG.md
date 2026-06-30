@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native train SDK exec handoff: `run_native_train(...)` now accepts
+  `exec_process=True`, mapping `runner="auto"` to the compiled CLI and then
+  delegating to `exec_native_train(...)`. This gives generic SDK launch scripts
+  the same no-Python-parent process boundary without switching helper names.
+  Verification: focused native train SDK exec-handoff pytest slice and
+  `git diff --check`.
+
 - Native GPT SDK exec handoff: `run_native_gpt(...)` and compatibility
   `run_native_gpt2(...)` now accept `exec_process=True`, routing through the
   same compiled-CLI `execvpe` path as `exec_native_gpt(...)` while preserving the
