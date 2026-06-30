@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native GPT-2 compatibility builder freshness now matches the generic GPT
+  trainer builders: `tools/build_native_gpt2_cli.sh` skips recompilation only
+  when its output is newer than the trainer source, token-shard source/header,
+  shipped GPT template preset header, and build script, and honors
+  `NFN_NATIVE_GPT_FORCE_REBUILD` / `NFN_NATIVE_FORCE_REBUILD`. Verification:
+  focused native GPT source assertion pytest.
+
 - Native GPT trainer freshness now includes shipped template metadata:
   `tools/build_native_gpt_cli.sh`, `tools/build_native_gpt_cli_linked.sh`, and
   the auto-rebuild paths in `tools/train_gpt.sh` / `tools/train_gpt_sm120.sh`

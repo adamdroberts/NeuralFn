@@ -978,8 +978,9 @@ are newer; explicitly pinned `NFN_NATIVE_GPT_TRAIN_BIN` and candidate trainer
 paths are left untouched. The
 low-level GPT CLI build scripts now skip recompilation when their output is
 newer than `nfn_gpt2_native_train.cpp`, `token_shards.cpp`,
-`token_shards.h`, their own build script, and, for the linked trainer,
-`libnfn_native_train_tile_ops.so`. Set `NFN_NATIVE_GPT_FORCE_REBUILD=1` or
+`token_shards.h`, `shipped_gpt_template_presets.h`, their own build script,
+and, for the linked trainer, `libnfn_native_train_tile_ops.so`. Set
+`NFN_NATIVE_GPT_FORCE_REBUILD=1` or
 `NFN_NATIVE_FORCE_REBUILD=1` when a forced local rebuild is required.
 `tools/rebuild_native_sm120.sh` sets `NFN_NATIVE_FORCE_REBUILD=1` by default,
 so CUDA toolkit refreshes still rebuild all native artifacts unless that

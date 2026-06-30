@@ -1486,6 +1486,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     build_script = (root / "tools" / "build_native_gpt_cli.sh").read_text(
         encoding="utf-8"
     )
+    compat_build = (root / "tools" / "build_native_gpt2_cli.sh").read_text(
+        encoding="utf-8"
+    )
     train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(
         encoding="utf-8"
     )
@@ -1664,6 +1667,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "TOKEN_SHARDS_HEADER" in build_script
     assert "CATALOG_HEADER" in build_script
     assert '! source_newer_than_out "${CATALOG_HEADER}"' in build_script
+    assert "NFN_NATIVE_GPT_FORCE_REBUILD" in compat_build
+    assert "NFN_NATIVE_FORCE_REBUILD" in compat_build
+    assert "source_newer_than_out" in compat_build
+    assert "TOKEN_SHARDS_HEADER" in compat_build
+    assert "CATALOG_HEADER" in compat_build
+    assert '! source_newer_than_out "${CATALOG_HEADER}"' in compat_build
     assert '"${SRC}" "${TOKEN_SHARDS_SRC}" -pthread -ldl -o "${OUT}"' in build_script
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
     assert "source_newer_than_out" in linked_build
