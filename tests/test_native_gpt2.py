@@ -1750,8 +1750,12 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in parity_bench
     assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0' in parity_bench
     assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0' in parity_bench
-    assert '"$USER_WARMUP_SET" == "0"' in candidate_bench
-    assert '"$USER_STEPS_SET" == "0"' in candidate_bench
+    assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_WARMUP_DIAGNOSTIC=0' in parity_bench
+    assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC=0' in parity_bench
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "0"' in candidate_bench
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "1"' in candidate_bench
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "0"' in parity_bench
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "1"' in parity_bench
     assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in parity_bench
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")' in parity_bench
@@ -1760,6 +1764,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS' in parity_bench
     assert 'default_long_run_defer_prewarm_min_warmup_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP' in candidate_bench
     assert 'default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS' in candidate_bench
+    assert 'default_long_run_defer_prewarm_low_warmup_diagnostic=$WARMUP' in parity_bench
+    assert 'default_long_run_defer_prewarm_low_step_diagnostic=$STEPS' in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench
@@ -3597,6 +3603,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC=0" in bench_source
     assert "USER_STEPS_SET=0" in bench_source
     assert "USER_WARMUP_SET=0" in bench_source
+    assert "ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in bench_source
+    assert "NFN_SM120_NATIVE_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in bench_source
+    assert "NFN_SM120_PARITY_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in parity_bench
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "default_long_run_defer_prewarm_min_steps_applied" in bench_source
     assert "default_long_run_defer_prewarm_low_warmup_diagnostic" in bench_source
@@ -3621,8 +3630,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         bench_source.index("DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1") :
         bench_source.index('Unsupported NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM value')
     ]
-    assert '"$USER_WARMUP_SET" == "0"' in default_auto_block
-    assert '"$USER_STEPS_SET" == "0"' in default_auto_block
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "0"' in default_auto_block
+    assert '"$ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" == "1"' in default_auto_block
     assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_block
     assert "full-loop ratios are not dominated by the intentionally deferred first step" in long_run_block
     assert (

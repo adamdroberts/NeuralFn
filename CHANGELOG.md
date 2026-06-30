@@ -64,6 +64,15 @@
   failed the wrapper gate because those keys were discarded during parsing.
   Verification: focused paired-kernel contract pytest.
 
+- Native SM120 long-run benchmark accuracy floors: the native candidate and
+  llm.kittens parity wrappers now apply the long-run deferred-prewarm minimum
+  warmup/step floors by default even when a copied command explicitly provides
+  smaller values. Set
+  `NFN_SM120_NATIVE_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC=1` only for
+  intentional first-use diagnostics; otherwise low-count runs are raised before
+  ratio gates execute. Verification: dry-run wrapper checks and focused native
+  benchmark source-contract pytest.
+
 - Native no-Torch deferred-timing artifact guard: `tools/check_native_no_torch_deps.py`
   now requires compiled GPT trainer artifacts to contain the deferred-prewarm
   timing-contract JSON markers. This makes stale or incomplete native binaries
