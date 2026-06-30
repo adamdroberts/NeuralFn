@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Dense GPT guard linked handoff: graph-backed compatibility script guards that
+  dispatch dense GPT training now prefer `build/nfn_gpt_native_train_linked`
+  when it exists and no `NFN_NATIVE_GPT_CLI` override is set. The guard also
+  appends `--tile-ops-lib linked` unless a Tile ops library flag was already
+  supplied, keeping scripts such as `train_nanogpt.py` on the linked CUDA Tile
+  trainer path without the dynamic Tile ops load. Verification: Python compile
+  check, focused native-training-guard pytest slice, NanoGPT dry-run command
+  inspection, stale-install-note grep, and `git diff --check`.
+
 - Paired benchmark GPU-load telemetry: `tools/paired_kernel_speed.py` now adds
   `all_gpu_max_utilization_pct` and
   `non_selected_gpu_max_utilization_pct` to `gpu_sample_summary`. Existing

@@ -169,6 +169,10 @@ def _resolve_family_native_cli(env_var: str, command_name: str) -> str | None:
     if requested:
         return requested
     root = Path(__file__).resolve().parents[2]
+    if command_name == "nfn_gpt_native_train":
+        linked = root / "build" / "nfn_gpt_native_train_linked"
+        if linked.exists():
+            return str(linked)
     built = root / "build" / command_name
     if built.exists():
         return str(built)
@@ -230,7 +234,18 @@ def _forwarded_args(model_family: str, native_default_args: list[str]) -> list[s
 def _family_forwarded_args(command: str, native_default_args: list[str]) -> list[str]:
     args = _normalize_forwarded_args(list(sys.argv[1:]))
     defaults = [] if _has_native_action(args) else native_default_args
-    return [command, *defaults, *args]
+    forwarded = [command, *defaults, *args]
+    if Path(command).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}:
+        has_tile_ops_lib = any(
+            arg == "--tile-ops-lib"
+            or arg == "--native-cuda-tile-ops-lib"
+            or arg.startswith("--tile-ops-lib=")
+            or arg.startswith("--native-cuda-tile-ops-lib=")
+            for arg in forwarded
+        )
+        if not has_tile_ops_lib:
+            forwarded.extend(["--tile-ops-lib", "linked"])
+    return forwarded
 
 
 def _set_env_default_if_empty(env: dict[str, str], key: str, value: str) -> None:

@@ -4807,6 +4807,10 @@ The direct native wrappers (`nfn train`, `cli/scripts/train_gpt.py`, and
 `native_training_guard.py`) keep their CUDA-visible-device default resolver
 local to the script, so selecting ordinal `0` or a display-disabled GPU does not
 import `neuralfn.native_cuda_device` before the compiled C++ trainer handoff.
+For guarded dense GPT compatibility scripts, the guard now prefers
+`build/nfn_gpt_native_train_linked` when it exists and appends
+`--tile-ops-lib linked` unless the caller already supplied a Tile ops library
+flag; set `NFN_NATIVE_GPT_CLI` to force a different dense GPT binary.
 
 After local C++/CUDA edits, run
 `bash tools/validate_sm120_cuda13.sh`; the validator now runs
@@ -4998,6 +5002,10 @@ It uses the same pre-import compiled CLI fast path as the compatibility
 `train_gpt2.py`, so dry-run and default native training commands do not load
 Torch, NumPy, the dataset manager, or the compatibility Python harness before
 handing off to C++.
+Guarded dense GPT scripts such as `train_nanogpt.py` use the linked native
+trainer by default when `build/nfn_gpt_native_train_linked` is present, keeping
+their normal training and dry-run command paths on the direct CUDA Tile C++
+boundary.
 
 ### Run the library examples
 

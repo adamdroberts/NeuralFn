@@ -122,6 +122,16 @@ def _load_train_gpt_native_script_module():
     return module
 
 
+def _load_native_training_guard_module():
+    root = Path(__file__).resolve().parents[1]
+    script = root / "cli" / "scripts" / "native_training_guard.py"
+    spec = importlib.util.spec_from_file_location("native_training_guard_direct_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _write_native_checkpoint(path: Path, *, step: int | None = None, version: int = 5) -> Path:
     max_seq_len = 8
     vocab_size = 16
@@ -1129,6 +1139,33 @@ def test_native_training_guard_sets_fast_cuda_ordinal_default() -> None:
     assert '_set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))' in source
     assert '_set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in source
+
+
+def test_native_training_guard_prefers_linked_dense_gpt_trainer(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_native_training_guard_module()
+    root = Path(__file__).resolve().parents[1]
+    linked = root / "build" / "nfn_gpt_native_train_linked"
+    if not linked.exists():
+        pytest.skip("build/nfn_gpt_native_train_linked is not built")
+
+    monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.setattr(sys, "argv", ["train_nanogpt.py", "--dry-run", "--print-command"])
+
+    with pytest.raises(SystemExit) as exc:
+        module.reject_torch_training_by_default(
+            "train_nanogpt.py",
+            native_target="nfn train --base-model nanogpt --train-transformer-lm",
+            model_family="gpt",
+            native_default_args=["--template-name", "nanogpt", "--train-transformer-lm"],
+            family_native_cli_env="NFN_NATIVE_GPT_CLI",
+            family_native_cli_name="nfn_gpt_native_train",
+        )
+
+    assert exc.value.code == 0
+    command = module._family_forwarded_args(str(linked), ["--template-name", "nanogpt", "--train-transformer-lm"])
+    assert command[:4] == [str(linked), "--template-name", "nanogpt", "--train-transformer-lm"]
+    assert command[-2:] == ["--tile-ops-lib", "linked"]
 
 
 def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
