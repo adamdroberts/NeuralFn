@@ -134,6 +134,15 @@
   gate. Verification: focused paired-kernel route-gate pytest slice and
   `git diff --check`.
 
+- Native SM120 QKV prewarm profile evidence: refreshed the rejected
+  `long_run_qkv_forward_prewarm` profile after a bounded 10-step same-script
+  run. Full-row TK QKV first-use prewarm now passes native train-loop,
+  first-step, startup-plus-train-loop, and tokens/sec gates and passes
+  candidate-over-llm.kittens train-loop wall, but remains rejected because the
+  strict reference first-step ratio is `1.023625x` and reference tokens/sec is
+  `0.999950x`. Verification: bounded same-script GPU rerun, focused native GPT
+  source-contract pytest slice, and `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or

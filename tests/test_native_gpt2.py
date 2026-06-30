@@ -4630,7 +4630,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert '"long_run_qkv_forward_prewarm"|"long-run-qkv-forward-prewarm"' in bench_source
     assert "forced full-row TK QKV first-use prewarm back on while keeping the long-run deferred-prewarm policy" in bench_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in bench_source
-    assert "candidate-over-llm.kittens train-loop wall was 1.006696x" in bench_source
+    assert "0.990528x train_loop_wall_ms_per_step" in bench_source
+    assert "0.937434x first-step CUDA-event time" in bench_source
+    assert "0.997349x startup_plus_train_loop_wall_ms" in bench_source
+    assert "1.009565x train_tokens_per_second" in bench_source
+    assert "candidate-over-llm.kittens train-loop wall at 0.998803x" in bench_source
+    assert "strict reference first-step gate missed at 1.023625x" in bench_source
+    assert "train_tokens_per_second missed by a hair at 0.999950x" in bench_source
     assert '"long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"' in bench_source
     assert "REJECTED_CANDIDATE_PROFILE=\"$CANDIDATE_PROFILE\"" in bench_source
     assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=0" in bench_source
