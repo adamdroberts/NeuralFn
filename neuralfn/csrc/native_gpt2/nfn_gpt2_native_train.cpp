@@ -24443,6 +24443,32 @@ int run_transformer_lm_training_json(
         << "  \"sample_every_steps\": " << cfg.sample_every_steps << ",\n"
         << "  \"generate_tokens\": " << cfg.generate_tokens << ",\n"
         << "  \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps << ",\n"
+        << "  \"warmup_steps\": " << cfg.warmup_steps << ",\n"
+        << "  \"learning_rate\": " << cfg.learning_rate << ",\n"
+        << "  \"final_lr_fraction\": " << cfg.final_lr_fraction << ",\n"
+        << "  \"weight_decay\": " << cfg.weight_decay << ",\n"
+        << "  \"beta1\": " << cfg.beta1 << ",\n"
+        << "  \"beta2\": " << cfg.beta2 << ",\n"
+        << "  \"adam_eps\": " << cfg.adam_eps << ",\n"
+        << "  \"grad_clip_norm\": " << cfg.grad_clip_norm << ",\n"
+        << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
+        << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
+        << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
+        << ", \"eval_every_steps\": " << cfg.eval_every_steps
+        << ", \"eval_batches\": " << cfg.eval_batches
+        << ", \"eval_batch_size\": " << eval_batch_size
+        << ", \"sample_every_steps\": " << cfg.sample_every_steps
+        << ", \"generate_tokens\": " << cfg.generate_tokens
+        << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
+        << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
+        << "  \"optimizer\": {\"profile\": \"adamw\""
+        << ", \"learning_rate\": " << cfg.learning_rate
+        << ", \"final_lr_fraction\": " << cfg.final_lr_fraction
+        << ", \"weight_decay\": " << cfg.weight_decay
+        << ", \"beta1\": " << cfg.beta1
+        << ", \"beta2\": " << cfg.beta2
+        << ", \"adam_eps\": " << cfg.adam_eps
+        << ", \"grad_clip_norm\": " << cfg.grad_clip_norm << "},\n"
         << "  \"train_time_sampling_enabled\": false,\n"
         << "  \"periodic_checkpoint_enabled\": false,\n"
         << "  \"checkpoint_export_enabled\": "

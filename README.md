@@ -153,7 +153,9 @@ llm.kittens gates prove a full activation tape is faster. The same paired
 metric summary flattens native schedule and optimizer fields such as batch
 size, sequence length, sample/checkpoint cadence, warmup, learning rate, and
 weight decay, so timing-only benchmark windows can be distinguished from the
-long-run training defaults.
+long-run training defaults. Full native GPT training JSON now emits the same
+root fields plus nested `schedule` and `optimizer` objects, so saved sidecars
+carry the actual runtime schedule contract.
 Benchmark dry-run plans are command plans, not performance evidence. When
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` is set, requested metric gates now report
 `measured: false`, `missing: true`, and `passed: false` for each ratio row, but

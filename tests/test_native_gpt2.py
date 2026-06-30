@@ -8673,6 +8673,36 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["sample_every_steps"] == 20000
     assert train_transformer_payload["generate_tokens"] == 144
     assert train_transformer_payload["checkpoint_every_steps"] == 200
+    assert train_transformer_payload["warmup_steps"] == 60
+    assert train_transformer_payload["learning_rate"] == 0.0006
+    assert train_transformer_payload["final_lr_fraction"] == 0.0
+    assert train_transformer_payload["weight_decay"] == 0.1
+    assert train_transformer_payload["beta1"] == 0.9
+    assert train_transformer_payload["beta2"] == 0.95
+    assert train_transformer_payload["adam_eps"] == 1e-8
+    assert train_transformer_payload["grad_clip_norm"] == 1.0
+    assert train_transformer_payload["schedule"] == {
+        "max_steps": 1,
+        "train_batch_tokens": 2,
+        "train_loss_every_steps": 0,
+        "eval_every_steps": 1,
+        "eval_batches": 1,
+        "eval_batch_size": 1,
+        "sample_every_steps": 20000,
+        "generate_tokens": 144,
+        "checkpoint_every_steps": 200,
+        "warmup_steps": 60,
+    }
+    assert train_transformer_payload["optimizer"] == {
+        "profile": "adamw",
+        "learning_rate": 0.0006,
+        "final_lr_fraction": 0.0,
+        "weight_decay": 0.1,
+        "beta1": 0.9,
+        "beta2": 0.95,
+        "adam_eps": 1e-8,
+        "grad_clip_norm": 1.0,
+    }
     assert train_transformer_payload["train_time_sampling_enabled"] is False
     assert train_transformer_payload["periodic_checkpoint_enabled"] is False
     assert train_transformer_payload["final_checkpoint_export_enabled"] is True

@@ -299,7 +299,10 @@ Schedule and optimizer fields from the native JSON are flattened too, including
 `checkpoint_every_steps`, `schedule.warmup_steps`, `optimizer.learning_rate`,
 and `optimizer.weight_decay`, so timing wrappers can show which values match
 the long-run training profile and which cadences were deliberately disabled for
-the benchmark window.
+the benchmark window. Full `--train-transformer-lm` runtime JSON emits those
+root fields plus nested `schedule` and `optimizer` objects, matching the
+compiled plan contract instead of requiring callers to infer optimizer defaults
+from the command line.
 Arena families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of

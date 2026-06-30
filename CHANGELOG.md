@@ -6,10 +6,14 @@
   flattens dense GPT native schedule and optimizer fields including batch size,
   sequence length, eval/sample/checkpoint cadence, generation length, warmup,
   learning rate, LR floor, weight decay, betas, epsilon, and gradient clipping.
+  Full native GPT training JSON now emits the matching root fields plus nested
+  `schedule` and `optimizer` objects, so real runtime sidecars and print-plan
+  output expose the same schedule contract.
   Candidate and parity reports can now show whether a timing-only benchmark
   window deliberately disabled cadences while still matching the long-run
   training profile's shape and optimizer defaults. Verification: focused native
-  GPT source-contract test, Python compile check, and `git diff --check`.
+  GPT source-contract test, linked C++ trainer rebuild, one-step native CUDA
+  smoke, Python compile check, and `git diff --check`.
 
 - Native SM120 recompute benchmark contract: paired native candidate reports
   now include `train_sm120_recompute_contract`, which records the llm.kittens
