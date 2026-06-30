@@ -1276,6 +1276,9 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "device_cuda_malloc_async_max_bytes" in source
     assert "device_cuda_malloc_async_fallback_count" in source
     assert "device_cuda_malloc_async_threshold_skip_count" in source
+    assert "concurrent_arena_materialize_async_safe" in source
+    assert "async_allocator_would_handle_large_arena" in source
+    assert "!concurrent_arena_materialize_requested_flag" in source
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
     assert "setup_timing_accounted_ms" in source
     assert "setup_timing_unattributed_ms" in source
@@ -1545,6 +1548,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
     assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 40)\"" in candidate_bench
+    assert "USER_WARMUP_SET=0" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
@@ -3992,11 +3996,15 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "LM-head dWeight did not use the BF16 dlogit/dWeight route" in native_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
     assert "USER_SAMPLES_SET=0" in bench_source
+    assert "USER_WARMUP_SET=0" in bench_source
     assert "DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0" in bench_source
+    assert "DEFAULT_STARTUP_ONLY_WARMUP_FLOOR_APPLIED=0" in bench_source
     assert "default_startup_only_sample_floor_applied=5" in bench_source
+    assert "default_startup_only_warmup_floor_applied=1" in bench_source
     assert '"setup.cuda_event.token_weight_init.total_ms"' in speed_source
     assert "concurrent_arena_materialize_requested" in speed_source
     assert "concurrent_arena_materialize_enabled" in speed_source
+    assert "concurrent_arena_materialize_async_safe" in speed_source
     assert "concurrent_arena_materialize_count" in speed_source
     assert "baseline_env: {json.dumps(baseline_env, sort_keys=True)}" in speed_source
     assert "candidate_env: {json.dumps(candidate_env, sort_keys=True)}" in speed_source

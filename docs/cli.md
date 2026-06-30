@@ -705,20 +705,17 @@ pinned-host bisection. Runtime JSON continues to report
 `token_u16_pageable_arena_malloc_count`.
 
 Set `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena
-startup profiling. It overlaps the float and uint16 arena `cudaMalloc` calls
-with host `std::thread` workers when the default split-arena `cudaMalloc` path
-is active, and falls back to serial materialization for combined-arena or async
-allocator diagnostics. Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` when manually
-profiling this route; the SM120 wrapper profile does that for both baseline and
-candidate commands. JSON reports
+startup profiling. It overlaps the separate float and uint16/BF16 transformer
+arena `cudaMalloc` calls with host `std::thread` workers only when both arenas
+are large enough to bypass the thresholded `cudaMallocAsync` allocator,
+preserving the accepted small-buffer async allocator path. It falls back to
+serial materialization for combined-arena diagnostics or when either arena would
+use async allocation. JSON reports
 `concurrent_arena_materialize_requested`,
 `concurrent_arena_materialize_enabled`,
+`concurrent_arena_materialize_async_safe`,
 `concurrent_arena_materialize_count`, and the setup bucket
-`setup.float_uint16_arena_materialize_concurrent`. The SM120 wrapper profile
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=concurrent_arena_materialize` is rejected
-by default: the CUDA 13.3 dedicated RTX 5090 startup-only gate moved the route
-counter but measured median setup wall at `1.003922x` and uint16 arena
-allocation at `2.664592x` mean versus the default serial split-arena path.
+`setup.float_uint16_arena_materialize_concurrent`.
 Startup timing JSON reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. Use these fields with `timing.setup_timing` to separate
@@ -2125,6 +2122,12 @@ records `default_startup_only_sample_floor_applied=5` in paired benchmark
 metadata. Explicit `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`, `NFN_SM120_CANDIDATE_SAMPLES`,
 `NFN_SM120_PARITY_SAMPLES`, or `NFN_SM120_SAMPLES` values are left unchanged.
+Startup-only profiles also raise an unset or profile-forced zero warmup to one
+pair, recording `default_startup_only_warmup_floor_applied=1`, so first-use
+CUDA/module load is discarded before measured setup samples. Explicit
+`NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CANDIDATE_WARMUP`,
+`NFN_SM120_CANDIDATE_WARMUP`, `NFN_SM120_PARITY_WARMUP`, or
+`NFN_SM120_WARMUP` values are left unchanged for cold-start diagnostics.
 Known route-bisection profiles are exposed through
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE`. For example,
 `qkv_forward_bf16_fallback_65536` expands to

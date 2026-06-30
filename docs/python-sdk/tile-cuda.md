@@ -3298,6 +3298,12 @@ The strided launch-cap profiles
 startup-only native setup comparisons and force `INCLUDE_LLMK_REFERENCE=0`
 inside the wrapper, because the native command exits after setup and the
 external llm.kittens training reference would measure a different workload.
+Startup-only profiles raise the default measured sample count to five and raise
+an unset or profile-forced zero warmup to one pair, reporting
+`default_startup_only_sample_floor_applied=5` and
+`default_startup_only_warmup_floor_applied=1` in paired JSON metadata. Explicit
+`NFN_SM120_*SAMPLES` and `NFN_SM120_*WARMUP` aliases remain literal for
+intentional cold-start diagnostics.
 The latest 1024-block rerun kept that profile rejected: setup wall improved to
 `0.986490x`, but the targeted `setup.token_weight_init.total_ms` bucket
 regressed to `1.011642x`, so the default cap remains 4096 blocks.
@@ -3720,19 +3726,17 @@ and `setup.concurrent_parameter_init.total_ms`, so the SM120 candidate profile
 compares the whole parameter-init path rather than treating renamed setup
 buckets as speedups.
 
-Set
-`NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena startup
-profiling. It overlaps the float and uint16 arena `cudaMalloc` calls with host
-`std::thread` workers when the default split-arena `cudaMalloc` path is active,
-falls back to serial materialization for combined-arena or async allocator
-diagnostics, and reports `concurrent_arena_materialize_requested`,
+Set `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1` only for split-arena
+startup profiling. It overlaps the separate float and uint16/BF16 transformer
+arena `cudaMalloc` calls with host `std::thread` workers only when both arenas
+are large enough to bypass the thresholded `cudaMallocAsync` allocator,
+preserving the accepted small-buffer async allocator path. It falls back to
+serial materialization for combined-arena diagnostics or when either arena would
+use async allocation, and reports `concurrent_arena_materialize_requested`,
 `concurrent_arena_materialize_enabled`,
+`concurrent_arena_materialize_async_safe`,
 `concurrent_arena_materialize_count`, and
-`setup.float_uint16_arena_materialize_concurrent.total_ms`. The CUDA 13.3
-dedicated RTX 5090 startup-only gate rejected the concurrent profile as a
-default: mean setup wall was a noisy `0.987871x`, while median setup wall
-regressed to `1.003922x` and uint16 arena allocation regressed to `2.664592x`
-mean. The same dense GPT
+`setup.float_uint16_arena_materialize_concurrent.total_ms`. The same dense GPT
 stored-activation diagnostics also support head/tail placement probes. Set
 `NFN_NATIVE_GPT_STORE_MLP_BLOCK_PLACEMENT=tail` with a reduced
 `NFN_NATIVE_GPT_STORE_MLP_BLOCKS` count, or set

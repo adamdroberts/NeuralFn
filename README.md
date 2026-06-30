@@ -1091,19 +1091,19 @@ The combined float+BF16 transformer arena is also still diagnostic-only behind
 startup-only recheck proved the route change, but rejected it at `1.031475x`
 setup wall time, with the combined allocation bucket shifting cost into
 `setup.uint16_arena_materialize` and slowing token initialization.
-The split-arena concurrent materialization probe is likewise diagnostic-only
-behind `NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1`. It overlaps the float
-and uint16 arena `cudaMalloc` calls with host `std::thread` workers when
-`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0`; the SM120 wrapper profile pins that legacy
-allocator on both sides so the route still measures actual overlap. It reports
+The split-arena concurrent materialization probe remains opt-in with
+`NFN_NATIVE_GPT_CONCURRENT_ARENA_MATERIALIZE=1`. It overlaps the separate float
+and uint16/BF16 transformer arena `cudaMalloc` calls with host `std::thread`
+workers only when both arenas are large enough to bypass the thresholded
+`cudaMallocAsync` allocator. It preserves the accepted small-buffer async
+allocator path and falls back to serial materialization if either large arena
+would be served by async allocation. It reports
 `concurrent_arena_materialize_requested`,
 `concurrent_arena_materialize_enabled`,
+`concurrent_arena_materialize_async_safe`,
 `concurrent_arena_materialize_count`, plus
 `setup.float_uint16_arena_materialize_concurrent.total_ms` when selected. The
-CUDA 13.3.33 dedicated RTX 5090 startup-only rerun after pageable token staging
-rejected default promotion: setup wall regressed to `1.007019x` mean /
-`1.005529x` median, and `uint16_arena_cuda_malloc_wall_ms` regressed to
-`2.570742x` mean / `2.568985x` median.
+guard avoids concurrent null-stream async allocation.
 `NFN_NATIVE_GPT_UINT16_ARENA_FIRST=1` is a startup-only bisection switch for the
 same default split-arena path. It materializes the large BF16/uint16 arena before
 the float arena, leaves concurrent and combined-arena modes untouched, and
@@ -4290,7 +4290,7 @@ automatically when `kernels.cu`, `tile_ops.cu`, or `tile_ops.h` is newer than
 the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
-`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 40 warmup pairs. Startup-only profiles raise the default measured sample count to 5 when no `NFN_SM120_*SAMPLES` alias is set, and paired JSON metadata reports `default_startup_only_sample_floor_applied=5` when that floor changes the run shape. Pass `NFN_SM120_NATIVE_WARMUP=0` or `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0` only for explicit cold-start diagnostics. The long-run deferred-prewarm gate also raises lower copied benchmark commands to at least 40 warmup pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or `NFN_SM120_CANDIDATE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set. Paired JSON now also includes `native_candidate_attribution`, which classifies each run as `kernel-route-attributed`, `setup-only-attributed`, or `unattributed` and records whether the candidate actually changed a hot route counter, strategy value, linear-shape row, or cuBLASLt plan-cache entry.
+`tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 40 warmup pairs. Startup-only profiles raise the default measured sample count to 5 when no `NFN_SM120_*SAMPLES` alias is set, and paired JSON metadata reports `default_startup_only_sample_floor_applied=5` when that floor changes the run shape. They also raise an unset or profile-forced zero warmup to one pair, reporting `default_startup_only_warmup_floor_applied=1`, so first-use CUDA/module load does not become a measured sample. Pass `NFN_SM120_NATIVE_WARMUP=0` or `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0` only for explicit cold-start diagnostics. The long-run deferred-prewarm gate also raises lower copied benchmark commands to at least 40 warmup pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or `NFN_SM120_CANDIDATE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set. Paired JSON now also includes `native_candidate_attribution`, which classifies each run as `kernel-route-attributed`, `setup-only-attributed`, or `unattributed` and records whether the candidate actually changed a hot route counter, strategy value, linear-shape row, or cuBLASLt plan-cache entry.
 For accepted LM-head CE/default profiles, the candidate wrapper now also
 requires the current CUDA Graph Tile-body contract: candidate metrics must show
 `lm_head_classifier_backward_path_class: "diagnostic-cuda-graph-wrapper"`,

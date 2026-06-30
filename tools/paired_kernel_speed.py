@@ -932,6 +932,10 @@ NATIVE_METRIC_PATHS = (
         ("concurrent_arena_materialize_enabled",),
     ),
     (
+        "concurrent_arena_materialize_async_safe",
+        ("concurrent_arena_materialize_async_safe",),
+    ),
+    (
         "concurrent_arena_materialize_count",
         ("concurrent_arena_materialize_count",),
     ),

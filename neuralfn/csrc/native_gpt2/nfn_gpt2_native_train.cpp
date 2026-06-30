@@ -15093,6 +15093,7 @@ int run_transformer_lm_training_json(
     std::int64_t concurrent_arena_materialize_requested = 0;
     std::int64_t concurrent_arena_materialize_enabled = 0;
     std::int64_t concurrent_arena_materialize_count = 0;
+    std::int64_t concurrent_arena_materialize_async_safe = 0;
     std::size_t transformer_device_arena_requested_bytes = 0;
     std::size_t transformer_device_arena_allocated_bytes = 0;
     std::size_t transformer_device_arena_uint16_byte_offset = 0;
@@ -15410,7 +15411,7 @@ int run_transformer_lm_training_json(
         }
         if (combined_transformer_device_arena_enabled || !combined_uint16_arena_enabled ||
             float_arena_requests.empty() || uint16_arena_requests.empty() ||
-            async_device_allocator_enabled) {
+            !concurrent_arena_materialize_requested_flag) {
             materialize_float_arena();
             materialize_uint16_arena();
             return;
@@ -15425,6 +15426,28 @@ int run_transformer_lm_training_json(
         if (uint16_arena_allocated_elements >
             static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "uint16 arena allocation byte size overflow";
+            return;
+        }
+        const std::size_t float_bytes =
+            sizeof(float) * static_cast<std::size_t>(float_arena_allocated_elements);
+        const std::size_t uint16_bytes =
+            sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements);
+        const std::size_t async_max_bytes =
+            async_device_allocator_max_bytes < 0
+                ? 0
+                : static_cast<std::size_t>(async_device_allocator_max_bytes);
+        const bool async_allocator_would_handle_large_arena =
+            async_device_allocator_enabled &&
+            (async_device_allocator_max_bytes == std::numeric_limits<std::int64_t>::max() ||
+             float_bytes <= async_max_bytes ||
+             uint16_bytes <= async_max_bytes);
+        const bool concurrent_arena_materialize_async_safe_now =
+            !async_allocator_would_handle_large_arena;
+        concurrent_arena_materialize_async_safe =
+            concurrent_arena_materialize_async_safe_now ? 1 : 0;
+        if (!concurrent_arena_materialize_async_safe_now) {
+            materialize_float_arena();
+            materialize_uint16_arena();
             return;
         }
         concurrent_arena_materialize_enabled = 1;
@@ -26050,6 +26073,8 @@ int run_transformer_lm_training_json(
         << (concurrent_arena_materialize_requested != 0 ? "true" : "false") << ",\n"
         << "  \"concurrent_arena_materialize_enabled\": "
         << (concurrent_arena_materialize_enabled != 0 ? "true" : "false") << ",\n"
+        << "  \"concurrent_arena_materialize_async_safe\": "
+        << (concurrent_arena_materialize_async_safe != 0 ? "true" : "false") << ",\n"
         << "  \"concurrent_arena_materialize_count\": "
         << concurrent_arena_materialize_count << ",\n"
         << "  \"device_exit_cuda_free_elision_enabled\": "

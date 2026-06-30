@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Native GPT startup diagnostics: the opt-in split-arena concurrent
+  materialization path now refuses to overlap the large float and uint16/BF16
+  arena allocations when either arena would be served by thresholded
+  `cudaMallocAsync`, preserving the accepted small-buffer async allocator path.
+  Runtime JSON now reports `concurrent_arena_materialize_async_safe` so startup
+  probes explain whether the opt-in route used two normal `cudaMalloc` calls or
+  fell back to serial materialization. The SM120 native candidate wrapper now
+  floors startup-only profile warmup to one pair unless a warmup alias is
+  explicitly set, and paired metrics include the async-safety diagnostic so
+  startup kernel candidates are measured after first-use CUDA costs settle.
+  Verification: focused native GPT source-contract pytest, C++ trainer rebuild,
+  startup-only live CUDA probe, no-Torch verifier, SM120 dry-run expansion, and
+  `git diff --check`.
+
 - LM-head true-fused diagnostics: `build/lm_head_backward_bench` JSON now
   reports normalized strict-body cycle work for true-fused candidates:
   CE cycles per logit element, dHidden/dWeight cycles per output element, and
