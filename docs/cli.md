@@ -294,10 +294,16 @@ transformer-LM global float buffers are named individually, for example
 being collapsed under a generic buffer label.
 The native SM120 candidate wrapper defaults to 40 warmup pairs for
 candidate-vs-current/reference runs and applies the same 40-pair floor to
-long-run deferred-prewarm comparisons. Set `NFN_SM120_NATIVE_WARMUP=0`,
+long-run deferred-prewarm comparisons. The parity wrapper uses the same
+40-pair long-run floor for current-vs-llm.kittens runs. Set
+`NFN_SM120_NATIVE_WARMUP=0`,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, or
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for intentional
 cold-start diagnostics where first-use timing is the thing being measured.
+Dry-run plans keep requested commands literal while reporting
+`default_long_run_defer_prewarm_min_warmup_dry_run_would_apply` and
+`default_long_run_defer_prewarm_min_steps_dry_run_would_apply` metadata when a
+measured run would raise warmup or step counts.
 `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` is a diagnostic-only
 startup/memory switch for the dense GPT scratch-recompute trainer. It stores
 the earlier inter-block persistent outputs as BF16, restores them through one
@@ -2559,17 +2565,14 @@ steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
 set for an intentional short reproduction. The JSON metadata records
 `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
-The parity wrapper applies its separate twenty-warmup floor and the same
-ten-step measured-run floor to default deferred-prewarm current-vs-llm.kittens
-runs; set
+The parity wrapper applies the shared forty-warmup floor and the same ten-step
+measured-run floor to default deferred-prewarm current-vs-llm.kittens runs; set
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
 short first-step-dominated parity reproduction.
-The 20-pair floor follows a 2026-06-29 20-warmup, 3-step, 1-sample same-script
-run on the dedicated RTX 5090 where selected GPU load stayed clean and NeuralFn
-measured `0.995716x` steady-state CUDA-event step time plus `1.004435x`
-steady-state tokens/sec versus llm.kittens; full-loop wall remained
-first-step-dominated at `1.027703x`.
+Dry-run plans keep literal requested command shapes and report would-apply
+metadata for warmup and step floors instead of silently hiding the measured-run
+policy.
 Plain `--startup-only` now uses the same skip-throughput-prewarm policy for
 setup-only/preflight runs even when `NFN_NATIVE_GPT_FAST_STARTUP` is unset.
 Normal training keeps throughput prewarms enabled by default. Set

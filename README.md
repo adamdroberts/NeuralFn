@@ -342,10 +342,13 @@ with the parity-specific
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` and
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` aliases available for
 intentional short reproductions.
-The stricter 20-pair floor is based on a 2026-06-29 20-warmup, 3-step,
-1-sample same-script run on the dedicated RTX 5090: selected GPU load stayed
-clean, NeuralFn steady-state CUDA-event step time measured `0.995716x` versus
-llm.kittens, and steady-state tokens/sec measured `1.004435x`; full-loop wall
+Dry-run plans keep the literal requested command shape, but metadata records
+`default_long_run_defer_prewarm_min_warmup_dry_run_would_apply` and
+`default_long_run_defer_prewarm_min_steps_dry_run_would_apply` when the measured
+run would apply those floors.
+The stricter floor is based on same-script long-run checks where selected GPU
+load stayed clean, NeuralFn steady-state CUDA-event step time measured at or
+better than llm.kittens, and steady-state tokens/sec met the reference; full-loop wall
 remained first-step dominated at `1.027703x`, which is why the long-run gate
 continues to use steady-state metrics.
 2026-06-29 CUDA 13.3.33 dedicated RTX 5090 5-step, 3-sample rerun kept the

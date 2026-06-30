@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native SM120 benchmark dry-run metadata: parity and candidate wrappers now
+  report `default_long_run_defer_prewarm_min_warmup_dry_run_would_apply` and
+  `default_long_run_defer_prewarm_min_steps_dry_run_would_apply` when a dry-run
+  plan keeps the literal requested command shape but a measured
+  deferred-prewarm run would raise warmup or step counts. This makes the
+  40-pair long-run measurement policy verifiable without launching the full
+  warmup sequence. Verification: focused wrapper pytest, parity and candidate
+  dry-run expansion checks, shell syntax checks, and `git diff --check`.
+
 - SM120 CUDA validator LM-head contract: `tools/validate_sm120_cuda13.sh` now
   enforces the current default dense GPT LM-head route, which reports
   `lm_head_classifier_backward_path_class: diagnostic-sequence-wrapper`,

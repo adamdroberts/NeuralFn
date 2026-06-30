@@ -1544,7 +1544,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in parity_bench
-    assert '"$IS_DRY_RUN_PLAN" == "0"' in candidate_bench
+    assert '"$IS_DRY_RUN_PLAN" == "1"' in candidate_bench
     assert (
         'COMMON_ENV_RAW="${COMMON_ENV_RAW:+$COMMON_ENV_RAW }'
         'NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"'
@@ -1561,6 +1561,10 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")' in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_applied=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")' in parity_bench
+    assert 'default_long_run_defer_prewarm_min_warmup_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP' in parity_bench
+    assert 'default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS' in parity_bench
+    assert 'default_long_run_defer_prewarm_min_warmup_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP' in candidate_bench
+    assert 'default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS' in candidate_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
     assert "DEFAULT_MAX_STEADY_STATE_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_PARITY_MAX_STEADY_STATE_RATIO NFN_SM120_MAX_STEADY_STATE_RATIO 1.003)\"" in parity_bench

@@ -201,9 +201,11 @@ SKIP_LM_HEAD_CE_STAGE_GATE=0
 LM_HEAD_BACKWARD_PREFLIGHT_PROFILE=""
 DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY=0
 LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0
 LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY=0
 DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0
 REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY="$(env_or_alias NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY 0)"
 if [[ -z "$CANDIDATE_EXTRA_ARGS_RAW" && -n "${NFN_SM120_NATIVE_CANDIDATE_ARGS-}" ]]; then
@@ -1662,8 +1664,7 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
         startup_only_for_long_run_defer=1
         ;;
     esac
-    if [[ "$IS_DRY_RUN_PLAN" == "0" &&
-          "$default_profile_for_long_run_defer" == "1" &&
+    if [[ "$default_profile_for_long_run_defer" == "1" &&
           "$startup_only_for_long_run_defer" == "0" ]]; then
         prewarm_policy_text="$COMMON_ENV_RAW $BASELINE_ENV_RAW $CANDIDATE_ENV_RAW"
         case "$prewarm_policy_text" in
@@ -1676,15 +1677,23 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
                   "$WARMUP" =~ ^[0-9]+$ &&
                   "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
                   "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
-              WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
-              DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
+              if [[ "$IS_DRY_RUN_PLAN" == "1" ]]; then
+                DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY=1
+              else
+                WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
+                DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
+              fi
             fi
             if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
                   "$STEPS" =~ ^[0-9]+$ &&
                   "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
                   "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
-              STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
-              DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
+              if [[ "$IS_DRY_RUN_PLAN" == "1" ]]; then
+                DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY=1
+              else
+                STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
+                DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
+              fi
             fi
             ;;
         esac
@@ -2288,8 +2297,14 @@ fi
 if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")
 fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")
+fi
 if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_applied=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")
+fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")
 fi
 if [[ "$DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_startup_only_sample_floor_applied=5")

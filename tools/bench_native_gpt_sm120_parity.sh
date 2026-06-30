@@ -82,6 +82,8 @@ LONG_RUN_DEFER_PREWARM_MIN_STEPS="$(env_or_alias3 NFN_SM120_NATIVE_LONG_RUN_DEFE
 DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY=0
 JSON_OUT="$(env_or_alias3 NFN_SM120_NATIVE_JSON_OUT NFN_SM120_PARITY_JSON_OUT NFN_SM120_JSON_OUT "/tmp/nfn_sm120_parity_${STEPS}step.json")"
 PROFILE_DIR_RAW="$(env_or_alias3 NFN_SM120_NATIVE_PROFILE_DIR NFN_SM120_PARITY_PROFILE_DIR NFN_SM120_PROFILE_DIR "/tmp/nfn_sm120_parity_profiles_${STEPS}step")"
 STAGE_TIMING="$(env_or_alias4 NFN_SM120_NATIVE_STAGE_TIMING NFN_SM120_NATIVE_PARITY_STAGE_TIMING NFN_SM120_PARITY_STAGE_TIMING NFN_SM120_STAGE_TIMING 0)"
@@ -123,26 +125,34 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
       *)
         CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
         DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1
-        case "${DRY_RUN_PLAN,,}" in
-          "1"|"true"|"yes"|"on")
-            ;;
-          *)
-            if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
-                  "$WARMUP" =~ ^[0-9]+$ &&
-                  "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
-                  "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+        if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
+              "$WARMUP" =~ ^[0-9]+$ &&
+              "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
+              "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+          case "${DRY_RUN_PLAN,,}" in
+            "1"|"true"|"yes"|"on")
+              DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY=1
+              ;;
+            *)
               WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
               DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
-            fi
-            if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
-                  "$STEPS" =~ ^[0-9]+$ &&
-                  "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
-                  "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+              ;;
+          esac
+        fi
+        if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
+              "$STEPS" =~ ^[0-9]+$ &&
+              "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
+              "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+          case "${DRY_RUN_PLAN,,}" in
+            "1"|"true"|"yes"|"on")
+              DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY=1
+              ;;
+            *)
               STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
               DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
-            fi
-            ;;
-        esac
+              ;;
+          esac
+        fi
         ;;
     esac
     ;;
@@ -250,8 +260,14 @@ fi
 if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")
 fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_DRY_RUN_WOULD_APPLY" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")
+fi
 if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_applied=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")
+fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")
 fi
 for item in $MAX_CANDIDATE_RATIO_RAW; do
   paired_args+=(--max-candidate-ratio "$item")
