@@ -24285,6 +24285,20 @@ int run_transformer_lm_training_json(
             ? static_cast<double>(effective_train_batch_tokens) * 20000.0 * 1000.0 /
                   (projected_20k_train_wall_ms + setup_wall_ms)
             : 0.0;
+    const bool train_first_step_deferred_prewarm_diagnostic =
+        native_long_run_defer_prewarm_enabled &&
+        steps_completed > 0;
+    const bool train_steady_state_parity_metric_available =
+        native_long_run_defer_prewarm_enabled &&
+        train_loop_cuda_event_steady_state_step_count > 0;
+    const char* train_timing_contract =
+        native_long_run_defer_prewarm_enabled
+            ? "long-run-deferred-prewarm-steady-state"
+            : native_fast_startup_requested
+            ? "fast-startup-first-use"
+            : cfg.startup_only
+            ? "startup-only"
+            : "eager-throughput-prewarm";
 
     std::cout
         << "{\n"
@@ -24318,6 +24332,11 @@ int run_transformer_lm_training_json(
         << "  \"train_loop_wall_ms_per_step\": " << train_loop_wall_ms_per_step << ",\n"
         << "  \"train_first_step_tokens_per_second\": " << first_step_tokens_per_second << ",\n"
         << "  \"train_steady_state_tokens_per_second\": " << steady_state_tokens_per_second << ",\n"
+        << "  \"train_timing_contract\": \"" << train_timing_contract << "\",\n"
+        << "  \"train_first_step_deferred_prewarm_diagnostic\": "
+        << (train_first_step_deferred_prewarm_diagnostic ? "true" : "false") << ",\n"
+        << "  \"train_steady_state_parity_metric_available\": "
+        << (train_steady_state_parity_metric_available ? "true" : "false") << ",\n"
         << "  \"setup_plus_train_loop_wall_ms\": " << setup_plus_train_loop_wall_ms << ",\n"
         << "  \"setup_amortized_train_tokens_per_second\": " << setup_amortized_train_tokens_per_second << ",\n"
         << "  \"projected_20k_train_wall_ms\": " << projected_20k_train_wall_ms << ",\n"
@@ -24363,6 +24382,8 @@ int run_transformer_lm_training_json(
         << ",\n"
         << "    \"train_first_step_tokens_per_second\": "
         << first_step_tokens_per_second << ",\n"
+        << "    \"train_first_step_deferred_prewarm_diagnostic\": "
+        << (train_first_step_deferred_prewarm_diagnostic ? "true" : "false") << ",\n"
         << "    \"train_loop_cuda_event_steady_state_wall_ms\": "
         << train_loop_cuda_event_steady_state_wall_ms << ",\n"
         << "    \"train_loop_cuda_event_steady_state_step_count\": "
@@ -24372,6 +24393,9 @@ int run_transformer_lm_training_json(
         << ",\n"
         << "    \"train_steady_state_tokens_per_second\": "
         << steady_state_tokens_per_second << ",\n"
+        << "    \"train_steady_state_parity_metric_available\": "
+        << (train_steady_state_parity_metric_available ? "true" : "false") << ",\n"
+        << "    \"train_timing_contract\": \"" << train_timing_contract << "\",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
         << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"

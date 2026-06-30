@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT deferred-prewarm timing contract: transformer training JSON now
+  reports `train_timing_contract`,
+  `train_first_step_deferred_prewarm_diagnostic`, and
+  `train_steady_state_parity_metric_available` at the top level and under
+  `timing`. Long-run deferred-prewarm runs therefore identify first-step output
+  as a first-use diagnostic and mark when steady-state parity metrics are
+  available. Verification: focused native GPT source-contract pytest slice,
+  dry-run metadata check, and `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or

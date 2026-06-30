@@ -2127,6 +2127,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS" in gpt_source
     assert "native_long_run_defer_prewarm_after_steps" in gpt_source
     assert "native_long_run_defer_prewarm_enabled" in gpt_source
+    assert "train_timing_contract" in gpt_source
+    assert "long-run-deferred-prewarm-steady-state" in gpt_source
+    assert "train_first_step_deferred_prewarm_diagnostic" in gpt_source
+    assert "train_steady_state_parity_metric_available" in gpt_source
     assert "native_fast_startup_prewarm_policy" in gpt_source
     assert "cfg.fast_startup ||" in gpt_source
     assert (
@@ -2905,6 +2909,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "        !native_fast_startup_requested &&"
     ) in source
     assert "!native_long_run_defer_prewarm_enabled" in source
+    assert "train_timing_contract" in source
+    assert "long-run-deferred-prewarm-steady-state" in source
+    assert "train_first_step_deferred_prewarm_diagnostic" in source
+    assert "train_steady_state_parity_metric_available" in source
     assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert "fast-startup-skip-throughput-prewarms-by-default" in source

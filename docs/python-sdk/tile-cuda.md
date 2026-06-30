@@ -3461,6 +3461,13 @@ for default deferred-prewarm current-vs-llm.kittens checks; set
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
 short parity reproduction.
+Native trainer JSON marks this timing contract directly. Long-run deferred
+prewarm emits `train_timing_contract: "long-run-deferred-prewarm-steady-state"`, marks
+`train_first_step_deferred_prewarm_diagnostic` once at least one optimizer step
+runs under that policy, and marks
+`train_steady_state_parity_metric_available` once the run has a post-first-step
+CUDA-event window. SDK and benchmark consumers should treat one-step outputs as
+first-use diagnostics and use steady-state metrics for long-run parity.
 A 2026-06-29 20-warmup, 3-step, 1-sample same-script run on the dedicated RTX
 5090 kept the selected GPU load clean and measured NeuralFn at `0.995716x`
 steady-state CUDA-event step time and `1.004435x` steady-state tokens/sec versus
