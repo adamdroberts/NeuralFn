@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- SM120 native benchmark profile triage refreshed the
+  `embedding_bf16_shadow` rejection with a longer 5-warmup, 3-step, 2-sample
+  same-script run on the dedicated RTX 5090. The BF16-shadow embedding route
+  still changes strategy correctly and slightly improves token setup, but it
+  regressed train-loop wall to `1.002959x`, steady-state CUDA-event timing to
+  `1.003632x`, setup wall to `1.039402x`, and tokens/sec to `0.997053x`.
+  Verification: live candidate benchmark.
+
 - SM120 native candidate startup sample floors now preserve stronger explicit
   sample requests. Profiles such as `concurrent_parameter_init` still run at
   least five startup samples by default, but `NFN_SM120_NATIVE_SAMPLES=7` or the
