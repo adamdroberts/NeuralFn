@@ -2003,7 +2003,10 @@ warmup; set `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when intentionally
 measuring the raw allocation failure path. For `tools/bench_native_gpt_sm120_candidate.sh` startup
 bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
 auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
-because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When
+because startup-only JSON has no `train_loop_wall_ms_per_step` metric.
+Generated startup-only gates also drop train-loop, token/sec, stage,
+attention-backward, and startup-plus-train metrics while preserving setup
+metrics; user-supplied ratio gates remain explicit and are still forwarded. When
 several named profiles need a fresh run, use
 `tools/sweep_native_gpt_sm120_candidates.sh`. It invokes the same candidate
 wrapper once per profile, keeps strict route/metric gates, continues after

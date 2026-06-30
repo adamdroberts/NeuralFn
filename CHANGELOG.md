@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SM120 startup gate filtering: generated startup-only candidate gates in
+  `tools/bench_native_gpt_sm120_candidate.sh` now strip train-loop, token/sec,
+  stage, attention-backward, and startup-plus-train metrics before invoking the
+  paired benchmark runner. Setup metrics remain gated, and explicit user ratio
+  overrides still pass through unchanged, so zero-step startup bisections no
+  longer fail on metrics that cannot be emitted by startup-only JSON.
+  Verification: shell syntax check, focused native GPT source-contract pytest,
+  startup-only dry-run plan, focused startup-only CUDA Tile benchmark probe,
+  and `git diff --check`.
+
 - Dense GPT guard linked handoff: graph-backed compatibility script guards that
   dispatch dense GPT training now prefer `build/nfn_gpt_native_train_linked`
   when it exists and no `NFN_NATIVE_GPT_CLI` override is set. The guard also

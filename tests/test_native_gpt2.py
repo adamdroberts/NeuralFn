@@ -1760,6 +1760,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'MIN_CANDIDATE_RATIO_RAW=""' in candidate_bench
     assert 'metric" == "train_loop_cuda_event_steady_state_wall_ms_per_step"' in candidate_bench
     assert '"$metric" == stage.*' in candidate_bench
+    assert "run_is_startup_only=0" in candidate_bench
+    assert 'train_loop_*|train_tokens_per_second|stage.*|attention_backward_*|startup_plus_first_step_wall_ms|startup_plus_train_loop_wall_ms|startup_plus_steady_state_step_wall_ms)' in candidate_bench
     assert "tile_ops_arg_for" in candidate_bench
     assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench

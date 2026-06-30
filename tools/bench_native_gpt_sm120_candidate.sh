@@ -2008,9 +2008,15 @@ filter_generated_candidate_ratio_gates() {
   local filtered=()
   local run_has_steady_state=0
   local run_has_stage_timing=0
+  local run_is_startup_only=0
   if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
     run_has_steady_state=1
   fi
+  case "${STARTUP_ONLY,,}" in
+    "1"|"true"|"yes"|"on")
+      run_is_startup_only=1
+      ;;
+  esac
   case "${STAGE_TIMING,,}" in
     "1"|"true"|"yes"|"on")
       run_has_stage_timing=1
@@ -2019,6 +2025,13 @@ filter_generated_candidate_ratio_gates() {
   for item in $raw; do
     metric="${item%%=*}"
     metric="${metric#*:}"
+    if [[ "$run_is_startup_only" == "1" ]]; then
+      case "$metric" in
+        train_loop_*|train_tokens_per_second|stage.*|attention_backward_*|startup_plus_first_step_wall_ms|startup_plus_train_loop_wall_ms|startup_plus_steady_state_step_wall_ms)
+          continue
+          ;;
+      esac
+    fi
     if [[ "$run_has_steady_state" != "1" &&
           "$metric" == "train_loop_cuda_event_steady_state_wall_ms_per_step" ]]; then
       continue
