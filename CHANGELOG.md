@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- LM-head true-fused diagnostics: `build/lm_head_backward_bench` JSON now
+  reports normalized strict-body cycle work for true-fused candidates:
+  CE cycles per logit element, dHidden/dWeight cycles per output element, and
+  dHidden/dWeight cycles per output tile. The tile normalization uses the
+  Tile-ops-reported `nfn_native_tile_lm_head_true_fused_mat_tile` value, so
+  tile4/8/16/24/32 bisections remain comparable. Verification: focused native GPT
+  source-contract pytest, C++ LM-head bench rebuild, focused benchmark dry run,
+  Python compile check, and `git diff --check`.
+
 - Native no-Torch inference guard: `tools/check_native_no_torch_deps.py` now
   requires native inference entrypoints to print the expected checkpoint
   metadata and compiled `--sample-checkpoint` delegation markers. A command

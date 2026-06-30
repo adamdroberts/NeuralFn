@@ -2884,6 +2884,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "candidate_symbol_abi_implementation_class" in lm_head_bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class" in lm_head_bench_source
     assert "true_fused_ce_cycles_per_block" in lm_head_bench_source
+    assert "true_fused_cycle_work_mat_tile" in lm_head_bench_source
+    assert "nfn_native_tile_lm_head_true_fused_mat_tile" in lm_head_bench_source
+    assert "true_fused_ce_cycles_per_logit_element" in lm_head_bench_source
+    assert "true_fused_dhidden_cycles_per_output_element" in lm_head_bench_source
+    assert "true_fused_dweight_cycles_per_output_element" in lm_head_bench_source
+    assert "true_fused_dhidden_cycles_per_output_tile" in lm_head_bench_source
+    assert "true_fused_dweight_cycles_per_output_tile" in lm_head_bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity" in tile_ops_header
     assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_source

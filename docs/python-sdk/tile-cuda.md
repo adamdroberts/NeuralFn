@@ -2405,7 +2405,15 @@ default. The resulting
 JSON reports `candidate_true_fused_production_shape`,
 `candidate_true_fused_allow_production_env`, and
 `candidate_true_fused_production_ready`, so trainer-shape runs distinguish a
-diagnostic forced-production measurement from a promotable kernel. The SM120
+diagnostic forced-production measurement from a promotable kernel. Candidate
+and baseline JSON also include normalized strict-body cycle work:
+`true_fused_ce_cycles_per_logit_element`,
+`true_fused_dhidden_cycles_per_output_element`,
+`true_fused_dweight_cycles_per_output_element`,
+`true_fused_dhidden_cycles_per_output_tile`, and
+`true_fused_dweight_cycles_per_output_tile`, using the Tile ops-reported
+`true_fused_cycle_work_mat_tile`.
+The SM120
 native-candidate wrapper runs this focused benchmark automatically before
 strict true-fused LM-head full-loop profiles when
 `NFN_SM120_NATIVE_LM_HEAD_BACKWARD_PREFLIGHT=auto`; the

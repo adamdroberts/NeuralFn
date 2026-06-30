@@ -813,7 +813,15 @@ paths, plus the current `reference_bottleneck_component`, so the next kernel
 candidate can be judged without manually subtracting component timings, and it
 makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
-CUDA Graph wrappers, and a future real fused kernel. Strict wrapper failures
+CUDA Graph wrappers, and a future real fused kernel. The candidate/baseline
+JSON also includes normalized strict-body cycle work:
+`true_fused_ce_cycles_per_logit_element`,
+`true_fused_dhidden_cycles_per_output_element`,
+`true_fused_dweight_cycles_per_output_element`,
+`true_fused_dhidden_cycles_per_output_tile`, and
+`true_fused_dweight_cycles_per_output_tile`, using the Tile ops-reported
+`true_fused_cycle_work_mat_tile`.
+Strict wrapper failures
 and direct compiled benchmark failures print those `next_required_*` fields, so
 a failed `trainer-chunk-strict` run or direct
 `build/lm_head_backward_bench --require-true-fused-candidate` invocation names

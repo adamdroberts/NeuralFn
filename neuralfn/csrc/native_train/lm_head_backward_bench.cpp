@@ -715,6 +715,7 @@ std::string render_json(
     bool true_fused_capability,
     bool true_fused_candidate_production_shape,
     bool true_fused_allow_production_env,
+    std::int64_t true_fused_mat_tile,
     std::string_view candidate_symbol_abi_path_class,
     std::string_view candidate_symbol_abi_implementation_class,
     const VariantResult& baseline,
@@ -813,7 +814,38 @@ std::string render_json(
         candidate.ms_per_iter - reference_cublaslt_components.summed_ms_per_iter;
     const double candidate_minus_cublaslt_reference_with_logits_ms_per_iter =
         candidate.ms_per_iter - reference_cublaslt_components.summed_with_logits_ms_per_iter;
-    auto variant_json = [](const VariantResult& value) {
+    if (true_fused_mat_tile <= 0) {
+        true_fused_mat_tile = 16;
+    }
+    auto ceil_div_i64 = [](std::int64_t value, std::int64_t divisor) {
+        return (value + divisor - 1) / divisor;
+    };
+    auto positive_product = [](std::int64_t a, std::int64_t b, std::int64_t c) -> double {
+        if (a <= 0 || b <= 0 || c <= 0) {
+            return 0.0;
+        }
+        return static_cast<double>(a) * static_cast<double>(b) * static_cast<double>(c);
+    };
+    const double true_fused_ce_elements =
+        positive_product(options.rows, options.vocab, options.iterations);
+    const double true_fused_dhidden_elements =
+        positive_product(options.rows, options.hidden_dim, options.iterations);
+    const double true_fused_dweight_elements =
+        positive_product(options.vocab, options.hidden_dim, options.iterations);
+    const double true_fused_dhidden_tiles =
+        positive_product(
+            ceil_div_i64(options.rows, true_fused_mat_tile),
+            ceil_div_i64(options.hidden_dim, true_fused_mat_tile),
+            options.iterations);
+    const double true_fused_dweight_tiles =
+        positive_product(
+            ceil_div_i64(options.vocab, true_fused_mat_tile),
+            ceil_div_i64(options.hidden_dim, true_fused_mat_tile),
+            options.iterations);
+    auto cycles_per_work = [](std::int64_t cycles, double work) {
+        return work > 0.0 ? static_cast<double>(cycles) / work : 0.0;
+    };
+    auto variant_json = [&](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
             << "\"name\":\"" << json_escape(value.name) << "\","
@@ -868,6 +900,31 @@ std::string render_json(
                     ? static_cast<double>(value.true_fused_dweight_cycles) /
                           static_cast<double>(value.true_fused_dweight_blocks)
                     : 0.0) << ","
+            << "\"true_fused_ce_cycle_work_elements\":"
+            << std::fixed << std::setprecision(6) << true_fused_ce_elements << ","
+            << "\"true_fused_dhidden_cycle_work_elements\":"
+            << std::fixed << std::setprecision(6) << true_fused_dhidden_elements << ","
+            << "\"true_fused_dweight_cycle_work_elements\":"
+            << std::fixed << std::setprecision(6) << true_fused_dweight_elements << ","
+            << "\"true_fused_dhidden_cycle_work_tiles\":"
+            << std::fixed << std::setprecision(6) << true_fused_dhidden_tiles << ","
+            << "\"true_fused_dweight_cycle_work_tiles\":"
+            << std::fixed << std::setprecision(6) << true_fused_dweight_tiles << ","
+            << "\"true_fused_ce_cycles_per_logit_element\":"
+            << std::fixed << std::setprecision(9)
+            << cycles_per_work(value.true_fused_ce_cycles, true_fused_ce_elements) << ","
+            << "\"true_fused_dhidden_cycles_per_output_element\":"
+            << std::fixed << std::setprecision(9)
+            << cycles_per_work(value.true_fused_dhidden_cycles, true_fused_dhidden_elements) << ","
+            << "\"true_fused_dweight_cycles_per_output_element\":"
+            << std::fixed << std::setprecision(9)
+            << cycles_per_work(value.true_fused_dweight_cycles, true_fused_dweight_elements) << ","
+            << "\"true_fused_dhidden_cycles_per_output_tile\":"
+            << std::fixed << std::setprecision(6)
+            << cycles_per_work(value.true_fused_dhidden_cycles, true_fused_dhidden_tiles) << ","
+            << "\"true_fused_dweight_cycles_per_output_tile\":"
+            << std::fixed << std::setprecision(6)
+            << cycles_per_work(value.true_fused_dweight_cycles, true_fused_dweight_tiles) << ","
             << "\"warmup_graph_capture_attempt_count\":"
             << value.warmup_graph_capture_attempt_count << ","
             << "\"warmup_graph_capture_success_count\":"
@@ -922,6 +979,7 @@ std::string render_json(
         << json_escape(candidate_symbol_abi_path_class) << "\",\n"
         << "  \"candidate_symbol_abi_implementation_class\": \""
         << json_escape(candidate_symbol_abi_implementation_class) << "\",\n"
+        << "  \"true_fused_cycle_work_mat_tile\": " << true_fused_mat_tile << ",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
         << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
@@ -1067,6 +1125,8 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dhidden_blocks");
         auto true_fused_dweight_blocks =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_dweight_blocks");
+        auto true_fused_mat_tile =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_true_fused_mat_tile");
         auto reference_logits_fn = load_symbol<LinearBf16InputWeightBf16OutputFn>(
             handle,
             "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
@@ -1214,6 +1274,7 @@ int main(int argc, char** argv) {
                 true_fused_capability() != 0,
                 true_fused_production_shape(options),
                 true_fused_allow_production_env_enabled(),
+                true_fused_mat_tile(),
                 fused_kernel_path_class() != nullptr ? fused_kernel_path_class() : "missing",
                 fused_kernel_implementation_class() != nullptr
                     ? fused_kernel_implementation_class()
