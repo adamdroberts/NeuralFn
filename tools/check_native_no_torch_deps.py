@@ -53,6 +53,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/token_shards.cpp"),
         Path("neuralfn/csrc/native_train/token_shards.h"),
         Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+        Path("tools/build_native_gpt_cli.sh"),
     ),
     Path("build/nfn_gpt_native_train_linked"): (
         Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"),
@@ -63,6 +64,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
         Path("tools/build_native_train_tile_ops.sh"),
+        Path("tools/build_native_gpt_cli_linked.sh"),
     ),
     Path("build/nfn_train_gpt_sm120"): (
         Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp"),
@@ -79,6 +81,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/token_shards.cpp"),
         Path("neuralfn/csrc/native_train/token_shards.h"),
         Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+        Path("tools/build_native_gpt2_cli.sh"),
     ),
     Path("build/nfn_native_train"): (
         Path("neuralfn/csrc/native_train/nfn_native_train.cpp"),

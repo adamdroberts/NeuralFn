@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native no-Torch stale-artifact mapping now treats GPT trainer build scripts as
+  source dependencies: `build/nfn_gpt_native_train`,
+  `build/nfn_gpt_native_train_linked`, and `build/nfn_gpt2_native_train` fail
+  freshness checks when their corresponding `tools/build_native_gpt*.sh` script
+  is newer, alongside trainer source, token-shard source/header, shipped GPT
+  template metadata, and Tile ops inputs. Verification: focused native
+  dependency-map pytest and full no-Torch JSON verifier.
+
 - Native GPT-2 compatibility builder freshness now matches the generic GPT
   trainer builders: `tools/build_native_gpt2_cli.sh` skips recompilation only
   when its output is newer than the trainer source, token-shard source/header,

@@ -768,6 +768,9 @@ def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: P
     stale_sources = module.stale_artifact_sources(artifact, tmp_path)
 
     assert Path("neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp") in dependencies
+    assert Path("neuralfn/csrc/native_train/token_shards.h") in dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in dependencies
+    assert Path("tools/build_native_gpt_cli.sh") in dependencies
     assert stale_sources
     assert stale_sources[0]["source"] == "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"
     assert stale_sources[0]["exists"] is True
@@ -862,6 +865,18 @@ def test_native_no_torch_dependency_verifier_maps_gpt_launcher_catalog_sources()
 
     generic_dependencies = module.artifact_source_dependencies(root / "build" / "nfn_train_gpt", root)
     sm120_dependencies = module.artifact_source_dependencies(root / "build" / "nfn_train_gpt_sm120", root)
+    native_gpt_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_gpt_native_train",
+        root,
+    )
+    native_gpt_linked_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_gpt_native_train_linked",
+        root,
+    )
+    native_gpt2_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_gpt2_native_train",
+        root,
+    )
 
     assert Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp") in generic_dependencies
     assert Path("neuralfn/csrc/native_train/train_gpt_sm120.cpp") in sm120_dependencies
@@ -869,6 +884,12 @@ def test_native_no_torch_dependency_verifier_maps_gpt_launcher_catalog_sources()
     assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in sm120_dependencies
     assert Path("tools/build_train_gpt_cli.sh") in generic_dependencies
     assert Path("tools/build_train_gpt_sm120_cli.sh") in sm120_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in native_gpt_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in native_gpt_linked_dependencies
+    assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in native_gpt2_dependencies
+    assert Path("tools/build_native_gpt_cli.sh") in native_gpt_dependencies
+    assert Path("tools/build_native_gpt_cli_linked.sh") in native_gpt_linked_dependencies
+    assert Path("tools/build_native_gpt2_cli.sh") in native_gpt2_dependencies
 
 
 def test_native_no_torch_dependency_verifier_maps_sdk_bindings() -> None:
