@@ -3491,7 +3491,9 @@ helpers, `train_gpt_native`, or `TorchTrainer`. Its lightweight parser is kept
 only for help/native-default inspection. Full-transformer training dispatches
 to `nfn_gpt_native_train --model-family nanogpt --template-name nanogpt --train-transformer-lm`; pass
 `--train-token-lm` explicitly to use the older NanoGPT family token-LM native
-diagnostic loop.
+diagnostic loop. The lightweight NanoGPT defaults now mirror the shared dense
+GPT native schedule: validation every 250 optimizer steps and 60 LR warmup
+steps.
 
 Dense GPT native training now accepts `--layer-evo` /
 `--native-cuda-layer-evo` plus `--evo-layer-index`,

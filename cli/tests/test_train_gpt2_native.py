@@ -330,6 +330,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 builtins.__import__ = real_import
 
             print("MODE_NAME", train_gpt2_evo.MODE_NAME)
+            print("EVAL_EVERY_STEPS", train_gpt2_evo.GPT2_EVO_DEFAULTS["eval_every_steps"])
+            print("WARMUP_STEPS", train_gpt2_evo.GPT2_EVO_DEFAULTS["warmup_steps"])
             print("TORCH_LOADED", "torch" in sys.modules)
             print("NUMPY_LOADED", "numpy" in sys.modules)
             """
@@ -348,6 +350,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("MODE_NAME gpt2_evo", proc.stdout)
+        self.assertIn("EVAL_EVERY_STEPS 1000", proc.stdout)
+        self.assertIn("WARMUP_STEPS 60", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
 
@@ -2306,6 +2310,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             print("RUNTIME", args.runtime)
             print("MODEL_FAMILY", args.model_family)
             print("TEMPLATE", args.template_name)
+            print("PARSER_EVAL_EVERY_STEPS", args.eval_every_steps)
+            print("PARSER_WARMUP_STEPS", args.warmup_steps)
+            print("DEFAULT_EVAL_EVERY_STEPS", module.NANOGPT_DEFAULTS["eval_every_steps"])
+            print("DEFAULT_WARMUP_STEPS", module.NANOGPT_DEFAULTS["warmup_steps"])
             print("TORCH_LOADED", "torch" in sys.modules)
             print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
             print("NUMPY_LOADED", "numpy" in sys.modules)
@@ -2327,6 +2335,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("RUNTIME native-cuda", proc.stdout)
         self.assertIn("MODEL_FAMILY gpt", proc.stdout)
         self.assertIn("TEMPLATE nanogpt", proc.stdout)
+        self.assertIn("PARSER_EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("PARSER_WARMUP_STEPS 60", proc.stdout)
+        self.assertIn("DEFAULT_EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("DEFAULT_WARMUP_STEPS 60", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)

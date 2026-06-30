@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT wrapper default cleanup: `train_gpt2_evo.py` now exposes the same
+  60-step LR warmup default as its compiled GPT-2-evo preflight, and
+  `train_nanogpt.py` now exposes the shared dense GPT native defaults of
+  validation every 250 optimizer steps and 60 warmup steps. This removes stale
+  1000-step wrapper defaults while keeping GPT-2-evo validation at the explicit
+  1000-step cadence. Verification: focused native CLI import/default tests and
+  `git diff --check`.
+
 - Native GPT-2 evo warmup default: `nfn_gpt2_evo_native_train` now defaults to
   the shared dense GPT 60-step LR warmup while preserving its validation cadence
   of every 1000 optimizer steps. The family preflight help, print-plan JSON,
