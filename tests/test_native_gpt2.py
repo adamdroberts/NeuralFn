@@ -6459,7 +6459,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert preset_args[preset_args.index("--model-family") + 1] == "gpt"
     assert preset_args[preset_args.index("--template-name") + 1] == "gpt2_moa"
     assert preset_args[preset_args.index("--native-cuda-activation") + 1] == "moa"
-    assert "--fast-startup" in preset_args
+    assert "--fast-startup" not in preset_args
 
     long_run_observed = tmp_path / "long-run-native-argv.txt"
     long_run_env = env.copy()
@@ -8893,8 +8893,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["adam_eps"] == 1e-8
     assert train_transformer_payload["grad_clip_norm"] == 1.0
     assert train_transformer_payload["schedule"] == {
-        "max_steps": 1,
-        "train_batch_tokens": 2,
+        "max_steps": 2,
+        "train_batch_tokens": 524288,
         "train_loss_every_steps": 0,
         "eval_every_steps": 1,
         "eval_batches": 1,
