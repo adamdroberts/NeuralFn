@@ -3418,7 +3418,13 @@ optimizer-step prewarm cost. `tools/paired_kernel_speed.py` reports
 `train_tokens_per_second` metric so SDK benchmark reports can judge long-run
 throughput without folding in that first optimizer step. The
 `long_run_defer_prewarm` profile gates that steady-state throughput metric
-against the llm.kittens reference by default. When a caller requests fewer than
+against the llm.kittens reference by default.
+
+Short native GPT runs that enter the `fast_startup` path also skip the TK QKV
+first-use setup prewarm by default, matching the LM-head graph prewarm skip.
+Pass `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` only when a fast-startup smoke
+or one-step diagnostic needs to reproduce the older eager QKV prewarm setup.
+When a caller requests fewer than
 twenty warmup pairs for this profile, or for a measured default long-run
 deferred-prewarm comparison, the wrapper raises benchmark warmup to twenty pairs.
 Dry-run plans keep explicit low-warmup aliases literal for command-shape

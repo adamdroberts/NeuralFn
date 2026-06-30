@@ -285,9 +285,9 @@ For smoke tests and low-latency startup checks, set
 `train_gpt.py`, or `nfn_gpt_native_train`, or set
 `fast_startup=True` on `NativeTrainRunConfig` / `build_native_train_run_config()`.
 This keeps the long-training default route unchanged, but flips the default
-setup-prewarm policy so short training keeps the TK QKV first-use prewarm while
-still skipping the LM-head CUDA Graph prewarm unless its explicit prewarm env
-var forces it back on.
+setup-prewarm policy so short training skips the TK QKV first-use prewarm and
+the LM-head CUDA Graph prewarm unless their explicit prewarm env vars force
+them back on.
 Native JSON reports `native_fast_startup_requested` and
 `native_fast_startup_prewarm_policy`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=fast_startup bash tools/bench_native_gpt_sm120_candidate.sh`
@@ -2477,11 +2477,10 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
 `lm_head_fused_graph_prewarm_cache_entry_count`. Runtime JSON also reports
-`native_fast_startup_prewarm_policy`: one-step auto fast-startup smokes keep
-the `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` policy, while
-multi-step training enables
-`qkv-and-lm-head-graph-prewarm-for-short-training` so the first measured
-optimizer steps do not pay lazy LM-head graph capture. The same JSON now also
+`native_fast_startup_prewarm_policy`: auto fast-startup smokes and short-run
+diagnostics now report `fast-startup-skip-throughput-prewarms-by-default`,
+skipping both TK QKV first-use and LM-head graph setup prewarms unless their
+explicit prewarm env vars force them back on. The same JSON now also
 reports `lm_head_fused_graph_prewarm_dedup_enabled` and
 `lm_head_fused_graph_prewarm_duplicate_skip_count`. Graph prewarm is enabled by
 default for real training with at least three optimizer steps and captures each

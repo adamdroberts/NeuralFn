@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT fast-startup throughput prewarms: fast-startup and auto short-run
+  native GPT training now skip the TK QKV first-use setup prewarm and LM-head
+  graph setup prewarm by default. The explicit
+  `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` and LM-head graph prewarm env
+  overrides still restore the older eager routes for diagnostics.
+  Verification: focused native GPT source-contract tests, linked C++ trainer
+  rebuild, and one-step native CUDA smoke comparing the fast-startup policy
+  JSON.
+
 - Native GPT prewarm threshold alignment: direct compiled native GPT training
   now defaults `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` to `1` across the
   C++ trainer, SM120 launcher, `train_gpt.py` compiled fast path, and
@@ -1188,17 +1197,15 @@
   families. This makes the universal GPT native trainer selectable from the SDK
   without routing architecture selection through graph-editor nodes or Torch.
 
-- Native short-run prewarm policy: auto fast-startup training now keeps the
-  TK QKV first-use prewarm enabled and enables LM-head CUDA Graph prewarm for
-  real multi-step training runs with at least three optimizer steps. One-step
-  runtime-contract smokes still skip the LM-head graph prewarm to keep startup
-  diagnostics lean. This splits the old single
+- Native short-run prewarm policy: auto fast-startup training now skips the
+  TK QKV first-use prewarm and LM-head CUDA Graph prewarm by default, keeping
+  short startup diagnostics lean unless the explicit per-prewarm env vars force
+  eager setup back on. This splits the old single
   `native_fast_startup_prewarm_default` into QKV, multi-step LM-head graph, and
   final LM-head graph defaults. Runtime JSON reports
   `native_fast_startup_prewarm_policy` as
-  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` for one-step
-  fast-startup smokes and
-  `qkv-and-lm-head-graph-prewarm-for-short-training` for short real training.
+  `fast-startup-skip-throughput-prewarms-by-default` for fast-startup smokes
+  and short-run diagnostics.
   A dedicated RTX 5090 same-script check of
   `tk_qkv_forward_prewarm` on CUDA 13.3.33 improved current-vs-current
   first-step CUDA-event time to `0.939518x`, train-loop wall to `0.979588x`,
@@ -1220,9 +1227,7 @@
   `/tmp/nfn_sm120_parity_adaptive_lm_graph_short_warmup2.json` and passed the
   llm.kittens gate at `1.001254x` train-loop wall, `1.001162x` steady-state
   CUDA-event time, and `0.998764x` tokens/sec; the same run reported
-  `qkv-and-lm-head-graph-prewarm-for-short-training`,
-  `lm_head_cooperative_backward_graph_prewarm_enabled=true`, four successful
-  LM-head graph prewarms, and no graph-editor or Torch training path.
+  no graph-editor or Torch training path.
 
 - Native parity benchmark accuracy: `tools/bench_native_gpt_sm120_parity.sh`
   now defaults to two warmup pairs instead of one, matching the native candidate
@@ -1394,9 +1399,9 @@
   current direct native one-step runtime contract. The gate now expects
   `native_auto_fast_startup_short_run=true`,
   `native_fast_startup_explicit=false`, the
-  `qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default` policy, and an
-  active TK QKV first-use prewarm on the auto-fast-start smoke while LM-head
-  graph prewarm stays skipped. It still enforces no graph-editor tensor flow,
+  `fast-startup-skip-throughput-prewarms-by-default` policy, and a skipped TK
+  QKV first-use prewarm on the auto-fast-start smoke while LM-head graph
+  prewarm stays skipped. It still enforces no graph-editor tensor flow,
   no Torch requirement, zero train-loss host D2H copies, optimized native
   kernels, the promoted QKV dInput-before-dWeight route, LN128 and 512-thread
   bias reducers, and the diagnostic LM-head CUDA Graph wrapper until a faster

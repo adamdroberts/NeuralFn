@@ -11475,9 +11475,11 @@ int run_transformer_lm_training_json(
         !cfg.startup_only &&
         !native_long_run_defer_prewarm_enabled;
     const bool native_qkv_first_use_prewarm_default =
+        !native_fast_startup_requested &&
         !cfg.startup_only &&
         !native_long_run_defer_prewarm_enabled;
     const bool native_lm_head_graph_training_prewarm_default =
+        !native_fast_startup_requested &&
         !cfg.startup_only &&
         cfg.max_steps >= 3 &&
         !native_long_run_defer_prewarm_enabled;
@@ -26028,9 +26030,7 @@ int run_transformer_lm_training_json(
         << (native_long_run_defer_prewarm_enabled ? "true" : "false") << ",\n"
         << "  \"native_fast_startup_prewarm_policy\": \""
         << (native_fast_startup_requested
-                ? native_lm_head_graph_training_prewarm_default
-                ? "qkv-and-lm-head-graph-prewarm-for-short-training"
-                : "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default"
+                ? "fast-startup-skip-throughput-prewarms-by-default"
                 : native_long_run_defer_prewarm_enabled
                 ? "long-run-defer-throughput-prewarms-by-default"
                 : cfg.startup_only

@@ -1226,10 +1226,10 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "native_auto_fast_startup_short_run" in source
     assert "native_fast_startup_explicit" in source
     assert "native_fast_startup_prewarm_policy" in source
-    assert "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default" in source
+    assert "fast-startup-skip-throughput-prewarms-by-default" in source
     assert "linear_tk_qkv_first_use_prewarm_requested" in source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in source
-    assert "TK QKV first-use prewarm active on auto fast-startup smokes" in source
+    assert "TK QKV first-use prewarm skipped on auto fast-startup smokes" in source
     assert "attention_backward_bf16_grad_out_handoff_enabled" in source
     assert "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff" in source
     assert "promoted BF16 attention grad-out handoff route active" in source
@@ -2009,6 +2009,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
         "            1)"
     ) in gpt_source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in gpt_source
+    assert (
+        "const bool native_qkv_first_use_prewarm_default =\n"
+        "        !native_fast_startup_requested &&"
+    ) in gpt_source
     assert "!native_long_run_defer_prewarm_enabled" in gpt_source
     assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
     assert "long-run-defer-throughput-prewarms-by-default" in gpt_source
@@ -2767,10 +2771,18 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert 'env_nonnegative_i64_or(\n            {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",' in source
     assert '"NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},\n            1)' in source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
+    assert (
+        "const bool native_qkv_first_use_prewarm_default =\n"
+        "        !native_fast_startup_requested &&"
+    ) in source
+    assert (
+        "const bool native_lm_head_graph_training_prewarm_default =\n"
+        "        !native_fast_startup_requested &&"
+    ) in source
     assert "!native_long_run_defer_prewarm_enabled" in source
     assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
-    assert "qkv-and-lm-head-graph-prewarm-for-short-training" in source
+    assert "fast-startup-skip-throughput-prewarms-by-default" in source
     assert "cfg.max_steps >= 3" in source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
