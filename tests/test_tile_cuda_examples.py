@@ -1351,6 +1351,46 @@ def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_pa
     assert payload["metadata"]["default_long_run_defer_prewarm"] == "applied"
 
 
+def test_native_gpt_sm120_candidate_profile_inherits_long_run_defer_prewarm(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-profile-defer-prewarm.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "qkv_dinput_ln128",
+            "NFN_SM120_NATIVE_STEPS": "2",
+            "NFN_SM120_NATIVE_SAMPLES": "1",
+            "NFN_SM120_NATIVE_WARMUP": "0",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_INCLUDE_LLMK_REFERENCE": "0",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["metadata"]["candidate_profile"] == "qkv_dinput_ln128"
+    assert payload["metadata"]["default_long_run_defer_prewarm"] == "applied"
+    assert payload["metadata"]["default_long_run_defer_prewarm_min_warmup_dry_run_would_apply"] == "40"
+    assert payload["metadata"]["default_long_run_defer_prewarm_min_steps_dry_run_would_apply"] == "10"
+    assert payload["baseline_env"]["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
+    assert payload["candidate_env"]["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
+    assert payload["baseline_env"]["NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT"] == "0"
+    assert payload["candidate_env"]["NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT"] == "1"
+
+
 def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tmp_path: Path) -> None:
     script = Path("tools/bench_native_gpt_sm120_candidate.sh")
     output_path = tmp_path / "candidate-default-gates.json"

@@ -1667,20 +1667,13 @@ if [[ -n "$REJECTED_CANDIDATE_PROFILE" ]]; then
 fi
 case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
   "1"|"true"|"yes"|"on")
-    default_profile_for_long_run_defer=0
-    case "${CANDIDATE_PROFILE,,}" in
-      ""|"none"|"off"|"0"|"false"|"no")
-        default_profile_for_long_run_defer=1
-        ;;
-    esac
     startup_only_for_long_run_defer=0
     case "${STARTUP_ONLY,,}" in
       "1"|"true"|"yes"|"on")
         startup_only_for_long_run_defer=1
         ;;
     esac
-    if [[ "$default_profile_for_long_run_defer" == "1" &&
-          "$startup_only_for_long_run_defer" == "0" ]]; then
+    if [[ "$startup_only_for_long_run_defer" == "0" ]]; then
         prewarm_policy_text="$COMMON_ENV_RAW $BASELINE_ENV_RAW $CANDIDATE_ENV_RAW"
         case "$prewarm_policy_text" in
           *NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=*|*NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS=*|*NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS=*|*NFN_NATIVE_GPT_FAST_STARTUP=*|*NFN_NATIVE_GPT2_FAST_STARTUP=*|*NFN_TILE_CUDA_FAST_STARTUP=*|*NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=*|*NFN_NATIVE_GPT2_PREWARM_TK_QKV_FORWARD=*|*NFN_TILE_CUDA_PREWARM_TK_QKV_FORWARD=*|*NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=*|*NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=*)

@@ -1403,6 +1403,10 @@ The common-shape controls also accept the explicit
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT`, so candidate wrapper commands can spell
 the workload consistently without silently falling back to the 10-step,
 3-sample default run.
+Measured non-startup candidate profiles inherit the wrapper's long-run
+deferred-prewarm policy unless the profile explicitly sets fast-startup or
+prewarm controls, so route candidates are compared in the same startup mode as
+production-length native GPT runs.
 The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and

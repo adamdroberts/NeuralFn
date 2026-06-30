@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native SM120 candidate benchmark policy: measured non-startup candidate
+  profiles now inherit the wrapper's long-run deferred-prewarm policy unless
+  the profile explicitly sets fast-startup or prewarm controls. This keeps
+  route-profile comparisons aligned with production-length native GPT training
+  instead of accidentally measuring extra first-use prewarm work. Verification:
+  focused wrapper dry-run pytest, shell syntax check, and `git diff --check`.
+
 - Native GPT benchmark first-step attribution: `tools/paired_kernel_speed.py`
   now derives `train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step`
   and `train_loop_cuda_event_first_step_over_steady_state_ratio` from native
