@@ -2960,7 +2960,10 @@ benchmarks.
 Set `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
 packed BF16 QKV bias-add launch.
 Set `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` to reproduce the previous
-float32-LN1 QKV forward path.
+float32-LN1 QKV forward path. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=ln1_bf16_qkv_forward` with
+`tools/bench_native_gpt_sm120_candidate.sh` to compare that legacy route
+against the current BF16 handoff with the wrapper's same-script gates.
 BF16/BF16 QKV dWeight+bias accumulation is default-on and reuses the saved LN1
 BF16 buffer;
 runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and

@@ -4079,6 +4079,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",
+        "ln1_bf16_qkv_forward": "NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=1",
         "packed_attention_bwd_batch_48": "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48",
         "packed_attention_bwd_batch_96": "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=96",
         "cublaslt_grouped_probe_required": "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1",
@@ -4138,6 +4139,17 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "llm.kittens reference steady-state CUDA-event step at 0.777842x" in bench_source
     assert "steady-state tokens/sec at 1.267382x" in bench_source
     assert "deferred first-step cost remains visible in train-loop wall timing" in bench_source
+    assert '"ln1_bf16_qkv_forward"|"ln1-bf16-qkv-forward"' in bench_source
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0"'
+        in bench_source
+    )
+    assert (
+        'CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=1"'
+        in bench_source
+    )
+    assert "qkv_forward_ln1_bf16_enabled" in bench_source
+    assert "old float32-LN1 QKV forward route measured 1.015832x" in bench_source
     assert "setup.token_weight_init.total_ms regressed to 1.020863x" in bench_source
     assert "setup_wall_ms regressed to 1.008041x" in bench_source
     assert "setup.token_weight_init.total_ms regressed to 1.003813x" in bench_source

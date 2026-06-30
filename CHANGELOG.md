@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SM120 BF16 QKV benchmark profile: added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=ln1_bf16_qkv_forward` to
+  `tools/bench_native_gpt_sm120_candidate.sh`. The profile compares the legacy
+  `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` float32-LN1 path against the current
+  BF16 LN1-to-QKV handoff, requires the `qkv_forward_ln1_bf16_enabled` route
+  change to show up in native metrics, and gates train-loop wall time plus
+  tokens/sec in the same script. Verification: focused native GPT
+  source-contract test, shell syntax check, direct one-step native Tile-CUDA
+  smoke with optimized-kernel contract enabled, and `git diff --check`.
+
 - Native GPT BF16 pack attribution: the trainer-facing Tile-CUDA ABI now
   splits the legacy `linear_bf16_a_pack_count` into cached A/B operand packs
   and transient A/B activation packs, and dense GPT runtime JSON plus
