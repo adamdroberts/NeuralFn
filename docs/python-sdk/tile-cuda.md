@@ -821,15 +821,21 @@ train-loop wall to `1.010542x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_prewarm` when the
 question is specifically the long-run deferred-prewarm path. It forces full-row
 TK QKV first-use prewarm back on for the candidate while both sides keep
-`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1`. The 2026-06-29 10-warmup rerun
-proved the route by moving QKV prewarm success `0->1` and improved train-loop
-wall to `0.980058x`, first-step CUDA-event timing to `0.943764x`,
-forward-QKV first-step timing to `0.406062x`, and train tokens/sec to
-`1.020352x` versus the deferred native baseline. It remains rejected because
-setup wall regressed to `1.320458x`, startup-plus-first-step to `1.000868x`,
-startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
-wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
-`0.993879x`.
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1`. The 2026-06-30 10-step bounded
+rerun proved the route by moving QKV prewarm success `0->1`, passed native
+gates at `0.990528x` train-loop wall, `0.937434x` first-step CUDA-event timing,
+`0.997349x` startup-plus-train-loop wall, and `1.009565x` train tokens/sec, and
+passed candidate-over-llm.kittens train-loop wall at `0.998803x`. It remains
+rejected because the strict reference first-step gate missed at `1.023625x` and
+reference train tokens/sec missed at `0.999950x`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_forced_prewarm` to test the
+combined long-run target: TK QKV first-use prewarm plus LM-head CUDA Graph setup
+prewarm. That bounded 10-step diagnostic closed the llm.kittens reference gap at
+`0.994474x` train-loop wall, `0.988372x` first-step CUDA-event time,
+`0.995158x` steady-state CUDA-event time, and `1.004802x` train tokens/sec, but
+it remains rejected because setup wall regressed to `1.567282x`,
+startup-plus-first-step to `1.009037x`, and startup-plus-train-loop to
+`1.001525x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` to
 test the rejected opt-in overlap variant against the default long-run deferred
 route. The candidate launches the full-row TK QKV first-use prewarm on a

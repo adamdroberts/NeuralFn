@@ -1552,18 +1552,23 @@ setup GEMM to the first `N` rows. Native GPT JSON reports
 `linear_tk_qkv_first_use_prewarm_effective_rows`; the rejected-by-default
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm_1row` profile still
 uses a one-row launch to test whether TK first-use overhead can be paid without
-the full-row setup cost. The current long-run deferred-prewarm rerun improved
-first-step CUDA-event timing to `0.940367x`, forward-QKV first-step timing to
-`0.416249x`, and train-loop wall to `0.978558x`, but failed setup wall at
-`1.354220x`, startup-plus-first-step at `1.005108x`, and reference train
-tokens/sec at `0.990679x`, so it remains diagnostic-only.
-LM-head graph prewarm is enabled by default for real native GPT training.
-It warms both the no-loss graph key and the active train-loss graph key,
-including loss-bin flags when that route is configured, so the first logged
-train-loss step does not pay a separate lazy graph capture. The prewarm dedup
-key is pointer-aware and matches the Tile runtime CUDA Graph cache key: chunks
-with different logit, target, hidden, row-loss, or gradient buffers are captured
-separately even when their row shape is the same.
+the full-row setup cost. Long-run deferred-prewarm training leaves QKV setup
+prewarm off by default unless `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1` forces
+it back on.
+LM-head graph setup prewarm is also off by default for long-run deferred
+training. Forced LM-head setup prewarm warms both the no-loss graph key and the
+active train-loss graph key, including loss-bin flags when that route is
+configured. The prewarm dedup key is pointer-aware and matches the Tile runtime
+CUDA Graph cache key: chunks with different logit, target, hidden, row-loss, or
+gradient buffers are captured separately even when their row shape is the same.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_forced_prewarm` to compare the
+current long-run deferred route against forcing both TK QKV first-use prewarm
+and LM-head CUDA Graph setup prewarm back on. The bounded 10-step diagnostic
+closed the llm.kittens reference gap at `0.994474x` train-loop wall,
+`0.988372x` first-step CUDA-event time, `0.995158x` steady-state CUDA-event
+time, and `1.004802x` train tokens/sec, but it remains rejected because setup
+wall regressed to `1.567282x`, startup-plus-first-step to `1.009037x`, and
+startup-plus-train-loop to `1.001525x`.
 Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are

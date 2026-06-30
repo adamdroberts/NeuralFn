@@ -375,6 +375,19 @@ case "${CANDIDATE_PROFILE,,}" in
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000 setup_wall_ms=1.000 startup_plus_train_loop_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
+  "long_run_forced_prewarm"|"long-run-forced-prewarm"|"long_run_qkv_lm_head_forced_prewarm"|"long-run-qkv-lm-head-forced-prewarm")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 10-step, 1-sample bounded long-run deferred-prewarm diagnostic forced both TK QKV first-use prewarm and LM-head CUDA Graph setup prewarm back on. It closed the llm.kittens reference gap at 0.994474x train-loop wall, 0.988372x first-step CUDA-event time, 0.995158x steady-state CUDA-event time, and 1.004802x train_tokens_per_second, and improved native train-loop wall to 0.990349x. Keep it rejected because setup_wall_ms regressed to 1.567282x, startup_plus_first_step_wall_ms to 1.009037x, and startup_plus_train_loop_wall_ms to 1.001525x; this is the reproducible target for reducing or hiding setup prewarm cost."
+    CANDIDATE_NOTE="Compares the current long-run deferred route against forcing both known first-use prewarms back on. This profile should stay rejected until the setup cost is reduced or overlapped enough for startup-plus gates to pass while retaining the reference wins."
+    BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }lm_head_cooperative_backward_graph_prewarm_enabled"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_success_count lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000 startup_plus_train_loop_wall_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    ;;
   "lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 2-sample same-script gate routed LM-head dHidden through TK dInput but regressed train_loop_wall_ms_per_step to 1.045528x and stage.lm_head_backward.dhidden.total_ms to 1.132973x."

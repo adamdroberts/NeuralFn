@@ -3659,6 +3659,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "1.002303x tokens/sec" in bench_source
     assert "setup_wall_ms regressed to 1.502355x" in bench_source
     assert "startup_plus_train_loop_wall_ms to 1.000732x" in bench_source
+    assert '"long_run_forced_prewarm"|"long-run-forced-prewarm"' in bench_source
+    assert "long-run deferred-prewarm diagnostic forced both TK QKV first-use prewarm and LM-head CUDA Graph setup prewarm back on" in bench_source
+    assert "0.994474x train-loop wall" in bench_source
+    assert "0.988372x first-step CUDA-event time" in bench_source
+    assert "1.004802x train_tokens_per_second" in bench_source
+    assert "setup_wall_ms regressed to 1.567282x" in bench_source
+    assert "startup_plus_first_step_wall_ms to 1.009037x" in bench_source
+    assert "startup_plus_train_loop_wall_ms to 1.001525x" in bench_source
+    assert "linear_tk_qkv_first_use_prewarm_success_count lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert "forced LM-head CUDA Graph setup prewarm against the current lazy graph-replay default" in bench_source

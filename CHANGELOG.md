@@ -143,6 +143,17 @@
   `0.999950x`. Verification: bounded same-script GPU rerun, focused native GPT
   source-contract pytest slice, and `git diff --check`.
 
+- Native SM120 combined prewarm target: added the rejected
+  `long_run_forced_prewarm` profile for the long-run deferred path with both TK
+  QKV first-use prewarm and LM-head CUDA Graph setup prewarm forced back on. The
+  bounded 10-step diagnostic closed the llm.kittens reference gap at `0.994474x`
+  train-loop wall, `0.988372x` first-step CUDA-event timing, `0.995158x`
+  steady-state CUDA-event timing, and `1.004802x` train tokens/sec, but remains
+  rejected because setup/startup-plus gates still fail. This profile is the
+  reproducible target for reducing or hiding setup prewarm cost without losing
+  reference wins. Verification: benchmark profile source-contract pytest slice,
+  shell syntax check, docs guard, and `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or
