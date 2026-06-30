@@ -381,6 +381,24 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_NOTE="Compares the current long-run deferred route against forcing both known first-use prewarms back on. This profile should stay rejected until the setup cost is reduced or overlapped enough for startup-plus gates to pass while retaining the reference wins."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
+          "$WARMUP" =~ ^[0-9]+$ &&
+          "$USER_WARMUP_SET" == "0" &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
+          "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+      WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
+      LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises benchmark warmup to at least ${LONG_RUN_DEFER_PREWARM_MIN_WARMUP} pair(s) so steady-state throughput gates are not dominated by first-use timing noise."
+    fi
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
+          "$STEPS" =~ ^[0-9]+$ &&
+          "$USER_STEPS_SET" == "0" &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
+          "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+      STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
+      LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises measured optimizer steps to at least ${LONG_RUN_DEFER_PREWARM_MIN_STEPS} so full-loop ratios are not dominated by the intentionally deferred first step."
+    fi
     REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }lm_head_cooperative_backward_graph_prewarm_enabled"
     REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_success_count lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000 startup_plus_train_loop_wall_ms=1.000}"
@@ -581,8 +599,27 @@ case "${CANDIDATE_PROFILE,,}" in
   "long_run_qkv_forward_prewarm"|"long-run-qkv-forward-prewarm"|"long_run_qkv_forward_full_prewarm"|"long-run-qkv-forward-full-prewarm")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 10-step, 1-sample bounded rerun with 3 warmup pairs forced full-row TK QKV first-use prewarm back on while keeping the long-run deferred-prewarm policy on both sides. The route changed as intended: QKV prewarm success moved 0->1 and linear_tk_gemm_count increased by one. It passed native gates at 0.990528x train_loop_wall_ms_per_step, 0.937434x first-step CUDA-event time, 0.997349x startup_plus_train_loop_wall_ms, and 1.009565x train_tokens_per_second. It also passed candidate-over-llm.kittens train-loop wall at 0.998803x, but remains rejected because the strict reference first-step gate missed at 1.023625x and train_tokens_per_second missed by a hair at 0.999950x."
+    CANDIDATE_NOTE="Compares the current long-run deferred route against forcing TK QKV first-use prewarm back on. This profile keeps long-run warmup and step floors unless the caller explicitly overrides them for a bounded reproduction."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1"
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
+          "$WARMUP" =~ ^[0-9]+$ &&
+          "$USER_WARMUP_SET" == "0" &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
+          "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+      WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
+      LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises benchmark warmup to at least ${LONG_RUN_DEFER_PREWARM_MIN_WARMUP} pair(s) so steady-state throughput gates are not dominated by first-use timing noise."
+    fi
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
+          "$STEPS" =~ ^[0-9]+$ &&
+          "$USER_STEPS_SET" == "0" &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
+          "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+      STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
+      LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises measured optimizer steps to at least ${LONG_RUN_DEFER_PREWARM_MIN_STEPS} so full-loop ratios are not dominated by the intentionally deferred first step."
+    fi
     REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_success_count"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_train_loop_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"

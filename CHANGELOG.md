@@ -154,6 +154,14 @@
   reference wins. Verification: benchmark profile source-contract pytest slice,
   shell syntax check, docs guard, and `git diff --check`.
 
+- Native SM120 long-run diagnostic floors: the rejected
+  `long_run_qkv_forward_prewarm` and `long_run_forced_prewarm` candidate
+  profiles now inherit the long-run warmup and measured-step floors when those
+  values are unset, matching the accepted deferred-prewarm profile's steady-state
+  gate policy. Explicit warmup or step overrides still produce bounded repro
+  shapes. Verification: source-contract pytest slice, dry-run metadata check,
+  shell syntax check, docs guard, and `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or

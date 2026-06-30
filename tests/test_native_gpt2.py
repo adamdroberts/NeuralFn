@@ -3668,6 +3668,20 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "startup_plus_first_step_wall_ms to 1.009037x" in bench_source
     assert "startup_plus_train_loop_wall_ms to 1.001525x" in bench_source
     assert "linear_tk_qkv_first_use_prewarm_success_count lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in bench_source
+    long_run_forced_block = bench_source[
+        bench_source.index('"long_run_forced_prewarm"|"long-run-forced-prewarm"') :
+        bench_source.index('"lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768"')
+    ]
+    assert '"$USER_WARMUP_SET" == "0"' in long_run_forced_block
+    assert '"$USER_STEPS_SET" == "0"' in long_run_forced_block
+    assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_forced_block
+    long_run_qkv_block = bench_source[
+        bench_source.index('"long_run_qkv_forward_prewarm"|"long-run-qkv-forward-prewarm"') :
+        bench_source.index('"long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"')
+    ]
+    assert '"$USER_WARMUP_SET" == "0"' in long_run_qkv_block
+    assert '"$USER_STEPS_SET" == "0"' in long_run_qkv_block
+    assert "This profile keeps long-run warmup and step floors" in long_run_qkv_block
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
     assert "forced LM-head CUDA Graph setup prewarm against the current lazy graph-replay default" in bench_source

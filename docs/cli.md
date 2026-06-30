@@ -1563,11 +1563,13 @@ CUDA Graph cache key: chunks with different logit, target, hidden, row-loss, or
 gradient buffers are captured separately even when their row shape is the same.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_forced_prewarm` to compare the
 current long-run deferred route against forcing both TK QKV first-use prewarm
-and LM-head CUDA Graph setup prewarm back on. The bounded 10-step diagnostic
-closed the llm.kittens reference gap at `0.994474x` train-loop wall,
-`0.988372x` first-step CUDA-event time, `0.995158x` steady-state CUDA-event
-time, and `1.004802x` train tokens/sec, but it remains rejected because setup
-wall regressed to `1.567282x`, startup-plus-first-step to `1.009037x`, and
+and LM-head CUDA Graph setup prewarm back on. The profile uses the same
+long-run warmup and measured-step floors unless the caller explicitly overrides
+them for a bounded reproduction. The bounded 10-step diagnostic closed the
+llm.kittens reference gap at `0.994474x` train-loop wall, `0.988372x`
+first-step CUDA-event time, `0.995158x` steady-state CUDA-event time, and
+`1.004802x` train tokens/sec, but it remains rejected because setup wall
+regressed to `1.567282x`, startup-plus-first-step to `1.009037x`, and
 startup-plus-train-loop to `1.001525x`.
 Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
