@@ -125,6 +125,15 @@
   Verification: focused native GPT source-contract pytest slice, shell syntax
   check, docs guard, and `git diff --check`.
 
+- Native SM120 route-gate attribution: `tools/paired_kernel_speed.py` now lets
+  an explicitly required setup-prewarm route counter satisfy
+  `--require-native-hot-route-counter` when that named counter changed, while
+  generic `--require-native-route-change` still rejects setup-only changes. This
+  fixes QKV first-use prewarm profiles that previously printed the required
+  counter under changed route counters but also reported it as missing from the
+  gate. Verification: focused paired-kernel route-gate pytest slice and
+  `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or

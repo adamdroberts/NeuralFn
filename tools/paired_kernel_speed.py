@@ -3295,8 +3295,14 @@ def evaluate_native_route_change_gate(
     hot_changed = route_changes.get("hot_changed")
     if not isinstance(hot_changed, dict):
         hot_changed = {}
+    changed = route_changes.get("changed")
+    if not isinstance(changed, dict):
+        changed = {}
+    explicitly_required_counter_changes = {
+        name: changed[name] for name in required_counter_names if name in changed
+    }
     missing_required_counters = [
-        name for name in required_counter_names if name not in hot_changed
+        name for name in required_counter_names if name not in explicitly_required_counter_changes
     ]
     required_strategy_names = [
         str(name).strip() for name in required_strategy_value_changes if str(name).strip()
@@ -3311,6 +3317,7 @@ def evaluate_native_route_change_gate(
     general_change_passed = (
         not route_change_required
         or has_hot_route_counter_change
+        or bool(explicitly_required_counter_changes)
         or has_strategy_value_change
         or has_linear_shape_change
         or has_plan_cache_change

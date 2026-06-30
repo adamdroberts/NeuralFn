@@ -4468,9 +4468,79 @@ def test_paired_kernel_speed_tool_rejects_setup_only_route_change_for_required_g
         "has_cublaslt_plan_cache_change": False,
         "failure_reason": "candidate-native-metrics-did-not-change-route-strategy-or-plan",
     }
+
+
+def test_paired_kernel_speed_tool_accepts_explicit_required_setup_route_counter() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-required-setup-counter.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_tk_qkv_first_use_prewarm_success_count\\\": 0"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.5}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_tk_qkv_first_use_prewarm_success_count\\\": 1"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-hot-route-counter",
+            "linear_tk_qkv_first_use_prewarm_success_count",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    route_changes = payload["native_route_counter_changes"]
+    assert route_changes["has_route_counter_change"] is True
+    assert route_changes["has_hot_route_counter_change"] is False
+    assert route_changes["has_setup_only_route_counter_change"] is True
+    assert "linear_tk_qkv_first_use_prewarm_success_count" in route_changes["setup_only_changed"]
+    assert payload["native_route_change_gate"] == {
+        "enabled": True,
+        "passed": True,
+        "required_hot_route_counters": ["linear_tk_qkv_first_use_prewarm_success_count"],
+        "missing_required_hot_route_counters": [],
+        "required_strategy_value_changes": [],
+        "missing_required_strategy_value_changes": [],
+        "has_route_counter_change": True,
+        "has_hot_route_counter_change": False,
+        "has_strategy_value_change": False,
+        "has_linear_shape_change": False,
+        "has_cublaslt_plan_cache_change": False,
+        "failure_reason": "",
+    }
     assert "has_hot_route_counter_change=false" in proc.stdout
-    assert "only setup/prewarm route counters changed" in proc.stdout
-    assert "native_route_change_gate: passed=false" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_warning() -> None:

@@ -1603,6 +1603,13 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+For SM120 candidate benchmarks, `--require-native-route-change` continues to
+reject setup-only route changes by default. When a profile intentionally tests a
+setup prewarm, pass that exact counter through
+`NFN_SM120_NATIVE_REQUIRE_HOT_ROUTE_COUNTERS` / `--require-native-hot-route-counter`;
+the paired-speed gate accepts the explicitly named changed counter even when it
+is classified as setup-only, and still reports generic setup-only changes as
+non-promotable.
 The llm.kittens side defaults `LD_LIBRARY_PATH` to
 `/usr/local/cuda/lib64:/usr/lib/wsl/lib` through
 `NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH`, so reference timings use the
