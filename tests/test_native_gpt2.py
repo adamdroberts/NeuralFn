@@ -1662,9 +1662,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_FORCE_REBUILD" in build_script
     assert "source_newer_than_out" in build_script
     assert "TOKEN_SHARDS_HEADER" in build_script
+    assert "CATALOG_HEADER" in build_script
+    assert '! source_newer_than_out "${CATALOG_HEADER}"' in build_script
     assert '"${SRC}" "${TOKEN_SHARDS_SRC}" -pthread -ldl -o "${OUT}"' in build_script
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
     assert "source_newer_than_out" in linked_build
+    assert "CATALOG_HEADER" in linked_build
+    assert '! source_newer_than_out "${CATALOG_HEADER}"' in linked_build
     assert '! source_newer_than_out "${TILE_OPS_LIB}"' in linked_build
     assert 'Path("tools/build_native_train_tile_ops.sh")' in no_torch_verifier
     assert 'Path("build/nfn_train_gpt")' in no_torch_verifier
@@ -2770,11 +2774,13 @@ def test_sm120_compiled_launcher_rejects_stale_native_trainer() -> None:
     assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-0}"' in generic_shell_source
     assert "tools/build_train_gpt_cli.sh" in generic_shell_source
     assert "tools/build_native_gpt_cli_linked.sh" in generic_shell_source
+    assert "shipped_gpt_template_presets.h" in generic_shell_source
     assert "ensure_default_compiled_launcher_current" in generic_shell_source
     assert "ensure_default_native_trainer_current" in generic_shell_source
     assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-${NFN_SM120_AUTO_REBUILD:-0}}"' in shell_source
     assert "tools/build_train_gpt_sm120_cli.sh" in shell_source
     assert "tools/build_native_gpt_cli_linked.sh" in shell_source
+    assert "shipped_gpt_template_presets.h" in shell_source
     assert "ensure_default_compiled_launcher_current" in shell_source
     assert "ensure_default_native_trainer_current" in shell_source
     assert 'NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1' in launcher_source

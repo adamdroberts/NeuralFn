@@ -10,7 +10,10 @@ AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-0}"
 native_gpt_source_newer_than() {
   local target="$1"
   [[ "$ROOT_DIR/neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp" -nt "$target" ||
-     "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ]]
+     "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.h" -nt "$target" ||
+     "$ROOT_DIR/neuralfn/csrc/native_train/shipped_gpt_template_presets.h" -nt "$target" ||
+     "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" -nt "$target" ]]
 }
 
 tile_ops_source_newer_than() {

@@ -3410,7 +3410,10 @@ available, so these shell paths do not re-parse defaults before the native
 handoff. For repo-owned default launcher paths, the shell helpers no longer run
 rebuild checks on the normal launch path; set `NFN_NATIVE_GPT_AUTO_REBUILD=1`
 or `NFN_SM120_AUTO_REBUILD=1` when you intentionally want development-time
-refreshes before exec. Direct
+refreshes before exec. Those refreshes treat the linked trainer, token-shard
+loader, Tile ops library, build scripts, and shipped GPT template preset header
+as freshness inputs, so template selector changes do not run through a stale
+native trainer. Direct
 `build/nfn_train_gpt ...` and `build/nfn_train_gpt_sm120 ...` invocations reject
 stale native trainer binaries before launching; set
 `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` only for stale-artifact diagnostics.

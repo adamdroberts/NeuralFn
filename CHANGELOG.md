@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT trainer freshness now includes shipped template metadata:
+  `tools/build_native_gpt_cli.sh`, `tools/build_native_gpt_cli_linked.sh`, and
+  the auto-rebuild paths in `tools/train_gpt.sh` / `tools/train_gpt_sm120.sh`
+  watch `shipped_gpt_template_presets.h` in addition to trainer, token-shard,
+  Tile ops, and build-script inputs. This prevents template selector changes
+  from running through stale native GPT trainer binaries. Verification: focused
+  native GPT source assertion pytest.
+
 - SM120 native rebuild now refreshes the compiled top-level `nfn-native` shim:
   `tools/rebuild_native_sm120.sh` builds `build/nfn_native` alongside
   `nfn_native_train`, the dense GPT launchers, bindings, Tile ops libraries, and
