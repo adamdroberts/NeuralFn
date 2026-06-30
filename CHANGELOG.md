@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- SM120 long-run benchmark floor overrides: named long-run native GPT candidate
+  profiles now honor explicit `NFN_SM120_NATIVE_*_WARMUP` and
+  `NFN_SM120_NATIVE_*_STEPS` values instead of always raising them to the
+  steady-state floor. Default runs still apply the robust floor when the caller
+  leaves warmup/steps unset. Verification: focused native GPT benchmark wrapper
+  test, dry-run expansion checks for explicit and default floors, and
+  `git diff --check`; bounded same-script GPU probes refreshed current long-run
+  and BF16-shadow evidence without promoting either rejected route.
+
 - No-Torch default requirements gate: `tools/check_native_no_torch_deps.py` now
   parses `requirements.txt` and fails if the default requirements file contains
   any install dependency, while still allowing `requirements-full.txt` to carry

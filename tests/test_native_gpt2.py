@@ -3549,8 +3549,10 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     ]
     assert "INCLUDE_LLMK_REFERENCE=0" not in long_run_block
     assert '"$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0' in long_run_block
+    assert '"$USER_WARMUP_SET" == "0"' in long_run_block
     assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in long_run_block
     assert '"$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0' in long_run_block
+    assert '"$USER_STEPS_SET" == "0"' in long_run_block
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in long_run_block
     default_auto_block = bench_source[
         bench_source.index("DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1") :

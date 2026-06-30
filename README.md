@@ -334,11 +334,13 @@ paired benchmark JSON and stdout also report
 CUDA-event step time, so long-run comparisons do not reuse the first-step
 prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
 requires that steady-state throughput metric to meet or beat the llm.kittens
-reference when reference gating is enabled. If a caller sets a lower warmup
-count while using this profile, or while running a measured default long-run
-deferred-prewarm comparison, the wrapper raises benchmark warmup to at least
-60 pairs by default, matching the native training warmup default. Dry-run plans keep
-explicit low-warmup aliases literal for command-shape checks. It records
+reference when reference gating is enabled. When the caller leaves warmup
+unset, this profile and the measured default long-run deferred-prewarm
+comparison raise benchmark warmup to at least 60 pairs by default, matching the
+native training warmup default. Explicit `NFN_SM120_NATIVE_WARMUP` /
+`NFN_SM120_NATIVE_CANDIDATE_WARMUP` values are honored for bounded repro probes.
+Dry-run plans keep explicit low-warmup aliases literal for command-shape checks.
+The wrapper records
 `long_run_defer_prewarm_min_warmup_applied` for the named
 profile and `default_long_run_defer_prewarm_min_warmup_applied` for the default
 auto policy in paired JSON metadata, so steady-state throughput gates are not
@@ -346,14 +348,13 @@ dominated by first-use timing noise. Set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for an intentional
 low-warmup reproduction.
 Measured long-run deferred-prewarm runs also raise fewer than ten optimizer
-steps to ten by default, recording `long_run_defer_prewarm_min_steps_applied`
-or `default_long_run_defer_prewarm_min_steps_applied`; set
+steps to ten by default when steps are not explicit, recording
+`long_run_defer_prewarm_min_steps_applied` or
+`default_long_run_defer_prewarm_min_steps_applied`; set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only when intentionally
-reproducing a short first-step-dominated benchmark.
-Explicit `NFN_SM120_NATIVE_WARMUP` or `NFN_SM120_NATIVE_STEPS` values are honored
-by the default auto policy for quick repro probes; use the named
-`long_run_defer_prewarm` profile when you want the steady-state floor enforced
-as a quality gate.
+reproducing a short first-step-dominated benchmark. Explicit
+`NFN_SM120_NATIVE_STEPS` / `NFN_SM120_NATIVE_CANDIDATE_STEPS` values are honored
+for quick repro probes.
 The parity wrapper uses the same 60-pair warmup floor and measured-step floor
 for default deferred-prewarm current-vs-llm.kittens runs,
 with the parity-specific
