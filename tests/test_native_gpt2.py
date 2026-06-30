@@ -4314,6 +4314,14 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "candidate_matches_llmk_train_sm120_r0" in speed_source
     assert "candidate_uses_native_scratch_recompute" in speed_source
     assert "do not promote no-recompute/full-activation-tape unless same-script" in speed_source
+    assert '("batch_size", ("batch_size",))' in speed_source
+    assert '("seq_len", ("seq_len",))' in speed_source
+    assert '("sample_every_steps", ("sample_every_steps",))' in speed_source
+    assert '("generate_tokens", ("generate_tokens",))' in speed_source
+    assert '("checkpoint_every_steps", ("checkpoint_every_steps",))' in speed_source
+    assert '("schedule.warmup_steps", ("schedule", "warmup_steps"))' in speed_source
+    assert '("optimizer.learning_rate", ("optimizer", "learning_rate"))' in speed_source
+    assert '("optimizer.weight_decay", ("optimizer", "weight_decay"))' in speed_source
     assert "attention dprep timing to 1.000231x" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
     assert "grouped layout status 0 with grouped matmul status 15" in bench_source

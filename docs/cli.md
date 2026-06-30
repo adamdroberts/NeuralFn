@@ -294,6 +294,12 @@ baseline and candidate native runs against the llm.kittens `train-sm120.sh`
 full activation tape with zero backward recompute blocks or the current
 scratch-recompute policy, and keeps no-recompute/full-tape promotion tied to
 same-script candidate, baseline, and llm.kittens timing gates.
+Schedule and optimizer fields from the native JSON are flattened too, including
+`batch_size`, `seq_len`, `sample_every_steps`, `generate_tokens`,
+`checkpoint_every_steps`, `schedule.warmup_steps`, `optimizer.learning_rate`,
+and `optimizer.weight_decay`, so timing wrappers can show which values match
+the long-run training profile and which cadences were deliberately disabled for
+the benchmark window.
 Arena families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of

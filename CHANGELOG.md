@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native SM120 schedule metric extraction: `tools/paired_kernel_speed.py` now
+  flattens dense GPT native schedule and optimizer fields including batch size,
+  sequence length, eval/sample/checkpoint cadence, generation length, warmup,
+  learning rate, LR floor, weight decay, betas, epsilon, and gradient clipping.
+  Candidate and parity reports can now show whether a timing-only benchmark
+  window deliberately disabled cadences while still matching the long-run
+  training profile's shape and optimizer defaults. Verification: focused native
+  GPT source-contract test, Python compile check, and `git diff --check`.
+
 - Native SM120 recompute benchmark contract: paired native candidate reports
   now include `train_sm120_recompute_contract`, which records the llm.kittens
   `train-sm120.sh -r 0` no-recompute reference, the observed baseline/candidate
