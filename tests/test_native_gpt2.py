@@ -69,6 +69,7 @@ from neuralfn.native_train import (
     build_native_gpt_launcher_run_config,
     build_native_sm120_gpt_run_config,
     build_native_train_run_config,
+    capture_native_sm120_gpt,
     capture_native_train,
     exec_native_train,
     native_train_model_registry,
@@ -191,6 +192,55 @@ def test_native_train_sdk_capture_uses_cpp_binding(monkeypatch: pytest.MonkeyPat
     assert result.returncode == 0
     assert json.loads(result.stdout)["status"] == "ok"
     assert result.argv[:3] == ("/tmp/nfn_gpt_native_train", "--base-model", "gpt")
+
+
+def test_capture_native_sm120_gpt_builds_config_and_uses_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = types.ModuleType("fake_native_train_sm120_binding")
+    captured_config: dict[str, object] = {}
+
+    def resolve_command(config: dict[str, object]) -> list[str]:
+        return [str(item) for item in config["argv"]]  # type: ignore[index]
+
+    def run_train(_config: dict[str, object]) -> int:
+        return 0
+
+    def capture_train(config: dict[str, object]) -> dict[str, object]:
+        captured_config.update(config)
+        argv = resolve_command(config)
+        return {
+            "returncode": 0,
+            "stdout": json.dumps({"runner": "sm120"}),
+            "stderr": "",
+            "argv": argv,
+        }
+
+    module.resolve_command = resolve_command  # type: ignore[attr-defined]
+    module.run_train = run_train  # type: ignore[attr-defined]
+    module.capture_train = capture_train  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_native_train_sm120_binding", module)
+    monkeypatch.setattr(native_train_module, "NATIVE_TRAIN_BINDING_MODULES", ("fake_native_train_sm120_binding",))
+
+    result = capture_native_sm120_gpt(
+        "gpt3",
+        ["--tinystories", "--startup-only"],
+        template_name="gpt3",
+        native_sm120_cli="/tmp/nfn_train_gpt_sm120",
+    )
+
+    assert result.runner == "binding"
+    assert result.returncode == 0
+    assert result.argv == (
+        "/tmp/nfn_train_gpt_sm120",
+        "--base-model",
+        "gpt3",
+        "--tinystories",
+        "--startup-only",
+        "--template-name",
+        "gpt3",
+    )
+    assert captured_config["strict_native_command"] is True
+    assert captured_config["cuda_device_max_connections"] == "1"
+    assert json.loads(result.stdout) == {"runner": "sm120"}
 
 
 def test_native_train_model_registry_prefers_cpp_binding_capture(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SM120 SDK capture helper: added
+  `capture_native_sm120_gpt(...)` to `neuralfn.native_train` and the top-level
+  lazy `neuralfn` exports. The helper builds the direct SM120 dense GPT config
+  and immediately captures stdout/stderr through the generic native-train C++
+  binding when available, keeping SDK probes on the compiled native boundary
+  without requiring callers to manually assemble a `NativeTrainRunConfig`.
+  Verification: Python compile check, focused native-train SDK capture pytest
+  slice, full no-Torch native dependency guard, stale-environment-note grep,
+  and `git diff --check`.
+
 - Native GPT startup-only validation elision: dense transformer-LM startup-only
   runs now disable the validation runtime and skip validation sampler
   construction even when an eval cadence is configured. Startup JSON continues

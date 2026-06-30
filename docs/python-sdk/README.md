@@ -56,7 +56,8 @@ from neuralfn import (
     build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, capture_native_gpt, is_native_gpt_checkpoint,
     NativeTrainCaptureResult, NativeTrainRunConfig, NativeTrainRunnerStatus,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, capture_native_gpt2, is_native_gpt2_checkpoint,
-    build_native_train_run_config, exec_native_gpt, exec_native_gpt2, exec_native_train,
+    build_native_train_run_config, capture_native_sm120_gpt,
+    exec_native_gpt, exec_native_gpt2, exec_native_train,
     latest_native_gpt_checkpoint, native_gpt_parameter_count,
     latest_native_gpt2_checkpoint, native_gpt2_parameter_count,
     native_gpt_runner_status, read_native_gpt_checkpoint_info,
@@ -128,6 +129,9 @@ The generic `NativeTrainRunConfig` builders also accept `template_name=` and
 `graph_file=` for dense GPT families, appending `--template-name` and
 `--graph-file` to the compiled native command once so SDK callers can select GPT
 presets or compatible custom graphs without manually editing raw CLI args.
+For the SM120 workstation path, `capture_native_sm120_gpt(...)` builds that
+direct SM120 config and immediately captures stdout/stderr through the generic
+native-train C++ binding when it is available.
 The explicit `dedicated` selector remains available when a benchmark needs
 `nvidia-smi` to choose a display-disabled CUDA GPU, but normal SDK training
 uses ordinal `0` to avoid that startup probe when `CUDA_VISIBLE_DEVICES` is

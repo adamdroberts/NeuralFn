@@ -501,6 +501,33 @@ def build_native_sm120_gpt_run_config(
     )
 
 
+def capture_native_sm120_gpt(
+    model_family: str = "gpt",
+    args: Sequence[str] | None = None,
+    *,
+    template_name: str = "",
+    graph_file: str = "",
+    native_sm120_cli: str | None = None,
+    require_cooperative_lm_head_backward: bool = False,
+    fast_startup: bool = False,
+    strict_native_command: bool = True,
+    runner: str = "auto",
+) -> NativeTrainCaptureResult:
+    """Capture a compiled SM120 dense GPT run through the native train binding."""
+
+    config = build_native_sm120_gpt_run_config(
+        model_family=model_family,
+        args=args,
+        template_name=template_name,
+        graph_file=graph_file,
+        native_sm120_cli=native_sm120_cli,
+        require_cooperative_lm_head_backward=require_cooperative_lm_head_backward,
+        fast_startup=fast_startup,
+        strict_native_command=strict_native_command,
+    )
+    return capture_native_train(config, runner=runner)
+
+
 def build_native_gpt_launcher_run_config(
     model_family: str = "gpt",
     args: Sequence[str] | None = None,

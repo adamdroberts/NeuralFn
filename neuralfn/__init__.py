@@ -41,6 +41,7 @@ _LAZY_EXPORTS = {
     "build_native_gpt2_run_config": ("native_gpt2", "build_native_gpt2_run_config"),
     "capture_native_gpt": ("native_gpt", "capture_native_gpt"),
     "capture_native_gpt2": ("native_gpt2", "capture_native_gpt2"),
+    "capture_native_sm120_gpt": ("native_train", "capture_native_sm120_gpt"),
     "exec_native_gpt": ("native_gpt", "exec_native_gpt"),
     "exec_native_gpt2": ("native_gpt2", "exec_native_gpt2"),
     "exec_native_train": ("native_train", "exec_native_train"),
