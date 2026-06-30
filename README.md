@@ -287,20 +287,20 @@ the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
 `linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0` and the
 runtime policy reporting
 `startup-only-skip-throughput-prewarms-by-default`.
-Long native training runs still defer the expensive LM-head graph prewarm by
-default, but now overlap TK QKV first-use prewarm on a side stream. When
+Long native training runs still defer throughput prewarms by default. When
 `cfg.max_steps` is above `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
 (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
 `NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1024`), the trainer reports
 `native_long_run_defer_prewarm_enabled=true` and
 `native_fast_startup_prewarm_policy` as
-`long-run-async-qkv-prewarm-defer-lm-head-graph-by-default`. This keeps short
-parity and smoke runs on the synchronous QKV-prewarmed route while avoiding the
-old blocking QKV/LM-head graph prewarm cost for 20k-step quality runs. Paired
-native speed gates verify that label by requiring the async QKV launch/wait/sync
-counters to be `1`, async failures to be `0`, and
+`long-run-defer-throughput-prewarms-by-default`. This keeps short parity and
+smoke runs on the QKV-prewarmed route while avoiding up-front QKV/LM-head graph
+prewarm cost for 20k-step quality runs where first-use cost is amortized.
+Paired native speed gates verify that label by requiring
+`linear_tk_qkv_first_use_prewarm_success_count=0` and
 `lm_head_fused_graph_prewarm_success_count=0`, so a long-run benchmark cannot
-silently fall back to the old startup path while keeping the async policy label.
+silently pay the old throughput-prewarm startup cost while still reporting the
+deferred policy.
 The `long_run_defer_prewarm` SM120 candidate profile also keeps the
 same-script llm.kittens reference enabled and gates steady-state CUDA-event
 step time against that reference at `<=1.003x`.
@@ -1540,20 +1540,23 @@ startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
 wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
 `0.993879x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` tests
-the accepted long-run default. It compares the old long-run route with TK QKV
-prewarm disabled against the current default, which launches the full-row TK QKV
-first-use prewarm on a nonblocking side stream during setup and synchronizes
+the rejected opt-in overlap variant. It compares the default long-run route
+with TK QKV prewarm disabled against a candidate that launches the full-row TK
+QKV first-use prewarm on a nonblocking side stream during setup and synchronizes
 that stream at the first real QKV stage. Native GPT JSON reports the route
 through
 `linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
 `linear_tk_qkv_first_use_prewarm_async_launch_count`,
 `linear_tk_qkv_first_use_prewarm_async_wait_count`, and
-`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 10-step same-script probe moved all four counters `0->1` and improved the
-native baseline comparison to `0.988802x` train-loop wall, `0.917323x`
-first-step CUDA-event timing, `0.997741x` steady-state wall, `1.011330x` train
-tokens/sec, and `1.002262x` steady-state tokens/sec. Against llm.kittens, the
-same run passed the long-run gates at `0.998025x` train-loop wall, `0.995337x`
-steady-state wall, and `1.002630x` steady-state tokens/sec.
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 20-warmup,
+10-step same-script probe moved all four counters `0->1` and improved the
+native baseline comparison to `0.994267x` train-loop wall, `0.937204x`
+first-step CUDA-event timing, and `1.005770x` train tokens/sec, but it remains
+rejected because steady-state wall regressed to `1.001251x`,
+startup-plus-train-loop regressed to `1.002379x`, steady-state tokens/sec fell
+to `0.998751x`, candidate-over-llm.kittens train-loop wall was `1.003904x`,
+candidate-over-llm.kittens steady-state wall was `1.002422x`, and
+candidate-over-llm.kittens steady-state tokens/sec was `0.996169x`.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

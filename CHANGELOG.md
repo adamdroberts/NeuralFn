@@ -2,26 +2,24 @@
 
 ## Unreleased
 
-- Native GPT long-run prewarm default: long native training now keeps LM-head
-  graph prewarm deferred but enables TK QKV first-use prewarm through the
-  nonblocking async side-stream route by default. Runtime JSON reports
+- Native GPT long-run prewarm default: reverted the attempted async TK QKV
+  first-use prewarm promotion after the 20-warmup, 10-step same-script gate
+  showed it is not a quality-run default. Long native training again reports
   `native_fast_startup_prewarm_policy:
-  "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default"` for that path,
-  and the native runtime contract now requires async QKV requested/enabled,
-  launch, wait, and sync counters to be `1`, async failures to be `0`, and
-  `lm_head_fused_graph_prewarm_success_count=0`. The
-  `long_run_qkv_forward_async_prewarm` SM120 candidate profile is now an
-  accepted comparison against the old deferred route and gates long-run
-  steady-state reference throughput instead of first-step-sensitive aggregate
-  tokens/sec. A 2026-06-30 10-step, 1-sample same-script run with
-  clean selected-GPU load measured candidate-vs-deferred-native at `0.988802x`
-  train-loop wall, `0.917323x` first-step CUDA-event wall, `0.997741x`
-  steady-state wall, `1.011330x` train tokens/sec, and `1.002262x`
-  steady-state tokens/sec; candidate-over-llm.kittens passed at `0.998025x`
-  train-loop wall, `0.995337x` steady-state wall, and `1.002630x`
+  "long-run-defer-throughput-prewarms-by-default"` and keeps both TK QKV
+  first-use and LM-head graph prewarm deferred by default. The opt-in
+  `long_run_qkv_forward_async_prewarm` SM120 candidate profile remains
+  rejected/default-off: with clean selected-GPU load it moved async stream
+  create/launch/wait/sync counters `0->1` and improved candidate-vs-deferred
+  train-loop wall to `0.994267x`, first-step CUDA-event wall to `0.937204x`,
+  and train tokens/sec to `1.005770x`, but regressed steady-state wall to
+  `1.001251x`, startup-plus-train-loop to `1.002379x`, and steady-state
+  tokens/sec to `0.998751x`; candidate-over-llm.kittens also missed at
+  `1.003904x` train-loop wall, `1.002422x` steady-state wall, and `0.996169x`
   steady-state tokens/sec. Verification: focused source-contract pytest,
-  benchmark dry-run expansion, shell syntax check, `git diff --check`, and the
-  same-script native/current/reference GPU benchmark.
+  benchmark dry-run expansion, shell syntax check, linked native trainer
+  rebuild, two-step native CUDA policy smoke, and the 20-warmup same-script
+  native/current/reference GPU benchmark.
 
 - Native GPT benchmark long-run measurement policy: measured default
   deferred-prewarm candidate/parity runs and the named `long_run_defer_prewarm`

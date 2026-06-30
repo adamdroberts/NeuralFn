@@ -1964,8 +1964,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in gpt_source
     assert "!native_long_run_defer_prewarm_enabled" in gpt_source
     assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
-    assert "native_long_run_async_qkv_first_use_prewarm_default" in gpt_source
-    assert "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default" in gpt_source
+    assert "long-run-defer-throughput-prewarms-by-default" in gpt_source
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
@@ -1975,10 +1974,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_tk_qkv_first_use_prewarm_effective_rows" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_success_count" in gpt_source
     assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM" in gpt_source
-    assert (
-        "linear_tk_qkv_first_use_prewarm_async_env,\n"
-        "            native_long_run_async_qkv_first_use_prewarm_default)"
-    ) in gpt_source
+    assert "env_flag_enabled_or_default(linear_tk_qkv_first_use_prewarm_async_env, false)" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_async_enabled" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_async_stream_create_count" in gpt_source
     assert "linear_tk_qkv_first_use_prewarm_async_launch_count" in gpt_source
@@ -2703,8 +2699,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "native_auto_fast_startup_short_run" in source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
     assert "!native_long_run_defer_prewarm_enabled" in source
-    assert "native_long_run_async_qkv_first_use_prewarm_default" in source
-    assert "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default" in source
+    assert "long-run-defer-throughput-prewarms-by-default" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert "qkv-and-lm-head-graph-prewarm-for-short-training" in source
     assert "cfg.max_steps >= 3" in source
@@ -2712,10 +2707,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         'linear_tk_qkv_first_use_prewarm_env,\n'
         "            native_qkv_first_use_prewarm_default)"
     ) in source
-    assert (
-        "linear_tk_qkv_first_use_prewarm_async_env,\n"
-        "            native_long_run_async_qkv_first_use_prewarm_default)"
-    ) in source
+    assert "env_flag_enabled_or_default(linear_tk_qkv_first_use_prewarm_async_env, false)" in source
     assert (
         '"NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM"}),\n'
         "            native_lm_head_graph_prewarm_default)"
@@ -4302,9 +4294,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "linear_tk_qkv_first_use_prewarm_success_count" in bench_source
     assert "candidate-over-llm.kittens train-loop wall was 1.006696x" in bench_source
     assert '"long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"' in bench_source
-    assert "ACCEPTED_CANDIDATE_PROFILE=\"$CANDIDATE_PROFILE\"" in bench_source
+    assert "REJECTED_CANDIDATE_PROFILE=\"$CANDIDATE_PROFILE\"" in bench_source
     assert "NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=0" in bench_source
-    assert "default long-run async QKV prewarm route" in bench_source
+    assert "opt-in async QKV prewarm route" in bench_source
     assert "linear_tk_qkv_first_use_prewarm_async_wait_count" in bench_source
     assert "train_steady_state_tokens_per_second=1.000" in bench_source
     assert "-DLLMK_SM120_SUPER_M=13 -DLLMK_SM120_DINP_SUPER_M=13" in bench_source

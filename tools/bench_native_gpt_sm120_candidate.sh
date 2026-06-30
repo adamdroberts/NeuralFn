@@ -498,11 +498,11 @@ case "${CANDIDATE_PROFILE,,}" in
     MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
   "long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"|"long_run_qkv_async_prewarm"|"long-run-qkv-async-prewarm")
-    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 10-step, 1-sample same-script probe launched full-row TK QKV first-use prewarm on a nonblocking side stream during setup, then synchronized that stream at the first real QKV stage. With external GPU load clean, the async route changed as intended: stream create, launch, wait, and sync counters all moved 0->1. Candidate-vs-deferred-native improved train-loop wall to 0.988802x, first-step CUDA-event timing to 0.917323x, steady-state wall to 0.997741x, train tokens/sec to 1.011330x, and steady-state tokens/sec to 1.002262x. Candidate-over-llm.kittens passed the long-run gates at 0.998025x train-loop wall, 0.995337x steady-state wall, and 1.002630x steady-state tokens/sec; full-run train tokens/sec was effectively parity at 0.999922x, so the profile gates long-run steady-state throughput instead of a first-step-sensitive aggregate."
-    CANDIDATE_NOTE="Compares the old long-run deferred route with TK QKV prewarm disabled against the default long-run async QKV prewarm route. The candidate threshold is one step so short benchmark runs exercise the same policy branch as default full-training runs, and the profile gates steady-state/reference metrics separately from first-step timing."
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 20-warmup, 10-step, 1-sample same-script probe launched full-row TK QKV first-use prewarm on a nonblocking side stream during setup, then synchronized that stream at the first real QKV stage. External GPU load was clean and the route changed as intended: stream create, launch, wait, and sync counters all moved 0->1. The opt-in async route improved candidate-vs-deferred-native train-loop wall to 0.994267x, first-step CUDA-event timing to 0.937204x, and train tokens/sec to 1.005770x, but remains rejected because steady-state wall regressed to 1.001251x, startup-plus-train-loop regressed to 1.002379x, steady-state tokens/sec fell to 0.998751x, candidate-over-llm.kittens train-loop wall was 1.003904x, candidate-over-llm.kittens steady-state wall was 1.002422x, and candidate-over-llm.kittens steady-state tokens/sec was 0.996169x."
+    CANDIDATE_NOTE="Compares the default long-run deferred route with TK QKV prewarm disabled against the opt-in async QKV prewarm route. The candidate threshold is one step so short benchmark runs exercise the same policy branch as default full-training runs, and the profile gates steady-state/reference metrics separately from first-step timing."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=0"
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1"
     if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
           "$WARMUP" =~ ^[0-9]+$ &&
           "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
@@ -519,7 +519,7 @@ case "${CANDIDATE_PROFILE,,}" in
       LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
       CANDIDATE_NOTE+=" The profile raises measured optimizer steps to at least ${LONG_RUN_DEFER_PREWARM_MIN_STEPS} so full-loop ratios are not dominated by the intentionally deferred first step."
     fi
-    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }linear_tk_qkv_first_use_prewarm_async_enabled"
     REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_async_wait_count"
     MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000 startup_plus_train_loop_wall_ms=1.000}"
     MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000 train_steady_state_tokens_per_second=1.000}"

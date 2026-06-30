@@ -11465,12 +11465,9 @@ int run_transformer_lm_training_json(
         !native_fast_startup_requested &&
         !cfg.startup_only &&
         !native_long_run_defer_prewarm_enabled;
-    const bool native_long_run_async_qkv_first_use_prewarm_default =
-        native_long_run_defer_prewarm_enabled;
     const bool native_qkv_first_use_prewarm_default =
         !cfg.startup_only &&
-        (!native_long_run_defer_prewarm_enabled ||
-         native_long_run_async_qkv_first_use_prewarm_default);
+        !native_long_run_defer_prewarm_enabled;
     const bool native_lm_head_graph_training_prewarm_default =
         !cfg.startup_only &&
         cfg.max_steps >= 3 &&
@@ -14581,9 +14578,7 @@ int run_transformer_lm_training_json(
                           "NFN_TILE_CUDA_ASYNC_TK_QKV_FORWARD_PREWARM"});
     const bool linear_tk_qkv_first_use_prewarm_async_requested =
         linear_tk_qkv_first_use_prewarm_requested &&
-        env_flag_enabled_or_default(
-            linear_tk_qkv_first_use_prewarm_async_env,
-            native_long_run_async_qkv_first_use_prewarm_default);
+        env_flag_enabled_or_default(linear_tk_qkv_first_use_prewarm_async_env, false);
     const bool linear_tk_qkv_first_use_prewarm_async_available =
         cuda_stream_create_with_flags != nullptr &&
         cuda_stream_destroy != nullptr &&
@@ -25944,7 +25939,7 @@ int run_transformer_lm_training_json(
                 ? "qkv-and-lm-head-graph-prewarm-for-short-training"
                 : "qkv-first-use-prewarm-skip-lm-head-graph-prewarm-by-default"
                 : native_long_run_defer_prewarm_enabled
-                ? "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default"
+                ? "long-run-defer-throughput-prewarms-by-default"
                 : cfg.startup_only
                 ? "startup-only-skip-throughput-prewarms-by-default"
                 : "throughput-prewarm-defaults")

@@ -814,19 +814,22 @@ startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
 wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
 `0.993879x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` to
-test the accepted long-run default against the old long-run deferred route. The
-default launches the full-row TK QKV first-use prewarm on a nonblocking side
-stream during setup, then synchronizes that stream before the first real QKV
-stage. Native JSON exposes
+test the rejected opt-in overlap variant against the default long-run deferred
+route. The candidate launches the full-row TK QKV first-use prewarm on a
+nonblocking side stream during setup, then synchronizes that stream before the
+first real QKV stage. Native JSON exposes
 `linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
 `linear_tk_qkv_first_use_prewarm_async_launch_count`,
 `linear_tk_qkv_first_use_prewarm_async_wait_count`, and
-`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 10-step same-script probe moved all four counters `0->1` and improved the
-native baseline comparison to `0.988802x` train-loop wall, `0.917323x`
-first-step CUDA-event timing, `0.997741x` steady-state wall, `1.011330x` train
-tokens/sec, and `1.002262x` steady-state tokens/sec. Against llm.kittens, the
-same run passed the long-run gates at `0.998025x` train-loop wall, `0.995337x`
-steady-state wall, and `1.002630x` steady-state tokens/sec.
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 20-warmup,
+10-step same-script probe moved all four counters `0->1` and improved the
+native baseline comparison to `0.994267x` train-loop wall, `0.937204x`
+first-step CUDA-event timing, and `1.005770x` train tokens/sec, but remains
+rejected because steady-state wall regressed to `1.001251x`,
+startup-plus-train-loop regressed to `1.002379x`, steady-state tokens/sec fell
+to `0.998751x`, candidate-over-llm.kittens train-loop wall was `1.003904x`,
+candidate-over-llm.kittens steady-state wall was `1.002422x`, and
+candidate-over-llm.kittens steady-state tokens/sec was `0.996169x`.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
