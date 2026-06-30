@@ -3539,6 +3539,14 @@ The same verifier now covers dense GPT `nfn train` dispatch with an explicit
 `--template-name` and with a custom `--graph-file`, so universal GPT trainer
 selection cannot regress into the graph-backed Python runtime while only the
 architecture selector changes.
+Python `nfn train --base-model gpt ...` and compiled
+`nfn-native-train --base-model gpt ...` now expand the same dense GPT quality
+defaults as `cli/scripts/train_gpt.py`: validation every 250 optimizer steps
+over 20 batches, sample and checkpoint cadence, `64 x 1024 -> 524288` token
+batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and GELU/MOA
+activation defaults unless the caller supplies explicit flags or
+`NFN_NATIVE_GPT_*` / `NFN_SM120_*` overrides. GPT3 keeps the 2048-context and
+batch-32 defaults unless those shape flags are explicit.
 The focused dependency tests assert those entries directly, including GPT3
 custom-graph dispatch, SM120 GPT3 launcher defaults, and generic SDK public
 exports under the same import blocker.

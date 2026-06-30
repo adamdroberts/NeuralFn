@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Native dense GPT `nfn train` dispatch now expands the same quality defaults as
+  `cli/scripts/train_gpt.py` and the SM120 workstation helper before invoking
+  the compiled CUDA Tile trainer. Python `nfn train --base-model gpt ...` and
+  compiled `nfn-native-train --base-model gpt ...` now resolve to validation
+  every 250 optimizer steps over 20 batches, sample/checkpoint cadences,
+  `64 x 1024 -> 524288` token batching, AdamW defaults, 60 warmup steps, 20,000
+  max steps, and GELU/MOA activation defaults unless explicit flags or
+  `NFN_NATIVE_GPT_*` / `NFN_SM120_*` overrides are supplied. GPT3 still uses the
+  2048-context and batch-32 defaults when shape flags are not explicit, while
+  metadata/smoke/list actions stay schedule-free. Verification: focused dense
+  GPT CLI pytest, compiled frontend rebuild, direct `nfn train
+  --native-cuda-print-command` dry-run, and import-time no-Torch grep.
+
 - **Breaking changes:** Native dense GPT training now defaults
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` to `0` in the C++ trainer, Python
   CLI wrappers, and SDK launch helpers, so real quality runs keep throughput

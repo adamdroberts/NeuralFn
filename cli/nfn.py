@@ -62,6 +62,117 @@ def _is_lightweight_root_help(argv: list[str]) -> bool:
 
 _DENSE_GPT_NATIVE_MODELS = {"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"}
 _AUTO_CUDA_VISIBLE_DEVICE_VALUES = {"auto", "dedicated", "dedicated-auto"}
+_DEFAULT_NATIVE_GPT_EVAL_BATCHES = "20"
+_NATIVE_GPT_QUALITY_DEFAULTS = {
+    "--eval-every-steps": (
+        "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
+        "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
+        "NFN_SM120_EVAL_EVERY_STEPS",
+        "250",
+    ),
+    "--eval-batches": (
+        "NFN_NATIVE_GPT_EVAL_BATCHES",
+        "NFN_SM120_NATIVE_EVAL_BATCHES",
+        "NFN_SM120_EVAL_BATCHES",
+        _DEFAULT_NATIVE_GPT_EVAL_BATCHES,
+    ),
+    "--native-cuda-sample-every": (
+        "NFN_NATIVE_GPT_SAMPLE_EVERY",
+        "NFN_SM120_NATIVE_SAMPLE_EVERY",
+        "NFN_SM120_SAMPLE_EVERY",
+        "20000",
+    ),
+    "--native-cuda-generate-tokens": (
+        "NFN_NATIVE_GPT_GENERATE_TOKENS",
+        "NFN_SM120_NATIVE_GENERATE_TOKENS",
+        "NFN_SM120_GENERATE_TOKENS",
+        "144",
+    ),
+    "--native-cuda-checkpoint-every": (
+        "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
+        "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
+        "NFN_SM120_CHECKPOINT_EVERY",
+        "200",
+    ),
+    "--batch-size": (
+        "NFN_NATIVE_GPT_BATCH_SIZE",
+        "NFN_SM120_NATIVE_BATCH_SIZE",
+        "NFN_SM120_BATCH_SIZE",
+        "64",
+    ),
+    "--train-seq-len": (
+        "NFN_NATIVE_GPT_TRAIN_SEQ_LEN",
+        "NFN_SM120_NATIVE_TRAIN_SEQ_LEN",
+        "NFN_SM120_TRAIN_SEQ_LEN",
+        "1024",
+    ),
+    "--train-batch-tokens": (
+        "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_TRAIN_BATCH_TOKENS",
+        "524288",
+    ),
+    "--learning-rate": (
+        "NFN_NATIVE_GPT_LEARNING_RATE",
+        "NFN_SM120_NATIVE_LEARNING_RATE",
+        "NFN_SM120_LEARNING_RATE",
+        "0.0006",
+    ),
+    "--final-lr-fraction": (
+        "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
+        "NFN_SM120_NATIVE_FINAL_LR_FRACTION",
+        "NFN_SM120_FINAL_LR_FRACTION",
+        "0.0",
+    ),
+    "--weight-decay": (
+        "NFN_NATIVE_GPT_WEIGHT_DECAY",
+        "NFN_SM120_NATIVE_WEIGHT_DECAY",
+        "NFN_SM120_WEIGHT_DECAY",
+        "0.1",
+    ),
+    "--beta1": ("NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1", "0.9"),
+    "--beta2": ("NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2", "0.95"),
+    "--adam-eps": (
+        "NFN_NATIVE_GPT_ADAM_EPS",
+        "NFN_SM120_NATIVE_ADAM_EPS",
+        "NFN_SM120_ADAM_EPS",
+        "1e-8",
+    ),
+    "--grad-clip-norm": (
+        "NFN_NATIVE_GPT_GRAD_CLIP_NORM",
+        "NFN_SM120_NATIVE_GRAD_CLIP_NORM",
+        "NFN_SM120_GRAD_CLIP_NORM",
+        "1.0",
+    ),
+    "--warmup-steps": (
+        "NFN_NATIVE_GPT_WARMUP_STEPS",
+        "NFN_SM120_NATIVE_WARMUP_STEPS",
+        "NFN_SM120_WARMUP_STEPS",
+        "60",
+    ),
+    "--max-steps": (
+        "NFN_NATIVE_GPT_MAX_STEPS",
+        "NFN_SM120_NATIVE_MAX_STEPS",
+        "NFN_SM120_MAX_STEPS",
+        "20000",
+    ),
+}
+_NATIVE_GPT_METADATA_ACTION_FLAGS = {
+    "--print-plan",
+    "--list-templates",
+    "--check-tile-ops",
+    "--startup-only",
+    "--smoke-tile-ops",
+    "--smoke-nvfp4-pack",
+    "--smoke-optimizer-step",
+    "--smoke-lm-step",
+    "--smoke-attention-step",
+    "--smoke-mlp-step",
+    "--smoke-norm-residual-step",
+    "--smoke-transformer-block-step",
+    "--smoke-transformer-lm-step",
+    "--smoke-embedding-lm-step",
+}
 _NATIVE_TRAIN_FAMILY_TARGETS = {
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
@@ -719,6 +830,30 @@ def _has_native_activation(argv: list[str]) -> bool:
     )
 
 
+def _native_env_default(names: tuple[str, ...]) -> str:
+    *env_names, fallback = names
+    for name in env_names:
+        value = os.environ.get(name)
+        if value is not None and str(value).strip():
+            return str(value)
+    return fallback
+
+
+def _append_native_gpt_quality_defaults(out: list[str]) -> None:
+    for flag, env_names in _NATIVE_GPT_QUALITY_DEFAULTS.items():
+        if not _explicit_arg(out, flag):
+            _append_value_arg(out, flag, _native_env_default(env_names))
+    if not _has_native_activation(out):
+        activation_default = "moa" if _native_template_name(out) == "gpt2_moa" else "gelu"
+        _append_value_arg(
+            out,
+            "--native-cuda-activation",
+            os.environ.get("NFN_NATIVE_GPT_ACTIVATION")
+            or os.environ.get("NFN_SM120_ACTIVATION")
+            or activation_default,
+        )
+
+
 def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
@@ -923,6 +1058,10 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         and not _explicit_arg(out, "--graph-file", "--graph")
     ):
         _append_value_arg(out, "--train-seq-len", "2048")
+    if dense_gpt and model == "gpt3" and not _explicit_arg(out, "--batch-size"):
+        _append_value_arg(out, "--batch-size", "32")
+    if dense_gpt and not any(flag in out for flag in _NATIVE_GPT_METADATA_ACTION_FLAGS):
+        _append_native_gpt_quality_defaults(out)
     if dense_gpt and not _explicit_arg(out, "--backend"):
         _append_value_arg(out, "--backend", "tile-cuda")
     if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:

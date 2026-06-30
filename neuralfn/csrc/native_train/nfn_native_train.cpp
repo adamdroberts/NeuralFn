@@ -159,9 +159,47 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
 
 constexpr std::string_view DEFAULT_TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
 
+struct NativeGptDefault {
+    std::string_view flag;
+    std::string_view env_a;
+    std::string_view env_b;
+    std::string_view env_c;
+    std::string_view fallback;
+};
+
+constexpr NativeGptDefault NATIVE_GPT_QUALITY_DEFAULTS[] = {
+    {"--eval-every-steps", "NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS", "250"},
+    {"--eval-batches", "NFN_NATIVE_GPT_EVAL_BATCHES", "NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES", "20"},
+    {"--native-cuda-sample-every", "NFN_NATIVE_GPT_SAMPLE_EVERY", "NFN_SM120_NATIVE_SAMPLE_EVERY", "NFN_SM120_SAMPLE_EVERY", "20000"},
+    {"--native-cuda-generate-tokens", "NFN_NATIVE_GPT_GENERATE_TOKENS", "NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS", "144"},
+    {"--native-cuda-checkpoint-every", "NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY", "200"},
+    {"--batch-size", "NFN_NATIVE_GPT_BATCH_SIZE", "NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE", "64"},
+    {"--train-seq-len", "NFN_NATIVE_GPT_TRAIN_SEQ_LEN", "NFN_SM120_NATIVE_TRAIN_SEQ_LEN", "NFN_SM120_TRAIN_SEQ_LEN", "1024"},
+    {"--train-batch-tokens", "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS", "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS", "524288"},
+    {"--learning-rate", "NFN_NATIVE_GPT_LEARNING_RATE", "NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE", "0.0006"},
+    {"--final-lr-fraction", "NFN_NATIVE_GPT_FINAL_LR_FRACTION", "NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION", "0.0"},
+    {"--weight-decay", "NFN_NATIVE_GPT_WEIGHT_DECAY", "NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY", "0.1"},
+    {"--beta1", "NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1", "0.9"},
+    {"--beta2", "NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2", "0.95"},
+    {"--adam-eps", "NFN_NATIVE_GPT_ADAM_EPS", "NFN_SM120_NATIVE_ADAM_EPS", "NFN_SM120_ADAM_EPS", "1e-8"},
+    {"--grad-clip-norm", "NFN_NATIVE_GPT_GRAD_CLIP_NORM", "NFN_SM120_NATIVE_GRAD_CLIP_NORM", "NFN_SM120_GRAD_CLIP_NORM", "1.0"},
+    {"--warmup-steps", "NFN_NATIVE_GPT_WARMUP_STEPS", "NFN_SM120_NATIVE_WARMUP_STEPS", "NFN_SM120_WARMUP_STEPS", "60"},
+    {"--max-steps", "NFN_NATIVE_GPT_MAX_STEPS", "NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS", "20000"},
+};
+
 std::string env_or_empty(const char* name) {
     const char* value = std::getenv(name);
     return value == nullptr ? std::string() : std::string(value);
+}
+
+std::string env_or_default(std::string_view env_a, std::string_view env_b, std::string_view env_c, std::string_view fallback) {
+    for (std::string_view name : {env_a, env_b, env_c}) {
+        const std::string value = env_or_empty(std::string(name).c_str());
+        if (!value.empty()) {
+            return value;
+        }
+    }
+    return std::string(fallback);
 }
 
 std::string lower_model(std::string value) {
@@ -238,6 +276,20 @@ bool has_forwarded_value_flag(const std::vector<std::string>& args, const std::s
     return false;
 }
 
+std::string forwarded_value_or_empty(const std::vector<std::string>& args, const std::string_view flag) {
+    const std::string prefix(flag);
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string& arg = args[i];
+        if (arg == prefix && i + 1 < args.size()) {
+            return args[i + 1];
+        }
+        if (arg.rfind(prefix + "=", 0) == 0) {
+            return arg.substr(prefix.size() + 1);
+        }
+    }
+    return {};
+}
+
 bool has_template_or_graph_selector(const std::vector<std::string>& args) {
     return has_forwarded_value_flag(args, "--template-name") ||
            has_forwarded_value_flag(args, "--template") ||
@@ -288,6 +340,31 @@ bool has_native_train_action(const std::vector<std::string>& args) {
     return false;
 }
 
+bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
+    static constexpr std::string_view ACTION_FLAGS[] = {
+        "--print-plan",
+        "--list-templates",
+        "--check-tile-ops",
+        "--startup-only",
+        "--smoke-tile-ops",
+        "--smoke-nvfp4-pack",
+        "--smoke-optimizer-step",
+        "--smoke-lm-step",
+        "--smoke-attention-step",
+        "--smoke-mlp-step",
+        "--smoke-norm-residual-step",
+        "--smoke-transformer-block-step",
+        "--smoke-transformer-lm-step",
+        "--smoke-embedding-lm-step",
+    };
+    for (std::string_view flag : ACTION_FLAGS) {
+        if (has_forwarded_flag(args, flag)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool has_template_catalog_action(const std::vector<std::string>& args) {
     return has_forwarded_flag(args, "--list-templates") ||
            has_forwarded_flag(args, "--native-cuda-list-templates");
@@ -296,6 +373,29 @@ bool has_template_catalog_action(const std::vector<std::string>& args) {
 void append_value_arg(std::vector<std::string>& args, std::string flag, std::string value) {
     args.push_back(std::move(flag));
     args.push_back(std::move(value));
+}
+
+void append_native_gpt_quality_defaults(std::vector<std::string>& args) {
+    for (const NativeGptDefault& entry : NATIVE_GPT_QUALITY_DEFAULTS) {
+        if (!has_forwarded_value_flag(args, entry.flag)) {
+            append_value_arg(
+                args,
+                std::string(entry.flag),
+                env_or_default(entry.env_a, entry.env_b, entry.env_c, entry.fallback));
+        }
+    }
+    if (!has_forwarded_value_flag(args, "--activation") &&
+        !has_forwarded_value_flag(args, "--native-cuda-activation")) {
+        const bool moa_template = forwarded_value_or_empty(args, "--template-name") == "gpt2_moa";
+        std::string activation = env_or_empty("NFN_NATIVE_GPT_ACTIVATION");
+        if (activation.empty()) {
+            activation = env_or_empty("NFN_SM120_ACTIVATION");
+        }
+        if (activation.empty()) {
+            activation = moa_template ? "moa" : "gelu";
+        }
+        append_value_arg(args, "--native-cuda-activation", activation);
+    }
 }
 
 std::string output_dir_from_output(const std::string& value) {
@@ -820,6 +920,15 @@ int main(int argc, char** argv) {
         !has_template_or_graph_selector(forwarded)
     ) {
         append_value_arg(forwarded, "--train-seq-len", "2048");
+    }
+    if (
+        model_entry->name == std::string_view("gpt3") &&
+        !has_forwarded_value_flag(forwarded, "--batch-size")
+    ) {
+        append_value_arg(forwarded, "--batch-size", "32");
+    }
+    if (dense_gpt && !has_native_gpt_metadata_action(forwarded)) {
+        append_native_gpt_quality_defaults(forwarded);
     }
 
     const bool dispatchable_native_target =

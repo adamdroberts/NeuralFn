@@ -2167,13 +2167,17 @@ argument shim. It accepts the same common wrapper flags as `nfn train` and
 `--kernel-backend`, `--template` / `--preset`, `--graph`, and
 `--native-cuda-*` aliases, then injects the dense GPT defaults
 `--train-transformer-lm`, `--backend tile-cuda`, the TinyStories alias fallback,
-and GPT-3's implicit `--train-seq-len 2048` / `--batch-size 32` when selected
-through `--base-model gpt3` or `--template-name gpt3` before execing
-`nfn_gpt_native_train`. High-level aliases are normalized before the exec; for
-example `--native-cuda-no-checkpoint` is passed to the compiled trainer as the
-single native `--no-checkpoint` flag. This removes Python startup from the
-direct compiled frontend path; it does not by itself close the remaining SM120
-in-loop throughput gap tracked by the parity benchmark.
+the same quality schedule used by `cli/scripts/train_gpt.py`, and GPT-3's
+implicit `--train-seq-len 2048` / `--batch-size 32` when selected through
+`--base-model gpt3` or `--template-name gpt3` before execing
+`nfn_gpt_native_train`. The default dense GPT schedule is validation every 250
+optimizer steps over 20 batches, sample/checkpoint cadences, `64 x 1024 ->
+524288` token batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and
+GELU unless the template selects MOA. High-level aliases are normalized before
+the exec; for example `--native-cuda-no-checkpoint` is passed to the compiled
+trainer as the single native `--no-checkpoint` flag. This removes Python startup
+from the direct compiled frontend path; it does not by itself close the
+remaining SM120 in-loop throughput gap tracked by the parity benchmark.
 The native dense GPT selector recognizes the shipped GPT-2 geometry aliases
 `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, and `gpt3` as
 compiled-loop runnable. NanoGPT aliases are recognized as dense GPT templates
@@ -3385,8 +3389,9 @@ override is set.
 
 The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` as a utility module is also lightweight; its shared dataset helper re-exports are lazy wrappers, and Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
 
-Direct `python cli/scripts/train_gpt.py ...` compiled-CLI runs now expand the
-same dense GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or
+Direct `python cli/scripts/train_gpt.py ...`, Python `nfn train --base-model
+gpt ...`, and compiled `nfn-native-train --base-model gpt ...` runs now expand
+the same dense GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or
 dry-run command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` /
 `NFN_SM120_*` overrides are supplied, the resolved command includes validation
 every 250 optimizer steps, sample and checkpoint cadence, `64 x 1024 -> 524288`

@@ -5235,6 +5235,62 @@ def test_train_gpt_fast_path_expands_quality_defaults(
     assert "--train-transformer-lm" in command
 
 
+def test_nfn_train_dense_gpt_direct_path_expands_quality_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    env = os.environ.copy()
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--base-model",
+            "gpt",
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0
+    command = proc.stdout
+    assert str(native_cli) in command
+    assert "--model-family gpt" in command
+    assert "--backend tile-cuda" in command
+    assert "--eval-every-steps 250" in command
+    assert "--eval-batches 20" in command
+    assert "--native-cuda-sample-every 20000" in command
+    assert "--native-cuda-generate-tokens 144" in command
+    assert "--native-cuda-checkpoint-every 200" in command
+    assert "--batch-size 64" in command
+    assert "--train-seq-len 1024" in command
+    assert "--train-batch-tokens 524288" in command
+    assert "--learning-rate 0.0006" in command
+    assert "--final-lr-fraction 0.0" in command
+    assert "--weight-decay 0.1" in command
+    assert "--beta1 0.9" in command
+    assert "--beta2 0.95" in command
+    assert "--adam-eps 1e-8" in command
+    assert "--grad-clip-norm 1.0" in command
+    assert "--warmup-steps 60" in command
+    assert "--max-steps 20000" in command
+    assert "--native-cuda-activation gelu" in command
+    assert "--train-transformer-lm" in command
+
+
 def test_train_gpt_fast_path_preserves_template_specific_defaults(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -10413,6 +10469,13 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
         assert f"--model-family\n{model}" in dense_gpt.stdout
         assert "--dataset-alias\n/tmp/native-cache" in dense_gpt.stdout
         assert "--eval-every-steps\n1000" in dense_gpt.stdout
+        assert "--eval-batches\n20" in dense_gpt.stdout
+        assert "--train-batch-tokens\n524288" in dense_gpt.stdout
+        assert "--learning-rate\n0.0006" in dense_gpt.stdout
+        assert "--weight-decay\n0.1" in dense_gpt.stdout
+        assert "--warmup-steps\n60" in dense_gpt.stdout
+        assert "--max-steps\n20000" in dense_gpt.stdout
+        assert "--native-cuda-activation\ngelu" in dense_gpt.stdout
         assert "--train-transformer-lm" in dense_gpt.stdout
         assert "--backend\ntile-cuda" in dense_gpt.stdout
         assert "--base-model" not in dense_gpt.stdout
@@ -10501,6 +10564,8 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--output-dir /tmp/native-model" in high_level_aliases.stdout
     assert "--train-transformer-lm" in high_level_aliases.stdout
     assert "--train-seq-len 2048" in high_level_aliases.stdout
+    assert "--batch-size 32" in high_level_aliases.stdout
+    assert "--eval-every-steps 250" not in high_level_aliases.stdout
     assert "--native-cuda-print-command" not in high_level_aliases.stdout
     assert "--native-cuda-startup-only" not in high_level_aliases.stdout
     assert "--native-cuda-fast-startup" not in high_level_aliases.stdout

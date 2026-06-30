@@ -180,13 +180,18 @@ python scripts/infer_nanogpt.py --device cuda --megakernel --prompt "Once upon a
 The master CLI uses the same no-Torch native dispatcher for explicit dense
 GPT pretraining. Use `nfn train --base-model gpt` as the canonical command;
 `gpt2` and `gpt3` are aliases, and `gpt3` only changes the default context to
-2048 when no explicit template, graph, or sequence length is supplied. With the default `compiled-cli` runner it goes directly to
-the no-Python cached-shard C++ CLI before importing `train_gpt_native`,
-`nfn_impl`, or Torch. `--template-name` / `--template` / `--preset` accepts
-every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and
-`--graph-file` / `--graph` selects a custom graph JSON; wrappers canonicalize
-the aliases to `--template-name` and `--graph-file` at handoff. Unsupported
-template shapes fail with native missing-trainer JSON instead of falling back to Torch.
+2048 when no explicit template, graph, or sequence length is supplied. Unless
+you override them, dense GPT training expands the same quality defaults as
+`scripts/train_gpt.py`: validation every 250 optimizer steps over 20 batches,
+sample/checkpoint cadence, `64 x 1024 -> 524288` token batching, AdamW defaults,
+60 warmup steps, 20,000 max steps, and GELU/MOA activation defaults. With the
+default `compiled-cli` runner it goes directly to the no-Python cached-shard C++
+CLI before importing `train_gpt_native`, `nfn_impl`, or Torch.
+`--template-name` / `--template` / `--preset` accepts every name in
+`neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and `--graph-file` / `--graph`
+selects a custom graph JSON; wrappers canonicalize the aliases to
+`--template-name` and `--graph-file` at handoff. Unsupported template shapes fail
+with native missing-trainer JSON instead of falling back to Torch.
 Use `nfn train --base-model gpt --list-templates` or wrapper alias
 `--native-cuda-list-templates` to print the compiled no-data support catalog
 for shipped GPT templates plus the public `gpt`/`gpt3` aliases. The action
