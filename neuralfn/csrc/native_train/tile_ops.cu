@@ -990,6 +990,12 @@ void launch_gelu_add_bias_bf16_act_float32(
     std::int64_t rows,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_swiglu_float32(
+    const float* gate,
+    const float* up,
+    float* out,
+    std::int64_t n,
+    cudaStream_t stream);
 void launch_linear_bias_residual_add_float32(
     const float* residual,
     const float* linear_out,
@@ -1131,6 +1137,14 @@ void launch_gelu_backward_float32(
     const float* x,
     const float* grad_out,
     float* grad_x,
+    std::int64_t n,
+    cudaStream_t stream);
+void launch_swiglu_backward_float32(
+    const float* gate,
+    const float* up,
+    const float* grad_out,
+    float* grad_gate,
+    float* grad_up,
     std::int64_t n,
     cudaStream_t stream);
 void launch_gelu_backward_inplace_float32(
@@ -4805,6 +4819,16 @@ int nfn_native_tile_gelu_add_bias_bf16_act_float32(
     return launch_status();
 }
 
+int nfn_native_tile_swiglu_float32(
+    const float* gate,
+    const float* up,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_swiglu_float32(gate, up, out, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_bf16_gelu_bf16_float32(
     const float* x,
     const float* weight,
@@ -5171,6 +5195,19 @@ int nfn_native_tile_gelu_backward_float32(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_gelu_backward_float32(x, grad_out, grad_x, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_swiglu_backward_float32(
+    const float* gate,
+    const float* up,
+    const float* grad_out,
+    float* grad_gate,
+    float* grad_up,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_swiglu_backward_float32(
+        gate, up, grad_out, grad_gate, grad_up, n, as_stream(cuda_stream));
     return launch_status();
 }
 

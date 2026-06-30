@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added native CUDA Tile SwiGLU forward/backward ABI coverage for the LLaMA
+  family path. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_swiglu_float32` and
+  `nfn_native_tile_swiglu_backward_float32`, and the LLaMA missing-family
+  preflight now lists those symbols as required kernels. This removes one
+  concrete kernel gap from the `missing-llama-rope-swiglu-transformer-lm`
+  class; the full LLaMA trainer loop is still not complete. Verification:
+  rebuilt `libnfn_native_train_tile_ops.so`, `nfn_gpt_native_train`, the linked
+  GPT trainer, optional benchmark artifacts, TK Tile ops artifact, and expanded
+  missing-family preflights; confirmed exported symbols with `nm -D`; ran a
+  live CUDA ctypes smoke for forward/backward with max error `2.2432548e-07`;
+  focused pytest passed (`1 passed, 1 skipped`); full no-Torch verifier passed
+  30 artifact scans with zero stale artifacts, 69 Python entrypoints, 24 shell
+  entrypoints, and 4 native template catalogs.
+
 - Expanded missing-family native coverage boundaries across all remaining GPT
   objective classes. `tools/build_native_missing_trainers.sh` now emits
   coverage-class-specific JSON for LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA,

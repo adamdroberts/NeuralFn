@@ -11592,6 +11592,27 @@ __tile_global__ void gelu_add_bias_bf16_act_float32_kernel(
   ct::store_masked(gelu_bf16 + idx, ct::element_cast<__nv_bfloat16>(result), mask);
 }
 
+__tile_global__ void swiglu_float32_kernel(
+    const float* __restrict__ gate,
+    const float* __restrict__ up,
+    float* __restrict__ out,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  gate = ct::assume_aligned(gate, 16_ic);
+  up = ct::assume_aligned(up, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto gate_tile = ct::partition_view{ct::tensor_span{gate, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto up_tile = ct::partition_view{ct::tensor_span{up, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto one = ct::full<decltype(gate_tile)>(1.0f);
+  auto sigmoid = one / (one + ct::exp(-gate_tile));
+  auto result = up_tile * gate_tile * sigmoid;
+  ct::partition_view{ct::tensor_span{out, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
+}
+
 __tile_global__ void linear_bias_residual_add_float32_kernel(
     const float* __restrict__ residual,
     const float* __restrict__ linear_out,
@@ -11887,6 +11908,36 @@ __tile_global__ void gelu_backward_float32_kernel(
           * (one + ct::full<decltype(x_tile)>(3.0f) * gelu_cubic * x2);
   auto grad = grad_tile * grad_local;
   ct::partition_view{ct::tensor_span{grad_x, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(grad, bx);
+}
+
+__tile_global__ void swiglu_backward_float32_kernel(
+    const float* __restrict__ gate,
+    const float* __restrict__ up,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_gate,
+    float* __restrict__ grad_up,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  gate = ct::assume_aligned(gate, 16_ic);
+  up = ct::assume_aligned(up, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_gate = ct::assume_aligned(grad_gate, 16_ic);
+  grad_up = ct::assume_aligned(grad_up, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto gate_tile = ct::partition_view{ct::tensor_span{gate, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto up_tile = ct::partition_view{ct::tensor_span{up, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto grad_tile = ct::partition_view{ct::tensor_span{grad_out, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto one = ct::full<decltype(gate_tile)>(1.0f);
+  auto sigmoid = one / (one + ct::exp(-gate_tile));
+  auto silu = gate_tile * sigmoid;
+  auto dsilu = sigmoid * (one + gate_tile * (one - sigmoid));
+  ct::partition_view{ct::tensor_span{grad_gate, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(
+      grad_tile * up_tile * dsilu, bx);
+  ct::partition_view{ct::tensor_span{grad_up, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(
+      grad_tile * silu, bx);
 }
 
 __tile_global__ void gelu_backward_inplace_float32_kernel(
@@ -19946,6 +19997,16 @@ void launch_gelu_add_bias_bf16_act_float32(
       x, bias, biased_out, gelu_out, gelu_bf16_bits, n, output_dim);
 }
 
+void launch_swiglu_float32(
+    const float* gate,
+    const float* up,
+    float* out,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  swiglu_float32_kernel<<<blocks, 1, 0, stream>>>(gate, up, out, n);
+}
+
 void launch_linear_bias_residual_add_float32(
     const float* residual,
     const float* linear_out,
@@ -20243,6 +20304,19 @@ void launch_gelu_backward_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_backward_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad_out, grad_x, n);
+}
+
+void launch_swiglu_backward_float32(
+    const float* gate,
+    const float* up,
+    const float* grad_out,
+    float* grad_gate,
+    float* grad_up,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  swiglu_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      gate, up, grad_out, grad_gate, grad_up, n);
 }
 
 void launch_gelu_backward_inplace_float32(

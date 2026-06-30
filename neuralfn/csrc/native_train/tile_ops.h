@@ -1276,6 +1276,13 @@ int nfn_native_tile_gelu_add_bias_bf16_act_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_swiglu_float32(
+    const float* gate,
+    const float* up,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_bf16_gelu_bf16_float32(
     const float* x,
     const float* weight,
@@ -1460,6 +1467,15 @@ int nfn_native_tile_gelu_backward_float32(
     const float* x,
     const float* grad_out,
     float* grad_x,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_swiglu_backward_float32(
+    const float* gate,
+    const float* up,
+    const float* grad_out,
+    float* grad_gate,
+    float* grad_up,
     std::int64_t n,
     void* cuda_stream);
 
