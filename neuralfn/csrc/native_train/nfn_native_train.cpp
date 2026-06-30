@@ -134,6 +134,39 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
     },
     {
+        "moe-jepa-evo",
+        "missing-native-trainer",
+        "nfn_moe_jepa_evo_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-moe-jepa-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
+        "MoE JEPA Evo training needs the standard MoE transformer loop plus JEPA target/projector/predictor and composite AR+JEPA+router loss wiring.",
+    },
+    {
+        "auxfree-moe-jepa-evo",
+        "missing-native-trainer",
+        "nfn_moe_jepa_evo_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-moe-jepa-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
+        "Aux-free MoE JEPA Evo shares the MoE+JEPA native trainer target and additionally needs aux-free load balancing integration.",
+    },
+    {
+        "moe-jepa-evo-modern",
+        "missing-native-trainer",
+        "nfn_moe_jepa_evo_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-moe-jepa-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
+        "Modern MoE JEPA Evo shares the MoE+JEPA native trainer target with modern-profile norm/position/MLP overlays.",
+    },
+    {
         "semantic-router-moe",
         "missing-native-trainer",
         "nfn_semantic_router_moe_native_train",
@@ -895,6 +928,8 @@ int main(int argc, char** argv) {
     const bool nanogpt_token_lm =
         model_entry->name == std::string_view("nanogpt") &&
         has_forwarded_flag(forwarded, "--train-token-lm");
+    const bool missing_family_native_target =
+        model_entry->status == std::string_view("missing-native-trainer");
 
     if (dense_gpt && !has_native_train_action(forwarded)) {
         forwarded.push_back("--train-transformer-lm");
@@ -928,6 +963,26 @@ int main(int argc, char** argv) {
         append_value_arg(forwarded, "--batch-size", "32");
     }
     if (dense_gpt && !has_native_gpt_metadata_action(forwarded)) {
+        append_native_gpt_quality_defaults(forwarded);
+    }
+    if (missing_family_native_target && !has_template_or_graph_selector(forwarded)) {
+        append_value_arg(forwarded, "--template-name", std::string(model_entry->name));
+    }
+    if (
+        missing_family_native_target &&
+        !has_any_forwarded_value_flag(forwarded, {"--dataset-alias", "--dataset-path"}) &&
+        !has_forwarded_flag(forwarded, "--tinystories")
+    ) {
+        const std::string dataset_alias = env_or_empty("DATASET_ALIAS");
+        append_value_arg(
+            forwarded,
+            "--dataset-alias",
+            dataset_alias.empty() ? std::string(DEFAULT_TINYSTORIES_ALIAS) : dataset_alias);
+    }
+    if (missing_family_native_target && !has_native_train_action(forwarded)) {
+        forwarded.push_back("--train-transformer-lm");
+    }
+    if (missing_family_native_target && !has_native_gpt_metadata_action(forwarded)) {
         append_native_gpt_quality_defaults(forwarded);
     }
 

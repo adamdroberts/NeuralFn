@@ -29,6 +29,14 @@
 #define NFN_NATIVE_REQUIRED_SYMBOLS ""
 #endif
 
+#ifndef NFN_NATIVE_COVERAGE_CLASS
+#define NFN_NATIVE_COVERAGE_CLASS "family-native-loop-missing"
+#endif
+
+#ifndef NFN_NATIVE_MISSING_REQUIREMENTS
+#define NFN_NATIVE_MISSING_REQUIREMENTS ""
+#endif
+
 namespace {
 
 struct Config {
@@ -303,6 +311,7 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"status\": \"family-native-trainer-missing\",\n"
         << "  \"kernel_status\": \"" << json_escape(kernel_status) << "\",\n"
         << "  \"trainer_loop_status\": \"family-native-loop-missing\",\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
@@ -323,6 +332,17 @@ void print_json(const Config& cfg, const char* program) {
         << "    \"" << json_escape(NFN_NATIVE_REQUIRED_KERNELS) << "\",\n"
         << "    \"wire the family forward/backward/optimizer loop to raw Tile ABI calls\",\n"
         << "    \"write native checkpoints and native inference metadata for this family\"\n"
+        << "  ],\n"
+        << "  \"native_training_missing_requirements\": [\n";
+    const std::vector<std::string> missing_requirements = split_csv(NFN_NATIVE_MISSING_REQUIREMENTS);
+    for (std::size_t i = 0; i < missing_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(missing_requirements[i]) << "\"";
+        if (i + 1 != missing_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
         << "  ],\n"
         << "  \"required_tile_symbols\": [\n";
     for (std::size_t i = 0; i < required_symbols.size(); ++i) {

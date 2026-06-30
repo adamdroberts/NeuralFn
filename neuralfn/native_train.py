@@ -156,6 +156,9 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
+    "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
+    "auxfree-moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
+    "moe-jepa-evo-modern": "nfn_moe_jepa_evo_native_train",
     "semantic-router-moe": "nfn_semantic_router_moe_native_train",
     "deepseek-v4": "nfn_deepseek_v4_native_train",
 }
@@ -265,6 +268,48 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "kernel_status": "required-tile-symbols-present",
         "trainer_loop_status": "family-native-loop-missing",
         "notes": "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "moe-jepa-evo",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_moe_jepa_evo_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-moe-jepa-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
+        "notes": (
+            "MoE JEPA Evo training needs the standard MoE transformer loop plus "
+            "JEPA target/projector/predictor and composite AR+JEPA+router loss wiring."
+        ),
+    },
+    {
+        "name": "auxfree-moe-jepa-evo",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_moe_jepa_evo_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-moe-jepa-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
+        "notes": (
+            "Aux-free MoE JEPA Evo shares the MoE+JEPA native target and still "
+            "needs aux-free load balancing integration."
+        ),
+    },
+    {
+        "name": "moe-jepa-evo-modern",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_moe_jepa_evo_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-moe-jepa-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
+        "notes": (
+            "Modern MoE JEPA Evo shares the MoE+JEPA native target with "
+            "modern-profile norm/position/MLP overlays."
+        ),
     },
     {
         "name": "semantic-router-moe",

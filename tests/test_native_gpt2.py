@@ -954,6 +954,10 @@ def test_native_no_torch_dependency_verifier_maps_optional_family_sources() -> N
         root / "build" / "nfn_llama_native_train",
         root,
     )
+    moe_jepa_dependencies = module.artifact_source_dependencies(
+        root / "build" / "nfn_moe_jepa_evo_native_train",
+        root,
+    )
 
     assert Path("neuralfn/csrc/native_train/gpt2_evo_native_train.cpp") in evo_dependencies
     assert Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h") in evo_dependencies
@@ -961,6 +965,8 @@ def test_native_no_torch_dependency_verifier_maps_optional_family_sources() -> N
     assert Path("neuralfn/csrc/native_train/token_shards.cpp") in nano_dependencies
     assert Path("neuralfn/csrc/native_train/missing_native_train.cpp") in llama_dependencies
     assert Path("tools/build_native_missing_trainers.sh") in llama_dependencies
+    assert Path("neuralfn/csrc/native_train/missing_native_train.cpp") in moe_jepa_dependencies
+    assert Path("tools/build_native_missing_trainers.sh") in moe_jepa_dependencies
 
 
 def test_native_no_torch_dependency_verifier_maps_gpt_launcher_catalog_sources() -> None:
@@ -7527,6 +7533,10 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
     assert registry["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
+    assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
+    assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
+    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "family-native-loop-missing"
     assert "gpt2-compatible-fixed-dense-transformer" not in cpp_source
 
 
@@ -10873,6 +10883,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert nanogpt.exists()
     llama = tmp_path / "nfn_llama_native_train"
     assert llama.exists()
+    moe_jepa = tmp_path / "nfn_moe_jepa_evo_native_train"
+    assert moe_jepa.exists()
     llama_plan = subprocess.run(
         [
             str(llama),
@@ -10949,6 +10961,43 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert sample_payload["sample_batch"]["items"] == 16
     assert sample_payload["sample_batch"]["tokens"] == list(range(16))
     assert sample_payload["sample_batch"]["targets"] == list(range(1, 17))
+
+    moe_jepa_plan = subprocess.run(
+        [
+            str(moe_jepa),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert moe_jepa_plan.returncode == 0, moe_jepa_plan.stderr
+    moe_jepa_payload = json.loads(moe_jepa_plan.stdout)
+    assert moe_jepa_payload["model_family"] == "moe-jepa-evo"
+    assert moe_jepa_payload["status"] == "family-native-trainer-missing"
+    assert moe_jepa_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
+    assert moe_jepa_payload["native_training_missing_requirements"] == [
+        "standard-moe-transformer-loop",
+        "jepa-target-encoder-forward",
+        "jepa-projector-predictor-forward-backward",
+        "latent-mse-loss-device-reduction",
+        "ar-plus-jepa-plus-router-loss-composition",
+    ]
+    assert moe_jepa_payload["compiled_native_boundary"] is True
+    assert moe_jepa_payload["torch_required"] is False
+    assert moe_jepa_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_topk_route_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_latent_mse_loss_float32" in moe_jepa_payload["required_tile_symbols"]
+
     dense_gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
     )
@@ -11023,6 +11072,34 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--eval-every-steps 1000" in unified_evo_delegate.stdout
     assert "--warmup-steps 60" in unified_evo_delegate.stdout
     assert "--tile-cuda-activation-dtype nvfp4" in unified_evo_delegate.stdout
+
+    unified_moe_jepa = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_moe_jepa.returncode == 0, unified_moe_jepa.stderr
+    moe_jepa_unified_payload = json.loads(unified_moe_jepa.stdout)
+    assert moe_jepa_unified_payload["model_family"] == "moe-jepa-evo"
+    assert moe_jepa_unified_payload["status"] == "family-native-trainer-missing"
+    assert moe_jepa_unified_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
+    assert moe_jepa_unified_payload["native_training_missing_requirements"] == [
+        "standard-moe-transformer-loop",
+        "jepa-target-encoder-forward",
+        "jepa-projector-predictor-forward-backward",
+        "latent-mse-loss-device-reduction",
+        "ar-plus-jepa-plus-router-loss-composition",
+    ]
+    assert moe_jepa_unified_payload["compiled_native_boundary"] is True
+    assert moe_jepa_unified_payload["torch_required"] is False
+    assert moe_jepa_unified_payload["graph_editor_tensor_flow"] is False
 
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],
@@ -11811,6 +11888,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert Path(env["NFN_NATIVE_TRAIN_TILE_OPS_OUT"]).exists()
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_nanogpt_native_train").exists()
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_llama_native_train").exists()
+    assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_moe_jepa_evo_native_train").exists()
 
 
 def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> None:

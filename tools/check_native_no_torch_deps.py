@@ -33,6 +33,7 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_nanogpt_native_train"),
     Path("build/nfn_llama_native_train"),
     Path("build/nfn_mixllama_native_train"),
+    Path("build/nfn_moe_jepa_evo_native_train"),
     Path("build/nfn_jepa_native_train"),
     Path("build/nfn_semantic_router_moe_native_train"),
     Path("build/nfn_deepseek_v4_native_train"),
@@ -122,6 +123,10 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
+    Path("build/nfn_moe_jepa_evo_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
     Path("build/nfn_jepa_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
         Path("tools/build_native_missing_trainers.sh"),
@@ -183,6 +188,7 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_nanogpt_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_mixllama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_moe_jepa_evo_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_jepa_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_semantic_router_moe_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_deepseek_v4_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),

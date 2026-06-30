@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added a compiled native training boundary for the MoE+JEPA GPT selectors.
+  `tools/build_native_missing_trainers.sh` now builds
+  `nfn_moe_jepa_evo_native_train`, the unified C++ frontend and SDK registry
+  map `moe-jepa-evo`, `auxfree-moe-jepa-evo`, and `moe-jepa-evo-modern` to that
+  target, and the placeholder JSON reports `missing-moe-jepa-objective` plus
+  the standard MoE loop, JEPA target/projector/predictor, latent MSE, and
+  AR+JEPA+router loss requirements. This is still a missing-family preflight,
+  not a runnable native trainer, so the complete GPT template coverage goal
+  remains open. Verification: rebuilt `build/nfn_moe_jepa_evo_native_train`,
+  `build/nfn_native_train`, and `build/nfn-native-train`; ran focused native
+  registry/dependency/dispatch pytest (`3 passed`); full no-Torch verifier
+  passed 24 artifact scans, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Compiled native GPT template catalogs now classify every shipped GPT template
   instead of reporting unsupported presets as a generic miss. `--list-templates`
   and per-template `--print-plan` JSON include
