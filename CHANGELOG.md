@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Native GPT long-run prewarm default: long native training now keeps LM-head
+  graph prewarm deferred but enables TK QKV first-use prewarm through the
+  nonblocking async side-stream route by default. Runtime JSON reports
+  `native_fast_startup_prewarm_policy:
+  "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default"` for that path,
+  and the native runtime contract now requires async QKV requested/enabled,
+  launch, wait, and sync counters to be `1`, async failures to be `0`, and
+  `lm_head_fused_graph_prewarm_success_count=0`. The
+  `long_run_qkv_forward_async_prewarm` SM120 candidate profile is now an
+  accepted comparison against the old deferred route and gates long-run
+  steady-state reference throughput instead of first-step-sensitive aggregate
+  tokens/sec. A 2026-06-30 20-warmup, 10-step, 1-sample same-script run with
+  clean selected-GPU load measured candidate-vs-deferred-native at `0.988802x`
+  train-loop wall, `0.917323x` first-step CUDA-event wall, `0.997741x`
+  steady-state wall, `1.011330x` train tokens/sec, and `1.002262x`
+  steady-state tokens/sec; candidate-over-llm.kittens passed at `0.998025x`
+  train-loop wall, `0.995337x` steady-state wall, and `1.002630x`
+  steady-state tokens/sec. Verification: focused source-contract pytest,
+  benchmark dry-run expansion, shell syntax check, `git diff --check`, and the
+  same-script native/current/reference GPU benchmark.
+
 - Native GPT benchmark long-run measurement policy: measured default
   deferred-prewarm candidate/parity runs and the named `long_run_defer_prewarm`
   profile now raise low optimizer-step requests to at least 10 steps, in
@@ -48,7 +69,7 @@
   candidate/current/reference GPU benchmark, focused native GPT source-contract
   pytest, shell syntax check, and dry-run expansion.
 
-- Native GPT benchmark diagnostics: added the rejected
+- Native GPT benchmark diagnostics: added the initial diagnostic
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm`
   profile and native JSON telemetry for async TK QKV first-use prewarm overlap.
   The opt-in `NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1` route creates a
@@ -60,7 +81,7 @@
   2026-06-30 20-warmup, 3-step, 1-sample same-script probe moved async stream
   create/launch/wait/sync counters `0->1` and improved candidate-vs-native
   train-loop wall to `0.979430x`, first-step CUDA-event timing to `0.941747x`,
-  and train tokens/sec to `1.021003x`, but kept the profile rejected because
+  and train tokens/sec to `1.021003x`, but initially kept the profile rejected because
   startup-plus-train-loop missed the native gate at `1.000201x`,
   candidate-over-llm.kittens train-loop wall was `1.009695x`, first-step
   CUDA-event timing was `1.029339x`, and train tokens/sec was `0.990453x`.

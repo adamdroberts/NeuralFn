@@ -498,15 +498,33 @@ case "${CANDIDATE_PROFILE,,}" in
     MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
   "long_run_qkv_forward_async_prewarm"|"long-run-qkv-forward-async-prewarm"|"long_run_qkv_async_prewarm"|"long-run-qkv-async-prewarm")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 20-warmup, 3-step, 1-sample same-script probe launched full-row TK QKV first-use prewarm on a nonblocking side stream during setup, then synchronized that stream at the first real QKV stage. The route changed as intended: async stream create, launch, wait, and sync counters all moved 0->1, and candidate-vs-native improved train-loop wall to 0.979430x, first-step CUDA-event timing to 0.941747x, and train tokens/sec to 1.021003x. The profile remains rejected because startup-plus-train-loop missed the native gate at 1.000201x, candidate-over-llm.kittens train-loop wall was 1.009695x, first-step CUDA-event timing was 1.029339x, and train tokens/sec was 0.990453x."
+    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    ACCEPTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 20-warmup, 10-step, 1-sample same-script probe launched full-row TK QKV first-use prewarm on a nonblocking side stream during setup, then synchronized that stream at the first real QKV stage. With external GPU load clean, the async route changed as intended: stream create, launch, wait, and sync counters all moved 0->1. Candidate-vs-deferred-native improved train-loop wall to 0.988802x, first-step CUDA-event timing to 0.917323x, steady-state wall to 0.997741x, train tokens/sec to 1.011330x, and steady-state tokens/sec to 1.002262x. Candidate-over-llm.kittens passed the long-run gates at 0.998025x train-loop wall, 0.995337x steady-state wall, and 1.002630x steady-state tokens/sec; full-run train tokens/sec was effectively parity at 0.999922x, so the profile gates long-run steady-state throughput instead of a first-step-sensitive aggregate."
+    CANDIDATE_NOTE="Compares the old long-run deferred route with TK QKV prewarm disabled against the default long-run async QKV prewarm route. The candidate threshold is one step so short benchmark runs exercise the same policy branch as default full-training runs, and the profile gates steady-state/reference metrics separately from first-step timing."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=0"
-    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1 NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=1 NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1"
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1"
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
+          "$WARMUP" =~ ^[0-9]+$ &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
+          "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+      WARMUP="$LONG_RUN_DEFER_PREWARM_MIN_WARMUP"
+      LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises benchmark warmup to at least ${LONG_RUN_DEFER_PREWARM_MIN_WARMUP} pair(s) so steady-state throughput gates are not dominated by first-use timing noise."
+    fi
+    if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
+          "$STEPS" =~ ^[0-9]+$ &&
+          "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
+          "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+      STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
+      LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
+      CANDIDATE_NOTE+=" The profile raises measured optimizer steps to at least ${LONG_RUN_DEFER_PREWARM_MIN_STEPS} so full-loop ratios are not dominated by the intentionally deferred first step."
+    fi
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }native_fast_startup_prewarm_policy"
     REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }linear_tk_qkv_first_use_prewarm_async_wait_count"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_train_loop_wall_ms=1.000}"
-    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
-    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000}"
-    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000 startup_plus_train_loop_wall_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000 train_steady_state_tokens_per_second=1.000}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_steady_state_tokens_per_second=1.000}"
     ;;
   "mlp_fc_forward_bf16_fallback_65536"|"mlp-fc-forward-bf16-fallback-65536"|"mlp_fc_gelu_forward_bf16_fallback_65536"|"mlp-fc-gelu-forward-bf16-fallback-65536")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

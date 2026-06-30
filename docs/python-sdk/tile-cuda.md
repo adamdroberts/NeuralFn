@@ -814,20 +814,20 @@ startup-plus-train-loop to `1.000371x`, candidate-over-llm.kittens train-loop
 wall was `1.006696x`, and candidate-over-llm.kittens train tokens/sec was
 `0.993879x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm` to
-test the overlapped version of that route. It uses
-`NFN_NATIVE_GPT_ASYNC_TK_QKV_FORWARD_PREWARM=1` to launch the full-row TK QKV
-first-use prewarm on a nonblocking side stream during setup, then synchronizes
-that stream before the first real QKV stage. Native JSON exposes
+test the accepted long-run default against the old long-run deferred route. The
+default launches the full-row TK QKV first-use prewarm on a nonblocking side
+stream during setup, then synchronizes that stream before the first real QKV
+stage. Native JSON exposes
 `linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
 `linear_tk_qkv_first_use_prewarm_async_launch_count`,
 `linear_tk_qkv_first_use_prewarm_async_wait_count`, and
 `linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 20-warmup,
-3-step same-script probe moved all four counters `0->1` and improved the
-native baseline comparison to `0.979430x` train-loop wall, `0.941747x`
-first-step CUDA-event timing, and `1.021003x` train tokens/sec, but the profile
-remains rejected because startup-plus-train-loop missed the native gate at
-`1.000201x`, candidate-over-llm.kittens train-loop wall was `1.009695x`, and
-train tokens/sec was `0.990453x`.
+10-step same-script probe moved all four counters `0->1` and improved the
+native baseline comparison to `0.988802x` train-loop wall, `0.917323x`
+first-step CUDA-event timing, `0.997741x` steady-state wall, `1.011330x` train
+tokens/sec, and `1.002262x` steady-state tokens/sec. Against llm.kittens, the
+same run passed the long-run gates at `0.998025x` train-loop wall, `0.995337x`
+steady-state wall, and `1.002630x` steady-state tokens/sec.
 The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss

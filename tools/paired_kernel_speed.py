@@ -4893,6 +4893,31 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                         "passed": mean == 0.0,
                     }
                 )
+        elif prewarm_policy == [
+            "long-run-async-qkv-prewarm-defer-lm-head-graph-by-default"
+        ]:
+            for metric_name, expected_mean in (
+                ("linear_tk_qkv_first_use_prewarm_async_requested_count", 1.0),
+                ("linear_tk_qkv_first_use_prewarm_async_enabled_count", 1.0),
+                ("linear_tk_qkv_first_use_prewarm_async_launch_count", 1.0),
+                ("linear_tk_qkv_first_use_prewarm_async_wait_count", 1.0),
+                ("linear_tk_qkv_first_use_prewarm_async_sync_count", 1.0),
+                ("linear_tk_qkv_first_use_prewarm_async_failure_count", 0.0),
+                ("lm_head_fused_graph_prewarm_success_count", 0.0),
+            ):
+                mean = _metric_mean(metrics, metric_name)
+                results.append(
+                    {
+                        "metric": metric_name,
+                        "expected": [str(int(expected_mean))],
+                        "observed": (
+                            [str(int(mean))]
+                            if mean is not None and mean.is_integer()
+                            else ([str(mean)] if mean is not None else [])
+                        ),
+                        "passed": mean == expected_mean,
+                    }
+                )
     failed = [item for item in results if item.get("passed") is False]
     return {
         "enabled": enabled,
@@ -4906,7 +4931,8 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             "and expose the LM-head path/implementation class and "
             "train_loss_host_d2h_count=0 with root setup/train timing metrics; "
             "long-run deferred-prewarm candidates must also report zero QKV and LM-head "
-            "graph prewarm successes"
+            "graph prewarm successes, while long-run async-QKV candidates must report "
+            "async launch/wait/sync success and zero LM-head graph prewarm successes"
         ),
     }
 

@@ -2516,6 +2516,14 @@ contract gate also treats this policy specially: if a candidate reports
 `lm_head_fused_graph_prewarm_success_count` must both be zero. That prevents a
 future change from preserving the policy label while silently paying the old
 QKV or LM-head graph prewarm startup cost.
+Current long-run defaults report
+`native_fast_startup_prewarm_policy:
+"long-run-async-qkv-prewarm-defer-lm-head-graph-by-default"` instead. That
+policy launches the TK QKV first-use prewarm on a nonblocking side stream,
+synchronizes it at the first real QKV stage, and keeps LM-head graph prewarm
+deferred. The paired runtime contract requires the async QKV requested,
+enabled, launch, wait, and sync counters to be `1`, the async failure counter
+to be `0`, and `lm_head_fused_graph_prewarm_success_count=0`.
 The 2026-06-29 7-warmup, 3-step, 2-sample same-script reference rerun passed
 those gates with clean selected-GPU load: `setup_wall_ms=0.438830x` and
 `startup_plus_steady_state_step_wall_ms=0.650744x` versus old native,
