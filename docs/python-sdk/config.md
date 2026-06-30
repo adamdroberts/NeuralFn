@@ -89,6 +89,14 @@ SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
 
 `SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
 
+Compiled native template catalogs and per-template plan JSON include
+`native_training_coverage_class` and `native_training_missing_requirements`.
+Implemented dense GPT selectors report `implemented-dense-gpt-transformer-lm`
+with no missing requirements. Other shipped presets are classified by the native
+trainer loop still required, such as `missing-moe-jepa-objective` for
+`moe_jepa_evo`. Treat this manifest as the SDK-visible coverage checklist until
+every shipped GPT template reports a native trainable class.
+
 ---
 
 ## BlockSpec

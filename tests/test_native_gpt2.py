@@ -5193,11 +5193,25 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert payload["selector_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS) + 2
     statuses = {item["name"]: item["selected_graph_support_status"] for item in payload["templates"]}
+    coverage = {item["name"]: item["native_training_coverage_class"] for item in payload["templates"]}
+    missing_requirements = {
+        item["name"]: item["native_training_missing_requirements"] for item in payload["templates"]
+    }
     assert statuses["gpt"] == "native-transformer-lm"
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
     assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
+    assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
+    assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
+    assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
+    assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
+    assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
+    assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
+    assert "standard-moe-transformer-loop" in missing_requirements["moe_jepa_evo"]
+    assert "jepa-projector-predictor-forward-backward" in missing_requirements["moe_jepa_evo"]
+    assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
+    assert missing_requirements["gpt2"] == []
 
 
 def test_native_gpt2_runner_status_auto_requires_neuralfn_native_artifacts(
@@ -7842,7 +7856,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is True
     assert isinstance(default_payload["lm_head_cooperative_backward_kernel_available"], bool)
     assert isinstance(default_payload["lm_head_cooperative_backward_fused_kernel_available"], bool)
-    assert default_payload["lm_head_cooperative_backward_route_integrated"] is False
+    assert default_payload["lm_head_cooperative_backward_route_integrated"] is True
     assert default_payload["lm_head_cooperative_backward_fused_kernel_capability_available"] is False
     assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
@@ -7851,7 +7865,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert isinstance(default_payload["lm_head_cooperative_backward_cuda_graph_enabled"], bool)
     assert (
         default_payload["lm_head_cooperative_backward_strategy"]
-        == "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity"
+        == "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel"
     )
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
@@ -8513,15 +8527,21 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         assert preset_payload["template_name"] == preset
         assert preset_payload["template_known"] is True
         assert preset_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
+        assert preset_payload["native_training_coverage_class"]
+        assert isinstance(preset_payload["native_training_missing_requirements"], list)
         if preset in {"gpt2", "gpt2_modern", "gpt2_megakernel", "gpt2_moa"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
+            assert preset_payload["native_training_coverage_class"] == "implemented-dense-gpt-transformer-lm"
+            assert preset_payload["native_training_missing_requirements"] == []
             assert preset_payload["native_geometry_contract"]["shape_source"] == "selected_dense_gpt_geometry"
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset in {"nanogpt", "nanogpt_modern", "nanogpt_megakernel"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
+            assert preset_payload["native_training_coverage_class"] == "implemented-dense-gpt-transformer-lm"
+            assert preset_payload["native_training_missing_requirements"] == []
             assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
                 "source": "template",
                 "model_dim": 320,
@@ -8539,6 +8559,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
+            assert preset_payload["native_training_missing_requirements"]
 
     gpt3_template_plan = subprocess.run(
         [

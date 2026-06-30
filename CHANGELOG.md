@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Compiled native GPT template catalogs now classify every shipped GPT template
+  instead of reporting unsupported presets as a generic miss. `--list-templates`
+  and per-template `--print-plan` JSON include
+  `native_training_coverage_class` and
+  `native_training_missing_requirements`; implemented dense GPT selectors report
+  `implemented-dense-gpt-transformer-lm` with no missing requirements, while
+  templates such as `moe_jepa_evo` now report
+  `missing-moe-jepa-objective` with the concrete MoE loop, JEPA
+  target/projector/predictor, latent MSE, and composite-loss work still needed.
+  This keeps the complete native-template coverage objective auditable without
+  pretending missing templates are trainable. Verification: rebuilt
+  `build/nfn_gpt_native_train`, `build/nfn_gpt_native_train_linked`, and
+  `build/nfn_gpt2_native_train`; validated the compiled catalog JSON covers 63
+  selectors with zero missing coverage classes; ran focused native catalog/CLI
+  pytest; full no-Torch verifier passed 23 artifact scans, 69 Python
+  entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Dense GPT native startup now uses the linked Tile ops path for the default
   `build/nfn_gpt_native_train` binary, not only for
   `build/nfn_gpt_native_train_linked`. `tools/build_native_gpt_cli.sh` links

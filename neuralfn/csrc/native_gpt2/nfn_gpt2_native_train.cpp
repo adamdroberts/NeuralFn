@@ -810,6 +810,156 @@ bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     return std::find(selectors.begin(), selectors.end(), name) != selectors.end();
 }
 
+std::string strip_modern_suffix(std::string name) {
+    constexpr std::string_view suffix = "_modern";
+    if (name.size() >= suffix.size() &&
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        name.resize(name.size() - suffix.size());
+    }
+    return name;
+}
+
+std::string native_training_coverage_class_for_template(const std::string& template_name) {
+    const std::string name = strip_modern_suffix(resolved_native_template_name(template_name));
+    if (name == "gpt" || name == "gpt2" || name == "gpt3" ||
+        name == "gpt2_megakernel" || name == "gpt2_moa" ||
+        name == "nanogpt" || name == "nanogpt_megakernel") {
+        return "implemented-dense-gpt-transformer-lm";
+    }
+    if (name == "llama" || name == "llama_fast" || name == "llama_fast_megakernel" ||
+        name == "llama_megakernel" || name == "modern_norms_llama" ||
+        name == "gemma3" || name == "diff_transformer" ||
+        name == "longctx_sparse_llama" || name == "qwen3_longctx" ||
+        name == "kv_pca_llama" || name == "ternary_b158" ||
+        name == "fp8_llama" || name == "mxfp4_llama") {
+        return "missing-llama-rope-swiglu-transformer-lm";
+    }
+    if (name == "mixllama" || name == "mixllama_fast" ||
+        name == "mixllama_fast_megakernel" || name == "moe" ||
+        name == "deepseek_v3" || name == "deepseek_v4") {
+        return "missing-standard-moe-transformer-lm";
+    }
+    if (name == "dense_jepa_evo" || name == "llm_jepa") {
+        return "missing-dense-jepa-objective";
+    }
+    if (name == "moe_jepa_evo" || name == "auxfree_moe_jepa_evo") {
+        return "missing-moe-jepa-objective";
+    }
+    if (name == "semantic_dense_jepa_evo" ||
+        name == "dyt_geglu_semantic_dense_jepa_evo" ||
+        name == "jepa_semantic_hybrid" ||
+        name == "jepa_semantic_hybrid_megakernel") {
+        return "missing-semantic-dense-jepa-objective";
+    }
+    if (name == "semantic_router_moe" || name == "semantic_router_moe_megakernel" ||
+        name == "semantic_moe_jepa_evo" || name == "diff_semantic_moe_jepa_evo") {
+        return "missing-semantic-moe-router-jepa-objective";
+    }
+    if (name == "seq2seq") {
+        return "missing-seq2seq-objective";
+    }
+    if (name == "diffusion") {
+        return "missing-diffusion-objective";
+    }
+    if (name == "ttt_llama") {
+        return "missing-ttt-transformer-lm";
+    }
+    if (name == "jamba") {
+        return "missing-jamba-hybrid-mamba-transformer-lm";
+    }
+    if (name == "hnet_lm") {
+        return "missing-hnet-byte-lm";
+    }
+    if (name == "universal_llama") {
+        return "missing-universal-transformer-lm";
+    }
+    return "unknown-template-native-coverage";
+}
+
+std::vector<std::string> native_training_missing_requirements_for_template(const std::string& template_name) {
+    const std::string coverage_class = native_training_coverage_class_for_template(template_name);
+    if (coverage_class == "implemented-dense-gpt-transformer-lm") {
+        return {};
+    }
+    if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
+        return {
+            "rmsnorm-forward-backward-loop-integration",
+            "rope-attention-loop-integration",
+            "swiglu-geglu-mlp-forward-backward-loop-integration",
+            "untied-lm-head-or-template-weight-layout",
+        };
+    }
+    if (coverage_class == "missing-standard-moe-transformer-lm") {
+        return {
+            "standard-router-topk-forward-backward",
+            "expert-dispatch-combine-forward-backward",
+            "moe-expert-weight-gradient-accumulation",
+            "load-balance-loss-device-reduction",
+        };
+    }
+    if (coverage_class == "missing-dense-jepa-objective") {
+        return {
+            "jepa-target-encoder-forward",
+            "jepa-projector-predictor-forward-backward",
+            "latent-mse-loss-device-reduction",
+            "ar-plus-jepa-loss-composition",
+        };
+    }
+    if (coverage_class == "missing-moe-jepa-objective") {
+        return {
+            "standard-moe-transformer-loop",
+            "jepa-target-encoder-forward",
+            "jepa-projector-predictor-forward-backward",
+            "latent-mse-loss-device-reduction",
+            "ar-plus-jepa-plus-router-loss-composition",
+        };
+    }
+    if (coverage_class == "missing-semantic-dense-jepa-objective") {
+        return {
+            "semantic-target-shard-resolver",
+            "semantic-planner-forward-backward",
+            "semantic-alignment-loss-device-reduction",
+            "jepa-target-encoder-forward",
+            "ar-plus-semantic-plus-jepa-loss-composition",
+        };
+    }
+    if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
+        return {
+            "semantic-target-shard-resolver",
+            "semantic-router-forward-backward",
+            "semantic-expert-dispatch-combine",
+            "route-selection-distillation-balance-losses",
+            "route-evo-device-controller",
+            "ar-plus-semantic-plus-jepa-loss-composition",
+        };
+    }
+    if (coverage_class == "missing-seq2seq-objective") {
+        return {"encoder-decoder-native-loop", "cross-attention-forward-backward", "seq2seq-loss-contract"};
+    }
+    if (coverage_class == "missing-diffusion-objective") {
+        return {"timestep-scheduler-native-loop", "denoise-head-forward-backward", "diffusion-loss-contract"};
+    }
+    if (coverage_class == "missing-ttt-transformer-lm") {
+        return {"ttt-inner-update-native-loop", "ttt-linear-forward-backward-integration"};
+    }
+    if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
+        return {"mamba-state-space-forward-backward", "jamba-layer-schedule-native-loop"};
+    }
+    if (coverage_class == "missing-hnet-byte-lm") {
+        return {"byte-token-shard-resolver", "hnet-byte-patch-loop", "byte-patch-merge-forward-backward"};
+    }
+    if (coverage_class == "missing-universal-transformer-lm") {
+        return {"recurrent-layer-halting-loop", "act-halting-loss-and-gradient"};
+    }
+    return {"classify-template-native-requirements"};
+}
+
+void write_native_training_missing_requirements_json(
+    std::ostream& out,
+    const std::string& template_name) {
+    write_json_string_array(out, native_training_missing_requirements_for_template(template_name));
+}
+
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
 bool custom_graph_template_metadata_found(const Config& cfg);
 
@@ -1271,6 +1421,12 @@ void print_template_catalog_json(const Config& base_cfg) {
             << "      \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
             << "      \"selected_graph_native_runnable\": "
             << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
+            << "      \"native_training_coverage_class\": \""
+            << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
+            << "      \"native_training_missing_requirements\": ";
+        write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+        std::cout
+            << ",\n"
             << "      \"selected_template_geometry\": " << selected_template_geometry_json(cfg) << "\n"
             << "    }" << (index + 1 == selectors.size() ? "\n" : ",\n");
     }
@@ -4713,6 +4869,12 @@ bool print_tile_plan(
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (native_runnable ? "true" : "false") << ",\n"
+        << "  \"native_training_coverage_class\": \""
+        << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
+        << "  \"native_training_missing_requirements\": ";
+    write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"shipped_template_catalog\": ";
     print_string_array_json(shipped_gpt_template_presets(), "    ");
@@ -5167,6 +5329,12 @@ int print_selected_graph_unsupported_json(
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": false,\n"
+        << "  \"native_training_coverage_class\": \""
+        << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
+        << "  \"native_training_missing_requirements\": ";
+    write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
         << "  \"status\": \"" << json_escape(status) << "\",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
@@ -24319,6 +24487,12 @@ int run_transformer_lm_training_json(
         << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
+        << "  \"native_training_coverage_class\": \""
+        << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
+        << "  \"native_training_missing_requirements\": ";
+    write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
         << "  \"status\": \""
         << (passed ? (cfg.startup_only ? "native-transformer-lm-startup-ready" : "native-transformer-lm-trained")
                    : "native-transformer-lm-failed")
