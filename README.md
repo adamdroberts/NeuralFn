@@ -2212,7 +2212,8 @@ for the future fused body, but the current llm.kittens-parity route is not a
 true single-kernel/cooperative implementation. Its capability probe
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 therefore returns `0`; callers that require the current native parity route
-should check `lm_head_llmk_classifier_matmul_parity_available` and
+should check `lm_head_llmk_classifier_matmul_parity_available` and the active
+route fields such as `lm_head_cooperative_backward_sequence_wrapper_enabled` or
 `lm_head_cooperative_backward_cuda_graph_enabled`, while callers that require a
 future monolithic CE+dHidden+dWeight kernel must check
 `lm_head_cooperative_backward_fused_kernel_capability_available`.
@@ -2359,14 +2360,17 @@ capability path can make `lm_head_cooperative_backward_kernel_available` and
 `diagnostic-cublaslt-sequence-wrapper`, `diagnostic-sequence-wrapper`,
 `legacy-abi-sequence-wrapper`, or `missing` so full-trainer parity reports do
 not have to infer the route from multiple booleans and counters.
-The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` route exercises
-the CUDA Graph body by default when the strict symbol is present. In that case
-runtime JSON reports `lm_head_cooperative_backward_cuda_graph_available: true`,
-`lm_head_cooperative_backward_cuda_graph_enabled: true`, a diagnostic
-`lm_head_cooperative_backward_strategy`, and graph replay counters; this still
-does not satisfy `--require-cooperative-lm-head-backward`.
-Fresh Tile ops builds also export cooperative sequence counters for this
-diagnostic wrapper. Runtime JSON reports
+The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` route now uses
+the cooperative sequence wrapper by default; set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only when explicitly
+bisecting the legacy cached CUDA Graph replay path. Runtime JSON reports
+`lm_head_cooperative_backward_cuda_graph_available`,
+`lm_head_cooperative_backward_cuda_graph_enabled`,
+`lm_head_cooperative_backward_sequence_wrapper_enabled`, a diagnostic
+`lm_head_cooperative_backward_strategy`, and the graph/sequence counters needed
+to prove which route ran. Neither diagnostic route satisfies
+`--require-cooperative-lm-head-backward`.
+Fresh Tile ops builds also export cooperative sequence counters. Runtime JSON reports
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,
 `lm_head_cooperative_sequence_dhidden_launch_count`,
@@ -2517,7 +2521,8 @@ row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
 dlogits. A CUDA 13.3 dedicated-RTX-5090 same-script wrapper run briefly measured
 `0.996095x` train-loop wall time over two samples, but the required 3-sample
 confirmation regressed train-loop wall time to `1.002871x` and train tokens/sec
-to `0.997262x`, so the default remains the cooperative CUDA Graph LM-head route.
+to `0.997262x`, so the default remains the cooperative sequence-wrapper LM-head
+route.
 Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` to rerun it
 through the same-script paired wrapper and route-change gate; the profile sets
@@ -3618,7 +3623,7 @@ Dense GPT native transformer training fuses token embedding, absolute position e
 
 Dense GPT native train-loss sampling copies the scalar LM-head loss back with a blocking device-to-host `cudaMemcpy` and does not issue an extra full-device `cudaDeviceSynchronize` first. Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC=1` or `NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC=1` only to reproduce the previous sync-before-copy path for paired diagnostics. Runtime JSON reports `lm_head_loss_copy_device_synchronize_enabled` and `lm_head_loss_copy_ordering`. Transformer validation uses the training batch size as its effective validation batch so validation loss stays on the tested full-row LM-head CE shape; JSON reports `validation.requested_eval_batch_size` and effective `validation.eval_batch_size`.
 
-`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` is an opt-in dense GPT LM-head backward scheduling candidate. After the BF16 CE kernel overwrites a row chunk with dlogits, the trainer records a CUDA event, launches LM-head dHidden and dWeight consumers on two non-blocking CUDA streams, and synchronizes both streams before the next row chunk reuses the workspace. The candidate only activates when cooperative LM-head backward is disabled, so the paired wrapper sets `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on candidate runs. The default remains the cooperative CUDA Graph LM-head route because the latest CUDA 13.3 dedicated RTX 5090 3-sample same-script confirmation measured the two-stream route slower (`1.002970x` train-loop wall time, `0.997039x` tokens/sec). Runtime JSON reports `lm_head_concurrent_dhidden_dweight_requested`, `lm_head_concurrent_dhidden_dweight_available`, `lm_head_concurrent_dhidden_dweight_enabled`, and `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports `lm_head_backward.dhidden_dweight_concurrent` when the candidate path runs.
+`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` is an opt-in dense GPT LM-head backward scheduling candidate. After the BF16 CE kernel overwrites a row chunk with dlogits, the trainer records a CUDA event, launches LM-head dHidden and dWeight consumers on two non-blocking CUDA streams, and synchronizes both streams before the next row chunk reuses the workspace. The candidate only activates when cooperative LM-head backward is disabled, so the paired wrapper sets `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` on candidate runs. The default remains the cooperative sequence-wrapper LM-head route because the same-script confirmations measured the two-stream route slower than the current native path. Runtime JSON reports `lm_head_concurrent_dhidden_dweight_requested`, `lm_head_concurrent_dhidden_dweight_available`, `lm_head_concurrent_dhidden_dweight_enabled`, and `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports `lm_head_backward.dhidden_dweight_concurrent` when the candidate path runs.
 
 Dense GPT transformer training now enables the packed-attention BF16 grad-out handoff by default. The attention projection dInput GEMM writes BF16 grad-out bits directly and feeds those bits into the packed attention backward bridge. Runtime JSON reports `attention_backward_bf16_grad_out_handoff_enabled`, `attention_backward_grad_out_dtype`, BF16 scratch sizes, and the updated QKV bridge strategy. Set `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=0` or `NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT=0` only to reproduce the older direct float32 scratch route. The CUDA 13.3 dedicated RTX 5090 actual-training 5-step, 2-sample promotion gate measured the route at `0.999028x` current NeuralFn train-loop wall time, `1.000975x` current NeuralFn tokens/sec, `0.998462x` llm.kittens reference train-loop wall time, and `1.001921x` llm.kittens reference tokens/sec.
 

@@ -495,8 +495,22 @@ Real training tensors must not pass through graph editor node objects.
   disabling CUDA Graph replay for the sequence wrapper regressed train-loop
   wall to `1.012109x`, steady-state CUDA-event step time to `1.005261x`,
   tokens/sec to `0.988038x`, LM-head backward to `1.050922x`, and cooperative
-  LM-head body time to `1.073406x`. Keep the CUDA Graph wrapper default until
-  the replacement is a true fused/reference-aligned classifier-backward path.
+  LM-head body time to `1.073406x`. This result was superseded by the later
+  long-run deferred-prewarm confirmation that made the sequence wrapper the
+  default and kept CUDA Graph replay as the legacy bisection route.
+  - 2026-06-30 refreshed the same-script SM120 parity sample on the dedicated
+    RTX 5090 with stage timing, `3` requested steps, `1` measured sample, and
+    the default long-run deferred-prewarm floors (`10` steps, `20` warmup
+    pairs). External GPU load was clean. llm.kittens measured `2466.044`
+    ms/step and NeuralFn measured `2491.330` ms/step, or `1.010254x` average
+    train-loop wall, but steady-state CUDA-event time was almost flat at
+    `1.001342x` (`2466.280` ms vs `2462.976` ms). The remaining average gap in
+    this short run is first-step dominated: NeuralFn first-step CUDA-event time
+    was `2716.590` ms vs `2493.660` ms (`1.089399x`), with forward QKV first-use
+    still visible (`2.781380` ms first-step vs `1.090100` ms steady-state per
+    block). Runtime contract checks passed with `graph_editor_tensor_flow=false`,
+    `torch_required=false`, `train_loss_host_d2h_count=0`, and the active
+    LM-head route reported `diagnostic-sequence-wrapper`.
 - [x] Revisit the broad native test surface after the CUDA Toolkit reinstall.
   `tools/check_native_no_torch_deps.py --rebuild-stale --json` passed with all
   tracked native binaries and bindings unstale, and

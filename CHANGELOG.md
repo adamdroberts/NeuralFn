@@ -19,10 +19,22 @@
   when the benchmark exits before writing timing JSON, and its selected-GPU idle
   retry loop now preserves the validator's nonzero status instead of exiting
   cleanly before the benchmark. Verification: focused source-contract pytest,
-  shell syntax check, dry-run profile expansion, and a live focused preflight
-  that built the candidate library, reached the benchmark, and captured the
-  current runtime failure as `cudaSetDevice: CUDA driver version is insufficient
-  for CUDA runtime version`.
+  shell syntax check, dry-run profile expansion, and a live focused preflight on
+  the dedicated RTX 5090. That preflight proved the strict path class and
+  implementation class, then rejected the four-warp WMMA body at `102.199905`
+  ms/iter, `4.158059x` slower than the current wrapper and `2.974840x` slower
+  than the reference component sum; dHidden and dWeight remained the dominant
+  gaps.
+
+- Native GPT LM-head route documentation: corrected README, SDK docs, and the
+  CUDA Tile checklist to describe the cooperative sequence wrapper as the
+  current default LM-head route, with cached CUDA Graph replay kept as an
+  explicit legacy bisection path. The 2026-06-30 same-script SM120 parity
+  refresh measured NeuralFn at `2491.330` ms/step versus llm.kittens at
+  `2466.044` ms/step over the short stage-timed run, while steady-state
+  CUDA-event timing was nearly flat at `1.001342x`; the remaining short-run gap
+  was first-step dominated. Verification: live same-script parity refresh on the
+  dedicated RTX 5090 and documentation source review.
 
 - SM120 parity benchmark warmup policy: default long-run deferred-prewarm
   current-vs-llm.kittens runs in `tools/bench_native_gpt_sm120_parity.sh` now
