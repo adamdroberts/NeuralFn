@@ -1475,6 +1475,17 @@ full-loop candidate. It is still a rejected diagnostic kernel body, not a
 promoted default; the 2026-06-29 focused trainer-chunk probe remained
 `2.585996x` slower than the current wrapper and `7.777548x` slower than the
 reference component sum.
+The same tile16 WMMA body can be built with
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128` and
+`NFN_TILE_CUDA_CE_BF16_THREADS=128` for a four-warp occupancy bisection between
+the rejected 256-thread and one-warp bodies. Use
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp128` or
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp128`;
+this profile is also rejected until same-script focused and full-loop gates
+beat the current wrapper and llm.kittens reference.
+If a focused LM-head benchmark exits before writing normal timing JSON, the
+wrapper now writes a `failed-before-json` artifact with benchmark stdout,
+stderr, and before/after GPU-load context.
 The native GPT trainer enables TK forward-QKV first-use prewarm by default.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_qkv_forward_prewarm` to compare the
 default against the legacy `NFN_NATIVE_GPT_PREWARM_TK_QKV_FORWARD=0` path. Set

@@ -25,7 +25,7 @@ DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_fused_kern
 REJECTED_PROFILE=""
 REJECTED_REASON=""
 FORCE_REBUILD_TILE_OPS=0
-PROFILE_CHOICES="smoke, trainer-chunk, trainer-chunk-serial-graph-body, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile16-wmma, trainer-chunk-true-fused-tile16-wmma-warp32, trainer-chunk-true-fused-tile16-wmma-exp2-ce, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, trainer-chunk-true-fused-tile4, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins"
+PROFILE_CHOICES="smoke, trainer-chunk, trainer-chunk-serial-graph-body, trainer-chunk-strict, trainer-chunk-true-fused, trainer-chunk-true-fused-tile16, trainer-chunk-true-fused-tile16-wmma, trainer-chunk-true-fused-tile16-wmma-warp128, trainer-chunk-true-fused-tile16-wmma-warp32, trainer-chunk-true-fused-tile16-wmma-exp2-ce, trainer-chunk-true-fused-tile24, trainer-chunk-true-fused-tile8, trainer-chunk-true-fused-tile4, true-fused-cooperative-smoke, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins"
 
 case "${PROFILE}" in
   smoke)
@@ -119,6 +119,27 @@ case "${PROFILE}" in
     export NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-256}"
     if [[ -z "${NFN_NATIVE_TILE_OPS_LIB+x}" ]]; then
       TILE_OPS_LIB="${TMPDIR:-/tmp}/nfn_lm_head_backward_tile_ops_true_fused_tile16_wmma.so"
+      FORCE_REBUILD_TILE_OPS=1
+    fi
+    ;;
+  trainer-chunk-true-fused-tile16-wmma-warp128|trainer_chunk_true_fused_tile16_wmma_warp128|true-fused-trainer-chunk-tile16-wmma-warp128|true_fused_trainer_chunk_tile16_wmma_warp128)
+    DEFAULT_ROWS=28672
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=2
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=1
+    DEFAULT_MAX_RATIO=1.000
+    DEFAULT_MAX_REFERENCE_RATIO=1.000
+    DEFAULT_MAX_CUBLASLT_REFERENCE_RATIO=1.000
+    REJECTED_PROFILE="${PROFILE}"
+    REJECTED_REASON="Production-shape focused strict true-fused LM-head tile16 WMMA four-warp profile. It builds the candidate Tile ops library with NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16, NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1, and NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128, then forces CE threads to 128 so the cooperative body lands between the rejected 256-thread and one-warp bodies. Keep rejected until this focused gate proves candidate/current-wrapper and candidate/reference parity."
+    export NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:+${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS} }-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16 -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1 -DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE:-1}"
+    export NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION="${NFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_COOPERATIVE_ALLOW_PRODUCTION:-1}"
+    export NFN_TILE_CUDA_CE_BF16_THREADS="${NFN_TILE_CUDA_CE_BF16_THREADS:-128}"
+    if [[ -z "${NFN_NATIVE_TILE_OPS_LIB+x}" ]]; then
+      TILE_OPS_LIB="${TMPDIR:-/tmp}/nfn_lm_head_backward_tile_ops_true_fused_tile16_wmma_warp128.so"
       FORCE_REBUILD_TILE_OPS=1
     fi
     ;;
@@ -607,11 +628,13 @@ require_selected_gpu_idle() {
     if [[ "${attempt}" -ge "${retries}" ]]; then
       final_attempt=1
     fi
+    local status
     if validate_selected_gpu_idle_snapshot "${snapshot}" "${final_attempt}"; then
       GPU_LOAD_BEFORE="${snapshot}"
       return 0
+    else
+      status=$?
     fi
-    local status=$?
     if [[ "${status}" != "1" || "${final_attempt}" == "1" ]]; then
       exit "${status}"
     fi
@@ -807,16 +830,42 @@ if [[ -z "${GPU_LOAD_BEFORE}" ]]; then
   GPU_LOAD_BEFORE="$(snapshot_selected_gpu_load_json before)"
 fi
 BENCH_STDOUT="$(mktemp "${TMPDIR:-/tmp}/nfn_lm_head_backward_stdout.XXXXXX")"
+BENCH_STDERR="$(mktemp "${TMPDIR:-/tmp}/nfn_lm_head_backward_stderr.XXXXXX")"
 BENCH_STATUS=0
-"${BENCH_BIN}" "${BENCH_ARGS[@]}" >"${BENCH_STDOUT}" || BENCH_STATUS=$?
+"${BENCH_BIN}" "${BENCH_ARGS[@]}" >"${BENCH_STDOUT}" 2>"${BENCH_STDERR}" || BENCH_STATUS=$?
 GPU_LOAD_AFTER="$(snapshot_selected_gpu_load_json after)"
 merge_gpu_load_context_json "${GPU_LOAD_BEFORE}" "${GPU_LOAD_AFTER}"
+if [[ "${BENCH_STATUS}" != "0" && ! -f "${JSON_OUT}" ]]; then
+  python - "${JSON_OUT}" "${BENCH_STATUS}" "${BENCH_STDOUT}" "${BENCH_STDERR}" "${GPU_LOAD_BEFORE}" "${GPU_LOAD_AFTER}" <<'PY'
+import json
+import pathlib
+import sys
+
+json_out = pathlib.Path(sys.argv[1])
+stdout_path = pathlib.Path(sys.argv[3])
+stderr_path = pathlib.Path(sys.argv[4])
+data = {
+    "status": "failed-before-json",
+    "bench_status": int(sys.argv[2]),
+    "stdout": stdout_path.read_text(errors="replace") if stdout_path.exists() else "",
+    "stderr": stderr_path.read_text(errors="replace") if stderr_path.exists() else "",
+}
+try:
+    data["gpu_load_context"] = {
+        "before": json.loads(sys.argv[5]),
+        "after": json.loads(sys.argv[6]),
+    }
+except Exception:
+    pass
+json_out.write_text(json.dumps(data, indent=2, sort_keys=False) + "\n")
+PY
+fi
 if [[ -f "${JSON_OUT}" ]]; then
   python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_text(), end="")' "${JSON_OUT}"
 elif [[ -s "${BENCH_STDOUT}" ]]; then
   python -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_text(), end="")' "${BENCH_STDOUT}"
 fi
-rm -f "${BENCH_STDOUT}"
+rm -f "${BENCH_STDOUT}" "${BENCH_STDERR}"
 if [[ "${BENCH_STATUS}" != "0" ]]; then
   case "${REQUIRE_TRUE_FUSED,,}" in
     1|true|yes|on)

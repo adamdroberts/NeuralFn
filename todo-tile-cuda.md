@@ -1091,6 +1091,24 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       strict ABI and three true-fused launches, but rejected it at `21.559768x`
       candidate/current-wrapper, `15.444372x` candidate/reference-summed, and
       `12.048745x` candidate/reference-summed-with-logits time.
+    - 2026-06-30 added the rejected-by-default
+      `trainer-chunk-true-fused-tile16-wmma-warp128` focused profile and
+      `lm_head_true_fused_tile16_wmma_warp128` SM120 full-loop preflight. The
+      candidate builds the strict body with
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16`,
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1`, and
+      `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128`, then forces
+      `NFN_TILE_CUDA_CE_BF16_THREADS=128`. This fills the occupancy bisection
+      gap between the rejected 256-thread and one-warp WMMA bodies; it remains
+      diagnostic until the same-script focused and full-loop gates beat the
+      current wrapper and llm.kittens reference. The same slice fixed the
+      focused LM-head wrapper so selected-GPU idle retries preserve nonzero
+      validator status and benchmark failures before normal timing JSON are
+      written as `failed-before-json` artifacts with stderr and GPU-load context.
+      A live focused preflight built the candidate library and reached the
+      benchmark path, then captured the current runtime failure:
+      `cudaSetDevice: CUDA driver version is insufficient for CUDA runtime
+      version`.
     - 2026-06-28 reran the production-shape focused default 32x32 strict
       true-fused LM-head body at the current 28672-row trainer chunk after the
       latest CUDA 13.3.33/native defaults:

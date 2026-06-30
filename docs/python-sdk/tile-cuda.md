@@ -3228,6 +3228,17 @@ candidate/reference-summed, and `6.416973x`
 candidate/reference-summed-with-logits time. The strict body took
 `276.307454` ms/iteration, with dHidden and dWeight dominating at
 `306649471.146405` and `492286394.807190` cycles/block.
+For occupancy bisection, the four-warp variant adds
+`-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128` and forces
+`NFN_TILE_CUDA_CE_BF16_THREADS=128`. The wrappers expose this as
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp128`
+and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp128`.
+It remains rejected until same-script focused and full-loop gates beat the
+current wrapper and llm.kittens reference.
+Focused LM-head benchmark runs that fail before normal timing JSON is written
+emit a `failed-before-json` artifact with benchmark stdout, stderr, and
+before/after GPU-load context.
 Dry-run plans for these strict profiles include `candidate_true_fused_cooperative_env` and
 `candidate_true_fused_production_env` metadata, which makes the production gate
 auditable before any GPU work starts. Focused LM-head benchmark JSON separates

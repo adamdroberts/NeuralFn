@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Native GPT LM-head strict-body diagnostics: added the rejected-by-default
+  four-warp strict WMMA LM-head bisection
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp128`
+  and the matching SM120 full-loop preflight
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp128`.
+  The profile builds the candidate Tile ops library with
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_MAT_TILE=16`,
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_WMMA=1`, and
+  `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128`, forces 128 CE threads, and
+  reports `wmma-bf16-cooperative-tile-warp128-experimental` so the focused
+  benchmark can separate it from the existing 256-thread and one-warp strict
+  bodies. It remains diagnostic until same-script focused and full-loop gates
+  beat the current wrapper and llm.kittens reference. The focused LM-head bench
+  wrapper now also preserves benchmark stderr in a `failed-before-json` artifact
+  when the benchmark exits before writing timing JSON, and its selected-GPU idle
+  retry loop now preserves the validator's nonzero status instead of exiting
+  cleanly before the benchmark. Verification: focused source-contract pytest,
+  shell syntax check, dry-run profile expansion, and a live focused preflight
+  that built the candidate library, reached the benchmark, and captured the
+  current runtime failure as `cudaSetDevice: CUDA driver version is insufficient
+  for CUDA runtime version`.
+
 - SM120 parity benchmark warmup policy: default long-run deferred-prewarm
   current-vs-llm.kittens runs in `tools/bench_native_gpt_sm120_parity.sh` now
   share the candidate wrapper's twenty warmup-pair floor as well as the

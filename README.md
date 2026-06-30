@@ -3131,6 +3131,19 @@ candidate/current-wrapper, `2.850141x` candidate/reference-summed, and
 `2.202791x` candidate/reference-summed-with-logits time. The strict body took
 `94.806450` ms/iteration, with CE, dHidden, and dWeight still slower than the
 reference components.
+For occupancy bisection without collapsing to the known-slow one-warp body,
+add `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_THREADS=128` to the tile16 WMMA build
+and set `NFN_TILE_CUDA_CE_BF16_THREADS=128`. The ABI implementation class
+reports `wmma-bf16-cooperative-tile-warp128-experimental`, and the rejected
+profiles
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp128`
+and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_true_fused_tile16_wmma_warp128`
+run the same-script focused/full-loop gates.
+Focused LM-head benchmark failures before timing JSON is available now emit a
+`failed-before-json` JSON artifact containing benchmark stdout, stderr, and
+before/after GPU-load context, so environment failures are durable instead of
+appearing as an empty or build-only run.
 Add `-DNFN_TILE_CUDA_LM_HEAD_TRUE_FUSED_CE_EXP2=1` to that tile16 WMMA build
 to isolate the strict body's CE math through the shared exp2 softmax helper.
 The ABI implementation class reports
