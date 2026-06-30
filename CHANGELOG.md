@@ -13,7 +13,7 @@
   `long_run_qkv_forward_async_prewarm` SM120 candidate profile is now an
   accepted comparison against the old deferred route and gates long-run
   steady-state reference throughput instead of first-step-sensitive aggregate
-  tokens/sec. A 2026-06-30 20-warmup, 10-step, 1-sample same-script run with
+  tokens/sec. A 2026-06-30 10-step, 1-sample same-script run with
   clean selected-GPU load measured candidate-vs-deferred-native at `0.988802x`
   train-loop wall, `0.917323x` first-step CUDA-event wall, `0.997741x`
   steady-state wall, `1.011330x` train tokens/sec, and `1.002262x`

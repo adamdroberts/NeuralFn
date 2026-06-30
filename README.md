@@ -1548,8 +1548,7 @@ through
 `linear_tk_qkv_first_use_prewarm_async_stream_create_count`,
 `linear_tk_qkv_first_use_prewarm_async_launch_count`,
 `linear_tk_qkv_first_use_prewarm_async_wait_count`, and
-`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 20-warmup,
-10-step same-script probe moved all four counters `0->1` and improved the
+`linear_tk_qkv_first_use_prewarm_async_sync_count`. The 2026-06-30 10-step same-script probe moved all four counters `0->1` and improved the
 native baseline comparison to `0.988802x` train-loop wall, `0.917323x`
 first-step CUDA-event timing, `0.997741x` steady-state wall, `1.011330x` train
 tokens/sec, and `1.002262x` steady-state tokens/sec. Against llm.kittens, the
