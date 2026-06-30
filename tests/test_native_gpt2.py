@@ -10939,6 +10939,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_rotary_embedding_float32" in llama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_rotary_embedding_backward_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_swiglu_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_swiglu_backward_float32" in llama_payload["required_tile_symbols"]
     assert llama_payload["tile_ops_check"]["all_required_symbols_found"] is False
@@ -13197,6 +13199,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "fused-dinput-residual-add-with-forward-stats" in gpt2_source_text
     assert "nfn_native_tile_rms_norm_float32" in header_text
     assert "nfn_native_tile_rms_norm_backward_input_float32" in header_text
+    assert "nfn_native_tile_rotary_embedding_float32" in header_text
+    assert "nfn_native_tile_rotary_embedding_backward_float32" in header_text
+    assert "launch_rotary_embedding_float32" in source_text
+    assert "launch_rotary_embedding_backward_float32" in source_text
+    assert "rotary_embedding_float32_kernel" in kernels_text
+    assert "rotary_embedding_backward_float32_kernel" in kernels_text
     assert "nfn_native_tile_swiglu_float32" in header_text
     assert "nfn_native_tile_swiglu_backward_float32" in header_text
     assert "launch_swiglu_float32" in source_text
@@ -14734,6 +14742,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in exported
         assert "nfn_native_tile_rms_norm_float32" in exported
         assert "nfn_native_tile_rms_norm_backward_input_float32" in exported
+        assert "nfn_native_tile_rotary_embedding_float32" in exported
+        assert "nfn_native_tile_rotary_embedding_backward_float32" in exported
         assert "nfn_native_tile_swiglu_float32" in exported
         assert "nfn_native_tile_swiglu_backward_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported

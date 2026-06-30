@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added native CUDA Tile rotary embedding forward/backward ABI coverage for the
+  LLaMA/RoPE family path. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_rotary_embedding_float32` and
+  `nfn_native_tile_rotary_embedding_backward_float32`, and the LLaMA
+  missing-family preflight now lists those symbols as required kernels. This
+  removes another concrete kernel gap from the
+  `missing-llama-rope-swiglu-transformer-lm` class; the full LLaMA trainer loop
+  is still not complete. Verification: rebuilt `libnfn_native_train_tile_ops.so`,
+  `nfn_gpt_native_train`, the linked GPT trainer, optional benchmark artifacts,
+  TK Tile ops artifact, and expanded missing-family preflights; confirmed
+  exported symbols with `nm -D`; ran a live CUDA ctypes smoke for
+  forward/backward with max error `4.0451292e-08`; focused pytest passed
+  (`1 passed, 1 skipped`); full no-Torch verifier passed 30 artifact scans with
+  zero stale artifacts, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Added native CUDA Tile SwiGLU forward/backward ABI coverage for the LLaMA
   family path. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_swiglu_float32` and

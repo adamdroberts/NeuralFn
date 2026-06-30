@@ -1563,6 +1563,26 @@ int nfn_native_tile_token_embedding_backward_weight_u16_float32(
     std::int64_t model_dim,
     void* cuda_stream);
 
+int nfn_native_tile_rotary_embedding_float32(
+    const float* x,
+    const float* inv_freq,
+    float* out,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_rotary_embedding_backward_float32(
+    const float* grad_out,
+    const float* inv_freq,
+    float* grad_x,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_rms_norm_float32(
     const float* x,
     float* out,

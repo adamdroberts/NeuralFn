@@ -9250,6 +9250,45 @@ __tile_global__ void rotary_embedding_float32_kernel(
   ct::store_masked(out + idx, value, mask);
 }
 
+__tile_global__ void rotary_embedding_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    const float* __restrict__ inv_freq,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  inv_freq = ct::assume_aligned(inv_freq, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto head_dim_tile = ct::full<IndexTile>(head_dim);
+  auto half_tile = ct::full<IndexTile>(head_dim / 2);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto d = idx % head_dim_tile;
+  auto s = (idx / head_dim_tile) % seq_tile;
+  auto pair_d = d % half_tile;
+  auto first_half = d < half_tile;
+  auto base = idx - d;
+  auto gy1 = ct::load_masked(grad_out + base + pair_d, mask);
+  auto gy2 = ct::load_masked(grad_out + base + pair_d + half_tile, mask);
+  auto inv = ct::load_masked(inv_freq + pair_d, mask);
+  auto angle = ct::tile<float, decltype(ct::shape{1024_ic})>(s) * inv;
+  auto c = ct::cos(angle);
+  auto sn = ct::sin(angle);
+  auto dx1 = gy1 * c - gy2 * sn;
+  auto dx2 = gy1 * sn + gy2 * c;
+  auto value = ct::select(first_half, dx1, dx2);
+  ct::store_masked(grad_x + idx, value, mask);
+}
+
 __tile_global__ void rms_norm_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -17635,6 +17674,20 @@ void launch_rotary_embedding_float32(
   const std::int64_t n = batch * heads * seq_len * head_dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   rotary_embedding_float32_kernel<<<blocks, 1, 0, stream>>>(x, inv_freq, out, n, heads, seq_len, head_dim);
+}
+
+void launch_rotary_embedding_backward_float32(
+    const float* grad_out,
+    const float* inv_freq,
+    float* grad_x,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  rotary_embedding_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, inv_freq, grad_x, n, heads, seq_len, head_dim);
 }
 
 void launch_rms_norm_float32(

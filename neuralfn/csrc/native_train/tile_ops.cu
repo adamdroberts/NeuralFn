@@ -1250,6 +1250,24 @@ void launch_token_embedding_backward_weight_u16_float32(
     std::int64_t tokens,
     std::int64_t model_dim,
     cudaStream_t stream);
+void launch_rotary_embedding_float32(
+    const float* x,
+    const float* inv_freq,
+    float* out,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream);
+void launch_rotary_embedding_backward_float32(
+    const float* grad_out,
+    const float* inv_freq,
+    float* grad_x,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream);
 void launch_rms_norm_float32(
     const float* x,
     float* out,
@@ -5409,6 +5427,40 @@ int nfn_native_tile_token_embedding_backward_weight_u16_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_embedding_backward_weight_u16_float32(
         token_ids, grad_out, grad_weight, tokens, model_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_rotary_embedding_float32(
+    const float* x,
+    const float* inv_freq,
+    float* out,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    void* cuda_stream) {
+    if (head_dim <= 0 || (head_dim % 2) != 0 || heads <= 0 || seq_len <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_rotary_embedding_float32(
+        x, inv_freq, out, n, heads, seq_len, head_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_rotary_embedding_backward_float32(
+    const float* grad_out,
+    const float* inv_freq,
+    float* grad_x,
+    std::int64_t n,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    void* cuda_stream) {
+    if (head_dim <= 0 || (head_dim % 2) != 0 || heads <= 0 || seq_len <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_rotary_embedding_backward_float32(
+        grad_out, inv_freq, grad_x, n, heads, seq_len, head_dim, as_stream(cuda_stream));
     return launch_status();
 }
 
