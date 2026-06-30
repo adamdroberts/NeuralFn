@@ -676,6 +676,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--train-seq-len 2048" not in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
     assert entrypoints["infer_gpt_native_info"]["missing_stdout_markers"] == []
+    assert entrypoints["infer_gpt_checkpoint_alias_directory_info"]["passed"] is True
+    assert entrypoints["infer_gpt_checkpoint_alias_directory_info"]["missing_stdout_markers"] == []
+    assert "model_00000020.bin" in entrypoints["infer_gpt_checkpoint_alias_directory_info"]["stdout"]
     assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["missing_stdout_markers"] == []
     assert "--sample-checkpoint" in entrypoints["infer_gpt_native_sample_prompt_tokens"]["stdout"]
@@ -1055,6 +1058,33 @@ def test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint(tmp_path: 
             sys.executable,
             str(root / "cli" / "nfn.py"),
             "infer",
+            "--checkpoint",
+            str(tmp_path),
+            "--native-info",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Native GPT checkpoint detected" in proc.stdout
+    assert f"path: {checkpoint}" in proc.stdout
+    assert "checkpoint_step: 20" in proc.stdout
+    assert "Traceback" not in proc.stderr
+
+
+def test_infer_gpt2_checkpoint_alias_directory_uses_latest_native_checkpoint(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    _write_native_checkpoint(tmp_path / "model_00000010.bin", step=10)
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000020.bin", step=20)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "scripts" / "infer_gpt2.py"),
             "--checkpoint",
             str(tmp_path),
             "--native-info",

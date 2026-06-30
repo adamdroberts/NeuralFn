@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Direct GPT inference wrappers now accept `--checkpoint PATH` as a native
+  checkpoint alias, matching `nfn infer`. `python cli/scripts/infer_gpt.py
+  --checkpoint DIR --native-info` resolves a checkpoint directory to the latest
+  native `model_*.bin` and exits on the lightweight native metadata path before
+  graph-backed inference helpers or Torch can start. The no-Torch verifier now
+  covers this direct-script alias. Verification: focused native inference pytest
+  and full no-Torch verifier.
+
 - Missing-family native trainer placeholders for LLaMA, MixLLaMA, JEPA,
   semantic-router MoE, and DeepSeek-V4 now link the shared C++ token-shard
   resolver. Their `--sample-token-batch --dataset-alias PATH_OR_ALIAS`

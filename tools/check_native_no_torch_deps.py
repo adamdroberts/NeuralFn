@@ -1682,6 +1682,16 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "infer_gpt_checkpoint_alias_directory_info",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_gpt.py",
+                    "--checkpoint",
+                    str(temp_root),
+                    "--native-info",
+                ),
+            ),
+            (
                 "infer_gpt_native_sample_prompt_tokens",
                 (
                     sys.executable,

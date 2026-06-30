@@ -2721,8 +2721,11 @@ Top-level `nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
 `run_native_gpt_checkpoint_sampler()` helper, preferring the C++ capture binding
 and falling back to the compiled `nfn_gpt_native_train --sample-checkpoint` path
 before importing graph-backed inference helpers, Torch, NumPy, tiktoken, or
-dataset managers. Use prompt tokens for the no-tokenizer path. Raw text prompts for
-native `.bin` checkpoints are rejected by default; set
+dataset managers. `python cli/scripts/infer_gpt.py --checkpoint PATH` accepts
+the same native `model_*.bin` file or checkpoint directory alias and resolves
+directories to the latest native checkpoint before the graph-backed runtime can
+start. Use prompt tokens for the no-tokenizer path. Raw text prompts for native
+`.bin` checkpoints are rejected by default; set
 `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` only when Python-side GPT-2
 tokenization is intentionally acceptable before launching the same native
 sampler. The native sampler accepts `temperature`, `top_k`,

@@ -112,6 +112,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a native llm.kittens/NeuralFn GPT model_*.bin checkpoint.",
     )
     parser.add_argument(
+        "--checkpoint",
+        default="",
+        help=(
+            "Alias for --native-checkpoint. Accepts a native model_*.bin checkpoint "
+            "or a directory containing native checkpoints."
+        ),
+    )
+    parser.add_argument(
         "--native-info",
         action="store_true",
         help="Print native GPT checkpoint metadata without importing the graph-backed runtime.",
@@ -230,14 +238,24 @@ def run_native_checkpoint_sampler(args: argparse.Namespace, checkpoint: str | Pa
 
 def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
     native_checkpoint = str(getattr(args, "native_checkpoint", "") or "").strip()
+    checkpoint_alias = str(getattr(args, "checkpoint", "") or "").strip()
+    if not native_checkpoint and checkpoint_alias:
+        native_checkpoint = checkpoint_alias
     if not native_checkpoint and not bool(getattr(args, "native_info", False)):
         return None
     if not native_checkpoint:
         print("--native-info requires --native-checkpoint.", file=sys.stderr)
         return 2
-    from neuralfn.native_gpt import read_native_gpt_checkpoint_info
+    from neuralfn.native_gpt import latest_native_gpt_checkpoint, read_native_gpt_checkpoint_info
 
-    info = read_native_gpt_checkpoint_info(Path(native_checkpoint).expanduser())
+    checkpoint_path = Path(native_checkpoint).expanduser()
+    if checkpoint_path.is_dir():
+        latest = latest_native_gpt_checkpoint(checkpoint_path)
+        if latest is None:
+            print(f"No native model_*.bin checkpoints found in {checkpoint_path}.", file=sys.stderr)
+            return 2
+        checkpoint_path = latest
+    info = read_native_gpt_checkpoint_info(checkpoint_path)
     print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")
@@ -248,7 +266,7 @@ def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
         print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
     if bool(getattr(args, "native_info", False)):
         return 0
-    return run_native_checkpoint_sampler(args, native_checkpoint)
+    return run_native_checkpoint_sampler(args, checkpoint_path)
 
 
 def main() -> int:

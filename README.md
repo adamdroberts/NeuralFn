@@ -4974,11 +4974,13 @@ For native dense GPT inference, point `nfn infer --checkpoint` at either the
 exact native `model_########.bin` file or the output directory that contains the
 native `DONE_########` marker. Directory input resolves to the latest completed
 native checkpoint on the lightweight no-Torch path before the compiled sampler
-runs:
+runs. The direct `python cli/scripts/infer_gpt.py --checkpoint` compatibility
+path uses the same native checkpoint resolution:
 
 ```bash
 nfn infer --checkpoint artifacts/gpt2 --native-info
 nfn infer --checkpoint artifacts/gpt2 --prompt-tokens 50256 --max-new-tokens 64
+python cli/scripts/infer_gpt.py --checkpoint artifacts/gpt2 --native-info
 ```
 
 ### Install the SDK as a package
