@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Python SDK dense GPT native training configs now expand the same real quality
+  defaults as the CLI native path before dispatching directly to
+  `nfn_gpt_native_train --model-family ...`. `build_native_train_run_config()`
+  now supplies validation cadence, AdamW/token-batch/warmup/max-step defaults,
+  GPT3's 2048-context/batch-32 defaults, NanoGPT's template default, and
+  `--train-transformer-lm` for no-action dense GPT runs, while metadata,
+  startup-only, and smoke actions remain schedule-free. Verification: focused
+  native GPT SDK/CLI pytest and direct SDK argv inspection.
+
 - Native dense GPT `nfn train` dispatch now expands the same quality defaults as
   `cli/scripts/train_gpt.py` and the SM120 workstation helper before invoking
   the compiled CUDA Tile trainer. Python `nfn train --base-model gpt ...` and

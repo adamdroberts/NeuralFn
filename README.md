@@ -3398,7 +3398,13 @@ every 250 optimizer steps, sample and checkpoint cadence, `64 x 1024 -> 524288`
 token batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and GELU/MOA
 activation defaults. Direct `python cli/scripts/train_gpt_native.py ...`
 compiled-CLI runs use the same validation and warmup defaults, so legacy native
-entrypoints no longer drift to the older 1000-step cadence.
+entrypoints no longer drift to the older 1000-step cadence. SDK callers that use
+`neuralfn.native_train.build_native_train_run_config("gpt"|"gpt2"|"gpt3"|"nanogpt", ...)`
+get the same defaults before the direct `nfn_gpt_native_train --model-family ...`
+handoff, including GPT3's 2048-context/batch-32 shape default and NanoGPT's
+default `--template-name nanogpt`. Metadata-only actions such as
+`--list-templates`, `--print-plan`, and startup/smoke checks remain
+schedule-free.
 
 Default local native CLI builds also create the documented hyphenated command
 names: `bash tools/build_native_train_cli.sh` emits `build/nfn_native_train`

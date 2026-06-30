@@ -22,6 +22,131 @@ DEFAULT_NATIVE_SM120_TRAIN_CLI = "build/nfn_train_gpt_sm120"
 NATIVE_GPT_LAUNCHER_COMMANDS = ("nfn-train-gpt", "nfn-gpt-train", "nfn_train_gpt")
 NATIVE_SM120_TRAIN_COMMANDS = ("nfn-train-gpt-sm120", "nfn-gpt-sm120-train", "nfn_train_gpt_sm120")
 DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt"})
+NATIVE_GPT_QUALITY_DEFAULTS = {
+    "--eval-every-steps": (
+        "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
+        "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
+        "NFN_SM120_EVAL_EVERY_STEPS",
+        "250",
+    ),
+    "--eval-batches": (
+        "NFN_NATIVE_GPT_EVAL_BATCHES",
+        "NFN_SM120_NATIVE_EVAL_BATCHES",
+        "NFN_SM120_EVAL_BATCHES",
+        "20",
+    ),
+    "--native-cuda-sample-every": (
+        "NFN_NATIVE_GPT_SAMPLE_EVERY",
+        "NFN_SM120_NATIVE_SAMPLE_EVERY",
+        "NFN_SM120_SAMPLE_EVERY",
+        "20000",
+    ),
+    "--native-cuda-generate-tokens": (
+        "NFN_NATIVE_GPT_GENERATE_TOKENS",
+        "NFN_SM120_NATIVE_GENERATE_TOKENS",
+        "NFN_SM120_GENERATE_TOKENS",
+        "144",
+    ),
+    "--native-cuda-checkpoint-every": (
+        "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
+        "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
+        "NFN_SM120_CHECKPOINT_EVERY",
+        "200",
+    ),
+    "--batch-size": (
+        "NFN_NATIVE_GPT_BATCH_SIZE",
+        "NFN_SM120_NATIVE_BATCH_SIZE",
+        "NFN_SM120_BATCH_SIZE",
+        "64",
+    ),
+    "--train-seq-len": (
+        "NFN_NATIVE_GPT_TRAIN_SEQ_LEN",
+        "NFN_SM120_NATIVE_TRAIN_SEQ_LEN",
+        "NFN_SM120_TRAIN_SEQ_LEN",
+        "1024",
+    ),
+    "--train-batch-tokens": (
+        "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS",
+        "NFN_SM120_TRAIN_BATCH_TOKENS",
+        "524288",
+    ),
+    "--learning-rate": (
+        "NFN_NATIVE_GPT_LEARNING_RATE",
+        "NFN_SM120_NATIVE_LEARNING_RATE",
+        "NFN_SM120_LEARNING_RATE",
+        "0.0006",
+    ),
+    "--final-lr-fraction": (
+        "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
+        "NFN_SM120_NATIVE_FINAL_LR_FRACTION",
+        "NFN_SM120_FINAL_LR_FRACTION",
+        "0.0",
+    ),
+    "--weight-decay": (
+        "NFN_NATIVE_GPT_WEIGHT_DECAY",
+        "NFN_SM120_NATIVE_WEIGHT_DECAY",
+        "NFN_SM120_WEIGHT_DECAY",
+        "0.1",
+    ),
+    "--beta1": ("NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1", "0.9"),
+    "--beta2": ("NFN_NATIVE_GPT_BETA2", "NFN_SM120_NATIVE_BETA2", "NFN_SM120_BETA2", "0.95"),
+    "--adam-eps": (
+        "NFN_NATIVE_GPT_ADAM_EPS",
+        "NFN_SM120_NATIVE_ADAM_EPS",
+        "NFN_SM120_ADAM_EPS",
+        "1e-8",
+    ),
+    "--grad-clip-norm": (
+        "NFN_NATIVE_GPT_GRAD_CLIP_NORM",
+        "NFN_SM120_NATIVE_GRAD_CLIP_NORM",
+        "NFN_SM120_GRAD_CLIP_NORM",
+        "1.0",
+    ),
+    "--warmup-steps": (
+        "NFN_NATIVE_GPT_WARMUP_STEPS",
+        "NFN_SM120_NATIVE_WARMUP_STEPS",
+        "NFN_SM120_WARMUP_STEPS",
+        "60",
+    ),
+    "--max-steps": (
+        "NFN_NATIVE_GPT_MAX_STEPS",
+        "NFN_SM120_NATIVE_MAX_STEPS",
+        "NFN_SM120_MAX_STEPS",
+        "20000",
+    ),
+}
+NATIVE_GPT_METADATA_ACTION_FLAGS = frozenset(
+    {
+        "--print-plan",
+        "--list-templates",
+        "--check-tile-ops",
+        "--startup-only",
+        "--smoke-tile-ops",
+        "--smoke-nvfp4-pack",
+        "--smoke-optimizer-step",
+        "--smoke-lm-step",
+        "--smoke-attention-step",
+        "--smoke-mlp-step",
+        "--smoke-norm-residual-step",
+        "--smoke-transformer-block-step",
+        "--smoke-transformer-lm-step",
+        "--smoke-embedding-lm-step",
+    }
+)
+NATIVE_TRAIN_ACTION_FLAGS = NATIVE_GPT_METADATA_ACTION_FLAGS | frozenset(
+    {
+        "--sample-token-batch",
+        "--smoke-embedding-norm-step",
+        "--smoke-fused-qkv-attention-step",
+        "--smoke-qkv-layout-step",
+        "--smoke-token-train-step",
+        "--smoke-training-loop-step",
+        "--train-embedding-lm",
+        "--train-token-lm",
+        "--train-transformer-lm",
+    }
+)
 NATIVE_TRAIN_FAMILY_TARGETS = {
     "gpt": "nfn_gpt_native_train",
     "gpt2": "nfn_gpt_native_train",
@@ -259,6 +384,34 @@ class NativeTrainRunConfig:
             "--native-cuda-graph-file",
         ):
             resolved_args.extend(["--graph-file", str(self.graph_file).strip()])
+        if normalized_family == "nanogpt" and not _native_train_args_have_option(
+            resolved_args,
+            "--template-name",
+            "--native-cuda-template-name",
+            "--template",
+            "--preset",
+            "--graph-file",
+            "--native-cuda-graph-file",
+            "--graph",
+        ):
+            resolved_args.extend(["--template-name", "nanogpt"])
+        if (
+            normalized_family == "gpt3"
+            and not _native_train_args_have_option(resolved_args, "--train-seq-len")
+            and not _native_train_args_have_option(
+                resolved_args,
+                "--template-name",
+                "--native-cuda-template-name",
+                "--template",
+                "--preset",
+                "--graph-file",
+                "--native-cuda-graph-file",
+                "--graph",
+            )
+        ):
+            resolved_args.extend(["--train-seq-len", "2048"])
+        if normalized_family == "gpt3" and not _native_train_args_have_option(resolved_args, "--batch-size"):
+            resolved_args.extend(["--batch-size", "32"])
         if self.fast_startup and (
             "--fast-startup" not in resolved_args
             and "--native-cuda-fast-startup" not in resolved_args
@@ -269,6 +422,10 @@ class NativeTrainRunConfig:
             and "--native-cuda-require-cooperative-lm-head-backward" not in resolved_args
         ):
             resolved_args.append("--require-cooperative-lm-head-backward")
+        if normalized_family in DENSE_GPT_MODEL_FAMILIES and not _native_train_has_metadata_action(resolved_args):
+            _append_native_gpt_quality_defaults(resolved_args)
+            if not _native_train_has_action(resolved_args):
+                resolved_args.append("--train-transformer-lm")
         return tuple(resolved_args)
 
 
@@ -301,6 +458,55 @@ def _native_train_args_have_option(args: Sequence[str], *names: str) -> bool:
         if any(text.startswith(f"{name}=") for name in option_names):
             return True
     return False
+
+
+def _native_train_has_flag(args: Sequence[str], flag: str) -> bool:
+    return any(str(arg) == flag for arg in args)
+
+
+def _native_train_has_action(args: Sequence[str]) -> bool:
+    return any(_native_train_has_flag(args, flag) for flag in NATIVE_TRAIN_ACTION_FLAGS)
+
+
+def _native_train_has_metadata_action(args: Sequence[str]) -> bool:
+    return any(_native_train_has_flag(args, flag) for flag in NATIVE_GPT_METADATA_ACTION_FLAGS)
+
+
+def _native_train_env_default(names: Sequence[str]) -> str:
+    *env_names, fallback = tuple(names)
+    for name in env_names:
+        value = os.environ.get(name)
+        if value is not None and str(value).strip():
+            return str(value)
+    return str(fallback)
+
+
+def _native_train_template_name(args: Sequence[str]) -> str:
+    for idx, arg in enumerate(args):
+        text = str(arg)
+        if text in {"--template-name", "--native-cuda-template-name", "--template", "--preset"} and idx + 1 < len(args):
+            return str(args[idx + 1]).strip().lower().replace("-", "_")
+        for flag in ("--template-name", "--native-cuda-template-name", "--template", "--preset"):
+            prefix = f"{flag}="
+            if text.startswith(prefix):
+                return text[len(prefix):].strip().lower().replace("-", "_")
+    return "gpt"
+
+
+def _append_native_gpt_quality_defaults(args: list[str]) -> None:
+    for flag, env_names in NATIVE_GPT_QUALITY_DEFAULTS.items():
+        if not _native_train_args_have_option(args, flag):
+            args.extend([flag, _native_train_env_default(env_names)])
+    if not _native_train_args_have_option(args, "--activation", "--native-cuda-activation"):
+        activation_default = "moa" if _native_train_template_name(args) == "gpt2_moa" else "gelu"
+        args.extend(
+            [
+                "--native-cuda-activation",
+                os.environ.get("NFN_NATIVE_GPT_ACTIVATION")
+                or os.environ.get("NFN_SM120_ACTIVATION")
+                or activation_default,
+            ]
+        )
 
 
 def normalize_native_model_family(value: str | None) -> str:

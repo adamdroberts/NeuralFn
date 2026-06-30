@@ -214,6 +214,13 @@ Torch-runtime training compiles graph topology, input/output layout, and edge ro
 
 For Torch-free native GPT launchers, `neuralfn.native_train.build_native_train_run_config()` can enforce the dense-GPT strict LM-head parity guard with `require_cooperative_lm_head_backward=True`. The SDK appends `--require-cooperative-lm-head-backward` once, rejects non-dense family targets, and keeps the handoff in the compiled native frontend without importing Torch. Current CUDA Tile builds still fail that guard because the LM-head backward route is a diagnostic CUDA Graph wrapper rather than the future fused classifier/dHidden/dWeight kernel.
 
+The same SDK helper expands dense GPT quality defaults before the direct native
+C++ handoff. `gpt`, `gpt2`, `gpt3`, and `nanogpt` SDK configs inherit the CLI's
+validation cadence, AdamW settings, token-batch shape, warmup, max-step, and
+activation defaults unless a flag or `NFN_NATIVE_GPT_*` / `NFN_SM120_*` override
+is explicit. GPT3 gets the 2048-context/batch-32 default and NanoGPT gets the
+`nanogpt` template default; metadata-only actions stay schedule-free.
+
 For dense GPT startup/preflight probes, pass `fast_startup=True` to the same native SDK helper to append `--fast-startup` once. This skips throughput-only setup prewarms through the native prewarm policy without requiring environment variables; normal training defaults remain unchanged.
 
 For startup bisection, `NFN_NATIVE_GPT_CONCURRENT_PARAMETER_INIT=1` enables the

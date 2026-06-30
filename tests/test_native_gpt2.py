@@ -247,10 +247,82 @@ def test_capture_native_sm120_gpt_builds_config_and_uses_cpp_binding(monkeypatch
         "--startup-only",
         "--template-name",
         "gpt3",
+        "--batch-size",
+        "32",
     )
     assert captured_config["strict_native_command"] is True
     assert captured_config["cuda_device_max_connections"] == "1"
     assert json.loads(result.stdout) == {"runner": "sm120"}
+
+
+def test_native_train_sdk_dense_gpt_expands_quality_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", "/tmp/nfn_gpt_native_train")
+    for key in (
+        "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
+        "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
+        "NFN_SM120_EVAL_EVERY_STEPS",
+        "NFN_NATIVE_GPT_WARMUP_STEPS",
+        "NFN_SM120_NATIVE_WARMUP_STEPS",
+        "NFN_SM120_WARMUP_STEPS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    cfg = build_native_train_run_config(
+        "gpt",
+        ["--tinystories", "--dry-run", "--print-command"],
+    )
+    argv = cfg.argv()
+
+    assert argv[:3] == ["/tmp/nfn_gpt_native_train", "--model-family", "gpt"]
+    assert argv[argv.index("--eval-every-steps") + 1] == "250"
+    assert argv[argv.index("--eval-batches") + 1] == "20"
+    assert argv[argv.index("--native-cuda-sample-every") + 1] == "20000"
+    assert argv[argv.index("--native-cuda-generate-tokens") + 1] == "144"
+    assert argv[argv.index("--native-cuda-checkpoint-every") + 1] == "200"
+    assert argv[argv.index("--batch-size") + 1] == "64"
+    assert argv[argv.index("--train-seq-len") + 1] == "1024"
+    assert argv[argv.index("--train-batch-tokens") + 1] == "524288"
+    assert argv[argv.index("--learning-rate") + 1] == "0.0006"
+    assert argv[argv.index("--final-lr-fraction") + 1] == "0.0"
+    assert argv[argv.index("--weight-decay") + 1] == "0.1"
+    assert argv[argv.index("--beta1") + 1] == "0.9"
+    assert argv[argv.index("--beta2") + 1] == "0.95"
+    assert argv[argv.index("--adam-eps") + 1] == "1e-8"
+    assert argv[argv.index("--grad-clip-norm") + 1] == "1.0"
+    assert argv[argv.index("--warmup-steps") + 1] == "60"
+    assert argv[argv.index("--max-steps") + 1] == "20000"
+    assert argv[argv.index("--native-cuda-activation") + 1] == "gelu"
+    assert "--train-transformer-lm" in argv
+
+
+def test_native_train_sdk_preserves_dense_gpt_template_and_metadata_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", "/tmp/nfn_gpt_native_train")
+
+    gpt3 = build_native_train_run_config(
+        "gpt3",
+        ["--tinystories", "--dry-run", "--print-command"],
+    ).argv()
+    nanogpt = build_native_train_run_config(
+        "nanogpt",
+        ["--tinystories", "--dry-run", "--print-command"],
+    ).argv()
+    moa = build_native_train_run_config(
+        "gpt",
+        ["--tinystories", "--template-name", "gpt2_moa", "--dry-run", "--print-command"],
+    ).argv()
+    catalog = build_native_train_run_config("gpt", ["--list-templates"]).argv()
+
+    assert gpt3[:3] == ["/tmp/nfn_gpt_native_train", "--model-family", "gpt3"]
+    assert gpt3[gpt3.index("--train-seq-len") + 1] == "2048"
+    assert gpt3[gpt3.index("--batch-size") + 1] == "32"
+    assert "--train-transformer-lm" in gpt3
+    assert nanogpt[:3] == ["/tmp/nfn_gpt_native_train", "--model-family", "nanogpt"]
+    assert nanogpt[nanogpt.index("--template-name") + 1] == "nanogpt"
+    assert "--train-transformer-lm" in nanogpt
+    assert moa[moa.index("--native-cuda-activation") + 1] == "moa"
+    assert catalog == ["/tmp/nfn_gpt_native_train", "--model-family", "gpt", "--list-templates"]
 
 
 def test_native_train_model_registry_prefers_cpp_binding_capture(monkeypatch: pytest.MonkeyPatch) -> None:
