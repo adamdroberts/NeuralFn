@@ -4176,6 +4176,9 @@ standard MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq,
 diffusion, TTT, HNet byte-LM, and universal transformer families. This manifest
 is the coverage gate for the remaining native-template work: no shipped GPT
 template should be an unclassified generic miss.
+LLaMA-family entries now report loop-composition requirements for RMSNorm,
+RoPE-attention, SwiGLU/GEGLU MLP, and untied/template LM-head layout because the
+RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present.
 
 The unified native model registry and compiled missing-family preflights report
 `kernel_status` separately from `trainer_loop_status`. Dense GPT entries report

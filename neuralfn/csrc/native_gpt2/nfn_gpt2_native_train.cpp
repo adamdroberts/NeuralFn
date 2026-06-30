@@ -883,9 +883,9 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
         return {
-            "rmsnorm-forward-backward-loop-integration",
-            "rope-attention-loop-integration",
-            "swiglu-geglu-mlp-forward-backward-loop-integration",
+            "rmsnorm-loop-composition",
+            "rope-attention-loop-composition",
+            "swiglu-geglu-mlp-loop-composition",
             "untied-lm-head-or-template-weight-layout",
         };
     }

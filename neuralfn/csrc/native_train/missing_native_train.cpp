@@ -426,7 +426,7 @@ int main(int argc, char** argv) {
         << " is not implemented yet.\n"
         << "Required native work: " << NFN_NATIVE_REQUIRED_KERNELS << "\n"
         << "Do not use the graph-backed TorchTrainer path for production training; implement this "
-        << "family's CUDA Tile C++ kernels first. For local graph-backed debugging, call the Python "
+        << "family's CUDA Tile C++ trainer loop first. For local graph-backed debugging, call the Python "
         << "SDK trainer APIs directly instead of routing through nfn train.\n";
     return 2;
 }

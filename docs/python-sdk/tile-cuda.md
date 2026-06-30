@@ -498,7 +498,10 @@ JSON preflights: `--print-plan`, `--dry-run`, and
 remaining native work for that family. `kernel_status` distinguishes unchecked,
 missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
-wired. Real training still fails until the family-specific CUDA Tile loop is
+wired. LLaMA-family missing requirements now name RMSNorm, RoPE-attention,
+SwiGLU/GEGLU MLP, and untied/template LM-head loop composition because the
+RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present. Real training
+still fails until the family-specific CUDA Tile loop is
 implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`

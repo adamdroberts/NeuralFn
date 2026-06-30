@@ -95,7 +95,10 @@ Implemented dense GPT selectors report `implemented-dense-gpt-transformer-lm`
 with no missing requirements. Other shipped presets are classified by the native
 trainer loop still required, including LLaMA/RoPE/SwiGLU, standard MoE, dense
 JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet
-byte-LM, and universal transformer families. Treat this manifest as the
+byte-LM, and universal transformer families. LLaMA-family entries now list
+RMSNorm, RoPE-attention, SwiGLU/GEGLU MLP, and untied/template LM-head
+loop-composition requirements because their raw Tile ABI symbols are present.
+Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
 

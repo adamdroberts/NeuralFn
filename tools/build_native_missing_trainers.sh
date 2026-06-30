@@ -48,7 +48,7 @@ build_one "llama" "nfn_llama_native_train" \
   "LLaMA RoPE/RMSNorm/SwiGLU attention and MLP CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_rms_norm_backward_input_float32,nfn_native_tile_rotary_embedding_float32,nfn_native_tile_rotary_embedding_backward_float32,nfn_native_tile_swiglu_float32,nfn_native_tile_swiglu_backward_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32,nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-llama-rope-swiglu-transformer-lm" \
-  "rmsnorm-forward-backward-loop-integration,rope-attention-loop-integration,swiglu-geglu-mlp-forward-backward-loop-integration,untied-lm-head-or-template-weight-layout"
+  "rmsnorm-loop-composition,rope-attention-loop-composition,swiglu-geglu-mlp-loop-composition,untied-lm-head-or-template-weight-layout"
 build_one "mixllama" "nfn_mixllama_native_train" \
   "LLaMA MoE routing, expert dispatch/combine, and grouped expert CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

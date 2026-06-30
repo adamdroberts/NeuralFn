@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Clarified native LLaMA coverage reporting now that the RMSNorm, rotary, and
+  SwiGLU raw Tile ABI symbols are present. LLaMA preflights and dense GPT
+  template plans now report `rmsnorm-loop-composition`,
+  `rope-attention-loop-composition`, and `swiglu-geglu-mlp-loop-composition`
+  instead of wording those remaining items as missing forward/backward kernel
+  integration, and the nonzero missing-family training stderr now says to
+  implement the CUDA Tile C++ trainer loop rather than kernels. Verification:
+  rebuilt missing-family and dense GPT native binaries, then ran focused native
+  GPT coverage/dispatch tests and the no-Torch dependency verifier.
+
 - Added native CUDA Tile rotary embedding forward/backward ABI coverage for the
   LLaMA/RoPE family path. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_rotary_embedding_float32` and

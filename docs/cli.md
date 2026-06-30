@@ -3211,7 +3211,10 @@ Template catalog and per-template plan JSON include
 Use these fields to audit complete GPT-template native coverage. Missing
 families now have compiled no-Torch boundaries for LLaMA/RoPE/SwiGLU, standard
 MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT,
-HNet byte-LM, and universal transformer classes; each boundary lists the exact
+HNet byte-LM, and universal transformer classes. LLaMA-family entries now list
+RMSNorm, RoPE-attention, SwiGLU/GEGLU MLP, and untied/template LM-head
+loop-composition requirements because their raw Tile ABI symbols are present;
+each boundary lists the exact
 native loop work that must be implemented before that template can run real
 native training.
 

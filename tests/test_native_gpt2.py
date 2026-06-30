@@ -5218,6 +5218,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
+    assert missing_requirements["llama"] == [
+        "rmsnorm-loop-composition",
+        "rope-attention-loop-composition",
+        "swiglu-geglu-mlp-loop-composition",
+        "untied-lm-head-or-template-weight-layout",
+    ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
     assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
     assert "standard-moe-transformer-loop" in missing_requirements["moe_jepa_evo"]
@@ -10843,7 +10849,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     )
     assert llama.returncode == 2
     assert "native CUDA Tile trainer for llama is not implemented yet" in llama.stderr
-    assert "implement this family's CUDA Tile C++ kernels first" in llama.stderr
+    assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
     assert llama_payload["status"] == "family-native-trainer-missing"
