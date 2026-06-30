@@ -367,10 +367,15 @@ def validate_strict_native_train_command(argv: Sequence[str], *, strict: bool = 
         "fish",
     }
     forbidden_suffixes = (".py", ".sh", ".bash", ".zsh")
+    forbidden_launcher = ""
     if executable in forbidden_names or executable.endswith(forbidden_suffixes):
+        forbidden_launcher = command[0]
+    elif executable == "env":
+        forbidden_launcher = command[0]
+    if forbidden_launcher:
         raise ValueError(
             "Native training requires a compiled C++ command; got launcher "
-            f"{command[0]!r}. Pass strict_native_command=False only for diagnostics."
+            f"{forbidden_launcher!r}. Pass strict_native_command=False only for diagnostics."
         )
     return command
 

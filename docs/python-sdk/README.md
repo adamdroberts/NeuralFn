@@ -296,10 +296,11 @@ from static no-Torch metadata so lean installs with only direct family trainers
 can still discover native coverage.
 `NativeTrainRunConfig`, `NativeGptRunConfig`, and `NativeGpt2RunConfig` now
 default `strict_native_command=True`: the SDK C++ bindings reject Python and
-shell launcher executables such as `python`, `bash`, `*.py`, and `*.sh` on the
-native training path. Pass `strict_native_command=False` to the native config
-builders only for diagnostic command-resolution tests; real training should
-cross directly into a compiled C++ trainer or unified native frontend.
+shell launcher executables such as `python`, `bash`, `/usr/bin/env`, `*.py`,
+and `*.sh` on the native training path. Pass `strict_native_command=False` to
+the native config builders only for diagnostic command-resolution tests; real
+training should cross directly into a compiled C++ trainer or unified native
+frontend.
 That registry includes `transformer_lm_status`, `token_lm_status`, and
 `geometry_status`; dense GPT selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`)
 all report `dense-gpt-template-geometry` because the selected template or

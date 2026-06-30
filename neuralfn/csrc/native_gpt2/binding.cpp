@@ -140,6 +140,29 @@ bool is_forbidden_native_launcher(const std::string& command) {
     return false;
 }
 
+bool is_env_launcher(const std::string& command) {
+    const std::string executable = std::filesystem::path(command).filename().string();
+    std::string lower;
+    lower.reserve(executable.size());
+    for (char ch : executable) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    return lower == "env";
+}
+
+std::string forbidden_native_launcher_from_command(const std::vector<std::string>& command) {
+    if (command.empty()) {
+        return "";
+    }
+    if (is_forbidden_native_launcher(command[0])) {
+        return command[0];
+    }
+    if (is_env_launcher(command[0])) {
+        return command[0];
+    }
+    return "";
+}
+
 bool validate_native_command_from_config(
     PyObject* config,
     std::vector<std::string>* command,
@@ -148,8 +171,10 @@ bool validate_native_command_from_config(
     if (!optional_bool_from_config(config, "strict_native_command", true, &strict_native_command)) {
         return false;
     }
-    if (strict_native_command && !command->empty() && is_forbidden_native_launcher((*command)[0])) {
-        *error = "native GPT binding requires a compiled C++ command; got launcher " + (*command)[0] +
+    const std::string forbidden_launcher =
+        strict_native_command ? forbidden_native_launcher_from_command(*command) : "";
+    if (!forbidden_launcher.empty()) {
+        *error = "native GPT binding requires a compiled C++ command; got launcher " + forbidden_launcher +
             ". Set strict_native_command=False only for diagnostics.";
         command->clear();
     }

@@ -76,6 +76,7 @@ from neuralfn.native_train import (
     resolve_native_train_binding_command,
     resolve_native_train_cli,
     run_native_train,
+    validate_strict_native_train_command,
 )
 
 
@@ -5466,6 +5467,10 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     }
     with pytest.raises(ValueError, match="requires a compiled C\\+\\+ command"):
         binding_module.resolve_native_gpt2_command({"compiled_cli_argv": [sys.executable, "-c", "pass"]})
+    with pytest.raises(ValueError, match="requires a compiled C\\+\\+ command"):
+        binding_module.resolve_native_gpt2_command(
+            {"compiled_cli_argv": ["/usr/bin/env", "python", "-c", "pass"]}
+        )
 
 
 def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
@@ -5538,6 +5543,7 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
     assert '"run_infer"' in source
     assert "strict_native_command" in source
     assert "is_forbidden_native_launcher" in source
+    assert "forbidden_native_launcher_from_command" in source
     assert "requires a compiled C++ command" in source
     assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
     assert "fork()" not in source
@@ -5550,6 +5556,7 @@ def test_native_train_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> N
     assert "#include <spawn.h>" in source
     assert "posix_spawnp(&pid" in source
     assert 'setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY")' in source
+    assert "forbidden_native_launcher_from_command" in source
     assert "fork()" not in source
 
 
@@ -5592,6 +5599,9 @@ def test_native_train_cpp_binding_resolves_and_runs_compiled_command(
     assert status.command_resolver_available is True
     assert resolve_native_train_binding_command(cfg) == cfg.argv()
     assert run_native_train(cfg, runner="auto") == 0
+    with pytest.raises(ValueError, match="requires a compiled C\\+\\+ command"):
+        binding_module = importlib.import_module("neuralfn._native_train")
+        binding_module.resolve_command({"argv": ["/usr/bin/env", "python", "-c", "pass"]})
 
 
 def test_native_train_cpp_binding_requires_command_resolver_symbol() -> None:
@@ -5604,6 +5614,7 @@ def test_native_train_cpp_binding_requires_command_resolver_symbol() -> None:
     assert "command_from_config(config, &command, &command_error)" in source
     assert "strict_native_command" in source
     assert "is_forbidden_native_launcher" in source
+    assert "forbidden_native_launcher_from_command" in source
     assert "requires a compiled C++ command" in source
     assert "validate_strict_native_train_command" in python_source
     assert "command_resolver_available" in python_source
@@ -5623,6 +5634,7 @@ def test_native_gpt_cpp_binding_requires_command_resolver_symbol() -> None:
     assert '"resolve_native_gpt2_command"' in binding_source
     assert "strict_native_command" in binding_source
     assert "is_forbidden_native_launcher" in binding_source
+    assert "forbidden_native_launcher_from_command" in binding_source
     assert "requires a compiled C++ command" in binding_source
     assert "strict_native_command: bool = True" in python_source
     assert "command_resolver_available" in python_source
@@ -6596,6 +6608,8 @@ def test_native_train_run_config_rejects_python_launchers_by_default() -> None:
     )
     assert diagnostic_cfg.argv()[:3] == [sys.executable, "--base-model", "gpt"]
     assert diagnostic_cfg.to_dict()["strict_native_command"] is False
+    with pytest.raises(ValueError, match="compiled C\\+\\+ command"):
+        validate_strict_native_train_command(["/usr/bin/env", "python", "-c", "pass"])
 
 
 def test_exec_native_train_replaces_process_with_compiled_cli(

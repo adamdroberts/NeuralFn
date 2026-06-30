@@ -4885,7 +4885,7 @@ The native training SDK keeps the same compiled-boundary contract by default.
 `NativeGptRunConfig.strict_native_command`, and
 `NativeGpt2RunConfig.strict_native_command` are `True`, so the native train,
 GPT, and GPT-2 C++ bindings reject Python and shell launchers such as `python`,
-`bash`, `*.py`, and `*.sh` on the native training path. Pass
+`bash`, `/usr/bin/env`, `*.py`, and `*.sh` on the native training path. Pass
 `strict_native_command=False` only for diagnostic command-resolution tests;
 production training should enter a compiled C++ trainer or the unified native
 frontend directly.
