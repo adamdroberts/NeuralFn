@@ -1881,8 +1881,10 @@ dispatchers prefer it automatically and the linked binary self-selects
 dynamic route for same-script kernel candidate comparisons that intentionally
 replace the Tile ops `.so` at runtime.
 The compiled `nfn-native infer` dispatcher now uses that same linked-aware GPT
-resolver for `--native-info` and `--sample-checkpoint` delegation, so checkpoint
-inference avoids the dynamic Tile ops loader when the linked trainer is present.
+resolver for `--native-info` and `--sample-checkpoint` delegation. It accepts
+`--checkpoint`, `--native-checkpoint`, or `--weights` as native checkpoint
+aliases, resolves checkpoint directories to the latest `model_########.bin`, and
+avoids the dynamic Tile ops loader when the linked trainer is present.
 
 `tools/install_native_gpt2_commands.sh` uses the same startup-oriented default
 for installed command symlinks: `nfn-gpt-native`, `nfn-gpt-native-train`,

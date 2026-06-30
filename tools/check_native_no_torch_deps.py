@@ -1069,6 +1069,18 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         {},
     ),
     (
+        "nfn_native_compiled_infer_weights_info_dry_run",
+        (
+            "build/nfn-native",
+            "infer",
+            "--weights",
+            "__NFN_NATIVE_CHECKPOINT_DIR__",
+            "--native-info",
+            "--print-command",
+        ),
+        {},
+    ),
+    (
         "native_gpt_linked_list_templates",
         (
             "build/nfn_gpt_native_train_linked",
@@ -1939,7 +1951,13 @@ def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -
             build_elapsed = 0.0
             first = run_command[0] if run_command else ""
             builder = launcher_builders.get(first)
-            if builder is not None and not (repo_root / first).exists():
+            launcher_path = repo_root / first
+            stale_launcher_sources = (
+                stale_artifact_sources(launcher_path, repo_root)
+                if builder is not None and launcher_path.exists()
+                else []
+            )
+            if builder is not None and (not launcher_path.exists() or stale_launcher_sources):
                 temp_binary = temp_root / Path(first).name
                 build_started = time.perf_counter()
                 build_proc = subprocess.run(

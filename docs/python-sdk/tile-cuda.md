@@ -350,7 +350,9 @@ print(captured.stdout)
 The compiled `nfn-native infer` dispatcher uses the same linked-aware GPT
 resolver for `--native-info` and `--sample-checkpoint` delegation, so native
 checkpoint inference avoids the dynamic Tile ops loader whenever the linked
-trainer is present.
+trainer is present. It accepts `--checkpoint`, `--native-checkpoint`, and
+`--weights` as native checkpoint aliases, resolving checkpoint directories to the
+latest `model_########.bin` before delegating to the compiled GPT binary.
 
 The linked GPT CLI skips the redundant full required-symbol scan by default on
 the `RTLD_DEFAULT` path. The 2026-06-29 same-script startup gate measured the

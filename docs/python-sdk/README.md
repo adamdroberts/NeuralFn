@@ -294,10 +294,12 @@ back to the unified compiled trainer for other families or explicit overrides.
 Direct native preflight aliases, including `--native-cuda-smoke-nvfp4-pack`,
 are normalized before the exec and do not receive the default training action.
 `nfn-native infer --checkpoint PATH --prompt-tokens IDS` execs the native GPT
-sampler against `model_*.bin` checkpoints. `bash tools/build_native_train_cli.sh`
+sampler against `model_*.bin` checkpoints, and `--weights PATH` is accepted as
+the same native checkpoint alias for compiled native inference. Passing a
+checkpoint directory picks the highest-step `model_########.bin`; `--native-info`
+delegates to the compiled metadata reader. `bash tools/build_native_train_cli.sh`
 likewise emits both `build/nfn_native_train` and `build/nfn-native-train` for
-direct native training. Passing a checkpoint directory picks the highest-step
-`model_########.bin`; graph-backed `.pt/.json` inference continues to use the
+direct native training. Graph-backed `.pt/.json` inference continues to use the
 Python `nfn infer` command.
 If that generic dispatcher binary is absent, the SDK returns the same registry
 from static no-Torch metadata so lean installs with only direct family trainers

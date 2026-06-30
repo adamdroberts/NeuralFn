@@ -602,6 +602,22 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     ]["stdout"]
     assert "--prompt-tokens" in shell_entrypoints["nfn_native_compiled_infer_prompt_tokens_dry_run"]["stdout"]
     assert "1,2,3" in shell_entrypoints["nfn_native_compiled_infer_prompt_tokens_dry_run"]["stdout"]
+    assert shell_entrypoints["nfn_native_compiled_infer_weights_info_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train" in shell_entrypoints[
+        "nfn_native_compiled_infer_weights_info_dry_run"
+    ]["stdout"]
+    assert "--native-info" in shell_entrypoints[
+        "nfn_native_compiled_infer_weights_info_dry_run"
+    ]["stdout"]
+    assert "--native-checkpoint" in shell_entrypoints[
+        "nfn_native_compiled_infer_weights_info_dry_run"
+    ]["stdout"]
+    assert "model_00000020.bin" in shell_entrypoints[
+        "nfn_native_compiled_infer_weights_info_dry_run"
+    ]["stdout"]
+    assert "--sample-checkpoint" not in shell_entrypoints[
+        "nfn_native_compiled_infer_weights_info_dry_run"
+    ]["stdout"]
     assert shell_entrypoints["native_gpt_linked_list_templates"]["passed"] is True
     assert shell_entrypoints["native_gpt_linked_list_templates"]["startup_within_budget"] is True
     assert "shipped_template_catalog" in shell_entrypoints["native_gpt_linked_list_templates"]["stdout"]
@@ -1719,6 +1735,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in native_train_source
     assert "linked_local_build" in native_train_source
     assert "command.push_back(sibling_gpt_cli(argv[0]));" in nfn_native_source
+    assert 'arg == "--weights"' in nfn_native_source
+    assert 'arg.rfind("--weights=", 0) == 0' in nfn_native_source
     assert "nfn_gpt_native_train_linked" in gpt2_evo_source
     assert "linked_build_path" in gpt2_evo_source
     assert "NATIVE_GPT_TRAIN_BIN" in train_sm120
@@ -15566,3 +15584,25 @@ def test_native_nfn_cli_dispatches_train_and_infer_without_python(tmp_path: Path
         "--native-checkpoint",
         str(ckpt_dir / "model_00001000.bin"),
     ]
+
+    weights_info_print = subprocess.run(
+        [
+            str(native_nfn),
+            "infer",
+            "--weights",
+            str(ckpt_dir),
+            "--native-info",
+            "--print-command",
+        ],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert weights_info_print.returncode == 0, weights_info_print.stderr
+    assert str(fake_gpt) in weights_info_print.stdout
+    assert "--native-info" in weights_info_print.stdout
+    assert "--native-checkpoint" in weights_info_print.stdout
+    assert str(ckpt_dir / "model_00001000.bin") in weights_info_print.stdout
+    assert "--sample-checkpoint" not in weights_info_print.stdout

@@ -651,7 +651,8 @@ void print_usage(const char* program) {
         << "  train    Exec dense GPT directly when possible, otherwise nfn_native_train.\n"
         << "  infer    Exec nfn_gpt_native_train --sample-checkpoint/--native-info.\n\n"
         << "Native infer options:\n"
-        << "  --checkpoint, --native-checkpoint PATH  Native model_*.bin file or directory.\n"
+        << "  --checkpoint, --native-checkpoint, --weights PATH\n"
+        << "                                        Native model_*.bin file or directory.\n"
         << "  --prompt-tokens IDS                     Comma-separated token ids for sampling.\n"
         << "  --native-info                           Inspect checkpoint metadata instead of sampling.\n"
         << "  --print-command                         Print the compiled delegate command.\n";
@@ -721,7 +722,7 @@ int main(int argc, char** argv) {
             print_usage(argv[0]);
             return 0;
         }
-        if (arg == "--checkpoint" || arg == "--native-checkpoint") {
+        if (arg == "--checkpoint" || arg == "--native-checkpoint" || arg == "--weights") {
             checkpoint = require_value(argc, argv, &i, arg);
             continue;
         }
@@ -731,6 +732,10 @@ int main(int argc, char** argv) {
         }
         if (arg.rfind("--native-checkpoint=", 0) == 0) {
             checkpoint = after_equals("--native-checkpoint=");
+            continue;
+        }
+        if (arg.rfind("--weights=", 0) == 0) {
+            checkpoint = after_equals("--weights=");
             continue;
         }
         if (arg == "--runtime" || arg == "--kernel-backend" || arg == "--device") {
@@ -757,7 +762,7 @@ int main(int argc, char** argv) {
     }
 
     if (checkpoint.empty()) {
-        std::cerr << "nfn-native infer requires --checkpoint or --native-checkpoint\n";
+        std::cerr << "nfn-native infer requires --checkpoint, --native-checkpoint, or --weights\n";
         return 2;
     }
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The compiled top-level `nfn-native infer` shim now accepts `--weights PATH`
+  as a native checkpoint alias, matching the Python `nfn infer` native route.
+  `--weights DIR --native-info --print-command` resolves the latest
+  `model_########.bin` checkpoint and delegates to
+  `nfn_gpt_native_train --native-info --native-checkpoint ...` without sampling,
+  training defaults, graph startup, or Torch. Verification: focused no-Torch
+  verifier pytest and full no-Torch JSON gate.
+
 - The no-Torch dependency verifier now covers the compiled top-level
   `build/nfn-native` shim directly. It build-resolves the shim when needed and
   checks both `nfn-native train ... --print-command` and `nfn-native infer
