@@ -1252,6 +1252,10 @@ when a candidate must preserve or improve a metric such as
 `median:train_loop_wall_ms_per_step=1.000` for noisy GPU timing. Missing metrics
 fail the gate so a stage-timing or JSON-output mistake cannot be accepted as a
 passing kernel result.
+Native JSON sidecars and parsed llm.kittens step logs also expose
+`train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step` and
+`train_loop_cuda_event_first_step_over_steady_state_ratio`, making cold
+first-step overhead gateable separately from steady-state CUDA-event throughput.
 `--command-timeout-seconds N` terminates the timed-out command's process
 group so a slow native candidate does not leave child GPU work running after the
 sample is recorded. Interrupting the helper also terminates the active command

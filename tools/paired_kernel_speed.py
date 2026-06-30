@@ -1342,6 +1342,8 @@ NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_cuda_event_wall_ms_per_step",
     "train_loop_cuda_event_first_step_wall_ms_per_step",
     "train_loop_cuda_event_steady_state_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_over_steady_state_ratio",
     "train_loop_cuda_event_wall_ms",
     "train_loop_cuda_event_first_step_wall_ms",
     "train_loop_cuda_event_steady_state_wall_ms",
@@ -1646,6 +1648,8 @@ NATIVE_HOT_SUMMARY_METRIC_KEYS = (
     "train_loop_cuda_event_wall_ms_per_step",
     "train_loop_cuda_event_first_step_wall_ms_per_step",
     "train_loop_cuda_event_steady_state_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_over_steady_state_ratio",
     "startup_plus_first_step_wall_ms",
     "startup_plus_steady_state_step_wall_ms",
     "startup_plus_train_loop_wall_ms",
@@ -2087,6 +2091,22 @@ def add_steady_state_throughput_metric(metrics: dict[str, float | int | str | bo
     metrics.setdefault("train_steady_state_tokens_per_second", tokens_per_step * 1000.0 / steady_state_ms)
 
 
+def add_first_step_overhead_metrics(metrics: dict[str, float | int | str | bool]) -> None:
+    first_step_ms = numeric_metric(metrics, "train_loop_cuda_event_first_step_wall_ms_per_step")
+    steady_state_ms = numeric_metric(metrics, "train_loop_cuda_event_steady_state_wall_ms_per_step")
+    if first_step_ms is None or steady_state_ms is None:
+        return
+    metrics.setdefault(
+        "train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step",
+        first_step_ms - steady_state_ms,
+    )
+    if steady_state_ms > 0.0:
+        metrics.setdefault(
+            "train_loop_cuda_event_first_step_over_steady_state_ratio",
+            first_step_ms / steady_state_ms,
+        )
+
+
 def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | int | str | bool]:
     metrics: dict[str, float | int | str | bool] = {}
     for name, path in NATIVE_METRIC_PATHS:
@@ -2250,6 +2270,7 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
         ):
             metrics["startup_plus_train_loop_wall_ms"] = setup_wall + float(train_loop_ms)
     add_steady_state_throughput_metric(metrics)
+    add_first_step_overhead_metrics(metrics)
     return metrics
 
 
@@ -2524,6 +2545,7 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
         if tokens_per_step_values:
             metrics["effective_train_batch_tokens"] = mean(tokens_per_step_values)
         add_steady_state_throughput_metric(metrics)
+        add_first_step_overhead_metrics(metrics)
         metrics["llm_kittens_bf16_mfu_pct"] = mean(mfu_values)
         metrics["llm_kittens_last_step_wall_ms"] = step_ms_values[-1]
         metrics["llm_kittens_last_step_tokens_per_second"] = tok_s_values[-1]

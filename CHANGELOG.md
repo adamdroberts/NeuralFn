@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT benchmark first-step attribution: `tools/paired_kernel_speed.py`
+  now derives `train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step`
+  and `train_loop_cuda_event_first_step_over_steady_state_ratio` from native
+  JSON sidecars and llm.kittens step logs, and includes both fields in the
+  native hot summary. Candidate gates can now target cold first-step overhead
+  separately from steady-state CUDA-event throughput. Verification: focused
+  paired-speed pytest, Python compile check, and `git diff --check`.
+
 - Native inference dispatch: the compiled `nfn-native infer` path now uses the
   same linked-aware GPT resolver as native training for `--native-info` and
   `--sample-checkpoint` delegation. When `build/nfn_gpt_native_train_linked`

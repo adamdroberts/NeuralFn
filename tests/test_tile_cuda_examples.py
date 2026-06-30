@@ -5280,14 +5280,18 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
         1000.0 / 900.0
     )
     assert hot_stage_ratios["top_improvements"][0]["metric"] == (
-        "train_loop_wall_ms_per_step"
+        "train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step"
     )
-    assert hot_stage_ratios["top_improvements"][0]["candidate_over_baseline_mean"] == 0.99
+    assert hot_stage_ratios["top_improvements"][0]["candidate_over_baseline_mean"] == (
+        165.0 / 180.0
+    )
     assert "native_hot_summary:" in proc.stdout
     assert "baseline:" in proc.stdout
     assert "candidate:" in proc.stdout
     assert "candidate_over_baseline:" in proc.stdout
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step" in proc.stdout
+    assert "train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step" in proc.stdout
+    assert "train_loop_cuda_event_first_step_over_steady_state_ratio" in proc.stdout
     assert "startup_plus_first_step_wall_ms" in proc.stdout
     assert "setup.float_arena_materialize.total_ms" in proc.stdout
     assert "setup.cublaslt_plan_prewarm.total_ms" in proc.stdout
@@ -6007,6 +6011,10 @@ step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 4
     assert metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] == 2400.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 2600.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 2600.0
+    assert metrics["train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step"] == -200.0
+    assert metrics["train_loop_cuda_event_first_step_over_steady_state_ratio"] == pytest.approx(
+        2400.0 / 2600.0
+    )
     assert metrics["effective_train_batch_tokens"] == 538000.0
     assert metrics["train_steady_state_tokens_per_second"] == pytest.approx(206923.076923)
     assert metrics["train_tokens_per_second"] == 215000.0
@@ -6302,6 +6310,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] == 6.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 12.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 4.0
+    assert metrics["train_loop_cuda_event_first_step_over_steady_state_wall_ms_per_step"] == 2.0
+    assert metrics["train_loop_cuda_event_first_step_over_steady_state_ratio"] == 1.5
     assert metrics["train_loop_cuda_event_timing_enabled"] is True
     assert metrics["setup_wall_ms"] == 2.0
     assert metrics["startup_plus_first_step_wall_ms"] == 8.0
