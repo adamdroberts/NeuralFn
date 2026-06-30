@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
+  candidate benchmark runs now emit paired metadata
+  `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or
+  `default_long_run_defer_prewarm_low_step_diagnostic` when they bypass the
+  default long-run floors. This labels copied one-step runs as first-use
+  diagnostics instead of steady-state parity evidence. Verification: dry-run
+  metadata checks, focused source-contract pytest slice, and `git diff --check`.
+
 - Native SM120 candidate benchmark help guard: `tools/bench_native_gpt_sm120_candidate.sh --help`
   now prints the environment-driven controls and exits before CUDA setup, and
   unknown positional arguments fail with exit code 2 instead of being ignored.

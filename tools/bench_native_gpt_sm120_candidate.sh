@@ -261,6 +261,8 @@ LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0
 LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0
 DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_WARMUP_DIAGNOSTIC=0
+DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC=0
 DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0
 DEFAULT_STARTUP_ONLY_WARMUP_FLOOR_APPLIED=0
 REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY="$(env_or_alias NFN_SM120_NATIVE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY NFN_SM120_CANDIDATE_REQUIRE_LM_HEAD_GRAPH_WRAPPER_TILE_BODY 0)"
@@ -1750,6 +1752,13 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
                 DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=1
               fi
             fi
+            if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
+                  "$WARMUP" =~ ^[0-9]+$ &&
+                  "$USER_WARMUP_SET" == "1" &&
+                  "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
+                  "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
+              DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_WARMUP_DIAGNOSTIC=1
+            fi
             if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
                   "$STEPS" =~ ^[0-9]+$ &&
                   "$USER_STEPS_SET" == "0" &&
@@ -1761,6 +1770,13 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
                 STEPS="$LONG_RUN_DEFER_PREWARM_MIN_STEPS"
                 DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=1
               fi
+            fi
+            if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
+                  "$STEPS" =~ ^[0-9]+$ &&
+                  "$USER_STEPS_SET" == "1" &&
+                  "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
+                  "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
+              DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC=1
             fi
             ;;
         esac
@@ -2399,6 +2415,12 @@ if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" == "1" ]]; then
 fi
 if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_DRY_RUN_WOULD_APPLY" == "1" ]]; then
   paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_dry_run_would_apply=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")
+fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_WARMUP_DIAGNOSTIC" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_low_warmup_diagnostic=$WARMUP")
+fi
+if [[ "$DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC" == "1" ]]; then
+  paired_args+=(--metadata "default_long_run_defer_prewarm_low_step_diagnostic=$STEPS")
 fi
 if [[ "$DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED" == "1" ]]; then
   paired_args+=(--metadata "default_startup_only_sample_floor_applied=5")

@@ -3537,10 +3537,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" in bench_source
+    assert "DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_WARMUP_DIAGNOSTIC=0" in bench_source
+    assert "DEFAULT_LONG_RUN_DEFER_PREWARM_LOW_STEP_DIAGNOSTIC=0" in bench_source
     assert "USER_STEPS_SET=0" in bench_source
     assert "USER_WARMUP_SET=0" in bench_source
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "default_long_run_defer_prewarm_min_steps_applied" in bench_source
+    assert "default_long_run_defer_prewarm_low_warmup_diagnostic" in bench_source
+    assert "default_long_run_defer_prewarm_low_step_diagnostic" in bench_source
     assert "long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "long_run_defer_prewarm_min_steps_applied" in bench_source
     assert "setup_wall_ms=0.900" in bench_source
