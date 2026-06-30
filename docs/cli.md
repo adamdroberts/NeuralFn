@@ -288,7 +288,13 @@ emits root allocation-pressure counters: `float_arena_allocated_bytes`,
 `tools/paired_kernel_speed.py` flattens those fields into native metric
 summaries, so startup and storage candidates can be ratio-gated by memory
 footprint as well as wall-clock timing.
-families can be selected from the JSON without manual grouping. Main
+The paired report also emits `train_sm120_recompute_contract`, which compares
+baseline and candidate native runs against the llm.kittens `train-sm120.sh`
+`-r 0` no-recompute reference. It records whether the native side is using a
+full activation tape with zero backward recompute blocks or the current
+scratch-recompute policy, and keeps no-recompute/full-tape promotion tied to
+same-script candidate, baseline, and llm.kittens timing gates.
+Arena families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of
 being collapsed under a generic buffer label.

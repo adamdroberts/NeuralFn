@@ -3137,6 +3137,82 @@ def summarize_native_strategy_value_changes(
     }
 
 
+def _metric_mean(metrics: dict[str, dict[str, float]], key: str) -> float | None:
+    stats = metrics.get(key)
+    if not isinstance(stats, dict):
+        return None
+    value = stats.get("mean")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _first_metric_value(values: dict[str, list[str]], key: str) -> str:
+    observed = values.get(key)
+    if isinstance(observed, list) and observed:
+        return str(observed[0])
+    return ""
+
+
+def summarize_train_sm120_recompute_contract(
+    baseline_metrics: dict[str, dict[str, float]],
+    candidate_metrics: dict[str, dict[str, float]],
+    baseline_values: dict[str, list[str]],
+    candidate_values: dict[str, list[str]],
+) -> dict[str, object]:
+    """Report whether native runs match llm.kittens train-sm120.sh -r 0."""
+
+    def summarize_side(
+        metrics: dict[str, dict[str, float]],
+        values: dict[str, list[str]],
+    ) -> dict[str, object]:
+        full_tape_value = _first_metric_value(values, "full_activation_tape_enabled")
+        recompute_blocks = _metric_mean(metrics, "backward_recompute_blocks")
+        strategy = (
+            _first_metric_value(values, "block_state_layout.activation_tape_strategy")
+            or _first_metric_value(values, "activation_tape_strategy")
+        )
+        full_tape_enabled = full_tape_value == "true"
+        no_recompute = (
+            full_tape_enabled
+            and recompute_blocks is not None
+            and abs(float(recompute_blocks)) <= 1e-9
+        )
+        native_scratch_recompute = (
+            full_tape_value == "false"
+            and recompute_blocks is not None
+            and float(recompute_blocks) > 0.0
+        )
+        return {
+            "observed": bool(full_tape_value or recompute_blocks is not None or strategy),
+            "full_activation_tape_enabled": full_tape_value,
+            "backward_recompute_blocks_mean": recompute_blocks,
+            "activation_tape_strategy": strategy,
+            "matches_llmk_train_sm120_r0": no_recompute,
+            "uses_native_scratch_recompute": native_scratch_recompute,
+        }
+
+    baseline = summarize_side(baseline_metrics, baseline_values)
+    candidate = summarize_side(candidate_metrics, candidate_values)
+    return {
+        "llmk_train_sm120_recompute_flag": 0,
+        "llmk_train_sm120_recompute_policy": "no-recompute",
+        "native_default_policy": "scratch-recompute unless full activation tape is explicitly enabled",
+        "promotion_policy": (
+            "do not promote no-recompute/full-activation-tape unless same-script "
+            "candidate, baseline, and llm.kittens gates prove it faster"
+        ),
+        "baseline": baseline,
+        "candidate": candidate,
+        "candidate_matches_llmk_train_sm120_r0": bool(
+            candidate.get("matches_llmk_train_sm120_r0") is True
+        ),
+        "candidate_uses_native_scratch_recompute": bool(
+            candidate.get("uses_native_scratch_recompute") is True
+        ),
+    }
+
+
 def evaluate_native_route_change_gate(
     *,
     required: bool,
@@ -5670,6 +5746,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "reference_native_metric_values": reference_native_metric_values,
         "native_route_counter_changes": native_route_counter_changes,
         "native_strategy_value_changes": native_strategy_value_changes,
+        "train_sm120_recompute_contract": summarize_train_sm120_recompute_contract(
+            baseline_native_metrics,
+            candidate_native_metrics,
+            baseline_native_metric_values,
+            candidate_native_metric_values,
+        ),
         "native_linear_shape_stats": native_linear_shape_stats,
         "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
         "native_arena_request_stats": native_arena_request_stats,
@@ -6002,6 +6084,27 @@ def print_text(payload: dict[str, object]) -> None:
             observed = values.get(key)
             if isinstance(observed, list) and observed:
                 print(f"    {key}: {', '.join(str(item) for item in observed)}")
+    train_sm120_contract = payload.get("train_sm120_recompute_contract")
+    if isinstance(train_sm120_contract, dict):
+        print(
+            "  train_sm120_recompute_contract: "
+            f"llmk_r={train_sm120_contract.get('llmk_train_sm120_recompute_flag', '')} "
+            f"candidate_matches_r0={str(train_sm120_contract.get('candidate_matches_llmk_train_sm120_r0', False)).lower()} "
+            f"candidate_scratch_recompute={str(train_sm120_contract.get('candidate_uses_native_scratch_recompute', False)).lower()}"
+        )
+        for side_name in ("baseline", "candidate"):
+            side = train_sm120_contract.get(side_name)
+            if not isinstance(side, dict) or side.get("observed") is not True:
+                continue
+            print(
+                f"    {side_name}: "
+                f"full_activation_tape_enabled={side.get('full_activation_tape_enabled', '')} "
+                f"backward_recompute_blocks_mean={side.get('backward_recompute_blocks_mean', '')} "
+                f"strategy={side.get('activation_tape_strategy', '')}"
+            )
+        promotion_policy = train_sm120_contract.get("promotion_policy")
+        if isinstance(promotion_policy, str) and promotion_policy:
+            print(f"    note: {promotion_policy}.")
     route_changes = payload.get("native_route_counter_changes")
     strategy_changes = payload.get("native_strategy_value_changes")
     has_strategy_change = (

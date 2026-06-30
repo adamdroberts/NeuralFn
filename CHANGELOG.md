@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native SM120 recompute benchmark contract: paired native candidate reports
+  now include `train_sm120_recompute_contract`, which records the llm.kittens
+  `train-sm120.sh -r 0` no-recompute reference, the observed baseline/candidate
+  native activation-tape policy, mean backward recompute block count, and
+  whether the candidate still uses NeuralFn's scratch-recompute default. The
+  text report prints the same summary so no-recompute/full-activation-tape
+  candidates remain diagnostic unless same-script candidate, baseline, and
+  llm.kittens timing gates prove they should be promoted. Verification:
+  focused native GPT source-contract test, Python compile check, and
+  `git diff --check`.
+
 - Native SM120 default schedule alignment: dense GPT native defaults now match
   the referenced `llm.kittens/train-sm120.sh` cadence more closely across the
   compiled trainer, `train_gpt.py` compiled-CLI fast path, compiled

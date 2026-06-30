@@ -145,7 +145,11 @@ but it should not override the stronger no-stage training-loop comparison. The
 same 5-step JSON still reports the LM-head classifier
 backward path as `diagnostic-cuda-graph-wrapper` with
 `true_fused_capability=false`, so strict true-fused LM-head work remains
-separate from current throughput parity.
+separate from current throughput parity. Paired benchmark JSON now includes
+`train_sm120_recompute_contract`, which makes the remaining llm.kittens
+`train-sm120.sh -r 0` no-recompute comparison explicit while keeping NeuralFn's
+default scratch-recompute policy unless same-script candidate, baseline, and
+llm.kittens gates prove a full activation tape is faster.
 Benchmark dry-run plans are command plans, not performance evidence. When
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` is set, requested metric gates now report
 `measured: false`, `missing: true`, and `passed: false` for each ratio row, but

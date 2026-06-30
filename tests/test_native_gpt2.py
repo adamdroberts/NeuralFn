@@ -4309,6 +4309,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         in speed_source
     )
     assert "activation_tape_strategy" in speed_source
+    assert "train_sm120_recompute_contract" in speed_source
+    assert "llmk_train_sm120_recompute_flag" in speed_source
+    assert "candidate_matches_llmk_train_sm120_r0" in speed_source
+    assert "candidate_uses_native_scratch_recompute" in speed_source
+    assert "do not promote no-recompute/full-activation-tape unless same-script" in speed_source
     assert "attention dprep timing to 1.000231x" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
     assert "grouped layout status 0 with grouped matmul status 15" in bench_source
