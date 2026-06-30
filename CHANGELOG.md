@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native missing-family kernel status: the unified native model registry and
+  compiled missing-family preflights now report `kernel_status` separately from
+  `trainer_loop_status`. With the shipped Tile ops library, LLaMA, MixLLaMA,
+  JEPA, semantic-router MoE, and DeepSeek-V4 preflights can show
+  `required-tile-symbols-present` while still failing real training with
+  `family-native-loop-missing`, making the remaining migration blocker explicit.
+  Verification: rebuilt native train frontends, ran focused native registry and
+  missing-family pytest slices, checked LLaMA preflight JSON against the shipped
+  Tile ops library, ran the no-Torch guard, and `git diff --check`.
+
 - Native SM120 benchmark warmup floor: raised the candidate-wrapper default
   warmup and the long-run deferred-prewarm warmup floor from 40 to 60 pairs,
   matching the native training LR warmup default so kernel candidate gates use

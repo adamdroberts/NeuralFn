@@ -494,8 +494,11 @@ JSON preflights: `--print-plan`, `--dry-run`, and
 `--check-tile-ops --tile-ops-lib PATH` report parsed schedule fields,
 `compiled_native_boundary: true`, `torch_required: false`,
 `graph_editor_tensor_flow: false`, the required raw Tile symbols, and the
-remaining native work for that family. Real training still fails until the
-family-specific CUDA Tile loop is implemented.
+remaining native work for that family. `kernel_status` distinguishes unchecked,
+missing, and present Tile ABI symbols, while `trainer_loop_status` remains
+`family-native-loop-missing` until the family forward/backward/optimizer loop is
+wired. Real training still fails until the family-specific CUDA Tile loop is
+implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

@@ -39,6 +39,8 @@ struct ModelEntry {
     std::string_view transformer_lm_status;
     std::string_view token_lm_status;
     std::string_view geometry_status;
+    std::string_view kernel_status;
+    std::string_view trainer_loop_status;
     std::string_view notes;
 };
 
@@ -50,6 +52,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "native-transformer-lm",
         "not-applicable",
         "dense-gpt-template-geometry",
+        "required-tile-symbols-present",
+        "implemented",
         "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
     },
     {
@@ -59,6 +63,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "native-transformer-lm",
         "not-applicable",
         "dense-gpt-template-geometry",
+        "required-tile-symbols-present",
+        "implemented",
         "GPT-2 is a dense GPT template selector on the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the effective architecture.",
     },
     {
@@ -68,6 +74,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "native-transformer-lm",
         "not-applicable",
         "dense-gpt-template-geometry",
+        "required-tile-symbols-present",
+        "implemented",
         "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
     {
@@ -77,6 +85,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "native-dense-gpt-layer-evo-delegate",
         "not-applicable",
         "dense-gpt2-compatible-layer-evo-delegate",
+        "required-tile-symbols-present",
+        "delegate-to-dense-gpt-loop",
         "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo.",
     },
     {
@@ -86,6 +96,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "native-transformer-lm",
         "implemented",
         "dense-gpt-template-geometry",
+        "required-tile-symbols-present",
+        "implemented",
         "NanoGPT routes to the shared dense GPT target with --template-name nanogpt; the native loop now uses the selected 320-wide/5-head/5-layer dense GPT geometry. Pass --train-token-lm for the token-only native preflight.",
     },
     {
@@ -95,6 +107,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "missing-native-trainer",
         "not-applicable",
         "requires-rope-swiglu-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
         "LLaMA/RoPE/SwiGLU training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -104,6 +118,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "missing-native-trainer",
         "not-applicable",
         "requires-moe-routing-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
         "MoE routing and expert kernels need a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -113,6 +129,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "missing-native-trainer",
         "not-applicable",
         "requires-jepa-objective-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
         "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -122,6 +140,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "missing-native-trainer",
         "not-applicable",
         "requires-semantic-router-moe-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
         "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -131,6 +151,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "missing-native-trainer",
         "not-applicable",
         "requires-deepseek-sparse-moe-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
         "DeepSeek-style sparse/MoE variants need a dedicated native CUDA Tile C++ trainer.",
     },
 };
@@ -322,7 +344,9 @@ void print_model_table() {
         std::cout << "  " << entry.name << ": " << entry.status << " -> " << entry.native_target << '\n';
         std::cout << "    transformer_lm=" << entry.transformer_lm_status
                   << " token_lm=" << entry.token_lm_status
-                  << " geometry=" << entry.geometry_status << '\n';
+                  << " geometry=" << entry.geometry_status
+                  << " kernels=" << entry.kernel_status
+                  << " loop=" << entry.trainer_loop_status << '\n';
         std::cout << "    " << entry.notes << '\n';
     }
 }
@@ -338,6 +362,8 @@ void print_model_json() {
             << "\", \"transformer_lm_status\": \"" << entry.transformer_lm_status
             << "\", \"token_lm_status\": \"" << entry.token_lm_status
             << "\", \"geometry_status\": \"" << entry.geometry_status
+            << "\", \"kernel_status\": \"" << entry.kernel_status
+            << "\", \"trainer_loop_status\": \"" << entry.trainer_loop_status
             << "\", \"notes\": \"" << entry.notes << "\"}";
         if (i + 1 != std::size(MODEL_REGISTRY)) {
             std::cout << ',';
@@ -843,6 +869,8 @@ int main(int argc, char** argv) {
                 "not-applicable",
                 "implemented",
                 "token-lm-only",
+                "required-tile-symbols-present",
+                "implemented",
                 "Explicit NanoGPT token-only native trainer.",
             });
         if (target_cli.empty()) {

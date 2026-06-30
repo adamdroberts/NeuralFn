@@ -43,6 +43,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
         "geometry_status": "dense-gpt-template-geometry",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "implemented",
         "notes": (
             "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; "
             "template/custom graph selection decides the GPT architecture."
@@ -55,6 +57,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
         "geometry_status": "dense-gpt-template-geometry",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "implemented",
         "notes": (
             "GPT-2 is a dense GPT template selector on the NeuralFn Tile-CUDA "
             "transformer-LM loop; template/custom graph selection decides the "
@@ -68,6 +72,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "not-applicable",
         "geometry_status": "dense-gpt-template-geometry",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "implemented",
         "notes": (
             "GPT-3-style dense decoder training uses the same GPT native target; "
             "context/window and width come from the selected template or custom graph."
@@ -80,6 +86,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "native-dense-gpt-layer-evo-delegate",
         "token_lm_status": "not-applicable",
         "geometry_status": "dense-gpt2-compatible-layer-evo-delegate",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "delegate-to-dense-gpt-loop",
         "notes": (
             "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches "
             "dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo."
@@ -92,6 +100,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "native-transformer-lm",
         "token_lm_status": "implemented",
         "geometry_status": "dense-gpt-template-geometry",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "implemented",
         "notes": (
             "NanoGPT routes to the shared dense GPT target with --template-name nanogpt; "
             "the native loop now uses the selected 320-wide/5-head/5-layer dense GPT geometry. "
@@ -105,6 +115,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "missing-native-trainer",
         "token_lm_status": "not-applicable",
         "geometry_status": "requires-rope-swiglu-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
         "notes": "LLaMA/RoPE/SwiGLU training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -114,6 +126,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "missing-native-trainer",
         "token_lm_status": "not-applicable",
         "geometry_status": "requires-moe-routing-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
         "notes": "MoE routing and expert kernels need a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -123,6 +137,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "missing-native-trainer",
         "token_lm_status": "not-applicable",
         "geometry_status": "requires-jepa-objective-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
         "notes": "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -132,6 +148,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "missing-native-trainer",
         "token_lm_status": "not-applicable",
         "geometry_status": "requires-semantic-router-moe-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
         "notes": "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -141,6 +159,8 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "transformer_lm_status": "missing-native-trainer",
         "token_lm_status": "not-applicable",
         "geometry_status": "requires-deepseek-sparse-moe-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
         "notes": "DeepSeek-style sparse/MoE variants need a dedicated native CUDA Tile C++ trainer.",
     },
 )

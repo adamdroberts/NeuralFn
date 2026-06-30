@@ -6964,6 +6964,8 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
     assert models["llama"]["status"] == "missing-native-trainer"
+    assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
+    assert models["llama"]["trainer_loop_status"] == "family-native-loop-missing"
 
 
 def test_native_train_model_registry_static_names_match_cpp_registry(
@@ -6989,6 +6991,10 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["geometry_status"] == "dense-gpt-template-geometry"
         assert registry[name]["native_target"] == "nfn_gpt_native_train"
         assert registry[name]["transformer_lm_status"] == "native-transformer-lm"
+        assert registry[name]["kernel_status"] == "required-tile-symbols-present"
+        assert registry[name]["trainer_loop_status"] == "implemented"
+    assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
+    assert registry["llama"]["trainer_loop_status"] == "family-native-loop-missing"
     assert "gpt2-compatible-fixed-dense-transformer" not in cpp_source
 
 
@@ -10227,6 +10233,8 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in payload["models"]}
     token_statuses = {item["name"]: item["token_lm_status"] for item in payload["models"]}
     geometry_statuses = {item["name"]: item["geometry_status"] for item in payload["models"]}
+    kernel_statuses = {item["name"]: item["kernel_status"] for item in payload["models"]}
+    loop_statuses = {item["name"]: item["trainer_loop_status"] for item in payload["models"]}
     assert statuses["gpt"] == "implemented"
     assert statuses["gpt2"] == "implemented"
     assert statuses["gpt3"] == "implemented"
@@ -10246,6 +10254,10 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert token_statuses["nanogpt"] == "implemented"
     assert geometry_statuses["gpt2-evo"] == "dense-gpt2-compatible-layer-evo-delegate"
     assert geometry_statuses["nanogpt"] == "dense-gpt-template-geometry"
+    assert kernel_statuses["gpt"] == "required-tile-symbols-present"
+    assert loop_statuses["gpt"] == "implemented"
+    assert kernel_statuses["llama"] == "required-tile-symbols-present"
+    assert loop_statuses["llama"] == "family-native-loop-missing"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
@@ -10265,6 +10277,8 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
     assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
+    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -10336,6 +10350,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     llama_payload = json.loads(llama_plan.stdout)
     assert llama_payload["model_family"] == "llama"
     assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["kernel_status"] == "required-tile-symbols-missing"
+    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -10345,6 +10361,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["max_steps"] == 3
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
     assert llama_payload["tile_ops_check"]["all_required_symbols_found"] is False
+    assert llama_payload["tile_ops_check"]["checked"] is True
     assert llama_payload["tile_ops_check"]["error"]
     dense_gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"

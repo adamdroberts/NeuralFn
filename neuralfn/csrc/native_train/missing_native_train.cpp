@@ -251,16 +251,26 @@ Config parse_args(int argc, char** argv) {
 void print_json(const Config& cfg, const char* program) {
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     std::string tile_ops_error;
+    const std::vector<std::string> required_symbols = split_csv(NFN_NATIVE_REQUIRED_SYMBOLS);
+    const bool symbol_check_requested = cfg.check_tile_ops || cfg.print_plan || cfg.dry_run;
     const std::vector<SymbolResult> symbols = cfg.check_tile_ops
         ? check_symbols(tile_ops_lib, &tile_ops_error)
         : std::vector<SymbolResult>{};
     const bool symbols_ok = cfg.check_tile_ops && all_symbols_found(symbols);
+    const std::string kernel_status =
+        required_symbols.empty()
+            ? "no-required-tile-symbols-declared"
+            : (!cfg.check_tile_ops
+                   ? "required-tile-symbols-unchecked"
+                   : (symbols_ok ? "required-tile-symbols-present" : "required-tile-symbols-missing"));
 
     std::cout
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"status\": \"family-native-trainer-missing\",\n"
+        << "  \"kernel_status\": \"" << json_escape(kernel_status) << "\",\n"
+        << "  \"trainer_loop_status\": \"family-native-loop-missing\",\n"
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
@@ -282,7 +292,6 @@ void print_json(const Config& cfg, const char* program) {
         << "    \"write native checkpoints and native inference metadata for this family\"\n"
         << "  ],\n"
         << "  \"required_tile_symbols\": [\n";
-    const std::vector<std::string> required_symbols = split_csv(NFN_NATIVE_REQUIRED_SYMBOLS);
     for (std::size_t i = 0; i < required_symbols.size(); ++i) {
         std::cout << "    \"" << json_escape(required_symbols[i]) << "\"";
         if (i + 1 != required_symbols.size()) {
@@ -301,11 +310,12 @@ void print_json(const Config& cfg, const char* program) {
         std::cout << "\n";
     }
     std::cout << "  ]";
-    if (cfg.check_tile_ops) {
+    if (symbol_check_requested) {
         std::cout
             << ",\n"
             << "  \"tile_ops_check\": {\n"
             << "    \"tile_ops_lib\": \"" << json_escape(tile_ops_lib) << "\",\n"
+            << "    \"checked\": " << (cfg.check_tile_ops ? "true" : "false") << ",\n"
             << "    \"all_required_symbols_found\": " << (symbols_ok ? "true" : "false") << ",\n"
             << "    \"error\": \"" << json_escape(tile_ops_error) << "\",\n"
             << "    \"symbols\": [\n";
