@@ -5880,6 +5880,87 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
     assert passing_gate["enabled"] is True
     assert passing_gate["passed"] is True
 
+    deferred_passing_gate = module.evaluate_native_runtime_contract_gate(
+        {
+            "candidate_native_metric_values": {
+                "graph_editor_tensor_flow": ["false"],
+                "torch_required": ["false"],
+                "optimized_kernel_contract_passed": ["true"],
+                "lm_head_classifier_backward_path_class": ["diagnostic-sequence-wrapper"],
+                "lm_head_cooperative_backward_fused_kernel_abi_implementation_class": [
+                    "diagnostic-sequence-wrapper"
+                ],
+                "native_fast_startup_prewarm_policy": [
+                    "long-run-defer-throughput-prewarms-by-default"
+                ],
+                "train_timing_contract": [
+                    "long-run-deferred-prewarm-steady-state"
+                ],
+                "train_first_step_deferred_prewarm_diagnostic": ["true"],
+                "train_steady_state_parity_metric_available": ["true"],
+            },
+            "candidate_native_metrics": {
+                "steps_completed": {"mean": 2.0},
+                "train_loss_host_d2h_count": {"mean": 0.0},
+                "setup_wall_ms": {"mean": 1.0},
+                "setup_timing_accounted_ms": {"mean": 1.0},
+                "setup_timing_unattributed_ms": {"mean": 0.0},
+                "setup_timing_record_count": {"mean": 1.0},
+                "train_loop_wall_ms": {"mean": 1.0},
+                "total_wall_ms": {"mean": 2.0},
+                "linear_tk_qkv_first_use_prewarm_success_count": {"mean": 0.0},
+                "lm_head_fused_graph_prewarm_success_count": {"mean": 0.0},
+            },
+        }
+    )
+    assert deferred_passing_gate["enabled"] is True
+    assert deferred_passing_gate["passed"] is True
+
+    deferred_failing_gate = module.evaluate_native_runtime_contract_gate(
+        {
+            "candidate_native_metric_values": {
+                "graph_editor_tensor_flow": ["false"],
+                "torch_required": ["false"],
+                "optimized_kernel_contract_passed": ["true"],
+                "lm_head_classifier_backward_path_class": ["diagnostic-sequence-wrapper"],
+                "lm_head_cooperative_backward_fused_kernel_abi_implementation_class": [
+                    "diagnostic-sequence-wrapper"
+                ],
+                "native_fast_startup_prewarm_policy": [
+                    "long-run-defer-throughput-prewarms-by-default"
+                ],
+                "train_timing_contract": [
+                    "long-run-deferred-prewarm-steady-state"
+                ],
+                "train_first_step_deferred_prewarm_diagnostic": ["true"],
+                "train_steady_state_parity_metric_available": ["false"],
+            },
+            "candidate_native_metrics": {
+                "steps_completed": {"mean": 2.0},
+                "train_loss_host_d2h_count": {"mean": 0.0},
+                "setup_wall_ms": {"mean": 1.0},
+                "setup_timing_accounted_ms": {"mean": 1.0},
+                "setup_timing_unattributed_ms": {"mean": 0.0},
+                "setup_timing_record_count": {"mean": 1.0},
+                "train_loop_wall_ms": {"mean": 1.0},
+                "total_wall_ms": {"mean": 2.0},
+                "linear_tk_qkv_first_use_prewarm_success_count": {"mean": 0.0},
+                "lm_head_fused_graph_prewarm_success_count": {"mean": 0.0},
+            },
+        }
+    )
+    assert deferred_failing_gate["enabled"] is True
+    assert deferred_failing_gate["passed"] is False
+    assert any(
+        result == {
+            "metric": "train_steady_state_parity_metric_available",
+            "expected": ["true"],
+            "observed": ["false"],
+            "passed": False,
+        }
+        for result in deferred_failing_gate["results"]
+    )
+
     failing_gate = module.evaluate_native_runtime_contract_gate(
         {
             "candidate_native_metric_values": {
@@ -5902,7 +5983,7 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
     }
     assert (
         failing_gate["failure_reason"]
-        == "candidate native training must report graph_editor_tensor_flow=false and torch_required=false and optimized_kernel_contract_passed=true and expose the LM-head path/implementation class and train_loss_host_d2h_count=0 with root setup/train timing metrics; long-run deferred-prewarm candidates must also report zero QKV and LM-head graph prewarm successes, while long-run async-QKV candidates must report async launch/wait/sync success and zero LM-head graph prewarm successes"
+        == "candidate native training must report graph_editor_tensor_flow=false and torch_required=false and optimized_kernel_contract_passed=true and expose the LM-head path/implementation class and train_loss_host_d2h_count=0 with root setup/train timing metrics; long-run deferred-prewarm candidates must also report the deferred timing contract, first-step diagnostic state, steady-state parity availability, and zero QKV and LM-head graph prewarm successes, while long-run async-QKV candidates must report async launch/wait/sync success and zero LM-head graph prewarm successes"
     )
 
 

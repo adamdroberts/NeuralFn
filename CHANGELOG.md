@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT paired deferred-prewarm gate: `tools/paired_kernel_speed.py` now
+  validates the trainer-emitted `train_timing_contract`,
+  `train_first_step_deferred_prewarm_diagnostic`, and
+  `train_steady_state_parity_metric_available` fields whenever a candidate
+  reports the long-run deferred-prewarm policy. Two-step-or-longer measured
+  runs must expose steady-state parity timing before ratio gates are trusted.
+  Verification: focused paired-kernel contract pytest, dry-run metadata check,
+  and `git diff --check`.
+
 - Native GPT deferred-prewarm timing contract: transformer training JSON now
   reports `train_timing_contract`,
   `train_first_step_deferred_prewarm_diagnostic`, and

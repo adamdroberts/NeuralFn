@@ -5145,6 +5145,43 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             )
         prewarm_policy = values.get("native_fast_startup_prewarm_policy")
         if prewarm_policy == ["long-run-defer-throughput-prewarms-by-default"]:
+            steps_completed_mean = _metric_mean(metrics, "steps_completed")
+            has_steps = steps_completed_mean is not None and steps_completed_mean > 0.0
+            has_steady_state_steps = (
+                steps_completed_mean is not None and steps_completed_mean > 1.0
+            )
+            deferred_contract_checks = (
+                (
+                    "train_timing_contract",
+                    ["long-run-deferred-prewarm-steady-state"],
+                    values.get("train_timing_contract", []),
+                    values.get("train_timing_contract")
+                    == ["long-run-deferred-prewarm-steady-state"],
+                ),
+                (
+                    "train_first_step_deferred_prewarm_diagnostic",
+                    ["true" if has_steps else "false"],
+                    values.get("train_first_step_deferred_prewarm_diagnostic", []),
+                    values.get("train_first_step_deferred_prewarm_diagnostic")
+                    == (["true"] if has_steps else ["false"]),
+                ),
+                (
+                    "train_steady_state_parity_metric_available",
+                    ["true" if has_steady_state_steps else "false"],
+                    values.get("train_steady_state_parity_metric_available", []),
+                    values.get("train_steady_state_parity_metric_available")
+                    == (["true"] if has_steady_state_steps else ["false"]),
+                ),
+            )
+            for metric_name, expected, observed, passed in deferred_contract_checks:
+                results.append(
+                    {
+                        "metric": metric_name,
+                        "expected": expected,
+                        "observed": observed,
+                        "passed": passed,
+                    }
+                )
             for metric_name in (
                 "linear_tk_qkv_first_use_prewarm_success_count",
                 "lm_head_fused_graph_prewarm_success_count",
@@ -5199,9 +5236,11 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             "and torch_required=false and optimized_kernel_contract_passed=true "
             "and expose the LM-head path/implementation class and "
             "train_loss_host_d2h_count=0 with root setup/train timing metrics; "
-            "long-run deferred-prewarm candidates must also report zero QKV and LM-head "
-            "graph prewarm successes, while long-run async-QKV candidates must report "
-            "async launch/wait/sync success and zero LM-head graph prewarm successes"
+            "long-run deferred-prewarm candidates must also report the deferred timing "
+            "contract, first-step diagnostic state, steady-state parity availability, "
+            "and zero QKV and LM-head graph prewarm successes, while long-run async-QKV "
+            "candidates must report async launch/wait/sync success and zero LM-head "
+            "graph prewarm successes"
         ),
     }
 

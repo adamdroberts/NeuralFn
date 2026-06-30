@@ -2600,10 +2600,16 @@ expected first-step deferred-prewarm cost. The paired native runtime
 contract gate also treats this policy specially: if a candidate reports
 `native_fast_startup_prewarm_policy:
 "long-run-defer-throughput-prewarms-by-default"`, then
+`train_timing_contract` must be
+`"long-run-deferred-prewarm-steady-state"`,
+`train_first_step_deferred_prewarm_diagnostic` must match whether any optimizer
+step completed, and `train_steady_state_parity_metric_available` must be true
+once more than one optimizer step is measured. In the same policy branch,
 `linear_tk_qkv_first_use_prewarm_success_count` and
 `lm_head_fused_graph_prewarm_success_count` must both be zero. That prevents a
 future change from preserving the policy label while silently paying the old
-QKV or LM-head graph prewarm startup cost.
+QKV or LM-head graph prewarm startup cost, or from treating a two-step-or-longer
+run without steady-state timing as parity evidence.
 The 2026-06-29 7-warmup, 3-step, 2-sample same-script reference rerun passed
 those gates with clean selected-GPU load: `setup_wall_ms=0.438830x` and
 `startup_plus_steady_state_step_wall_ms=0.650744x` versus old native,
