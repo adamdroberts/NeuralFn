@@ -437,7 +437,9 @@ faster default. GPT-2 training JSON reports `linear_backend_strategy:
 `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`,
 `linear_cublaslt_gemm_count`, `linear_cublaslt_descriptor_cache_enabled`, `linear_sgemm_count`,
 `bf16_to_f32_vec4_count`,
-`linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
+`linear_bf16_a_pack_count`, `linear_bf16_cached_a_pack_count`,
+`linear_bf16_cached_b_pack_count`, `linear_bf16_transient_a_pack_count`,
+`linear_bf16_transient_b_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
 Native GPT CLI runs also report `device_exit_cuda_free_elision_enabled` and
@@ -479,6 +481,10 @@ that plan from heuristic `1` to `0` while regressing
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.
+The split pack counters classify the legacy aggregate
+`linear_bf16_a_pack_count` into cached A/B operand packs and transient A/B
+activation packs, so paired benchmarks can distinguish cache misses from
+expected per-step activation repacking.
 The tied LM-head dWeight path follows the same rule: it consumes BF16 dlogits
 but repacks each mutable hidden activation chunk instead of caching that
 scratch pointer across gradient-accumulation microbatches.

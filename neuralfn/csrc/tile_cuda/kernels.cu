@@ -149,6 +149,10 @@ std::atomic<std::int64_t> g_linear_cublaslt_bgrad_direct_write_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_bgrad_accumulate_count{0};
 std::atomic<std::int64_t> g_linear_sgemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
+std::atomic<std::int64_t> g_linear_bf16_cached_a_pack_count{0};
+std::atomic<std::int64_t> g_linear_bf16_cached_b_pack_count{0};
+std::atomic<std::int64_t> g_linear_bf16_transient_a_pack_count{0};
+std::atomic<std::int64_t> g_linear_bf16_transient_b_pack_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_cache_hit_count{0};
 std::atomic<std::int64_t> g_linear_bf16_cache_reset_count{0};
 std::atomic<std::int64_t> g_linear_bf16_workspace_allocation_count{0};
@@ -4626,10 +4630,12 @@ __nv_bfloat16* trainer_linear_bf16_a_operand(
     }
     f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(a, entry->data, a_elements);
     g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+    g_linear_bf16_cached_a_pack_count.fetch_add(1, std::memory_order_relaxed);
     return entry->data;
   }
   f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(a, workspace->a, a_elements);
   g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_transient_a_pack_count.fetch_add(1, std::memory_order_relaxed);
   return workspace->a;
 }
 
@@ -4653,10 +4659,12 @@ __nv_bfloat16* trainer_linear_bf16_b_operand(
     }
     f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(b, entry->data, b_elements);
     g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+    g_linear_bf16_cached_b_pack_count.fetch_add(1, std::memory_order_relaxed);
     return entry->data;
   }
   f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
   g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_transient_b_pack_count.fetch_add(1, std::memory_order_relaxed);
   return workspace->b;
 }
 
@@ -5703,6 +5711,7 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
     const int blocks = static_cast<int>((output_dim + threads - 1) / threads);
     f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(bias, bias_entry->data, output_dim);
     g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+    g_linear_bf16_cached_a_pack_count.fetch_add(1, std::memory_order_relaxed);
   }
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
@@ -5791,6 +5800,7 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
     const int blocks = static_cast<int>((output_dim + threads - 1) / threads);
     f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(bias, bias_entry->data, output_dim);
     g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+    g_linear_bf16_cached_a_pack_count.fetch_add(1, std::memory_order_relaxed);
   }
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
@@ -18669,6 +18679,7 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
         const int pack_blocks = static_cast<int>((output_dim + pack_threads - 1) / pack_threads);
         f32_to_bf16_kernel<<<pack_blocks, pack_threads, 0, stream>>>(bias, bias_entry->data, output_dim);
         g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+        g_linear_bf16_cached_a_pack_count.fetch_add(1, std::memory_order_relaxed);
       }
       ensure_llmk_sm120_cublaslt_initialized();
       const auto host_start = std::chrono::steady_clock::now();
@@ -21409,6 +21420,10 @@ void reset_trainer_linear_launch_stats() {
   g_linear_cublaslt_bgrad_accumulate_count.store(0, std::memory_order_relaxed);
   g_linear_sgemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_cached_a_pack_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_cached_b_pack_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_transient_a_pack_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_transient_b_pack_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_cache_hit_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_cache_reset_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_workspace_allocation_count.store(0, std::memory_order_relaxed);
@@ -21659,6 +21674,38 @@ std::int64_t trainer_linear_cublaslt_bgrad_accumulate_count() {
 std::int64_t trainer_linear_bf16_a_pack_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_bf16_a_pack_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_cached_a_pack_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_cached_a_pack_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_cached_b_pack_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_cached_b_pack_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_transient_a_pack_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_transient_a_pack_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_transient_b_pack_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_transient_b_pack_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

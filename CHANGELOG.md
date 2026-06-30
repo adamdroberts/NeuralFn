@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT BF16 pack attribution: the trainer-facing Tile-CUDA ABI now
+  splits the legacy `linear_bf16_a_pack_count` into cached A/B operand packs
+  and transient A/B activation packs, and dense GPT runtime JSON plus
+  `tools/paired_kernel_speed.py` report the new fields. The old aggregate
+  remains available, so existing benchmark comparisons continue to work while
+  new runs can distinguish cache misses from expected mutable activation
+  repacking. Verification: focused native GPT source-contract tests, Python
+  compile check, and `git diff --check`.
+
 - Native SM120 candidate benchmark policy: measured non-startup candidate
   profiles now inherit the wrapper's long-run deferred-prewarm policy unless
   the profile explicitly sets fast-startup or prewarm controls. This keeps

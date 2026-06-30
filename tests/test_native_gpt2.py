@@ -2038,6 +2038,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_bf16_workspace_prewarm_requested" in speed_tool
     assert "linear_bf16_workspace_prewarm_success_count" in speed_tool
     assert "linear_bf16_workspace_prewarm_failure_count" in speed_tool
+    assert "linear_bf16_cached_a_pack_count" in speed_tool
+    assert "linear_bf16_cached_b_pack_count" in speed_tool
+    assert "linear_bf16_transient_a_pack_count" in speed_tool
+    assert "linear_bf16_transient_b_pack_count" in speed_tool
     assert '"graph_editor_tensor_flow"' in speed_tool
     assert '"torch_required"' in speed_tool
     assert '"train_loss_host_d2h_count"' in speed_tool
@@ -7717,6 +7721,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_trainer_linear_sgemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_bf16_to_f32_vec4_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_bf16_cached_a_pack_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_bf16_cached_b_pack_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_bf16_transient_a_pack_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_bf16_transient_b_pack_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in tile_payload["available_native_kernels"]
     assert (
@@ -12011,6 +12019,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT" in kernels_text
     assert "trainer_linear_bf16_b_operand" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
+    assert "trainer_linear_bf16_cached_a_pack_count" in kernels_text
+    assert "trainer_linear_bf16_cached_b_pack_count" in kernels_text
+    assert "trainer_linear_bf16_transient_a_pack_count" in kernels_text
+    assert "trainer_linear_bf16_transient_b_pack_count" in kernels_text
+    assert "linear_bf16_cached_a_pack_count" in gpt2_source_text
+    assert "linear_bf16_cached_b_pack_count" in gpt2_source_text
+    assert "linear_bf16_transient_a_pack_count" in gpt2_source_text
+    assert "linear_bf16_transient_b_pack_count" in gpt2_source_text
     assert "trainer_linear_cublaslt_heuristic_index_override" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
@@ -13645,6 +13661,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_sgemm_count" in exported
         assert "nfn_native_tile_trainer_bf16_to_f32_vec4_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in exported
+        assert "nfn_native_tile_trainer_linear_bf16_cached_a_pack_count" in exported
+        assert "nfn_native_tile_trainer_linear_bf16_cached_b_pack_count" in exported
+        assert "nfn_native_tile_trainer_linear_bf16_transient_a_pack_count" in exported
+        assert "nfn_native_tile_trainer_linear_bf16_transient_b_pack_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count" in exported

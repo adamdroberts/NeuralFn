@@ -3673,6 +3673,10 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_bf16_to_f32_vec4_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_cached_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_cached_b_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_transient_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_transient_b_pack_count",
         "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count",
         "nfn_native_tile_trainer_linear_bf16_cache_reset_count",
         "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count",
@@ -11401,6 +11405,10 @@ int run_transformer_lm_training_json(
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
+    std::int64_t linear_bf16_cached_a_pack_count = 0;
+    std::int64_t linear_bf16_cached_b_pack_count = 0;
+    std::int64_t linear_bf16_transient_a_pack_count = 0;
+    std::int64_t linear_bf16_transient_b_pack_count = 0;
     std::int64_t linear_bf16_a_cache_hit_count = 0;
     std::int64_t linear_bf16_cache_reset_count = 0;
     std::int64_t linear_bf16_workspace_allocation_count = 0;
@@ -11840,6 +11848,10 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_bf16_to_f32_vec4_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_cached_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_cached_b_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_transient_a_pack_count",
+        "nfn_native_tile_trainer_linear_bf16_transient_b_pack_count",
         "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count",
         "nfn_native_tile_trainer_linear_bf16_cache_reset_count",
         "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count",
@@ -12532,6 +12544,10 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_sgemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_bf16_to_f32_vec4_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_pack_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_pack_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_bf16_cached_b_pack_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_bf16_transient_a_pack_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_bf16_transient_b_pack_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_cache_hit_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_reset_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_workspace_allocation_count_fn = nullptr;
@@ -13153,6 +13169,14 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_bf16_to_f32_vec4_count");
                 trainer_linear_bf16_a_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_a_pack_count");
+                trainer_linear_bf16_cached_a_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_bf16_cached_a_pack_count");
+                trainer_linear_bf16_cached_b_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_bf16_cached_b_pack_count");
+                trainer_linear_bf16_transient_a_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_bf16_transient_a_pack_count");
+                trainer_linear_bf16_transient_b_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_bf16_transient_b_pack_count");
                 trainer_linear_bf16_a_cache_hit_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count");
                 trainer_linear_bf16_cache_reset_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -23326,6 +23350,18 @@ int run_transformer_lm_training_json(
     if (trainer_linear_bf16_a_pack_count_fn != nullptr) {
         linear_bf16_a_pack_count = trainer_linear_bf16_a_pack_count_fn();
     }
+    if (trainer_linear_bf16_cached_a_pack_count_fn != nullptr) {
+        linear_bf16_cached_a_pack_count = trainer_linear_bf16_cached_a_pack_count_fn();
+    }
+    if (trainer_linear_bf16_cached_b_pack_count_fn != nullptr) {
+        linear_bf16_cached_b_pack_count = trainer_linear_bf16_cached_b_pack_count_fn();
+    }
+    if (trainer_linear_bf16_transient_a_pack_count_fn != nullptr) {
+        linear_bf16_transient_a_pack_count = trainer_linear_bf16_transient_a_pack_count_fn();
+    }
+    if (trainer_linear_bf16_transient_b_pack_count_fn != nullptr) {
+        linear_bf16_transient_b_pack_count = trainer_linear_bf16_transient_b_pack_count_fn();
+    }
     if (trainer_linear_bf16_a_cache_hit_count_fn != nullptr) {
         linear_bf16_a_cache_hit_count = trainer_linear_bf16_a_cache_hit_count_fn();
     }
@@ -25452,6 +25488,10 @@ int run_transformer_lm_training_json(
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"bf16_to_f32_vec4_count\": " << bf16_to_f32_vec4_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"
+        << "  \"linear_bf16_cached_a_pack_count\": " << linear_bf16_cached_a_pack_count << ",\n"
+        << "  \"linear_bf16_cached_b_pack_count\": " << linear_bf16_cached_b_pack_count << ",\n"
+        << "  \"linear_bf16_transient_a_pack_count\": " << linear_bf16_transient_a_pack_count << ",\n"
+        << "  \"linear_bf16_transient_b_pack_count\": " << linear_bf16_transient_b_pack_count << ",\n"
         << "  \"linear_bf16_a_cache_hit_count\": " << linear_bf16_a_cache_hit_count << ",\n"
         << "  \"linear_bf16_a_cache_strategy\": \""
         << (linear_bf16_a_cache_hit_count > 0 ? "cached-first-gemm-operand-with-optimizer-reset" : "unused")
