@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Native SM120 candidate benchmark help guard: `tools/bench_native_gpt_sm120_candidate.sh --help`
+  now prints the environment-driven controls and exits before CUDA setup, and
+  unknown positional arguments fail with exit code 2 instead of being ignored.
+  Verification: source-contract pytest slice, direct `--help`/unknown-argument
+  checks, bounded one-warmup/one-sample GPU benchmark, and `git diff --check`.
+
 - Native train SDK exec handoff: `run_native_train(...)` now accepts
   `exec_process=True`, mapping `runner="auto"` to the compiled CLI and then
   delegating to `exec_native_train(...)`. This gives generic SDK launch scripts

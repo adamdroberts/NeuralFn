@@ -114,6 +114,37 @@ env_or_alias6() {
   fi
 }
 
+print_usage() {
+  cat <<'USAGE'
+Usage: tools/bench_native_gpt_sm120_candidate.sh [--help]
+
+Environment controls:
+  NFN_SM120_NATIVE_STEPS       Optimizer steps per measured native run.
+  NFN_SM120_NATIVE_SAMPLES     Measured paired samples.
+  NFN_SM120_NATIVE_WARMUP      Paired warmup samples before measurement.
+  NFN_SM120_NATIVE_DRY_RUN=1   Print the expanded paired benchmark plan only.
+  NFN_SM120_NATIVE_JSON_OUT    Output JSON path.
+  NFN_SM120_NATIVE_PROFILE_DIR Native profile JSON directory.
+
+The wrapper is intentionally environment-driven so copied benchmark commands
+keep baseline, candidate, and reference shapes comparable.
+USAGE
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Use --help for environment controls." >&2
+      exit 2
+      ;;
+  esac
+done
+
 tile_ops_arg_for() {
   local train_bin="$1"
   local tile_ops_lib="$2"
