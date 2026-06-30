@@ -4916,7 +4916,7 @@ def test_train_gpt_fast_path_expands_quality_defaults(
     assert str(native_cli) in command
     assert "--model-family gpt" in command
     assert "--backend tile-cuda" in command
-    assert "--eval-every-steps 1000" in command
+    assert "--eval-every-steps 250" in command
     assert "--eval-batches 20" in command
     assert "--native-cuda-sample-every 20000" in command
     assert "--native-cuda-generate-tokens 144" in command
@@ -4931,7 +4931,7 @@ def test_train_gpt_fast_path_expands_quality_defaults(
     assert "--beta2 0.95" in command
     assert "--adam-eps 1e-8" in command
     assert "--grad-clip-norm 1.0" in command
-    assert "--warmup-steps 1000" in command
+    assert "--warmup-steps 60" in command
     assert "--max-steps 20000" in command
     assert "--native-cuda-activation gelu" in command
     assert "--train-transformer-lm" in command
@@ -6114,8 +6114,8 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     )
     assert default_proc.returncode == 0, default_proc.stderr
     default_args = default_observed.read_text(encoding="utf-8").splitlines()
-    assert default_args[default_args.index("--eval-every-steps") + 1] == "1000"
-    assert default_args[default_args.index("--warmup-steps") + 1] == "1000"
+    assert default_args[default_args.index("--eval-every-steps") + 1] == "250"
+    assert default_args[default_args.index("--warmup-steps") + 1] == "60"
 
     env = os.environ.copy()
     env.update(
@@ -7038,7 +7038,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "compatible dense GPT template_spec metadata can drive native geometry" in help_proc.stdout
     assert "Tile-CUDA smokes/training" in help_proc.stdout
     assert "dense GPT registered parameter layout" in help_proc.stdout
-    assert "1000 warmup steps" in help_proc.stdout
+    assert "60 warmup steps" in help_proc.stdout
     assert "train-sm120.sh -u 60" in help_proc.stdout
 
     dry_run = subprocess.run(
@@ -7071,8 +7071,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["backend"] == "tile-cuda"
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt"
-    assert default_payload["schedule"]["eval_every_steps"] == 1000
-    assert default_payload["schedule"]["warmup_steps"] == 1000
+    assert default_payload["schedule"]["eval_every_steps"] == 250
+    assert default_payload["schedule"]["warmup_steps"] == 60
     assert default_payload["optimizer"] == {
         "profile": "adamw",
         "learning_rate": 0.0006,

@@ -25,7 +25,7 @@ _QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
         "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
         "NFN_SM120_EVAL_EVERY_STEPS",
-        "1000",
+        "250",
     ),
     "--eval-batches": (
         "NFN_NATIVE_GPT_EVAL_BATCHES",
@@ -105,7 +105,7 @@ _QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_WARMUP_STEPS",
         "NFN_SM120_NATIVE_WARMUP_STEPS",
         "NFN_SM120_WARMUP_STEPS",
-        "1000",
+        "60",
     ),
     "--max-steps": (
         "NFN_NATIVE_GPT_MAX_STEPS",

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native SM120 default schedule alignment: dense GPT native defaults now match
+  the referenced `llm.kittens/train-sm120.sh` cadence more closely across the
+  compiled trainer, `train_gpt.py` compiled-CLI fast path, compiled
+  `nfn_train_gpt_sm120` launcher, and `tools/train_gpt_sm120.sh`: validation
+  defaults to every 250 optimizer steps and LR warmup defaults to 60 steps.
+  Explicit `--eval-every-steps` and `--warmup-steps` overrides are unchanged.
+  Verification: focused launcher/default tests, shell syntax check, Python
+  compile check, and `git diff --check`.
+
 - Native GPT binding command contract: `NativeGptRunConfig` and
   `NativeGpt2RunConfig` now inherit the same `strict_native_command=True`
   default as generic native training, and the GPT/GPT-2 C++ bindings reject
