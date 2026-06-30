@@ -53,9 +53,9 @@ from neuralfn import (
     build_gpt_root_graph, build_model_stage_graph,
     NativeGptCheckpointInfo, NativeGptRunConfig, NativeGptRunnerStatus,
     NativeGpt2CheckpointInfo, NativeGpt2RunConfig, NativeGpt2RunnerStatus,
-    build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, is_native_gpt_checkpoint,
+    build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, capture_native_gpt, is_native_gpt_checkpoint,
     NativeTrainCaptureResult, NativeTrainRunConfig, NativeTrainRunnerStatus,
-    build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, is_native_gpt2_checkpoint,
+    build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, capture_native_gpt2, is_native_gpt2_checkpoint,
     build_native_train_run_config, exec_native_gpt, exec_native_gpt2, exec_native_train,
     latest_native_gpt_checkpoint, native_gpt_parameter_count,
     latest_native_gpt2_checkpoint, native_gpt2_parameter_count,
@@ -103,6 +103,10 @@ without local build outputs.
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
 generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,
 runner="auto")` before falling back to the compiled CLI or standalone launcher.
+Use `capture_native_gpt(config, runner="auto")` when an SDK caller needs
+captured JSON/stdout/stderr from the same native config without keeping Python
+`subprocess.run()` in the fast path; the GPT-2 compatibility helper is
+`capture_native_gpt2(config, runner="auto")`.
 The auto route no longer falls through to an external `train_gpt2cu` subprocess, and `runner="subprocess"` is no longer a GPT training runner.
 `bash tools/build_native_gpt2_binding.sh` still builds the compatibility
 `neuralfn._native_gpt2` module, and `run_native_gpt2(...)` can use either

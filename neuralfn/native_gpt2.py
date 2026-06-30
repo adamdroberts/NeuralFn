@@ -1288,6 +1288,61 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
     raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
 
 
+def capture_native_gpt2(
+    config: NativeGpt2RunConfig,
+    *,
+    runner: str = "auto",
+) -> subprocess.CompletedProcess[str]:
+    """Run a native GPT config and capture stdout/stderr.
+
+    The default runner uses the C++ binding capture path when available, which
+    keeps SDK preflight and JSON inspection on the compiled native command
+    launcher instead of Python ``subprocess.run`` orchestration. Explicit
+    ``runner="compiled-cli"`` or ``runner="launcher"`` keeps the matching
+    fallback command shape.
+    """
+
+    status = native_gpt2_runner_status(runner)
+    if status.resolved == "binding":
+        if not status.available:
+            raise RuntimeError(f"Native GPT binding requested but unavailable: {status.reason}")
+        module_name, _runner, _resolver = _load_native_gpt2_binding()
+        module = importlib.import_module(module_name)
+        capture_runner = (
+            getattr(module, "run_gpt_capture", None)
+            or getattr(module, "run_gpt2_capture", None)
+            or getattr(module, "run_infer", None)
+        )
+        if not callable(capture_runner):
+            raise RuntimeError(f"{module_name} does not expose run_gpt_capture/run_gpt2_capture/run_infer")
+        payload = capture_runner(config.launch_dict())
+        argv = [str(item) for item in payload.get("argv", config.compiled_cli_argv())]
+        return subprocess.CompletedProcess(
+            argv,
+            int(payload.get("returncode", 126)),
+            stdout=str(payload.get("stdout", "")),
+            stderr=str(payload.get("stderr", "")),
+        )
+    if status.resolved == "compiled-cli":
+        if not status.available:
+            raise RuntimeError(f"Native GPT compiled CLI requested but unavailable: {status.reason}")
+        argv = config.compiled_cli_argv()
+    elif status.resolved == "launcher":
+        if not status.available:
+            raise RuntimeError(f"Native GPT launcher requested but unavailable: {status.reason}")
+        argv = config.launcher_argv()
+    else:
+        raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
+    return subprocess.run(
+        argv,
+        env=_native_gpt2_subprocess_env(config),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
 def run_native_gpt2_compiled_cli_capture(
     command: Sequence[str],
     *,

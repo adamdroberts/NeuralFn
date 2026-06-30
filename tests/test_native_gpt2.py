@@ -23,6 +23,7 @@ from neuralfn.native_gpt import (
     NativeGptRunConfig,
     NativeGptRunnerStatus,
     build_native_gpt_compiled_cli_run_config,
+    capture_native_gpt,
     exec_native_gpt,
     native_gpt_activation,
     native_gpt_encoding_vocab_size,
@@ -40,6 +41,7 @@ from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
     build_native_gpt2_compiled_cli_run_config,
     build_native_gpt2_run_config,
+    capture_native_gpt2,
     exec_native_gpt2,
     latest_native_gpt2_checkpoint,
     native_gpt2_activation,
@@ -5745,6 +5747,66 @@ def test_native_gpt_compiled_cli_capture_prefers_cpp_binding(monkeypatch: pytest
     assert generic_result.returncode == 7
     assert calls[0]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--print-plan"]
     assert calls[1]["compiled_cli_argv"] == ["/tmp/nfn_gpt_native_train", "--list-templates"]
+
+
+def test_native_gpt_config_capture_prefers_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_capture(payload: dict[str, object]) -> dict[str, object]:
+        calls.append(payload)
+        return {
+            "returncode": 0,
+            "stdout": "{\"status\":\"captured\"}\n",
+            "stderr": "",
+            "argv": payload["compiled_cli_argv"],
+        }
+
+    fake_binding = SimpleNamespace(
+        run_gpt=lambda _payload: 0,
+        resolve_native_gpt_command=lambda payload: payload["compiled_cli_argv"],
+        run_gpt_capture=fake_capture,
+    )
+    monkeypatch.setitem(sys.modules, "neuralfn_native_gpt", fake_binding)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
+    monkeypatch.setattr(
+        native_gpt2_module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess fallback should not run")),
+    )
+
+    cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="/tmp/tinystories",
+        executable=None,
+        output_dir=Path("/tmp/out"),
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=0,
+        num_layers=12,
+        activation="gelu",
+        write_checkpoint=False,
+    )
+
+    result = capture_native_gpt(cfg, runner="auto")
+    compat_result = capture_native_gpt2(cfg, runner="auto")
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["status"] == "captured"
+    assert result.args == calls[0]["compiled_cli_argv"]
+    assert compat_result.returncode == 0
+    assert "nfn_gpt_native_train" in calls[0]["compiled_cli_argv"][0]
+    assert calls[0]["cuda_visible_devices"] == "0"
+    assert calls[1]["compiled_cli_argv"] == calls[0]["compiled_cli_argv"]
 
 
 def test_native_gpt_template_catalog_prefers_cpp_binding(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Native GPT SDK capture helpers: added `capture_native_gpt(config,
+  runner="auto")` and compatibility `capture_native_gpt2(config,
+  runner="auto")` for callers that need stdout/stderr/JSON from a full native
+  GPT run config. The auto runner prefers the rebuilt C++ binding capture path
+  and returns a `subprocess.CompletedProcess`, falling back to the compiled CLI
+  or launcher capture path only when selected or when the binding is
+  unavailable. The helpers are also exposed through the top-level lazy
+  `neuralfn` package exports. Verification: focused native GPT capture pytest
+  slice, Python compile check, no-Torch SDK/CLI guard with artifacts skipped,
+  and `git diff --check`.
+
 - Native GPT fast-startup throughput prewarms: fast-startup and auto short-run
   native GPT training now skip the TK QKV first-use setup prewarm and LM-head
   graph setup prewarm by default. The explicit

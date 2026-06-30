@@ -21,6 +21,7 @@ from .native_gpt2 import (
     native_gpt2_prompt_tokens,
     native_gpt2_template_catalog,
     exec_native_gpt2,
+    capture_native_gpt2,
     native_gpt2_activation as native_gpt_activation,
     native_gpt2_encoding_vocab_size as native_gpt_encoding_vocab_size,
     native_gpt2_kernel_backend as native_gpt_kernel_backend,
@@ -92,6 +93,10 @@ def run_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto") -> int:
     return run_native_gpt2(config, runner=runner)
 
 
+def capture_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto"):
+    return capture_native_gpt2(config, runner=runner)
+
+
 def run_native_gpt_compiled_cli_capture(*args, **kwargs):
     return run_native_gpt2_compiled_cli_capture(*args, **kwargs)
 
@@ -134,6 +139,7 @@ __all__ = [
     "NativeGptRunnerStatus",
     "build_native_gpt_compiled_cli_run_config",
     "build_native_gpt_run_config",
+    "capture_native_gpt",
     "exec_native_gpt",
     "is_native_gpt_checkpoint",
     "latest_native_gpt_checkpoint",
