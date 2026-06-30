@@ -2247,18 +2247,18 @@ CE/dlogits default. The strict single-kernel
 classifier/dHidden/dWeight Tile route remains experimental.
 Dense GPT training now requests the non-strict cooperative LM-head backward
 route by default. On current CUDA 13.3 RTX 5090 builds this selects the
-cooperative sequence wrapper instead of cached LM-head CUDA Graph replay:
-fused classifier CE/dlogits runs in Tile CUDA, and dHidden plus dWeight remain
-native matmul backward kernels with no Torch or graph-editor tensor flow. Set
+cached LM-head CUDA Graph replay wrapper: fused classifier CE/dlogits runs in
+Tile CUDA, and dHidden plus dWeight remain native matmul backward kernels with
+no Torch or graph-editor tensor flow. Set
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
 separate-stage LM-head schedule, or use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
 the route in the paired benchmark wrapper. Set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only to compare the legacy
-cached CUDA Graph wrapper. The reproducible same-script profile is
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only to compare the rejected
+sequence-wrapper route. The reproducible same-script profile is
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`;
-that profile compares graph replay as baseline against the default sequence
-wrapper and keeps promotion gates on train-loop, startup, LM-head, and
+that profile compares graph replay as baseline against the sequence-wrapper
+candidate and keeps promotion gates on train-loop, startup, LM-head, and
 llm.kittens steady-state timing. The separate strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
 for the future fused body, but the current llm.kittens-parity route is not a
@@ -2266,8 +2266,8 @@ true single-kernel/cooperative implementation. Its capability probe
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 therefore returns `0`; callers that require the current native parity route
 should check `lm_head_llmk_classifier_matmul_parity_available` and the active
-`diagnostic-sequence-wrapper` path class. The SM120 CUDA validator enforces that
-default route and treats cached CUDA Graph replay as an explicit diagnostic
+`diagnostic-cuda-graph-wrapper` path class. The SM120 CUDA validator enforces
+that default route and treats the sequence wrapper as an explicit diagnostic
 comparison path, not as the default runtime contract.
 route fields such as `lm_head_cooperative_backward_sequence_wrapper_enabled` or
 `lm_head_cooperative_backward_cuda_graph_enabled`, while callers that require a
@@ -2417,9 +2417,9 @@ capability path can make `lm_head_cooperative_backward_kernel_available` and
 `legacy-abi-sequence-wrapper`, or `missing` so full-trainer parity reports do
 not have to infer the route from multiple booleans and counters.
 The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` route now uses
-the cooperative sequence wrapper by default; set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1` only when explicitly
-bisecting the legacy cached CUDA Graph replay path. Runtime JSON reports
+the cached CUDA Graph replay wrapper by default; set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only when explicitly
+bisecting the rejected cooperative sequence wrapper path. Runtime JSON reports
 `lm_head_cooperative_backward_cuda_graph_available`,
 `lm_head_cooperative_backward_cuda_graph_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, a diagnostic

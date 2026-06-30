@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Native GPT LM-head default restored cached CUDA Graph replay for the
+  cooperative classifier-backward route. A higher-warmup 2026-06-30 rerun of
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
+  used 20 warmup pairs, 10 optimizer steps, and 2 measured samples on the
+  dedicated RTX 5090. The sequence-wrapper candidate still improved setup wall
+  to `0.957808x` and startup-plus-first-step to `0.991651x`, but failed the
+  throughput gates with train-loop wall at `1.000449x` and train tokens/sec at
+  `0.999552x` versus cached graph replay. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH`
+  and its GPT-2 alias therefore default to `1` again; set them to `0` only for
+  explicit sequence-wrapper bisection. Verification: live same-script native
+  candidate benchmark with clean selected-GPU state.
+
 - SM120 native benchmark profile triage refreshed the
   `embedding_bf16_shadow` rejection with a longer 5-warmup, 3-step, 2-sample
   same-script run on the dedicated RTX 5090. The BF16-shadow embedding route
@@ -725,15 +737,17 @@
   setup wall regresses to `1.307975x` and train tokens/sec still trails the
   llm.kittens reference at `0.991683x`. Verification: same-script
   candidate/current/reference benchmarks with clean selected-GPU state.
+  Superseding note: the cooperative LM-head sequence wrapper is no longer the
+  default after the 20-warmup 2026-06-30 rerun restored cached CUDA Graph replay
+  as the throughput default.
 
-- Native GPT LM-head default: the cooperative LM-head sequence wrapper is now
-  the default native route, and cached LM-head CUDA Graph replay is opt-in via
-  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=1`. A 7-warmup, 3-step,
-  2-sample same-script long-run deferred-prewarm benchmark on the dedicated RTX
-  5090 changed the route by dropping LM-head graph replay counters to zero and
-  increasing `lm_head_classifier_chunk_launch_count` from 4 to 72, while
-  improving train-loop wall to `0.999005x`, first-step CUDA-event timing to
-  `0.997003x`, startup-plus-first-step to `0.998553x`, LM-head backward to
+- Native GPT LM-head default: superseded previous 7-warmup evidence that made
+  the cooperative LM-head sequence wrapper the default native route. That older
+  3-step, 2-sample same-script long-run deferred-prewarm benchmark on the
+  dedicated RTX 5090 changed the route by dropping LM-head graph replay counters
+  to zero and increasing `lm_head_classifier_chunk_launch_count` from 4 to 72,
+  while improving train-loop wall to `0.999005x`, first-step CUDA-event timing
+  to `0.997003x`, startup-plus-first-step to `0.998553x`, LM-head backward to
   `0.996796x`, cooperative LM-head body time to `0.995351x`, and train
   tokens/sec to `1.000997x` versus current native. Steady-state CUDA-event
   timing stayed inside gate at `1.000114x` versus current native and

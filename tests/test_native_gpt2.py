@@ -2922,12 +2922,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH" in source
-    default_off_lm_head_graph = (
+    default_on_lm_head_graph = (
         'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",\n'
         + '                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),\n'
-        + "            false);"
+        + "            true);"
     )
-    assert source.count(default_off_lm_head_graph) == 2
+    assert source.count(default_on_lm_head_graph) == 2
     assert "NFN_NATIVE_GPT_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_FORCE_SEQUENCE_WRAPPER_DIAGNOSTIC" in source
     assert "static const bool enabled = []() {" in tile_ops_source
@@ -3558,9 +3558,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "run_lm_head_backward_preflight" in bench_source
     assert "tools/bench_lm_head_backward_candidate.sh" in bench_source
     assert "lm_head_cooperative_sequence_wrapper" in bench_source
-    assert "train-loop wall to 0.999005x" in bench_source
-    assert "cooperative LM-head body time to 0.995351x" in bench_source
-    assert "Candidate steady-state CUDA-event timing stayed within gate" in bench_source
+    assert "20-warmup, 10-step, 2-sample native-only same-script rerun rejected" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 1.000449x" in bench_source
+    assert "train_tokens_per_second fell to 0.999552x" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=256" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=576" in bench_source
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=64" in bench_source
@@ -3605,6 +3605,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "USER_WARMUP_SET=0" in bench_source
     assert "ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in bench_source
     assert "NFN_SM120_NATIVE_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in bench_source
+    parity_bench = (root / "tools" / "bench_native_gpt_sm120_parity.sh").read_text(
+        encoding="utf-8"
+    )
     assert "NFN_SM120_PARITY_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC" in parity_bench
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "default_long_run_defer_prewarm_min_steps_applied" in bench_source
@@ -3677,8 +3680,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
         "lm_head_graph_body_cublaslt_dhidden, lm_head_graph_body_cublaslt_dweight, lm_head_tk_dweight_28672"
         in bench_source
     )
-    assert "1.335573x stage.lm_head_backward.total_ms" in bench_source
-    assert "1.477219x stage.lm_head_backward.cooperative.total_ms" in bench_source
+    assert "20-warmup, 10-step, 2-sample native-only same-script rerun rejected" in bench_source
+    assert "train_loop_wall_ms_per_step regressed to 1.000449x" in bench_source
+    assert "train_tokens_per_second fell to 0.999552x" in bench_source
     assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0" in bench_source

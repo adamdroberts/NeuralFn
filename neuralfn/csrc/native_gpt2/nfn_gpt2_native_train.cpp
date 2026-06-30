@@ -4488,7 +4488,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),
-            false);
+            true);
     const bool cooperative_lm_head_force_sequence_wrapper_diagnostic =
         cooperative_lm_head_backward_requested &&
         !cfg.require_cooperative_lm_head_backward &&
@@ -14354,7 +14354,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_CUDA_GRAPH"}),
-            false);
+            true);
     const bool lm_head_force_sequence_wrapper_diagnostic =
         lm_head_cooperative_backward_requested &&
         !cfg.require_cooperative_lm_head_backward &&
