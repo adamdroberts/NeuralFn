@@ -2900,10 +2900,13 @@ key row. Native JSON reports
 `attention_backward_scalar_cta_elision_factor: 192`.
 
 Compiled GPT-2 `--train-transformer-lm` training results include a `timing`
-object with host wall-clock phase timers: `setup_wall_ms`,
-`train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`,
-`checkpoint_wall_ms`, `total_wall_ms`, `optimizer_steps_per_second`, and
-`train_tokens_per_second`. CUDA-event timing additionally reports
+object with host wall-clock phase timers: `token_shard_resolution_wall_ms`,
+`setup_wall_ms`, `train_loop_wall_ms`, `validation_wall_ms`,
+`train_compute_wall_ms`, `checkpoint_wall_ms`, `total_wall_ms`,
+`optimizer_steps_per_second`, and `train_tokens_per_second`.
+`token_shard_resolution_wall_ms` is also emitted at the JSON root so startup
+bisections can distinguish cached dataset/token-shard discovery from CUDA
+setup and train-loop time. CUDA-event timing additionally reports
 `train_first_step_tokens_per_second`, `train_steady_state_tokens_per_second`,
 `setup_plus_train_loop_wall_ms`, `setup_amortized_train_tokens_per_second`, and
 `projected_20k_setup_amortized_tokens_per_second`. Use the steady-state and

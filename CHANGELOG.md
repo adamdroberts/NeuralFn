@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT startup timing: compiled dense GPT transformer-LM runs now emit
+  `token_shard_resolution_wall_ms` at the JSON root and inside `timing`. This
+  covers the cached dataset/token-shard resolution phase that happens before
+  CUDA setup, so startup investigations can distinguish graph-free native
+  data discovery from `setup_wall_ms` and train-loop throughput. Verification:
+  focused native GPT source-contract test, linked C++ trainer rebuild,
+  one-step native CUDA smoke, and `git diff --check`.
+
 - Native SM120 schedule metric extraction: `tools/paired_kernel_speed.py` now
   flattens dense GPT native schedule and optimizer fields including batch size,
   sequence length, eval/sample/checkpoint cadence, generation length, warmup,

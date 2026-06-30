@@ -11119,7 +11119,8 @@ int write_checkpoint_metadata_smoke_json(
 int run_transformer_lm_training_json(
     const Config& cfg,
     const neuralfn::native_train::TokenShardDataset& dataset,
-    const char* program) {
+    const char* program,
+    double token_shard_resolution_wall_ms) {
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     const std::int64_t kHeads = geometry.num_heads;
     const std::int64_t kDefaultTargetLayers = geometry.num_layers;
@@ -24305,6 +24306,7 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"torch_required\": false,\n"
+        << "  \"token_shard_resolution_wall_ms\": " << token_shard_resolution_wall_ms << ",\n"
         << "  \"setup_wall_ms\": " << setup_wall_ms << ",\n"
         << "  \"setup_timing_accounted_ms\": " << setup_timing_accounted_ms << ",\n"
         << "  \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
@@ -24325,6 +24327,8 @@ int run_transformer_lm_training_json(
         << "  \"total_wall_ms\": " << total_wall_ms << ",\n"
         << "  \"timing\": {\n"
         << "    \"clock\": \"steady_clock_host_wall_ms\",\n"
+        << "    \"token_shard_resolution_wall_ms\": "
+        << token_shard_resolution_wall_ms << ",\n"
         << "    \"setup_wall_ms\": " << setup_wall_ms << ",\n"
         << "    \"setup_timing_accounted_ms\": " << setup_timing_accounted_ms << ",\n"
         << "    \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
@@ -27890,12 +27894,18 @@ int main(int argc, char** argv) {
     }
 
     neuralfn::native_train::TokenShardDataset dataset;
+    double token_shard_resolution_wall_ms = 0.0;
     try {
         const bool require_validation_shards = validation_shards_required_for_config(cfg);
+        const auto token_shard_resolution_start = std::chrono::steady_clock::now();
         dataset = neuralfn::native_train::resolve_token_shards(
             cfg.dataset_alias,
             cfg.allow_train_as_val,
             require_validation_shards);
+        token_shard_resolution_wall_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - token_shard_resolution_start)
+                .count();
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";
         return 2;
@@ -27922,7 +27932,8 @@ int main(int argc, char** argv) {
             return run_embedding_lm_training_json(cfg, dataset, argv[0]);
         }
         if (cfg.train_transformer_lm) {
-            return run_transformer_lm_training_json(cfg, dataset, argv[0]);
+            return run_transformer_lm_training_json(
+                cfg, dataset, argv[0], token_shard_resolution_wall_ms);
         }
         std::cerr
             << "nfn_gpt_native_train: no Tile CUDA action selected after --no-train-transformer-lm.\n"

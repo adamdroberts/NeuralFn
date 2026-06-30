@@ -1284,8 +1284,16 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "setup_timing_accounted_ms" in source
     assert "setup_timing_unattributed_ms" in source
     assert "setup_timing_record_count" in source
+    assert "token_shard_resolution_wall_ms" in source
+    assert "token_shard_resolution_start" in source
+    assert (
+        "run_transformer_lm_training_json(\n"
+        "                cfg, dataset, argv[0], token_shard_resolution_wall_ms)"
+        in source
+    )
     assert (
         '<< "  \\"torch_required\\": false,\\n"\n'
+        '        << "  \\"token_shard_resolution_wall_ms\\": " << token_shard_resolution_wall_ms << ",\\n"\n'
         '        << "  \\"setup_wall_ms\\": " << setup_wall_ms << ",\\n"\n'
         '        << "  \\"setup_timing_accounted_ms\\": " << setup_timing_accounted_ms << ",\\n"\n'
         '        << "  \\"setup_timing_unattributed_ms\\": " << setup_timing_unattributed_ms << ",\\n"\n'
