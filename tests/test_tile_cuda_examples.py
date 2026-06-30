@@ -62,6 +62,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 f"{sys.executable} -c "
                 "\"print('{\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 12.5, "
                 "\\\"train_tokens_per_second\\\": 42.0, \\\"setup_wall_ms\\\": 1.0, "
+                "\\\"token_shard_resolution_wall_ms\\\": 0.25, "
                 "\\\"setup_cuda_event_timing_requested\\\": true, "
                 "\\\"setup_cuda_event_timing_enabled\\\": true, "
                 "\\\"setup_cuda_event_timing_sync_count\\\": 2, "
@@ -189,6 +190,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "max_selected_gpu_utilization_pct: -1.0" in proc.stdout
     assert "allow_stale_selected_gpu_utilization_without_compute_processes: False" in proc.stdout
     assert "setup.cuda_event.token_weight_init.total_ms" in proc.stdout
+    assert "token_shard_resolution_wall_ms" in proc.stdout
     assert payload["gpu_benchmark_lock_enabled"] is True
     assert payload["gpu_benchmark_lock_acquired"] is True
     assert payload["gpu_benchmark_lock_path"].endswith("nfn_paired_kernel_speed_gpu_test-device.lock")
@@ -262,6 +264,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5
     assert payload["candidate_native_metrics"]["train_loop_wall_ms_per_step"]["mean"] == 2.5
+    assert payload["candidate_native_metrics"]["token_shard_resolution_wall_ms"]["mean"] == 0.25
     assert payload["candidate_native_metrics"]["steps_completed"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
     assert payload["candidate_native_metrics"]["linear_tk_gemm_count"]["mean"] == 3.0

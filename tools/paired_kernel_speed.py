@@ -74,6 +74,7 @@ NATIVE_METRIC_PATHS = (
     ("optimizer.beta2", ("optimizer", "beta2")),
     ("optimizer.adam_eps", ("optimizer", "adam_eps")),
     ("optimizer.grad_clip_norm", ("optimizer", "grad_clip_norm")),
+    ("token_shard_resolution_wall_ms", ("token_shard_resolution_wall_ms",)),
     ("train_loop_wall_ms", ("train_loop_wall_ms",)),
     ("train_loop_wall_ms_per_step", ("timing", "train_loop_wall_ms_per_step")),
     (
@@ -1387,6 +1388,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "startup_plus_steady_state_step_wall_ms",
     "startup_plus_train_loop_wall_ms",
     "setup_plus_train_loop_wall_ms",
+    "token_shard_resolution_wall_ms",
     "steps_completed",
     "batch_size",
     "seq_len",
@@ -2218,6 +2220,7 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
         for key in (
             "train_loop_wall_ms",
             "setup_wall_ms",
+            "token_shard_resolution_wall_ms",
             "train_tokens_per_second",
         ):
             value = timing.get(key)

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Native GPT benchmark startup metrics: `tools/paired_kernel_speed.py` now
+  extracts `token_shard_resolution_wall_ms` from native runtime JSON, including
+  the nested `timing` fallback, and prints it in native candidate/parity text
+  summaries. Verification: focused paired benchmark fixture test, Python
+  compile check, and `git diff --check`.
+
 - Native GPT startup timing: compiled dense GPT transformer-LM runs now emit
   `token_shard_resolution_wall_ms` at the JSON root and inside `timing`. This
   covers the cached dataset/token-shard resolution phase that happens before
