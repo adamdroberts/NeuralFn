@@ -152,26 +152,34 @@ Real training tensors must not pass through graph editor node objects.
   row/scalar paths, or the linear backend launches TF32/SGEMM fallback.
   `--allow-basic-kernel-fallback` is reserved for diagnostics and rejected
   same-script candidate bisection.
-- [x] Defer throughput-only setup prewarms for long native GPT quality runs.
-  Dense GPT training keeps the current prewarmed route for short parity/smoke
-  runs, but when `max_steps` exceeds
-  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) it skips the
-  default TK QKV first-use and LM-head CUDA Graph prewarms up front. Runtime
-  JSON reports `native_long_run_defer_prewarm_enabled` and
+- [x] Overlap long-run TK QKV first-use prewarm instead of blocking startup.
+  Dense GPT training keeps the synchronous prewarmed route for short
+  parity/smoke runs, but when `max_steps` exceeds
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1024`) it now launches
+  TK QKV first-use prewarm on a nonblocking side stream and still defers
+  LM-head CUDA Graph prewarm. Runtime JSON reports
+  `native_long_run_defer_prewarm_enabled` and
   `native_fast_startup_prewarm_policy` as
-  `long-run-defer-throughput-prewarms-by-default` so 20k-step workstation runs
-  do not pay avoidable startup cost before the first optimizer step.
-- [x] Add a same-script benchmark profile for long-run prewarm deferral.
+  `long-run-async-qkv-prewarm-defer-lm-head-graph-by-default`; the paired
+  runtime contract requires async QKV requested/enabled/launch/wait/sync
+  counters to be `1`, async failures to be `0`, and
+  `lm_head_fused_graph_prewarm_success_count=0`.
+- [x] Add same-script benchmark profiles for long-run prewarm policy changes.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_defer_prewarm` compares the old
   eager-prewarm baseline against the deferred-prewarm candidate by setting
   `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=999999999` on the baseline and `=1`
   on the candidate, then requiring the `native_fast_startup_prewarm_policy`
-  strategy value to change. After the CUDA 13.3 WSL reinstall, the same profile
-  also gates `setup_wall_ms<=0.900x`,
+  strategy value to change. The legacy deferred profile gates
+  `setup_wall_ms<=0.900x`,
   `train_loop_cuda_event_steady_state_wall_ms_per_step<=1.003x`, and
   `startup_plus_steady_state_step_wall_ms<=0.950x`, so the expected deferred
   first-step prewarm cost remains visible while long-run steady-state evidence
-  is still enforced.
+  is still enforced. The accepted
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_async_prewarm`
+  profile compares the old QKV-prewarm-disabled long-run route against the
+  current async-QKV default, floors copied short commands to 10 measured steps
+  and 20 warmup pairs by default, and gates native plus llm.kittens reference
+  steady-state throughput.
 
 ## Current SM120 parity baseline
 
