@@ -1534,6 +1534,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 20)\"" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
+    assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in parity_bench
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 20)" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS" in parity_bench
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in parity_bench
@@ -1548,8 +1551,11 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ) in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in candidate_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in parity_bench
+    assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0' in parity_bench
     assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0' in parity_bench
+    assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in parity_bench
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in parity_bench
+    assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")' in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_steps_applied=$LONG_RUN_DEFER_PREWARM_MIN_STEPS")' in parity_bench
     assert "ENFORCE_GATE=\"$(env_or_alias3 NFN_SM120_NATIVE_ENFORCE_PARITY_GATE NFN_SM120_PARITY_ENFORCE_GATE NFN_SM120_ENFORCE_PARITY_GATE 1)\"" in parity_bench
     assert "DEFAULT_MAX_TRAIN_LOOP_RATIO=\"$(env_or_alias3 NFN_SM120_NATIVE_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_PARITY_MAX_TRAIN_LOOP_RATIO NFN_SM120_MAX_TRAIN_LOOP_RATIO 1.003)\"" in parity_bench
@@ -7095,7 +7101,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is True
     assert isinstance(default_payload["lm_head_cooperative_backward_kernel_available"], bool)
     assert isinstance(default_payload["lm_head_cooperative_backward_fused_kernel_available"], bool)
-    assert default_payload["lm_head_cooperative_backward_route_integrated"] is True
+    assert default_payload["lm_head_cooperative_backward_route_integrated"] is False
     assert default_payload["lm_head_cooperative_backward_fused_kernel_capability_available"] is False
     assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
@@ -7104,7 +7110,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert isinstance(default_payload["lm_head_cooperative_backward_cuda_graph_enabled"], bool)
     assert (
         default_payload["lm_head_cooperative_backward_strategy"]
-        == "diagnostic-cuda-graph-ce-fork-join-dhidden-dweight-not-single-kernel"
+        == "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity"
     )
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True

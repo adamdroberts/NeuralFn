@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- SM120 parity benchmark warmup policy: default long-run deferred-prewarm
+  current-vs-llm.kittens runs in `tools/bench_native_gpt_sm120_parity.sh` now
+  share the candidate wrapper's twenty warmup-pair floor as well as the
+  existing ten-step measured-run floor. Explicit dry-run plans and explicit
+  low-warmup diagnostics remain available; set
+  `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only when
+  intentionally reproducing first-use timing. Paired JSON records
+  `default_long_run_defer_prewarm_min_warmup_applied` when the parity wrapper
+  raises the requested warmup count. Verification: focused native GPT
+  source-contract pytest, shell syntax check, parity dry-run expansion, and
+  `git diff --check`.
+
 - Native GPT long-run prewarm default: reverted the attempted async TK QKV
   first-use prewarm promotion after the 20-warmup, 10-step same-script gate
   showed it is not a quality-run default. Long native training again reports

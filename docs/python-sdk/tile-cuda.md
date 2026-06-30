@@ -3396,8 +3396,9 @@ steps to ten and record `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied`; use
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for an intentional
 short first-step-dominated reproduction.
-The parity wrapper shares this ten-step measured-run floor for default
-deferred-prewarm current-vs-llm.kittens checks; set
+The parity wrapper shares these twenty-warmup and ten-step measured-run floors
+for default deferred-prewarm current-vs-llm.kittens checks; set
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
 short parity reproduction.
 A 2026-06-29 20-warmup, 3-step, 1-sample same-script run on the dedicated RTX

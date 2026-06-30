@@ -2532,8 +2532,9 @@ steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
 set for an intentional short reproduction. The JSON metadata records
 `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
-The parity wrapper applies the same ten-step measured-run floor to default
-deferred-prewarm current-vs-llm.kittens runs; set
+The parity wrapper applies the same twenty-warmup and ten-step measured-run
+floors to default deferred-prewarm current-vs-llm.kittens runs; set
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
 short first-step-dominated parity reproduction.
 The 20-pair floor follows a 2026-06-29 20-warmup, 3-step, 1-sample same-script

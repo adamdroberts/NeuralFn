@@ -336,9 +336,10 @@ steps to ten by default, recording `long_run_defer_prewarm_min_steps_applied`
 or `default_long_run_defer_prewarm_min_steps_applied`; set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only when intentionally
 reproducing a short first-step-dominated benchmark.
-The parity wrapper uses the same measured-step floor for default
+The parity wrapper uses the same warmup and measured-step floors for default
 deferred-prewarm current-vs-llm.kittens runs, with the parity-specific
-`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` alias available for
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` and
+`NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` aliases available for
 intentional short reproductions.
 The stricter 20-pair floor is based on a 2026-06-29 20-warmup, 3-step,
 1-sample same-script run on the dedicated RTX 5090: selected GPU load stayed
