@@ -229,17 +229,16 @@ legacy loop against the default pointer-aware dedup key path and gates on
 deterministic prewarm work. Equal-shaped chunks with distinct buffers no longer
 count as a route change, so the profile disables the generic route-change gate
 and avoids setup timing gates that are dominated by allocator noise.
-The default was rechecked after the
-CUDA 13.3.33 RTX 5090 post-token-pattern graph-prewarm opt-out rerun: disabling
-it saved setup wall to `0.898657x`, but failed the short-run throughput
-contract at `1.011184x` train-loop wall, `1.032819x` first-step CUDA-event
-time, `0.988942x` tokens/sec, `1.001224x` startup-plus-first-step wall, and
-`1.007336x` candidate-over-llm.kittens train-loop wall. Set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` only for lazy-capture
-bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` compares
-explicit prewarm opt-out against the default-on prewarmed route without toggling
-the already-default cuBLAS handle or BF16 workspace prewarm. Prewarmed runs
+Long-run deferred-prewarm training leaves setup prewarm off by default; set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only for forced-prewarm
+bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` now keeps
+that route rejected: the latest same-script RTX 5090 rerun improved native
+train-loop wall to `0.987857x`, first-step CUDA-event time to `0.965656x`, and
+train tokens/sec to `1.012294x`, but setup wall regressed to `1.212384x`,
+startup-plus-first-step wall missed at `1.002645x`, and the llm.kittens
+reference gates still failed at `1.011970x` train-loop wall, `1.053876x`
+first-step CUDA-event time, and `0.987790x` train tokens/sec. Prewarmed runs
 also preserve the last successful prewarm shape in `lm_head_classifier_last_rows`,
 `lm_head_classifier_last_vocab`, and `lm_head_classifier_last_row_stride` when
 runtime graph capture counters stay at zero because every LM-head chunk hit the

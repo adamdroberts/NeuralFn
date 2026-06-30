@@ -110,6 +110,21 @@
   available. Verification: focused native GPT source-contract pytest slice,
   dry-run metadata check, and `git diff --check`.
 
+- Native SM120 LM-head graph prewarm profile: reclassified
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` as a rejected
+  forced-prewarm diagnostic for the current long-run lazy graph-replay default.
+  The latest same-script RTX 5090 run showed forced setup prewarm improved
+  native train-loop wall to `0.987857x`, first-step CUDA-event timing to
+  `0.965656x`, and train tokens/sec to `1.012294x`, but moved cost into setup
+  wall at `1.212384x`, missed startup-plus-first-step at `1.002645x`, and
+  still failed llm.kittens reference gates at `1.011970x` train-loop wall,
+  `1.053876x` first-step CUDA-event time, and `0.987790x` train tokens/sec.
+  The benchmark profile now gates the real prewarm body fallback route counters
+  plus native/reference timing ratios so the harness does not promote setup
+  prewarm until it beats both startup-plus timing and reference throughput.
+  Verification: focused native GPT source-contract pytest slice, shell syntax
+  check, docs guard, and `git diff --check`.
+
 - Native SM120 deferred-prewarm diagnostics: explicit low-warmup or low-step
   candidate benchmark runs now emit paired metadata
   `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or

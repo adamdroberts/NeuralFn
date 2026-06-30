@@ -1443,12 +1443,16 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     ;;
   "lm_head_graph_prewarm"|"lm-head-graph-prewarm"|"lm_head_cooperative_graph_prewarm"|"lm-head-cooperative-graph-prewarm")
-    ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    ACCEPTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-28 post-token-pattern isolated opt-out rerun kept LM-head CUDA Graph prewarm as the default. Disabling it saved setup_wall_ms to 0.898657x, but failed the short-run throughput contract at 1.011184x train_loop_wall_ms_per_step, 1.032819x first-step CUDA-event time, 0.988942x train_tokens_per_second, 1.001224x startup_plus_first_step_wall_ms, and 1.007336x candidate-over-llm.kittens train-loop wall. The native trainer defaults graph prewarm on; keep this profile as the explicit default-on versus opt-out regression check."
-    DEFAULT_VS_LEGACY_PROFILE=1
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="Dedicated RTX 5090 2026-06-30 long-run deferred-prewarm isolated rerun forced LM-head CUDA Graph setup prewarm against the current lazy graph-replay default. It improved native train_loop_wall_ms_per_step to 0.987857x, first-step CUDA-event time to 0.965656x, and train_tokens_per_second to 1.012294x, but moved the capture cost into setup_wall_ms at 1.212384x, missed startup_plus_first_step_wall_ms at 1.002645x, and still failed the llm.kittens reference gates at 1.011970x train-loop wall, 1.053876x first-step CUDA-event time, and 0.987790x train_tokens_per_second. Keep forced setup prewarm rejected until it beats both native startup-plus timing and reference throughput."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1"
-    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_steady_state_wall_ms_per_step=1.002 startup_plus_first_step_wall_ms=1.000 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
+    REQUIRED_STRATEGY_VALUE_CHANGES_RAW="${REQUIRED_STRATEGY_VALUE_CHANGES_RAW:+$REQUIRED_STRATEGY_VALUE_CHANGES_RAW }lm_head_cooperative_backward_graph_prewarm_enabled"
+    REQUIRED_HOT_ROUTE_COUNTERS_RAW="${REQUIRED_HOT_ROUTE_COUNTERS_RAW:+$REQUIRED_HOT_ROUTE_COUNTERS_RAW }lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count"
+    MAX_CANDIDATE_RATIO_RAW="${MAX_CANDIDATE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000 startup_plus_first_step_wall_ms=1.000 stage.lm_head_backward.total_ms=1.000 stage.block_backward.total_ms=1.000 stage.block_backward.mlp_proj.total_ms=1.000}"
+    MIN_CANDIDATE_RATIO_RAW="${MIN_CANDIDATE_RATIO_RAW:-train_tokens_per_second=1.000}"
+    MAX_CANDIDATE_REFERENCE_RATIO_RAW="${MAX_CANDIDATE_REFERENCE_RATIO_RAW:-train_loop_wall_ms_per_step=1.000 train_loop_cuda_event_first_step_wall_ms_per_step=1.000}"
+    MIN_CANDIDATE_REFERENCE_RATIO_RAW="${MIN_CANDIDATE_REFERENCE_RATIO_RAW:-train_tokens_per_second=1.000}"
     ;;
   "lm_head_graph_prewarm_dedup"|"lm-head-graph-prewarm-dedup"|"lm_head_graph_dedup"|"lm-head-graph-dedup")
     ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"

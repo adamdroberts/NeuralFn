@@ -1568,18 +1568,17 @@ Trainer JSON preserves the last successful prewarm shape in
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` even when runtime graph captures are
 eliminated and the Tile runtime stats have been reset before the timed train
-loop. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
-capture route; `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm`
-compares explicit prewarm opt-out against the default-on prewarmed route without
-also disabling the already-default cuBLAS handle or BF16 workspace prewarm. The
-post-token-pattern opt-out rerun on CUDA 13.3.33 / RTX 5090 saved setup wall
-(`0.898657x`) but failed the production gates: train-loop wall regressed to
-`1.011184x`, first-step CUDA-event time to `1.032819x`, train tokens per second
-to `0.988942x`, startup-plus-first-step wall to `1.001224x`, and the
-candidate-over-llm.kittens train-loop wall ratio to `1.007336x`. The prewarm
-therefore stays default-on; the remaining parity target is the true fused
-LM-head kernel body rather than lazy graph capture.
+loop. Long-run deferred-prewarm training leaves setup prewarm off by default;
+set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only for forced-prewarm
+bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` now keeps
+that route rejected: the latest same-script RTX 5090 rerun improved native
+train-loop wall to `0.987857x`, first-step CUDA-event time to `0.965656x`, and
+train tokens/sec to `1.012294x`, but setup wall regressed to `1.212384x`,
+startup-plus-first-step wall missed at `1.002645x`, and the llm.kittens
+reference gates still failed at `1.011970x` train-loop wall, `1.053876x`
+first-step CUDA-event time, and `0.987790x` train tokens/sec. The remaining
+parity target is the true fused LM-head kernel body rather than setup prewarm.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

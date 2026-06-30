@@ -2488,22 +2488,20 @@ captured CE/dHidden/dWeight graph. Dense GPT JSON reports
 `lm_head_fused_graph_prewarm_last_error_code`,
 `lm_head_fused_graph_prewarm_cache_hit_count`, and
 `lm_head_fused_graph_prewarm_cache_entry_count`. Runtime JSON also reports
-`native_fast_startup_prewarm_policy`: auto fast-startup smokes and short-run
-diagnostics now report `fast-startup-skip-throughput-prewarms-by-default`,
-skipping both TK QKV first-use and LM-head graph setup prewarms unless their
-explicit prewarm env vars force them back on. The same JSON now also
-reports `lm_head_fused_graph_prewarm_dedup_enabled` and
-`lm_head_fused_graph_prewarm_duplicate_skip_count`. Graph prewarm is enabled by
-default for real training with at least three optimizer steps and captures each
-unique LM-head graph key once,
+`native_fast_startup_prewarm_policy`: auto fast-startup smokes, short-run
+diagnostics, and long-run deferred-prewarm training skip LM-head graph setup
+prewarm by default unless explicit prewarm env vars force it back on. The same
+JSON now also reports `lm_head_fused_graph_prewarm_dedup_enabled` and
+`lm_head_fused_graph_prewarm_duplicate_skip_count`. Forced graph prewarm
+captures each unique LM-head graph key once,
 deduplicating only when the chunk pointers, row shape, dWeight beta, and
 cooperative flags match the Tile runtime CUDA Graph cache key. Equal-sized
 row chunks with different logit, target, hidden, or gradient buffer pointers
 are still prewarmed separately, while separate no-loss and active train-loss
 graph keys, including the loss-bin variant when configured, remain distinct.
-This keeps the first logged train-loss step and later LM-head row chunks from
-lazily capturing separate LM-head backward graphs without recapturing a true
-duplicate chunk. Set
+This can keep the first logged train-loss step and later LM-head row chunks
+from lazily capturing separate LM-head backward graphs without recapturing a
+true duplicate chunk, but it is not the default long-run route. Set
 `NFN_NATIVE_GPT_LM_HEAD_GRAPH_PREWARM_DEDUP=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_GRAPH_PREWARM_DEDUP=0` only to reproduce the older
 per-chunk prewarm loop. The
@@ -2526,17 +2524,18 @@ bisection. The route moved `lm_head_fused_graph_thread_cache_hit_count` from
 `45` to `48`, but regressed train-loop wall to `1.003958x`, steady-state
 CUDA-event timing to `1.002099x`, LM-head backward to `1.000922x`, and
 tokens/sec to `0.996059x`. The
-default was rechecked after the CUDA 13.3.33 RTX 5090 post-token-pattern
-isolated opt-out rerun: disabling graph prewarm saved setup wall to
-`0.898657x`, but failed the short-run throughput contract at `1.011184x`
-train-loop wall, `1.032819x` first-step CUDA-event time, `0.988942x`
-tokens/sec, `1.001224x` startup-plus-first-step wall, and `1.007336x`
-candidate-over-llm.kittens train-loop wall. Set
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` or
-`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0` to reproduce the lazy
-capture path for bisection. The remaining implementation target is still a true
-fused LM-head classifier-backward Tile kernel. When graph prewarm
-eliminates runtime LM-head graph capture,
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_prewarm` profile now keeps
+forced setup prewarm rejected for long-run training. The latest same-script
+RTX 5090 rerun improved native train-loop wall to `0.987857x`, first-step
+CUDA-event time to `0.965656x`, and train tokens/sec to `1.012294x`, but setup
+wall regressed to `1.212384x`, startup-plus-first-step wall missed at
+`1.002645x`, and the llm.kittens reference gates still failed at `1.011970x`
+train-loop wall, `1.053876x` first-step CUDA-event time, and `0.987790x` train
+tokens/sec. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1` only for forced-prewarm
+bisection. The remaining implementation target is still a true fused LM-head
+classifier-backward Tile kernel. When graph prewarm eliminates runtime LM-head
+graph capture,
 trainer JSON still preserves
 `lm_head_classifier_last_rows`, `lm_head_classifier_last_vocab`, and
 `lm_head_classifier_last_row_stride` from the last successfully prewarmed

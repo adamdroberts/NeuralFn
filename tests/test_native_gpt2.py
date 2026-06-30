@@ -3661,17 +3661,23 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "startup_plus_train_loop_wall_ms to 1.000732x" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=1" in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_GRAPH_PREWARM=0" in bench_source
-    assert 'ACCEPTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in bench_source
-    assert "post-token-pattern isolated opt-out rerun" in bench_source
-    assert "1.011184x train_loop_wall_ms_per_step" in bench_source
-    assert "1.032819x first-step CUDA-event time" in bench_source
-    assert "0.988942x train_tokens_per_second" in bench_source
-    assert "1.001224x startup_plus_first_step_wall_ms" in bench_source
-    assert "1.007336x candidate-over-llm.kittens train-loop wall" in bench_source
+    assert "forced LM-head CUDA Graph setup prewarm against the current lazy graph-replay default" in bench_source
+    assert "0.987857x" in bench_source
+    assert "0.965656x" in bench_source
+    assert "1.012294x" in bench_source
+    assert "setup_wall_ms at 1.212384x" in bench_source
+    assert "startup_plus_first_step_wall_ms at 1.002645x" in bench_source
+    assert "1.011970x train-loop wall" in bench_source
+    assert "1.053876x first-step CUDA-event time" in bench_source
+    assert "0.987790x train_tokens_per_second" in bench_source
     assert "train_loop_cuda_event_steady_state_wall_ms_per_step=1.002" in bench_source
     graph_prewarm_block = bench_source.split('"lm_head_graph_prewarm"|', 1)[1].split(
         "    ;;", 1
     )[0]
+    assert 'REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"' in graph_prewarm_block
+    assert "lm_head_cooperative_backward_graph_prewarm_enabled" in graph_prewarm_block
+    assert "lm_head_fused_graph_prewarm_body_tile_dhidden_fallback_count" in graph_prewarm_block
+    assert "lm_head_fused_graph_prewarm_body_tile_dweight_fallback_count" in graph_prewarm_block
     assert "startup_plus_first_step_wall_ms=1.000" in graph_prewarm_block
     assert '"lm_head_cooperative_sequence_wrapper"|"lm-head-cooperative-sequence-wrapper"' in bench_source
     assert '"lm_head_cooperative_cublaslt"|"lm-head-cooperative-cublaslt"' in bench_source
