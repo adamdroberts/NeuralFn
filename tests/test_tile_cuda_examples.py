@@ -205,6 +205,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["gpu_sample_summary"]["selected_gpu_utilization_clean"] is True
     assert payload["gpu_sample_summary"]["selected_gpu_stale_utilization_accepted"] is False
     assert payload["gpu_sample_summary"]["selected_gpu_external_load_clean"] is True
+    assert payload["gpu_sample_summary"]["all_gpu_max_utilization_pct"] == 0.0
+    assert payload["gpu_sample_summary"]["non_selected_gpu_max_utilization_pct"] == 0.0
     assert "test-device\n1\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.total_ms"]["mean"] == 0.7
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.avg_ms"]["mean"] == 0.7
@@ -6923,6 +6925,85 @@ def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> No
     explicit = module.resolve_cuda_visible_devices("", snapshot)
     assert explicit["resolved"] == ""
     assert explicit["mode"] == "unchanged"
+
+
+def test_paired_kernel_speed_gpu_sample_summary_separates_non_selected_gpu_load() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    rows = [
+        {
+            "gpu_before": {
+                "gpus": [
+                    {
+                        "index": "0",
+                        "uuid": "GPU-compute",
+                        "utilization.gpu_pct": "3",
+                        "memory.used_mib": "640",
+                    },
+                    {
+                        "index": "1",
+                        "uuid": "GPU-display",
+                        "utilization.gpu_pct": "95",
+                        "memory.used_mib": "2048",
+                    },
+                ],
+                "compute_processes": [
+                    {
+                        "gpu_uuid": "GPU-display",
+                        "pid": "100",
+                        "process_name": "desktop",
+                        "used_memory_mib": "512",
+                    }
+                ],
+            },
+            "gpu_after": {
+                "gpus": [
+                    {
+                        "index": "0",
+                        "uuid": "GPU-compute",
+                        "utilization.gpu_pct": "4",
+                        "memory.used_mib": "650",
+                    },
+                    {
+                        "index": "1",
+                        "uuid": "GPU-display",
+                        "utilization.gpu_pct": "88",
+                        "memory.used_mib": "2100",
+                    },
+                ],
+                "compute_processes": [
+                    {
+                        "gpu_uuid": "GPU-display",
+                        "pid": "100",
+                        "process_name": "desktop",
+                        "used_memory_mib": "512",
+                    }
+                ],
+            },
+        }
+    ]
+
+    summary = module.summarize_gpu_sample_load(
+        rows,
+        "0",
+        max_selected_gpu_utilization_pct=15.0,
+        allow_stale_utilization_without_compute_processes=False,
+    )
+
+    assert summary["selected_gpu_max_utilization_pct"] == 4.0
+    assert summary["all_gpu_max_utilization_pct"] == 95.0
+    assert summary["non_selected_gpu_max_utilization_pct"] == 95.0
+    assert summary["selected_gpu_max_compute_process_count"] == 0.0
+    assert summary["selected_gpu_external_load_clean"] is True
 
 
 def test_focused_kernel_benchmark_wrappers_default_to_dedicated_gpu() -> None:

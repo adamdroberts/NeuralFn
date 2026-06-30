@@ -4138,6 +4138,8 @@ def summarize_gpu_sample_load(
     after_util: list[float] = []
     before_mem: list[float] = []
     after_mem: list[float] = []
+    all_gpu_util: list[float] = []
+    non_selected_gpu_util: list[float] = []
     total_processes_before: list[float] = []
     total_processes_after: list[float] = []
     selected_processes_before: list[float] = []
@@ -4160,6 +4162,17 @@ def summarize_gpu_sample_load(
             selected_uuid = selected_uuid or str(after_gpu.get("uuid", "")).strip()
             after_util.append(float(_csv_int(after_gpu.get("utilization.gpu_pct"), 0)))
             after_mem.append(float(_csv_int(after_gpu.get("memory.used_mib"), 0)))
+        for snapshot in (before, after):
+            gpus = snapshot.get("gpus")
+            if not isinstance(gpus, list):
+                continue
+            for gpu in gpus:
+                if not isinstance(gpu, dict):
+                    continue
+                util = float(_csv_int(gpu.get("utilization.gpu_pct"), 0))
+                all_gpu_util.append(util)
+                if str(gpu.get("index", "")).strip() != selected_index:
+                    non_selected_gpu_util.append(util)
         before_uuid = selected_uuid or _selected_gpu_uuid(before, cuda_visible_devices)
         after_uuid = selected_uuid or _selected_gpu_uuid(after, cuda_visible_devices)
         total_processes_before.append(float(_compute_process_count(before)))
@@ -4180,6 +4193,8 @@ def summarize_gpu_sample_load(
         ("selected_gpu_utilization_after_pct", after_util),
         ("selected_gpu_memory_used_before_mib", before_mem),
         ("selected_gpu_memory_used_after_mib", after_mem),
+        ("all_gpu_utilization_pct", all_gpu_util),
+        ("non_selected_gpu_utilization_pct", non_selected_gpu_util),
         ("compute_process_count_before", total_processes_before),
         ("compute_process_count_after", total_processes_after),
         ("selected_gpu_compute_process_count_before", selected_processes_before),
@@ -4208,6 +4223,8 @@ def summarize_gpu_sample_load(
     summary.update(
         {
             "selected_gpu_max_utilization_pct": max_selected_utilization_pct,
+            "all_gpu_max_utilization_pct": max(all_gpu_util, default=0.0),
+            "non_selected_gpu_max_utilization_pct": max(non_selected_gpu_util, default=0.0),
             "selected_gpu_max_compute_process_count": max_selected_process_count,
             "selected_gpu_compute_process_clean": selected_gpu_compute_process_clean,
             "selected_gpu_utilization_clean": selected_gpu_utilization_clean,

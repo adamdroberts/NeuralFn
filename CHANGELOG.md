@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Paired benchmark GPU-load telemetry: `tools/paired_kernel_speed.py` now adds
+  `all_gpu_max_utilization_pct` and
+  `non_selected_gpu_max_utilization_pct` to `gpu_sample_summary`. Existing
+  selected-GPU cleanliness gates are unchanged, but saved benchmark artifacts
+  now make display/secondary GPU activity visible separately from the dedicated
+  CUDA device used for the paired baseline/candidate run. Verification:
+  focused paired-speed pytest slice, Python compile check, SM120 wrapper syntax
+  check, SM120 wrapper dry-run plan, and `git diff --check`.
+
 - Native SM120 SDK capture helper: added
   `capture_native_sm120_gpt(...)` to `neuralfn.native_train` and the top-level
   lazy `neuralfn` exports. The helper builds the direct SM120 dense GPT config
