@@ -4234,14 +4234,53 @@ def summarize_candidate_native_leaf_hot_stages(
 ) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     row_bases: dict[str, str] = {}
+    first_step_rows: list[dict[str, object]] = []
+    first_step_row_bases: dict[str, str] = {}
+    steady_state_rows: list[dict[str, object]] = []
+    steady_state_row_bases: dict[str, str] = {}
+
+    def append_stage_avg_row(
+        *,
+        key: str,
+        stats: dict[str, float],
+        suffix: str,
+        rows_out: list[dict[str, object]],
+        row_bases_out: dict[str, str],
+    ) -> None:
+        if not key.startswith("stage.") or not key.endswith(suffix):
+            return
+        mean_value = stats.get("mean")
+        if not isinstance(mean_value, (int, float)) or isinstance(mean_value, bool):
+            return
+        row = {
+            "metric": key,
+            "candidate_mean_ms": float(mean_value),
+        }
+        rows_out.append(row)
+        row_bases_out[key] = key[: -len(suffix)]
+
     for key, stats in candidate_summary.items():
+        if not isinstance(stats, dict):
+            continue
+        append_stage_avg_row(
+            key=key,
+            stats=stats,
+            suffix=".first_step_avg_ms",
+            rows_out=first_step_rows,
+            row_bases_out=first_step_row_bases,
+        )
+        append_stage_avg_row(
+            key=key,
+            stats=stats,
+            suffix=".steady_state_avg_ms",
+            rows_out=steady_state_rows,
+            row_bases_out=steady_state_row_bases,
+        )
         if key.startswith("stage.") and key.endswith(".total_ms"):
             base = key[: -len(".total_ms")]
         elif key.startswith("setup.") and key.endswith(".total_ms"):
             base = key[: -len(".total_ms")]
         else:
-            continue
-        if not isinstance(stats, dict):
             continue
         mean_value = stats.get("mean")
         if not isinstance(mean_value, (int, float)) or isinstance(mean_value, bool):
@@ -4273,12 +4312,43 @@ def summarize_candidate_native_leaf_hot_stages(
                 return False
         return True
 
+    def is_leaf_with_total_bases(
+        row: dict[str, object],
+        bases: dict[str, str],
+    ) -> bool:
+        metric = row.get("metric")
+        if not isinstance(metric, str):
+            return False
+        base = bases.get(metric)
+        if base is None:
+            return False
+        for other_base in row_bases.values():
+            if other_base != base and other_base.startswith(base + "."):
+                return False
+        return True
+
     leaf_rows = [row for row in rows if is_leaf(row)]
+    first_step_leaf_rows = [
+        row for row in first_step_rows if is_leaf_with_total_bases(row, first_step_row_bases)
+    ]
+    steady_state_leaf_rows = [
+        row for row in steady_state_rows if is_leaf_with_total_bases(row, steady_state_row_bases)
+    ]
     return {
-        "enabled": bool(leaf_rows),
+        "enabled": bool(leaf_rows or first_step_leaf_rows or steady_state_leaf_rows),
         "limit": int(limit),
         "top_leaf_candidate_total_ms": sorted(
             leaf_rows,
+            key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
+            reverse=True,
+        )[:limit],
+        "top_leaf_candidate_first_step_avg_ms": sorted(
+            first_step_leaf_rows,
+            key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
+            reverse=True,
+        )[:limit],
+        "top_leaf_candidate_steady_state_avg_ms": sorted(
+            steady_state_leaf_rows,
             key=lambda item: float(item.get("candidate_mean_ms", 0.0)),
             reverse=True,
         )[:limit],
@@ -4335,13 +4405,18 @@ def print_candidate_native_leaf_hot_stages(payload: dict[str, object]) -> None:
     summary = payload.get("candidate_native_leaf_hot_stages")
     if not isinstance(summary, dict) or not summary.get("enabled"):
         return
-    rows = summary.get("top_leaf_candidate_total_ms")
-    if not isinstance(rows, list) or not rows:
-        return
     print("  candidate_native_leaf_hot_stages:")
-    print("    top_leaf_candidate_total_ms:")
-    for row in rows:
-        _print_native_hot_stage_ratio_row(row)
+    for label in (
+        "top_leaf_candidate_total_ms",
+        "top_leaf_candidate_first_step_avg_ms",
+        "top_leaf_candidate_steady_state_avg_ms",
+    ):
+        rows = summary.get(label)
+        if not isinstance(rows, list) or not rows:
+            continue
+        print(f"    {label}:")
+        for row in rows:
+            _print_native_hot_stage_ratio_row(row)
 
 
 def _first_metric_value(

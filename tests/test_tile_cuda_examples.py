@@ -5117,10 +5117,54 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
                 {"name": "cublaslt_plan_prewarm", "total_ms": 80.0, "avg_ms": 80.0, "count": 1},
             ],
             "stage_timing": [
-                {"name": "lm_head_backward", "total_ms": 1700.0, "avg_ms": 566.6, "count": 3},
-                {"name": "block_backward", "total_ms": 3900.0, "avg_ms": 1300.0, "count": 3},
-                {"name": "block_backward.attn_sdpa.to_qkv", "total_ms": 800.0, "avg_ms": 266.6, "count": 3},
-                {"name": "block_backward.mlp_proj", "total_ms": 970.0, "avg_ms": 323.3, "count": 3},
+                {
+                    "name": "lm_head_backward",
+                    "total_ms": 1700.0,
+                    "avg_ms": 566.6,
+                    "count": 3,
+                    "first_step_avg_ms": 300.0,
+                    "steady_state_avg_ms": 600.0,
+                },
+                {
+                    "name": "block_backward",
+                    "total_ms": 3900.0,
+                    "avg_ms": 1300.0,
+                    "count": 3,
+                    "first_step_avg_ms": 1400.0,
+                    "steady_state_avg_ms": 1200.0,
+                },
+                {
+                    "name": "block_backward.attn_sdpa.to_qkv",
+                    "total_ms": 800.0,
+                    "avg_ms": 266.6,
+                    "count": 3,
+                    "first_step_avg_ms": 700.0,
+                    "steady_state_avg_ms": 200.0,
+                },
+                {
+                    "name": "block_backward.mlp_proj",
+                    "total_ms": 970.0,
+                    "avg_ms": 323.3,
+                    "count": 3,
+                    "first_step_avg_ms": 450.0,
+                    "steady_state_avg_ms": 300.0,
+                },
+                {
+                    "name": "block_forward",
+                    "total_ms": 900.0,
+                    "avg_ms": 300.0,
+                    "count": 3,
+                    "first_step_avg_ms": 1000.0,
+                    "steady_state_avg_ms": 250.0,
+                },
+                {
+                    "name": "block_forward.attention.qkv",
+                    "total_ms": 700.0,
+                    "avg_ms": 233.3,
+                    "count": 3,
+                    "first_step_avg_ms": 900.0,
+                    "steady_state_avg_ms": 100.0,
+                },
             ],
         },
     }
@@ -5199,6 +5243,23 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
         row["metric"] != "setup_wall_ms"
         for row in candidate_leaf_stages["top_leaf_candidate_total_ms"]
     )
+    assert candidate_leaf_stages["top_leaf_candidate_first_step_avg_ms"][0]["metric"] == (
+        "stage.block_forward.attention.qkv.first_step_avg_ms"
+    )
+    assert candidate_leaf_stages["top_leaf_candidate_first_step_avg_ms"][1]["metric"] == (
+        "stage.block_backward.attn_sdpa.to_qkv.first_step_avg_ms"
+    )
+    assert candidate_leaf_stages["top_leaf_candidate_steady_state_avg_ms"][0]["metric"] == (
+        "stage.lm_head_backward.steady_state_avg_ms"
+    )
+    assert all(
+        row["metric"] != "stage.block_forward.first_step_avg_ms"
+        for row in candidate_leaf_stages["top_leaf_candidate_first_step_avg_ms"]
+    )
+    assert all(
+        row["metric"] != "stage.block_backward.steady_state_avg_ms"
+        for row in candidate_leaf_stages["top_leaf_candidate_steady_state_avg_ms"]
+    )
     assert all(
         row["metric"] != "setup_wall_ms"
         for row in hot_stage_ratios["top_leaf_candidate_total_ms"]
@@ -5231,6 +5292,10 @@ def test_paired_kernel_speed_tool_prints_native_hot_summary() -> None:
     assert "native_hot_stage_ratios:" in proc.stdout
     assert "top_candidate_total_ms:" in proc.stdout
     assert "top_leaf_candidate_total_ms:" in proc.stdout
+    assert "top_leaf_candidate_first_step_avg_ms:" in proc.stdout
+    assert "top_leaf_candidate_steady_state_avg_ms:" in proc.stdout
+    assert "stage.block_forward.attention.qkv.first_step_avg_ms" in proc.stdout
+    assert "stage.lm_head_backward.steady_state_avg_ms" in proc.stdout
     assert "candidate_native_leaf_hot_stages:" in proc.stdout
     assert "top_reference_gaps:" in proc.stdout
     assert "top_regressions:" in proc.stdout

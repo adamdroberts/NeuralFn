@@ -2061,7 +2061,8 @@ execution counters such as
 `block_backward_mlp_proj_dinput_before_dweight_count` and
 `block_backward_qkv_dinput_before_dweight_count`, emitted
 `attention_backward_tk_block_size`, emitted
-`timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
+`timing.setup_timing` and `timing.stage_timing` totals/averages/counts,
+first-step and steady-state stage averages, and paired native-metric ratios
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads
 that sidecar JSON when stdout has no native payload, so profiled native runs can
@@ -2069,7 +2070,11 @@ keep stdout small without dropping metric summaries. Direct native C++ runs that
 redirect to those JSON/profile files also mirror failed `--check-tile-ops` and
 `--train-transformer-lm` summaries to stderr, so missing Tile symbols and
 CUDA-driver/runtime preflight errors are visible without manually opening the
-sidecar. The helper also parses llm.kittens
+sidecar. The compact `candidate_native_leaf_hot_stages` summary includes
+`top_leaf_candidate_first_step_avg_ms` and
+`top_leaf_candidate_steady_state_avg_ms`, so first-use stage penalties and
+steady-state hot kernels are ranked next to total leaf stage time. The helper
+also parses llm.kittens
 `step ... ms ... tok/s` output into the same metric keys, plus BF16 MFU and
 device-memory fields, so direct `train_gpt2cu` baselines can be compared
 against NeuralFn native JSON without relying on outer subprocess wall time.

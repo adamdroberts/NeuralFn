@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now includes
+  `top_leaf_candidate_first_step_avg_ms` and
+  `top_leaf_candidate_steady_state_avg_ms` in the
+  `candidate_native_leaf_hot_stages` JSON/stdout summary. Parent stage buckets
+  are filtered when child leaf stages exist, so short parity runs can identify
+  first-use QKV or LM-head costs without manually opening the native profile
+  sidecar. Verification: focused paired-speed pytest, Python compile check, and
+  `git diff --check`.
+
 - Native GPT LM-head strict-body diagnostics: added the rejected-by-default
   four-warp strict WMMA LM-head bisection
   `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-true-fused-tile16-wmma-warp128`
