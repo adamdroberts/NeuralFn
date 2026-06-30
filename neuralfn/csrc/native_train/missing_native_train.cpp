@@ -3,12 +3,15 @@
 #include <cstdint>
 #include <cstdlib>
 #include <dlfcn.h>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "token_shards.h"
 
 #ifndef NFN_NATIVE_MODEL_FAMILY
 #define NFN_NATIVE_MODEL_FAMILY "unknown"
@@ -43,6 +46,8 @@ struct Config {
     bool print_plan = false;
     bool check_tile_ops = false;
     bool dry_run = false;
+    bool sample_token_batch = false;
+    bool allow_train_as_val = false;
     std::vector<std::string> unparsed_args;
 };
 
@@ -196,6 +201,7 @@ void print_usage(const char* program) {
         << "Useful preflight options:\n"
         << "  --print-plan              Emit JSON with native work and schedule metadata\n"
         << "  --check-tile-ops          Check required raw Tile symbols from the trainer ABI\n"
+        << "  --sample-token-batch      Resolve native token shards and emit the first token/target batch\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
         << "Required native work:\n"
@@ -217,6 +223,10 @@ Config parse_args(int argc, char** argv) {
             cfg.check_tile_ops = true;
         } else if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             cfg.dry_run = true;
+        } else if (arg == "--sample-token-batch") {
+            cfg.sample_token_batch = true;
+        } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
+            cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
             cfg.dataset_alias = require_value(argc, argv, &i, arg);
         } else if (arg == "--tinystories") {
@@ -257,6 +267,28 @@ void print_json(const Config& cfg, const char* program) {
         ? check_symbols(tile_ops_lib, &tile_ops_error)
         : std::vector<SymbolResult>{};
     const bool symbols_ok = cfg.check_tile_ops && all_symbols_found(symbols);
+    bool have_dataset = false;
+    bool have_batch = false;
+    neuralfn::native_train::TokenShardDataset dataset;
+    neuralfn::native_train::BatchPlan batch_plan;
+    neuralfn::native_train::TokenBatch sample_batch;
+    if (cfg.sample_token_batch) {
+        dataset = neuralfn::native_train::resolve_token_shards(
+            cfg.dataset_alias,
+            cfg.allow_train_as_val,
+            false);
+        batch_plan = neuralfn::native_train::build_batch_plan(
+            dataset,
+            cfg.train_seq_len,
+            cfg.batch_size,
+            cfg.train_batch_tokens);
+        have_dataset = true;
+        neuralfn::native_train::SequentialTokenBatchSampler sampler(
+            dataset.train_shards,
+            cfg.train_seq_len,
+            cfg.batch_size);
+        have_batch = sampler.next(sample_batch);
+    }
     const std::string kernel_status =
         required_symbols.empty()
             ? "no-required-tile-symbols-declared"
@@ -274,6 +306,7 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"native_token_batch_preflight\": " << (cfg.sample_token_batch ? "true" : "false") << ",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
@@ -309,7 +342,20 @@ void print_json(const Config& cfg, const char* program) {
         }
         std::cout << "\n";
     }
-    std::cout << "  ]";
+    std::cout << "  ],\n"
+        << "  \"token_shards\": ";
+    if (have_dataset) {
+        std::cout << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan);
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\n"
+        << "  \"sample_batch\": ";
+    if (have_batch) {
+        std::cout << neuralfn::native_train::token_batch_json(sample_batch);
+    } else {
+        std::cout << "null";
+    }
     if (symbol_check_requested) {
         std::cout
             << ",\n"
@@ -339,12 +385,22 @@ void print_json(const Config& cfg, const char* program) {
 
 int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
-    if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run) {
-        print_json(cfg, argv[0]);
-        return 0;
+    try {
+        if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
+            print_json(cfg, argv[0]);
+            return 0;
+        }
+    } catch (const std::exception& exc) {
+        std::cerr << exc.what() << "\n";
+        return 2;
     }
 
-    print_json(cfg, argv[0]);
+    try {
+        print_json(cfg, argv[0]);
+    } catch (const std::exception& exc) {
+        std::cerr << exc.what() << "\n";
+        return 2;
+    }
     std::cerr
         << NFN_NATIVE_TARGET_NAME << ": native CUDA Tile trainer for " << NFN_NATIVE_MODEL_FAMILY
         << " is not implemented yet.\n"

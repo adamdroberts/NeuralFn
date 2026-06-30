@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Missing-family native trainer placeholders for LLaMA, MixLLaMA, JEPA,
+  semantic-router MoE, and DeepSeek-V4 now link the shared C++ token-shard
+  resolver. Their `--sample-token-batch --dataset-alias PATH_OR_ALIAS`
+  preflight emits cached-shard metadata and the first token/target batch while
+  preserving the structured `family-native-loop-missing` training status,
+  `torch_required: false`, and `graph_editor_tensor_flow: false` runtime
+  contract. Verification: focused missing-family native build/dispatch pytest.
+
 - `cli/scripts/train_jepa_semantic.py` now keeps semantic-vocabulary and
   dataset-manager helpers lazy when imported as a utility module. Direct script
   execution still exits through the compiled native training registry before

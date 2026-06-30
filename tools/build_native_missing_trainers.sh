@@ -22,7 +22,8 @@ build_one() {
     -DNFN_NATIVE_TARGET_NAME="\"${target}\"" \
     -DNFN_NATIVE_REQUIRED_KERNELS="\"${required}\"" \
     -DNFN_NATIVE_REQUIRED_SYMBOLS="\"${symbols}\"" \
-    "${SRC}" -ldl -o "${out}"
+    -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
+    "${SRC}" "${TOKEN_SHARDS_SRC}" -ldl -o "${out}"
   printf '%s\n' "${out}"
 }
 

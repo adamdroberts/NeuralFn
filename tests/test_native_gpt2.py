@@ -10814,6 +10814,44 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["tile_ops_check"]["all_required_symbols_found"] is False
     assert llama_payload["tile_ops_check"]["checked"] is True
     assert llama_payload["tile_ops_check"]["error"]
+
+    dataset_path = _write_uint16_shard_dataset(tmp_path)
+    llama_sample = subprocess.run(
+        [
+            str(llama),
+            "--sample-token-batch",
+            "--dataset-alias",
+            str(dataset_path),
+            "--batch-size",
+            "2",
+            "--train-seq-len",
+            "8",
+            "--train-batch-tokens",
+            "32",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert llama_sample.returncode == 0, llama_sample.stderr
+    sample_payload = json.loads(llama_sample.stdout)
+    assert sample_payload["model_family"] == "llama"
+    assert sample_payload["status"] == "family-native-trainer-missing"
+    assert sample_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert sample_payload["compiled_native_boundary"] is True
+    assert sample_payload["torch_required"] is False
+    assert sample_payload["graph_editor_tensor_flow"] is False
+    assert sample_payload["native_token_batch_preflight"] is True
+    assert sample_payload["token_shards"]["dataset_path"] == str(dataset_path)
+    assert sample_payload["token_shards"]["batch_read_strategy"] == "contiguous_shard_segments"
+    assert sample_payload["token_shards"]["batch_plan"]["microbatch_tokens"] == 16
+    assert sample_payload["token_shards"]["batch_plan"]["grad_accum_steps"] == 2
+    assert sample_payload["sample_batch"]["batch_size"] == 2
+    assert sample_payload["sample_batch"]["seq_len"] == 8
+    assert sample_payload["sample_batch"]["items"] == 16
+    assert sample_payload["sample_batch"]["tokens"] == list(range(16))
+    assert sample_payload["sample_batch"]["targets"] == list(range(1, 17))
     dense_gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
     )
