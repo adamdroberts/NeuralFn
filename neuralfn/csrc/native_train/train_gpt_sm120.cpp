@@ -99,7 +99,8 @@ bool native_trainer_stale(const fs::path& root, const fs::path& native_bin) {
     if (native_trainer_source_newer_than(root, native_bin)) {
         return true;
     }
-    return native_bin.filename() == "nfn_gpt_native_train_linked" &&
+    const fs::path filename = native_bin.filename();
+    return (filename == "nfn_gpt_native_train" || filename == "nfn_gpt_native_train_linked") &&
            linked_tile_ops_source_newer_than(root, native_bin);
 }
 
@@ -264,8 +265,7 @@ int main(int argc, char** argv) {
 
     std::string native_bin = env_or("NFN_NATIVE_GPT_TRAIN_BIN");
     if (native_bin.empty()) {
-        const fs::path linked = root / "build" / "nfn_gpt_native_train_linked";
-        native_bin = executable(linked) ? linked.string() : (root / "build" / "nfn_gpt_native_train").string();
+        native_bin = (root / "build" / "nfn_gpt_native_train").string();
     }
 
     const bool cuda_visible_devices_selector_explicit = env_any_nonempty(
@@ -505,7 +505,9 @@ int main(int argc, char** argv) {
         append(out, "--tinystories");
     }
     append_pair(out, "--backend", "tile-cuda");
-    if (fs::path(native_bin).filename() == "nfn_gpt_native_train_linked") {
+    const fs::path native_filename = fs::path(native_bin).filename();
+    if (native_filename == "nfn_gpt_native_train" ||
+        native_filename == "nfn_gpt_native_train_linked") {
         append_pair(out, "--tile-ops-lib", "linked");
     }
     append_pair(out, "--output-dir", output_dir);

@@ -13,7 +13,7 @@ native_gpt_source_newer_than() {
      "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ||
      "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.h" -nt "$target" ||
      "$ROOT_DIR/neuralfn/csrc/native_train/shipped_gpt_template_presets.h" -nt "$target" ||
-     "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" -nt "$target" ]]
+     "$ROOT_DIR/tools/build_native_gpt_cli.sh" -nt "$target" ]]
 }
 
 tile_ops_source_newer_than() {
@@ -37,17 +37,17 @@ ensure_default_native_trainer_current() {
       ;;
   esac
   if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" ]]; then
-    local linked="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
-    local rebuild_linked=0
-    if [[ ! -x "$linked" ]]; then
-      rebuild_linked=1
-    elif native_gpt_source_newer_than "$linked"; then
-      rebuild_linked=1
-    elif tile_ops_source_newer_than "$linked"; then
-      rebuild_linked=1
+    local trainer="${ROOT_DIR}/build/nfn_gpt_native_train"
+    local rebuild_trainer=0
+    if [[ ! -x "$trainer" ]]; then
+      rebuild_trainer=1
+    elif native_gpt_source_newer_than "$trainer"; then
+      rebuild_trainer=1
+    elif tile_ops_source_newer_than "$trainer"; then
+      rebuild_trainer=1
     fi
-    if [[ "$rebuild_linked" == "1" ]]; then
-      bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$linked" >&2
+    if [[ "$rebuild_trainer" == "1" ]]; then
+      bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$trainer" >&2
     fi
   fi
 }

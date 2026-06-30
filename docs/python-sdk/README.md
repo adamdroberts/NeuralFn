@@ -258,10 +258,9 @@ Backend names are strict: use `"tile-cuda"`. For the unified native training fro
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is
 used by `run_native_train(..., runner="auto")` to hand off without importing
 Torch. Dense GPT-family SDK configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) skip the
-generic `nfn_native_train` dispatcher and spawn the linked
-`nfn_gpt_native_train_linked` binary when it exists, falling back to
-`nfn_gpt_native_train` only when no linked binary or `NFN_NATIVE_GPT_CLI`
-override is available.
+generic `nfn_native_train` dispatcher and spawn the canonical
+`nfn_gpt_native_train` binary unless `NFN_NATIVE_GPT_CLI` overrides it. That
+default binary self-selects the linked Tile-ops path.
 Use `build_native_gpt_launcher_run_config()` when an SDK caller should spawn the
 generic compiled GPT launcher (`build/nfn_train_gpt`, `NFN_NATIVE_GPT_TRAIN_CLI`,
 or installed `nfn-train-gpt` / `nfn-gpt-train`) through the same validated

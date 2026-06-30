@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Dense GPT native startup now uses the linked Tile ops path for the default
+  `build/nfn_gpt_native_train` binary, not only for
+  `build/nfn_gpt_native_train_linked`. `tools/build_native_gpt_cli.sh` links
+  `libnfn_native_train_tile_ops.so` directly, tracks Tile ops sources for stale
+  rebuilds, and the C++ loader self-selects `--tile-ops-lib linked` for
+  `nfn_gpt_native_train` / `nfn-gpt-native-train` executable names. Direct
+  default invocations now avoid dynamic Tile ops `dlopen`; pass an explicit
+  `--tile-ops-lib PATH` when intentionally testing a swappable candidate shared
+  object. The SDK, `nfn train`, direct GPT-native wrapper, SM120 shell helpers,
+  and same-script benchmark wrappers now use `build/nfn_gpt_native_train` as
+  the canonical dense GPT trainer and reserve
+  `build/nfn_gpt_native_train_linked` for explicit alias/comparison runs.
+  `NFN_NATIVE_GPT_CXX_OPT_FLAGS` can override the native trainer frontend
+  compile flags; the default frontend build uses `-O0` while the optimized CUDA
+  Tile kernels remain in the linked Tile ops library. **Breaking changes:**
+  callers that inferred behavior from the resolved binary path should migrate
+  from checking for `nfn_gpt_native_train_linked` to checking
+  `tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` or passing an
+  explicit `NFN_NATIVE_GPT_CLI` / `--tile-ops-lib PATH` when testing a swappable
+  Tile ops shared object. Verification: rebuilt `build/nfn_gpt_native_train`
+  and `build/nfn_gpt2_native_train`;
+  direct startup-only profile reported `tile_ops_library: linked`,
+  `tile_ops_dlopen_binding_strategy: RTLD_DEFAULT-linked`,
+  `torch_required: false`, `graph_editor_tensor_flow: false`, and
+  `setup_wall_ms=1660.34`; full no-Torch verifier passed 23 artifact scans, 69
+  Python entrypoints, 24 shell entrypoints, and 4 native template catalogs;
+  focused native GPT pytest passed; same-script SM120 parity passed with
+  steady-state CUDA-event timing `0.888825x` and steady-state tokens/sec
+  `1.124733x` versus the llm.kittens reference under clean selected-GPU state.
+
 - The compiled top-level `nfn-native infer` shim now accepts `--weights PATH`
   as a native checkpoint alias, matching the Python `nfn infer` native route.
   `--weights DIR --native-info --print-command` resolves the latest

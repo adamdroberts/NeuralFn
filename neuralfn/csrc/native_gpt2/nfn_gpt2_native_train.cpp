@@ -4200,7 +4200,9 @@ std::string default_tile_ops_lib(const char* program) {
     }
     fs::path exe_path(program);
     const std::string executable_name = exe_path.filename().string();
-    if (executable_name == "nfn_gpt_native_train_linked" ||
+    if (executable_name == "nfn_gpt_native_train" ||
+        executable_name == "nfn-gpt-native-train" ||
+        executable_name == "nfn_gpt_native_train_linked" ||
         executable_name == "nfn-gpt-native-train-linked") {
         return "linked";
     }

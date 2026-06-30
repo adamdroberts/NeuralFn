@@ -725,9 +725,6 @@ def _resolve_direct_native_train_cli(model: str) -> str:
         requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
         if requested:
             return requested
-        linked = ROOT.parent / "build" / "nfn_gpt_native_train_linked"
-        if linked.exists():
-            return str(linked)
         return str(ROOT.parent / "build" / "nfn_gpt_native_train")
     family_cli = _resolve_direct_native_train_family_cli(model)
     if family_cli:
@@ -771,7 +768,12 @@ def _canonical_dense_gpt_model_family(model: str) -> str:
 
 
 def _native_gpt_cli_uses_linked_tile_ops(path: str) -> bool:
-    return Path(path).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
+    return Path(path).name in {
+        "nfn_gpt_native_train",
+        "nfn-gpt-native-train",
+        "nfn_gpt_native_train_linked",
+        "nfn-gpt-native-train-linked",
+    }
 
 
 _NATIVE_TRAIN_ACTION_FLAGS = {

@@ -335,14 +335,16 @@ def _resolve_native_compiled_cli_path(args: argparse.Namespace) -> str:
         value = str(os.environ.get(key, "")).strip()
         if value:
             return value
-    linked = REPO_ROOT / "build" / "nfn_gpt_native_train_linked"
-    if linked.exists():
-        return str(linked)
     return str(REPO_ROOT / "build" / "nfn_gpt_native_train")
 
 
 def _compiled_cli_uses_linked_tile_ops(path: str) -> bool:
-    return Path(path).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
+    return Path(path).name in {
+        "nfn_gpt_native_train",
+        "nfn-gpt-native-train",
+        "nfn_gpt_native_train_linked",
+        "nfn-gpt-native-train-linked",
+    }
 
 
 def _fast_final_lr_fraction(args: argparse.Namespace) -> float:

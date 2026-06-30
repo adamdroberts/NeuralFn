@@ -130,8 +130,10 @@ PyTorch install outside the default CLI training workflow.
 The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.
 Graph-backed compatibility script guards that target the shared dense GPT
-trainer now prefer `build/nfn_gpt_native_train_linked` when it exists and no
-`NFN_NATIVE_GPT_CLI` override is set. Those guards also append
+trainer now prefer the canonical `build/nfn_gpt_native_train` binary when no
+`NFN_NATIVE_GPT_CLI` override is set. That default binary is built with the Tile
+ops library as a direct dependency and self-selects `--tile-ops-lib linked`, so
+direct default invocations avoid the dynamic Tile ops loader. Guards append
 `--tile-ops-lib linked` unless the caller already supplied a Tile ops library
 flag, so direct scripts such as `python cli/scripts/train_nanogpt.py ...` enter
 the linked CUDA Tile trainer path instead of paying the dynamic Tile ops load.
@@ -1858,13 +1860,18 @@ or `nanogpt`, the dispatcher also preserves the wrapper spelling
 native-cuda command inspection tests.
 
 For startup measurements where the Tile ops library itself is not being
-swapped, `bash tools/build_native_gpt_cli_linked.sh` builds
-`build/nfn_gpt_native_train_linked` with
-`build/libnfn_native_train_tile_ops.so` as a direct dependency. Invoke that
-binary with `--tile-ops-lib linked` to resolve Tile ABI symbols from
-`RTLD_DEFAULT` instead of calling `dlopen` on the shared object inside the
-trainer. JSON reports `tile_ops_dlopen_binding_strategy:
+swapped, `bash tools/build_native_gpt_cli.sh` now builds the default
+`build/nfn_gpt_native_train` with
+`build/libnfn_native_train_tile_ops.so` as a direct dependency. The
+`build_native_gpt_cli_linked.sh` alias still builds
+`build/nfn_gpt_native_train_linked` for older scripts and explicit comparisons.
+Invoke either binary with `--tile-ops-lib linked`, or omit the flag for the
+default executable names, to resolve Tile ABI symbols from `RTLD_DEFAULT`
+instead of calling `dlopen` on the shared object inside the trainer. JSON reports
+`tile_ops_dlopen_binding_strategy:
 "RTLD_DEFAULT-linked"` and keeps the same required-symbol scan fields. When
+rebuilding the C++ trainer frontend, set `NFN_NATIVE_GPT_CXX_OPT_FLAGS` to
+override the default compile optimization flags. When
 running direct no-data smokes, `--smoke-tile-ops` and
 `--smoke-optimizer-step` also treat `--tile-ops-lib linked` as `RTLD_DEFAULT`
 instead of trying to `dlopen` a file named `linked`. The same linked sentinel
@@ -1874,12 +1881,13 @@ transformer-LM diagnostics. On the 2026-06-25 one-step TinyStories probe,
 the linked binary reduced `setup.load_tile_ops` from about `63.986 ms` on the
 dynamic trainer to `0.083 ms`, while keeping `torch_required=false` and
 `graph_editor_tensor_flow=false`.
-When `build/nfn_gpt_native_train_linked` exists, the normal Python and C++ dense GPT
-dispatchers prefer it automatically and the linked binary self-selects
-`--tile-ops-lib linked` from its executable name. Set `NFN_NATIVE_GPT_CLI`,
-`NFN_NATIVE_GPT2_CLI`, or explicit `--tile-ops-lib PATH` to force the regular
-dynamic route for same-script kernel candidate comparisons that intentionally
-replace the Tile ops `.so` at runtime.
+Normal Python and C++ dense GPT dispatchers prefer the default
+`nfn_gpt_native_train` executable, which self-selects `--tile-ops-lib linked`
+from the executable name. The `nfn_gpt_native_train_linked` alias remains
+available for explicit comparisons. Set `NFN_NATIVE_GPT_CLI`,
+`NFN_NATIVE_GPT2_CLI`, or explicit `--tile-ops-lib PATH` to force the dynamic
+route for same-script kernel candidate comparisons that intentionally replace
+the Tile ops `.so` at runtime.
 The compiled `nfn-native infer` dispatcher now uses that same linked-aware GPT
 resolver for `--native-info` and `--sample-checkpoint` delegation. It accepts
 `--checkpoint`, `--native-checkpoint`, or `--weights` as native checkpoint

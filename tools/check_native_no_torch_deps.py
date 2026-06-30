@@ -19,7 +19,6 @@ import tomllib
 REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt_native_train"),
     Path("build/libnfn_native_train_tile_ops.so"),
-    Path("build/nfn_gpt_native_train_linked"),
     Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_train_gpt"),
     Path("build/nfn_train_gpt_sm120"),
@@ -29,6 +28,7 @@ REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn-native"),
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
+    Path("build/nfn_gpt_native_train_linked"),
     Path("build/nfn_gpt2_evo_native_train"),
     Path("build/nfn_nanogpt_native_train"),
     Path("build/nfn_llama_native_train"),
@@ -53,6 +53,10 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/token_shards.cpp"),
         Path("neuralfn/csrc/native_train/token_shards.h"),
         Path("neuralfn/csrc/native_train/shipped_gpt_template_presets.h"),
+        Path("neuralfn/csrc/native_train/tile_ops.cu"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+        Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+        Path("tools/build_native_train_tile_ops.sh"),
         Path("tools/build_native_gpt_cli.sh"),
     ),
     Path("build/nfn_gpt_native_train_linked"): (
@@ -1289,6 +1293,22 @@ def default_artifacts() -> list[Path]:
     return artifacts
 
 
+def artifact_is_required(path: Path, repo_root: Path) -> bool:
+    try:
+        rel_path = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        rel_path = path
+    rel = Path(rel_path)
+    if rel in REQUIRED_DEFAULT_ARTIFACTS:
+        return True
+    rel_text = rel.as_posix()
+    return any(Path().glob(pattern) and rel.match(pattern) for pattern in REQUIRED_DEFAULT_ARTIFACT_GLOBS) or any(
+        Path(match).as_posix() == rel_text
+        for pattern in REQUIRED_DEFAULT_ARTIFACT_GLOBS
+        for match in Path().glob(pattern)
+    )
+
+
 def artifact_source_dependencies(path: Path, repo_root: Path) -> list[Path]:
     try:
         rel_path = path.resolve().relative_to(repo_root.resolve())
@@ -2201,7 +2221,7 @@ def artifact_summary_counts(entries: list[dict[str, object]]) -> dict[str, int]:
         1
         for entry in entries
         if entry.get("error") == "missing"
-        or bool(entry.get("stale_sources"))
+        or (bool(entry.get("stale_sources")) and bool(entry.get("required", True)))
         or bool(entry.get("forbidden"))
     )
     return {
@@ -2405,6 +2425,7 @@ def main() -> int:
         artifacts = list(args.artifacts) if args.artifacts else default_artifacts()
         for artifact in artifacts:
             path = artifact.expanduser()
+            required_artifact = artifact_is_required(path, repo_root)
             stale_sources = (
                 [] if args.skip_stale_artifacts else stale_artifact_sources(path, repo_root)
             )
@@ -2418,6 +2439,7 @@ def main() -> int:
                     stale_sources = stale_artifact_sources(path, repo_root)
             entry: dict[str, object] = {
                 "artifact": str(path),
+                "required": required_artifact,
                 "exists": path.exists(),
                 "forbidden": [],
                 "required_string_markers": [
@@ -2450,7 +2472,7 @@ def main() -> int:
             entry["missing_string_markers"] = missing_markers
             if missing_markers:
                 failed = True
-            if stale_sources:
+            if stale_sources and required_artifact:
                 failed = True
             artifact_report.append(entry)
 

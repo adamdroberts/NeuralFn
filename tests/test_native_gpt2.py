@@ -518,7 +518,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "train_gpt_sm120_custom_graph_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["passed"] is True
-    assert "nfn_gpt_native_train_linked" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "nfn_gpt_native_train" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--tile-ops-lib linked" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
@@ -529,14 +529,14 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--adam-eps 1e-8" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--grad-clip-norm 0.75" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["passed"] is True
-    assert "nfn_gpt_native_train_linked" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert "nfn_gpt_native_train" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--tile-ops-lib linked" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--batch-size 32" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_template_selector_dry_run"]["passed"] is True
-    assert "nfn_gpt_native_train_linked" in shell_entrypoints[
+    assert "nfn_gpt_native_train" in shell_entrypoints[
         "train_gpt_sm120_compiled_template_selector_dry_run"
     ]["stdout"]
     assert "--tile-ops-lib linked" in shell_entrypoints[
@@ -552,7 +552,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "train_gpt_sm120_compiled_template_selector_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_custom_graph_dry_run"]["passed"] is True
-    assert "nfn_gpt_native_train_linked" in shell_entrypoints[
+    assert "nfn_gpt_native_train" in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
     ]["stdout"]
     assert "--tile-ops-lib linked" in shell_entrypoints[
@@ -772,7 +772,7 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
     assert all(path.relative_to(root) in artifacts for path in present_optional_globs)
     assert Path("build/nfn_gpt_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/libnfn_native_train_tile_ops.so") in module.REQUIRED_DEFAULT_ARTIFACTS
-    assert Path("build/nfn_gpt_native_train_linked") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt_native_train_linked") not in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt_sm120") in module.REQUIRED_DEFAULT_ARTIFACTS
@@ -780,7 +780,7 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
     assert Path("build/nfn_native_train") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt_sm120") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt") not in module.OPTIONAL_DEFAULT_ARTIFACTS
-    assert Path("build/nfn_gpt_native_train_linked") not in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt_native_train_linked") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_native_train") not in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
@@ -1683,6 +1683,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "linked_tile_ops_requested" in source
     assert "open_tile_ops_library" in source
     assert "dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL)" not in source
+    assert 'executable_name == "nfn_gpt_native_train"' in source
+    assert 'executable_name == "nfn-gpt-native-train"' in source
     assert 'executable_name == "nfn_gpt_native_train_linked"' in source
     assert 'return "linked";' in source
     assert "bool linked_tile_ops_requested(std::string_view path)" in source
@@ -1710,7 +1712,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}"' in linked_build
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}"' in linked_build
     assert '"${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}"' in linked_build
-    assert "nfn_gpt_native_train_linked" in train_gpt_source
+    assert "nfn_gpt_native_train" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
     assert "run_native_gpt_compiled_cli_capture" in train_gpt_source
@@ -1758,9 +1760,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS" in train_sm120_cpp
     assert "cuda_visible_devices_selector_explicit" in train_sm120_cpp
     assert 'setenv("CUDA_VISIBLE_DEVICES", cuda_visible_devices_value.c_str(), 1)' in train_sm120_cpp
-    assert "build/nfn_gpt_native_train_linked" in train_sm120
+    assert "build/nfn_gpt_native_train" in train_sm120
     assert 'TILE_OPS_ARGS=(--tile-ops-lib linked)' in train_sm120
-    assert "build_native_gpt_cli_linked.sh" in train_sm120
+    assert "build_native_gpt_cli.sh" in train_sm120
     assert "GPT_LINKED_CLI_OUT" in build_all
     assert "GPT_TRAIN_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
@@ -1823,17 +1825,26 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'export NFN_NATIVE_FORCE_REBUILD="${NFN_NATIVE_FORCE_REBUILD:-1}"' in rebuild_sm120
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in build_script
     assert "NFN_NATIVE_FORCE_REBUILD" in build_script
+    assert "libnfn_native_train_tile_ops.so" in build_script
+    assert "-Wl,--export-dynamic" in build_script
+    assert "-Wl,--no-as-needed" in build_script
+    assert "-Wl,-rpath" in build_script
+    assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}"' in build_script
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}"' in build_script
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}"' in build_script
+    assert '"${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}"' in build_script
     assert "source_newer_than_out" in build_script
     assert "TOKEN_SHARDS_HEADER" in build_script
     assert "CATALOG_HEADER" in build_script
     assert '! source_newer_than_out "${CATALOG_HEADER}"' in build_script
+    assert '! source_newer_than_out "${TILE_OPS_LIB}"' in build_script
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in compat_build
     assert "NFN_NATIVE_FORCE_REBUILD" in compat_build
     assert "source_newer_than_out" in compat_build
     assert "TOKEN_SHARDS_HEADER" in compat_build
     assert "CATALOG_HEADER" in compat_build
     assert '! source_newer_than_out "${CATALOG_HEADER}"' in compat_build
-    assert '"${SRC}" "${TOKEN_SHARDS_SRC}" -pthread -ldl -o "${OUT}"' in build_script
+    assert '-pthread -ldl -o "${OUT}"' in build_script
     assert "NFN_NATIVE_GPT_FORCE_REBUILD" in linked_build
     assert "source_newer_than_out" in linked_build
     assert "CATALOG_HEADER" in linked_build
@@ -2948,13 +2959,13 @@ def test_sm120_compiled_launcher_rejects_stale_native_trainer() -> None:
 
     assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-0}"' in generic_shell_source
     assert "tools/build_train_gpt_cli.sh" in generic_shell_source
-    assert "tools/build_native_gpt_cli_linked.sh" in generic_shell_source
+    assert "tools/build_native_gpt_cli.sh" in generic_shell_source
     assert "shipped_gpt_template_presets.h" in generic_shell_source
     assert "ensure_default_compiled_launcher_current" in generic_shell_source
     assert "ensure_default_native_trainer_current" in generic_shell_source
     assert 'AUTO_REBUILD_NATIVE="${NFN_NATIVE_GPT_AUTO_REBUILD:-${NFN_SM120_AUTO_REBUILD:-0}}"' in shell_source
     assert "tools/build_train_gpt_sm120_cli.sh" in shell_source
-    assert "tools/build_native_gpt_cli_linked.sh" in shell_source
+    assert "tools/build_native_gpt_cli.sh" in shell_source
     assert "shipped_gpt_template_presets.h" in shell_source
     assert "ensure_default_compiled_launcher_current" in shell_source
     assert "ensure_default_native_trainer_current" in shell_source

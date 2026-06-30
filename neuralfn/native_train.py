@@ -15,8 +15,8 @@ from .native_cuda_device import resolve_cuda_visible_devices_value
 
 
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
-DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
+DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_LAUNCHER_CLI = "build/nfn_train_gpt"
 DEFAULT_NATIVE_SM120_TRAIN_CLI = "build/nfn_train_gpt_sm120"
 NATIVE_GPT_LAUNCHER_COMMANDS = ("nfn-train-gpt", "nfn-gpt-train", "nfn_train_gpt")
@@ -624,9 +624,6 @@ def resolve_native_train_family_cli(model_family: str | None, native_train_cli: 
             return env_value
     repo_root = Path(__file__).resolve().parents[1]
     if target_name == "nfn_gpt_native_train":
-        linked_path = repo_root / DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED
-        if linked_path.exists():
-            return str(linked_path)
         default_path = DEFAULT_NATIVE_GPT_TRAIN_CLI
     else:
         default_path = f"build/{target_name}"

@@ -9,6 +9,7 @@ CATALOG_HEADER="${ROOT_DIR}/neuralfn/csrc/native_train/shipped_gpt_template_pres
 OUT="${1:-${ROOT_DIR}/build/nfn_gpt_native_train_linked}"
 TILE_OPS_LIB="${NFN_NATIVE_TRAIN_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 CXX_BIN="${CXX:-c++}"
+CXX_OPT_FLAGS="${NFN_NATIVE_GPT_CXX_OPT_FLAGS:--O0}"
 FORCE_REBUILD="${NFN_NATIVE_GPT_FORCE_REBUILD:-${NFN_NATIVE_FORCE_REBUILD:-0}}"
 
 if [[ ! -f "${TILE_OPS_LIB}" ||
@@ -37,7 +38,7 @@ if [[ "${FORCE_REBUILD}" != "1" && -f "${OUT}" ]]; then
 fi
 
 mkdir -p "$(dirname "${OUT}")"
-"${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic \
+"${CXX_BIN}" -std=c++20 ${CXX_OPT_FLAGS} -Wall -Wextra -pedantic \
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
   "${SRC}" "${TOKEN_SHARDS_SRC}" \
   -rdynamic -Wl,--export-dynamic \

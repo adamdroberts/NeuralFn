@@ -7,11 +7,7 @@ LLM_KITTENS_TRAIN_BIN="${LLM_KITTENS_TRAIN_BIN:-$LLM_KITTENS_ROOT/train_gpt2cu}"
 LLM_KITTENS_TINYSTORIES_DIR="${LLM_KITTENS_TINYSTORIES_DIR:-$LLM_KITTENS_ROOT/dev/data/tinystories}"
 NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH="${NFN_SM120_REFERENCE_CUDA_LD_LIBRARY_PATH-/usr/local/cuda/lib64:/usr/lib/wsl/lib}"
 NFN_NATIVE_GPT_TRAIN_BIN_EXPLICIT="${NFN_NATIVE_GPT_TRAIN_BIN+x}"
-if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "$ROOT_DIR/build/nfn_gpt_native_train_linked" ]]; then
-  NFN_NATIVE_GPT_TRAIN_BIN="$ROOT_DIR/build/nfn_gpt_native_train_linked"
-else
-  NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
-fi
+NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
 NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN_EXPLICIT="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN+x}${NFN_SM120_CANDIDATE_TRAIN_BIN+x}"
 NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN:-${NFN_SM120_CANDIDATE_TRAIN_BIN:-$NFN_NATIVE_GPT_TRAIN_BIN}}"
 NFN_NATIVE_TILE_OPS_LIB_EXPLICIT="${NFN_NATIVE_TILE_OPS_LIB+x}"
@@ -149,7 +145,9 @@ tile_ops_arg_for() {
   local train_bin="$1"
   local tile_ops_lib="$2"
   local explicit="$3"
-  if [[ -z "$explicit" && "$(basename "$train_bin")" == "nfn_gpt_native_train_linked" ]]; then
+  if [[ -z "$explicit" &&
+        ( "$(basename "$train_bin")" == "nfn_gpt_native_train" ||
+          "$(basename "$train_bin")" == "nfn_gpt_native_train_linked" ) ]]; then
     printf '%s' "linked"
   else
     printf '%s' "$tile_ops_lib"
@@ -2227,6 +2225,8 @@ ensure_native_gpt_trainer_current() {
       if [[ ! -x "$train_bin" ]]; then
         rebuild_dynamic=1
       elif native_gpt_source_newer_than "$train_bin"; then
+        rebuild_dynamic=1
+      elif tile_ops_source_newer_than "$train_bin"; then
         rebuild_dynamic=1
       fi
       if [[ "$rebuild_dynamic" == "1" ]]; then

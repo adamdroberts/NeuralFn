@@ -394,7 +394,7 @@ compiled launcher invocations reject stale native trainer binaries before CUDA
 setup, unless `NFN_NATIVE_GPT_ALLOW_STALE_TRAIN_BIN=1` is set for
 stale-artifact diagnostics.
 Set `NFN_SM120_USE_COMPILED_LAUNCHER=0` only to exercise the older Bash parser.
-The compiled launcher prefers `build/nfn_gpt_native_train_linked`,
+The compiled launcher prefers `build/nfn_gpt_native_train`,
 injects `--tile-ops-lib linked` for that binary, supports `--base-model`,
 `--template-name`, and `--graph-file`, and is included in
 `tools/build_native_gpt2_all.sh` plus the no-Torch dependency checker. The
@@ -3602,10 +3602,10 @@ returning captured stdout and stderr for SDK-native checkpoint sampling and
 native inference diagnostics.
 For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
 `neuralfn.native_train` SDK resolver now chooses
-`build/nfn_gpt_native_train_linked` before `build/nfn_gpt_native_train` when no
-explicit `NFN_NATIVE_GPT_CLI` or `NFN_NATIVE_TRAIN_CLI` override is set. This
-keeps SDK-native runs on the same linked Tile-ops startup path as `nfn train`
-and avoids the avoidable dynamic `dlopen` branch on workstation builds.
+`build/nfn_gpt_native_train` when no explicit `NFN_NATIVE_GPT_CLI` or
+`NFN_NATIVE_TRAIN_CLI` override is set. The default trainer self-selects the
+linked Tile-ops startup path, matching `nfn train` while avoiding the dynamic
+`dlopen` branch on workstation builds.
 A CUDA 13.3.33 dedicated RTX 5090 startup-only recheck on 2026-06-26 measured
 that linked path at `0.898449x` `setup_wall_ms` and `0.898865x`
 `total_wall_ms` versus the dynamic loader baseline, with no native route or

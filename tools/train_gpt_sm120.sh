@@ -14,7 +14,7 @@ native_gpt_source_newer_than() {
      "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.cpp" -nt "$target" ||
      "$ROOT_DIR/neuralfn/csrc/native_train/token_shards.h" -nt "$target" ||
      "$ROOT_DIR/neuralfn/csrc/native_train/shipped_gpt_template_presets.h" -nt "$target" ||
-     "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" -nt "$target" ]]
+     "$ROOT_DIR/tools/build_native_gpt_cli.sh" -nt "$target" ]]
 }
 
 tile_ops_source_newer_than() {
@@ -38,17 +38,17 @@ ensure_default_native_trainer_current() {
       ;;
   esac
   if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" ]]; then
-    local linked="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
-    local rebuild_linked=0
-    if [[ ! -x "$linked" ]]; then
-      rebuild_linked=1
-    elif native_gpt_source_newer_than "$linked"; then
-      rebuild_linked=1
-    elif tile_ops_source_newer_than "$linked"; then
-      rebuild_linked=1
+    local trainer="${ROOT_DIR}/build/nfn_gpt_native_train"
+    local rebuild_trainer=0
+    if [[ ! -x "$trainer" ]]; then
+      rebuild_trainer=1
+    elif native_gpt_source_newer_than "$trainer"; then
+      rebuild_trainer=1
+    elif tile_ops_source_newer_than "$trainer"; then
+      rebuild_trainer=1
     fi
-    if [[ "$rebuild_linked" == "1" ]]; then
-      bash "$ROOT_DIR/tools/build_native_gpt_cli_linked.sh" "$linked" >&2
+    if [[ "$rebuild_trainer" == "1" ]]; then
+      bash "$ROOT_DIR/tools/build_native_gpt_cli.sh" "$trainer" >&2
     fi
   fi
 }
@@ -86,11 +86,7 @@ case "${USE_COMPILED_SM120_LAUNCHER,,}" in
     ;;
 esac
 
-if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "${ROOT_DIR}/build/nfn_gpt_native_train_linked" ]]; then
-  NATIVE_GPT_TRAIN_BIN="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
-else
-  NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-${ROOT_DIR}/build/nfn_gpt_native_train}"
-fi
+NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-${ROOT_DIR}/build/nfn_gpt_native_train}"
 
 export CUDA_DEVICE_MAX_CONNECTIONS="${CUDA_DEVICE_MAX_CONNECTIONS:-1}"
 export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
@@ -215,7 +211,7 @@ Usage: tools/train_gpt_sm120.sh [options] [-- extra native args]
 
 Zero-Python SM120 dense GPT training helper. By default this shell shim execs
 build/nfn_train_gpt_sm120 when available. Set NFN_SM120_USE_COMPILED_LAUNCHER=0
-to use the legacy shell parser, which prefers build/nfn_gpt_native_train_linked,
+to use the legacy shell parser, which prefers build/nfn_gpt_native_train,
 falls back to build/nfn_gpt_native_train, and uses the same core defaults as
 llm.kittens/train-sm120.sh, with NeuralFn validation batches on the same cadence:
   eval=250 sample=20000 generate=144 batch=64 seq=1024 tokens/step=524288
@@ -390,7 +386,7 @@ esac
 
 if [[ ! -x "${NATIVE_GPT_TRAIN_BIN}" ]]; then
   echo "Native GPT trainer is not executable: ${NATIVE_GPT_TRAIN_BIN}" >&2
-  echo "Build it with: bash tools/build_native_gpt_cli_linked.sh" >&2
+  echo "Build it with: bash tools/build_native_gpt_cli.sh" >&2
   exit 127
 fi
 
@@ -404,7 +400,8 @@ else
 fi
 
 TILE_OPS_ARGS=()
-if [[ "$(basename "${NATIVE_GPT_TRAIN_BIN}")" == "nfn_gpt_native_train_linked" ]]; then
+if [[ "$(basename "${NATIVE_GPT_TRAIN_BIN}")" == "nfn_gpt_native_train" ||
+      "$(basename "${NATIVE_GPT_TRAIN_BIN}")" == "nfn_gpt_native_train_linked" ]]; then
   TILE_OPS_ARGS=(--tile-ops-lib linked)
 fi
 
