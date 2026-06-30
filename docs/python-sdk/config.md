@@ -93,9 +93,11 @@ Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class` and `native_training_missing_requirements`.
 Implemented dense GPT selectors report `implemented-dense-gpt-transformer-lm`
 with no missing requirements. Other shipped presets are classified by the native
-trainer loop still required, such as `missing-moe-jepa-objective` for
-`moe_jepa_evo`. Treat this manifest as the SDK-visible coverage checklist until
-every shipped GPT template reports a native trainable class.
+trainer loop still required, including LLaMA/RoPE/SwiGLU, standard MoE, dense
+JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet
+byte-LM, and universal transformer families. Treat this manifest as the
+SDK-visible coverage checklist until every shipped GPT template reports a
+native trainable class.
 
 ---
 

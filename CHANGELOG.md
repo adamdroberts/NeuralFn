@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Expanded missing-family native coverage boundaries across all remaining GPT
+  objective classes. `tools/build_native_missing_trainers.sh` now emits
+  coverage-class-specific JSON for LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA,
+  MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM,
+  and universal transformer families, and builds dedicated placeholder targets
+  for Jamba, seq2seq, diffusion, TTT-LLaMA, HNet-LM, and universal LLaMA.
+  `nfn-native-train --list-models --json` and
+  `native_train_model_registry()` now expose those new family entries without
+  importing Torch. These targets are still compiled missing-family preflights,
+  not runnable trainers. Verification: rebuilt the expanded missing-family
+  binaries plus `build/nfn_native_train` and `build/nfn-native-train`; focused
+  registry/dependency tests passed (`2 passed`); focused missing-family
+  dispatch/build test passed; full no-Torch verifier passed 30 artifact scans,
+  69 Python entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a compiled native training boundary for the MoE+JEPA GPT selectors.
   `tools/build_native_missing_trainers.sh` now builds
   `nfn_moe_jepa_evo_native_train`, the unified C++ frontend and SDK registry

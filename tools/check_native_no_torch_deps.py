@@ -37,6 +37,12 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_jepa_native_train"),
     Path("build/nfn_semantic_router_moe_native_train"),
     Path("build/nfn_deepseek_v4_native_train"),
+    Path("build/nfn_jamba_native_train"),
+    Path("build/nfn_seq2seq_native_train"),
+    Path("build/nfn_diffusion_native_train"),
+    Path("build/nfn_ttt_llama_native_train"),
+    Path("build/nfn_hnet_lm_native_train"),
+    Path("build/nfn_universal_llama_native_train"),
     Path("build/linear_backward_bench"),
     Path("build/lm_head_backward_bench"),
     Path("build/libnfn_native_train_tile_ops_tk.so"),
@@ -139,6 +145,30 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
+    Path("build/nfn_jamba_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
+    Path("build/nfn_seq2seq_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
+    Path("build/nfn_diffusion_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
+    Path("build/nfn_ttt_llama_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
+    Path("build/nfn_hnet_lm_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
+    Path("build/nfn_universal_llama_native_train"): (
+        Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("tools/build_native_missing_trainers.sh"),
+    ),
     Path("build/libnfn_native_train_tile_ops.so"): (
         Path("neuralfn/csrc/native_train/tile_ops.cu"),
         Path("neuralfn/csrc/native_train/tile_ops.h"),
@@ -192,6 +222,12 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_jepa_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_semantic_router_moe_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_deepseek_v4_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_jamba_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_seq2seq_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_diffusion_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_ttt_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_hnet_lm_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
+    Path("build/nfn_universal_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/libnfn_native_train_tile_ops.so"): ("bash", "tools/build_native_train_tile_ops.sh"),
     Path("build/libnfn_native_train_tile_ops_tk.so"): (
         "bash",

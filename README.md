@@ -3499,7 +3499,7 @@ remain the opt-in Python setup path.
 
 Native compiled entrypoints, SDK bindings, the master `nfn train` native dispatcher, the direct `cli/scripts/train_gpt.py` / `train_gpt2.py` compiled-CLI fast path, and legacy training-script native guards set `CUDA_MODULE_LOADING=LAZY` when unset before executing native trainers or loading Tile CUDA libraries, matching the dense GPT C++ trainer. They also treat empty exported CUDA env values as unset, so `CUDA_VISIBLE_DEVICES=""`, `CUDA_DEVICE_MAX_CONNECTIONS=""`, or `CUDA_MODULE_LOADING=""` is normalized back to the workstation defaults (`0`, `1`, and `LAZY`) instead of silently disabling the dedicated RTX 5090 route. Existing non-empty user-provided CUDA environment values still take precedence. Guarded legacy scripts such as `train_gpt2_evo.py` keep plain `--native-cuda-dry-run --native-cuda-print-command` metadata-only: they print the resolved native command without spawning the native binary unless a real native action such as `--print-plan`, `--startup-only`, `--check-tile-ops`, or a smoke flag is also present.
 
-The unified native model registry exposes capability-specific status fields in addition to the legacy top-level status. `nfn-native-train --list-models --json` now includes `transformer_lm_status`, `token_lm_status`, and `geometry_status` for each model, and the SDK `native_train_model_registry()` returns the same compiled registry from static no-Torch metadata when the generic dispatcher binary is not installed. Dense GPT selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`) all report `geometry_status: "dense-gpt-template-geometry"` because the template name or custom graph, not the family label, decides the architecture. `gpt2-evo` is reported as `implemented` with `transformer_lm_status: "native-dense-gpt-layer-evo-delegate"` because the family binary delegates dense GPT-2-compatible runs to the native CUDA Tile transformer-LM loop with `--layer-evo`. `nanogpt` is reported as `implemented`: full transformer training routes through the shared dense GPT Tile-CUDA loop with `--template-name nanogpt`, and the explicit `--train-token-lm` path remains available for token-LM diagnostics. MoE+JEPA selectors (`moe-jepa-evo`, `auxfree-moe-jepa-evo`, and `moe-jepa-evo-modern`) now resolve to the compiled `nfn_moe_jepa_evo_native_train` boundary and report `missing-moe-jepa-objective` plus the exact CUDA Tile loop requirements still needed; this is an auditable native boundary, not a runnable trainer yet.
+The unified native model registry exposes capability-specific status fields in addition to the legacy top-level status. `nfn-native-train --list-models --json` now includes `transformer_lm_status`, `token_lm_status`, and `geometry_status` for each model, and the SDK `native_train_model_registry()` returns the same compiled registry from static no-Torch metadata when the generic dispatcher binary is not installed. Dense GPT selectors (`gpt`, `gpt2`, `gpt3`, and `nanogpt`) all report `geometry_status: "dense-gpt-template-geometry"` because the template name or custom graph, not the family label, decides the architecture. `gpt2-evo` is reported as `implemented` with `transformer_lm_status: "native-dense-gpt-layer-evo-delegate"` because the family binary delegates dense GPT-2-compatible runs to the native CUDA Tile transformer-LM loop with `--layer-evo`. `nanogpt` is reported as `implemented`: full transformer training routes through the shared dense GPT Tile-CUDA loop with `--template-name nanogpt`, and the explicit `--train-token-lm` path remains available for token-LM diagnostics. Every missing coverage family now has a compiled no-Torch boundary target: LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal transformer entries report their exact `native_training_coverage_class` and missing requirements. These are auditable boundaries, not runnable trainers yet.
 
 Unsupported GPT templates and custom graph selections are rejected by the compiled native GPT CLI before token-shard resolution when they are not runnable by the current native loop. The error JSON reports `token_shards_resolved: false`, so missing datasets do not hide native graph/template coverage gaps or add avoidable startup work.
 The compiled dense GPT and GPT-2-evo frontends share a generated C++ template
@@ -4170,18 +4170,18 @@ The compiled template catalog and per-template `--print-plan` JSON now also
 include `native_training_coverage_class` and
 `native_training_missing_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with an empty requirement list. Missing
-templates are classified by the native loop still required, for example
-`moe_jepa_evo` reports `missing-moe-jepa-objective` with requirements for the
-standard MoE loop, JEPA target/projector/predictor stages, latent MSE reduction,
-and AR+JEPA+router loss composition. This manifest is the coverage gate for the
-remaining native-template work: no shipped GPT template should be an unclassified
-generic miss.
+templates are classified by the native loop still required. The compiled
+missing-family binaries emit the same coverage classes for LLaMA/RoPE/SwiGLU,
+standard MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq,
+diffusion, TTT, HNet byte-LM, and universal transformer families. This manifest
+is the coverage gate for the remaining native-template work: no shipped GPT
+template should be an unclassified generic miss.
 
 The unified native model registry and compiled missing-family preflights report
 `kernel_status` separately from `trainer_loop_status`. Dense GPT entries report
-implemented loops; LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4
-preflights report `required-tile-symbols-present` with the shipped Tile ops
-library but still report `family-native-loop-missing`, so the remaining blocker
+implemented loops; missing-family preflights report `required-tile-symbols-present`
+with the shipped Tile ops library but still report `family-native-loop-missing`,
+so the remaining blocker
 is the model-specific native forward/backward/optimizer loop rather than a
 Torch fallback path.
 
