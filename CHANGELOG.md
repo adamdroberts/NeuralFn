@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Native no-Torch compiled custom-graph launcher guard: the no-Torch verifier now
+  runs a direct `build/nfn_train_gpt --graph-file ... --print-command` dry-run
+  and asserts that the compiled dense GPT helper preserves the custom graph,
+  template selector, model family, and `tile-cuda` backend before execing the
+  native trainer. Verification: focused no-Torch dependency pytest.
+
 - Native no-Torch deferred-timing artifact guard: `tools/check_native_no_torch_deps.py`
   now requires compiled GPT trainer artifacts to contain the deferred-prewarm
   timing-contract JSON markers. This makes stale or incomplete native binaries

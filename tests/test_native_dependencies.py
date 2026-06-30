@@ -368,6 +368,13 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
     assert "--template-name gpt3" in str(sm120_gpt3_entry["stdout"])
     assert "--train-seq-len 2048" in str(sm120_gpt3_entry["stdout"])
 
+    compiled_graph_entry = shell_entries["train_gpt_compiled_custom_graph_dry_run"]
+    assert compiled_graph_entry["passed"] is True
+    assert "--model-family gpt" in str(compiled_graph_entry["stdout"])
+    assert "--template-name gpt2_moa" in str(compiled_graph_entry["stdout"])
+    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in str(compiled_graph_entry["stdout"])
+    assert "--backend tile-cuda" in str(compiled_graph_entry["stdout"])
+
     catalog_entry = shell_entries["native_gpt_linked_list_templates"]
     assert catalog_entry["passed"] is True
     catalog = json.loads(str(catalog_entry["stdout"]))

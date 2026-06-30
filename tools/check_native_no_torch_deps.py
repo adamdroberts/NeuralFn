@@ -963,6 +963,20 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         {},
     ),
     (
+        "train_gpt_compiled_custom_graph_dry_run",
+        (
+            "build/nfn_train_gpt",
+            "--template-name",
+            "gpt2_moa",
+            "--graph-file",
+            "/tmp/native-compatible-gpt-graph.json",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
         "train_gpt_sm120_compiled_dry_run",
         (
             "build/nfn_train_gpt_sm120",
