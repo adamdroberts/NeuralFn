@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native GPT direct-wrapper defaults: `cli/scripts/train_gpt_native.py` now
+  shares the SM120 dense GPT defaults used by the canonical compiled-CLI path:
+  validation every 250 optimizer steps and 60 warmup steps. Direct legacy
+  native wrapper runs no longer drift to the old 1000-step validation/warmup
+  cadence while still preserving explicit caller overrides. Verification:
+  focused native GPT CLI tests, Python compile check, and `git diff --check`.
+
 - Native GPT benchmark startup metrics: `tools/paired_kernel_speed.py` now
   extracts `token_shard_resolution_wall_ms` from native runtime JSON, including
   the nested `timing` fallback, and prints it in native candidate/parity text

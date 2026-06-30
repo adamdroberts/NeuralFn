@@ -3370,7 +3370,9 @@ dry-run command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` /
 `NFN_SM120_*` overrides are supplied, the resolved command includes validation
 every 250 optimizer steps, sample and checkpoint cadence, `64 x 1024 -> 524288`
 token batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and GELU/MOA
-activation defaults.
+activation defaults. Direct `python cli/scripts/train_gpt_native.py ...`
+compiled-CLI runs use the same validation and warmup defaults, so legacy native
+entrypoints no longer drift to the older 1000-step cadence.
 
 Default local native CLI builds also create the documented hyphenated command
 names: `bash tools/build_native_train_cli.sh` emits `build/nfn_native_train`

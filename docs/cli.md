@@ -2675,7 +2675,9 @@ GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or dry-run
 command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` / `NFN_SM120_*`
 overrides are supplied, the resolved command includes 250-step validation,
 sample/checkpoint cadence, `64 x 1024 -> 524288` token batching, AdamW defaults,
-60 warmup steps, 20,000 max steps, and GELU/MOA activation defaults.
+60 warmup steps, 20,000 max steps, and GELU/MOA activation defaults. Direct
+`train_gpt_native.py` compiled-CLI runs share those validation and warmup
+defaults instead of the older 1000-step cadence.
 The compiled Tile-CUDA
 frontend itself treats `--print-command` as a no-data/no-CUDA inspection mode:
 it prints the exact `nfn_gpt_native_train ...` invocation and exits before

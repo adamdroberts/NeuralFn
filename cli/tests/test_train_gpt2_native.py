@@ -898,6 +898,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("nfn_gpt_native_train_linked", proc.stdout)
         self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertIn("--eval-every-steps 250", proc.stdout)
+        self.assertIn("--warmup-steps 60", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("--no-checkpoint", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -2636,6 +2638,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             print("DATASET_HF_PATH", args.dataset_hf_path)
             print("DATASET_TRAIN_FILE", args.dataset_train_file)
             print("DATASET_VAL_FILE", args.dataset_val_file)
+            print("EVAL_EVERY_STEPS", args.eval_every_steps)
+            print("WARMUP_STEPS", args.warmup_steps)
             print("LM_HEAD_ROW_CHUNK_SIZE", args.lm_head_row_chunk_size)
             print("TORCH_LOADED", "torch" in sys.modules)
             """
@@ -2657,7 +2661,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_HF_PATH roneneldan/TinyStories", proc.stdout)
         self.assertIn("DATASET_TRAIN_FILE TinyStoriesV2-GPT4-train.txt", proc.stdout)
         self.assertIn("DATASET_VAL_FILE TinyStoriesV2-GPT4-valid.txt", proc.stdout)
-        self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 32768", proc.stdout)
+        self.assertIn("EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("WARMUP_STEPS 60", proc.stdout)
+        self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 28672", proc.stdout)
         self.assertNotIn("parameter-golf", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
