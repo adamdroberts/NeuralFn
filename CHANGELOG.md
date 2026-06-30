@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native SM120 launcher verification: the no-Torch dependency verifier tests now
+  assert that compiled `build/nfn_train_gpt_sm120` dry-runs resolve to
+  `nfn_gpt_native_train_linked --tile-ops-lib linked` for default, GPT-3,
+  template-selector, and custom-graph commands. This locks the closest
+  zero-Python workstation entrypoint to the linked CUDA Tile trainer path that
+  avoids the dynamic Tile loader startup cost. Verification: focused native
+  dependency pytest slice and `git diff --check`.
+
 - Native SM120 startup gate filtering: generated startup-only candidate and
   candidate-reference gates in `tools/bench_native_gpt_sm120_candidate.sh` now
   strip `train_*`, stage, attention-backward, and startup-plus-train metrics

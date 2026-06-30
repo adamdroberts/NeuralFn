@@ -446,6 +446,8 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "train_gpt_sm120_custom_graph_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train_linked" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
+    assert "--tile-ops-lib linked" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--model-family gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--template-name gpt" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--batch-size 64" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
@@ -455,11 +457,19 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--adam-eps 1e-8" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert "--grad-clip-norm 0.75" in shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train_linked" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
+    assert "--tile-ops-lib linked" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--model-family gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--template-name gpt3" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--batch-size 32" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert "--train-seq-len 2048" in shell_entrypoints["train_gpt_sm120_compiled_gpt3_dry_run"]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_template_selector_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train_linked" in shell_entrypoints[
+        "train_gpt_sm120_compiled_template_selector_dry_run"
+    ]["stdout"]
+    assert "--tile-ops-lib linked" in shell_entrypoints[
+        "train_gpt_sm120_compiled_template_selector_dry_run"
+    ]["stdout"]
     assert "--model-family gpt" in shell_entrypoints[
         "train_gpt_sm120_compiled_template_selector_dry_run"
     ]["stdout"]
@@ -470,6 +480,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "train_gpt_sm120_compiled_template_selector_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_custom_graph_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train_linked" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
+    assert "--tile-ops-lib linked" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
     assert "--template-name gpt2_moa" in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
     ]["stdout"]
