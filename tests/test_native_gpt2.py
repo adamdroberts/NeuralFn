@@ -10265,6 +10265,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--train-transformer-lm" in unified_evo_delegate.stdout
     assert "--layer-evo" in unified_evo_delegate.stdout
     assert "--eval-every-steps 1000" in unified_evo_delegate.stdout
+    assert "--warmup-steps 60" in unified_evo_delegate.stdout
     assert "--tile-cuda-activation-dtype nvfp4" in unified_evo_delegate.stdout
 
     evo_help = subprocess.run(
@@ -10278,6 +10279,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "Compiled NeuralFn GPT-2 evo native training preflight" in evo_help.stdout
     assert "--template-name NAME" in evo_help.stdout
     assert "--graph-file PATH" in evo_help.stdout
+    assert "--warmup-steps N" in evo_help.stdout
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in evo_help.stdout
     assert "--evo-layer-index N" in evo_help.stdout
     assert "--evo-layer-population N" in evo_help.stdout
@@ -10321,6 +10323,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["shape"]["num_heads"] == 12
     assert evo_plan["shape"]["vocab_size"] == 50257
     assert evo_plan["schedule"]["eval_every_steps"] == 1000
+    assert evo_plan["schedule"]["warmup_steps"] == 60
     assert evo_plan["schedule"]["grad_accum_steps"] == 8
     assert evo_plan["optimizer"]["profile"] == "adamw"
     assert evo_plan["tile_cuda"]["activation_dtype"] == "nvfp4"
