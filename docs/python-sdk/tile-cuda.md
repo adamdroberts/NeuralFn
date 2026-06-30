@@ -3557,6 +3557,8 @@ It also covers legacy graph-backed family inference/eval help paths, including
 Torch, NumPy, tokenizers, dataset manager modules, or graph-backed runtime
 helpers; actual graph-backed execution imports those dependencies only after
 argument parsing.
+The same verifier imports `train_jepa_semantic` under the blocker so its shared
+dataset helpers stay lazy for module consumers as well as direct script startup.
 The generic compiled binding must expose both a runner symbol and a command
 resolver symbol; `resolve_native_train_binding_command(config)` returns the
 argv that `neuralfn._native_train` will spawn so SDK callers can assert the

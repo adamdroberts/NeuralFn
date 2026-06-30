@@ -805,6 +805,14 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_jepa_semantic_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_jepa_semantic; print('train_jepa_semantic-import-ok')",
+        ),
+    ),
+    (
         "infer_jepa_semantic_module_import",
         (
             sys.executable,

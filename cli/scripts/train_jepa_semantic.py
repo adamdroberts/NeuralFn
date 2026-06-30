@@ -23,31 +23,142 @@ if __name__ == "__main__":
     reject_torch_training_by_default("train_jepa_semantic.py", native_target="nfn train --base-model jepa", model_family="jepa")
 
 from cli_utils import artifact_path, create_argument_parser
-import neuralfn.semantic as semantic_module
-import server.dataset_manager as dataset_manager_module
-from server.dataset_manager import (
-    DATASETS_DIR,
-    DatasetTokenizerMismatchError,
-    MemmapTokenDataset,
-    _download_hf_file,
-    _load_tokens_for,
-    _shard_header_offset_uint16,
-    download_hf_dataset,
-    encode_raw_text,
-    estimate_dataset_sequence_count,
-    is_sentencepiece_tokenizer_name,
-    load_dataset_tensors,
-    normalize_raw_text_encoding_name,
-    raw_text_encoding_name_for_backbone,
-    raw_text_encoding_name_for_template_spec,
-    raw_text_encoding_vocab_size,
-    refresh_raw_text_dataset_metadata,
-    resolve_sentencepiece_model_path,
-    shared_sentencepiece_artifact_filenames,
-    shared_sentencepiece_model_path,
-    shared_sentencepiece_vocab_path,
-    validate_cached_tokenizer_contract,
-)
+
+
+class _LazyModuleProxy:
+    def __init__(self, module_name: str) -> None:
+        self._module_name = module_name
+
+    def _load(self):
+        import importlib
+
+        return importlib.import_module(self._module_name)
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+class _LazyPathProxy:
+    def __init__(self, resolver: Callable[[], Path]) -> None:
+        self._resolver = resolver
+
+    def _path(self) -> Path:
+        return Path(self._resolver())
+
+    def __truediv__(self, value: str) -> Path:
+        return self._path() / value
+
+    def __fspath__(self) -> str:
+        return os.fspath(self._path())
+
+    def __str__(self) -> str:
+        return str(self._path())
+
+    def __repr__(self) -> str:
+        return repr(self._path())
+
+
+def _ensure_dataset_manager_runtime():
+    import server.dataset_manager as dataset_manager
+
+    return dataset_manager
+
+
+def _ensure_semantic_runtime():
+    import neuralfn.semantic as semantic
+
+    return semantic
+
+
+def _default_num_vocab_dims() -> int:
+    vocab_path = Path(__file__).resolve().parents[2] / "neuralfn" / "data" / "semantic" / "vocab_86d_o200k.json"
+    try:
+        payload = json.loads(vocab_path.read_text(encoding="utf-8"))
+        dimensions = payload.get("vocabulary") or payload.get("dimension_descriptions") or {}
+        return max(1, len(dimensions) - 1)
+    except Exception:
+        return 85
+
+
+semantic_module = _LazyModuleProxy("neuralfn.semantic")
+dataset_manager_module = _LazyModuleProxy("server.dataset_manager")
+DATASETS_DIR = _LazyPathProxy(lambda: _ensure_dataset_manager_runtime().DATASETS_DIR)
+
+
+def MemmapTokenDataset(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().MemmapTokenDataset(*args, **kwargs)
+
+
+def _download_hf_file(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime()._download_hf_file(*args, **kwargs)
+
+
+def _load_tokens_for(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime()._load_tokens_for(*args, **kwargs)
+
+
+def _shard_header_offset_uint16(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime()._shard_header_offset_uint16(*args, **kwargs)
+
+
+def download_hf_dataset(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().download_hf_dataset(*args, **kwargs)
+
+
+def encode_raw_text(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().encode_raw_text(*args, **kwargs)
+
+
+def estimate_dataset_sequence_count(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().estimate_dataset_sequence_count(*args, **kwargs)
+
+
+def is_sentencepiece_tokenizer_name(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().is_sentencepiece_tokenizer_name(*args, **kwargs)
+
+
+def load_dataset_tensors(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().load_dataset_tensors(*args, **kwargs)
+
+
+def normalize_raw_text_encoding_name(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().normalize_raw_text_encoding_name(*args, **kwargs)
+
+
+def raw_text_encoding_name_for_backbone(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().raw_text_encoding_name_for_backbone(*args, **kwargs)
+
+
+def raw_text_encoding_name_for_template_spec(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().raw_text_encoding_name_for_template_spec(*args, **kwargs)
+
+
+def raw_text_encoding_vocab_size(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().raw_text_encoding_vocab_size(*args, **kwargs)
+
+
+def refresh_raw_text_dataset_metadata(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().refresh_raw_text_dataset_metadata(*args, **kwargs)
+
+
+def resolve_sentencepiece_model_path(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().resolve_sentencepiece_model_path(*args, **kwargs)
+
+
+def shared_sentencepiece_artifact_filenames(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().shared_sentencepiece_artifact_filenames(*args, **kwargs)
+
+
+def shared_sentencepiece_model_path(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().shared_sentencepiece_model_path(*args, **kwargs)
+
+
+def shared_sentencepiece_vocab_path(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().shared_sentencepiece_vocab_path(*args, **kwargs)
+
+
+def validate_cached_tokenizer_contract(*args: Any, **kwargs: Any):
+    return _ensure_dataset_manager_runtime().validate_cached_tokenizer_contract(*args, **kwargs)
 
 PARAMETER_GOLF_HF_PATH = "willdepueoai/parameter-golf"
 DEFAULT_TOKENIZER_HF_PATH = "sproos/parameter-golf-tokenizers"
@@ -585,7 +696,7 @@ JEPA_DEFAULTS = {
     "num_kv_heads": 4,
     "mlp_mult": 2.0,
     "multiple_of": 64,
-    "experts": semantic_module.NUM_VOCAB_DIMS,
+    "experts": _default_num_vocab_dims(),
     "top_k": 2,
     "ema_decay": 0.99,
     "rope_base": 10_000.0,
@@ -658,19 +769,6 @@ def _ensure_torch_training_runtime():
         "CompiledTorchGraph": CompiledTorchGraph,
         "resolve_torch_train_drop_last": resolve_torch_train_drop_last,
     }
-
-
-class _LazyModuleProxy:
-    def __init__(self, module_name: str) -> None:
-        self._module_name = module_name
-
-    def _load(self):
-        import importlib
-
-        return importlib.import_module(self._module_name)
-
-    def __getattr__(self, name: str):
-        return getattr(self._load(), name)
 
 
 torch = _LazyModuleProxy("torch")

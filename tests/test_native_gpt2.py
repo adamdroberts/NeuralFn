@@ -696,6 +696,8 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         entrypoints["nfn_console_infer_native_sample_prompt_tokens"]["startup_within_budget"]
         is True
     )
+    assert entrypoints["train_jepa_semantic_module_import"]["passed"] is True
+    assert "train_jepa_semantic-import-ok" in entrypoints["train_jepa_semantic_module_import"]["stdout"]
     assert entrypoints["native_sdk_imports"]["passed"] is True
     assert entrypoints["native_sdk_public_exports"]["passed"] is True
     assert entrypoints["native_sdk_binding_imports"]["passed"] is True

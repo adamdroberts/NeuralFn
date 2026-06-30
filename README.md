@@ -33,6 +33,11 @@ load the graph-backed planner lazily when first accessed. Importing `nfn_impl`
 itself also keeps Torch, NumPy, `server.dataset_manager`, graph ops,
 parameter-golf Torch helpers, and `train_jepa_semantic` lazy until a
 graph-backed command path uses them.
+Importing `cli/scripts/train_jepa_semantic.py` as a utility module is also lazy:
+semantic-vocabulary, dataset-manager, NumPy, tokenizer, and Torch helpers are
+loaded only when a runtime dataset/training helper actually needs them. Direct
+script execution still hands off to the compiled native training registry before
+those graph-backed imports.
 
 Dense GPT native training defaults to periodic validation loss every 250
 optimizer steps over 20 validation batches. Pass `--eval-every-steps N` to
@@ -3387,7 +3392,7 @@ delegation, so native checkpoint inference prefers
 `build/nfn_gpt_native_train_linked` when it exists and no explicit GPT CLI
 override is set.
 
-The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` as a utility module is also lightweight; its shared dataset helper re-exports are lazy wrappers, and Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
+The legacy graph-backed family inference and eval helpers for LLaMA-fast, LLaMA-megakernel, MixLLaMA-fast, NanoGPT, Semantic Router MoE, and JEPA Semantic now follow the same parser/help startup discipline as GPT inference. Running `python cli/scripts/infer_llama_fast.py --help`, `python cli/scripts/infer_llama_megakernel.py --help`, `python cli/scripts/infer_mixllama_fast.py --help`, `python cli/scripts/infer_nanogpt.py --help`, `python cli/scripts/infer_semantic_router_moe.py --help`, `python cli/scripts/infer_jepa_semantic.py --help`, or `python cli/scripts/eval_llama_fast.py --help` stays in the lightweight CLI layer and does not import Torch, NumPy, tokenizers, the dataset manager, or graph-backed runtime modules. Importing `infer_jepa_semantic` or `train_jepa_semantic` as a utility module is also lightweight; shared dataset helper re-exports are lazy wrappers, and Torch/dataset/runtime imports are loaded only when runtime-only helpers are called. Actual graph-backed LLaMA eval and JEPA generation still import the CUDA/Torch runtime after argument parsing.
 
 Direct `python cli/scripts/train_gpt.py ...`, Python `nfn train --base-model
 gpt ...`, and compiled `nfn-native-train --base-model gpt ...` runs now expand

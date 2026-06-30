@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `cli/scripts/train_jepa_semantic.py` now keeps semantic-vocabulary and
+  dataset-manager helpers lazy when imported as a utility module. Direct script
+  execution still exits through the compiled native training registry before
+  graph-backed runtime imports, and the no-Torch verifier now includes a blocked
+  `import train_jepa_semantic` check. Verification: direct blocked import smoke
+  and focused no-Torch verifier coverage.
+
 - Python SDK dense GPT native training configs now expand the same real quality
   defaults as the CLI native path before dispatching directly to
   `nfn_gpt_native_train --model-family ...`. `build_native_train_run_config()`
