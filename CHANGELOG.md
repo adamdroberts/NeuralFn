@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SM120 benchmark quick-probe controls: the default long-run
+  deferred-prewarm auto policy in `tools/bench_native_gpt_sm120_candidate.sh`
+  now honors explicit `NFN_SM120_NATIVE_WARMUP` and
+  `NFN_SM120_NATIVE_STEPS` values instead of silently raising quick repro
+  probes to the steady-state warmup/step floors. The named
+  `long_run_defer_prewarm` profile still enforces those floors as a benchmark
+  quality gate. Verification: focused native GPT source-contract test, shell
+  syntax check, dry-run quick-probe command check, same-script one-step GPU
+  benchmark, and `git diff --check`.
+
 - Native GPT wrapper default cleanup: `train_gpt2_evo.py` now exposes the same
   60-step LR warmup default as its compiled GPT-2-evo preflight, and
   `train_nanogpt.py` now exposes the shared dense GPT native defaults of

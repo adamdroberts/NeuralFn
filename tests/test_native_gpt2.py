@@ -1561,6 +1561,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_SM120_PARITY_WARMUP=3 regressed the median steady-state CUDA-event ratio" in parity_bench
     assert "1.003405x" in parity_bench
     assert "WARMUP=\"$(env_or_alias5 NFN_SM120_NATIVE_WARMUP NFN_SM120_NATIVE_CANDIDATE_WARMUP NFN_SM120_CANDIDATE_WARMUP NFN_SM120_PARITY_WARMUP NFN_SM120_WARMUP 40)\"" in candidate_bench
+    assert "USER_STEPS_SET=0" in candidate_bench
     assert "USER_WARMUP_SET=0" in candidate_bench
     assert "NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM" in candidate_bench
     assert "NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM" in parity_bench
@@ -1583,6 +1584,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm=applied")' in parity_bench
     assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED=0' in parity_bench
     assert 'DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED=0' in parity_bench
+    assert '"$USER_WARMUP_SET" == "0"' in candidate_bench
+    assert '"$USER_STEPS_SET" == "0"' in candidate_bench
     assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in parity_bench
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in parity_bench
     assert 'paired_args+=(--metadata "default_long_run_defer_prewarm_min_warmup_applied=$LONG_RUN_DEFER_PREWARM_MIN_WARMUP")' in parity_bench
@@ -3379,6 +3382,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_STEP_FLOOR_APPLIED" in bench_source
+    assert "USER_STEPS_SET=0" in bench_source
+    assert "USER_WARMUP_SET=0" in bench_source
     assert "default_long_run_defer_prewarm_min_warmup_applied" in bench_source
     assert "default_long_run_defer_prewarm_min_steps_applied" in bench_source
     assert "long_run_defer_prewarm_min_warmup_applied" in bench_source
@@ -3395,6 +3400,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert '"$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then' in long_run_block
     assert '"$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0' in long_run_block
     assert '"$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then' in long_run_block
+    default_auto_block = bench_source[
+        bench_source.index("DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1") :
+        bench_source.index('Unsupported NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM value')
+    ]
+    assert '"$USER_WARMUP_SET" == "0"' in default_auto_block
+    assert '"$USER_STEPS_SET" == "0"' in default_auto_block
     assert "steady-state throughput gates are not dominated by first-use timing noise" in long_run_block
     assert "full-loop ratios are not dominated by the intentionally deferred first step" in long_run_block
     assert (
@@ -4013,6 +4024,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "LM-head dWeight did not use the BF16 dlogit/dWeight route" in native_source
     assert '("timing", "setup_cuda_event_timing_enabled")' in speed_source
     assert "USER_SAMPLES_SET=0" in bench_source
+    assert "USER_STEPS_SET=0" in bench_source
     assert "USER_WARMUP_SET=0" in bench_source
     assert "DEFAULT_STARTUP_ONLY_SAMPLE_FLOOR_APPLIED=0" in bench_source
     assert "DEFAULT_STARTUP_ONLY_WARMUP_FLOOR_APPLIED=0" in bench_source

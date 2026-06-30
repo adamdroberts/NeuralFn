@@ -2592,6 +2592,10 @@ steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
 set for an intentional short reproduction. The JSON metadata records
 `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
+The default auto policy treats explicit `NFN_SM120_NATIVE_WARMUP` and
+`NFN_SM120_NATIVE_STEPS` values as quick-probe intent and leaves them literal;
+the named `long_run_defer_prewarm` profile still enforces its warmup and step
+floors for steady-state quality gates.
 The parity wrapper applies the shared forty-warmup floor and the same ten-step
 measured-run floor to default deferred-prewarm current-vs-llm.kittens runs; set
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or

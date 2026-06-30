@@ -350,6 +350,10 @@ steps to ten by default, recording `long_run_defer_prewarm_min_steps_applied`
 or `default_long_run_defer_prewarm_min_steps_applied`; set
 `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only when intentionally
 reproducing a short first-step-dominated benchmark.
+Explicit `NFN_SM120_NATIVE_WARMUP` or `NFN_SM120_NATIVE_STEPS` values are honored
+by the default auto policy for quick repro probes; use the named
+`long_run_defer_prewarm` profile when you want the steady-state floor enforced
+as a quality gate.
 The parity wrapper uses the same 40-pair warmup floor and measured-step floor
 for default deferred-prewarm current-vs-llm.kittens runs,
 with the parity-specific

@@ -126,6 +126,18 @@ tile_ops_arg_for() {
 }
 
 STEPS="$(env_or_alias5 NFN_SM120_NATIVE_STEPS NFN_SM120_NATIVE_CANDIDATE_STEPS NFN_SM120_CANDIDATE_STEPS NFN_SM120_PARITY_STEPS NFN_SM120_STEPS 10)"
+USER_STEPS_SET=0
+for steps_env_name in \
+  NFN_SM120_NATIVE_STEPS \
+  NFN_SM120_NATIVE_CANDIDATE_STEPS \
+  NFN_SM120_CANDIDATE_STEPS \
+  NFN_SM120_PARITY_STEPS \
+  NFN_SM120_STEPS; do
+  if [[ -n "${!steps_env_name-}" ]]; then
+    USER_STEPS_SET=1
+    break
+  fi
+done
 SAMPLES="$(env_or_alias5 NFN_SM120_NATIVE_SAMPLES NFN_SM120_NATIVE_CANDIDATE_SAMPLES NFN_SM120_CANDIDATE_SAMPLES NFN_SM120_PARITY_SAMPLES NFN_SM120_SAMPLES 3)"
 USER_SAMPLES_SET=0
 for sample_env_name in \
@@ -1693,6 +1705,7 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
             DEFAULT_LONG_RUN_DEFER_PREWARM_APPLIED=1
             if [[ "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" =~ ^[0-9]+$ &&
                   "$WARMUP" =~ ^[0-9]+$ &&
+                  "$USER_WARMUP_SET" == "0" &&
                   "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" -gt 0 &&
                   "$WARMUP" -lt "$LONG_RUN_DEFER_PREWARM_MIN_WARMUP" ]]; then
               if [[ "$IS_DRY_RUN_PLAN" == "1" ]]; then
@@ -1704,6 +1717,7 @@ case "${DEFAULT_LONG_RUN_DEFER_PREWARM,,}" in
             fi
             if [[ "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" =~ ^[0-9]+$ &&
                   "$STEPS" =~ ^[0-9]+$ &&
+                  "$USER_STEPS_SET" == "0" &&
                   "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" -gt 0 &&
                   "$STEPS" -lt "$LONG_RUN_DEFER_PREWARM_MIN_STEPS" ]]; then
               if [[ "$IS_DRY_RUN_PLAN" == "1" ]]; then
