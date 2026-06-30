@@ -3329,7 +3329,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1" in bench_source
     assert "native_fast_startup_prewarm_policy" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP" in bench_source
-    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 20)" in bench_source
+    assert "LONG_RUN_DEFER_PREWARM_MIN_WARMUP 40)" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS" in bench_source
     assert "LONG_RUN_DEFER_PREWARM_MIN_STEPS 10)" in bench_source
     assert "DEFAULT_LONG_RUN_DEFER_PREWARM_WARMUP_FLOOR_APPLIED" in bench_source

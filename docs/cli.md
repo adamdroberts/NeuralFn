@@ -292,6 +292,12 @@ families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of
 being collapsed under a generic buffer label.
+The native SM120 candidate wrapper defaults to 40 warmup pairs for
+candidate-vs-current/reference runs and applies the same 40-pair floor to
+long-run deferred-prewarm comparisons. Set `NFN_SM120_NATIVE_WARMUP=0`,
+`NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, or
+`NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only for intentional
+cold-start diagnostics where first-use timing is the thing being measured.
 `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` is a diagnostic-only
 startup/memory switch for the dense GPT scratch-recompute trainer. It stores
 the earlier inter-block persistent outputs as BF16, restores them through one
@@ -2540,7 +2546,7 @@ versus llm.kittens, with steady-state tokens/sec at `1.267382x` versus the
 reference. The deferred first-step cost remains visible in train-loop wall
 timing, so the profile gates steady-state separately. If a copied benchmark
 command sets a lower warmup count for this profile or the default long-run
-deferred-prewarm auto policy, the wrapper raises warmup to at least twenty
+deferred-prewarm auto policy, the wrapper raises warmup to at least 40
 pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set for
 an intentional first-use diagnostic run.
 Measured long-run deferred-prewarm runs also raise fewer than ten optimizer
@@ -2548,8 +2554,9 @@ steps to ten unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` is
 set for an intentional short reproduction. The JSON metadata records
 `long_run_defer_prewarm_min_steps_applied` or
 `default_long_run_defer_prewarm_min_steps_applied` when this step floor is used.
-The parity wrapper applies the same twenty-warmup and ten-step measured-run
-floors to default deferred-prewarm current-vs-llm.kittens runs; set
+The parity wrapper applies its separate twenty-warmup floor and the same
+ten-step measured-run floor to default deferred-prewarm current-vs-llm.kittens
+runs; set
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` only for a deliberate
 short first-step-dominated parity reproduction.

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Native SM120 candidate benchmark warmup: raised
+  `tools/bench_native_gpt_sm120_candidate.sh` from 20 to 40 warmup pairs and
+  raised the long-run deferred-prewarm benchmark floor to the same 40 pairs.
+  This is a measurement-policy change for candidate gates only; explicit
+  low-warmup cold-start diagnostics still work through
+  `NFN_SM120_NATIVE_WARMUP=0`, `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, or
+  `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0`. Verification: shell
+  syntax check, dry-run command-shape check, focused candidate-wrapper pytest,
+  and `git diff --check`.
+
 - Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now includes
   `top_leaf_candidate_first_step_avg_ms` and
   `top_leaf_candidate_steady_state_avg_ms` in the
@@ -47,7 +57,7 @@
 
 - SM120 parity benchmark warmup policy: default long-run deferred-prewarm
   current-vs-llm.kittens runs in `tools/bench_native_gpt_sm120_parity.sh` now
-  share the candidate wrapper's twenty warmup-pair floor as well as the
+  use a twenty warmup-pair floor as well as the
   existing ten-step measured-run floor. Explicit dry-run plans and explicit
   low-warmup diagnostics remain available; set
   `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` only when
