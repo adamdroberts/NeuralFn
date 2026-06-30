@@ -2805,9 +2805,10 @@ same-script parity runs where timing perturbation would hide the candidate
 effect. `tools/paired_kernel_speed.py` summarizes this data under
 `native_cublaslt_plan_cache`, prints plan-cache changes, and treats a cached
 plan change as kernel-level attribution when deciding whether to emit the
-timing-only candidate warning. Shared-shape heuristic changes, baseline-only
-plan-cache shapes, and candidate-only plan-cache shapes all count as plan-cache
-route evidence.
+timing-only candidate warning. The route-change gate only accepts plan-cache
+evidence when both native sides emitted a shared cached shape; baseline-only or
+candidate-only plan-cache shapes are still reported for diagnostics but do not
+validate native-vs-reference comparisons as native route changes.
 
 The native trainer also exposes `nfn_native_tile_trainer_linear_cublas_prewarm`
 for the non-Lt cuBLAS handle used by BF16 GEMMEx fallback paths. Native GPT

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Native GPT benchmark attribution: `tools/paired_kernel_speed.py` now requires
+  an enabled shared native cuBLASLt plan-cache comparison before plan-cache
+  differences can satisfy route-change attribution. Candidate-only or
+  baseline-only cached shapes are still reported in `native_cublaslt_plan_cache`,
+  but they no longer make native-vs-reference runs look like native-vs-native
+  route proof. Verification: full paired-speed pytest, Python compile check,
+  and `git diff --check`.
+
 - Native SM120 candidate benchmark warmup: raised
   `tools/bench_native_gpt_sm120_candidate.sh` from 20 to 40 warmup pairs and
   raised the long-run deferred-prewarm benchmark floor to the same 40 pairs.

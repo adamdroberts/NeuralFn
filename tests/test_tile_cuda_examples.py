@@ -1347,9 +1347,8 @@ def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_pa
     assert payload["native_stage_timing"] is True
     assert payload["append_native_profile_json_dir"] == ""
     assert payload["metric_ratio_gates"]["enabled"] is False
-    assert payload["metadata"] == {
-        "default_metric_ratio_gate": "disabled_for_candidate_only_stage_timing"
-    }
+    assert payload["metadata"]["default_metric_ratio_gate"] == "disabled_for_candidate_only_stage_timing"
+    assert payload["metadata"]["default_long_run_defer_prewarm"] == "applied"
 
 
 def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tmp_path: Path) -> None:
@@ -4260,6 +4259,8 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
         "passed": False,
         "required_hot_route_counters": [],
         "missing_required_hot_route_counters": [],
+        "required_strategy_value_changes": [],
+        "missing_required_strategy_value_changes": [],
         "has_route_counter_change": False,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
@@ -4413,6 +4414,8 @@ def test_paired_kernel_speed_tool_rejects_setup_only_route_change_for_required_g
         "passed": False,
         "required_hot_route_counters": [],
         "missing_required_hot_route_counters": [],
+        "required_strategy_value_changes": [],
+        "missing_required_strategy_value_changes": [],
         "has_route_counter_change": True,
         "has_hot_route_counter_change": False,
         "has_strategy_value_change": False,
@@ -5809,6 +5812,19 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
                 "graph_editor_tensor_flow": ["false"],
                 "torch_required": ["false"],
                 "optimized_kernel_contract_passed": ["true"],
+                "lm_head_classifier_backward_path_class": ["diagnostic-sequence-wrapper"],
+                "lm_head_cooperative_backward_fused_kernel_abi_implementation_class": [
+                    "diagnostic-sequence-wrapper"
+                ],
+            },
+            "candidate_native_metrics": {
+                "train_loss_host_d2h_count": {"mean": 0.0},
+                "setup_wall_ms": {"mean": 1.0},
+                "setup_timing_accounted_ms": {"mean": 1.0},
+                "setup_timing_unattributed_ms": {"mean": 0.0},
+                "setup_timing_record_count": {"mean": 1.0},
+                "train_loop_wall_ms": {"mean": 1.0},
+                "total_wall_ms": {"mean": 2.0},
             }
         }
     )
@@ -5837,7 +5853,7 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
     }
     assert (
         failing_gate["failure_reason"]
-        == "candidate native training must report graph_editor_tensor_flow=false and torch_required=false and optimized_kernel_contract_passed=true"
+        == "candidate native training must report graph_editor_tensor_flow=false and torch_required=false and optimized_kernel_contract_passed=true and expose the LM-head path/implementation class and train_loss_host_d2h_count=0 with root setup/train timing metrics; long-run deferred-prewarm candidates must also report zero QKV and LM-head graph prewarm successes, while long-run async-QKV candidates must report async launch/wait/sync success and zero LM-head graph prewarm successes"
     )
 
 
@@ -6507,7 +6523,7 @@ def test_paired_kernel_speed_tool_summarizes_cublaslt_plan_cache() -> None:
     assert changed["selected_heuristics"] == {"baseline": [1], "candidate": [0]}
 
 
-def test_paired_kernel_speed_tool_counts_side_only_plan_cache_as_change() -> None:
+def test_paired_kernel_speed_tool_reports_side_only_plan_cache_without_gate_pass() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
     assert spec is not None
@@ -6549,8 +6565,8 @@ def test_paired_kernel_speed_tool_counts_side_only_plan_cache_as_change() -> Non
     assert summary["enabled"] is False
     assert summary["has_plan_cache_change"] is True
     assert summary["candidate_only"] == ["cublaslt:768x65536x2304:N,N"]
-    assert gate["passed"] is True
-    assert gate["has_cublaslt_plan_cache_change"] is True
+    assert gate["passed"] is False
+    assert gate["has_cublaslt_plan_cache_change"] is False
 
 
 def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:

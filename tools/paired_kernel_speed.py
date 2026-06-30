@@ -3113,7 +3113,10 @@ def evaluate_native_route_change_gate(
     has_hot_route_counter_change = route_changes.get("has_hot_route_counter_change") is True
     has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
     has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
-    has_plan_cache_change = bool(cublaslt_plan_cache.get("has_plan_cache_change"))
+    has_plan_cache_change = bool(
+        cublaslt_plan_cache.get("enabled") is True
+        and cublaslt_plan_cache.get("has_plan_cache_change")
+    )
     required_counter_names = [str(name).strip() for name in required_hot_route_counters if str(name).strip()]
     hot_changed = route_changes.get("hot_changed")
     if not isinstance(hot_changed, dict):
@@ -3188,7 +3191,10 @@ def summarize_native_candidate_attribution(
     )
     has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
     has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
-    has_plan_cache_change = bool(cublaslt_plan_cache.get("has_plan_cache_change"))
+    has_plan_cache_change = bool(
+        cublaslt_plan_cache.get("enabled") is True
+        and cublaslt_plan_cache.get("has_plan_cache_change")
+    )
     has_kernel_attribution = (
         has_hot_route_counter_change
         or has_strategy_value_change
@@ -4878,7 +4884,7 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
             "torch_required",
             "optimized_kernel_contract_passed",
         )
-    ) or "train_loss_host_d2h_count" in metrics
+    )
     enabled = candidate_is_native or observed_contract
     results: list[dict[str, object]] = []
     if enabled:
