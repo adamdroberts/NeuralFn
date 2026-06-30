@@ -66,9 +66,9 @@ pip install -e ".[all]"           # full native/server/dataset workstation, with
 need to run legacy graph-backed Torch code while it still exists in the tree,
 install PyTorch explicitly in that environment outside NeuralFn's package
 metadata. The no-Torch dependency gate checks both `requirements.txt` and
-`requirements-full.txt`; the full requirements file may include server,
-dataset, tokenizer, and graph helpers, but it must not reintroduce Torch-family
-packages.
+`requirements-full.txt`; the default requirements file must remain dependency
+empty, and the full requirements file may include server, dataset, tokenizer,
+and graph helpers, but it must not reintroduce Torch-family packages.
 
 CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from

@@ -33,7 +33,10 @@ materialization, `pip install -e ".[graph]"` for Python graph helpers,
 `pip install -e ".[server]"` for the FastAPI/editor/MCP backend. The root
 `.[all]` extra is also Torch-free, and NeuralFn no longer exposes a `.[torch]`
 extra. Legacy graph-backed Torch code requires a separately managed PyTorch
-install outside NeuralFn's package metadata.
+install outside NeuralFn's package metadata. The no-Torch verifier requires
+`requirements.txt` to stay dependency-empty and checks `requirements-full.txt`
+only for Torch-family packages, so optional server/dataset helpers cannot
+become default native-training dependencies.
 Importing `nfn_impl` for parser/planner helpers also keeps Torch, NumPy,
 `server.dataset_manager`, graph ops, parameter-golf Torch helpers, and
 `train_jepa_semantic` lazy until a command path actually needs the graph-backed

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- No-Torch default requirements gate: `tools/check_native_no_torch_deps.py` now
+  parses `requirements.txt` and fails if the default requirements file contains
+  any install dependency, while still allowing `requirements-full.txt` to carry
+  non-Torch optional server/dataset packages. This keeps the default native/core
+  install surface dependency-empty instead of merely Torch-free. Verification:
+  focused native dependency pytest slices, verifier JSON run, and
+  `git diff --check`.
+
 - Native SM120 launcher verification: the no-Torch dependency verifier tests now
   assert that compiled `build/nfn_train_gpt_sm120` dry-runs resolve to
   `nfn_gpt_native_train_linked --tile-ops-lib linked` for default, GPT-3,

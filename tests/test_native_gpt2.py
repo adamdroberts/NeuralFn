@@ -358,7 +358,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     ]
     assert project_dependencies["forbidden_optional_extra_hits"] == {}
     assert project_dependencies["optional_dependency_hits"].get("torch") is None
-    requirements_dependencies = payload["requirements_dependencies"]
+    requirements_dependencies = payload["requirements_default_dependencies"]
     assert requirements_dependencies["name"] == "requirements_default_dependencies"
     assert requirements_dependencies["exists"] is True
     assert requirements_dependencies["passed"] is True
@@ -727,6 +727,19 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
         root / "build" / "nfn_train_gpt",
         root,
     ) == ()
+    default_requirements = module.requirements_dependency_report(root, require_empty=True)
+    assert default_requirements["passed"] is True
+    assert default_requirements["require_empty"] is True
+    assert default_requirements["dependency_count"] == 0
+    assert default_requirements["unexpected_default_dependencies"] == []
+    full_requirements = module.requirements_dependency_report(
+        root,
+        filename="requirements-full.txt",
+        name="requirements_full_dependencies",
+        forbidden_prefixes=("torch", "torchvision", "torchaudio"),
+    )
+    assert full_requirements["passed"] is True
+    assert full_requirements["dependency_count"] > 0
 
 
 def test_native_no_torch_dependency_verifier_detects_stale_artifacts(tmp_path: Path) -> None:

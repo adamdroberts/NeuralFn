@@ -2205,14 +2205,17 @@ def requirements_dependency_report(
     filename: str = "requirements.txt",
     name: str = "requirements_default_dependencies",
     forbidden_prefixes: tuple[str, ...] = FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES,
+    require_empty: bool = False,
 ) -> dict[str, object]:
     requirements = repo_root / filename
+    dependencies: list[str] = []
     offenders: list[str] = []
     if requirements.exists():
         for raw_line in requirements.read_text(encoding="utf-8").splitlines():
             dependency = raw_line.split("#", 1)[0].strip()
             if not dependency or dependency.startswith(("-", "--")):
                 continue
+            dependencies.append(dependency)
             normalized = dependency.lower().replace("_", "-")
             for prefix in forbidden_prefixes:
                 if (
@@ -2225,11 +2228,16 @@ def requirements_dependency_report(
                 ):
                     offenders.append(raw_line.strip())
                     break
+    unexpected_default_dependencies = dependencies if require_empty else []
     return {
         "name": name,
         "path": str(requirements),
         "exists": requirements.exists(),
-        "passed": not offenders,
+        "passed": not offenders and not unexpected_default_dependencies,
+        "dependencies": dependencies,
+        "dependency_count": len(dependencies),
+        "require_empty": bool(require_empty),
+        "unexpected_default_dependencies": unexpected_default_dependencies,
         "offenders": offenders,
         "forbidden_dependency_prefixes": list(forbidden_prefixes),
     }
@@ -2366,7 +2374,7 @@ def main() -> int:
     if not args.skip_python_entrypoints:
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
-        requirements_report = requirements_dependency_report(repo_root)
+        requirements_report = requirements_dependency_report(repo_root, require_empty=True)
         failed = failed or not bool(requirements_report["passed"])
         requirements_full_report = requirements_dependency_report(
             repo_root,
@@ -2405,7 +2413,7 @@ def main() -> int:
                     "forbidden_python_import_roots": list(FORBIDDEN_PYTHON_IMPORT_ROOTS),
                     "artifacts": artifact_report,
                     "project_dependencies": dependency_report,
-                    "requirements_dependencies": requirements_report,
+                    "requirements_default_dependencies": requirements_report,
                     "requirements_full_dependencies": requirements_full_report,
                     "egg_info_dependencies": egg_info_report,
                     "python_entrypoints": python_report,
