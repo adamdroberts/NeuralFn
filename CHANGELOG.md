@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The no-Torch dependency verifier now covers the compiled top-level
+  `build/nfn-native` shim directly. It build-resolves the shim when needed and
+  checks both `nfn-native train ... --print-command` and `nfn-native infer
+  --checkpoint DIR --prompt-tokens ... --print-command`, proving the zero-Python
+  entrypoint delegates to dense GPT native training and `--sample-checkpoint`
+  inference without graph-backed startup. Verification: focused no-Torch
+  verifier pytest and full no-Torch JSON gate.
+
 - Direct GPT inference wrappers now accept `--checkpoint PATH` as a native
   checkpoint alias, matching `nfn infer`. `python cli/scripts/infer_gpt.py
   --checkpoint DIR --native-info` resolves a checkpoint directory to the latest

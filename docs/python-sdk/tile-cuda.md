@@ -3542,6 +3542,10 @@ The same verifier now covers dense GPT `nfn train` dispatch with an explicit
 `--template-name` and with a custom `--graph-file`, so universal GPT trainer
 selection cannot regress into the graph-backed Python runtime while only the
 architecture selector changes.
+It also covers the compiled top-level `nfn-native` shim's train and
+native-checkpoint infer delegates with `--print-command`, proving those
+zero-Python entrypoints still hand off to dense GPT native training and
+`--sample-checkpoint` inference before graph-backed startup can run.
 Python `nfn train --base-model gpt ...` and compiled
 `nfn-native-train --base-model gpt ...` now expand the same dense GPT quality
 defaults as `cli/scripts/train_gpt.py`: validation every 250 optimizer steps

@@ -1041,6 +1041,34 @@ DEFAULT_SHELL_ENTRYPOINTS = (
         {},
     ),
     (
+        "nfn_native_compiled_train_gpt_dry_run",
+        (
+            "build/nfn-native",
+            "train",
+            "--base-model",
+            "gpt",
+            "--print-command",
+            "--dry-run",
+            "--no-checkpoint",
+        ),
+        {},
+    ),
+    (
+        "nfn_native_compiled_infer_prompt_tokens_dry_run",
+        (
+            "build/nfn-native",
+            "infer",
+            "--checkpoint",
+            "__NFN_NATIVE_CHECKPOINT_DIR__",
+            "--prompt-tokens",
+            "1,2,3",
+            "--max-new-tokens",
+            "2",
+            "--print-command",
+        ),
+        {},
+    ),
+    (
         "native_gpt_linked_list_templates",
         (
             "build/nfn_gpt_native_train_linked",
@@ -1894,13 +1922,19 @@ def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -
     launcher_builders = {
         "build/nfn_train_gpt": "tools/build_train_gpt_cli.sh",
         "build/nfn_train_gpt_sm120": "tools/build_train_gpt_sm120_cli.sh",
+        "build/nfn-native": "tools/build_native_nfn_cli.sh",
+        "build/nfn_native": "tools/build_native_nfn_cli.sh",
     }
     with tempfile.TemporaryDirectory(prefix="nfn-native-shell-entrypoints-") as tmp:
         temp_root = Path(tmp)
+        _write_latest_native_checkpoint_stub(temp_root)
         for name, command, extra_env in DEFAULT_SHELL_ENTRYPOINTS:
             env = base_env.copy()
             env.update(extra_env)
-            run_command = list(command)
+            run_command = [
+                str(temp_root) if part == "__NFN_NATIVE_CHECKPOINT_DIR__" else part
+                for part in command
+            ]
             build_started: float | None = None
             build_elapsed = 0.0
             first = run_command[0] if run_command else ""

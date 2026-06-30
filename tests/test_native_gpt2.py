@@ -585,6 +585,23 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--native-cuda-activation moa" in shell_entrypoints[
         "train_gpt_compiled_template_selector_dry_run"
     ]["stdout"]
+    assert shell_entrypoints["nfn_native_compiled_train_gpt_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train" in shell_entrypoints["nfn_native_compiled_train_gpt_dry_run"]["stdout"]
+    assert "--model-family gpt" in shell_entrypoints["nfn_native_compiled_train_gpt_dry_run"]["stdout"]
+    assert "--train-transformer-lm" in shell_entrypoints["nfn_native_compiled_train_gpt_dry_run"]["stdout"]
+    assert "--backend tile-cuda" in shell_entrypoints["nfn_native_compiled_train_gpt_dry_run"]["stdout"]
+    assert shell_entrypoints["nfn_native_compiled_infer_prompt_tokens_dry_run"]["passed"] is True
+    assert "nfn_gpt_native_train" in shell_entrypoints[
+        "nfn_native_compiled_infer_prompt_tokens_dry_run"
+    ]["stdout"]
+    assert "--sample-checkpoint" in shell_entrypoints[
+        "nfn_native_compiled_infer_prompt_tokens_dry_run"
+    ]["stdout"]
+    assert "model_00000020.bin" in shell_entrypoints[
+        "nfn_native_compiled_infer_prompt_tokens_dry_run"
+    ]["stdout"]
+    assert "--prompt-tokens" in shell_entrypoints["nfn_native_compiled_infer_prompt_tokens_dry_run"]["stdout"]
+    assert "1,2,3" in shell_entrypoints["nfn_native_compiled_infer_prompt_tokens_dry_run"]["stdout"]
     assert shell_entrypoints["native_gpt_linked_list_templates"]["passed"] is True
     assert shell_entrypoints["native_gpt_linked_list_templates"]["startup_within_budget"] is True
     assert "shipped_template_catalog" in shell_entrypoints["native_gpt_linked_list_templates"]["stdout"]
