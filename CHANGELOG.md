@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Native no-Torch deferred-timing artifact guard: `tools/check_native_no_torch_deps.py`
+  now requires compiled GPT trainer artifacts to contain the deferred-prewarm
+  timing-contract JSON markers. This makes stale or incomplete native binaries
+  fail the no-Torch artifact gate before long benchmark or training runs rely on
+  them. Verification: focused native no-Torch verifier pytest, full no-Torch
+  JSON verifier, and `git diff --check`.
+
 - Native GPT paired deferred-prewarm gate: `tools/paired_kernel_speed.py` now
   validates the trainer-emitted `train_timing_contract`,
   `train_first_step_deferred_prewarm_diagnostic`, and
