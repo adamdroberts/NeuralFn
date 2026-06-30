@@ -11464,7 +11464,7 @@ int run_transformer_lm_training_json(
             {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",
              "NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS",
              "NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},
-            1);
+            0);
     const bool native_long_run_defer_prewarm_enabled =
         !native_fast_startup_requested &&
         !cfg.startup_only &&
@@ -26057,7 +26057,7 @@ int run_transformer_lm_training_json(
         << (native_fast_startup_requested
                 ? "fast-startup-skip-throughput-prewarms-by-default"
                 : native_long_run_defer_prewarm_enabled
-                ? "long-run-defer-throughput-prewarms-by-default"
+                ? "long-run-defer-throughput-prewarms-by-env"
                 : cfg.startup_only
                 ? "startup-only-skip-throughput-prewarms-by-default"
                 : "throughput-prewarm-defaults")

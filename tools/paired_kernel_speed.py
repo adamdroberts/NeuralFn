@@ -5154,7 +5154,7 @@ def evaluate_native_runtime_contract_gate(payload: dict[str, object]) -> dict[st
                 }
             )
         prewarm_policy = values.get("native_fast_startup_prewarm_policy")
-        if prewarm_policy == ["long-run-defer-throughput-prewarms-by-default"]:
+        if prewarm_policy == ["long-run-defer-throughput-prewarms-by-env"]:
             steps_completed_mean = _metric_mean(metrics, "steps_completed")
             has_steps = steps_completed_mean is not None and steps_completed_mean > 0.0
             has_steady_state_steps = (

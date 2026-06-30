@@ -1388,7 +1388,7 @@ def test_native_gpt_sm120_candidate_profile_inherits_long_run_defer_prewarm(tmp_
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["metadata"]["candidate_profile"] == "qkv_dinput_ln128"
     assert payload["metadata"]["default_long_run_defer_prewarm"] == "applied"
-    assert payload["metadata"]["default_long_run_defer_prewarm_min_warmup_dry_run_would_apply"] == "40"
+    assert payload["metadata"]["default_long_run_defer_prewarm_min_warmup_dry_run_would_apply"] == "60"
     assert payload["metadata"]["default_long_run_defer_prewarm_min_steps_dry_run_would_apply"] == "10"
     assert payload["baseline_env"]["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
     assert payload["candidate_env"]["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
@@ -5961,7 +5961,7 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
                     "diagnostic-sequence-wrapper"
                 ],
                 "native_fast_startup_prewarm_policy": [
-                    "long-run-defer-throughput-prewarms-by-default"
+                    "long-run-defer-throughput-prewarms-by-env"
                 ],
                 "train_timing_contract": [
                     "long-run-deferred-prewarm-steady-state"
@@ -5997,7 +5997,7 @@ def test_paired_kernel_speed_native_runtime_contract_requires_optimized_kernel_c
                     "diagnostic-sequence-wrapper"
                 ],
                 "native_fast_startup_prewarm_policy": [
-                    "long-run-defer-throughput-prewarms-by-default"
+                    "long-run-defer-throughput-prewarms-by-env"
                 ],
                 "train_timing_contract": [
                     "long-run-deferred-prewarm-steady-state"

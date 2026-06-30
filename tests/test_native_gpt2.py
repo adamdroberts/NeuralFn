@@ -2195,7 +2195,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     ) in gpt_source
     assert "!native_long_run_defer_prewarm_enabled" in gpt_source
     assert "cfg.startup_only\n            ? 0\n            : std::min<std::int64_t>(" in gpt_source
-    assert "long-run-defer-throughput-prewarms-by-default" in gpt_source
+    assert "long-run-defer-throughput-prewarms-by-env" in gpt_source
     assert "startup-only-skip-throughput-prewarms-by-default" in gpt_source
     assert (
         'linear_tk_qkv_first_use_prewarm_env,\n'
@@ -2781,15 +2781,15 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert "os.execvpe(command[0], command, _compiled_cli_env(config))" in train_gpt_native_source
     assert '_set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
     assert (
-        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "0")'
         in train_gpt_source
     )
     assert (
-        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "0")'
         in train_gpt_native_source
     )
     assert (
-        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")'
+        '_set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "0")'
         in native_sdk_source
     )
     assert (
@@ -2951,7 +2951,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "fast_startup_env_explicit" in source
     assert "native_auto_fast_startup_short_run" in source
     assert 'env_nonnegative_i64_or(\n            {"NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS",' in source
-    assert '"NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},\n            1)' in source
+    assert '"NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS"},\n            0)' in source
     assert "cfg.max_steps > native_long_run_defer_prewarm_after_steps" in source
     assert (
         "const bool native_qkv_first_use_prewarm_default =\n"
@@ -2966,7 +2966,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_graph_prewarm_default_o
     assert "long-run-deferred-prewarm-steady-state" in source
     assert "train_first_step_deferred_prewarm_diagnostic" in source
     assert "train_steady_state_parity_metric_available" in source
-    assert "long-run-defer-throughput-prewarms-by-default" in source
+    assert "long-run-defer-throughput-prewarms-by-env" in source
     assert "startup-only-skip-throughput-prewarms-by-default" in source
     assert "fast-startup-skip-throughput-prewarms-by-default" in source
     assert "cfg.max_steps >= 3" in source
@@ -5612,7 +5612,7 @@ def test_native_gpt_exec_handoff_uses_compiled_cli_env(
         assert env["CUDA_VISIBLE_DEVICES"] == "0"
         assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
         assert env["CUDA_MODULE_LOADING"] == "LAZY"
-        assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
+        assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "0"
 
 
 def test_run_native_gpt_exec_process_handoff_defaults_to_compiled_cli(
@@ -5701,7 +5701,7 @@ def test_train_gpt_native_compiled_cli_env_overrides_ambient_cuda_env(
     assert env["CUDA_VISIBLE_DEVICES"] == "dedicated-sm120"
     assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
     assert env["CUDA_MODULE_LOADING"] == "LAZY"
-    assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "1"
+    assert env["NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS"] == "0"
 
     monkeypatch.setenv("NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "7")
     overridden = module._compiled_cli_env(cfg)
@@ -14533,7 +14533,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "\"optimized_kernel_contract_passed\":true,"
         "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
-        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-env\","
         "\"train_timing_contract\":\"long-run-deferred-prewarm-steady-state\","
         "\"train_first_step_deferred_prewarm_diagnostic\":true,"
         "\"train_steady_state_parity_metric_available\":false,"
@@ -14560,7 +14560,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
     assert deferred_passing.returncode == 0, deferred_passing.stderr
     assert (
         "native_fast_startup_prewarm_policy: "
-        "expected=present observed=long-run-defer-throughput-prewarms-by-default"
+        "expected=present observed=long-run-defer-throughput-prewarms-by-env"
     ) not in deferred_passing.stdout
     assert (
         "train_timing_contract: expected=long-run-deferred-prewarm-steady-state "
@@ -14590,7 +14590,7 @@ def test_paired_speed_gates_native_runtime_contract(tmp_path: Path) -> None:
         "\"optimized_kernel_contract_passed\":true,"
         "\"lm_head_classifier_backward_path_class\":\"diagnostic-cuda-graph-wrapper\","
         "\"lm_head_cooperative_backward_fused_kernel_abi_implementation_class\":\"diagnostic-cuda-graph-wrapper\","
-        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-default\","
+        "\"native_fast_startup_prewarm_policy\":\"long-run-defer-throughput-prewarms-by-env\","
         "\"train_timing_contract\":\"long-run-deferred-prewarm-steady-state\","
         "\"train_first_step_deferred_prewarm_diagnostic\":true,"
         "\"train_steady_state_parity_metric_available\":false,"

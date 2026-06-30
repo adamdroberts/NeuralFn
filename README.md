@@ -303,16 +303,15 @@ the old full throughput-prewarm setup. On 2026-06-28, a dedicated RTX 5090
 `linear_tk_qkv_first_use_prewarm_success_count` moving from `1` to `0` and the
 runtime policy reporting
 `startup-only-skip-throughput-prewarms-by-default`.
-Long native training runs still defer throughput prewarms by default. When
-`cfg.max_steps` is above `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS`
+Long native training runs keep throughput prewarms on by default. Set
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` to a positive threshold
 (`NFN_NATIVE_GPT2_DEFER_PREWARM_AFTER_STEPS` /
-`NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`, default `1`), the trainer reports
-`native_long_run_defer_prewarm_enabled=true` and
+`NFN_TILE_CUDA_DEFER_PREWARM_AFTER_STEPS`) only for a deferred-prewarm
+benchmark or startup diagnostic. When `cfg.max_steps` is above that threshold,
+the trainer reports `native_long_run_defer_prewarm_enabled=true` and
 `native_fast_startup_prewarm_policy` as
-`long-run-defer-throughput-prewarms-by-default`. This keeps single-step smoke
-runs on the auto-fast-startup route while avoiding up-front QKV/LM-head graph
-prewarm cost for multi-step quality runs where first-use cost is amortized.
-Paired native speed gates verify that label by requiring
+`long-run-defer-throughput-prewarms-by-env`. Paired native speed gates verify
+that explicit env-selected label by requiring
 `linear_tk_qkv_first_use_prewarm_success_count=0` and
 `lm_head_fused_graph_prewarm_success_count=0`, so a long-run benchmark cannot
 silently pay the old throughput-prewarm startup cost while still reporting the
@@ -337,9 +336,9 @@ CUDA-event step time, so long-run comparisons do not reuse the first-step
 prewarm cost in throughput gates. The named `long_run_defer_prewarm` profile
 requires that steady-state throughput metric to meet or beat the llm.kittens
 reference when reference gating is enabled. When the caller leaves warmup
-unset, this profile and the measured default long-run deferred-prewarm
-comparison raise benchmark warmup to at least 60 pairs by default, matching the
-native training warmup default. Explicit `NFN_SM120_NATIVE_WARMUP` /
+unset, this profile and the measured benchmark-only deferred-prewarm comparison
+raise benchmark warmup to at least 60 pairs by default. Explicit
+`NFN_SM120_NATIVE_WARMUP` /
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP` values are honored for bounded repro probes.
 Dry-run plans keep explicit low-warmup aliases literal for command-shape checks.
 The wrapper records
@@ -358,7 +357,7 @@ reproducing a short first-step-dominated benchmark. Explicit
 `NFN_SM120_NATIVE_STEPS` / `NFN_SM120_NATIVE_CANDIDATE_STEPS` values are honored
 for quick repro probes.
 The parity wrapper uses the same 60-pair warmup floor and measured-step floor
-for default deferred-prewarm current-vs-llm.kittens runs,
+for benchmark-only deferred-prewarm current-vs-llm.kittens runs,
 with the parity-specific
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` and
 `NFN_SM120_PARITY_LONG_RUN_DEFER_PREWARM_MIN_STEPS=0` aliases available for
@@ -394,8 +393,8 @@ The compiled GPT launchers (`build/nfn_train_gpt` and
 `build/nfn_train_gpt_sm120`) also auto-append `--fast-startup` for short
 debug/smoke runs when `max_steps` is at or below the same deferred-prewarm
 threshold and no explicit fast-startup env/flag was provided. Full default
-training (`max_steps=20000`) keeps the long-run deferred-prewarm policy instead
-of the smoke-run shortcut.
+training (`max_steps=20000`) keeps throughput prewarms on instead of taking the
+smoke-run shortcut.
 Stage-timed startup-only probes also elide the CUDA event-pool preallocation
 because no optimizer step can consume those events before exit; runtime JSON
 reports `stage_timing_prealloc_event_pairs_requested: 0` for that path.
@@ -1582,7 +1581,7 @@ first-step CUDA-event timing to `1.003118x`, forward-QKV first-step timing to
 `0.998875x` versus current native. Candidate-over-llm.kittens train-loop wall
 was `1.010542x` and train tokens/sec was `0.989134x`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=long_run_qkv_forward_prewarm` to test
-the same idea against the actual long-run deferred-prewarm path. That profile
+the same idea against the explicit long-run deferred-prewarm benchmark path. That profile
 forces full-row TK QKV first-use prewarm back on for the candidate while both
 sides keep `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1`. It inherits the
 long-run warmup and measured-step floors when those values are unset, so strict
@@ -4137,7 +4136,7 @@ When neither `--cuda-runtime-lib` nor `NFN_CUDA_RUNTIME_LIB` is set, the native 
 
 For wrapper-level command inspection, `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command` stays metadata-only on the default `compiled-cli` runner. It prints the compiled C++ command without importing `server.dataset_manager`, NumPy, tiktoken, or Torch and without materializing raw-text token shards, and the default Tile-CUDA command no longer includes the external `--target train_gpt2cu` bridge argument. `python cli/scripts/train_gpt_native.py ...` now uses the same early compiled-CLI handoff for cached-shard runs, so direct script execution builds the command locally and execs C++ before importing `neuralfn.native_gpt`; `--download-if-missing`, config export, and non-compiled runners still enter the SDK wrapper. `train_gpt.py` preserves its own command name for help/errors; `train_gpt2.py` remains a compatibility entrypoint. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action: it prints the exact `nfn_gpt_native_train ...` invocation and exits before token-shard resolution, CUDA runtime loading, or driver preflight. Dense GPT `--dry-run` / `--print-plan` JSON reports `model_family: "gpt"` by default, while `train_gpt2.py`, `--base-model gpt2`, GPT3, and NanoGPT selections preserve their selected family labels and the implemented trainer as `native-transformer-lm-ready` with a ready `training_step_plan`; `remaining_validation` now tracks keeping the llm.kittens parity gate green, reducing native startup/setup arena materialization time, and replacing the diagnostic CUDA Graph LM-head classifier wrapper with a strict true-fused Tile kernel.
 
-The current CUDA 13.3 dedicated RTX 5090 parity checkpoint after the fused padded token-weight initializer became default is green: the 5-step, 3-sample same-script wrapper measured median NeuralFn over llm.kittens train-loop `0.999041x`, steady-state CUDA-event `0.999342x`, and tokens/sec `1.001718x`, with `graph_editor_tensor_flow=false`, `torch_required=false`, `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`. Default no-profile `tools/bench_native_gpt_sm120_parity.sh` and `tools/bench_native_gpt_sm120_candidate.sh` runs now apply `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` unless the caller or named profile supplies a prewarm policy, so short benchmark shapes exercise the same deferred-prewarm branch used by real long-training runs. The parity wrapper gates steady-state CUDA-event step time and `train_steady_state_tokens_per_second` by default in this mode rather than treating the expected first-step deferred-prewarm cost as a train-loop regression. Set `NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM=0` or `NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM=0` only when intentionally reproducing older short-run eager-prewarm benchmark behavior; set `NFN_SM120_PARITY_MIN_CANDIDATE_RATIO` or `NFN_SM120_PARITY_MIN_STEADY_STATE_TOKENS_RATIO` only when intentionally changing the default steady-state throughput floor. The same run still reports startup setup dominated by the large CUDA arenas (`setup_wall_ms` median `714.306 ms`, float arena materialization median `181.658 ms`, uint16 arena materialization median `125.478 ms`) plus token-weight initialization median `151.345 ms`, and the LM-head classifier remains the diagnostic CUDA Graph wrapper over CE/dHidden/dWeight rather than a strict true-fused Tile kernel. Runtime JSON now reports `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`; the optimized-kernel contract rejects launched `scalar-cooperative-tile-diagnostic` LM-head true-fused bodies so that diagnostic cooperative kernels cannot be mistaken for production Tile kernels.
+The current CUDA 13.3 dedicated RTX 5090 parity checkpoint after the fused padded token-weight initializer became default is green: the 5-step, 3-sample same-script wrapper measured median NeuralFn over llm.kittens train-loop `0.999041x`, steady-state CUDA-event `0.999342x`, and tokens/sec `1.001718x`, with `graph_editor_tensor_flow=false`, `torch_required=false`, `optimized_kernel_contract_passed=true`, and `train_loss_host_d2h_count=0`. Default no-profile `tools/bench_native_gpt_sm120_parity.sh` and `tools/bench_native_gpt_sm120_candidate.sh` runs apply `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` unless the caller or named profile supplies a prewarm policy, so short benchmark shapes can isolate the deferred-prewarm diagnostic branch. Real native training defaults `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=0` and keeps throughput prewarms on unless the caller explicitly selects deferred prewarm. The parity wrapper gates steady-state CUDA-event step time and `train_steady_state_tokens_per_second` by default in benchmark deferred-prewarm mode rather than treating the expected first-step deferred-prewarm cost as a train-loop regression. Set `NFN_SM120_PARITY_DEFAULT_LONG_RUN_DEFER_PREWARM=0` or `NFN_SM120_NATIVE_DEFAULT_LONG_RUN_DEFER_PREWARM=0` only when intentionally reproducing older short-run eager-prewarm benchmark behavior; set `NFN_SM120_PARITY_MIN_CANDIDATE_RATIO` or `NFN_SM120_PARITY_MIN_STEADY_STATE_TOKENS_RATIO` only when intentionally changing the default steady-state throughput floor. The same run still reports startup setup dominated by the large CUDA arenas (`setup_wall_ms` median `714.306 ms`, float arena materialization median `181.658 ms`, uint16 arena materialization median `125.478 ms`) plus token-weight initialization median `151.345 ms`, and the LM-head classifier remains the diagnostic CUDA Graph wrapper over CE/dHidden/dWeight rather than a strict true-fused Tile kernel. Runtime JSON now reports `lm_head_cooperative_backward_fused_kernel_abi_implementation_class`; the optimized-kernel contract rejects launched `scalar-cooperative-tile-diagnostic` LM-head true-fused bodies so that diagnostic cooperative kernels cannot be mistaken for production Tile kernels.
 Native trainer JSON also reports the active training timing contract. Long-run deferred-prewarm runs emit `train_timing_contract: "long-run-deferred-prewarm-steady-state"`, set `train_first_step_deferred_prewarm_diagnostic` once at least one optimizer step runs under that policy, and set `train_steady_state_parity_metric_available` once a post-first-step CUDA-event window exists. Use the steady-state CUDA-event and `train_steady_state_tokens_per_second` fields for long-run parity; one-step runs are first-use diagnostics by construction.
 
 A 2026-06-29 parity rerun with 2 warmup order pairs, 2 measured samples, and
@@ -4362,7 +4361,7 @@ the shared object, so new Tile ABI counters and kernel symbols are not hidden
 behind a stale linked trainer.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. `NFN_SM120_NATIVE_DRY_RUN=1` is accepted as a convenience alias for `NFN_SM120_NATIVE_DRY_RUN_PLAN=1`. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 60 warmup pairs. Startup-only profiles raise the default measured sample count to 5 when no `NFN_SM120_*SAMPLES` alias is set, and paired JSON metadata reports `default_startup_only_sample_floor_applied=5` when that floor changes the run shape. They also raise an unset or profile-forced zero warmup to one pair, reporting `default_startup_only_warmup_floor_applied=1`, so first-use CUDA/module load does not become a measured sample. Pass `NFN_SM120_NATIVE_WARMUP=0` or `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0` only for explicit cold-start diagnostics. Generated startup-only metric gates, including generated candidate-reference gates, keep setup metrics and drop `train_*`, stage, attention-backward, and startup-plus-train metrics that cannot exist in a zero-step startup JSON; explicit user-supplied ratio gates are still forwarded unchanged. The long-run deferred-prewarm gate also raises lower copied benchmark commands to at least 60 warmup pairs unless `NFN_SM120_NATIVE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` or `NFN_SM120_CANDIDATE_LONG_RUN_DEFER_PREWARM_MIN_WARMUP=0` is set. Paired JSON now also includes `native_candidate_attribution`, which classifies each run as `kernel-route-attributed`, `setup-only-attributed`, or `unattributed` and records whether the candidate actually changed a hot route counter, strategy value, linear-shape row, or cuBLASLt plan-cache entry. Generic `--require-native-route-change` still rejects setup-only changes, but an explicitly named setup-prewarm counter passed through `NFN_SM120_NATIVE_REQUIRE_HOT_ROUTE_COUNTERS` / `--require-native-hot-route-counter` satisfies the gate when that exact counter changed.
-When the default long-run deferred-prewarm policy is active, the native candidate and llm.kittens parity wrappers raise lower warmup or step counts to the configured accuracy floors before measuring, even when copied commands provide smaller explicit values. Set `NFN_SM120_NATIVE_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC=1` only for intentional first-use diagnostics; those runs record `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or `default_long_run_defer_prewarm_low_step_diagnostic` metadata and should not be treated as steady-state promotion evidence.
+When the benchmark-wrapper long-run deferred-prewarm policy is active, the native candidate and llm.kittens parity wrappers raise lower warmup or step counts to the configured accuracy floors before measuring, even when copied commands provide smaller explicit values. Set `NFN_SM120_NATIVE_ALLOW_LOW_LONG_RUN_DEFER_PREWARM_DIAGNOSTIC=1` only for intentional first-use diagnostics; those runs record `default_long_run_defer_prewarm_low_warmup_diagnostic` and/or `default_long_run_defer_prewarm_low_step_diagnostic` metadata and should not be treated as steady-state promotion evidence.
 The paired native runtime contract gate now consumes the same trainer fields as first-class strategy values: long-run deferred-prewarm candidates must report `train_timing_contract: "long-run-deferred-prewarm-steady-state"`, the expected `train_first_step_deferred_prewarm_diagnostic` value for completed steps, and `train_steady_state_parity_metric_available` once more than one optimizer step is measured. A two-step-or-longer measured candidate that lacks the steady-state marker fails the native runtime contract before ratio gates are interpreted.
 `tools/bench_native_gpt_sm120_candidate.sh --help` prints those environment controls and exits before CUDA, dataset, or paired-run setup. Unknown positional arguments now fail with exit code 2 instead of being ignored and accidentally launching the default long benchmark.
 For accepted LM-head CE/default profiles, the candidate wrapper now also
@@ -4656,9 +4655,10 @@ weight/bias cache misses apart from expected mutable activation repacking when
 triaging first-step or per-step BF16 bridge cost.
 Direct compiled trainer invocations also auto-enable `--fast-startup` for short
 debug/smoke runs when `max_steps` is at or below
-`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `1`) and no explicit
-fast-startup flag or env var was provided. Long quality runs keep the deferred
-long-run prewarm policy. Runtime JSON reports
+`NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` (default `0`) and no explicit
+fast-startup flag or env var was provided. Long quality runs keep throughput
+prewarms on unless the caller sets a positive deferred-prewarm threshold.
+Runtime JSON reports
 `native_auto_fast_startup_short_run` and `native_fast_startup_explicit` so
 benchmarks can distinguish auto preflight behavior from caller intent.
 

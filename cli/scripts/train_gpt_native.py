@@ -82,7 +82,7 @@ def _compiled_cli_env(config: NativeGptRunConfig) -> dict[str, str]:
     if str(config.cuda_device_max_connections or "").strip():
         env["CUDA_DEVICE_MAX_CONNECTIONS"] = str(config.cuda_device_max_connections)
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
-    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")
+    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "0")
     return env
 
 
@@ -91,7 +91,7 @@ def _compiled_cli_env_from_values() -> dict[str, str]:
     _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", "0")
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
-    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "1")
+    _set_env_default_if_empty(env, "NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS", "0")
     return env
 
 

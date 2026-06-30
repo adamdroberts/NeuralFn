@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Breaking changes:** Native dense GPT training now defaults
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS` to `0` in the C++ trainer, Python
+  CLI wrappers, and SDK launch helpers, so real quality runs keep throughput
+  QKV/LM-head prewarms enabled unless the caller explicitly opts into a positive
+  deferred-prewarm threshold. Runtime JSON now labels that opt-in branch as
+  `native_fast_startup_prewarm_policy:
+  "long-run-defer-throughput-prewarms-by-env"` instead of the previous
+  `long-run-defer-throughput-prewarms-by-default`. To reproduce the old
+  deferred-prewarm benchmark/startup diagnostic behavior, set
+  `NFN_NATIVE_GPT_DEFER_PREWARM_AFTER_STEPS=1` or use the SM120 benchmark
+  profiles that inject it intentionally. Verification: focused native GPT source
+  contract pytest, Tile-CUDA runtime-contract pytest, benchmark-wrapper shell
+  syntax checks, linked native GPT trainer rebuild, docs guard, and diff
+  whitespace check.
+
 - Native GPT LM-head default restored cached CUDA Graph replay for the
   cooperative classifier-backward route. A higher-warmup 2026-06-30 rerun of
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_sequence_wrapper`
