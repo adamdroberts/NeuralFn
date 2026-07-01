@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Added a raw CUDA Tile native-train ABI wrapper for causal chunk-state and a
+  Jamba native train-step smoke for Jamba-family compiled preflights.
+  `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH`
+  and the unified `nfn-native-train --base-model jamba
+  --native-cuda-smoke-jamba-chunk-state-step` alias now execute causal
+  chunk-state, reconstruction head, latent MSE, linear head backward, and AdamW
+  through raw CUDA Tile ABI calls with CPU-reference checks. Jamba
+  catalog/preflight JSON now reports
+  `jamba-causal-chunk-state-head-adamw-smoke` in
+  `native_training_completed_requirements`, while full Mamba state-space
+  forward/backward, the Jamba layer schedule loop, checkpointing, and inference
+  wiring remain visible in the missing list. Real Jamba-family training remains
+  `family-native-loop-missing` until the full hybrid loop is implemented.
+  Verification: rebuilt the native Tile ops libraries, missing-family native
+  trainers, unified native CLIs, dense GPT launchers, and native backward
+  benches; live CUDA Jamba smoke passed with max errors at or below
+  `2.40281e-06`; unified command forwarding emitted
+  `nfn_jamba_native_train --smoke-jamba-chunk-state-step`; focused native GPT
+  tests passed; the no-Torch dependency verifier passed all 30 native artifacts
+  with no stale outputs, 69 Python entrypoints, 24 shell entrypoints, and four
+  native template catalogs.
+
 - Added raw CUDA Tile native-train ABI wrappers for byte patch embed/merge and
   a HNet byte-patch native train-step smoke for HNet-family compiled preflights.
   `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-step --tile-ops-lib PATH`

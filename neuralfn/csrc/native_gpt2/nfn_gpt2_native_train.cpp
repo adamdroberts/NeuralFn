@@ -950,7 +950,11 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"ttt-inner-update-native-loop", "family-parameter-layout-checkpoint-inference"};
     }
     if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
-        return {"mamba-state-space-forward-backward", "jamba-layer-schedule-native-loop"};
+        return {
+            "mamba-state-space-forward-backward",
+            "jamba-layer-schedule-native-loop",
+            "family-parameter-layout-checkpoint-inference",
+        };
     }
     if (coverage_class == "missing-hnet-byte-lm") {
         return {
@@ -1013,6 +1017,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
         return {"ttt-linear-mse-adamw-smoke"};
+    }
+    if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
+        return {"jamba-causal-chunk-state-head-adamw-smoke"};
     }
     if (coverage_class == "missing-universal-transformer-lm") {
         return {"universal-recurrent-linear-mse-adamw-smoke"};

@@ -121,7 +121,10 @@ linear/MSE/backward/AdamW smoke while keeping ACT halting, checkpointing, and
 inference in the missing list. HNet entries list the completed byte patch
 embed/merge plus head-loss/backward/AdamW smoke while keeping byte-token shard
 resolution, byte-patch backward, checkpointing, and inference in the missing
-list.
+list. Jamba entries list the completed causal chunk-state plus
+head-loss/backward/AdamW smoke while keeping full Mamba state-space
+forward/backward, the Jamba layer schedule loop, checkpointing, and inference
+in the missing list.
 Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.

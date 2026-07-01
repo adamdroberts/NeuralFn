@@ -767,6 +767,17 @@ int nfn_native_tile_byte_patch_merge_float32(
     std::int64_t dim,
     void* cuda_stream);
 
+int nfn_native_tile_causal_chunk_state_float32(
+    const float* hidden,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    std::int64_t mode,
+    void* cuda_stream);
+
 int nfn_native_tile_topk_route_float32(
     const float* logits,
     float* weights,
