@@ -3231,14 +3231,16 @@ latency matters and the run should bypass Python argument shims entirely.
 For the LLaMA LM-head slice, use `nfn_llama_native_train --smoke-llama-lm-head-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-lm-head-step`; it runs linear logits, token CE forward/backward, linear input/weight backward, and AdamW without Torch or graph-editor tensor flow.
 
 Template catalog and per-template plan JSON include
-`native_training_coverage_class` plus `native_training_missing_requirements`.
-Use these fields to audit complete GPT-template native coverage. Missing
+`native_training_coverage_class`, `native_training_missing_requirements`, and
+`native_training_completed_requirements`. Use these fields to audit complete
+GPT-template native coverage. Missing
 families now have compiled no-Torch boundaries for LLaMA/RoPE/SwiGLU, standard
 MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT,
 HNet byte-LM, and universal transformer classes. LLaMA-family entries now list
-RMSNorm, RoPE-attention, SwiGLU/GEGLU MLP, and untied/template LM-head
-loop-composition requirements because their raw Tile ABI symbols are present;
-each boundary lists the exact
+completed smoke-backed slices for RMSNorm, RoPE, SwiGLU/GEGLU, and LM-head
+CE/backward/AdamW, while their missing list is limited to packed-QKV RoPE
+attention block integration, the full LLaMA block forward/backward loop, and
+family checkpoint/inference wiring.
 native loop work that must be implemented before that template can run real
 native training.
 

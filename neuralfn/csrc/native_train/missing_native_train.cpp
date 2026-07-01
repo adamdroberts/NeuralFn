@@ -38,6 +38,10 @@
 #define NFN_NATIVE_MISSING_REQUIREMENTS ""
 #endif
 
+#ifndef NFN_NATIVE_COMPLETED_REQUIREMENTS
+#define NFN_NATIVE_COMPLETED_REQUIREMENTS ""
+#endif
+
 namespace {
 
 struct Config {
@@ -379,6 +383,17 @@ void print_json(const Config& cfg, const char* program) {
     for (std::size_t i = 0; i < missing_requirements.size(); ++i) {
         std::cout << "    \"" << json_escape(missing_requirements[i]) << "\"";
         if (i + 1 != missing_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
             std::cout << ",";
         }
         std::cout << "\n";

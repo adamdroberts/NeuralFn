@@ -883,10 +883,9 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
         return {
-            "rmsnorm-loop-composition",
-            "rope-attention-loop-composition",
-            "swiglu-geglu-mlp-loop-composition",
-            "untied-lm-head-or-template-weight-layout",
+            "packed-qkv-rope-attention-block-integration",
+            "llama-block-forward-backward-loop",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-standard-moe-transformer-lm") {
@@ -954,10 +953,41 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     return {"classify-template-native-requirements"};
 }
 
+std::vector<std::string> native_training_completed_requirements_for_template(const std::string& template_name) {
+    const std::string coverage_class = native_training_coverage_class_for_template(template_name);
+    if (coverage_class == "implemented-dense-gpt-transformer-lm") {
+        return {"native-transformer-lm-trainer"};
+    }
+    if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
+        return {
+            "rmsnorm-loop-composition-smoke",
+            "rope-loop-composition-smoke",
+            "swiglu-geglu-mlp-loop-composition-smoke",
+            "lm-head-linear-ce-backward-adamw-smoke",
+        };
+    }
+    if (coverage_class == "missing-standard-moe-transformer-lm" ||
+        coverage_class == "missing-moe-jepa-objective" ||
+        coverage_class == "missing-semantic-moe-router-jepa-objective") {
+        return {"required-router-and-expert-tile-abi-symbols"};
+    }
+    if (coverage_class == "missing-dense-jepa-objective" ||
+        coverage_class == "missing-semantic-dense-jepa-objective") {
+        return {"required-linear-latent-loss-tile-abi-symbols"};
+    }
+    return {};
+}
+
 void write_native_training_missing_requirements_json(
     std::ostream& out,
     const std::string& template_name) {
     write_json_string_array(out, native_training_missing_requirements_for_template(template_name));
+}
+
+void write_native_training_completed_requirements_json(
+    std::ostream& out,
+    const std::string& template_name) {
+    write_json_string_array(out, native_training_completed_requirements_for_template(template_name));
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
@@ -1425,6 +1455,10 @@ void print_template_catalog_json(const Config& base_cfg) {
             << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
             << "      \"native_training_missing_requirements\": ";
         write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+        std::cout
+            << ",\n"
+            << "      \"native_training_completed_requirements\": ";
+        write_native_training_completed_requirements_json(std::cout, cfg.template_name);
         std::cout
             << ",\n"
             << "      \"selected_template_geometry\": " << selected_template_geometry_json(cfg) << "\n"
@@ -4875,6 +4909,10 @@ bool print_tile_plan(
     write_native_training_missing_requirements_json(std::cout, cfg.template_name);
     std::cout
         << ",\n"
+        << "  \"native_training_completed_requirements\": ";
+    write_native_training_completed_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"shipped_template_catalog\": ";
     print_string_array_json(shipped_gpt_template_presets(), "    ");
@@ -5333,6 +5371,10 @@ int print_selected_graph_unsupported_json(
         << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
         << "  \"native_training_missing_requirements\": ";
     write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
+        << "  \"native_training_completed_requirements\": ";
+    write_native_training_completed_requirements_json(std::cout, cfg.template_name);
     std::cout
         << ",\n"
         << "  \"status\": \"" << json_escape(status) << "\",\n"
@@ -24491,6 +24533,10 @@ int run_transformer_lm_training_json(
         << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
         << "  \"native_training_missing_requirements\": ";
     write_native_training_missing_requirements_json(std::cout, cfg.template_name);
+    std::cout
+        << ",\n"
+        << "  \"native_training_completed_requirements\": ";
+    write_native_training_completed_requirements_json(std::cout, cfg.template_name);
     std::cout
         << ",\n"
         << "  \"status\": \""

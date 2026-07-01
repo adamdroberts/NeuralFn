@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added `native_training_completed_requirements` to compiled dense GPT template
+  catalog, per-template plan JSON, and missing-family preflight JSON. LLaMA
+  coverage now reports the RMSNorm, RoPE, SwiGLU/GEGLU, and LM-head
+  CE/backward/AdamW CUDA smokes as completed requirements, while its missing
+  list is narrowed to packed-QKV RoPE attention block integration, the full
+  LLaMA block forward/backward loop, and family checkpoint/inference wiring.
+  This keeps the coverage audit honest without marking the family trainer
+  runnable before the full loop exists. Verification: rebuilt dense GPT,
+  GPT2-compatible, linked dense GPT, and missing-family native binaries; checked
+  dense catalog and direct LLaMA preflight JSON; focused catalog and
+  missing-family dispatch pytest passed (`2 passed`); the no-Torch verifier
+  passed 30 artifact scans, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Added a LLaMA LM-head native train-step CUDA smoke. `nfn_llama_native_train
   --smoke-llama-lm-head-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model llama --native-cuda-smoke-llama-lm-head-step`

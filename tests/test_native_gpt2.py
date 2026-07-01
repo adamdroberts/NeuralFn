@@ -5209,6 +5209,9 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     missing_requirements = {
         item["name"]: item["native_training_missing_requirements"] for item in payload["templates"]
     }
+    completed_requirements = {
+        item["name"]: item["native_training_completed_requirements"] for item in payload["templates"]
+    }
     assert statuses["gpt"] == "native-transformer-lm"
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
@@ -5219,10 +5222,15 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
     assert missing_requirements["llama"] == [
-        "rmsnorm-loop-composition",
-        "rope-attention-loop-composition",
-        "swiglu-geglu-mlp-loop-composition",
-        "untied-lm-head-or-template-weight-layout",
+        "packed-qkv-rope-attention-block-integration",
+        "llama-block-forward-backward-loop",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert completed_requirements["llama"] == [
+        "rmsnorm-loop-composition-smoke",
+        "rope-loop-composition-smoke",
+        "swiglu-geglu-mlp-loop-composition-smoke",
+        "lm-head-linear-ce-backward-adamw-smoke",
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
     assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
@@ -10976,6 +10984,17 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["batch_size"] == 8
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
+    assert llama_payload["native_training_missing_requirements"] == [
+        "packed-qkv-rope-attention-block-integration",
+        "llama-block-forward-backward-loop",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert llama_payload["native_training_completed_requirements"] == [
+        "rmsnorm-loop-composition-smoke",
+        "rope-loop-composition-smoke",
+        "swiglu-geglu-mlp-loop-composition-smoke",
+        "lm-head-linear-ce-backward-adamw-smoke",
+    ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_rotary_embedding_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_rotary_embedding_backward_float32" in llama_payload["required_tile_symbols"]

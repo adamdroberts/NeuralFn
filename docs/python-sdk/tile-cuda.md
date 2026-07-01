@@ -513,9 +513,12 @@ JSON preflights: `--print-plan`, `--dry-run`, and
 remaining native work for that family. `kernel_status` distinguishes unchecked,
 missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
-wired. LLaMA-family missing requirements now name RMSNorm, RoPE-attention,
-SwiGLU/GEGLU MLP, and untied/template LM-head loop composition because the
-RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present.
+wired. LLaMA-family entries now separate completed smoke-backed slices from the
+remaining blockers: `native_training_completed_requirements` names RMSNorm,
+RoPE, SwiGLU/GEGLU, and LM-head CE/backward/AdamW CUDA smokes, while
+`native_training_missing_requirements` names packed-QKV RoPE attention block
+integration, the full LLaMA block forward/backward loop, and family
+checkpoint/inference wiring.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on
