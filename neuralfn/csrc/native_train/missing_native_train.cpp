@@ -75,6 +75,7 @@ struct Config {
     bool smoke_diffusion_denoise_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_ttt_linear_inner_step = false;
+    bool smoke_ttt_composite_inner_step = false;
     bool smoke_universal_recurrent_step = false;
     bool smoke_universal_act_halt_step = false;
     bool smoke_hnet_byte_patch_step = false;
@@ -272,6 +273,7 @@ void print_usage(const char* program) {
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-ttt-composite-inner-step Launch TTT base/down/tanh/up residual, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-recurrent-step Launch universal recurrent linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-act-halt-step Launch universal ACT halt gate, weighted sum, BCE-gradient, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
@@ -328,6 +330,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_seq2seq_cross_attention_step = true;
         } else if (arg == "--smoke-ttt-linear-inner-step" || arg == "--native-cuda-smoke-ttt-linear-inner-step") {
             cfg.smoke_ttt_linear_inner_step = true;
+        } else if (arg == "--smoke-ttt-composite-inner-step" || arg == "--native-cuda-smoke-ttt-composite-inner-step") {
+            cfg.smoke_ttt_composite_inner_step = true;
         } else if (arg == "--smoke-universal-recurrent-step" || arg == "--native-cuda-smoke-universal-recurrent-step") {
             cfg.smoke_universal_recurrent_step = true;
         } else if (arg == "--smoke-universal-act-halt-step" || arg == "--native-cuda-smoke-universal-act-halt-step") {
@@ -4996,6 +5000,618 @@ int print_ttt_linear_inner_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_ttt_composite_inner_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool ttt_family = family.find("ttt") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using TanhFn = int (*)(const float*, float*, std::int64_t, void*);
+    using TanhBackwardFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using AddFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+    FillFn fill = nullptr;
+    TanhFn tanh_forward = nullptr;
+    TanhBackwardFn tanh_backward = nullptr;
+    AddFn add = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kInputDim = 3;
+    constexpr std::int64_t kHiddenDim = 4;
+    constexpr std::int64_t kOutputDim = 2;
+    constexpr std::int64_t kInputElements = kRows * kInputDim;
+    constexpr std::int64_t kHiddenElements = kRows * kHiddenDim;
+    constexpr std::int64_t kOutputElements = kRows * kOutputDim;
+    constexpr std::int64_t kBaseWeightElements = kOutputDim * kInputDim;
+    constexpr std::int64_t kDownWeightElements = kHiddenDim * kInputDim;
+    constexpr std::int64_t kUpWeightElements = kOutputDim * kHiddenDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto adamw_expected = [](std::vector<float> weight, const std::vector<float>& grad) {
+        for (std::size_t i = 0; i < weight.size(); ++i) {
+            const float next_m = 0.1f * grad[i];
+            const float next_v = 0.05f * grad[i] * grad[i];
+            const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+            const float decayed = weight[i] * (1.0f - 0.01f * 0.02f);
+            weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+        }
+        return weight;
+    };
+
+    bool passed = false;
+    float composite_forward_max_error = 0.0f;
+    float composite_loss_max_error = 0.0f;
+    float composite_tanh_max_error = 0.0f;
+    float composite_grad_input_max_error = 0.0f;
+    float composite_grad_base_weight_max_error = 0.0f;
+    float composite_grad_down_weight_max_error = 0.0f;
+    float composite_grad_up_weight_max_error = 0.0f;
+    float composite_base_weight_update_max_error = 0.0f;
+    float composite_down_weight_update_max_error = 0.0f;
+    float composite_up_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!ttt_family) {
+        error = "TTT smoke commands are only valid for ttt-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            tanh_forward = load_symbol<TanhFn>(tile_handle, "nfn_native_tile_tanh_float32");
+            tanh_backward = load_symbol<TanhBackwardFn>(tile_handle, "nfn_native_tile_tanh_backward_float32");
+            add = load_symbol<AddFn>(tile_handle, "nfn_native_tile_add_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (linear == nullptr || linear_backward_input == nullptr ||
+                linear_backward_weight_accumulate == nullptr || latent_mse_loss == nullptr ||
+                fill == nullptr || tanh_forward == nullptr || tanh_backward == nullptr ||
+                add == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more TTT composite train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> x = {
+            0.12f, -0.08f, 0.18f,
+            -0.14f, 0.21f, 0.06f,
+        };
+        const std::vector<float> target = {
+            0.04f, -0.03f,
+            -0.01f, 0.05f,
+        };
+        std::vector<float> base_weight(static_cast<std::size_t>(kBaseWeightElements));
+        std::vector<float> down_weight(static_cast<std::size_t>(kDownWeightElements));
+        std::vector<float> up_weight(static_cast<std::size_t>(kUpWeightElements));
+        for (std::size_t i = 0; i < base_weight.size(); ++i) {
+            base_weight[i] = 0.027f * static_cast<float>(static_cast<int>(i % 5) - 2);
+        }
+        for (std::size_t i = 0; i < down_weight.size(); ++i) {
+            down_weight[i] = 0.019f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        for (std::size_t i = 0; i < up_weight.size(); ++i) {
+            up_weight[i] = 0.023f * static_cast<float>(static_cast<int>(i % 6) - 2);
+        }
+
+        std::vector<float> expected_base(static_cast<std::size_t>(kOutputElements), 0.0f);
+        std::vector<float> expected_down(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        std::vector<float> expected_tanh(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        std::vector<float> expected_up(static_cast<std::size_t>(kOutputElements), 0.0f);
+        std::vector<float> expected_y(static_cast<std::size_t>(kOutputElements), 0.0f);
+        auto matmul = [](const std::vector<float>& a, const std::vector<float>& w, std::vector<float>* out,
+                         std::int64_t rows, std::int64_t input_dim, std::int64_t output_dim) {
+            for (std::int64_t row = 0; row < rows; ++row) {
+                for (std::int64_t out_d = 0; out_d < output_dim; ++out_d) {
+                    float acc = 0.0f;
+                    for (std::int64_t in_d = 0; in_d < input_dim; ++in_d) {
+                        acc += a[static_cast<std::size_t>(row * input_dim + in_d)] *
+                            w[static_cast<std::size_t>(out_d * input_dim + in_d)];
+                    }
+                    (*out)[static_cast<std::size_t>(row * output_dim + out_d)] = acc;
+                }
+            }
+        };
+        matmul(x, base_weight, &expected_base, kRows, kInputDim, kOutputDim);
+        matmul(x, down_weight, &expected_down, kRows, kInputDim, kHiddenDim);
+        for (std::size_t i = 0; i < expected_down.size(); ++i) {
+            expected_tanh[i] = std::tanh(expected_down[i]);
+        }
+        matmul(expected_tanh, up_weight, &expected_up, kRows, kHiddenDim, kOutputDim);
+        std::vector<float> grad_y(static_cast<std::size_t>(kOutputElements), 0.0f);
+        float expected_loss = 0.0f;
+        for (std::size_t i = 0; i < expected_y.size(); ++i) {
+            expected_y[i] = expected_base[i] + expected_up[i];
+            const float diff = expected_y[i] - target[i];
+            expected_loss += diff * diff;
+            grad_y[i] = 2.0f * diff;
+        }
+
+        std::vector<float> expected_grad_base_weight(base_weight.size(), 0.0f);
+        std::vector<float> expected_grad_down_weight(down_weight.size(), 0.0f);
+        std::vector<float> expected_grad_up_weight(up_weight.size(), 0.0f);
+        std::vector<float> expected_grad_x_base(static_cast<std::size_t>(kInputElements), 0.0f);
+        std::vector<float> expected_grad_tanh(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        std::vector<float> expected_grad_down(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        std::vector<float> expected_grad_x_down(static_cast<std::size_t>(kInputElements), 0.0f);
+        std::vector<float> expected_grad_x(static_cast<std::size_t>(kInputElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t out_d = 0; out_d < kOutputDim; ++out_d) {
+                const float grad = grad_y[static_cast<std::size_t>(row * kOutputDim + out_d)];
+                for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                    expected_grad_base_weight[static_cast<std::size_t>(out_d * kInputDim + in_d)] +=
+                        x[static_cast<std::size_t>(row * kInputDim + in_d)] * grad;
+                    expected_grad_x_base[static_cast<std::size_t>(row * kInputDim + in_d)] +=
+                        grad * base_weight[static_cast<std::size_t>(out_d * kInputDim + in_d)];
+                }
+                for (std::int64_t hidden_d = 0; hidden_d < kHiddenDim; ++hidden_d) {
+                    expected_grad_up_weight[static_cast<std::size_t>(out_d * kHiddenDim + hidden_d)] +=
+                        expected_tanh[static_cast<std::size_t>(row * kHiddenDim + hidden_d)] * grad;
+                    expected_grad_tanh[static_cast<std::size_t>(row * kHiddenDim + hidden_d)] +=
+                        grad * up_weight[static_cast<std::size_t>(out_d * kHiddenDim + hidden_d)];
+                }
+            }
+        }
+        for (std::size_t i = 0; i < expected_grad_down.size(); ++i) {
+            expected_grad_down[i] = expected_grad_tanh[i] * (1.0f - expected_tanh[i] * expected_tanh[i]);
+        }
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t hidden_d = 0; hidden_d < kHiddenDim; ++hidden_d) {
+                const float grad = expected_grad_down[static_cast<std::size_t>(row * kHiddenDim + hidden_d)];
+                for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                    expected_grad_down_weight[static_cast<std::size_t>(hidden_d * kInputDim + in_d)] +=
+                        x[static_cast<std::size_t>(row * kInputDim + in_d)] * grad;
+                    expected_grad_x_down[static_cast<std::size_t>(row * kInputDim + in_d)] +=
+                        grad * down_weight[static_cast<std::size_t>(hidden_d * kInputDim + in_d)];
+                }
+            }
+        }
+        for (std::size_t i = 0; i < expected_grad_x.size(); ++i) {
+            expected_grad_x[i] = expected_grad_x_base[i] + expected_grad_x_down[i];
+        }
+
+        float* d_x = nullptr;
+        float* d_target = nullptr;
+        float* d_base_weight = nullptr;
+        float* d_down_weight = nullptr;
+        float* d_up_weight = nullptr;
+        float* d_base = nullptr;
+        float* d_down = nullptr;
+        float* d_tanh = nullptr;
+        float* d_up = nullptr;
+        float* d_y = nullptr;
+        float* d_loss = nullptr;
+        float* d_grad_y = nullptr;
+        float* d_grad_x_base = nullptr;
+        float* d_grad_tanh = nullptr;
+        float* d_grad_down = nullptr;
+        float* d_grad_x_down = nullptr;
+        float* d_grad_x = nullptr;
+        float* d_grad_base_weight = nullptr;
+        float* d_grad_down_weight = nullptr;
+        float* d_grad_up_weight = nullptr;
+        float* d_base_exp_avg = nullptr;
+        float* d_base_exp_avg_sq = nullptr;
+        float* d_down_exp_avg = nullptr;
+        float* d_down_exp_avg_sq = nullptr;
+        float* d_up_exp_avg = nullptr;
+        float* d_up_exp_avg_sq = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_x, x.size(), "x") &&
+            alloc(&d_target, target.size(), "target") &&
+            alloc(&d_base_weight, base_weight.size(), "base_weight") &&
+            alloc(&d_down_weight, down_weight.size(), "down_weight") &&
+            alloc(&d_up_weight, up_weight.size(), "up_weight") &&
+            alloc(&d_base, kOutputElements, "base") &&
+            alloc(&d_down, kHiddenElements, "down") &&
+            alloc(&d_tanh, kHiddenElements, "tanh") &&
+            alloc(&d_up, kOutputElements, "up") &&
+            alloc(&d_y, kOutputElements, "y") &&
+            alloc(&d_loss, 1, "loss") &&
+            alloc(&d_grad_y, grad_y.size(), "grad_y") &&
+            alloc(&d_grad_x_base, kInputElements, "grad_x_base") &&
+            alloc(&d_grad_tanh, kHiddenElements, "grad_tanh") &&
+            alloc(&d_grad_down, kHiddenElements, "grad_down") &&
+            alloc(&d_grad_x_down, kInputElements, "grad_x_down") &&
+            alloc(&d_grad_x, kInputElements, "grad_x") &&
+            alloc(&d_grad_base_weight, base_weight.size(), "grad_base_weight") &&
+            alloc(&d_grad_down_weight, down_weight.size(), "grad_down_weight") &&
+            alloc(&d_grad_up_weight, up_weight.size(), "grad_up_weight") &&
+            alloc(&d_base_exp_avg, base_weight.size(), "base_exp_avg") &&
+            alloc(&d_base_exp_avg_sq, base_weight.size(), "base_exp_avg_sq") &&
+            alloc(&d_down_exp_avg, down_weight.size(), "down_exp_avg") &&
+            alloc(&d_down_exp_avg_sq, down_weight.size(), "down_exp_avg_sq") &&
+            alloc(&d_up_exp_avg, up_weight.size(), "up_exp_avg") &&
+            alloc(&d_up_exp_avg_sq, up_weight.size(), "up_exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_x, x, "x") &&
+                copy_float(d_target, target, "target") &&
+                copy_float(d_base_weight, base_weight, "base_weight") &&
+                copy_float(d_down_weight, down_weight, "down_weight") &&
+                copy_float(d_up_weight, up_weight, "up_weight") &&
+                copy_float(d_grad_y, grad_y, "grad_y");
+            int status = 0;
+            auto zero = [&](float* ptr, std::int64_t n, const std::string& name) {
+                if (status == 0) {
+                    status = fill(ptr, n, 0.0f, nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "zero " + name);
+                    }
+                }
+            };
+            zero(d_grad_base_weight, kBaseWeightElements, "grad_base_weight");
+            zero(d_grad_down_weight, kDownWeightElements, "grad_down_weight");
+            zero(d_grad_up_weight, kUpWeightElements, "grad_up_weight");
+            zero(d_base_exp_avg, kBaseWeightElements, "base_exp_avg");
+            zero(d_base_exp_avg_sq, kBaseWeightElements, "base_exp_avg_sq");
+            zero(d_down_exp_avg, kDownWeightElements, "down_exp_avg");
+            zero(d_down_exp_avg_sq, kDownWeightElements, "down_exp_avg_sq");
+            zero(d_up_exp_avg, kUpWeightElements, "up_exp_avg");
+            zero(d_up_exp_avg_sq, kUpWeightElements, "up_exp_avg_sq");
+            if (error.empty()) {
+                status = linear(d_x, d_base_weight, nullptr, d_base, kRows, kInputDim, kOutputDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 ttt base");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_x, d_down_weight, nullptr, d_down, kRows, kInputDim, kHiddenDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 ttt down");
+                }
+            }
+            if (error.empty()) {
+                status = tanh_forward(d_down, d_tanh, kHiddenElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_tanh_float32 ttt inner");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_tanh, d_up_weight, nullptr, d_up, kRows, kHiddenDim, kOutputDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 ttt up");
+                }
+            }
+            if (error.empty()) {
+                status = add(d_base, d_up, d_y, kOutputElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_add_float32 ttt residual");
+                }
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_y, d_target, d_loss, kOutputElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32 ttt composite");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_y, d_base_weight, d_grad_x_base, kRows, kInputDim, kOutputDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 ttt base");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_x, d_grad_y, d_grad_base_weight, kRows, kInputDim, kOutputDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 ttt base");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_y, d_up_weight, d_grad_tanh, kRows, kHiddenDim, kOutputDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 ttt up");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_tanh, d_grad_y, d_grad_up_weight, kRows, kHiddenDim, kOutputDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 ttt up");
+                }
+            }
+            if (error.empty()) {
+                status = tanh_backward(d_grad_tanh, d_tanh, d_grad_down, kHiddenElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_tanh_backward_float32 ttt inner");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_down, d_down_weight, d_grad_x_down, kRows, kInputDim, kHiddenDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 ttt down");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_x, d_grad_down, d_grad_down_weight, kRows, kInputDim, kHiddenDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 ttt down");
+                }
+            }
+            if (error.empty()) {
+                status = add(d_grad_x_base, d_grad_x_down, d_grad_x, kInputElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_add_float32 ttt grad_x");
+                }
+            }
+            auto update_weight = [&](float* weight, const float* grad, float* exp_avg, float* exp_avg_sq,
+                                     std::int64_t n, const std::string& name) {
+                if (error.empty()) {
+                    const int adam_status = adamw(
+                        weight,
+                        grad,
+                        exp_avg,
+                        exp_avg_sq,
+                        n,
+                        0.01f,
+                        0.9f,
+                        0.95f,
+                        1e-8f,
+                        0.02f,
+                        0.1f,
+                        std::sqrt(0.05f),
+                        nullptr);
+                    if (adam_status != 0) {
+                        error = cuda_error(adam_status, "nfn_native_tile_adamw_step_float32 " + name);
+                    }
+                }
+            };
+            update_weight(d_base_weight, d_grad_base_weight, d_base_exp_avg, d_base_exp_avg_sq, kBaseWeightElements, "ttt base");
+            update_weight(d_down_weight, d_grad_down_weight, d_down_exp_avg, d_down_exp_avg_sq, kDownWeightElements, "ttt down");
+            update_weight(d_up_weight, d_grad_up_weight, d_up_exp_avg, d_up_exp_avg_sq, kUpWeightElements, "ttt up");
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_tanh(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> actual_y(static_cast<std::size_t>(kOutputElements), 0.0f);
+            std::vector<float> actual_loss(1, 0.0f);
+            std::vector<float> actual_grad_x(static_cast<std::size_t>(kInputElements), 0.0f);
+            std::vector<float> actual_grad_base_weight(base_weight.size(), 0.0f);
+            std::vector<float> actual_grad_down_weight(down_weight.size(), 0.0f);
+            std::vector<float> actual_grad_up_weight(up_weight.size(), 0.0f);
+            std::vector<float> actual_base_weight(base_weight.size(), 0.0f);
+            std::vector<float> actual_down_weight(down_weight.size(), 0.0f);
+            std::vector<float> actual_up_weight(up_weight.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_tanh, d_tanh, "tanh") &&
+                    copy_back_float(actual_y, d_y, "y") &&
+                    copy_back_float(actual_loss, d_loss, "loss") &&
+                    copy_back_float(actual_grad_x, d_grad_x, "grad_x") &&
+                    copy_back_float(actual_grad_base_weight, d_grad_base_weight, "grad_base_weight") &&
+                    copy_back_float(actual_grad_down_weight, d_grad_down_weight, "grad_down_weight") &&
+                    copy_back_float(actual_grad_up_weight, d_grad_up_weight, "grad_up_weight") &&
+                    copy_back_float(actual_base_weight, d_base_weight, "base_weight") &&
+                    copy_back_float(actual_down_weight, d_down_weight, "down_weight") &&
+                    copy_back_float(actual_up_weight, d_up_weight, "up_weight");
+            }
+
+            if (error.empty()) {
+                const std::vector<float> expected_base_weight =
+                    adamw_expected(base_weight, expected_grad_base_weight);
+                const std::vector<float> expected_down_weight =
+                    adamw_expected(down_weight, expected_grad_down_weight);
+                const std::vector<float> expected_up_weight =
+                    adamw_expected(up_weight, expected_grad_up_weight);
+                composite_tanh_max_error = max_abs_error(actual_tanh, expected_tanh);
+                composite_forward_max_error = max_abs_error(actual_y, expected_y);
+                composite_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
+                composite_grad_input_max_error = max_abs_error(actual_grad_x, expected_grad_x);
+                composite_grad_base_weight_max_error =
+                    max_abs_error(actual_grad_base_weight, expected_grad_base_weight);
+                composite_grad_down_weight_max_error =
+                    max_abs_error(actual_grad_down_weight, expected_grad_down_weight);
+                composite_grad_up_weight_max_error =
+                    max_abs_error(actual_grad_up_weight, expected_grad_up_weight);
+                composite_base_weight_update_max_error =
+                    max_abs_error(actual_base_weight, expected_base_weight);
+                composite_down_weight_update_max_error =
+                    max_abs_error(actual_down_weight, expected_down_weight);
+                composite_up_weight_update_max_error =
+                    max_abs_error(actual_up_weight, expected_up_weight);
+            }
+            constexpr float kTolerance = 5e-5f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                composite_tanh_max_error <= kTolerance &&
+                composite_forward_max_error <= kTolerance &&
+                composite_loss_max_error <= kTolerance &&
+                composite_grad_input_max_error <= kTolerance &&
+                composite_grad_base_weight_max_error <= kTolerance &&
+                composite_grad_down_weight_max_error <= kTolerance &&
+                composite_grad_up_weight_max_error <= kTolerance &&
+                composite_base_weight_update_max_error <= kAdamTolerance &&
+                composite_down_weight_update_max_error <= kAdamTolerance &&
+                composite_up_weight_update_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "TTT composite inner train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"ttt_composite_inner_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows
+        << ", \"input_dim\": " << kInputDim
+        << ", \"hidden_dim\": " << kHiddenDim
+        << ", \"output_dim\": " << kOutputDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_tanh_float32\",\n"
+        << "    \"nfn_native_tile_add_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_tanh_backward_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"composite_tanh\":" << composite_tanh_max_error
+        << ", \"composite_forward\":" << composite_forward_max_error
+        << ", \"composite_loss\":" << composite_loss_max_error
+        << ", \"composite_grad_input\":" << composite_grad_input_max_error
+        << ", \"composite_grad_base_weight\":" << composite_grad_base_weight_max_error
+        << ", \"composite_grad_down_weight\":" << composite_grad_down_weight_max_error
+        << ", \"composite_grad_up_weight\":" << composite_grad_up_weight_max_error
+        << ", \"composite_base_weight_update\":" << composite_base_weight_update_max_error
+        << ", \"composite_down_weight_update\":" << composite_down_weight_update_max_error
+        << ", \"composite_up_weight_update\":" << composite_up_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_universal_recurrent_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool universal_family = family.find("universal") != std::string::npos || family == "unknown";
@@ -7733,6 +8349,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_ttt_linear_inner_step) {
             return print_ttt_linear_inner_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_ttt_composite_inner_step) {
+            return print_ttt_composite_inner_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_universal_recurrent_step) {
             return print_universal_recurrent_smoke_json(cfg, argv[0]);

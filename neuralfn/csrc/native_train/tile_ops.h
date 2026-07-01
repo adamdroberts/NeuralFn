@@ -158,6 +158,26 @@ int nfn_native_tile_fill_float32(
     float value,
     void* cuda_stream);
 
+int nfn_native_tile_tanh_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_tanh_backward_float32(
+    const float* grad_out,
+    const float* tanh_out,
+    float* grad_x,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_add_float32(
+    const float* lhs,
+    const float* rhs,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_fill_many_float32(
     float* const* buffers,
     const std::int64_t* elements,

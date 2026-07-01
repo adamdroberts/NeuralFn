@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Added a TTT composite inner-update native smoke and exposed the reusable
+  `nfn_native_tile_tanh_float32`, `nfn_native_tile_tanh_backward_float32`, and
+  `nfn_native_tile_add_float32` raw CUDA Tile ABI calls. `nfn_ttt_llama_native_train
+  --smoke-ttt-composite-inner-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model ttt-llama
+  --native-cuda-smoke-ttt-composite-inner-step` alias now run the current TTT
+  module composition, base projection plus `down -> tanh -> up` residual,
+  latent MSE, linear/tanh backward, input-gradient merge, and AdamW updates for
+  all three weights without Torch or graph-editor tensor flow. TTT catalog and
+  preflight JSON now report `ttt-composite-inner-forward-backward-adamw-smoke`
+  in `native_training_completed_requirements`; checkpoint/inference wiring
+  remains visible as the outstanding TTT requirement. Verification: rebuilt
+  missing-family native trainers, unified native frontends, dense GPT
+  frontends, benchmark binaries, and the TK Tile sidecar; live CUDA TTT
+  composite smoke passed with tanh max error `0`, forward max error `0`, loss
+  max error `0`, input-gradient max error `2.32831e-10`, base/down/up
+  weight-gradient max errors `9.67458e-06`, `4.55533e-07`, and `7.82311e-07`,
+  and base/down/up AdamW update max errors `7.45058e-09`, `5.58794e-09`, and
+  `7.45058e-09`; focused native GPT catalog/dispatch pytest passed
+  (`2 passed`); the no-Torch verifier passed 30 native artifacts, 69 Python
+  entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a universal-transformer ACT halt native smoke and exposed the ACT
   weighted-sum raw CUDA Tile ABI to standalone native training binaries.
   `nfn_universal_llama_native_train --smoke-universal-act-halt-step

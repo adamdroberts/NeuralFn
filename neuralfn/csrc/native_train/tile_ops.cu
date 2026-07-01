@@ -100,6 +100,9 @@ void launch_lm_head_prob_only_combined_target_correction_bf16_bits(
     std::int64_t,
     float,
     cudaStream_t);
+void launch_unary_float32(const float*, float*, std::int64_t, int, cudaStream_t);
+void launch_binary_float32(const float*, const float*, float*, std::int64_t, int, cudaStream_t);
+void launch_tanh_backward_float32(const float*, const float*, float*, std::int64_t, cudaStream_t);
 std::int64_t attention_forward_row_fallback_count();
 std::int64_t attention_forward_scalar_launch_count();
 int attention_forward_row_last_error();
@@ -3419,6 +3422,44 @@ int nfn_native_tile_fill_float32(
     float value,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_fill_float32(values, n, value, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_tanh_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream) {
+    if (n <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_unary_float32(x, out, n, 4, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_tanh_backward_float32(
+    const float* grad_out,
+    const float* tanh_out,
+    float* grad_x,
+    std::int64_t n,
+    void* cuda_stream) {
+    if (n <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_tanh_backward_float32(grad_out, tanh_out, grad_x, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_add_float32(
+    const float* lhs,
+    const float* rhs,
+    float* out,
+    std::int64_t n,
+    void* cuda_stream) {
+    if (n <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_binary_float32(lhs, rhs, out, n, 0, as_stream(cuda_stream));
     return launch_status();
 }
 

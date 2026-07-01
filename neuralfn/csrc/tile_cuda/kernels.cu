@@ -6942,6 +6942,27 @@ __tile_global__ void binary_float32_kernel(
   out_view.store_masked(result, bx);
 }
 
+__tile_global__ void tanh_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    const float* __restrict__ tanh_out,
+    float* __restrict__ grad_x,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  tanh_out = ct::assume_aligned(tanh_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto grad_tile = ct::partition_view{ct::tensor_span{grad_out, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto tanh_tile = ct::partition_view{ct::tensor_span{tanh_out, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto one = ct::full<decltype(tanh_tile)>(1.0f);
+  auto result = grad_tile * (one - tanh_tile * tanh_tile);
+  auto out_view = ct::partition_view{ct::tensor_span{grad_x, ct::extents{n}}, ct::shape{1024_ic}};
+  out_view.store_masked(result, bx);
+}
+
 __tile_global__ void binary_pair_float32_kernel(
     const float* __restrict__ lhs,
     const float* __restrict__ rhs,
@@ -16396,6 +16417,16 @@ void launch_binary_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   binary_float32_kernel<<<blocks, 1, 0, stream>>>(lhs, rhs, out, n, op);
+}
+
+void launch_tanh_backward_float32(
+    const float* grad_out,
+    const float* tanh_out,
+    float* grad_x,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  tanh_backward_float32_kernel<<<blocks, 1, 0, stream>>>(grad_out, tanh_out, grad_x, n);
 }
 
 void launch_binary_pair_float32(
