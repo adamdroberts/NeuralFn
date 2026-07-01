@@ -5267,6 +5267,14 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
     ]
+    assert coverage["universal_llama"] == "missing-universal-transformer-lm"
+    assert missing_requirements["universal_llama"] == [
+        "act-halting-loss-and-gradient",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert completed_requirements["universal_llama"] == [
+        "universal-recurrent-linear-mse-adamw-smoke",
+    ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
         "timestep-scheduler-native-loop",
@@ -10993,7 +11001,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ttt_llama = tmp_path / "nfn_ttt_llama_native_train"
     assert ttt_llama.exists()
     assert (tmp_path / "nfn_hnet_lm_native_train").exists()
-    assert (tmp_path / "nfn_universal_llama_native_train").exists()
+    universal_llama = tmp_path / "nfn_universal_llama_native_train"
+    assert universal_llama.exists()
     llama_plan = subprocess.run(
         [
             str(llama),
@@ -11476,6 +11485,42 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ):
         assert symbol in ttt_payload["required_tile_symbols"]
 
+    universal_plan = subprocess.run(
+        [
+            str(universal_llama),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert universal_plan.returncode == 0, universal_plan.stderr
+    universal_payload = json.loads(universal_plan.stdout)
+    assert universal_payload["model_family"] == "universal-llama"
+    assert universal_payload["status"] == "family-native-trainer-missing"
+    assert universal_payload["native_training_coverage_class"] == "missing-universal-transformer-lm"
+    assert universal_payload["native_training_missing_requirements"] == [
+        "act-halting-loss-and-gradient",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert universal_payload["native_training_completed_requirements"] == [
+        "universal-recurrent-linear-mse-adamw-smoke",
+    ]
+    assert universal_payload["compiled_native_boundary"] is True
+    assert universal_payload["torch_required"] is False
+    assert universal_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_linear_float32",
+        "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_adamw_step_float32",
+    ):
+        assert symbol in universal_payload["required_tile_symbols"]
+
     jamba_plan = subprocess.run(
         [
             str(jamba),
@@ -11760,6 +11805,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-ttt-linear-inner-step" in unified_ttt_smoke_command.stdout
     assert "--tile-ops-lib" in unified_ttt_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_ttt_smoke_command.stdout
+
+    unified_universal_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "universal-llama",
+            "--native-cuda-smoke-universal-recurrent-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_universal_smoke_command.returncode == 0, unified_universal_smoke_command.stderr
+    assert str(universal_llama) in unified_universal_smoke_command.stdout
+    assert "--smoke-universal-recurrent-step" in unified_universal_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_universal_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_universal_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

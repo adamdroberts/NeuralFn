@@ -118,6 +118,7 @@ build_one "hnet-lm" "nfn_hnet_lm_native_train" \
   "byte-token-shard-resolver,hnet-byte-patch-loop,byte-patch-merge-forward-backward"
 build_one "universal-llama" "nfn_universal_llama_native_train" \
   "universal transformer recurrent layer and halting CUDA Tile trainer" \
-  "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-universal-transformer-lm" \
-  "recurrent-layer-halting-loop,act-halting-loss-and-gradient"
+  "act-halting-loss-and-gradient,family-parameter-layout-checkpoint-inference" \
+  "universal-recurrent-linear-mse-adamw-smoke"

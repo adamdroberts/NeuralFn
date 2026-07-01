@@ -557,6 +557,11 @@ CUDA Tile train-step slice. Use
 or the unified `--native-cuda-smoke-ttt-linear-inner-step` alias on TTT
 families to run inner linear forward, latent MSE, linear input/weight backward,
 and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_universal_llama_native_train --smoke-universal-recurrent-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-universal-recurrent-step` alias on universal transformer
+families to run recurrent linear forward, latent MSE, linear input/weight
+backward, and AdamW as a raw CUDA Tile train-step slice. Use
 `nfn_diffusion_native_train --smoke-diffusion-denoise-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-diffusion-denoise-step` alias on diffusion
 families to run denoise linear forward, latent MSE, linear input/weight

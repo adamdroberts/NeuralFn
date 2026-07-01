@@ -956,7 +956,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"byte-token-shard-resolver", "hnet-byte-patch-loop", "byte-patch-merge-forward-backward"};
     }
     if (coverage_class == "missing-universal-transformer-lm") {
-        return {"recurrent-layer-halting-loop", "act-halting-loss-and-gradient"};
+        return {"act-halting-loss-and-gradient", "family-parameter-layout-checkpoint-inference"};
     }
     return {"classify-template-native-requirements"};
 }
@@ -1009,6 +1009,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
         return {"ttt-linear-mse-adamw-smoke"};
+    }
+    if (coverage_class == "missing-universal-transformer-lm") {
+        return {"universal-recurrent-linear-mse-adamw-smoke"};
     }
     return {};
 }

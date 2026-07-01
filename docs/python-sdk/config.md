@@ -116,7 +116,9 @@ cross-attention/CE/backward/AdamW smoke while keeping the full encoder-decoder
 loop, full loss composition, checkpointing, and inference in the missing list.
 TTT entries list the completed inner linear/MSE/backward/AdamW smoke while
 keeping the full inner-update loop, checkpointing, and inference in the missing
-list.
+list. Universal transformer entries list the completed recurrent
+linear/MSE/backward/AdamW smoke while keeping ACT halting, checkpointing, and
+inference in the missing list.
 Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
