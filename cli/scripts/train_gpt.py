@@ -145,6 +145,7 @@ _NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "diff-transformer": "llama",
     "longctx-sparse-llama": "llama",
     "qwen3-longctx": "llama",
+    "kv-pca-llama": "llama",
     "kv-pca-llama-modern": "llama",
     "mixllama": "mixllama",
     "mixllama-fast": "mixllama",

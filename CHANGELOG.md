@@ -7,12 +7,12 @@
   `nfn train --base-model gpt --template-name ...`, and direct
   `cli/scripts/train_gpt.py --template-name ...` now resolve known non-dense
   GPT presets such as `llama`, `mixllama`, `moe_jepa_evo`,
-  `semantic_router_moe`, `jamba`, `seq2seq`, `diffusion`, `ttt_llama`,
-  `hnet_lm`, and `universal_llama` to the matching compiled family target when
-  it exists, while custom graph files continue to stay on the universal GPT
-  path. This keeps template-selected training on compiled C++ native boundaries
-  and out of graph-editor tensor flow while the remaining family loops are
-  implemented. Verification: rebuilt `build/nfn_native_train` /
+  `semantic_router_moe`, `kv_pca_llama`, `jamba`, `seq2seq`, `diffusion`,
+  `ttt_llama`, `hnet_lm`, and `universal_llama` to the matching compiled family
+  target when it exists, while custom graph files continue to stay on the
+  universal GPT path. This keeps template-selected training on compiled C++
+  native boundaries and out of graph-editor tensor flow while the remaining
+  family loops are implemented. Verification: rebuilt `build/nfn_native_train` /
   `build/nfn-native-train`; focused routing pytest passed (`2 passed`);
   `python cli/scripts/train_gpt.py --template-name moe_jepa_evo
   --native-cuda-print-command --native-cuda-dry-run` and
