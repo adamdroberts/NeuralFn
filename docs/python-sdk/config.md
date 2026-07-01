@@ -108,8 +108,10 @@ RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
 smokes while keeping the full family loop, JEPA or semantic objective,
 checkpoint, and inference blockers in the missing list. JEPA-family entries
 list completed target-encoder forward, projector/predictor linear, latent-loss,
-backward, and AdamW smokes while keeping full objective composition,
-checkpoint, and inference blockers in the missing list. Semantic-family entries list
+backward, AdamW, and base AR+JEPA loss-composition smokes. Dense JEPA keeps
+family checkpoint/inference wiring as missing, while MoE+JEPA and semantic JEPA
+still keep router/semantic objective composition, checkpoint, and inference
+blockers in the missing list. Semantic-family entries list
 completed semantic hash/alignment-loss-items smokes while keeping full
 semantic planner/router, reduction, objective
 composition, checkpoint, and inference blockers in the missing list. Diffusion
@@ -469,9 +471,11 @@ Build the non-semantic MoE counterpart. It uses the same `(tokens, targets)` AR+
 Native CUDA Tile preflight JSON for `dense_jepa_evo`, `moe_jepa_evo`, and the
 semantic JEPA families now reports the target-encoder forward smoke
 (`jepa-target-encoder-forward-smoke`) and projector/predictor latent-loss smoke
-(`jepa-projector-predictor-latent-loss-smoke`) as completed requirements. The
-remaining missing requirements are the full AR+JEPA, semantic, or route-objective
-composition, family loop integration, checkpointing, and inference wiring.
+(`jepa-projector-predictor-latent-loss-smoke`) plus base AR+JEPA loss
+composition (`ar-plus-jepa-loss-composition-smoke`) as completed requirements.
+The remaining missing requirements are family loop/checkpoint/inference wiring
+for dense JEPA and the semantic or route-objective composition plus family loop,
+checkpointing, and inference wiring for the semantic/MoE JEPA variants.
 
 ---
 

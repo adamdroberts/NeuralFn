@@ -4240,9 +4240,15 @@ For JEPA-family native trainer coverage, `nfn_jepa_native_train
 `nfn-native-train --base-model moe-jepa-evo
 --native-cuda-smoke-jepa-target-encoder-step` alias compose
 `nfn_native_tile_latent_pool_float32` with `nfn_native_tile_linear_float32`.
-Dense JEPA, semantic dense JEPA, and MoE+JEPA preflight JSON reports that target
-encoder slice as `jepa-target-encoder-forward-smoke`; full AR+JEPA, semantic,
-or route-objective composition remains separate missing native-loop work.
+Use `nfn_jepa_native_train --smoke-jepa-ar-loss-step --tile-ops-lib PATH` or
+`nfn-native-train --base-model moe-jepa-evo
+--native-cuda-smoke-jepa-ar-loss-step` to compose
+`nfn_native_tile_token_cross_entropy_partials_float32` with
+`nfn_native_tile_latent_mse_loss_float32` for the weighted AR+JEPA scalar
+objective. Dense JEPA, semantic dense JEPA, and MoE+JEPA preflight JSON reports
+these slices as `jepa-target-encoder-forward-smoke` and
+`ar-plus-jepa-loss-composition-smoke`; semantic and route-objective composition
+remain separate missing native-loop work for the semantic/MoE JEPA families.
 
 When `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` or
 `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` is enabled for dense GPT bisection, the

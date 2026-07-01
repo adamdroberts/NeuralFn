@@ -70,6 +70,7 @@ struct Config {
     bool smoke_moe_transformer_block_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
+    bool smoke_jepa_ar_loss_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_diffusion_denoise_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
@@ -265,6 +266,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
+        << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
@@ -314,6 +316,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
             cfg.smoke_jepa_target_encoder_step = true;
+        } else if (arg == "--smoke-jepa-ar-loss-step" || arg == "--native-cuda-smoke-jepa-ar-loss-step") {
+            cfg.smoke_jepa_ar_loss_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
@@ -3462,6 +3466,287 @@ int print_jepa_target_encoder_smoke_json(const Config& cfg, const char* program)
         << "  \"max_errors\": {"
         << "\"pooled\":" << pooled_max_error
         << ", \"projected\":" << projected_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using TokenCrossEntropyPartialsFn =
+        int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 3;
+    constexpr std::int64_t kVocab = 5;
+    constexpr std::int64_t kLatentElements = 6;
+    constexpr float kArLossCoef = 1.0f;
+    constexpr float kJepaLossCoef = 0.25f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+
+    bool passed = false;
+    float ar_loss_max_error = 0.0f;
+    float jepa_loss_max_error = 0.0f;
+    float total_loss_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!jepa_family) {
+        error = "JEPA AR+loss smoke commands are only valid for JEPA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            if (ce_partials == nullptr || latent_mse_loss == nullptr) {
+                error = "Tile ops library is missing one or more JEPA AR+loss composition symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        const std::vector<float> logits = {
+            0.10f, -0.20f, 0.30f, 0.05f, -0.10f,
+            -0.15f, 0.25f, 0.05f, -0.05f, 0.10f,
+            0.20f, 0.15f, -0.25f, 0.35f, -0.30f,
+        };
+        const std::vector<std::int64_t> targets = {2, 1, 3};
+        const std::vector<float> pred = {0.05f, -0.10f, 0.20f, 0.30f, -0.15f, 0.12f};
+        const std::vector<float> latent_target = {0.01f, -0.05f, 0.25f, 0.10f, -0.20f, 0.08f};
+
+        float* d_logits = nullptr;
+        float* d_ar_loss = nullptr;
+        float* d_pred = nullptr;
+        float* d_latent_target = nullptr;
+        float* d_jepa_loss = nullptr;
+        std::int64_t* d_targets = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_logits, logits.size(), "logits") &&
+            alloc_i64(&d_targets, targets.size(), "targets") &&
+            alloc(&d_ar_loss, 1, "ar_loss") &&
+            alloc(&d_pred, pred.size(), "pred") &&
+            alloc(&d_latent_target, latent_target.size(), "latent_target") &&
+            alloc(&d_jepa_loss, 1, "jepa_loss")) {
+            int status = cuda_memcpy(
+                d_logits, logits.data(), logits.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_targets, targets.data(), targets.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_pred, pred.data(), pred.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_latent_target, latent_target.data(), latent_target.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy JEPA AR+loss H2D");
+            }
+            if (error.empty()) {
+                status = ce_partials(d_logits, d_targets, d_ar_loss, kRows, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32");
+                }
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_pred, d_latent_target, d_jepa_loss, kLatentElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize JEPA AR+loss");
+                }
+            }
+            std::vector<float> actual_ar_loss(1, 0.0f);
+            std::vector<float> actual_jepa_loss(1, 0.0f);
+            if (error.empty()) {
+                status = cuda_memcpy(
+                    actual_ar_loss.data(), d_ar_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status == 0) {
+                    status = cuda_memcpy(
+                        actual_jepa_loss.data(), d_jepa_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy JEPA AR+loss D2H");
+                }
+            }
+
+            float expected_ar_loss = 0.0f;
+            for (std::int64_t row = 0; row < kRows; ++row) {
+                float row_max = logits[static_cast<std::size_t>(row * kVocab)];
+                for (std::int64_t col = 1; col < kVocab; ++col) {
+                    row_max = std::max(row_max, logits[static_cast<std::size_t>(row * kVocab + col)]);
+                }
+                float denom = 0.0f;
+                for (std::int64_t col = 0; col < kVocab; ++col) {
+                    denom += std::exp(logits[static_cast<std::size_t>(row * kVocab + col)] - row_max);
+                }
+                const float target_logit =
+                    logits[static_cast<std::size_t>(row * kVocab + targets[static_cast<std::size_t>(row)])];
+                expected_ar_loss += std::log(denom) + row_max - target_logit;
+            }
+            float expected_jepa_loss = 0.0f;
+            for (std::size_t i = 0; i < pred.size(); ++i) {
+                const float diff = pred[i] - latent_target[i];
+                expected_jepa_loss += diff * diff;
+            }
+            const float actual_total =
+                kArLossCoef * actual_ar_loss[0] + kJepaLossCoef * actual_jepa_loss[0];
+            const float expected_total =
+                kArLossCoef * expected_ar_loss + kJepaLossCoef * expected_jepa_loss;
+            ar_loss_max_error = std::fabs(actual_ar_loss[0] - expected_ar_loss);
+            jepa_loss_max_error = std::fabs(actual_jepa_loss[0] - expected_jepa_loss);
+            total_loss_max_error = std::fabs(actual_total - expected_total);
+            constexpr float kTolerance = 2e-6f;
+            passed = error.empty() &&
+                ar_loss_max_error <= kTolerance &&
+                jepa_loss_max_error <= kTolerance &&
+                total_loss_max_error <= kTolerance;
+            if (!passed && error.empty()) {
+                error = "JEPA AR+loss composition smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"jepa_ar_loss_composition_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"vocab\": " << kVocab
+        << ", \"latent_elements\": " << kLatentElements << "},\n"
+        << "  \"loss_coefficients\": {\"ar\": " << kArLossCoef
+        << ", \"jepa\": " << kJepaLossCoef << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"ar_loss\":" << ar_loss_max_error
+        << ", \"jepa_loss\":" << jepa_loss_max_error
+        << ", \"total_loss\":" << total_loss_max_error
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -6998,6 +7283,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_jepa_target_encoder_step) {
             return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_jepa_ar_loss_step) {
+            return print_jepa_ar_loss_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_alignment_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);

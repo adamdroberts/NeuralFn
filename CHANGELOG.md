@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Added a JEPA AR+latent-loss composition native smoke for missing-family
+  compiled preflights. `nfn_jepa_native_train --smoke-jepa-ar-loss-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  moe-jepa-evo --native-cuda-smoke-jepa-ar-loss-step` alias now execute token
+  cross-entropy partials and JEPA latent MSE through raw CUDA Tile ABI calls and
+  validate the weighted AR+JEPA scalar objective without Torch or graph-editor
+  tensor flow. Dense JEPA catalog/preflight JSON now reports
+  `ar-plus-jepa-loss-composition-smoke` in
+  `native_training_completed_requirements` and no longer lists the base
+  `ar-plus-jepa-loss-composition` requirement as missing; MoE+JEPA and semantic
+  JEPA families also report the base smoke as completed while keeping their
+  router/semantic objective composition, full family loop integration,
+  checkpointing, and inference wiring visible. Verification: rebuilt
+  missing-family native trainers, GPT/GPT-2 native CLIs, and unified native
+  CLIs; live CUDA JEPA AR+loss smoke passed with AR loss max error
+  `4.76837e-07`, JEPA loss max error `3.72529e-09`, and total loss max error
+  `4.76837e-07`; unified command forwarding emitted
+  `nfn_moe_jepa_evo_native_train --smoke-jepa-ar-loss-step`.
+
 - Added a JEPA target-encoder forward native smoke for missing-family compiled
   preflights. `nfn_jepa_native_train --smoke-jepa-target-encoder-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model

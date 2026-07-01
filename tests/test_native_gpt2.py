@@ -5253,9 +5253,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "standard-moe-transformer-block-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
+    assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "missing-seq2seq-objective"
     assert missing_requirements["seq2seq"] == [
@@ -11339,12 +11341,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
+        "ar-plus-jepa-loss-composition-smoke",
     ]
     assert moe_jepa_payload["compiled_native_boundary"] is True
     assert moe_jepa_payload["torch_required"] is False
     assert moe_jepa_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_topk_route_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_pool_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_token_cross_entropy_partials_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_mse_loss_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_moe_swiglu_forward_float32" in moe_jepa_payload["required_tile_symbols"]
@@ -11375,17 +11379,18 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "missing-dense-jepa-objective"
     assert jepa_payload["native_training_missing_requirements"] == [
-        "ar-plus-jepa-loss-composition",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
+        "ar-plus-jepa-loss-composition-smoke",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
     assert jepa_payload["torch_required"] is False
     assert jepa_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_latent_pool_float32" in jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_token_cross_entropy_partials_float32" in jepa_payload["required_tile_symbols"]
 
     jepa_target_smoke_missing_lib = subprocess.run(
         [
@@ -11407,6 +11412,28 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jepa_target_smoke_payload["torch_required"] is False
     assert jepa_target_smoke_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_latent_pool_float32" in jepa_target_smoke_payload["loop_composition_stages"]
+
+    jepa_ar_loss_smoke_missing_lib = subprocess.run(
+        [
+            str(jepa),
+            "--smoke-jepa-ar-loss-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert jepa_ar_loss_smoke_missing_lib.returncode == 2
+    jepa_ar_loss_smoke_payload = json.loads(jepa_ar_loss_smoke_missing_lib.stdout)
+    assert jepa_ar_loss_smoke_payload["smoke"] == "jepa_ar_loss_composition_slice"
+    assert jepa_ar_loss_smoke_payload["passed"] is False
+    assert jepa_ar_loss_smoke_payload["compiled_native_boundary"] is True
+    assert jepa_ar_loss_smoke_payload["torch_required"] is False
+    assert jepa_ar_loss_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_token_cross_entropy_partials_float32" in jepa_ar_loss_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_latent_mse_loss_float32" in jepa_ar_loss_smoke_payload["loop_composition_stages"]
 
     semantic_dense_plan = subprocess.run(
         [
@@ -11434,6 +11461,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
+        "ar-plus-jepa-loss-composition-smoke",
         "semantic-hash-alignment-loss-items-smoke",
     ]
     assert semantic_dense_payload["compiled_native_boundary"] is True
@@ -11444,6 +11472,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_semantic_alignment_loss_items_float32",
+        "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
     ):
@@ -11824,6 +11853,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
+        "ar-plus-jepa-loss-composition-smoke",
     ]
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
     assert moe_jepa_unified_payload["torch_required"] is False
@@ -11937,6 +11967,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-jepa-target-encoder-step" in unified_jepa_target_smoke_command.stdout
     assert "--tile-ops-lib" in unified_jepa_target_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_jepa_target_smoke_command.stdout
+
+    unified_jepa_ar_loss_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-smoke-jepa-ar-loss-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_jepa_ar_loss_smoke_command.returncode == 0, unified_jepa_ar_loss_smoke_command.stderr
+    assert str(moe_jepa) in unified_jepa_ar_loss_smoke_command.stdout
+    assert "--smoke-jepa-ar-loss-step" in unified_jepa_ar_loss_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_jepa_ar_loss_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_jepa_ar_loss_smoke_command.stdout
 
     unified_semantic_smoke_command = subprocess.run(
         [
