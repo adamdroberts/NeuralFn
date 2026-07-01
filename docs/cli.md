@@ -869,6 +869,10 @@ semantic-router MoE, and DeepSeek-V4 binaries also accept `--print-plan`,
 `graph_editor_tensor_flow: false`, plus the parsed schedule, required raw Tile
 symbols, and remaining family-native work; no-action training still exits
 nonzero until the real family loop lands.
+Dense GPT launcher paths also route known non-dense template selectors, for
+example `--template-name llama`, `--template-name mixllama`,
+`--template-name moe_jepa_evo`, or `--template-name semantic_router_moe`, to the
+matching compiled family binary when no custom graph file is supplied.
 Use `--base-model semantic-dense-jepa` to inspect the semantic dense JEPA Evo
 coverage class directly; it requires linear/projector ABI, semantic-alignment
 loss items, latent MSE, and AdamW while still reporting

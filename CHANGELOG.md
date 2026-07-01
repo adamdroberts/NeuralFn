@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Routed GPT template selectors for non-dense families to their compiled native
+  family binaries. SDK `build_native_train_run_config("gpt", ..., template_name=...)`,
+  `nfn train --base-model gpt --template-name ...`, and direct
+  `cli/scripts/train_gpt.py --template-name ...` now resolve known non-dense
+  GPT presets such as `llama`, `mixllama`, `moe_jepa_evo`,
+  `semantic_router_moe`, `jamba`, `seq2seq`, `diffusion`, `ttt_llama`,
+  `hnet_lm`, and `universal_llama` to the matching compiled family target when
+  it exists, while custom graph files continue to stay on the universal GPT
+  path. This keeps template-selected training on compiled C++ native boundaries
+  and out of graph-editor tensor flow while the remaining family loops are
+  implemented. Verification: rebuilt `build/nfn_native_train` /
+  `build/nfn-native-train`; focused routing pytest passed (`2 passed`);
+  `python cli/scripts/train_gpt.py --template-name moe_jepa_evo
+  --native-cuda-print-command --native-cuda-dry-run` and
+  `build/nfn_native_train --base-model gpt --template-name moe_jepa_evo
+  --native-cuda-print-command --native-cuda-dry-run` both resolved
+  `nfn_moe_jepa_evo_native_train`; the no-Torch verifier passed 30 artifact
+  scans, 69 Python entrypoints, 24 shell entrypoints, and 4 native template
+  catalogs.
+
 - Added trainer-facing raw CUDA Tile ABI support for routed MoE expert backward:
   `nfn_native_tile_moe_swiglu_backward_float32`. The Tile kernel computes
   `grad_x` plus accumulated packed expert gradients for `w1`, `w2`, and `w3`

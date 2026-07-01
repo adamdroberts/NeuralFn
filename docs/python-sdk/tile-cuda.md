@@ -3618,6 +3618,13 @@ frontend.
 `--template-name` and `--graph-file` only when those flags are not already
 present in raw `args`, preserving explicit CLI overrides while making GPT preset
 and native-compatible custom graph selection first-class in the SDK.
+When `model_family="gpt"` selects a known non-dense GPT template and no
+`graph_file` is supplied, the SDK resolver now routes to the matching compiled
+family target instead of the dense GPT binary. For example,
+`template_name="moe_jepa_evo"` resolves through `NFN_NATIVE_MOE_JEPA_EVO_CLI`,
+`build/nfn_moe_jepa_evo_native_train`, or an installed
+`nfn_moe_jepa_evo_native_train`, while still forwarding `--template-name` to
+that binary for plan output.
 Rebuilt GPT bindings also expose `run_gpt_capture`, `run_gpt2_capture`, and
 `run_infer`, which run a compiled native command through the C++ binding while
 returning captured stdout and stderr for SDK-native checkpoint sampling and

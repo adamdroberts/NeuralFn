@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import shlex
 import subprocess
 import sys
@@ -115,6 +116,75 @@ _QUALITY_DEFAULTS = {
     ),
 }
 _AUTO_CUDA_VISIBLE_DEVICE_VALUES = {"auto", "dedicated", "dedicated-auto"}
+_NATIVE_TRAIN_FAMILY_TARGETS = {
+    "llama": "nfn_llama_native_train",
+    "mixllama": "nfn_mixllama_native_train",
+    "jepa": "nfn_jepa_native_train",
+    "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
+    "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
+    "semantic-router-moe": "nfn_semantic_router_moe_native_train",
+    "deepseek-v4": "nfn_deepseek_v4_native_train",
+    "jamba": "nfn_jamba_native_train",
+    "seq2seq": "nfn_seq2seq_native_train",
+    "diffusion": "nfn_diffusion_native_train",
+    "ttt-llama": "nfn_ttt_llama_native_train",
+    "hnet-lm": "nfn_hnet_lm_native_train",
+    "universal-llama": "nfn_universal_llama_native_train",
+}
+_NATIVE_TEMPLATE_FAMILY_ALIASES = {
+    "llama": "llama",
+    "llama-fast": "llama",
+    "llama-fast-megakernel": "llama",
+    "llama-modern": "llama",
+    "modern-norms-llama": "llama",
+    "ternary-b158": "llama",
+    "ternary-b158-modern": "llama",
+    "fp8-llama": "llama",
+    "mxfp4-llama": "llama",
+    "gemma3": "llama",
+    "diff-transformer": "llama",
+    "longctx-sparse-llama": "llama",
+    "qwen3-longctx": "llama",
+    "kv-pca-llama-modern": "llama",
+    "mixllama": "mixllama",
+    "mixllama-fast": "mixllama",
+    "mixllama-fast-megakernel": "mixllama",
+    "moe": "mixllama",
+    "moe-modern": "mixllama",
+    "deepseek-v3": "mixllama",
+    "deepseek-v4": "deepseek-v4",
+    "llm-jepa": "jepa",
+    "llm-jepa-modern": "jepa",
+    "dense-jepa-evo": "jepa",
+    "dense-jepa-evo-modern": "jepa",
+    "semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "semantic-dense-jepa-evo-modern": "semantic-dense-jepa",
+    "dyt-geglu-semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "jepa-semantic-hybrid": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-modern": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-megakernel": "semantic-dense-jepa",
+    "moe-jepa-evo": "moe-jepa-evo",
+    "moe-jepa-evo-modern": "moe-jepa-evo",
+    "auxfree-moe-jepa-evo": "moe-jepa-evo",
+    "semantic-router-moe": "semantic-router-moe",
+    "semantic-router-moe-modern": "semantic-router-moe",
+    "semantic-router-moe-megakernel": "semantic-router-moe",
+    "semantic-moe-jepa-evo": "semantic-router-moe",
+    "semantic-moe-jepa-evo-modern": "semantic-router-moe",
+    "diff-semantic-moe-jepa-evo": "semantic-router-moe",
+    "jamba": "jamba",
+    "jamba-modern": "jamba",
+    "seq2seq": "seq2seq",
+    "seq2seq-modern": "seq2seq",
+    "diffusion": "diffusion",
+    "diffusion-modern": "diffusion",
+    "ttt-llama": "ttt-llama",
+    "ttt-llama-modern": "ttt-llama",
+    "hnet-lm": "hnet-lm",
+    "hnet-lm-modern": "hnet-lm",
+    "universal-llama": "universal-llama",
+    "universal-llama-modern": "universal-llama",
+}
 _NATIVE_METADATA_ACTION_FLAGS = {
     "--print-plan",
     "--list-templates",
@@ -260,6 +330,33 @@ def _final_lr_fraction(argv: list[str]) -> str | None:
 
 def _native_template_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt").strip().lower().replace("-", "_")
+
+
+def _native_template_family(argv: list[str]) -> str | None:
+    template = _native_template_name(argv).replace("_", "-")
+    return _NATIVE_TEMPLATE_FAMILY_ALIASES.get(template)
+
+
+def _native_train_family_cli_env(model: str) -> str:
+    suffix = "".join(ch if ch.isalnum() else "_" for ch in model.upper()).strip("_")
+    return f"NFN_NATIVE_{suffix}_CLI"
+
+
+def _resolve_native_train_family_cli(model: str) -> str | None:
+    normalized = model.strip().lower().replace("_", "-")
+    target = _NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
+    if target is None:
+        return None
+    requested = os.environ.get(_native_train_family_cli_env(normalized), "").strip()
+    if requested:
+        return requested
+    built = REPO_ROOT / "build" / target
+    if built.exists():
+        return str(built)
+    resolved = shutil.which(target)
+    if resolved:
+        return resolved
+    return None
 
 
 def _default_native_model_family() -> str:
@@ -580,6 +677,13 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         and not any(flag in out for flag in _NATIVE_METADATA_ACTION_FLAGS)
     ):
         out.append("--train-transformer-lm")
+    template_family = None if _explicit_arg(out, "--graph-file", "--graph") else _native_template_family(out)
+    if template_family is not None:
+        family_cli = _resolve_native_train_family_cli(template_family)
+        if family_cli is not None:
+            out[0] = family_cli
+            _remove_split_or_bool_flags(out, "--model-family")
+            out[:] = [arg for arg in out if arg != "--train-transformer-lm"]
     return out
 
 

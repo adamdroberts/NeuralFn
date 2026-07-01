@@ -128,7 +128,10 @@ C++ binding uses `posix_spawnp()` instead of `fork()` and defaults
 The generic `NativeTrainRunConfig` builders also accept `template_name=` and
 `graph_file=` for dense GPT families, appending `--template-name` and
 `--graph-file` to the compiled native command once so SDK callers can select GPT
-presets or compatible custom graphs without manually editing raw CLI args.
+presets or compatible custom graphs without manually editing raw CLI args. When
+`model_family="gpt"` selects a known non-dense GPT template and no custom graph
+is supplied, the resolver now chooses that template's compiled family binary
+instead of the dense GPT trainer while forwarding the template selector.
 For the SM120 workstation path, `capture_native_sm120_gpt(...)` builds that
 direct SM120 config and immediately captures stdout/stderr through the generic
 native-train C++ binding when it is available.

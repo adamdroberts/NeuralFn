@@ -178,10 +178,72 @@ _NATIVE_TRAIN_FAMILY_TARGETS = {
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
+    "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
+    "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
     "semantic-router-moe": "nfn_semantic_router_moe_native_train",
     "deepseek-v4": "nfn_deepseek_v4_native_train",
+    "jamba": "nfn_jamba_native_train",
+    "seq2seq": "nfn_seq2seq_native_train",
+    "diffusion": "nfn_diffusion_native_train",
+    "ttt-llama": "nfn_ttt_llama_native_train",
+    "hnet-lm": "nfn_hnet_lm_native_train",
+    "universal-llama": "nfn_universal_llama_native_train",
     "nanogpt": "nfn_nanogpt_native_train",
     "nano-gpt": "nfn_nanogpt_native_train",
+}
+_NATIVE_TEMPLATE_FAMILY_ALIASES = {
+    "llama": "llama",
+    "llama-fast": "llama",
+    "llama-fast-megakernel": "llama",
+    "llama-modern": "llama",
+    "modern-norms-llama": "llama",
+    "ternary-b158": "llama",
+    "ternary-b158-modern": "llama",
+    "fp8-llama": "llama",
+    "mxfp4-llama": "llama",
+    "gemma3": "llama",
+    "diff-transformer": "llama",
+    "longctx-sparse-llama": "llama",
+    "qwen3-longctx": "llama",
+    "kv-pca-llama-modern": "llama",
+    "mixllama": "mixllama",
+    "mixllama-fast": "mixllama",
+    "mixllama-fast-megakernel": "mixllama",
+    "moe": "mixllama",
+    "moe-modern": "mixllama",
+    "deepseek-v3": "mixllama",
+    "deepseek-v4": "deepseek-v4",
+    "llm-jepa": "jepa",
+    "llm-jepa-modern": "jepa",
+    "dense-jepa-evo": "jepa",
+    "dense-jepa-evo-modern": "jepa",
+    "semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "semantic-dense-jepa-evo-modern": "semantic-dense-jepa",
+    "dyt-geglu-semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "jepa-semantic-hybrid": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-modern": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-megakernel": "semantic-dense-jepa",
+    "moe-jepa-evo": "moe-jepa-evo",
+    "moe-jepa-evo-modern": "moe-jepa-evo",
+    "auxfree-moe-jepa-evo": "moe-jepa-evo",
+    "semantic-router-moe": "semantic-router-moe",
+    "semantic-router-moe-modern": "semantic-router-moe",
+    "semantic-router-moe-megakernel": "semantic-router-moe",
+    "semantic-moe-jepa-evo": "semantic-router-moe",
+    "semantic-moe-jepa-evo-modern": "semantic-router-moe",
+    "diff-semantic-moe-jepa-evo": "semantic-router-moe",
+    "jamba": "jamba",
+    "jamba-modern": "jamba",
+    "seq2seq": "seq2seq",
+    "seq2seq-modern": "seq2seq",
+    "diffusion": "diffusion",
+    "diffusion-modern": "diffusion",
+    "ttt-llama": "ttt-llama",
+    "ttt-llama-modern": "ttt-llama",
+    "hnet-lm": "hnet-lm",
+    "hnet-lm-modern": "hnet-lm",
+    "universal-llama": "universal-llama",
+    "universal-llama-modern": "universal-llama",
 }
 
 
@@ -823,6 +885,27 @@ def _native_template_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt").strip().lower().replace("-", "_")
 
 
+def _native_template_family(argv: list[str]) -> str | None:
+    template = _native_template_name(argv).replace("_", "-")
+    return _NATIVE_TEMPLATE_FAMILY_ALIASES.get(template)
+
+
+def _remove_split_or_bool_flags(out: list[str], *flags: str) -> None:
+    remove = set(flags)
+    idx = 0
+    while idx < len(out):
+        arg = out[idx]
+        if arg in remove:
+            del out[idx]
+            if idx < len(out) and arg not in {"--train-transformer-lm", "--backend"}:
+                del out[idx]
+            continue
+        if any(arg.startswith(flag + "=") for flag in remove):
+            del out[idx]
+            continue
+        idx += 1
+
+
 def _has_native_activation(argv: list[str]) -> bool:
     return any(
         arg in {"--activation", "--native-cuda-activation"} or
@@ -1068,6 +1151,12 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         _append_value_arg(out, "--backend", "tile-cuda")
     if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
         _append_value_arg(out, "--tile-ops-lib", "linked")
+    template_family = None if _explicit_arg(out, "--graph-file", "--graph") else _native_template_family(out)
+    if dense_gpt and template_family is not None:
+        family_cli = _resolve_direct_native_train_family_cli(template_family)
+        if family_cli is not None:
+            out[0] = family_cli
+            _remove_split_or_bool_flags(out, "--model-family", "--train-transformer-lm")
     return out
 
 

@@ -169,6 +169,61 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "hnet-lm": "nfn_hnet_lm_native_train",
     "universal-llama": "nfn_universal_llama_native_train",
 }
+NATIVE_TEMPLATE_FAMILY_ALIASES = {
+    "llama": "llama",
+    "llama-fast": "llama",
+    "llama-fast-megakernel": "llama",
+    "llama-megakernel": "llama",
+    "llama-modern": "llama",
+    "modern-norms-llama": "llama",
+    "ternary-b158": "llama",
+    "ternary-b158-modern": "llama",
+    "fp8-llama": "llama",
+    "mxfp4-llama": "llama",
+    "gemma3": "llama",
+    "diff-transformer": "llama",
+    "longctx-sparse-llama": "llama",
+    "qwen3-longctx": "llama",
+    "kv-pca-llama-modern": "llama",
+    "mixllama": "mixllama",
+    "mixllama-fast": "mixllama",
+    "mixllama-fast-megakernel": "mixllama",
+    "moe": "mixllama",
+    "moe-modern": "mixllama",
+    "deepseek-v3": "mixllama",
+    "deepseek-v4": "deepseek-v4",
+    "llm-jepa": "jepa",
+    "llm-jepa-modern": "jepa",
+    "dense-jepa-evo": "jepa",
+    "dense-jepa-evo-modern": "jepa",
+    "semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "semantic-dense-jepa-evo-modern": "semantic-dense-jepa",
+    "dyt-geglu-semantic-dense-jepa-evo": "semantic-dense-jepa",
+    "jepa-semantic-hybrid": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-modern": "semantic-dense-jepa",
+    "jepa-semantic-hybrid-megakernel": "semantic-dense-jepa",
+    "moe-jepa-evo": "moe-jepa-evo",
+    "moe-jepa-evo-modern": "moe-jepa-evo",
+    "auxfree-moe-jepa-evo": "moe-jepa-evo",
+    "semantic-router-moe": "semantic-router-moe",
+    "semantic-router-moe-modern": "semantic-router-moe",
+    "semantic-router-moe-megakernel": "semantic-router-moe",
+    "semantic-moe-jepa-evo": "semantic-router-moe",
+    "semantic-moe-jepa-evo-modern": "semantic-router-moe",
+    "diff-semantic-moe-jepa-evo": "semantic-router-moe",
+    "jamba": "jamba",
+    "jamba-modern": "jamba",
+    "seq2seq": "seq2seq",
+    "seq2seq-modern": "seq2seq",
+    "diffusion": "diffusion",
+    "diffusion-modern": "diffusion",
+    "ttt-llama": "ttt-llama",
+    "ttt-llama-modern": "ttt-llama",
+    "hnet-lm": "hnet-lm",
+    "hnet-lm-modern": "hnet-lm",
+    "universal-llama": "universal-llama",
+    "universal-llama-modern": "universal-llama",
+}
 NATIVE_TRAIN_BINDING_MODULES = ("neuralfn_native_train", "neuralfn._native_train")
 _NATIVE_TRAIN_MODEL_REGISTRY = (
     {
@@ -454,14 +509,26 @@ class NativeTrainRunConfig:
 
     def argv(self) -> list[str]:
         normalized_family = normalize_native_model_family(self.model_family)
-        args = self._resolved_args(normalized_family)
-        family_cli = resolve_native_train_family_cli(normalized_family, self.native_train_cli)
+        template_family = (
+            None
+            if str(self.graph_file or "").strip()
+            else native_train_family_for_template_name(
+                self.template_name or _native_train_template_name(self.args)
+            )
+        )
+        effective_family = (
+            template_family
+            if normalized_family in DENSE_GPT_MODEL_FAMILIES and template_family is not None
+            else normalized_family
+        )
+        args = self._resolved_args(effective_family)
+        family_cli = resolve_native_train_family_cli(effective_family, self.native_train_cli)
         if family_cli is not None:
-            if native_train_family_uses_model_family_arg(normalized_family):
+            if native_train_family_uses_model_family_arg(effective_family):
                 return validate_strict_native_train_command([
                     family_cli,
                     "--model-family",
-                    normalized_family,
+                    effective_family,
                     *args,
                 ], strict=self.strict_native_command)
             return validate_strict_native_train_command([
@@ -471,7 +538,7 @@ class NativeTrainRunConfig:
         return validate_strict_native_train_command([
             resolve_native_train_cli(self.native_train_cli),
             "--base-model",
-            normalized_family,
+            effective_family,
             *args,
         ], strict=self.strict_native_command)
 
@@ -501,10 +568,8 @@ class NativeTrainRunConfig:
             raise ValueError(
                 "fast_startup and require_cooperative_lm_head_backward are only supported for dense GPT native train families"
             )
-        if (str(self.template_name or "").strip() or str(self.graph_file or "").strip()) and (
-            normalized_family not in DENSE_GPT_MODEL_FAMILIES
-        ):
-            raise ValueError("template_name and graph_file are only supported for dense GPT native train families")
+        if str(self.graph_file or "").strip() and normalized_family not in DENSE_GPT_MODEL_FAMILIES:
+            raise ValueError("graph_file is only supported for dense GPT native train families")
         if str(self.template_name or "").strip() and not _native_train_args_have_option(
             resolved_args,
             "--template-name",
@@ -647,6 +712,13 @@ def normalize_native_model_family(value: str | None) -> str:
     if normalized == "nano-gpt":
         return "nanogpt"
     return normalized or "gpt"
+
+
+def native_train_family_for_template_name(template_name: str | None) -> str | None:
+    normalized = str(template_name or "").strip().lower().replace("_", "-")
+    if not normalized:
+        return None
+    return NATIVE_TEMPLATE_FAMILY_ALIASES.get(normalized)
 
 
 def native_train_family_cli_env(model_family: str | None) -> str:

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #if defined(_WIN32)
@@ -367,6 +368,86 @@ const ModelEntry* find_model(std::string_view name) {
     for (const ModelEntry& entry : MODEL_REGISTRY) {
         if (entry.name == name) {
             return &entry;
+        }
+    }
+    return nullptr;
+}
+
+bool has_forwarded_value_flag(const std::vector<std::string>& args, const std::string_view flag);
+std::string forwarded_value_or_empty(const std::vector<std::string>& args, const std::string_view flag);
+
+const ModelEntry* template_family_model(const std::vector<std::string>& args) {
+    static constexpr std::pair<std::string_view, std::string_view> ALIASES[] = {
+        {"llama", "llama"},
+        {"llama-fast", "llama"},
+        {"llama-fast-megakernel", "llama"},
+        {"llama-modern", "llama"},
+        {"modern-norms-llama", "llama"},
+        {"ternary-b158", "llama"},
+        {"ternary-b158-modern", "llama"},
+        {"fp8-llama", "llama"},
+        {"mxfp4-llama", "llama"},
+        {"gemma3", "llama"},
+        {"diff-transformer", "llama"},
+        {"longctx-sparse-llama", "llama"},
+        {"qwen3-longctx", "llama"},
+        {"kv-pca-llama-modern", "llama"},
+        {"mixllama", "mixllama"},
+        {"mixllama-fast", "mixllama"},
+        {"mixllama-fast-megakernel", "mixllama"},
+        {"moe", "mixllama"},
+        {"moe-modern", "mixllama"},
+        {"deepseek-v3", "mixllama"},
+        {"deepseek-v4", "deepseek-v4"},
+        {"llm-jepa", "jepa"},
+        {"llm-jepa-modern", "jepa"},
+        {"dense-jepa-evo", "jepa"},
+        {"dense-jepa-evo-modern", "jepa"},
+        {"semantic-dense-jepa-evo", "semantic-dense-jepa"},
+        {"semantic-dense-jepa-evo-modern", "semantic-dense-jepa"},
+        {"dyt-geglu-semantic-dense-jepa-evo", "semantic-dense-jepa"},
+        {"jepa-semantic-hybrid", "semantic-dense-jepa"},
+        {"jepa-semantic-hybrid-modern", "semantic-dense-jepa"},
+        {"jepa-semantic-hybrid-megakernel", "semantic-dense-jepa"},
+        {"moe-jepa-evo", "moe-jepa-evo"},
+        {"moe-jepa-evo-modern", "moe-jepa-evo"},
+        {"auxfree-moe-jepa-evo", "moe-jepa-evo"},
+        {"semantic-router-moe", "semantic-router-moe"},
+        {"semantic-router-moe-modern", "semantic-router-moe"},
+        {"semantic-router-moe-megakernel", "semantic-router-moe"},
+        {"semantic-moe-jepa-evo", "semantic-router-moe"},
+        {"semantic-moe-jepa-evo-modern", "semantic-router-moe"},
+        {"diff-semantic-moe-jepa-evo", "semantic-router-moe"},
+        {"jamba", "jamba"},
+        {"jamba-modern", "jamba"},
+        {"seq2seq", "seq2seq"},
+        {"seq2seq-modern", "seq2seq"},
+        {"diffusion", "diffusion"},
+        {"diffusion-modern", "diffusion"},
+        {"ttt-llama", "ttt-llama"},
+        {"ttt-llama-modern", "ttt-llama"},
+        {"hnet-lm", "hnet-lm"},
+        {"hnet-lm-modern", "hnet-lm"},
+        {"universal-llama", "universal-llama"},
+        {"universal-llama-modern", "universal-llama"},
+    };
+    if (has_forwarded_value_flag(args, "--graph-file") || has_forwarded_value_flag(args, "--graph")) {
+        return nullptr;
+    }
+    std::string template_name = forwarded_value_or_empty(args, "--template-name");
+    if (template_name.empty()) {
+        template_name = forwarded_value_or_empty(args, "--template");
+    }
+    if (template_name.empty()) {
+        template_name = forwarded_value_or_empty(args, "--preset");
+    }
+    if (template_name.empty()) {
+        return nullptr;
+    }
+    template_name = lower_model(template_name);
+    for (const auto& alias : ALIASES) {
+        if (alias.first == template_name) {
+            return find_model(alias.second);
         }
     }
     return nullptr;
@@ -1001,6 +1082,20 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    bool template_routed_family = false;
+    if (
+        (model_entry->name == std::string_view("gpt") ||
+         model_entry->name == std::string_view("gpt2") ||
+         model_entry->name == std::string_view("gpt3") ||
+         model_entry->name == std::string_view("nanogpt")) &&
+        !has_template_catalog_action(forwarded)
+    ) {
+        if (const ModelEntry* template_entry = template_family_model(forwarded); template_entry != nullptr) {
+            model_entry = template_entry;
+            template_routed_family = true;
+        }
+    }
+
     const bool dense_gpt =
         model_entry->name == std::string_view("gpt") ||
         model_entry->name == std::string_view("gpt2") ||
@@ -1061,7 +1156,7 @@ int main(int argc, char** argv) {
             "--dataset-alias",
             dataset_alias.empty() ? std::string(DEFAULT_TINYSTORIES_ALIAS) : dataset_alias);
     }
-    if (missing_family_native_target && !has_native_train_action(forwarded)) {
+    if (missing_family_native_target && !template_routed_family && !has_native_train_action(forwarded)) {
         forwarded.push_back("--train-transformer-lm");
     }
     if (missing_family_native_target && !has_native_gpt_metadata_action(forwarded)) {

@@ -6517,8 +6517,26 @@ def test_native_train_run_config_and_subprocess_runner(
         ["--dry-run"],
         template_name="gpt3",
     )
-    with pytest.raises(ValueError, match="template_name and graph_file"):
-        unsupported_template_cfg.argv()
+    unsupported_template_argv = unsupported_template_cfg.argv()
+    assert "--template-name" in unsupported_template_argv
+    assert unsupported_template_argv[unsupported_template_argv.index("--template-name") + 1] == "gpt3"
+
+    family_cli = tmp_path / "nfn_moe_jepa_evo_native_train"
+    family_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    family_cli.chmod(0o755)
+    with monkeypatch.context() as route_env:
+        route_env.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+        route_env.setenv("NFN_NATIVE_MOE_JEPA_EVO_CLI", str(family_cli))
+        routed_template_cfg = build_native_train_run_config(
+            "gpt",
+            ["--print-plan"],
+            template_name="moe_jepa_evo",
+        )
+        routed_template_argv = routed_template_cfg.argv()
+        assert routed_template_argv[0] == str(family_cli)
+        assert "--model-family" not in routed_template_argv
+        assert "--train-transformer-lm" not in routed_template_argv
+        assert routed_template_argv[routed_template_argv.index("--template-name") + 1] == "moe_jepa_evo"
 
     token_lm_cfg = build_native_train_run_config(
         "nanogpt",
@@ -11307,6 +11325,31 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
     assert moe_jepa_unified_payload["torch_required"] is False
     assert moe_jepa_unified_payload["graph_editor_tensor_flow"] is False
+
+    routed_template_env = os.environ.copy()
+    routed_template_env["NFN_NATIVE_MOE_JEPA_EVO_CLI"] = str(moe_jepa)
+    unified_template_moe_jepa = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "gpt",
+            "--template-name",
+            "moe_jepa_evo",
+            "--native-cuda-print-command",
+            "--native-cuda-dry-run",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=routed_template_env,
+    )
+    assert unified_template_moe_jepa.returncode == 0, unified_template_moe_jepa.stderr
+    assert str(moe_jepa) in unified_template_moe_jepa.stdout
+    assert "nfn_gpt_native_train" not in unified_template_moe_jepa.stdout
+    assert "--template-name moe_jepa_evo" in unified_template_moe_jepa.stdout
+    assert "--model-family" not in unified_template_moe_jepa.stdout
+    assert "--train-transformer-lm" not in unified_template_moe_jepa.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [
