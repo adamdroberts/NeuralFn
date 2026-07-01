@@ -522,8 +522,12 @@ launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on
 CUDA and verify them against CPU references without Torch. Use
 `nfn_llama_native_train --smoke-llama-train-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-llama-train-step` alias to extend that same slice
-through device-side fill plus one AdamW update and moment verification. Real
-training still fails until the family-specific CUDA Tile loop is implemented.
+through device-side fill plus one AdamW update and moment verification. Use
+`nfn_llama_native_train --smoke-llama-lm-head-step --tile-ops-lib PATH` or the
+unified `--native-cuda-smoke-llama-lm-head-step` alias to cover the LM-head
+linear logits, token CE forward/backward, linear input/weight backward, and
+AdamW slice. Real training still fails until the family-specific CUDA Tile loop
+is implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

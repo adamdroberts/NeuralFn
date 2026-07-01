@@ -11029,6 +11029,28 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_train_smoke_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_adamw_step_float32" in llama_train_smoke_payload["loop_composition_stages"]
 
+    llama_lm_head_smoke_missing_lib = subprocess.run(
+        [
+            str(llama),
+            "--smoke-llama-lm-head-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert llama_lm_head_smoke_missing_lib.returncode == 2
+    llama_lm_head_smoke_payload = json.loads(llama_lm_head_smoke_missing_lib.stdout)
+    assert llama_lm_head_smoke_payload["smoke"] == "llama_lm_head_train_step_slice"
+    assert llama_lm_head_smoke_payload["passed"] is False
+    assert llama_lm_head_smoke_payload["compiled_native_boundary"] is True
+    assert llama_lm_head_smoke_payload["torch_required"] is False
+    assert llama_lm_head_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_linear_float32" in llama_lm_head_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_token_cross_entropy_backward_float32" in llama_lm_head_smoke_payload["loop_composition_stages"]
+
     dataset_path = _write_uint16_shard_dataset(tmp_path)
     llama_sample = subprocess.run(
         [
@@ -11411,6 +11433,26 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(llama) in unified_llama_train_smoke_command.stdout
     assert "--smoke-llama-train-step" in unified_llama_train_smoke_command.stdout
     assert "--tile-ops-lib" in unified_llama_train_smoke_command.stdout
+
+    unified_llama_lm_head_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "llama",
+            "--native-cuda-smoke-llama-lm-head-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_llama_lm_head_smoke_command.returncode == 0, unified_llama_lm_head_smoke_command.stderr
+    assert str(llama) in unified_llama_lm_head_smoke_command.stdout
+    assert "--smoke-llama-lm-head-step" in unified_llama_lm_head_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_llama_lm_head_smoke_command.stdout
 
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],

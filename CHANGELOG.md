@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a LLaMA LM-head native train-step CUDA smoke. `nfn_llama_native_train
+  --smoke-llama-lm-head-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model llama --native-cuda-smoke-llama-lm-head-step`
+  alias now execute the LLaMA loop-composition slice plus LM-head linear logits,
+  token CE forward/backward, linear input/weight backward, and AdamW update
+  against deterministic CPU references. This advances the untied/template
+  LM-head item in the LLaMA coverage class while still keeping real family
+  training marked `family-native-loop-missing` until the full loop is wired.
+  Verification: rebuilt missing-family native trainers plus the compiled
+  unified native CLIs; live CUDA smoke passed with max errors
+  `lm_head_loss=0`, `lm_head_grad_weight=7.63088e-05`, and
+  `lm_head_weight=2.98023e-08`; focused missing-family dispatch pytest passed;
+  the no-Torch verifier passed 30 artifact scans, 69 Python entrypoints, 24
+  shell entrypoints, and 4 native template catalogs.
+
 - Added a LLaMA native train-step CUDA smoke. `nfn_llama_native_train
   --smoke-llama-train-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model llama --native-cuda-smoke-llama-train-step`

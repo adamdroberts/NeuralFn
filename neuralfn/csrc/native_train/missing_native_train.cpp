@@ -59,6 +59,7 @@ struct Config {
     bool allow_train_as_val = false;
     bool smoke_llama_loop = false;
     bool smoke_llama_train_step = false;
+    bool smoke_llama_lm_head_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -240,6 +241,7 @@ void print_usage(const char* program) {
         << "  --sample-token-batch      Resolve native token shards and emit the first token/target batch\n"
         << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
+        << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -268,6 +270,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_loop = true;
         } else if (arg == "--smoke-llama-train-step" || arg == "--native-cuda-smoke-llama-train-step") {
             cfg.smoke_llama_train_step = true;
+        } else if (arg == "--smoke-llama-lm-head-step" || arg == "--native-cuda-smoke-llama-lm-head-step") {
+            cfg.smoke_llama_lm_head_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -463,6 +467,16 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     using SwiGluFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
     using SwiGluBackwardFn = int (*)(const float*, const float*, const float*, float*, float*, std::int64_t, void*);
     using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyBackwardFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, float, void*);
     using AdamWFn = int (*)(
         float*,
         const float*,
@@ -490,6 +504,11 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     SwiGluFn swiglu = nullptr;
     SwiGluBackwardFn swiglu_backward = nullptr;
     FillFn fill = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightFn linear_backward_weight = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    TokenCrossEntropyBackwardFn ce_backward = nullptr;
     AdamWFn adamw = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
@@ -500,6 +519,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     constexpr std::int64_t kHeads = 2;
     constexpr std::int64_t kHeadDim = 4;
     constexpr std::int64_t kElements = kRows * kDim;
+    constexpr std::int64_t kLmVocab = 4;
+    constexpr std::int64_t kLmWeightElements = kLmVocab * kDim;
+    constexpr std::int64_t kLmLogitElements = kRows * kLmVocab;
     constexpr float kEps = 1e-6f;
 
     auto cuda_error = [&](int code, const std::string& context) {
@@ -544,6 +566,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     float swiglu_backward_up_max_error = 0.0f;
     float adamw_param_max_error = 0.0f;
     float adamw_moment_max_error = 0.0f;
+    float lm_head_loss_max_error = 0.0f;
+    float lm_head_grad_weight_max_error = 0.0f;
+    float lm_head_weight_max_error = 0.0f;
 
     std::vector<void*> allocated;
     auto free_allocated = [&]() {
@@ -577,10 +602,23 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
             swiglu_backward = load_symbol<SwiGluBackwardFn>(
                 tile_handle, "nfn_native_tile_swiglu_backward_float32");
             fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight = load_symbol<LinearBackwardWeightFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_float32");
+            ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+            ce_backward = load_symbol<TokenCrossEntropyBackwardFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_backward_float32");
             adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
             if (rms_norm == nullptr || rms_norm_backward == nullptr || rotary == nullptr ||
                 rotary_backward == nullptr || swiglu == nullptr || swiglu_backward == nullptr ||
-                (cfg.smoke_llama_train_step && (fill == nullptr || adamw == nullptr))) {
+                ((cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) &&
+                 (fill == nullptr || adamw == nullptr)) ||
+                (cfg.smoke_llama_lm_head_step &&
+                 (linear == nullptr || linear_backward_input == nullptr || linear_backward_weight == nullptr ||
+                  ce_partials == nullptr || ce_backward == nullptr))) {
                 error = "Tile ops library is missing one or more LLaMA loop-composition symbols";
             }
         }
@@ -633,8 +671,26 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         float* d_param_grad = nullptr;
         float* d_exp_avg = nullptr;
         float* d_exp_avg_sq = nullptr;
+        float* d_lm_weight = nullptr;
+        float* d_lm_grad_weight = nullptr;
+        float* d_lm_exp_avg = nullptr;
+        float* d_lm_exp_avg_sq = nullptr;
+        float* d_lm_logits = nullptr;
+        float* d_lm_loss = nullptr;
+        float* d_lm_grad_logits = nullptr;
+        float* d_lm_grad_hidden = nullptr;
+        std::int64_t* d_lm_targets = nullptr;
         auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc " + name);
                 return false;
@@ -653,7 +709,17 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
              (alloc(&d_param, 4, "adamw_param") &&
               alloc(&d_param_grad, 4, "adamw_grad") &&
               alloc(&d_exp_avg, 4, "adamw_exp_avg") &&
-              alloc(&d_exp_avg_sq, 4, "adamw_exp_avg_sq")))) {
+              alloc(&d_exp_avg_sq, 4, "adamw_exp_avg_sq"))) &&
+            (!cfg.smoke_llama_lm_head_step ||
+             (alloc(&d_lm_weight, kLmWeightElements, "lm_weight") &&
+              alloc(&d_lm_grad_weight, kLmWeightElements, "lm_grad_weight") &&
+              alloc(&d_lm_exp_avg, kLmWeightElements, "lm_exp_avg") &&
+              alloc(&d_lm_exp_avg_sq, kLmWeightElements, "lm_exp_avg_sq") &&
+              alloc(&d_lm_logits, kLmLogitElements, "lm_logits") &&
+              alloc(&d_lm_loss, 1, "lm_loss") &&
+              alloc(&d_lm_grad_logits, kLmLogitElements, "lm_grad_logits") &&
+              alloc(&d_lm_grad_hidden, kElements, "lm_grad_hidden") &&
+              alloc_i64(&d_lm_targets, kRows, "lm_targets")))) {
             int status = cuda_memcpy(d_x, x.data(), x.size() * sizeof(float), kCudaMemcpyHostToDevice);
             if (status != 0) {
                 error = cuda_error(status, "cudaMemcpy x H2D");
@@ -749,6 +815,107 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_adamw_step_float32");
                 }
             }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = fill(d_lm_weight, kLmWeightElements, 0.1f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill lm_weight");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = fill(d_lm_grad_weight, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill lm_grad_weight");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = fill(d_lm_exp_avg, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill lm_exp_avg");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = fill(d_lm_exp_avg_sq, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill lm_exp_avg_sq");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                const std::int64_t lm_targets[2] = {1, 2};
+                status = cuda_memcpy(d_lm_targets, lm_targets, sizeof(lm_targets), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lm_targets H2D");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = linear(d_x, d_lm_weight, nullptr, d_lm_logits, kRows, kDim, kLmVocab, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = ce_partials(d_lm_logits, d_lm_targets, d_lm_loss, kRows, kLmVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = ce_backward(
+                    d_lm_logits,
+                    d_lm_targets,
+                    d_lm_grad_logits,
+                    kRows,
+                    kLmVocab,
+                    1.0f / static_cast<float>(kRows),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_backward_float32");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = linear_backward_input(
+                    d_lm_grad_logits,
+                    d_lm_weight,
+                    d_lm_grad_hidden,
+                    kRows,
+                    kDim,
+                    kLmVocab,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = linear_backward_weight(
+                    d_x,
+                    d_lm_grad_logits,
+                    d_lm_grad_weight,
+                    kRows,
+                    kDim,
+                    kLmVocab,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_float32");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = adamw(
+                    d_lm_weight,
+                    d_lm_grad_weight,
+                    d_lm_exp_avg,
+                    d_lm_exp_avg_sq,
+                    kLmWeightElements,
+                    0.1f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.1f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 lm_head");
+                }
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -762,6 +929,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
             std::vector<float> actual_param(4, 0.0f);
             std::vector<float> actual_exp_avg(4, 0.0f);
             std::vector<float> actual_exp_avg_sq(4, 0.0f);
+            std::vector<float> actual_lm_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+            std::vector<float> actual_lm_grad_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+            std::vector<float> actual_lm_loss(1, 0.0f);
             if (error.empty()) {
                 status = cuda_memcpy(actual_out.data(), d_out, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
@@ -802,6 +972,24 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 status = cuda_memcpy(actual_exp_avg_sq.data(), d_exp_avg_sq, actual_exp_avg_sq.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy adamw_exp_avg_sq D2H");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = cuda_memcpy(actual_lm_weight.data(), d_lm_weight, actual_lm_weight.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lm_weight D2H");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = cuda_memcpy(actual_lm_grad_weight.data(), d_lm_grad_weight, actual_lm_grad_weight.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lm_grad_weight D2H");
+                }
+            }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                status = cuda_memcpy(actual_lm_loss.data(), d_lm_loss, actual_lm_loss.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lm_loss D2H");
                 }
             }
 
@@ -917,6 +1105,7 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 }
             }
             const float tolerance = 2e-6f;
+            const float lm_head_tolerance = 1e-4f;
             if (error.empty() && cfg.smoke_llama_train_step) {
                 const float grad_value = 0.25f;
                 const float expected_exp_avg = 0.9f * 0.0f + 0.1f * grad_value;
@@ -933,6 +1122,36 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                             std::fabs(actual_exp_avg_sq[i] - expected_exp_avg_sq)));
                 }
             }
+            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+                const std::int64_t lm_targets[2] = {1, 2};
+                const float expected_loss = static_cast<float>(kRows) * std::log(static_cast<float>(kLmVocab));
+                lm_head_loss_max_error = std::fabs(actual_lm_loss[0] - expected_loss);
+                for (std::int64_t token = 0; token < kLmVocab; ++token) {
+                    for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                        float expected_grad = 0.0f;
+                        for (std::int64_t row = 0; row < kRows; ++row) {
+                            const float prob = 1.0f / static_cast<float>(kLmVocab);
+                            const float target_term = lm_targets[row] == token ? 1.0f : 0.0f;
+                            const float grad_logit =
+                                (prob - target_term) / static_cast<float>(kRows);
+                            expected_grad += x[static_cast<std::size_t>(row * kDim + dim)] * grad_logit;
+                        }
+                        const std::size_t idx = static_cast<std::size_t>(token * kDim + dim);
+                        const float adamw_grad = actual_lm_grad_weight[idx];
+                        const float next_m = 0.1f * adamw_grad;
+                        const float next_v = 0.05f * adamw_grad * adamw_grad;
+                        const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                        const float decayed_weight = 0.1f * (1.0f - 0.1f * 0.1f);
+                        const float expected_weight = decayed_weight - 0.1f * (next_m / 0.1f) / denom;
+                        lm_head_grad_weight_max_error = std::max(
+                            lm_head_grad_weight_max_error,
+                            std::fabs(actual_lm_grad_weight[idx] - expected_grad));
+                        lm_head_weight_max_error = std::max(
+                            lm_head_weight_max_error,
+                            std::fabs(actual_lm_weight[idx] - expected_weight));
+                    }
+                }
+            }
             passed = error.empty() &&
                 rms_max_error <= tolerance &&
                 rms_backward_max_error <= tolerance &&
@@ -942,7 +1161,11 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 swiglu_backward_gate_max_error <= tolerance &&
                 swiglu_backward_up_max_error <= tolerance &&
                 (!cfg.smoke_llama_train_step ||
-                 (adamw_param_max_error <= tolerance && adamw_moment_max_error <= tolerance));
+                 (adamw_param_max_error <= tolerance && adamw_moment_max_error <= tolerance)) &&
+                (!cfg.smoke_llama_lm_head_step ||
+                 (lm_head_loss_max_error <= lm_head_tolerance &&
+                  lm_head_grad_weight_max_error <= lm_head_tolerance &&
+                  lm_head_weight_max_error <= lm_head_tolerance));
             if (!passed && error.empty()) {
                 error = "LLaMA loop-composition smoke exceeded tolerance";
             }
@@ -955,7 +1178,11 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"" << (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition") << "\",\n"
+        << "  \"smoke\": \""
+        << (cfg.smoke_llama_lm_head_step
+                ? "llama_lm_head_train_step_slice"
+                : (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition"))
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -975,10 +1202,21 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << "    \"nfn_native_tile_rotary_embedding_backward_float32\",\n"
         << "    \"nfn_native_tile_swiglu_float32\",\n"
         << "    \"nfn_native_tile_swiglu_backward_float32\"";
-    if (cfg.smoke_llama_train_step) {
+    if (cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
         std::cout << ",\n"
-                  << "    \"nfn_native_tile_fill_float32\",\n"
-                  << "    \"nfn_native_tile_adamw_step_float32\"\n";
+                  << "    \"nfn_native_tile_fill_float32\"";
+        if (cfg.smoke_llama_lm_head_step) {
+            std::cout << ",\n"
+                      << "    \"nfn_native_tile_linear_float32\",\n"
+                      << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
+                      << "    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n"
+                      << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+                      << "    \"nfn_native_tile_linear_backward_weight_float32\",\n"
+                      << "    \"nfn_native_tile_adamw_step_float32\"\n";
+        } else {
+            std::cout << ",\n"
+                      << "    \"nfn_native_tile_adamw_step_float32\"\n";
+        }
     } else {
         std::cout << "\n";
     }
@@ -994,6 +1232,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << ", \"swiglu_backward_up\":" << swiglu_backward_up_max_error
         << ", \"adamw_param\":" << adamw_param_max_error
         << ", \"adamw_moment\":" << adamw_moment_max_error
+        << ", \"lm_head_loss\":" << lm_head_loss_max_error
+        << ", \"lm_head_grad_weight\":" << lm_head_grad_weight_max_error
+        << ", \"lm_head_weight\":" << lm_head_weight_max_error
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -1004,7 +1245,7 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
 int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
     try {
-        if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step) {
+        if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
