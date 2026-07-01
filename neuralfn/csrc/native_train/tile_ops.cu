@@ -558,6 +558,22 @@ void launch_latent_mse_partials_float32(
     float* partials,
     std::int64_t n,
     cudaStream_t stream);
+void launch_act_weighted_sum_float32(
+    const float* states,
+    const float* weights,
+    float* out,
+    std::int64_t batch,
+    std::int64_t steps,
+    std::int64_t inner,
+    cudaStream_t stream);
+void launch_act_halting_bce_grad_float32(
+    const float* logits,
+    const float* targets,
+    float* partials,
+    float* grad_logits,
+    float* probs_out,
+    std::int64_t n,
+    cudaStream_t stream);
 void launch_latent_pool_float32(
     const float* x,
     const float* mask_values,
@@ -6214,6 +6230,38 @@ int nfn_native_tile_latent_mse_loss_float32(
     }
     neuralfn::tile_cuda::launch_latent_mse_partials_float32(
         pred, target, partials, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_act_weighted_sum_float32(
+    const float* states,
+    const float* weights,
+    float* out,
+    std::int64_t batch,
+    std::int64_t steps,
+    std::int64_t inner,
+    void* cuda_stream) {
+    if (batch <= 0 || steps <= 0 || inner <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_act_weighted_sum_float32(
+        states, weights, out, batch, steps, inner, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_act_halting_bce_grad_float32(
+    const float* logits,
+    const float* targets,
+    float* partials,
+    float* grad_logits,
+    float* probs_out,
+    std::int64_t n,
+    void* cuda_stream) {
+    if (n <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_act_halting_bce_grad_float32(
+        logits, targets, partials, grad_logits, probs_out, n, as_stream(cuda_stream));
     return launch_status();
 }
 

@@ -122,8 +122,8 @@ cross-attention/CE/backward/AdamW smoke while keeping the full encoder-decoder
 loop, full loss composition, checkpointing, and inference in the missing list.
 TTT entries list the completed inner linear/MSE/backward/AdamW smoke while
 keeping the full inner-update loop, checkpointing, and inference in the missing
-list. Universal transformer entries list the completed recurrent
-linear/MSE/backward/AdamW smoke while keeping ACT halting, checkpointing, and
+list. Universal transformer entries list recurrent linear/MSE/backward/AdamW
+and ACT halt loss/gradient smokes as completed while keeping checkpointing and
 inference in the missing list. HNet entries list the completed byte patch
 embed/merge plus head-loss/backward/AdamW smoke while keeping byte-token shard
 resolution, byte-patch backward, checkpointing, and inference in the missing

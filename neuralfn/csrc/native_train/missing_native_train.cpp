@@ -76,6 +76,7 @@ struct Config {
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_ttt_linear_inner_step = false;
     bool smoke_universal_recurrent_step = false;
+    bool smoke_universal_act_halt_step = false;
     bool smoke_hnet_byte_patch_step = false;
     bool smoke_jamba_chunk_state_step = false;
     std::vector<std::string> unparsed_args;
@@ -272,6 +273,7 @@ void print_usage(const char* program) {
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-recurrent-step Launch universal recurrent linear loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-universal-act-halt-step Launch universal ACT halt gate, weighted sum, BCE-gradient, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-chunk-state-step Launch Jamba chunk state, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
@@ -328,6 +330,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_ttt_linear_inner_step = true;
         } else if (arg == "--smoke-universal-recurrent-step" || arg == "--native-cuda-smoke-universal-recurrent-step") {
             cfg.smoke_universal_recurrent_step = true;
+        } else if (arg == "--smoke-universal-act-halt-step" || arg == "--native-cuda-smoke-universal-act-halt-step") {
+            cfg.smoke_universal_act_halt_step = true;
         } else if (arg == "--smoke-hnet-byte-patch-step" || arg == "--native-cuda-smoke-hnet-byte-patch-step") {
             cfg.smoke_hnet_byte_patch_step = true;
         } else if (arg == "--smoke-jamba-chunk-state-step" || arg == "--native-cuda-smoke-jamba-chunk-state-step") {
@@ -5379,6 +5383,437 @@ int print_universal_recurrent_smoke_json(const Config& cfg, const char* program)
     return passed ? 0 : 2;
 }
 
+int print_universal_act_halt_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool universal_family = family.find("universal") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using ActWeightedSumFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using ActHaltingBceGradFn = int (*)(
+        const float*, const float*, float*, float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    ActWeightedSumFn act_weighted_sum = nullptr;
+    ActHaltingBceGradFn act_halting_bce_grad = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 2;
+    constexpr std::int64_t kSteps = 3;
+    constexpr std::int64_t kDim = 4;
+    constexpr std::int64_t kRows = kBatch * kSteps;
+    constexpr std::int64_t kStateElements = kRows * kDim;
+    constexpr std::int64_t kHaltWeightElements = kDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto sigmoid = [](float x) {
+        return 1.0f / (1.0f + std::exp(-x));
+    };
+
+    bool passed = false;
+    float halt_logits_max_error = 0.0f;
+    float halt_loss_max_error = 0.0f;
+    float halt_grad_input_max_error = 0.0f;
+    float halt_grad_weight_max_error = 0.0f;
+    float halt_weight_update_max_error = 0.0f;
+    float act_weighted_sum_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!universal_family) {
+        error = "Universal smoke commands are only valid for universal-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            act_weighted_sum = load_symbol<ActWeightedSumFn>(
+                tile_handle, "nfn_native_tile_act_weighted_sum_float32");
+            act_halting_bce_grad = load_symbol<ActHaltingBceGradFn>(
+                tile_handle, "nfn_native_tile_act_halting_bce_grad_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (linear == nullptr || linear_backward_input == nullptr ||
+                linear_backward_weight_accumulate == nullptr || act_weighted_sum == nullptr ||
+                act_halting_bce_grad == nullptr || fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more universal ACT halt train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> hidden_states = {
+            0.11f, -0.07f, 0.19f, 0.03f,
+            -0.13f, 0.22f, -0.04f, 0.09f,
+            0.05f, 0.08f, -0.10f, 0.17f,
+            0.03f, -0.02f, 0.07f, -0.11f,
+            0.14f, 0.06f, -0.05f, 0.12f,
+            -0.09f, 0.15f, 0.02f, -0.04f,
+        };
+        const std::vector<float> halt_targets = {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f};
+        const std::vector<float> halt_weight = {0.18f, -0.09f, 0.07f, 0.13f};
+
+        std::vector<float> expected_logits(static_cast<std::size_t>(kRows), 0.0f);
+        std::vector<float> halt_probs(static_cast<std::size_t>(kRows), 0.0f);
+        std::vector<float> grad_logits(static_cast<std::size_t>(kRows), 0.0f);
+        float expected_loss = 0.0f;
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            float logit = 0.0f;
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                logit += hidden_states[static_cast<std::size_t>(row * kDim + dim)] *
+                    halt_weight[static_cast<std::size_t>(dim)];
+            }
+            const float prob = sigmoid(logit);
+            const float target = halt_targets[static_cast<std::size_t>(row)];
+            expected_logits[static_cast<std::size_t>(row)] = logit;
+            halt_probs[static_cast<std::size_t>(row)] = prob;
+            grad_logits[static_cast<std::size_t>(row)] = prob - target;
+            expected_loss += -target * std::log(std::max(prob, 1e-6f)) -
+                (1.0f - target) * std::log(std::max(1.0f - prob, 1e-6f));
+        }
+
+        std::vector<float> expected_grad_hidden(static_cast<std::size_t>(kStateElements), 0.0f);
+        std::vector<float> expected_grad_weight(static_cast<std::size_t>(kHaltWeightElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            const float grad = grad_logits[static_cast<std::size_t>(row)];
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                expected_grad_weight[static_cast<std::size_t>(dim)] +=
+                    hidden_states[static_cast<std::size_t>(row * kDim + dim)] * grad;
+                expected_grad_hidden[static_cast<std::size_t>(row * kDim + dim)] =
+                    grad * halt_weight[static_cast<std::size_t>(dim)];
+            }
+        }
+        std::vector<float> expected_act(static_cast<std::size_t>(kBatch * kDim), 0.0f);
+        for (std::int64_t batch = 0; batch < kBatch; ++batch) {
+            for (std::int64_t step = 0; step < kSteps; ++step) {
+                const std::int64_t row = batch * kSteps + step;
+                const float weight = halt_probs[static_cast<std::size_t>(row)];
+                for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                    expected_act[static_cast<std::size_t>(batch * kDim + dim)] +=
+                        hidden_states[static_cast<std::size_t>(row * kDim + dim)] * weight;
+                }
+            }
+        }
+
+        float* d_hidden = nullptr;
+        float* d_halt_weight = nullptr;
+        float* d_halt_targets = nullptr;
+        float* d_logits = nullptr;
+        float* d_loss_partials = nullptr;
+        float* d_halt_probs = nullptr;
+        float* d_grad_logits = nullptr;
+        float* d_grad_hidden = nullptr;
+        float* d_grad_weight = nullptr;
+        float* d_exp_avg = nullptr;
+        float* d_exp_avg_sq = nullptr;
+        float* d_act = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_hidden, hidden_states.size(), "hidden") &&
+            alloc(&d_halt_weight, halt_weight.size(), "halt_weight") &&
+            alloc(&d_halt_targets, halt_targets.size(), "halt_targets") &&
+            alloc(&d_logits, expected_logits.size(), "halt_logits") &&
+            alloc(&d_loss_partials, 1, "halt_loss_partials") &&
+            alloc(&d_halt_probs, halt_probs.size(), "halt_probs") &&
+            alloc(&d_grad_logits, grad_logits.size(), "grad_logits") &&
+            alloc(&d_grad_hidden, expected_grad_hidden.size(), "grad_hidden") &&
+            alloc(&d_grad_weight, expected_grad_weight.size(), "grad_weight") &&
+            alloc(&d_exp_avg, halt_weight.size(), "exp_avg") &&
+            alloc(&d_exp_avg_sq, halt_weight.size(), "exp_avg_sq") &&
+            alloc(&d_act, expected_act.size(), "act_weighted_sum")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_hidden, hidden_states, "hidden") &&
+                copy_float(d_halt_weight, halt_weight, "halt_weight") &&
+                copy_float(d_halt_targets, halt_targets, "halt_targets");
+
+            int status = 0;
+            if (error.empty()) {
+                status = fill(d_grad_weight, kHaltWeightElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_exp_avg, kHaltWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_exp_avg_sq, kHaltWeightElements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero universal ACT gradients/moments");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_hidden, d_halt_weight, nullptr, d_logits, kRows, kDim, 1, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 universal ACT halt gate");
+                }
+            }
+            if (error.empty()) {
+                status = act_halting_bce_grad(
+                    d_logits, d_halt_targets, d_loss_partials, d_grad_logits, d_halt_probs, kRows, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_act_halting_bce_grad_float32 universal ACT");
+                }
+            }
+            if (error.empty()) {
+                status = act_weighted_sum(d_hidden, d_halt_probs, d_act, kBatch, kSteps, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_act_weighted_sum_float32 universal ACT");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_logits, d_halt_weight, d_grad_hidden, kRows, kDim, 1, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 universal ACT");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(d_hidden, d_grad_logits, d_grad_weight, kRows, kDim, 1, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 universal ACT");
+                }
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_halt_weight,
+                    d_grad_weight,
+                    d_exp_avg,
+                    d_exp_avg_sq,
+                    kHaltWeightElements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 universal ACT");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_logits(expected_logits.size(), 0.0f);
+            std::vector<float> actual_loss_partials(1, 0.0f);
+            std::vector<float> actual_halt_probs(halt_probs.size(), 0.0f);
+            std::vector<float> actual_grad_hidden(expected_grad_hidden.size(), 0.0f);
+            std::vector<float> actual_grad_weight(expected_grad_weight.size(), 0.0f);
+            std::vector<float> actual_weight(halt_weight.size(), 0.0f);
+            std::vector<float> actual_act(expected_act.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_logits, d_logits, "halt_logits") &&
+                    copy_back_float(actual_loss_partials, d_loss_partials, "halt_loss_partials") &&
+                    copy_back_float(actual_halt_probs, d_halt_probs, "halt_probs") &&
+                    copy_back_float(actual_grad_hidden, d_grad_hidden, "grad_hidden") &&
+                    copy_back_float(actual_grad_weight, d_grad_weight, "grad_weight") &&
+                    copy_back_float(actual_weight, d_halt_weight, "halt_weight") &&
+                    copy_back_float(actual_act, d_act, "act_weighted_sum");
+            }
+            float actual_loss = 0.0f;
+            for (float item : actual_loss_partials) {
+                actual_loss += item;
+            }
+
+            std::vector<float> expected_weight = halt_weight;
+            for (std::size_t i = 0; i < expected_weight.size(); ++i) {
+                const float grad = expected_grad_weight[i];
+                const float next_m = 0.1f * grad;
+                const float next_v = 0.05f * grad * grad;
+                const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                const float decayed = expected_weight[i] * (1.0f - 0.01f * 0.02f);
+                expected_weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+            }
+            if (error.empty()) {
+                halt_logits_max_error = max_abs_error(actual_logits, expected_logits);
+                halt_loss_max_error = std::fabs(actual_loss - expected_loss);
+                halt_grad_input_max_error = max_abs_error(actual_grad_hidden, expected_grad_hidden);
+                halt_grad_weight_max_error = max_abs_error(actual_grad_weight, expected_grad_weight);
+                halt_weight_update_max_error = max_abs_error(actual_weight, expected_weight);
+                act_weighted_sum_max_error =
+                    std::max(max_abs_error(actual_act, expected_act), max_abs_error(actual_halt_probs, halt_probs));
+            }
+            constexpr float kTolerance = 5e-5f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                halt_logits_max_error <= kTolerance &&
+                halt_loss_max_error <= kTolerance &&
+                halt_grad_input_max_error <= kTolerance &&
+                halt_grad_weight_max_error <= kTolerance &&
+                halt_weight_update_max_error <= kAdamTolerance &&
+                act_weighted_sum_max_error <= kTolerance;
+            if (!passed && error.empty()) {
+                error = "Universal ACT halt train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"universal_act_halt_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"steps\": " << kSteps << ", \"dim\": " << kDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_act_halting_bce_grad_float32\",\n"
+        << "    \"nfn_native_tile_act_weighted_sum_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"halt_logits\":" << halt_logits_max_error
+        << ", \"halt_loss\":" << halt_loss_max_error
+        << ", \"halt_grad_input\":" << halt_grad_input_max_error
+        << ", \"halt_grad_weight\":" << halt_grad_weight_max_error
+        << ", \"halt_weight_update\":" << halt_weight_update_max_error
+        << ", \"act_weighted_sum\":" << act_weighted_sum_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_hnet_byte_patch_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool hnet_family = family.find("hnet") != std::string::npos || family == "unknown";
@@ -7301,6 +7736,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_universal_recurrent_step) {
             return print_universal_recurrent_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_universal_act_halt_step) {
+            return print_universal_act_halt_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_hnet_byte_patch_step) {
             return print_hnet_byte_patch_smoke_json(cfg, argv[0]);

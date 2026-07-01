@@ -14867,6 +14867,43 @@ __tile_global__ void preference_bce_partials_float32_kernel(
   ct::store(partials + out_idx, ct::sum(loss, 0_ic));
 }
 
+__tile_global__ void act_halting_bce_grad_float32_kernel(
+    const float* __restrict__ logits,
+    const float* __restrict__ targets,
+    float* __restrict__ partials,
+    float* __restrict__ grad_logits,
+    float* __restrict__ probs_out,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  partials = ct::assume_aligned(partials, 16_ic);
+  grad_logits = ct::assume_aligned(grad_logits, 16_ic);
+  probs_out = ct::assume_aligned(probs_out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto logit = ct::load_masked(logits + idx, mask);
+  auto target = ct::load_masked(targets + idx, mask);
+  auto prob = ct::full<decltype(logit)>(1.0f) /
+      (ct::full<decltype(logit)>(1.0f) + ct::exp(-logit));
+  auto eps = ct::full<decltype(prob)>(1e-6f);
+  auto one = ct::full<decltype(prob)>(1.0f);
+  auto zero = ct::full<decltype(prob)>(0.0f);
+  auto prob_clamped = ct::select(prob < eps, eps, ct::select(prob > one - eps, one - eps, prob));
+  auto loss = -target * ct::log(prob_clamped) - (one - target) * ct::log(one - prob_clamped);
+  loss = ct::select(mask, loss, zero);
+  ct::store_masked(grad_logits + idx, prob - target, mask);
+  ct::store_masked(probs_out + idx, prob, mask);
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(static_cast<std::int64_t>(bx));
+  ct::store(partials + out_idx, ct::sum(loss, 0_ic));
+}
+
 __tile_global__ void ppo_clipped_loss_partials_float32_kernel(
     const float* __restrict__ logp_new,
     const float* __restrict__ logp_old,
@@ -21490,6 +21527,19 @@ void launch_preference_bce_partials_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   preference_bce_partials_float32_kernel<<<blocks, 1, 0, stream>>>(reward_chosen, reward_rejected, partials, n);
+}
+
+void launch_act_halting_bce_grad_float32(
+    const float* logits,
+    const float* targets,
+    float* partials,
+    float* grad_logits,
+    float* probs_out,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  act_halting_bce_grad_float32_kernel<<<blocks, 1, 0, stream>>>(
+      logits, targets, partials, grad_logits, probs_out, n);
 }
 
 void launch_ppo_clipped_loss_partials_float32(

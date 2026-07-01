@@ -5278,11 +5278,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     ]
     assert coverage["universal_llama"] == "missing-universal-transformer-lm"
     assert missing_requirements["universal_llama"] == [
-        "act-halting-loss-and-gradient",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["universal_llama"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
+        "universal-act-halt-loss-gradient-smoke",
     ]
     assert coverage["jamba"] == "missing-jamba-hybrid-mamba-transformer-lm"
     assert missing_requirements["jamba"] == [
@@ -11656,11 +11656,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_payload["status"] == "family-native-trainer-missing"
     assert universal_payload["native_training_coverage_class"] == "missing-universal-transformer-lm"
     assert universal_payload["native_training_missing_requirements"] == [
-        "act-halting-loss-and-gradient",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert universal_payload["native_training_completed_requirements"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
+        "universal-act-halt-loss-gradient-smoke",
     ]
     assert universal_payload["compiled_native_boundary"] is True
     assert universal_payload["torch_required"] is False
@@ -11670,6 +11670,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_act_halting_bce_grad_float32",
+        "nfn_native_tile_act_weighted_sum_float32",
         "nfn_native_tile_adamw_step_float32",
     ):
         assert symbol in universal_payload["required_tile_symbols"]
@@ -12135,6 +12137,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-universal-recurrent-step" in unified_universal_smoke_command.stdout
     assert "--tile-ops-lib" in unified_universal_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_universal_smoke_command.stdout
+
+    unified_universal_act_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "universal-llama",
+            "--native-cuda-smoke-universal-act-halt-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_universal_act_smoke_command.returncode == 0, unified_universal_act_smoke_command.stderr
+    assert str(universal_llama) in unified_universal_act_smoke_command.stdout
+    assert "--smoke-universal-act-halt-step" in unified_universal_act_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_universal_act_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_universal_act_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

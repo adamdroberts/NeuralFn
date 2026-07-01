@@ -1963,6 +1963,24 @@ int nfn_native_tile_latent_mse_loss_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_act_weighted_sum_float32(
+    const float* states,
+    const float* weights,
+    float* out,
+    std::int64_t batch,
+    std::int64_t steps,
+    std::int64_t inner,
+    void* cuda_stream);
+
+int nfn_native_tile_act_halting_bce_grad_float32(
+    const float* logits,
+    const float* targets,
+    float* partials,
+    float* grad_logits,
+    float* probs_out,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_semantic_alignment_loss_items_float32(
     const float* logits,
     const std::int64_t* targets,

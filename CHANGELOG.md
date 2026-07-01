@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Added a universal-transformer ACT halt native smoke and exposed the ACT
+  weighted-sum raw CUDA Tile ABI to standalone native training binaries.
+  `nfn_universal_llama_native_train --smoke-universal-act-halt-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  universal-llama --native-cuda-smoke-universal-act-halt-step` alias now run
+  halt-gate projection, `nfn_native_tile_act_halting_bce_grad_float32`,
+  `nfn_native_tile_act_weighted_sum_float32`, linear backward, and AdamW update
+  checks without Torch or graph-editor tensor flow. Universal-family
+  catalog/preflight JSON now reports `universal-act-halt-loss-gradient-smoke`
+  in `native_training_completed_requirements`; checkpoint/inference wiring
+  remains visible as the outstanding universal requirement. Verification:
+  rebuilt missing-family native trainers, unified native frontends, dense GPT
+  frontends, benchmark binaries, and the TK Tile sidecar; live CUDA universal
+  ACT halt smoke passed with halt-logit max error `3.72529e-09`,
+  halt-loss max error `0`, halt-gradient-input max error `0`, halt-gradient-weight max error
+  `1.49012e-08`, halt-weight-update max error `1.49012e-08`, and
+  ACT-weighted-sum max error `1.49012e-08`; focused native GPT catalog/dispatch
+  pytest passed (`2 passed`); the no-Torch verifier passed 30 native artifacts
+  with 0 stale/forbidden artifacts, 69 Python entrypoints, 24 shell
+  entrypoints, and 4 native template catalogs.
+
 - Added a JEPA AR+latent-loss composition native smoke for missing-family
   compiled preflights. `nfn_jepa_native_train --smoke-jepa-ar-loss-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
