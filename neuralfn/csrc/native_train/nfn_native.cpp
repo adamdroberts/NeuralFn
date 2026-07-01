@@ -233,6 +233,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-llama-packed-attention-step",
         "--smoke-lm-step",
         "--smoke-mlp-step",
+        "--smoke-moe-transformer-block-step",
         "--smoke-norm-residual-step",
         "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
@@ -499,6 +500,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-jepa-projector-step" ||
                                arg == "--native-cuda-smoke-diffusion-denoise-step" ||
                                arg == "--native-cuda-smoke-moe-route-expert-step" ||
+                               arg == "--native-cuda-smoke-moe-transformer-block-step" ||
                                arg == "--native-cuda-smoke-semantic-alignment-step" ||
                                arg == "--native-cuda-smoke-seq2seq-cross-attention-step" ||
                                arg == "--native-cuda-smoke-ttt-linear-inner-step" ||
@@ -551,6 +553,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-diffusion-denoise-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
                 forwarded.push_back("--smoke-moe-route-expert-step");
+            } else if (arg == "--native-cuda-smoke-moe-transformer-block-step") {
+                forwarded.push_back("--smoke-moe-transformer-block-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {
                 forwarded.push_back("--smoke-semantic-alignment-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {

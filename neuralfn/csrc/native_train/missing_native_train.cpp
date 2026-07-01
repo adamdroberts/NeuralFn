@@ -67,6 +67,7 @@ struct Config {
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
     bool smoke_moe_route_expert_step = false;
+    bool smoke_moe_transformer_block_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_diffusion_denoise_step = false;
@@ -260,6 +261,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-llama-attention-block-step Launch RMSNorm, QKV projection, packed attention, and residual kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
+        << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
@@ -304,6 +306,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_attention_block_step = true;
         } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
             cfg.smoke_moe_route_expert_step = true;
+        } else if (arg == "--smoke-moe-transformer-block-step" || arg == "--native-cuda-smoke-moe-transformer-block-step") {
+            cfg.smoke_moe_transformer_block_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
@@ -2089,6 +2093,457 @@ int print_llama_attention_block_smoke_json(const Config& cfg, const char* progra
         << "\"qkv_nonzero\":" << qkv_max_abs
         << ", \"attention_max_abs\":" << attention_max_abs
         << ", \"residual_delta_max_abs\":" << residual_delta_max_abs
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_moe_transformer_block_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool moe_family =
+        family.find("moe") != std::string::npos ||
+        family.find("mixllama") != std::string::npos ||
+        family.find("deepseek") != std::string::npos ||
+        family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using RmsNormFn = int (*)(const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LinearBf16OutputFn = int (*)(
+        const float*, const float*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using PackedAttentionFn = int (*)(
+        const std::uint16_t*, std::uint16_t*, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        float, bool, bool, bool, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, void*);
+    using Bf16ToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
+    using ScaledResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
+    using TopKRouteFn = int (*)(const float*, float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MoeSwiGluForwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    RmsNormFn rms_norm = nullptr;
+    LinearBf16OutputFn linear_bf16_output = nullptr;
+    PackedAttentionFn packed_attention = nullptr;
+    Bf16ToFloat32Fn bf16_to_float32 = nullptr;
+    ScaledResidualAddFn residual_add = nullptr;
+    TopKRouteFn topk_route = nullptr;
+    MoeSwiGluForwardFn moe_forward = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 1;
+    constexpr std::int64_t kHeads = 12;
+    constexpr std::int64_t kSeqLen = 32;
+    constexpr std::int64_t kHeadDim = 64;
+    constexpr std::int64_t kDim = kHeads * kHeadDim;
+    constexpr std::int64_t kRows = kBatch * kSeqLen;
+    constexpr std::int64_t kQkvDim = 3 * kDim;
+    constexpr std::int64_t kElements = kRows * kDim;
+    constexpr std::int64_t kQkvElements = kRows * kQkvDim;
+    constexpr std::int64_t kExperts = 4;
+    constexpr std::int64_t kTopK = 2;
+    constexpr std::int64_t kMoeHidden = 4;
+    constexpr std::int64_t kRouteElements = kRows * kTopK;
+    constexpr std::int64_t kW13Elements = kExperts * kDim * kMoeHidden;
+    constexpr std::int64_t kW2Elements = kExperts * kMoeHidden * kDim;
+    constexpr float kEps = 1e-6f;
+    constexpr float kScale = 1.0f / 8.0f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs = [](const std::vector<float>& values) {
+        float out = 0.0f;
+        for (float value : values) {
+            out = std::max(out, std::fabs(value));
+        }
+        return out;
+    };
+
+    bool passed = false;
+    float attention_max_abs = 0.0f;
+    float attn_residual_delta_max_abs = 0.0f;
+    float route_weight_max_abs = 0.0f;
+    float moe_max_abs = 0.0f;
+    float block_residual_delta_max_abs = 0.0f;
+    std::int64_t route_index_max = -1;
+    const float residual_scale_value = 1.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!moe_family) {
+        error = "MoE transformer-block smoke commands are only valid for MoE-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            rms_norm = load_symbol<RmsNormFn>(tile_handle, "nfn_native_tile_rms_norm_float32");
+            linear_bf16_output = load_symbol<LinearBf16OutputFn>(
+                tile_handle, "nfn_native_tile_linear_bf16_output_float32");
+            packed_attention = load_symbol<PackedAttentionFn>(
+                tile_handle, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32");
+            bf16_to_float32 = load_symbol<Bf16ToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
+            residual_add = load_symbol<ScaledResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
+            topk_route = load_symbol<TopKRouteFn>(tile_handle, "nfn_native_tile_topk_route_float32");
+            moe_forward = load_symbol<MoeSwiGluForwardFn>(
+                tile_handle, "nfn_native_tile_moe_swiglu_forward_float32");
+            if (rms_norm == nullptr || linear_bf16_output == nullptr || packed_attention == nullptr ||
+                bf16_to_float32 == nullptr || residual_add == nullptr || topk_route == nullptr ||
+                moe_forward == nullptr) {
+                error = "Tile ops library is missing one or more MoE transformer-block symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> hidden(static_cast<std::size_t>(kElements), 0.0f);
+        std::vector<float> qkv_weight(static_cast<std::size_t>(kDim * kQkvDim), 0.0f);
+        std::vector<float> route_logits(static_cast<std::size_t>(kRows * kExperts), 0.0f);
+        std::vector<float> w1(static_cast<std::size_t>(kW13Elements), 0.0f);
+        std::vector<float> w2(static_cast<std::size_t>(kW2Elements), 0.0f);
+        std::vector<float> w3(static_cast<std::size_t>(kW13Elements), 0.0f);
+        std::vector<float> residual_scale = {residual_scale_value};
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                hidden[static_cast<std::size_t>(row * kDim + dim)] =
+                    0.001f * static_cast<float>((row % 19) + 1) +
+                    0.0001f * static_cast<float>((dim % 37) + 1);
+            }
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                route_logits[static_cast<std::size_t>(row * kExperts + expert)] =
+                    0.02f * static_cast<float>((row + expert * 3) % 11) -
+                    0.01f * static_cast<float>(expert);
+            }
+        }
+        for (std::int64_t out_dim = 0; out_dim < kQkvDim; ++out_dim) {
+            const std::int64_t in_dim = out_dim % kDim;
+            qkv_weight[static_cast<std::size_t>(out_dim * kDim + in_dim)] =
+                0.07f + 0.001f * static_cast<float>(out_dim % 17);
+        }
+        for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                for (std::int64_t hidden_dim = 0; hidden_dim < kMoeHidden; ++hidden_dim) {
+                    const std::size_t idx = static_cast<std::size_t>((expert * kDim + dim) * kMoeHidden + hidden_dim);
+                    w1[idx] = 0.0005f * static_cast<float>((dim + hidden_dim + expert) % 13 + 1);
+                    w3[idx] = -0.0004f * static_cast<float>((dim * 2 + hidden_dim + expert) % 11 + 1);
+                }
+            }
+            for (std::int64_t hidden_dim = 0; hidden_dim < kMoeHidden; ++hidden_dim) {
+                for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                    const std::size_t idx = static_cast<std::size_t>((expert * kMoeHidden + hidden_dim) * kDim + dim);
+                    w2[idx] = 0.0006f * static_cast<float>((dim + hidden_dim * 3 + expert) % 7 + 1);
+                }
+            }
+        }
+
+        float* d_hidden = nullptr;
+        float* d_normed = nullptr;
+        float* d_attention_float = nullptr;
+        float* d_attn_residual = nullptr;
+        float* d_moe_out = nullptr;
+        float* d_block_out = nullptr;
+        float* d_qkv_weight = nullptr;
+        float* d_route_logits = nullptr;
+        float* d_route_weights = nullptr;
+        float* d_w1 = nullptr;
+        float* d_w2 = nullptr;
+        float* d_w3 = nullptr;
+        float* d_residual_scale = nullptr;
+        std::uint16_t* d_qkv_bf16 = nullptr;
+        std::uint16_t* d_attention_bf16 = nullptr;
+        std::int64_t* d_route_indices = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_bf16 = [&](std::uint16_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::uint16_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_float(&d_hidden, hidden.size(), "hidden") &&
+            alloc_float(&d_normed, hidden.size(), "normed") &&
+            alloc_float(&d_attention_float, hidden.size(), "attention_float") &&
+            alloc_float(&d_attn_residual, hidden.size(), "attn_residual") &&
+            alloc_float(&d_moe_out, hidden.size(), "moe_out") &&
+            alloc_float(&d_block_out, hidden.size(), "block_out") &&
+            alloc_float(&d_qkv_weight, qkv_weight.size(), "qkv_weight") &&
+            alloc_float(&d_route_logits, route_logits.size(), "route_logits") &&
+            alloc_float(&d_route_weights, static_cast<std::size_t>(kRouteElements), "route_weights") &&
+            alloc_float(&d_w1, w1.size(), "w1") &&
+            alloc_float(&d_w2, w2.size(), "w2") &&
+            alloc_float(&d_w3, w3.size(), "w3") &&
+            alloc_float(&d_residual_scale, residual_scale.size(), "residual_scale") &&
+            alloc_bf16(&d_qkv_bf16, static_cast<std::size_t>(kQkvElements), "qkv_bf16") &&
+            alloc_bf16(&d_attention_bf16, hidden.size(), "attention_bf16") &&
+            alloc_i64(&d_route_indices, static_cast<std::size_t>(kRouteElements), "route_indices")) {
+            int status = cuda_memcpy(d_hidden, hidden.data(), hidden.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status == 0) {
+                status = cuda_memcpy(d_qkv_weight, qkv_weight.data(), qkv_weight.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_route_logits, route_logits.data(), route_logits.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_w1, w1.data(), w1.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_w2, w2.data(), w2.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_w3, w3.data(), w3.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_residual_scale, residual_scale.data(), sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy MoE transformer block H2D");
+            }
+            if (error.empty()) {
+                status = rms_norm(d_hidden, d_normed, kRows, kDim, kEps, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rms_norm_float32");
+                }
+            }
+            if (error.empty()) {
+                status = linear_bf16_output(d_normed, d_qkv_weight, nullptr, d_qkv_bf16, kRows, kDim, kQkvDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_bf16_output_float32");
+                }
+            }
+            if (error.empty()) {
+                status = packed_attention(
+                    d_qkv_bf16, d_attention_bf16, kBatch, kHeads, kHeads, kSeqLen, kSeqLen,
+                    kHeadDim, kHeadDim, kScale, true, false, false, 0, 0, 0, 0, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32");
+                }
+            }
+            if (error.empty()) {
+                status = bf16_to_float32(d_attention_bf16, d_attention_float, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_bf16_bits_to_float32");
+                }
+            }
+            if (error.empty()) {
+                status = residual_add(d_hidden, d_attention_float, d_residual_scale, d_attn_residual, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_residual_add_float32 attention");
+                }
+            }
+            if (error.empty()) {
+                status = topk_route(d_route_logits, d_route_weights, d_route_indices, kRows, kExperts, kTopK, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_topk_route_float32");
+                }
+            }
+            if (error.empty()) {
+                status = moe_forward(
+                    d_attn_residual, d_route_weights, d_route_indices, d_w1, d_w2, d_w3, d_moe_out,
+                    kRows, kDim, kMoeHidden, kExperts, kTopK, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_moe_swiglu_forward_float32");
+                }
+            }
+            if (error.empty()) {
+                status = residual_add(d_attn_residual, d_moe_out, d_residual_scale, d_block_out, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_residual_add_float32 moe");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize MoE transformer block smoke");
+                }
+            }
+            if (error.empty()) {
+                std::vector<float> attention_actual(hidden.size(), 0.0f);
+                std::vector<float> attn_residual_actual(hidden.size(), 0.0f);
+                std::vector<float> route_weight_actual(static_cast<std::size_t>(kRouteElements), 0.0f);
+                std::vector<std::int64_t> route_index_actual(static_cast<std::size_t>(kRouteElements), -1);
+                std::vector<float> moe_actual(hidden.size(), 0.0f);
+                std::vector<float> block_actual(hidden.size(), 0.0f);
+                status = cuda_memcpy(attention_actual.data(), d_attention_float, attention_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status == 0) {
+                    status = cuda_memcpy(attn_residual_actual.data(), d_attn_residual, attn_residual_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(route_weight_actual.data(), d_route_weights, route_weight_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(route_index_actual.data(), d_route_indices, route_index_actual.size() * sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(moe_actual.data(), d_moe_out, moe_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(block_actual.data(), d_block_out, block_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy MoE transformer block D2H");
+                } else {
+                    attention_max_abs = max_abs(attention_actual);
+                    route_weight_max_abs = max_abs(route_weight_actual);
+                    moe_max_abs = max_abs(moe_actual);
+                    for (std::int64_t index : route_index_actual) {
+                        route_index_max = std::max(route_index_max, index);
+                    }
+                    for (std::size_t i = 0; i < hidden.size(); ++i) {
+                        attn_residual_delta_max_abs = std::max(
+                            attn_residual_delta_max_abs,
+                            std::fabs(attn_residual_actual[i] - hidden[i]));
+                        block_residual_delta_max_abs = std::max(
+                            block_residual_delta_max_abs,
+                            std::fabs(block_actual[i] - attn_residual_actual[i]));
+                    }
+                }
+            }
+            passed = error.empty() &&
+                attention_max_abs > 0.0f &&
+                attn_residual_delta_max_abs > 0.0f &&
+                route_weight_max_abs > 0.0f &&
+                route_index_max >= 0 &&
+                moe_max_abs > 0.0f &&
+                block_residual_delta_max_abs > 0.0f;
+            if (!passed && error.empty()) {
+                error = "MoE transformer-block smoke produced a degenerate output";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"moe_transformer_block_forward_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"seq_len\": " << kSeqLen
+        << ", \"model_dim\": " << kDim << ", \"heads\": " << kHeads
+        << ", \"head_dim\": " << kHeadDim << ", \"experts\": " << kExperts
+        << ", \"top_k\": " << kTopK << ", \"moe_hidden_dim\": " << kMoeHidden << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_rms_norm_float32\",\n"
+        << "    \"nfn_native_tile_linear_bf16_output_float32\",\n"
+        << "    \"nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32\",\n"
+        << "    \"nfn_native_tile_bf16_bits_to_float32\",\n"
+        << "    \"nfn_native_tile_scaled_residual_add_float32\",\n"
+        << "    \"nfn_native_tile_topk_route_float32\",\n"
+        << "    \"nfn_native_tile_moe_swiglu_forward_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"attention_max_abs\":" << attention_max_abs
+        << ", \"attn_residual_delta_max_abs\":" << attn_residual_delta_max_abs
+        << ", \"route_weight_max_abs\":" << route_weight_max_abs
+        << ", \"route_index_max\":" << route_index_max
+        << ", \"moe_max_abs\":" << moe_max_abs
+        << ", \"block_residual_delta_max_abs\":" << block_residual_delta_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -6247,6 +6702,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_moe_transformer_block_step) {
+            return print_moe_transformer_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);

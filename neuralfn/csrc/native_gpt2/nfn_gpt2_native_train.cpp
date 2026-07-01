@@ -992,6 +992,10 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "routed-swiglu-expert-forward-backward-smoke",
             "load-balance-loss-adamw-smoke",
         };
+        if (coverage_class == "missing-standard-moe-transformer-lm" ||
+            coverage_class == "missing-moe-jepa-objective") {
+            completed.push_back("standard-moe-transformer-block-forward-smoke");
+        }
         if (coverage_class == "missing-moe-jepa-objective" ||
             (coverage_class == "missing-semantic-moe-router-jepa-objective" &&
              template_name.find("jepa") != std::string::npos)) {

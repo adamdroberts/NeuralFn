@@ -522,7 +522,8 @@ packed-QKV RoPE attention block integration, the full LLaMA block
 forward/backward loop, and family checkpoint/inference wiring. MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
-routed SwiGLU forward/backward, and load-balance/AdamW CUDA smokes, while
+routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
+transformer-block forward CUDA smokes, while
 missing requirements keep the full family loop, JEPA or semantic objectives,
 checkpointing, and inference wiring visible. JEPA-family entries now list the
 completed projector/predictor/latent-loss CUDA smoke while keeping target
@@ -554,6 +555,11 @@ and residual add in one native forward block slice. Use
 `--native-cuda-smoke-moe-route-expert-step` alias on MoE families to run top-k
 routing, route broadcast, routed SwiGLU expert forward/backward,
 load-balance density/loss, and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_mixllama_native_train --smoke-moe-transformer-block-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-moe-transformer-block-step` alias on
+standard MoE families to compose RMSNorm, BF16 QKV projection, packed causal
+attention, residual add, per-token top-k routing, routed SwiGLU expert forward,
+and the second residual add in one native forward block slice. Use
 `nfn_jepa_native_train --smoke-jepa-projector-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-jepa-projector-step` alias on JEPA families to run
 projector/predictor linear stages, latent MSE partials, linear backward, and

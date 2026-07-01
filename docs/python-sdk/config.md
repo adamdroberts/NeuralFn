@@ -101,15 +101,17 @@ slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, and
 packed-QKV attention forward/backward plus the
 RMSNorm/QKV-projection/packed-attention/residual forward block slice, while
 their missing list keeps packed-QKV RoPE attention block integration, the full
-LLaMA block forward/backward loop, and family checkpoint/inference wiring. MoE-family
-entries list completed top-k route/broadcast, routed SwiGLU
-expert forward/backward, and load-balance/AdamW smokes while keeping the full
-family loop, JEPA or semantic objective, checkpoint, and inference blockers in
-the missing list. JEPA-family entries list completed projector/predictor
-linear, latent-loss, backward, and AdamW smokes while keeping target encoder,
-full objective composition, checkpoint, and inference blockers in the missing
-list. Semantic-family entries list completed semantic hash/alignment-loss-items
-smokes while keeping full semantic planner/router, reduction, objective
+LLaMA block forward/backward loop, and family checkpoint/inference wiring.
+Standard MoE-family entries list completed top-k route/broadcast, routed
+SwiGLU expert forward/backward, load-balance/AdamW, and
+RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
+smokes while keeping the full family loop, JEPA or semantic objective,
+checkpoint, and inference blockers in the missing list. JEPA-family entries
+list completed projector/predictor linear, latent-loss, backward, and AdamW
+smokes while keeping target encoder, full objective composition, checkpoint,
+and inference blockers in the missing list. Semantic-family entries list
+completed semantic hash/alignment-loss-items smokes while keeping full
+semantic planner/router, reduction, objective
 composition, checkpoint, and inference blockers in the missing list. Diffusion
 entries list the completed denoise linear/MSE/backward/AdamW smoke while
 keeping timestep scheduling, full objective composition, checkpointing, and

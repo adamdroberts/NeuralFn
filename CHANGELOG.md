@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Added a shared standard-MoE transformer-block forward native smoke.
+  `nfn_mixllama_native_train --smoke-moe-transformer-block-step --tile-ops-lib
+  PATH`, `nfn_moe_jepa_evo_native_train --smoke-moe-transformer-block-step`,
+  and the unified `nfn-native-train --base-model moe-jepa-evo
+  --native-cuda-smoke-moe-transformer-block-step` alias now compose RMSNorm,
+  BF16 QKV projection, packed causal attention, residual add, per-token top-k
+  routing, routed SwiGLU expert forward, and the second residual add through
+  raw CUDA Tile ABI calls. Standard MoE-family catalog/preflight JSON now
+  reports `standard-moe-transformer-block-forward-smoke` in
+  `native_training_completed_requirements`; the full MoE forward/backward loop,
+  JEPA/semantic objective composition, checkpointing, and inference wiring
+  remain visible in the missing lists. Verification so far: rebuilt
+  missing-family native trainers, unified native CLIs, and dense GPT catalog
+  binaries; live CUDA MixLLaMA smoke passed with `attention_max_abs=0.125`,
+  `route_weight_max_abs=0.517493`, `moe_max_abs=0.000294317`, and
+  `block_residual_delta_max_abs=0.00029432`; unified command forwarding emitted
+  `nfn_moe_jepa_evo_native_train --smoke-moe-transformer-block-step`; focused
+  native GPT tests passed; the no-Torch dependency verifier passed all 30 native
+  artifacts with no stale outputs, 69 Python entrypoints, 24 shell entrypoints,
+  and four native template catalogs.
+
 - Added a LLaMA-family attention-block forward native smoke.
   `nfn_llama_native_train --smoke-llama-attention-block-step --tile-ops-lib
   PATH` and the unified `nfn-native-train --base-model llama

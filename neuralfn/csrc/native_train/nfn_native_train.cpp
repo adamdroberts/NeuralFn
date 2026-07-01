@@ -522,6 +522,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-lm-step",
         "--smoke-mlp-step",
         "--smoke-moe-route-expert-step",
+        "--smoke-moe-transformer-block-step",
         "--smoke-norm-residual-step",
         "--smoke-optimizer-step",
         "--smoke-semantic-alignment-step",
@@ -563,6 +564,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-llama-packed-attention-step",
         "--smoke-llama-train-step",
         "--smoke-moe-route-expert-step",
+        "--smoke-moe-transformer-block-step",
         "--smoke-semantic-alignment-step",
         "--smoke-seq2seq-cross-attention-step",
         "--smoke-ttt-linear-inner-step",
@@ -1027,6 +1029,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-jamba-chunk-state-step",
                 "--native-cuda-smoke-moe-route-expert-step",
+                "--native-cuda-smoke-moe-transformer-block-step",
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-seq2seq-cross-attention-step",
                 "--native-cuda-smoke-ttt-linear-inner-step",
@@ -1076,6 +1079,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
                 forwarded.push_back("--smoke-moe-route-expert-step");
+            } else if (arg == "--native-cuda-smoke-moe-transformer-block-step") {
+                forwarded.push_back("--smoke-moe-transformer-block-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {
                 forwarded.push_back("--smoke-semantic-alignment-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
