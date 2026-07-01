@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a compiled LLaMA loop-composition CUDA smoke to the missing-family
+  native preflight. `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib
+  PATH` and the unified `--native-cuda-smoke-llama-loop` alias now launch
+  RMSNorm forward/backward, RoPE forward/backward, and SwiGLU forward/backward
+  through the raw Tile ABI on device buffers, compare each stage against CPU
+  references, and emit JSON with max errors while keeping `torch_required:
+  false` and `graph_editor_tensor_flow: false`. This is not the full LLaMA
+  trainer yet, but it makes the first LLaMA loop-composition slice executable.
+  Verification: rebuilt missing-family and unified native CLIs; live CUDA smoke
+  passed with max errors at or below `1.19209e-07`; focused missing-family
+  dispatch pytest passed.
+
 - Clarified native LLaMA coverage reporting now that the RMSNorm, rotary, and
   SwiGLU raw Tile ABI symbols are present. LLaMA preflights and dense GPT
   template plans now report `rmsnorm-loop-composition`,

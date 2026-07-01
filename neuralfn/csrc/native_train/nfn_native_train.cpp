@@ -417,6 +417,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-fused-qkv-attention-step",
+        "--smoke-llama-loop",
         "--smoke-lm-step",
         "--smoke-mlp-step",
         "--smoke-norm-residual-step",
@@ -446,6 +447,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--check-tile-ops",
         "--startup-only",
         "--smoke-tile-ops",
+        "--smoke-llama-loop",
         "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
         "--smoke-lm-step",
@@ -896,6 +898,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-list-templates",
                 "--native-cuda-check-tile-ops",
                 "--native-cuda-smoke-tile-ops",
+                "--native-cuda-smoke-llama-loop",
                 "--native-cuda-smoke-optimizer-step",
                 "--native-cuda-smoke-lm-step",
                 "--native-cuda-smoke-attention-step",
@@ -921,6 +924,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--check-tile-ops");
             } else if (arg == "--native-cuda-smoke-tile-ops") {
                 forwarded.push_back("--smoke-tile-ops");
+            } else if (arg == "--native-cuda-smoke-llama-loop") {
+                forwarded.push_back("--smoke-llama-loop");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {

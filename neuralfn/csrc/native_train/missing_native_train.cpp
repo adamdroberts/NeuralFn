@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -56,7 +57,9 @@ struct Config {
     bool dry_run = false;
     bool sample_token_batch = false;
     bool allow_train_as_val = false;
+    bool smoke_llama_loop = false;
     std::vector<std::string> unparsed_args;
+    std::string cuda_runtime_lib;
 };
 
 struct SymbolResult {
@@ -146,6 +149,30 @@ std::vector<std::string> split_csv(std::string_view value) {
     return out;
 }
 
+template <typename Fn>
+Fn load_symbol(void* handle, const char* name) {
+    return reinterpret_cast<Fn>(dlsym(handle, name));
+}
+
+std::vector<std::string> cuda_runtime_candidates(const Config& cfg) {
+    if (!cfg.cuda_runtime_lib.empty()) {
+        return {cfg.cuda_runtime_lib};
+    }
+    const char* env = std::getenv("NFN_CUDA_RUNTIME_LIB");
+    if (env != nullptr && env[0] != '\0') {
+        return {env};
+    }
+    return {
+        "/usr/local/cuda/lib64/libcudart.so.13",
+        "/usr/local/cuda/lib64/libcudart.so",
+        "/usr/local/cuda-13/lib64/libcudart.so.13",
+        "/usr/local/cuda-13/lib64/libcudart.so",
+        "libcudart.so.13",
+        "libcudart.so",
+        "libcudart.so.12",
+    };
+}
+
 std::string resolve_tile_ops_lib(const Config& cfg, const char* program) {
     if (!cfg.tile_ops_lib.empty()) {
         return cfg.tile_ops_lib;
@@ -210,7 +237,9 @@ void print_usage(const char* program) {
         << "  --print-plan              Emit JSON with native work and schedule metadata\n"
         << "  --check-tile-ops          Check required raw Tile symbols from the trainer ABI\n"
         << "  --sample-token-batch      Resolve native token shards and emit the first token/target batch\n"
+        << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
+        << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
         << "Required native work:\n"
         << "  " << NFN_NATIVE_REQUIRED_KERNELS << "\n\n"
@@ -233,6 +262,8 @@ Config parse_args(int argc, char** argv) {
             cfg.dry_run = true;
         } else if (arg == "--sample-token-batch") {
             cfg.sample_token_batch = true;
+        } else if (arg == "--smoke-llama-loop" || arg == "--native-cuda-smoke-llama-loop") {
+            cfg.smoke_llama_loop = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -247,6 +278,8 @@ Config parse_args(int argc, char** argv) {
             cfg.graph_file = require_value(argc, argv, &i, arg);
         } else if (arg == "--tile-ops-lib" || arg == "--native-cuda-tile-ops-lib") {
             cfg.tile_ops_lib = require_value(argc, argv, &i, arg);
+        } else if (arg == "--cuda-runtime-lib" || arg == "--native-cuda-cuda-runtime-lib") {
+            cfg.cuda_runtime_lib = require_value(argc, argv, &i, arg);
         } else if (arg == "--max-steps") {
             cfg.max_steps = parse_i64(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--batch-size") {
@@ -401,11 +434,452 @@ void print_json(const Config& cfg, const char* program) {
     std::cout << "\n}\n";
 }
 
+int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool llama_family =
+        family.find("llama") != std::string::npos ||
+        family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using RmsNormFn = int (*)(const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using RmsNormBackwardFn = int (*)(const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using RotaryFn = int (*)(const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SwiGluFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using SwiGluBackwardFn = int (*)(const float*, const float*, const float*, float*, float*, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    RmsNormFn rms_norm = nullptr;
+    RmsNormBackwardFn rms_norm_backward = nullptr;
+    RotaryFn rotary = nullptr;
+    RotaryFn rotary_backward = nullptr;
+    SwiGluFn swiglu = nullptr;
+    SwiGluBackwardFn swiglu_backward = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kDim = 8;
+    constexpr std::int64_t kSeqLen = 2;
+    constexpr std::int64_t kHeads = 2;
+    constexpr std::int64_t kHeadDim = 4;
+    constexpr std::int64_t kElements = kRows * kDim;
+    constexpr float kEps = 1e-6f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    bool passed = false;
+    float rms_max_error = 0.0f;
+    float rms_backward_max_error = 0.0f;
+    float rotary_max_error = 0.0f;
+    float rotary_backward_max_error = 0.0f;
+    float swiglu_max_error = 0.0f;
+    float swiglu_backward_gate_max_error = 0.0f;
+    float swiglu_backward_up_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!llama_family) {
+        error = "--smoke-llama-loop is only valid for LLaMA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            rms_norm = load_symbol<RmsNormFn>(tile_handle, "nfn_native_tile_rms_norm_float32");
+            rms_norm_backward = load_symbol<RmsNormBackwardFn>(
+                tile_handle, "nfn_native_tile_rms_norm_backward_input_float32");
+            rotary = load_symbol<RotaryFn>(tile_handle, "nfn_native_tile_rotary_embedding_float32");
+            rotary_backward = load_symbol<RotaryFn>(
+                tile_handle, "nfn_native_tile_rotary_embedding_backward_float32");
+            swiglu = load_symbol<SwiGluFn>(tile_handle, "nfn_native_tile_swiglu_float32");
+            swiglu_backward = load_symbol<SwiGluBackwardFn>(
+                tile_handle, "nfn_native_tile_swiglu_backward_float32");
+            if (rms_norm == nullptr || rms_norm_backward == nullptr || rotary == nullptr ||
+                rotary_backward == nullptr || swiglu == nullptr || swiglu_backward == nullptr) {
+                error = "Tile ops library is missing one or more LLaMA loop-composition symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> x(static_cast<std::size_t>(kElements));
+        std::vector<float> grad(static_cast<std::size_t>(kElements));
+        std::vector<float> inv_freq(static_cast<std::size_t>(kHeadDim / 2));
+        for (std::int64_t i = 0; i < kElements; ++i) {
+            x[static_cast<std::size_t>(i)] = 0.05f * static_cast<float>(i + 1);
+            grad[static_cast<std::size_t>(i)] = 0.02f * static_cast<float>((i % 7) + 1);
+        }
+        for (std::int64_t i = 0; i < kHeadDim / 2; ++i) {
+            inv_freq[static_cast<std::size_t>(i)] = 1.0f / std::pow(10000.0f, (2.0f * static_cast<float>(i)) / static_cast<float>(kHeadDim));
+        }
+
+        float* d_x = nullptr;
+        float* d_grad = nullptr;
+        float* d_out = nullptr;
+        float* d_grad_x = nullptr;
+        float* d_inv = nullptr;
+        float* d_gate_grad = nullptr;
+        float* d_up_grad = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_x, x.size(), "x") &&
+            alloc(&d_grad, grad.size(), "grad") &&
+            alloc(&d_out, x.size(), "out") &&
+            alloc(&d_grad_x, x.size(), "grad_x") &&
+            alloc(&d_inv, inv_freq.size(), "inv_freq") &&
+            alloc(&d_gate_grad, x.size(), "grad_gate") &&
+            alloc(&d_up_grad, x.size(), "grad_up")) {
+            int status = cuda_memcpy(d_x, x.data(), x.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy x H2D");
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(d_grad, grad.data(), grad.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad H2D");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(d_inv, inv_freq.data(), inv_freq.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy inv_freq H2D");
+                }
+            }
+            if (error.empty()) {
+                status = rms_norm(d_x, d_out, kRows, kDim, kEps, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rms_norm_float32");
+                }
+            }
+            if (error.empty()) {
+                status = rms_norm_backward(d_x, d_grad, d_grad_x, kRows, kDim, kEps, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rms_norm_backward_input_float32");
+                }
+            }
+            if (error.empty()) {
+                status = rotary(d_x, d_inv, d_out, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_float32");
+                }
+            }
+            if (error.empty()) {
+                status = rotary_backward(d_grad, d_inv, d_grad_x, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_backward_float32");
+                }
+            }
+            if (error.empty()) {
+                status = swiglu(d_x, d_grad, d_out, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_swiglu_float32");
+                }
+            }
+            if (error.empty()) {
+                status = swiglu_backward(d_x, d_grad, d_grad, d_gate_grad, d_up_grad, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_swiglu_backward_float32");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+            std::vector<float> actual_out(x.size(), 0.0f);
+            std::vector<float> actual_grad_x(x.size(), 0.0f);
+            std::vector<float> actual_gate_grad(x.size(), 0.0f);
+            std::vector<float> actual_up_grad(x.size(), 0.0f);
+            if (error.empty()) {
+                status = cuda_memcpy(actual_out.data(), d_out, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy out D2H");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(actual_grad_x.data(), d_grad_x, actual_grad_x.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad_x D2H");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(actual_gate_grad.data(), d_gate_grad, actual_gate_grad.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad_gate D2H");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(actual_up_grad.data(), d_up_grad, actual_up_grad.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad_up D2H");
+                }
+            }
+
+            std::vector<float> rms_expected(x.size(), 0.0f);
+            std::vector<float> rms_bwd_expected(x.size(), 0.0f);
+            for (std::int64_t row = 0; row < kRows; ++row) {
+                float sum_sq = 0.0f;
+                float dot = 0.0f;
+                for (std::int64_t d = 0; d < kDim; ++d) {
+                    const std::size_t idx = static_cast<std::size_t>(row * kDim + d);
+                    sum_sq += x[idx] * x[idx];
+                    dot += grad[idx] * x[idx];
+                }
+                const float inv_rms = 1.0f / std::sqrt(sum_sq / static_cast<float>(kDim) + kEps);
+                for (std::int64_t d = 0; d < kDim; ++d) {
+                    const std::size_t idx = static_cast<std::size_t>(row * kDim + d);
+                    rms_expected[idx] = x[idx] * inv_rms;
+                    rms_bwd_expected[idx] =
+                        grad[idx] * inv_rms -
+                        x[idx] * inv_rms * inv_rms * inv_rms * (dot / static_cast<float>(kDim));
+                }
+            }
+            std::vector<float> rotary_expected(x.size(), 0.0f);
+            std::vector<float> rotary_bwd_expected(x.size(), 0.0f);
+            for (std::int64_t idx = 0; idx < kElements; ++idx) {
+                const std::int64_t d = idx % kHeadDim;
+                const std::int64_t s = (idx / kHeadDim) % kSeqLen;
+                const std::int64_t pair = d % (kHeadDim / 2);
+                const std::int64_t base = idx - d;
+                const float angle = static_cast<float>(s) * inv_freq[static_cast<std::size_t>(pair)];
+                const float c = std::cos(angle);
+                const float sn = std::sin(angle);
+                const float x1 = x[static_cast<std::size_t>(base + pair)];
+                const float x2 = x[static_cast<std::size_t>(base + pair + kHeadDim / 2)];
+                const float g1 = grad[static_cast<std::size_t>(base + pair)];
+                const float g2 = grad[static_cast<std::size_t>(base + pair + kHeadDim / 2)];
+                rotary_expected[static_cast<std::size_t>(idx)] =
+                    d < kHeadDim / 2 ? (x1 * c + x2 * sn) : (-x1 * sn + x2 * c);
+                rotary_bwd_expected[static_cast<std::size_t>(idx)] =
+                    d < kHeadDim / 2 ? (g1 * c - g2 * sn) : (g1 * sn + g2 * c);
+            }
+            std::vector<float> swiglu_expected(x.size(), 0.0f);
+            std::vector<float> swiglu_gate_grad_expected(x.size(), 0.0f);
+            std::vector<float> swiglu_up_grad_expected(x.size(), 0.0f);
+            for (std::size_t i = 0; i < x.size(); ++i) {
+                const float sig = 1.0f / (1.0f + std::exp(-x[i]));
+                const float act = x[i] * sig;
+                const float dact = sig * (1.0f + x[i] * (1.0f - sig));
+                swiglu_expected[i] = act * grad[i];
+                swiglu_gate_grad_expected[i] = grad[i] * grad[i] * dact;
+                swiglu_up_grad_expected[i] = grad[i] * act;
+            }
+
+            if (error.empty()) {
+                rms_max_error = max_abs_error(actual_out, swiglu_expected);
+                swiglu_max_error = rms_max_error;
+                swiglu_backward_gate_max_error = max_abs_error(actual_gate_grad, swiglu_gate_grad_expected);
+                swiglu_backward_up_max_error = max_abs_error(actual_up_grad, swiglu_up_grad_expected);
+                // Re-run and copy each earlier stage for exact per-stage checks.
+                status = rms_norm(d_x, d_out, kRows, kDim, kEps, nullptr);
+                if (status == 0) {
+                    status = cuda_device_synchronize();
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(actual_out.data(), d_out, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "RMSNorm verification copy");
+                } else {
+                    rms_max_error = max_abs_error(actual_out, rms_expected);
+                }
+            }
+            if (error.empty()) {
+                status = rms_norm_backward(d_x, d_grad, d_grad_x, kRows, kDim, kEps, nullptr);
+                if (status == 0) {
+                    status = cuda_device_synchronize();
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(actual_grad_x.data(), d_grad_x, actual_grad_x.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "RMSNorm backward verification copy");
+                } else {
+                    rms_backward_max_error = max_abs_error(actual_grad_x, rms_bwd_expected);
+                }
+            }
+            if (error.empty()) {
+                status = rotary(d_x, d_inv, d_out, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status == 0) {
+                    status = cuda_device_synchronize();
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(actual_out.data(), d_out, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "RoPE verification copy");
+                } else {
+                    rotary_max_error = max_abs_error(actual_out, rotary_expected);
+                }
+            }
+            if (error.empty()) {
+                status = rotary_backward(d_grad, d_inv, d_grad_x, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status == 0) {
+                    status = cuda_device_synchronize();
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(actual_grad_x.data(), d_grad_x, actual_grad_x.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "RoPE backward verification copy");
+                } else {
+                    rotary_backward_max_error = max_abs_error(actual_grad_x, rotary_bwd_expected);
+                }
+            }
+            const float tolerance = 2e-6f;
+            passed = error.empty() &&
+                rms_max_error <= tolerance &&
+                rms_backward_max_error <= tolerance &&
+                rotary_max_error <= tolerance &&
+                rotary_backward_max_error <= tolerance &&
+                swiglu_max_error <= tolerance &&
+                swiglu_backward_gate_max_error <= tolerance &&
+                swiglu_backward_up_max_error <= tolerance;
+            if (!passed && error.empty()) {
+                error = "LLaMA loop-composition smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"llama_loop_composition\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"dim\": " << kDim
+        << ", \"heads\": " << kHeads << ", \"seq_len\": " << kSeqLen
+        << ", \"head_dim\": " << kHeadDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_rms_norm_float32\",\n"
+        << "    \"nfn_native_tile_rms_norm_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_rotary_embedding_float32\",\n"
+        << "    \"nfn_native_tile_rotary_embedding_backward_float32\",\n"
+        << "    \"nfn_native_tile_swiglu_float32\",\n"
+        << "    \"nfn_native_tile_swiglu_backward_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"rms_norm\":" << rms_max_error
+        << ", \"rms_norm_backward\":" << rms_backward_max_error
+        << ", \"rotary\":" << rotary_max_error
+        << ", \"rotary_backward\":" << rotary_backward_max_error
+        << ", \"swiglu\":" << swiglu_max_error
+        << ", \"swiglu_backward_gate\":" << swiglu_backward_gate_max_error
+        << ", \"swiglu_backward_up\":" << swiglu_backward_up_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
     try {
+        if (cfg.smoke_llama_loop) {
+            return print_llama_loop_smoke_json(cfg, argv[0]);
+        }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);
             return 0;

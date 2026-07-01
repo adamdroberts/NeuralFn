@@ -500,8 +500,12 @@ missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
 wired. LLaMA-family missing requirements now name RMSNorm, RoPE-attention,
 SwiGLU/GEGLU MLP, and untied/template LM-head loop composition because the
-RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present. Real training
-still fails until the family-specific CUDA Tile loop is
+RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present.
+`nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
+`nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
+launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on
+CUDA and verify them against CPU references without Torch. Real training still
+fails until the family-specific CUDA Tile loop is
 implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
