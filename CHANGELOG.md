@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a semantic hash/alignment native CUDA smoke for semantic-family
+  compiled preflights. `nfn_semantic_router_moe_native_train
+  --smoke-semantic-alignment-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model semantic-router-moe
+  --native-cuda-smoke-semantic-alignment-step` alias now execute semantic hash
+  and semantic alignment loss-item kernels through raw CUDA Tile ABI calls with
+  CPU-reference checks for hash bits, per-item losses, valid counts, and
+  aggregate loss/count. Semantic dense JEPA and semantic router/MoE
+  catalog/preflight JSON now report
+  `semantic-hash-alignment-loss-items-smoke` in
+  `native_training_completed_requirements`, while full semantic planner/router,
+  device reduction, objective composition, checkpointing, and inference wiring
+  remain visible in the missing list. Real semantic-family training remains
+  `family-native-loop-missing` until those full loops are implemented.
+  Verification: rebuilt dense GPT native CLIs, GPT-2 compatibility CLI,
+  missing-family native trainers, and unified native CLIs; live CUDA semantic
+  smoke passed with zero max error; focused catalog and missing-family dispatch
+  pytest passed (`2 passed`); the no-Torch verifier passed 30 artifact scans,
+  69 Python entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a JEPA projector/predictor native train-step CUDA smoke for
   missing-family compiled preflights. `nfn_jepa_native_train
   --smoke-jepa-projector-step --tile-ops-lib PATH` and the unified

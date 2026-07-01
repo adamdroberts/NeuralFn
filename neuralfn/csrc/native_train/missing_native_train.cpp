@@ -66,6 +66,7 @@ struct Config {
     bool smoke_llama_lm_head_step = false;
     bool smoke_moe_route_expert_step = false;
     bool smoke_jepa_projector_step = false;
+    bool smoke_semantic_alignment_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -250,6 +251,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -284,6 +286,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
+        } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
+            cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -2354,6 +2358,396 @@ int print_jepa_projector_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using SemanticHashFn = int (*)(
+        const float*, const float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SemanticAlignmentLossItemsFn = int (*)(
+        const float*, const std::int64_t*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    SemanticHashFn semantic_hash = nullptr;
+    SemanticAlignmentLossItemsFn semantic_alignment_loss_items = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kDims = 3;
+    constexpr std::int64_t kTerms = 4;
+    constexpr std::int64_t kTables = 2;
+    constexpr std::int64_t kPlanes = 3;
+    constexpr std::int64_t kIgnoreIndex = -1;
+    constexpr std::int64_t kLogitElements = kRows * kDims * kTerms;
+    constexpr std::int64_t kItemElements = kRows * kDims;
+    constexpr std::int64_t kHashElements = kRows * kTables;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto max_i64_error = [](const std::vector<std::int64_t>& actual, const std::vector<std::int64_t>& expected) {
+        std::int64_t max_err = 0;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::int64_t err = static_cast<std::int64_t>(std::llabs(actual[i] - expected[i]));
+            max_err = std::max(max_err, err);
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    std::int64_t semantic_hash_max_error = 0;
+    float semantic_loss_items_max_error = 0.0f;
+    float semantic_count_items_max_error = 0.0f;
+    float semantic_loss_sum_max_error = 0.0f;
+    float semantic_count_sum_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!semantic_family) {
+        error = "Semantic smoke commands are only valid for semantic-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            semantic_hash = load_symbol<SemanticHashFn>(tile_handle, "nfn_native_tile_semantic_hash_int64");
+            semantic_alignment_loss_items = load_symbol<SemanticAlignmentLossItemsFn>(
+                tile_handle, "nfn_native_tile_semantic_alignment_loss_items_float32");
+            if (semantic_hash == nullptr || semantic_alignment_loss_items == nullptr) {
+                error = "Tile ops library is missing one or more semantic alignment symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> sem_vec = {
+            0.25f, -0.5f, 0.75f,
+            -0.2f, 0.4f, 0.1f,
+        };
+        const std::vector<float> projection = {
+            0.5f, 0.25f, -0.1f,
+            -0.4f, 0.2f, 0.3f,
+            0.1f, -0.7f, 0.4f,
+            -0.3f, 0.6f, 0.2f,
+            0.8f, -0.1f, -0.5f,
+            0.2f, 0.3f, 0.4f,
+        };
+        std::vector<float> logits(static_cast<std::size_t>(kLogitElements));
+        for (std::int64_t i = 0; i < kLogitElements; ++i) {
+            logits[static_cast<std::size_t>(i)] = 0.07f * static_cast<float>(static_cast<int>(i % 9) - 4);
+        }
+        const std::vector<std::int64_t> targets = {
+            1, 2, kIgnoreIndex,
+            0, 1, 2,
+        };
+        const std::vector<std::int64_t> term_counts = {3, 2, 4};
+
+        std::vector<std::int64_t> expected_hash(static_cast<std::size_t>(kHashElements), 0);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t table = 0; table < kTables; ++table) {
+                std::int64_t hash = 0;
+                for (std::int64_t plane = 0; plane < kPlanes; ++plane) {
+                    float dot = 0.0f;
+                    for (std::int64_t dim = 0; dim < kDims; ++dim) {
+                        dot += sem_vec[static_cast<std::size_t>(row * kDims + dim)] *
+                            projection[static_cast<std::size_t>((table * kPlanes + plane) * kDims + dim)];
+                    }
+                    if (dot > 0.0f) {
+                        hash |= (static_cast<std::int64_t>(1) << plane);
+                    }
+                }
+                expected_hash[static_cast<std::size_t>(row * kTables + table)] = hash;
+            }
+        }
+
+        std::vector<float> expected_losses(static_cast<std::size_t>(kItemElements), 0.0f);
+        std::vector<float> expected_counts(static_cast<std::size_t>(kItemElements), 0.0f);
+        float expected_loss_sum = 0.0f;
+        float expected_count_sum = 0.0f;
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t dim = 0; dim < kDims; ++dim) {
+                const std::size_t item_idx = static_cast<std::size_t>(row * kDims + dim);
+                const std::int64_t target = targets[item_idx];
+                const std::int64_t term_count = std::min<std::int64_t>(term_counts[static_cast<std::size_t>(dim)], kTerms);
+                if (target == kIgnoreIndex || target < 0 || target >= term_count) {
+                    continue;
+                }
+                const std::int64_t base = (row * kDims + dim) * kTerms;
+                float max_value = -3.4028234663852886e38f;
+                for (std::int64_t term = 0; term < term_count; ++term) {
+                    max_value = std::max(max_value, logits[static_cast<std::size_t>(base + term)]);
+                }
+                float sum_exp = 0.0f;
+                for (std::int64_t term = 0; term < term_count; ++term) {
+                    sum_exp += std::exp(logits[static_cast<std::size_t>(base + term)] - max_value);
+                }
+                const float loss =
+                    std::log(sum_exp) + max_value - logits[static_cast<std::size_t>(base + target)];
+                expected_losses[item_idx] = loss;
+                expected_counts[item_idx] = 1.0f;
+                expected_loss_sum += loss;
+                expected_count_sum += 1.0f;
+            }
+        }
+
+        float* d_sem_vec = nullptr;
+        float* d_projection = nullptr;
+        float* d_logits = nullptr;
+        float* d_losses = nullptr;
+        float* d_counts = nullptr;
+        std::int64_t* d_hash = nullptr;
+        std::int64_t* d_targets = nullptr;
+        std::int64_t* d_term_counts = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_sem_vec, sem_vec.size(), "sem_vec") &&
+            alloc(&d_projection, projection.size(), "projection") &&
+            alloc(&d_logits, logits.size(), "logits") &&
+            alloc(&d_losses, kItemElements, "losses") &&
+            alloc(&d_counts, kItemElements, "counts") &&
+            alloc_i64(&d_hash, kHashElements, "hash") &&
+            alloc_i64(&d_targets, targets.size(), "targets") &&
+            alloc_i64(&d_term_counts, term_counts.size(), "term_counts")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_sem_vec, sem_vec, "sem_vec") &&
+                copy_float(d_projection, projection, "projection") &&
+                copy_float(d_logits, logits, "logits") &&
+                copy_i64(d_targets, targets, "targets") &&
+                copy_i64(d_term_counts, term_counts, "term_counts");
+        }
+        int status = 0;
+        if (error.empty()) {
+            status = semantic_hash(d_sem_vec, d_projection, d_hash, kRows, kDims, kTables, kPlanes, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_semantic_hash_int64");
+            }
+        }
+        if (error.empty()) {
+            status = semantic_alignment_loss_items(
+                d_logits,
+                d_targets,
+                d_term_counts,
+                d_losses,
+                d_counts,
+                kItemElements,
+                kDims,
+                kTerms,
+                kIgnoreIndex,
+                nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_semantic_alignment_loss_items_float32");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_device_synchronize();
+            if (status != 0) {
+                error = cuda_error(status, "cudaDeviceSynchronize");
+            }
+        }
+
+        std::vector<std::int64_t> actual_hash(static_cast<std::size_t>(kHashElements), 0);
+        std::vector<float> actual_losses(static_cast<std::size_t>(kItemElements), 0.0f);
+        std::vector<float> actual_counts(static_cast<std::size_t>(kItemElements), 0.0f);
+        auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        auto copy_back_i64 = [&](std::vector<std::int64_t>& dst, const std::int64_t* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        if (error.empty()) {
+            copy_back_i64(actual_hash, d_hash, "hash") &&
+                copy_back_float(actual_losses, d_losses, "losses") &&
+                copy_back_float(actual_counts, d_counts, "counts");
+        }
+        if (error.empty()) {
+            float actual_loss_sum = 0.0f;
+            float actual_count_sum = 0.0f;
+            for (float value : actual_losses) {
+                actual_loss_sum += value;
+            }
+            for (float value : actual_counts) {
+                actual_count_sum += value;
+            }
+            semantic_hash_max_error = max_i64_error(actual_hash, expected_hash);
+            semantic_loss_items_max_error = max_abs_error(actual_losses, expected_losses);
+            semantic_count_items_max_error = max_abs_error(actual_counts, expected_counts);
+            semantic_loss_sum_max_error = std::fabs(actual_loss_sum - expected_loss_sum);
+            semantic_count_sum_max_error = std::fabs(actual_count_sum - expected_count_sum);
+        }
+        constexpr float kTolerance = 2e-6f;
+        passed = error.empty() &&
+            semantic_hash_max_error == 0 &&
+            semantic_loss_items_max_error <= kTolerance &&
+            semantic_count_items_max_error <= kTolerance &&
+            semantic_loss_sum_max_error <= kTolerance &&
+            semantic_count_sum_max_error <= kTolerance;
+        if (!passed && error.empty()) {
+            error = "Semantic alignment smoke exceeded tolerance";
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"semantic_alignment_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"dims\": " << kDims
+        << ", \"terms\": " << kTerms << ", \"tables\": " << kTables
+        << ", \"planes\": " << kPlanes << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_semantic_hash_int64\",\n"
+        << "    \"nfn_native_tile_semantic_alignment_loss_items_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"semantic_hash\":" << semantic_hash_max_error
+        << ", \"semantic_loss_items\":" << semantic_loss_items_max_error
+        << ", \"semantic_count_items\":" << semantic_count_items_max_error
+        << ", \"semantic_loss_sum\":" << semantic_loss_sum_max_error
+        << ", \"semantic_count_sum\":" << semantic_count_sum_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -2367,6 +2761,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_semantic_alignment_step) {
+            return print_semantic_alignment_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

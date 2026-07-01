@@ -525,7 +525,10 @@ missing requirements keep the full family loop, JEPA or semantic objectives,
 checkpointing, and inference wiring visible. JEPA-family entries now list the
 completed projector/predictor/latent-loss CUDA smoke while keeping target
 encoder, full objective composition, checkpointing, and inference wiring in the
-missing list.
+missing list. Semantic-family entries now list the completed semantic
+hash/alignment-loss-items CUDA smoke while keeping full semantic planner/router,
+device reduction, objective composition, checkpointing, and inference wiring in
+the missing list.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on
@@ -544,8 +547,12 @@ load-balance density/loss, and AdamW as a raw CUDA Tile train-step slice. Use
 `nfn_jepa_native_train --smoke-jepa-projector-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-jepa-projector-step` alias on JEPA families to run
 projector/predictor linear stages, latent MSE partials, linear backward, and
-AdamW as a raw CUDA Tile train-step slice. Real training still fails until the
-family-specific CUDA Tile loop is implemented.
+AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_semantic_router_moe_native_train --smoke-semantic-alignment-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-semantic-alignment-step` alias on semantic families to run
+semantic hash and alignment loss-item kernels as a raw CUDA Tile slice. Real
+training still fails until the family-specific CUDA Tile loop is implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

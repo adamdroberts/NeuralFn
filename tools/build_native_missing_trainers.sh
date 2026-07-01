@@ -75,13 +75,13 @@ build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-dense-jepa-objective" \
   "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,jepa-target-encoder-forward,ar-plus-semantic-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "jepa-projector-predictor-latent-loss-smoke"
+  "jepa-projector-predictor-latent-loss-smoke,semantic-hash-alignment-loss-items-smoke"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-moe-router-jepa-objective" \
   "semantic-target-shard-resolver,semantic-router-forward-backward,semantic-expert-dispatch-combine,route-selection-distillation-balance-losses,route-evo-device-controller,ar-plus-semantic-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke"
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,semantic-hash-alignment-loss-items-smoke"
 build_one "deepseek-v4" "nfn_deepseek_v4_native_train" \
   "DeepSeek sparse attention, MoE routing, and native optimizer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

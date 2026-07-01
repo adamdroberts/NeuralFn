@@ -5249,6 +5249,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert missing_requirements["gpt2"] == []
 
 
@@ -11271,6 +11272,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_payload["native_training_coverage_class"] == "missing-semantic-dense-jepa-objective"
     assert semantic_dense_payload["native_training_completed_requirements"] == [
         "jepa-projector-predictor-latent-loss-smoke",
+        "semantic-hash-alignment-loss-items-smoke",
     ]
     assert semantic_dense_payload["compiled_native_boundary"] is True
     assert semantic_dense_payload["torch_required"] is False
@@ -11312,6 +11314,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
+        "semantic-hash-alignment-loss-items-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
     assert semantic_router_payload["torch_required"] is False
@@ -11532,6 +11535,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-jepa-projector-step" in unified_jepa_smoke_command.stdout
     assert "--tile-ops-lib" in unified_jepa_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_jepa_smoke_command.stdout
+
+    unified_semantic_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-smoke-semantic-alignment-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_semantic_smoke_command.returncode == 0, unified_semantic_smoke_command.stderr
+    assert str(semantic_router_moe) in unified_semantic_smoke_command.stdout
+    assert "--smoke-semantic-alignment-step" in unified_semantic_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

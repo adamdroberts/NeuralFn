@@ -979,11 +979,19 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
              template_name.find("jepa") != std::string::npos)) {
             completed.push_back("jepa-projector-predictor-latent-loss-smoke");
         }
+        if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
+            completed.push_back("semantic-hash-alignment-loss-items-smoke");
+        }
         return completed;
     }
-    if (coverage_class == "missing-dense-jepa-objective" ||
-        coverage_class == "missing-semantic-dense-jepa-objective") {
+    if (coverage_class == "missing-dense-jepa-objective") {
         return {"jepa-projector-predictor-latent-loss-smoke"};
+    }
+    if (coverage_class == "missing-semantic-dense-jepa-objective") {
+        return {
+            "jepa-projector-predictor-latent-loss-smoke",
+            "semantic-hash-alignment-loss-items-smoke",
+        };
     }
     return {};
 }
