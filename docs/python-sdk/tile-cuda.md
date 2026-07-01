@@ -517,7 +517,8 @@ missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 wired. LLaMA-family entries now separate completed smoke-backed slices from the
 remaining blockers: `native_training_completed_requirements` names RMSNorm,
 RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
-token-LM embedding/CE/backward/AdamW, packed-QKV attention forward/backward,
+token-LM embedding/CE/backward/AdamW, composed token/block/LM AdamW,
+packed-QKV attention forward/backward,
 RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
 RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
 and family
@@ -555,7 +556,11 @@ AdamW slice. Use
 or the unified `--native-cuda-smoke-llama-token-lm-train-step` alias to cover
 the token-ID to loss path: token embedding, LM logits, token CE
 forward/backward, LM-head backward, token embedding weight backward, and AdamW
-without Torch or graph-editor tensor flow. Use `nfn_llama_native_train
+without Torch or graph-editor tensor flow. Use
+`nfn_llama_native_train --smoke-llama-composed-train-step --tile-ops-lib PATH`
+or the unified `--native-cuda-smoke-llama-composed-train-step` alias to run
+that token-LM path alongside RMSNorm, RoPE, and SwiGLU forward/backward as an
+explicit composed no-Torch coverage smoke. Use `nfn_llama_native_train
 --smoke-llama-packed-attention-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-llama-packed-attention-step` alias to cover packed-QKV

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added an explicit LLaMA-family composed token/block/LM train-step native
+  smoke. `nfn_llama_native_train --smoke-llama-composed-train-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-composed-train-step` alias now run the token-LM
+  train-step alongside RMSNorm, RoPE, and SwiGLU forward/backward as one
+  compiled CUDA Tile coverage smoke with `torch_required: false` and
+  `graph_editor_tensor_flow: false`. LLaMA-family catalog/preflight JSON now
+  reports `composed-token-block-lm-adamw-smoke` as completed while keeping
+  `llama-full-forward-backward-loop` as the remaining real trainer-loop
+  blocker. Verification: rebuilt the missing-family native trainers, unified
+  native frontends, dense GPT catalog binaries, and the linked dense GPT
+  binary; live CUDA direct and unified composed LLaMA smokes passed.
+
 - Added a LLaMA-family token-LM train-step native smoke.
   `nfn_llama_native_train --smoke-llama-token-lm-train-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama
