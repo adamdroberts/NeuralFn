@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Added a MoE route/expert native train-step CUDA smoke for missing-family
+  compiled preflights. `nfn_moe_jepa_evo_native_train
+  --smoke-moe-route-expert-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model moe-jepa-evo
+  --native-cuda-smoke-moe-route-expert-step` alias now execute top-k routing,
+  route broadcast, routed SwiGLU expert forward/backward, route-balance
+  density/loss, and AdamW through raw CUDA Tile ABI calls with CPU-reference
+  checks. Standard MoE, MoE+JEPA, and semantic MoE catalog/preflight JSON now
+  reports `router-topk-broadcast-smoke`,
+  `routed-swiglu-expert-forward-backward-smoke`, and
+  `load-balance-loss-adamw-smoke` in
+  `native_training_completed_requirements`, while the missing list is narrowed
+  to full family-loop integration, JEPA or semantic objectives, checkpointing,
+  and inference wiring. Real MoE-family training remains
+  `family-native-loop-missing` until those full loops are implemented.
+  Verification: rebuilt the Tile ops library, dense GPT native CLIs, GPT-2
+  compatibility CLI, missing-family native trainers, and unified native CLIs;
+  live CUDA MoE smoke passed with max errors at or below `3.72529e-09`; focused
+  catalog and missing-family dispatch pytest passed (`2 passed`); the no-Torch
+  verifier passed 30 artifact scans, 69 Python entrypoints, 24 shell
+  entrypoints, and 4 native template catalogs.
+
 - Added `native_training_completed_requirements` to compiled dense GPT template
   catalog, per-template plan JSON, and missing-family preflight JSON. LLaMA
   coverage now reports the RMSNorm, RoPE, SwiGLU/GEGLU, and LM-head

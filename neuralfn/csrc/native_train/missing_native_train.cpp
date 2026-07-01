@@ -64,6 +64,7 @@ struct Config {
     bool smoke_llama_loop = false;
     bool smoke_llama_train_step = false;
     bool smoke_llama_lm_head_step = false;
+    bool smoke_moe_route_expert_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -246,6 +247,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
+        << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -276,6 +278,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_train_step = true;
         } else if (arg == "--smoke-llama-lm-head-step" || arg == "--native-cuda-smoke-llama-lm-head-step") {
             cfg.smoke_llama_lm_head_step = true;
+        } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
+            cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -1255,6 +1259,637 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_moe_route_expert_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool moe_family =
+        family.find("moe") != std::string::npos ||
+        family.find("mixllama") != std::string::npos ||
+        family.find("deepseek") != std::string::npos ||
+        family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using TopKRouteFn = int (*)(const float*, float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using BroadcastExpertRoutesFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MoeSwiGluForwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MoeSwiGluBackwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*, const float*,
+        float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using RouteBalanceDensityFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
+    using RouteBalanceLossFn = int (*)(const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    TopKRouteFn topk_route = nullptr;
+    BroadcastExpertRoutesFn broadcast_routes = nullptr;
+    MoeSwiGluForwardFn moe_forward = nullptr;
+    MoeSwiGluBackwardFn moe_backward = nullptr;
+    RouteBalanceDensityFn route_density = nullptr;
+    RouteBalanceLossFn route_loss = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRouteRows = 1;
+    constexpr std::int64_t kBatch = 1;
+    constexpr std::int64_t kSeqLen = 2;
+    constexpr std::int64_t kTokens = kBatch * kSeqLen;
+    constexpr std::int64_t kDim = 3;
+    constexpr std::int64_t kHidden = 2;
+    constexpr std::int64_t kExperts = 3;
+    constexpr std::int64_t kTopK = 2;
+    constexpr std::int64_t kRouteElements = kRouteRows * kTopK;
+    constexpr std::int64_t kBroadcastRouteElements = kTokens * kTopK;
+    constexpr std::int64_t kTokenElements = kTokens * kDim;
+    constexpr std::int64_t kW13Elements = kExperts * kDim * kHidden;
+    constexpr std::int64_t kW2Elements = kExperts * kHidden * kDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto max_i64_error = [](const std::vector<std::int64_t>& actual, const std::vector<std::int64_t>& expected) {
+        std::int64_t max_err = 0;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::int64_t err = static_cast<std::int64_t>(std::llabs(actual[i] - expected[i]));
+            max_err = std::max(max_err, err);
+        }
+        return max_err;
+    };
+    auto silu = [](float value) {
+        const float sig = 1.0f / (1.0f + std::exp(-value));
+        return value * sig;
+    };
+    auto dsilu = [](float value) {
+        const float sig = 1.0f / (1.0f + std::exp(-value));
+        return sig * (1.0f + value * (1.0f - sig));
+    };
+
+    bool passed = false;
+    float topk_weight_max_error = 0.0f;
+    std::int64_t topk_index_max_error = 0;
+    float broadcast_weight_max_error = 0.0f;
+    std::int64_t broadcast_index_max_error = 0;
+    float moe_forward_max_error = 0.0f;
+    float moe_grad_x_max_error = 0.0f;
+    float moe_grad_w1_max_error = 0.0f;
+    float moe_grad_w2_max_error = 0.0f;
+    float moe_grad_w3_max_error = 0.0f;
+    float balance_density_max_error = 0.0f;
+    float balance_loss_max_error = 0.0f;
+    float adamw_w1_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!moe_family) {
+        error = "MoE smoke commands are only valid for MoE-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            topk_route = load_symbol<TopKRouteFn>(tile_handle, "nfn_native_tile_topk_route_float32");
+            broadcast_routes = load_symbol<BroadcastExpertRoutesFn>(
+                tile_handle, "nfn_native_tile_broadcast_expert_routes_float32");
+            moe_forward = load_symbol<MoeSwiGluForwardFn>(
+                tile_handle, "nfn_native_tile_moe_swiglu_forward_float32");
+            moe_backward = load_symbol<MoeSwiGluBackwardFn>(
+                tile_handle, "nfn_native_tile_moe_swiglu_backward_float32");
+            route_density = load_symbol<RouteBalanceDensityFn>(
+                tile_handle, "nfn_native_tile_route_balance_density_float32");
+            route_loss = load_symbol<RouteBalanceLossFn>(
+                tile_handle, "nfn_native_tile_route_balance_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (topk_route == nullptr || broadcast_routes == nullptr || moe_forward == nullptr ||
+                moe_backward == nullptr || route_density == nullptr || route_loss == nullptr ||
+                fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more MoE route/expert train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> route_logits = {0.1f, 0.5f, -0.2f};
+        const std::vector<float> x = {
+            0.2f, -0.1f, 0.3f,
+            -0.4f, 0.5f, 0.1f,
+        };
+        const std::vector<float> grad_out = {
+            0.1f, -0.2f, 0.05f,
+            0.03f, 0.07f, -0.04f,
+        };
+        std::vector<float> w1(static_cast<std::size_t>(kW13Elements));
+        std::vector<float> w2(static_cast<std::size_t>(kW2Elements));
+        std::vector<float> w3(static_cast<std::size_t>(kW13Elements));
+        for (std::size_t i = 0; i < w1.size(); ++i) {
+            w1[i] = 0.02f * static_cast<float>((i % 7) + 1);
+            w3[i] = -0.015f * static_cast<float>((i % 5) + 1);
+        }
+        for (std::size_t i = 0; i < w2.size(); ++i) {
+            w2[i] = 0.01f * static_cast<float>(static_cast<int>(i % 11) - 5);
+        }
+
+        float* d_route_logits = nullptr;
+        float* d_route_weights = nullptr;
+        float* d_broadcast_weights = nullptr;
+        float* d_x = nullptr;
+        float* d_w1 = nullptr;
+        float* d_w2 = nullptr;
+        float* d_w3 = nullptr;
+        float* d_out = nullptr;
+        float* d_grad_out = nullptr;
+        float* d_grad_x = nullptr;
+        float* d_grad_w1 = nullptr;
+        float* d_grad_w2 = nullptr;
+        float* d_grad_w3 = nullptr;
+        float* d_density = nullptr;
+        float* d_balance_loss = nullptr;
+        float* d_w1_exp_avg = nullptr;
+        float* d_w1_exp_avg_sq = nullptr;
+        std::int64_t* d_route_indices = nullptr;
+        std::int64_t* d_broadcast_indices = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_route_logits, route_logits.size(), "route_logits") &&
+            alloc(&d_route_weights, kRouteElements, "route_weights") &&
+            alloc_i64(&d_route_indices, kRouteElements, "route_indices") &&
+            alloc(&d_broadcast_weights, kBroadcastRouteElements, "broadcast_weights") &&
+            alloc_i64(&d_broadcast_indices, kBroadcastRouteElements, "broadcast_indices") &&
+            alloc(&d_x, x.size(), "x") &&
+            alloc(&d_w1, w1.size(), "w1") &&
+            alloc(&d_w2, w2.size(), "w2") &&
+            alloc(&d_w3, w3.size(), "w3") &&
+            alloc(&d_out, kTokenElements, "out") &&
+            alloc(&d_grad_out, grad_out.size(), "grad_out") &&
+            alloc(&d_grad_x, kTokenElements, "grad_x") &&
+            alloc(&d_grad_w1, w1.size(), "grad_w1") &&
+            alloc(&d_grad_w2, w2.size(), "grad_w2") &&
+            alloc(&d_grad_w3, w3.size(), "grad_w3") &&
+            alloc(&d_density, kExperts, "density") &&
+            alloc(&d_balance_loss, 1, "balance_loss") &&
+            alloc(&d_w1_exp_avg, w1.size(), "w1_exp_avg") &&
+            alloc(&d_w1_exp_avg_sq, w1.size(), "w1_exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            if (copy_float(d_route_logits, route_logits, "route_logits") &&
+                copy_float(d_x, x, "x") &&
+                copy_float(d_w1, w1, "w1") &&
+                copy_float(d_w2, w2, "w2") &&
+                copy_float(d_w3, w3, "w3") &&
+                copy_float(d_grad_out, grad_out, "grad_out")) {
+                int status = fill(d_grad_x, kTokenElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_grad_w1, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_grad_w2, kW2Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_grad_w3, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_w1_exp_avg, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_w1_exp_avg_sq, kW13Elements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero MoE gradients/moments");
+                }
+            }
+            int status = 0;
+            if (error.empty()) {
+                status = topk_route(d_route_logits, d_route_weights, d_route_indices, kRouteRows, kExperts, kTopK, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_topk_route_float32");
+                }
+            }
+            if (error.empty()) {
+                status = broadcast_routes(
+                    d_route_weights,
+                    d_route_indices,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    kBatch,
+                    kRouteRows,
+                    kSeqLen,
+                    kTopK,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_broadcast_expert_routes_float32");
+                }
+            }
+            if (error.empty()) {
+                status = moe_forward(
+                    d_x,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    d_w1,
+                    d_w2,
+                    d_w3,
+                    d_out,
+                    kTokens,
+                    kDim,
+                    kHidden,
+                    kExperts,
+                    kTopK,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_moe_swiglu_forward_float32");
+                }
+            }
+            if (error.empty()) {
+                status = moe_backward(
+                    d_x,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    d_w1,
+                    d_w2,
+                    d_w3,
+                    d_grad_out,
+                    d_grad_x,
+                    d_grad_w1,
+                    d_grad_w2,
+                    d_grad_w3,
+                    kTokens,
+                    kDim,
+                    kHidden,
+                    kExperts,
+                    kTopK,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_moe_swiglu_backward_float32");
+                }
+            }
+            if (error.empty()) {
+                status = route_density(d_route_logits, d_density, kRouteRows, kExperts, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_route_balance_density_float32");
+                }
+            }
+            if (error.empty()) {
+                status = route_loss(d_density, d_balance_loss, kExperts, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_route_balance_loss_float32");
+                }
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_w1,
+                    d_grad_w1,
+                    d_w1_exp_avg,
+                    d_w1_exp_avg_sq,
+                    kW13Elements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 w1");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_route_weights(static_cast<std::size_t>(kRouteElements), 0.0f);
+            std::vector<std::int64_t> actual_route_indices(static_cast<std::size_t>(kRouteElements), 0);
+            std::vector<float> actual_broadcast_weights(static_cast<std::size_t>(kBroadcastRouteElements), 0.0f);
+            std::vector<std::int64_t> actual_broadcast_indices(static_cast<std::size_t>(kBroadcastRouteElements), 0);
+            std::vector<float> actual_out(static_cast<std::size_t>(kTokenElements), 0.0f);
+            std::vector<float> actual_grad_x(static_cast<std::size_t>(kTokenElements), 0.0f);
+            std::vector<float> actual_grad_w1(w1.size(), 0.0f);
+            std::vector<float> actual_grad_w2(w2.size(), 0.0f);
+            std::vector<float> actual_grad_w3(w3.size(), 0.0f);
+            std::vector<float> actual_density(static_cast<std::size_t>(kExperts), 0.0f);
+            std::vector<float> actual_balance_loss(1, 0.0f);
+            std::vector<float> actual_w1(w1.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_back_i64 = [&](std::vector<std::int64_t>& dst, const std::int64_t* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_route_weights, d_route_weights, "route_weights") &&
+                    copy_back_i64(actual_route_indices, d_route_indices, "route_indices") &&
+                    copy_back_float(actual_broadcast_weights, d_broadcast_weights, "broadcast_weights") &&
+                    copy_back_i64(actual_broadcast_indices, d_broadcast_indices, "broadcast_indices") &&
+                    copy_back_float(actual_out, d_out, "out") &&
+                    copy_back_float(actual_grad_x, d_grad_x, "grad_x") &&
+                    copy_back_float(actual_grad_w1, d_grad_w1, "grad_w1") &&
+                    copy_back_float(actual_grad_w2, d_grad_w2, "grad_w2") &&
+                    copy_back_float(actual_grad_w3, d_grad_w3, "grad_w3") &&
+                    copy_back_float(actual_density, d_density, "density") &&
+                    copy_back_float(actual_balance_loss, d_balance_loss, "balance_loss") &&
+                    copy_back_float(actual_w1, d_w1, "w1_updated");
+            }
+
+            std::vector<float> expected_route_weights(static_cast<std::size_t>(kRouteElements), 0.0f);
+            std::vector<std::int64_t> expected_route_indices = {1, 0};
+            const float top_max = route_logits[1];
+            const float denom = std::exp(route_logits[1] - top_max) + std::exp(route_logits[0] - top_max);
+            expected_route_weights[0] = std::exp(route_logits[1] - top_max) / denom;
+            expected_route_weights[1] = std::exp(route_logits[0] - top_max) / denom;
+            std::vector<float> expected_broadcast_weights(static_cast<std::size_t>(kBroadcastRouteElements), 0.0f);
+            std::vector<std::int64_t> expected_broadcast_indices(static_cast<std::size_t>(kBroadcastRouteElements), 0);
+            for (std::int64_t token = 0; token < kTokens; ++token) {
+                for (std::int64_t k = 0; k < kTopK; ++k) {
+                    expected_broadcast_weights[static_cast<std::size_t>(token * kTopK + k)] =
+                        expected_route_weights[static_cast<std::size_t>(k)];
+                    expected_broadcast_indices[static_cast<std::size_t>(token * kTopK + k)] =
+                        expected_route_indices[static_cast<std::size_t>(k)];
+                }
+            }
+
+            std::vector<float> expected_out(static_cast<std::size_t>(kTokenElements), 0.0f);
+            std::vector<float> expected_grad_x(static_cast<std::size_t>(kTokenElements), 0.0f);
+            std::vector<float> expected_grad_w1(w1.size(), 0.0f);
+            std::vector<float> expected_grad_w2(w2.size(), 0.0f);
+            std::vector<float> expected_grad_w3(w3.size(), 0.0f);
+            for (std::int64_t token = 0; token < kTokens; ++token) {
+                for (std::int64_t k = 0; k < kTopK; ++k) {
+                    const std::int64_t expert = expected_broadcast_indices[static_cast<std::size_t>(token * kTopK + k)];
+                    const float route_weight = expected_broadcast_weights[static_cast<std::size_t>(token * kTopK + k)];
+                    std::vector<float> gate(static_cast<std::size_t>(kHidden), 0.0f);
+                    std::vector<float> up(static_cast<std::size_t>(kHidden), 0.0f);
+                    std::vector<float> hidden(static_cast<std::size_t>(kHidden), 0.0f);
+                    for (std::int64_t h = 0; h < kHidden; ++h) {
+                        for (std::int64_t d = 0; d < kDim; ++d) {
+                            const float xv = x[static_cast<std::size_t>(token * kDim + d)];
+                            const std::size_t w13_idx = static_cast<std::size_t>((expert * kDim + d) * kHidden + h);
+                            gate[static_cast<std::size_t>(h)] += xv * w1[w13_idx];
+                            up[static_cast<std::size_t>(h)] += xv * w3[w13_idx];
+                        }
+                        hidden[static_cast<std::size_t>(h)] = silu(gate[static_cast<std::size_t>(h)]) * up[static_cast<std::size_t>(h)];
+                    }
+                    for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                        float expert_acc = 0.0f;
+                        for (std::int64_t h = 0; h < kHidden; ++h) {
+                            const std::size_t w2_idx = static_cast<std::size_t>((expert * kHidden + h) * kDim + out_d);
+                            expert_acc += hidden[static_cast<std::size_t>(h)] * w2[w2_idx];
+                        }
+                        expected_out[static_cast<std::size_t>(token * kDim + out_d)] += route_weight * expert_acc;
+                    }
+                    for (std::int64_t h = 0; h < kHidden; ++h) {
+                        float grad_hidden = 0.0f;
+                        for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                            const std::size_t w2_idx = static_cast<std::size_t>((expert * kHidden + h) * kDim + out_d);
+                            const float grad_expert_out =
+                                route_weight * grad_out[static_cast<std::size_t>(token * kDim + out_d)];
+                            expected_grad_w2[w2_idx] += hidden[static_cast<std::size_t>(h)] * grad_expert_out;
+                            grad_hidden += grad_expert_out * w2[w2_idx];
+                        }
+                        const float grad_up = grad_hidden * silu(gate[static_cast<std::size_t>(h)]);
+                        const float grad_gate =
+                            grad_hidden * up[static_cast<std::size_t>(h)] * dsilu(gate[static_cast<std::size_t>(h)]);
+                        for (std::int64_t d = 0; d < kDim; ++d) {
+                            const float xv = x[static_cast<std::size_t>(token * kDim + d)];
+                            const std::size_t w13_idx = static_cast<std::size_t>((expert * kDim + d) * kHidden + h);
+                            expected_grad_w1[w13_idx] += xv * grad_gate;
+                            expected_grad_w3[w13_idx] += xv * grad_up;
+                            expected_grad_x[static_cast<std::size_t>(token * kDim + d)] +=
+                                grad_gate * w1[w13_idx] + grad_up * w3[w13_idx];
+                        }
+                    }
+                }
+            }
+
+            std::vector<float> expected_density(static_cast<std::size_t>(kExperts), 0.0f);
+            float all_denom = 0.0f;
+            const float all_max = *std::max_element(route_logits.begin(), route_logits.end());
+            for (float value : route_logits) {
+                all_denom += std::exp(value - all_max);
+            }
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                expected_density[static_cast<std::size_t>(expert)] =
+                    std::exp(route_logits[static_cast<std::size_t>(expert)] - all_max) / all_denom;
+            }
+            float expected_balance_loss = 0.0f;
+            for (float value : expected_density) {
+                expected_balance_loss += value * value;
+            }
+            expected_balance_loss *= static_cast<float>(kExperts);
+
+            std::vector<float> expected_w1 = w1;
+            for (std::size_t i = 0; i < expected_w1.size(); ++i) {
+                const float grad = expected_grad_w1[i];
+                const float next_m = 0.1f * grad;
+                const float next_v = 0.05f * grad * grad;
+                const float denom_adam = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                const float decayed = expected_w1[i] * (1.0f - 0.01f * 0.02f);
+                expected_w1[i] = decayed - 0.01f * (next_m / 0.1f) / denom_adam;
+            }
+
+            if (error.empty()) {
+                topk_weight_max_error = max_abs_error(actual_route_weights, expected_route_weights);
+                topk_index_max_error = max_i64_error(actual_route_indices, expected_route_indices);
+                broadcast_weight_max_error = max_abs_error(actual_broadcast_weights, expected_broadcast_weights);
+                broadcast_index_max_error = max_i64_error(actual_broadcast_indices, expected_broadcast_indices);
+                moe_forward_max_error = max_abs_error(actual_out, expected_out);
+                moe_grad_x_max_error = max_abs_error(actual_grad_x, expected_grad_x);
+                moe_grad_w1_max_error = max_abs_error(actual_grad_w1, expected_grad_w1);
+                moe_grad_w2_max_error = max_abs_error(actual_grad_w2, expected_grad_w2);
+                moe_grad_w3_max_error = max_abs_error(actual_grad_w3, expected_grad_w3);
+                balance_density_max_error = max_abs_error(actual_density, expected_density);
+                balance_loss_max_error = std::fabs(actual_balance_loss[0] - expected_balance_loss);
+                adamw_w1_max_error = max_abs_error(actual_w1, expected_w1);
+            }
+            constexpr float kTolerance = 2e-6f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                topk_weight_max_error <= kTolerance &&
+                topk_index_max_error == 0 &&
+                broadcast_weight_max_error <= kTolerance &&
+                broadcast_index_max_error == 0 &&
+                moe_forward_max_error <= kTolerance &&
+                moe_grad_x_max_error <= kTolerance &&
+                moe_grad_w1_max_error <= kTolerance &&
+                moe_grad_w2_max_error <= kTolerance &&
+                moe_grad_w3_max_error <= kTolerance &&
+                balance_density_max_error <= kTolerance &&
+                balance_loss_max_error <= kTolerance &&
+                adamw_w1_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "MoE route/expert train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"moe_route_expert_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"tokens\": " << kTokens << ", \"dim\": " << kDim
+        << ", \"hidden_dim\": " << kHidden << ", \"experts\": " << kExperts
+        << ", \"top_k\": " << kTopK << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_topk_route_float32\",\n"
+        << "    \"nfn_native_tile_broadcast_expert_routes_float32\",\n"
+        << "    \"nfn_native_tile_moe_swiglu_forward_float32\",\n"
+        << "    \"nfn_native_tile_moe_swiglu_backward_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_density_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_loss_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"topk_weight\":" << topk_weight_max_error
+        << ", \"topk_index\":" << topk_index_max_error
+        << ", \"broadcast_weight\":" << broadcast_weight_max_error
+        << ", \"broadcast_index\":" << broadcast_index_max_error
+        << ", \"moe_forward\":" << moe_forward_max_error
+        << ", \"moe_grad_x\":" << moe_grad_x_max_error
+        << ", \"moe_grad_w1\":" << moe_grad_w1_max_error
+        << ", \"moe_grad_w2\":" << moe_grad_w2_max_error
+        << ", \"moe_grad_w3\":" << moe_grad_w3_max_error
+        << ", \"balance_density\":" << balance_density_max_error
+        << ", \"balance_loss\":" << balance_loss_max_error
+        << ", \"adamw_w1\":" << adamw_w1_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1262,6 +1897,9 @@ int main(int argc, char** argv) {
     try {
         if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_moe_route_expert_step) {
+            return print_moe_route_expert_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

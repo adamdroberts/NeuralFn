@@ -890,10 +890,9 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-standard-moe-transformer-lm") {
         return {
-            "standard-router-topk-forward-backward",
-            "expert-dispatch-combine-forward-backward",
-            "moe-expert-weight-gradient-accumulation",
-            "load-balance-loss-device-reduction",
+            "standard-moe-transformer-block-integration",
+            "standard-moe-full-forward-backward-loop",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-dense-jepa-objective") {
@@ -906,11 +905,13 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-moe-jepa-objective") {
         return {
-            "standard-moe-transformer-loop",
+            "standard-moe-transformer-block-integration",
+            "standard-moe-full-forward-backward-loop",
             "jepa-target-encoder-forward",
             "jepa-projector-predictor-forward-backward",
             "latent-mse-loss-device-reduction",
             "ar-plus-jepa-plus-router-loss-composition",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-semantic-dense-jepa-objective") {
@@ -930,6 +931,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
             "route-selection-distillation-balance-losses",
             "route-evo-device-controller",
             "ar-plus-semantic-plus-jepa-loss-composition",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-seq2seq-objective") {
@@ -969,7 +971,11 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     if (coverage_class == "missing-standard-moe-transformer-lm" ||
         coverage_class == "missing-moe-jepa-objective" ||
         coverage_class == "missing-semantic-moe-router-jepa-objective") {
-        return {"required-router-and-expert-tile-abi-symbols"};
+        return {
+            "router-topk-broadcast-smoke",
+            "routed-swiglu-expert-forward-backward-smoke",
+            "load-balance-loss-adamw-smoke",
+        };
     }
     if (coverage_class == "missing-dense-jepa-objective" ||
         coverage_class == "missing-semantic-dense-jepa-objective") {

@@ -100,7 +100,10 @@ transformer families. LLaMA-family entries now list completed smoke-backed
 slices for RMSNorm, RoPE, SwiGLU/GEGLU, and LM-head CE/backward/AdamW, while
 their missing list is limited to packed-QKV RoPE attention block integration,
 the full LLaMA block forward/backward loop, and family checkpoint/inference
-wiring. Treat this manifest as the
+wiring. MoE-family entries list completed top-k route/broadcast, routed SwiGLU
+expert forward/backward, and load-balance/AdamW smokes while keeping the full
+family loop, JEPA or semantic objective, checkpoint, and inference blockers in
+the missing list. Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
 
