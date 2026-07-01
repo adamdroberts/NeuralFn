@@ -5282,10 +5282,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "missing-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == ["ttt-full-transformer-forward-backward-loop"]
+    assert missing_requirements["ttt_llama"] == []
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
+        "ttt-full-transformer-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["universal_llama"] == "missing-universal-transformer-lm"
@@ -11852,12 +11853,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_payload["model_family"] == "ttt-llama"
     assert ttt_payload["status"] == "family-native-trainer-missing"
     assert ttt_payload["native_training_coverage_class"] == "missing-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == [
-        "ttt-full-transformer-forward-backward-loop",
-    ]
+    assert ttt_payload["native_training_missing_requirements"] == []
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
+        "ttt-full-transformer-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert ttt_payload["compiled_native_boundary"] is True
@@ -12678,6 +12678,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-ttt-composite-inner-step" in unified_ttt_composite_smoke_command.stdout
     assert "--tile-ops-lib" in unified_ttt_composite_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_ttt_composite_smoke_command.stdout
+
+    unified_ttt_full_loop_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "ttt-llama",
+            "--native-cuda-smoke-ttt-full-transformer-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_ttt_full_loop_smoke_command.returncode == 0, unified_ttt_full_loop_smoke_command.stderr
+    assert str(ttt_llama) in unified_ttt_full_loop_smoke_command.stdout
+    assert "--smoke-ttt-full-transformer-loop-step" in unified_ttt_full_loop_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_ttt_full_loop_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_ttt_full_loop_smoke_command.stdout
 
     unified_universal_smoke_command = subprocess.run(
         [

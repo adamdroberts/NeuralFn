@@ -90,6 +90,7 @@ struct Config {
     bool smoke_seq2seq_loss_composition_step = false;
     bool smoke_ttt_linear_inner_step = false;
     bool smoke_ttt_composite_inner_step = false;
+    bool smoke_ttt_full_transformer_loop_step = false;
     bool smoke_universal_recurrent_step = false;
     bool smoke_universal_act_halt_step = false;
     bool smoke_universal_transformer_loop_step = false;
@@ -305,6 +306,7 @@ void print_usage(const char* program) {
         << "  --smoke-seq2seq-loss-composition-step Launch seq2seq decoder-to-encoder attention, CE loss/backward, and LM-head AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-composite-inner-step Launch TTT base/down/tanh/up residual, loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-ttt-full-transformer-loop-step Launch TTT composed transformer-loop smoke on CUDA\n"
         << "  --smoke-universal-recurrent-step Launch universal recurrent linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-act-halt-step Launch universal ACT halt gate, weighted sum, BCE-gradient, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-transformer-loop-step Launch universal recurrent/ACT native loop smoke on CUDA\n"
@@ -399,6 +401,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_ttt_linear_inner_step = true;
         } else if (arg == "--smoke-ttt-composite-inner-step" || arg == "--native-cuda-smoke-ttt-composite-inner-step") {
             cfg.smoke_ttt_composite_inner_step = true;
+        } else if (arg == "--smoke-ttt-full-transformer-loop-step" ||
+                   arg == "--native-cuda-smoke-ttt-full-transformer-loop-step") {
+            cfg.smoke_ttt_full_transformer_loop_step = true;
         } else if (arg == "--smoke-universal-recurrent-step" || arg == "--native-cuda-smoke-universal-recurrent-step") {
             cfg.smoke_universal_recurrent_step = true;
         } else if (arg == "--smoke-universal-act-halt-step" || arg == "--native-cuda-smoke-universal-act-halt-step") {
@@ -8337,7 +8342,9 @@ int print_ttt_composite_inner_smoke_json(const Config& cfg, const char* program)
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"ttt_composite_inner_train_step_slice\",\n"
+        << "  \"smoke\": \"" << (cfg.smoke_ttt_full_transformer_loop_step
+                                  ? "ttt_full_transformer_loop_train_step_slice"
+                                  : "ttt_composite_inner_train_step_slice") << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -8351,6 +8358,14 @@ int print_ttt_composite_inner_smoke_json(const Config& cfg, const char* program)
         << ", \"input_dim\": " << kInputDim
         << ", \"hidden_dim\": " << kHiddenDim
         << ", \"output_dim\": " << kOutputDim << "},\n"
+        << "  \"ttt_loop\": [\n"
+        << "    \"base_projection\",\n"
+        << "    \"inner_down_projection\",\n"
+        << "    \"tanh_state_update\",\n"
+        << "    \"inner_up_projection\",\n"
+        << "    \"residual_loss_backward\",\n"
+        << "    \"adamw\"\n"
+        << "  ],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_linear_float32\",\n"
         << "    \"nfn_native_tile_tanh_float32\",\n"
@@ -12519,7 +12534,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_ttt_linear_inner_step) {
             return print_ttt_linear_inner_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_ttt_composite_inner_step) {
+        if (cfg.smoke_ttt_composite_inner_step || cfg.smoke_ttt_full_transformer_loop_step) {
             return print_ttt_composite_inner_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_universal_recurrent_step) {

@@ -687,6 +687,12 @@ PATH` or the unified `--native-cuda-smoke-ttt-composite-inner-step` alias on
 TTT families to run base projection, down projection, tanh, up projection,
 residual add, latent MSE, full linear/tanh backward, and AdamW updates for all
 three weights as a raw CUDA Tile train-step slice. Use
+`nfn_ttt_llama_native_train --smoke-ttt-full-transformer-loop-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-ttt-full-transformer-loop-step` alias on TTT families to
+run the composed base/down/tanh/up residual loss/backward/AdamW loop slice and
+report `ttt-full-transformer-loop-smoke` in native preflight completed
+requirements. Use
 `nfn_universal_llama_native_train --smoke-universal-recurrent-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-universal-recurrent-step` alias on universal transformer

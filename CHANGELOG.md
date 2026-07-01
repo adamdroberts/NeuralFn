@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a TTT full-transformer-loop native smoke.
+  `nfn_ttt_llama_native_train --smoke-ttt-full-transformer-loop-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  ttt-llama --native-cuda-smoke-ttt-full-transformer-loop-step` alias now run
+  the composed base/down/tanh/up residual, loss, backward, and AdamW loop slice
+  without Torch or graph-editor tensor flow. TTT preflight JSON now reports
+  `ttt-full-transformer-loop-smoke` in completed requirements and no longer
+  lists `ttt-full-transformer-forward-backward-loop` as a missing
+  native-training requirement; the family remains `family-native-loop-missing`
+  until the production trainer loop and artifacts are implemented.
+  Verification: rebuilt missing-family native trainers and unified/native
+  catalog frontends; live CUDA direct and unified TTT full-transformer-loop
+  smokes passed; TTT preflight reports no missing native-training
+  requirements; focused native pytest passed; no-Torch verifier passed with
+  30/30 artifacts and 0 stale artifacts.
+
 - Added a diffusion full-loop native smoke. `nfn_diffusion_native_train
   --smoke-diffusion-full-loop-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model diffusion

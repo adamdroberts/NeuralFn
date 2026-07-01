@@ -928,9 +928,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
-        return {
-            "ttt-full-transformer-forward-backward-loop",
-        };
+        return {};
     }
     if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
         return {};
@@ -1033,6 +1031,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "ttt-linear-mse-adamw-smoke",
             "ttt-composite-inner-forward-backward-adamw-smoke",
+            "ttt-full-transformer-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
