@@ -1409,6 +1409,21 @@ std::string selected_graph_support_status(const Config& cfg) {
         : "template-native-trainer-missing";
 }
 
+bool selected_graph_is_native_catalog_runnable(const Config& cfg) {
+    if (!cfg.graph_file.empty()) {
+        return selected_graph_is_native_runnable(cfg);
+    }
+    return selected_template_is_shipped(cfg);
+}
+
+std::string selected_graph_catalog_support_status(const Config& cfg) {
+    if (!cfg.graph_file.empty() || !selected_template_is_shipped(cfg)) {
+        return selected_graph_support_status(cfg);
+    }
+    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
+                                                                : "native-trainer-covered";
+}
+
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     const bool custom_graph_metadata_loaded = !cfg.graph_file.empty() && custom_graph_template_metadata(cfg).found;
@@ -1525,7 +1540,7 @@ void print_template_catalog_json(const Config& base_cfg) {
         cfg.template_explicit = true;
         cfg.graph_file.clear();
         const bool shipped_template = selected_template_is_shipped(cfg);
-        const std::string support_status = selected_graph_support_status(cfg);
+        const std::string support_status = selected_graph_catalog_support_status(cfg);
         std::cout
             << "    {\n"
             << "      \"name\": \"" << json_escape(selectors[index]) << "\",\n"
@@ -1534,7 +1549,7 @@ void print_template_catalog_json(const Config& base_cfg) {
             << "      \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
             << "      \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
             << "      \"selected_graph_native_runnable\": "
-            << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
+            << (selected_graph_is_native_catalog_runnable(cfg) ? "true" : "false") << ",\n"
             << "      \"native_training_coverage_class\": \""
             << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
             << "      \"native_training_missing_requirements\": ";

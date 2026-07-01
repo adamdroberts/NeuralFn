@@ -2117,6 +2117,8 @@ def _validate_native_template_catalog(
         "passed": False,
         "required_dense_templates": {},
         "covered_native_sentinels": {},
+        "all_template_runnable": False,
+        "non_runnable_templates": [],
         "errors": [],
     }
     errors = report["errors"]
@@ -2155,6 +2157,18 @@ def _validate_native_template_catalog(
         for template in templates
         if isinstance(template, dict) and isinstance(template.get("name"), str)
     }
+    non_runnable_templates = [
+        str(template.get("name"))
+        for template in templates
+        if isinstance(template, dict) and template.get("selected_graph_native_runnable") is not True
+    ]
+    report["non_runnable_templates"] = non_runnable_templates
+    report["all_template_runnable"] = not non_runnable_templates
+    if non_runnable_templates:
+        errors.append(
+            "templates with selected_graph_native_runnable != true: "
+            + ", ".join(non_runnable_templates)
+        )
     dense_reports: dict[str, object] = {}
     for template_name, expected_geometry in REQUIRED_NATIVE_DENSE_GPT_TEMPLATES.items():
         template = by_name.get(template_name)
@@ -2207,14 +2221,14 @@ def _validate_native_template_catalog(
         else:
             template_report["status"] = template.get("selected_graph_support_status")
             template_report["native_runnable"] = template.get("selected_graph_native_runnable")
-            if template.get("selected_graph_support_status") != "template-native-trainer-missing":
+            if template.get("selected_graph_support_status") != "native-trainer-covered":
                 template_errors.append(
                     "status="
                     f"{template.get('selected_graph_support_status')!r}, "
-                    "expected 'template-native-trainer-missing'"
+                    "expected 'native-trainer-covered'"
                 )
-            if template.get("selected_graph_native_runnable") is not False:
-                template_errors.append("selected_graph_native_runnable was not false")
+            if template.get("selected_graph_native_runnable") is not True:
+                template_errors.append("selected_graph_native_runnable was not true")
         template_report["passed"] = not template_errors
         if template_errors:
             errors.append(f"{template_name}: {'; '.join(template_errors)}")

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Changed the compiled GPT template catalog contract so
+  `build/nfn-native-train --list-templates --json` reports
+  `selected_graph_native_runnable: true` for every listed GPT template selector.
+  Dense GPT-compatible selectors still report `native-transformer-lm`; shipped
+  non-dense families with completed native smoke coverage report
+  `native-trainer-covered` in the no-data catalog. Runtime custom-graph,
+  unknown-template, and dense-loop execution guards remain separate from this
+  catalog action. The no-Torch verifier now fails if any catalog template stops
+  reporting `selected_graph_native_runnable: true`.
+
 - Added live stderr progress for dense GPT CUDA Tile training. The native
   transformer-LM loop now prints a startup summary with the resolved template,
   dataset, shape, AdamW hyperparameters, evaluation cadence, train-loss cadence,

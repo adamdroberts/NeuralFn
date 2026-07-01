@@ -941,10 +941,15 @@ no-data JSON catalog of every shipped GPT template selector plus the public
 `gpt` and `gpt3` aliases. This action exits before dataset or token-shard
 resolution, reports `token_shards_resolved: false`, and exposes
 `selected_graph_support_status` plus `selected_graph_native_runnable` for each
-selector so native migration gaps can be checked without sending real batches
-through graph-editor nodes. The `train_gpt.py` wrapper also strips its default
-dataset alias and eval cadence arguments for this catalog action before
-launching the compiled command.
+selector so native coverage can be checked without sending real batches through
+graph-editor nodes. Every shipped GPT template plus the public `gpt` and
+`gpt3` aliases reports `selected_graph_native_runnable: true` in this no-data
+catalog. Dense GPT-compatible selectors report `native-transformer-lm`; other
+smoke-covered shipped families report `native-trainer-covered`. Custom graph
+and unknown-template runtime guards remain separate from the catalog action.
+The `train_gpt.py` wrapper also strips its default dataset alias and eval
+cadence arguments for this catalog action before launching the compiled
+command.
 
 The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,

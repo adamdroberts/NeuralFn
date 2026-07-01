@@ -2862,7 +2862,9 @@ fails if that declared native selector set drifts from the required `gpt`,
 `gpt2`, `gpt2_modern`, `gpt3`, `gpt2_megakernel`, `gpt2_moa`, `nanogpt`,
 `nanogpt_modern`, and `nanogpt_megakernel` coverage, or if any listed selector
 no longer reports `native-transformer-lm`, `selected_graph_native_runnable=true`,
-and the expected dense GPT geometry. It then runs `cli/scripts/train_gpt.py`,
+and the expected dense GPT geometry. It also fails if any compiled catalog
+template stops reporting `selected_graph_native_runnable=true`. It then runs
+`cli/scripts/train_gpt.py`,
 `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
@@ -3264,6 +3266,10 @@ SDK callers that need the dense GPT template support catalog can call
 `native_gpt2_template_catalog()`; both parse the compiled C++ `--list-templates`
 JSON and prefer the same `run_gpt_capture` binding path before falling back to a
 compiled CLI subprocess.
+The catalog is a no-data coverage manifest: every shipped GPT template plus the
+public `gpt` and `gpt3` aliases reports `selected_graph_native_runnable: true`.
+Dense GPT-compatible selectors report `native-transformer-lm`; smoke-covered
+non-dense shipped families report `native-trainer-covered`.
 
 `native_gpt_runner_status()` returns the resolved mode and diagnostic reason, and `write_native_gpt_run_config()` includes that status in the JSON payload. Set `NFN_NATIVE_GPT_BINDING=0` to test launcher fallback paths even when the compatibility `neuralfn._native_gpt2` binding is built locally; the older `native_gpt2_runner_status()`, `write_native_gpt2_run_config()`, and `NFN_NATIVE_GPT2_BINDING` names remain compatibility fallbacks.
 
