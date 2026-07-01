@@ -3277,6 +3277,8 @@ For the LLaMA token-LM train-step slice, use `nfn_llama_native_train --smoke-lla
 
 For the LLaMA composed token/block/LM train-step slice, use `nfn_llama_native_train --smoke-llama-composed-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-composed-train-step`; it runs the token-LM train-step alongside RMSNorm, RoPE, and SwiGLU forward/backward as one explicit composed no-Torch coverage smoke.
 
+For the LLaMA full forward/backward-loop slice, use `nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-full-loop-step`; it reports the token/block/LM full-loop smoke through token embedding, RMSNorm, RoPE, SwiGLU, LM-head CE/backward, embedding backward, and AdamW without Torch or graph-editor tensor flow.
+
 For the standard MoE transformer-LM train-step slice, use `nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-transformer-lm-train-step`; it runs the MoE block forward path into LM-head logits, token CE forward/backward, LM-head backward, routed expert backward, and AdamW without Torch or graph-editor tensor flow.
 
 For the dense JEPA composed train-step slice, use `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-train-step`; it launches target latent pooling/projection, projector/predictor forward, latent MSE, AR logits, token CE forward/backward, JEPA and LM weight-gradient accumulation, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
@@ -3298,18 +3300,19 @@ For the shared family metadata slice, use `nfn_jepa_native_train --smoke-family-
 Template catalog and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Use these fields to audit complete
-GPT-template native coverage. Implemented dense GPT selectors are the only
-entries that may report an empty missing-requirements list; non-runnable
-templates name at least one remaining native loop or objective requirement.
+GPT-template native coverage. Implemented dense GPT selectors report an empty
+missing-requirements list because they are runnable, and missing-family entries
+may also report an empty list when their smoke-backed native coverage gates are
+complete but production trainer artifacts are still pending.
 Missing
 families now have compiled no-Torch boundaries for LLaMA/RoPE/SwiGLU, standard
 MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT,
 HNet byte-LM, and universal transformer classes. LLaMA-family entries now list
 completed smoke-backed slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head
 CE/backward/AdamW, packed-QKV attention forward/backward, RoPE attention-block
-integration, RoPE/SwiGLU block forward/backward/AdamW, and family
-parameter-layout/checkpoint/inference metadata, while their missing list keeps
-the full LLaMA-family forward/backward/optimizer loop. Standard MoE, MoE+JEPA, and semantic MoE
+integration, RoPE/SwiGLU block forward/backward/AdamW, the LLaMA full
+forward/backward loop smoke, and family parameter-layout/checkpoint/inference
+metadata, while their missing list is empty. Standard MoE, MoE+JEPA, and semantic MoE
 families now list completed route top-k/broadcast, routed SwiGLU
 forward/backward, load-balance/AdamW, and standard MoE forward-block smokes
 while still reporting the full family block loop, JEPA or semantic objectives,

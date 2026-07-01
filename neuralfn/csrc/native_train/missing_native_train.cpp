@@ -67,6 +67,7 @@ struct Config {
     bool smoke_llama_lm_head_step = false;
     bool smoke_llama_token_lm_train_step = false;
     bool smoke_llama_composed_train_step = false;
+    bool smoke_llama_full_loop_step = false;
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
     bool smoke_llama_rope_attention_block_step = false;
@@ -286,6 +287,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
         << "  --smoke-llama-token-lm-train-step Launch token embedding, LM-head CE/backward, embedding backward, and AdamW on CUDA\n"
         << "  --smoke-llama-composed-train-step Launch token embedding, RMSNorm/RoPE/SwiGLU, LM-head CE/backward, embedding backward, and AdamW on CUDA\n"
+        << "  --smoke-llama-full-loop-step Launch the LLaMA token/block/LM native loop smoke on CUDA\n"
         << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-llama-attention-block-step Launch RMSNorm, QKV projection, packed attention, and residual kernels on CUDA\n"
         << "  --smoke-llama-rope-attention-block-step Launch RMSNorm, QKV split, RoPE, attention, and residual kernels on CUDA\n"
@@ -353,6 +355,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_token_lm_train_step = true;
         } else if (arg == "--smoke-llama-composed-train-step" || arg == "--native-cuda-smoke-llama-composed-train-step") {
             cfg.smoke_llama_composed_train_step = true;
+        } else if (arg == "--smoke-llama-full-loop-step" || arg == "--native-cuda-smoke-llama-full-loop-step") {
+            cfg.smoke_llama_full_loop_step = true;
         } else if (arg == "--smoke-llama-packed-attention-step" || arg == "--native-cuda-smoke-llama-packed-attention-step") {
             cfg.smoke_llama_packed_attention_step = true;
         } else if (arg == "--smoke-llama-attention-block-step" || arg == "--native-cuda-smoke-llama-attention-block-step") {
@@ -826,7 +830,8 @@ int print_family_layout_checkpoint_smoke_json(const Config& cfg, const char*) {
 }
 
 int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
-    const bool composed_train_step = cfg.smoke_llama_composed_train_step;
+    const bool full_loop_step = cfg.smoke_llama_full_loop_step;
+    const bool composed_train_step = cfg.smoke_llama_composed_train_step || full_loop_step;
     const bool token_lm_train_step = cfg.smoke_llama_token_lm_train_step || composed_train_step;
     const bool run_lm_head = cfg.smoke_llama_lm_head_step || token_lm_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
@@ -1745,13 +1750,15 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (composed_train_step
+        << (full_loop_step
+                ? "llama_full_forward_backward_loop_train_step_slice"
+                : (composed_train_step
                 ? "llama_composed_token_block_lm_train_step_slice"
                 : (token_lm_train_step
                 ? "llama_token_lm_train_step_slice"
                 : (cfg.smoke_llama_lm_head_step
                 ? "llama_lm_head_train_step_slice"
-                : (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition"))))
+                : (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition")))))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -12496,7 +12503,8 @@ int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
     try {
         if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step ||
-            cfg.smoke_llama_token_lm_train_step || cfg.smoke_llama_composed_train_step) {
+            cfg.smoke_llama_token_lm_train_step || cfg.smoke_llama_composed_train_step ||
+            cfg.smoke_llama_full_loop_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_llama_packed_attention_step) {

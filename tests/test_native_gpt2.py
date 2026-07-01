@@ -5221,9 +5221,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
-    assert missing_requirements["llama"] == [
-        "llama-full-forward-backward-loop",
-    ]
+    assert missing_requirements["llama"] == []
     assert completed_requirements["llama"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -5235,6 +5233,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "packed-qkv-attention-block-forward-smoke",
         "packed-qkv-rope-attention-block-integration-smoke",
         "rope-swiglu-block-forward-backward-adamw-smoke",
+        "llama-full-forward-backward-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
@@ -11075,9 +11074,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["batch_size"] == 8
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
-    assert llama_payload["native_training_missing_requirements"] == [
-        "llama-full-forward-backward-loop",
-    ]
+    assert llama_payload["native_training_missing_requirements"] == []
     assert llama_payload["native_training_completed_requirements"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -11089,6 +11086,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "packed-qkv-attention-block-forward-smoke",
         "packed-qkv-rope-attention-block-integration-smoke",
         "rope-swiglu-block-forward-backward-adamw-smoke",
+        "llama-full-forward-backward-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
@@ -12961,6 +12959,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(llama) in unified_llama_composed_smoke_command.stdout
     assert "--smoke-llama-composed-train-step" in unified_llama_composed_smoke_command.stdout
     assert "--tile-ops-lib" in unified_llama_composed_smoke_command.stdout
+
+    unified_llama_full_loop_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "llama",
+            "--native-cuda-smoke-llama-full-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_llama_full_loop_smoke_command.returncode == 0, unified_llama_full_loop_smoke_command.stderr
+    assert str(llama) in unified_llama_full_loop_smoke_command.stdout
+    assert "--smoke-llama-full-loop-step" in unified_llama_full_loop_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_llama_full_loop_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_llama_full_loop_smoke_command.stdout
 
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],

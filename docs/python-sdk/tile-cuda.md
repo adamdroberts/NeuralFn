@@ -572,10 +572,10 @@ token-LM embedding/CE/backward/AdamW, composed token/block/LM AdamW,
 packed-QKV attention forward/backward,
 RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
 RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
-and family
+the LLaMA full forward/backward loop smoke, and family
 parameter-layout/checkpoint/inference metadata CUDA smokes, while
-`native_training_missing_requirements` keeps the full LLaMA-family
-forward/backward/optimizer loop. MoE-family
+`native_training_missing_requirements` is empty for the LLaMA family.
+MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
 routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
@@ -625,7 +625,11 @@ without Torch or graph-editor tensor flow. Use
 `nfn_llama_native_train --smoke-llama-composed-train-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-llama-composed-train-step` alias to run
 that token-LM path alongside RMSNorm, RoPE, and SwiGLU forward/backward as an
-explicit composed no-Torch coverage smoke. Use `nfn_llama_native_train
+explicit composed no-Torch coverage smoke. Use
+`nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH`
+or the unified `--native-cuda-smoke-llama-full-loop-step` alias to report the
+LLaMA token/block/LM full forward/backward loop smoke through the same compiled
+CUDA Tile boundary. Use `nfn_llama_native_train
 --smoke-llama-packed-attention-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-llama-packed-attention-step` alias to cover packed-QKV

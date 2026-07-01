@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a LLaMA full forward/backward-loop native smoke.
+  `nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH`
+  and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-full-loop-step` alias now run the LLaMA
+  token/block/LM loop slice through token embedding, RMSNorm, RoPE, SwiGLU,
+  LM-head CE/backward, embedding backward, and AdamW without Torch or
+  graph-editor tensor flow. LLaMA preflight JSON now reports
+  `llama-full-forward-backward-loop-smoke` in completed requirements and no
+  longer lists `llama-full-forward-backward-loop` as a missing native-training
+  requirement; the family remains `family-native-loop-missing` until the
+  production trainer loop and artifacts are implemented. Verification: rebuilt
+  missing-family native trainers and unified/native catalog frontends; live
+  CUDA direct and unified LLaMA full-loop smokes passed; LLaMA preflight
+  reports no missing native-training requirements; focused native pytest
+  passed; no-Torch verifier passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added a seq2seq full encoder-decoder-loop native smoke.
   `nfn_seq2seq_native_train --smoke-seq2seq-full-encoder-decoder-loop-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model seq2seq

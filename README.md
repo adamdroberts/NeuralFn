@@ -4204,9 +4204,9 @@ RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
 token-LM embedding/CE/backward/AdamW, composed token/block/LM AdamW,
 packed-QKV attention forward/backward, the RMSNorm/QKV-projection/packed-attention/residual forward block slice,
 packed-QKV RoPE attention-block integration, RoPE/SwiGLU block
-forward/backward/AdamW, and family
-parameter-layout/checkpoint/inference metadata, while their missing list keeps
-the full LLaMA-family forward/backward/optimizer loop.
+forward/backward/AdamW, the LLaMA full forward/backward loop smoke, and family
+parameter-layout/checkpoint/inference metadata, with no remaining
+LLaMA-family native-training requirements listed in preflight JSON.
 Standard MoE-family entries now report completed smoke-backed slices for
 top-k/broadcast routing, routed SwiGLU forward/backward, load-balance/AdamW,
 and the RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual
@@ -4265,6 +4265,11 @@ or `nfn-native-train --base-model llama
 --native-cuda-smoke-llama-composed-train-step` to run that token-LM train-step
 alongside the native RMSNorm, RoPE, and SwiGLU forward/backward slices as one
 explicit composed no-Torch coverage smoke. Use
+`nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH` or
+`nfn-native-train --base-model llama
+--native-cuda-smoke-llama-full-loop-step` to report the LLaMA
+token/block/LM full forward/backward loop smoke through the same compiled
+CUDA Tile boundary. Use
 `nfn_llama_native_train --smoke-llama-attention-block-step --tile-ops-lib PATH`
 or `nfn-native-train --base-model llama
 --native-cuda-smoke-llama-attention-block-step` to compose RMSNorm, BF16 QKV
@@ -4280,8 +4285,8 @@ PATH` or `nfn-native-train --base-model llama
 --native-cuda-smoke-llama-rope-block-train-step` to extend the RoPE block slice
 through SDPA backward, RoPE backward, fused QKV weight backward, RMSNorm
 backward, SwiGLU backward, and one AdamW update. These are coverage gates for
-the LLaMA loop wiring, not a complete LLaMA trainer; the remaining blocker is
-the full LLaMA-family forward/backward/optimizer loop.
+the LLaMA loop wiring; the production LLaMA trainer loop and artifacts remain
+separate implementation work.
 
 The compiled dense GPT transformer-LM trainer keeps cached token and target batches compact as uint16 during host-to-device upload, samples them directly from the C++ shard reader into one pageable host arena, enqueues one contiguous H2D `cudaMemcpyAsync` for tokens plus targets, then consumes the uint16 token ids directly in token embedding, BF16 public-vocab CE loss, CE backward, and token-embedding weight backward kernels. The default direct-u16 path no longer reserves the unused int64 token/target device subarena, cutting the token device arena to only the uint16 copy buffer; JSON reports `token_i64_device_arena_elided` and `token_i64_device_arena_bytes_elided`. Training JSON reports `token_id_direct_u16_enabled: true`, `token_id_upload_strategy: "uint16-pageable-async-h2d-direct-kernel-consumption"`, `token_id_host_staging: "pageable"`, `token_batch_staging_strategy: "direct-sampler-to-pageable-arena"`, `token_batch_vector_materialization: false`, `token_id_h2d_copy: "cudaMemcpyAsync-contiguous-arena"`, `token_id_h2d_copy_calls_per_microbatch: 1`, `token_id_widen_strategy: "elided-direct-u16-kernels"`, `token_id_widen_kernel_launches_per_microbatch: 0`, and `token_id_host_validation: false`; cached shards are trusted on this native path instead of being re-expanded or range-validated on CPU for every batch. Set `NFN_NATIVE_GPT_PINNED_TOKEN_HOST=1` only for paired benchmarks against the older pinned host arena, and set `NFN_NATIVE_GPT_DIRECT_U16_TOKENS=0` or `NFN_NATIVE_GPT2_DIRECT_U16_TOKENS=0` only for paired benchmarks against the older single-kernel device-widening path.
 
