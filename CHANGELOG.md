@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added a shared standard-MoE full forward/backward-loop native smoke.
+  `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH`
+  and the unified `nfn-native-train --base-model moe-jepa-evo
+  --native-cuda-smoke-moe-full-loop-step` alias now run the standard MoE
+  transformer-LM loop slice through RMSNorm, packed attention, top-k routing,
+  routed SwiGLU expert forward/backward, LM-head CE/backward, and AdamW without
+  Torch or graph-editor tensor flow. MixLLaMA and DeepSeek preflight JSON now
+  report `standard-moe-full-forward-backward-loop-smoke` in completed
+  requirements and no longer list `standard-moe-full-forward-backward-loop` as
+  a missing native-training requirement. MoE-JEPA keeps only its composite
+  AR+JEPA+router objective as missing. Verification: rebuilt missing-family
+  native trainers and unified/native catalog frontends; live CUDA direct
+  MixLLaMA and DeepSeek full-loop smokes passed; live CUDA unified MoE-JEPA
+  full-loop smoke passed; MixLLaMA and DeepSeek preflight reports no missing
+  native-training requirements; focused native pytest passed; no-Torch verifier
+  passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added a LLaMA full forward/backward-loop native smoke.
   `nfn_llama_native_train --smoke-llama-full-loop-step --tile-ops-lib PATH`
   and the unified `nfn-native-train --base-model llama

@@ -76,6 +76,7 @@ struct Config {
     bool smoke_moe_transformer_block_step = false;
     bool smoke_moe_transformer_block_train_step = false;
     bool smoke_moe_transformer_lm_train_step = false;
+    bool smoke_moe_full_loop_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -296,6 +297,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-train-step Launch MoE transformer block forward plus expert backward/AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
+        << "  --smoke-moe-full-loop-step Launch the standard MoE transformer-LM native loop smoke on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -373,6 +375,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_transformer_block_train_step = true;
         } else if (arg == "--smoke-moe-transformer-lm-train-step" || arg == "--native-cuda-smoke-moe-transformer-lm-train-step") {
             cfg.smoke_moe_transformer_lm_train_step = true;
+        } else if (arg == "--smoke-moe-full-loop-step" || arg == "--native-cuda-smoke-moe-full-loop-step") {
+            cfg.smoke_moe_full_loop_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -3347,7 +3351,8 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
 }
 
 int print_moe_transformer_block_smoke_json(const Config& cfg, const char* program) {
-    const bool lm_train_step = cfg.smoke_moe_transformer_lm_train_step;
+    const bool full_loop_step = cfg.smoke_moe_full_loop_step;
+    const bool lm_train_step = cfg.smoke_moe_transformer_lm_train_step || full_loop_step;
     const bool train_step = cfg.smoke_moe_transformer_block_train_step || lm_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_family =
@@ -4063,9 +4068,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (lm_train_step
+        << (full_loop_step
+                ? "standard_moe_full_forward_backward_loop_train_step_slice"
+                : (lm_train_step
                 ? "moe_transformer_lm_train_step_slice"
-                : (train_step ? "moe_transformer_block_train_step_slice" : "moe_transformer_block_forward_slice"))
+                : (train_step ? "moe_transformer_block_train_step_slice" : "moe_transformer_block_forward_slice")))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -12520,7 +12527,7 @@ int main(int argc, char** argv) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_moe_transformer_block_step || cfg.smoke_moe_transformer_block_train_step ||
-            cfg.smoke_moe_transformer_lm_train_step) {
+            cfg.smoke_moe_transformer_lm_train_step || cfg.smoke_moe_full_loop_step) {
             return print_moe_transformer_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_jepa_projector_step) {

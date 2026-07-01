@@ -5237,9 +5237,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
-    assert missing_requirements["mixllama"] == [
-        "standard-moe-full-forward-backward-loop",
-    ]
+    assert missing_requirements["mixllama"] == []
     assert completed_requirements["mixllama"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -5247,16 +5245,18 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "standard-moe-transformer-block-forward-smoke",
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
+        "standard-moe-full-forward-backward-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
-    assert "standard-moe-full-forward-backward-loop" in missing_requirements["moe_jepa_evo"]
+    assert "standard-moe-full-forward-backward-loop" not in missing_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-block-integration" not in missing_requirements["moe_jepa_evo"]
     assert "jepa-target-encoder-forward" not in missing_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-forward-backward" not in missing_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-block-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-block-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-lm-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
+    assert "standard-moe-full-forward-backward-loop-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
@@ -11409,9 +11409,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_payload["model_family"] == "mixllama"
     assert mixllama_payload["status"] == "family-native-trainer-missing"
     assert mixllama_payload["native_training_coverage_class"] == "missing-standard-moe-transformer-lm"
-    assert mixllama_payload["native_training_missing_requirements"] == [
-        "standard-moe-full-forward-backward-loop",
-    ]
+    assert mixllama_payload["native_training_missing_requirements"] == []
     assert mixllama_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11419,6 +11417,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-smoke",
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
+        "standard-moe-full-forward-backward-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert mixllama_payload["compiled_native_boundary"] is True
@@ -11481,6 +11480,30 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_moe_swiglu_backward_float32" in moe_lm_smoke_payload["loop_composition_stages"]
     assert "nfn_native_tile_adamw_step_float32" in moe_lm_smoke_payload["loop_composition_stages"]
 
+    moe_full_loop_smoke_missing_lib = subprocess.run(
+        [
+            str(mixllama),
+            "--smoke-moe-full-loop-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert moe_full_loop_smoke_missing_lib.returncode == 2
+    moe_full_loop_smoke_payload = json.loads(moe_full_loop_smoke_missing_lib.stdout)
+    assert moe_full_loop_smoke_payload["smoke"] == "standard_moe_full_forward_backward_loop_train_step_slice"
+    assert moe_full_loop_smoke_payload["passed"] is False
+    assert moe_full_loop_smoke_payload["compiled_native_boundary"] is True
+    assert moe_full_loop_smoke_payload["torch_required"] is False
+    assert moe_full_loop_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_linear_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_token_cross_entropy_backward_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_moe_swiglu_backward_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_adamw_step_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
+
     moe_jepa_plan = subprocess.run(
         [
             str(moe_jepa),
@@ -11505,7 +11528,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_payload["native_training_missing_requirements"] == [
-        "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
     ]
     assert moe_jepa_payload["native_training_completed_requirements"] == [
@@ -11515,6 +11537,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-smoke",
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
+        "standard-moe-full-forward-backward-loop-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
@@ -12078,7 +12101,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_unified_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_unified_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_unified_payload["native_training_missing_requirements"] == [
-        "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
     ]
     assert moe_jepa_unified_payload["native_training_completed_requirements"] == [
@@ -12088,6 +12110,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-smoke",
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
+        "standard-moe-full-forward-backward-loop-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
@@ -12227,6 +12250,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-moe-transformer-lm-train-step" in unified_moe_lm_smoke_command.stdout
     assert "--tile-ops-lib" in unified_moe_lm_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_moe_lm_smoke_command.stdout
+
+    unified_moe_full_loop_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-smoke-moe-full-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_moe_full_loop_smoke_command.returncode == 0, unified_moe_full_loop_smoke_command.stderr
+    assert str(moe_jepa) in unified_moe_full_loop_smoke_command.stdout
+    assert "--smoke-moe-full-loop-step" in unified_moe_full_loop_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_moe_full_loop_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_moe_full_loop_smoke_command.stdout
 
     unified_jepa_smoke_command = subprocess.run(
         [

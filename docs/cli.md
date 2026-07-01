@@ -3281,6 +3281,8 @@ For the LLaMA full forward/backward-loop slice, use `nfn_llama_native_train --sm
 
 For the standard MoE transformer-LM train-step slice, use `nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-transformer-lm-train-step`; it runs the MoE block forward path into LM-head logits, token CE forward/backward, LM-head backward, routed expert backward, and AdamW without Torch or graph-editor tensor flow.
 
+For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-full-loop-step`; it reports the RMSNorm/packed-attention/top-k-route/routed-SwiGLU/LM-head CE/backward/AdamW loop smoke without Torch or graph-editor tensor flow.
+
 For the dense JEPA composed train-step slice, use `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-train-step`; it launches target latent pooling/projection, projector/predictor forward, latent MSE, AR logits, token CE forward/backward, JEPA and LM weight-gradient accumulation, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 
 For the semantic dense JEPA planner/alignment slice, use `nfn_semantic_dense_jepa_native_train --smoke-semantic-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-smoke-semantic-dense-jepa-train-step`; it launches semantic planner forward/backward, semantic hash, alignment loss items, device-side alignment loss/count reduction, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
@@ -3314,9 +3316,10 @@ integration, RoPE/SwiGLU block forward/backward/AdamW, the LLaMA full
 forward/backward loop smoke, and family parameter-layout/checkpoint/inference
 metadata, while their missing list is empty. Standard MoE, MoE+JEPA, and semantic MoE
 families now list completed route top-k/broadcast, routed SwiGLU
-forward/backward, load-balance/AdamW, and standard MoE forward-block smokes
-while still reporting the full family block loop, JEPA or semantic objectives,
-as missing. Dense JEPA, semantic dense JEPA, and
+forward/backward, load-balance/AdamW, standard MoE forward-block smokes, and
+the standard MoE full forward/backward loop smoke. Standard MoE-only families
+now have an empty missing list, while MoE+JEPA and semantic MoE families still
+report their JEPA or semantic objectives as missing. Dense JEPA, semantic dense JEPA, and
 MoE+JEPA entries now list the completed target-encoder forward,
 projector/predictor/latent-loss, and base AR+JEPA loss-composition smokes.
 Dense JEPA has no shared metadata item left in the missing list, while
