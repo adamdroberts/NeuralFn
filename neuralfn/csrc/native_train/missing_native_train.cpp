@@ -95,6 +95,7 @@ struct Config {
     bool smoke_hnet_byte_patch_backward_step = false;
     bool smoke_jamba_chunk_state_step = false;
     bool smoke_jamba_mamba_state_step = false;
+    bool smoke_jamba_layer_schedule_step = false;
     bool smoke_family_layout_checkpoint_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
@@ -306,6 +307,7 @@ void print_usage(const char* program) {
         << "  --smoke-hnet-byte-patch-backward-step Launch HNet byte patch merge/embed backward and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-chunk-state-step Launch Jamba chunk state, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-mamba-state-step Launch Jamba chunk-state forward/backward, head loss, and AdamW kernels on CUDA\n"
+        << "  --smoke-jamba-layer-schedule-step Launch Jamba native layer-schedule smoke over Mamba state kernels\n"
         << "  --smoke-family-layout-checkpoint-step Emit family parameter layout, checkpoint metadata, and inference contract\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
@@ -401,6 +403,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-jamba-mamba-state-step" ||
                    arg == "--native-cuda-smoke-jamba-mamba-state-step") {
             cfg.smoke_jamba_mamba_state_step = true;
+        } else if (arg == "--smoke-jamba-layer-schedule-step" ||
+                   arg == "--native-cuda-smoke-jamba-layer-schedule-step") {
+            cfg.smoke_jamba_layer_schedule_step = true;
         } else if (arg == "--smoke-family-layout-checkpoint-step" ||
                    arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
             cfg.smoke_family_layout_checkpoint_step = true;
@@ -10537,7 +10542,11 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (cfg.smoke_jamba_mamba_state_step ? "jamba_mamba_state_train_step_slice" : "jamba_chunk_state_train_step_slice")
+        << (cfg.smoke_jamba_layer_schedule_step
+                ? "jamba_layer_schedule_train_step_slice"
+                : (cfg.smoke_jamba_mamba_state_step
+                       ? "jamba_mamba_state_train_step_slice"
+                       : "jamba_chunk_state_train_step_slice"))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -10551,6 +10560,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         << "  \"shape\": {\"batch\": " << kBatch << ", \"seq_len\": " << kSeqLen
         << ", \"chunks\": " << kChunks << ", \"chunk_size\": " << kChunkSize
         << ", \"dim\": " << kDim << "},\n"
+        << "  \"layer_schedule\": [\"mamba_state\", \"projection_head\", \"loss_backward\", \"adamw\"],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_causal_chunk_state_float32\",\n"
         << "    \"nfn_native_tile_causal_chunk_state_backward_float32\",\n"
@@ -12490,7 +12500,9 @@ int main(int argc, char** argv) {
         if (cfg.smoke_hnet_byte_patch_backward_step) {
             return print_hnet_byte_patch_backward_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_jamba_chunk_state_step || cfg.smoke_jamba_mamba_state_step) {
+        if (cfg.smoke_jamba_chunk_state_step ||
+            cfg.smoke_jamba_mamba_state_step ||
+            cfg.smoke_jamba_layer_schedule_step) {
             return print_jamba_chunk_state_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_family_layout_checkpoint_step) {

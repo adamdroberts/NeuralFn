@@ -75,6 +75,9 @@ nfn_jamba_native_train --smoke-jamba-mamba-state-step --tile-ops-lib PATH
 nfn-native-train --base-model jamba \
   --native-cuda-smoke-jamba-mamba-state-step \
   --native-cuda-tile-ops-lib PATH
+nfn-native-train --base-model jamba \
+  --native-cuda-smoke-jamba-layer-schedule-step \
+  --native-cuda-tile-ops-lib PATH
 ```
 
 Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
@@ -585,8 +588,10 @@ device reduction, and objective composition in the missing list. Universal-famil
 entries now list recurrent linear/MSE/AdamW
 and ACT halt loss/gradient CUDA smokes plus family metadata as completed.
 Jamba entries now list causal chunk-state/head AdamW and Mamba chunk-state
-forward/backward/head AdamW CUDA smokes as completed while keeping the
-Jamba layer-schedule native loop visible as the remaining blocker.
+forward/backward/head AdamW plus layer-schedule native-loop CUDA smokes as
+completed. The family still reports `family-native-loop-missing` until the
+production train loop, checkpoint writer, and inference artifact path are
+implemented.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on

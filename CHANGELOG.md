@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added a Jamba native layer-schedule smoke. `nfn_jamba_native_train
+  --smoke-jamba-layer-schedule-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model jamba
+  --native-cuda-smoke-jamba-layer-schedule-step` alias run the Jamba scheduled
+  Mamba-state/head/loss/backward/AdamW slice without Torch or graph-editor
+  tensor flow. Jamba preflight JSON now reports
+  `jamba-layer-schedule-native-loop-smoke` in completed requirements; the
+  family remains `family-native-loop-missing` until the production trainer loop
+  and artifacts are implemented. Verification: rebuilt missing-family native
+  trainers and unified native frontends; live CUDA direct and unified Jamba
+  layer-schedule smokes passed; focused native pytest passed; no-Torch verifier
+  passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added Jamba Mamba chunk-state backward coverage to the native CUDA Tile
   surface. The trainer-facing raw ABI and PyTorch Tile extension now export
   `nfn_native_tile_causal_chunk_state_backward_float32` /

@@ -29,8 +29,11 @@ forward/backward smoke:
 `nfn-native-train --base-model jamba
 --native-cuda-smoke-jamba-mamba-state-step --native-cuda-tile-ops-lib PATH`.
 It stays on raw C++/CUDA Tile kernels, reports `torch_required: false` and
-`graph_editor_tensor_flow: false`, and leaves the family layer-schedule native
-loop as the visible remaining Jamba trainer requirement.
+`graph_editor_tensor_flow: false`. Use
+`--native-cuda-smoke-jamba-layer-schedule-step` for the matching scheduled
+Mamba-state/head/loss/backward/AdamW preflight. The full Jamba production
+trainer still reports `family-native-loop-missing` until the train loop and
+native artifacts are implemented.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
 shim: `from nfn import main; main()` can serve root help, direct dense GPT

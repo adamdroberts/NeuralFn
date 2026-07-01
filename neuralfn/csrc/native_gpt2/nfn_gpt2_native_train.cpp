@@ -935,9 +935,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
-        return {
-            "jamba-layer-schedule-native-loop",
-        };
+        return {};
     }
     if (coverage_class == "missing-hnet-byte-lm") {
         return {
@@ -1047,6 +1045,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "jamba-causal-chunk-state-head-adamw-smoke",
             "jamba-mamba-state-forward-backward-adamw-smoke",
+            "jamba-layer-schedule-native-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
