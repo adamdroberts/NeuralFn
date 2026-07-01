@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Tightened native GPT template coverage metadata so every non-runnable shipped
+  template class now reports at least one explicit missing native loop or
+  objective requirement. Dense JEPA, diffusion, TTT, HNet byte-LM, and universal
+  transformer coverage classes now name their remaining full-loop blockers
+  instead of returning an empty `native_training_missing_requirements` list.
+  Implemented dense GPT selectors remain the only templates with an empty
+  missing list. Verification: rebuilt the missing-family native trainers and
+  dense GPT catalog binaries, then checked the unified catalog grouping for
+  non-empty missing requirements on every `template-native-trainer-missing`
+  class.
+
 - Added a shared standard-MoE transformer-block train-step smoke.
   `nfn_mixllama_native_train --smoke-moe-transformer-block-train-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model

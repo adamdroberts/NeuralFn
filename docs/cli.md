@@ -3261,7 +3261,10 @@ For the shared family metadata slice, use `nfn_jepa_native_train --smoke-family-
 Template catalog and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Use these fields to audit complete
-GPT-template native coverage. Missing
+GPT-template native coverage. Implemented dense GPT selectors are the only
+entries that may report an empty missing-requirements list; non-runnable
+templates name at least one remaining native loop or objective requirement.
+Missing
 families now have compiled no-Torch boundaries for LLaMA/RoPE/SwiGLU, standard
 MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT,
 HNet byte-LM, and universal transformer classes. LLaMA-family entries now list

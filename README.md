@@ -4176,7 +4176,8 @@ missing-family binaries emit the same coverage classes for LLaMA/RoPE/SwiGLU,
 standard MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq,
 diffusion, TTT, HNet byte-LM, and universal transformer families. This manifest
 is the coverage gate for the remaining native-template work: no shipped GPT
-template should be an unclassified generic miss.
+template should be an unclassified generic miss, and non-runnable templates must
+name at least one remaining native loop or objective requirement.
 LLaMA-family entries now report completed smoke-backed slices for RMSNorm,
 RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, packed-QKV attention
 forward/backward, the RMSNorm/QKV-projection/packed-attention/residual forward

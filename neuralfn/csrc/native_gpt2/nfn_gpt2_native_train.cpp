@@ -892,7 +892,9 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-dense-jepa-objective") {
-        return {};
+        return {
+            "dense-jepa-full-forward-backward-loop",
+        };
     }
     if (coverage_class == "missing-moe-jepa-objective") {
         return {
@@ -924,10 +926,14 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-diffusion-objective") {
-        return {};
+        return {
+            "diffusion-full-forward-backward-loop",
+        };
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
-        return {};
+        return {
+            "ttt-full-transformer-forward-backward-loop",
+        };
     }
     if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
         return {
@@ -936,10 +942,14 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-hnet-byte-lm") {
-        return {};
+        return {
+            "hnet-byte-lm-full-forward-backward-loop",
+        };
     }
     if (coverage_class == "missing-universal-transformer-lm") {
-        return {};
+        return {
+            "universal-transformer-full-forward-backward-loop",
+        };
     }
     return {"classify-template-native-requirements"};
 }

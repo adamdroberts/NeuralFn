@@ -68,7 +68,7 @@ build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-dense-jepa-objective" \
-  "" \
+  "dense-jepa-full-forward-backward-loop" \
   "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
@@ -104,23 +104,23 @@ build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
   "nfn_native_tile_random_timesteps_float32,nfn_native_tile_mask_scheduler_int64,nfn_native_tile_token_embedding_float32,nfn_native_tile_token_embedding_backward_weight_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-diffusion-objective" \
-  "" \
+  "diffusion-full-forward-backward-loop" \
   "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_tanh_float32,nfn_native_tile_add_float32,nfn_native_tile_tanh_backward_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-ttt-transformer-lm" \
-  "" \
+  "ttt-full-transformer-forward-backward-loop" \
   "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "hnet-lm" "nfn_hnet_lm_native_train" \
   "HNet byte-token patch and merge CUDA Tile trainer" \
   "nfn_native_tile_byte_patch_embed_float32,nfn_native_tile_byte_patch_merge_float32,nfn_native_tile_byte_patch_merge_backward_float32,nfn_native_tile_byte_patch_embed_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-hnet-byte-lm" \
-  "" \
+  "hnet-byte-lm-full-forward-backward-loop" \
   "hnet-byte-patch-embed-merge-head-adamw-smoke,hnet-byte-patch-backward-adamw-smoke,byte-token-shard-resolver-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "universal-llama" "nfn_universal_llama_native_train" \
   "universal transformer recurrent layer and halting CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_act_halting_bce_grad_float32,nfn_native_tile_act_weighted_sum_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-universal-transformer-lm" \
-  "" \
+  "universal-transformer-full-forward-backward-loop" \
   "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke,family-parameter-layout-checkpoint-inference-smoke"

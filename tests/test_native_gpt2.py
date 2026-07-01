@@ -5274,14 +5274,14 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "missing-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == []
+    assert missing_requirements["ttt_llama"] == ["ttt-full-transformer-forward-backward-loop"]
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["universal_llama"] == "missing-universal-transformer-lm"
-    assert missing_requirements["universal_llama"] == []
+    assert missing_requirements["universal_llama"] == ["universal-transformer-full-forward-backward-loop"]
     assert completed_requirements["universal_llama"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
@@ -5297,7 +5297,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "missing-hnet-byte-lm"
-    assert missing_requirements["hnet_lm"] == []
+    assert missing_requirements["hnet_lm"] == ["hnet-byte-lm-full-forward-backward-loop"]
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
@@ -5305,7 +5305,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
-    assert missing_requirements["diffusion"] == []
+    assert missing_requirements["diffusion"] == ["diffusion-full-forward-backward-loop"]
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
@@ -11442,7 +11442,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "missing-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == []
+    assert jepa_payload["native_training_missing_requirements"] == [
+        "dense-jepa-full-forward-backward-loop",
+    ]
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
@@ -11647,7 +11649,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_payload["model_family"] == "diffusion"
     assert diffusion_payload["status"] == "family-native-trainer-missing"
     assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == []
+    assert diffusion_payload["native_training_missing_requirements"] == [
+        "diffusion-full-forward-backward-loop",
+    ]
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
@@ -11727,7 +11731,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_payload["model_family"] == "ttt-llama"
     assert ttt_payload["status"] == "family-native-trainer-missing"
     assert ttt_payload["native_training_coverage_class"] == "missing-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == []
+    assert ttt_payload["native_training_missing_requirements"] == [
+        "ttt-full-transformer-forward-backward-loop",
+    ]
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
@@ -11765,7 +11771,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_payload["model_family"] == "universal-llama"
     assert universal_payload["status"] == "family-native-trainer-missing"
     assert universal_payload["native_training_coverage_class"] == "missing-universal-transformer-lm"
-    assert universal_payload["native_training_missing_requirements"] == []
+    assert universal_payload["native_training_missing_requirements"] == [
+        "universal-transformer-full-forward-backward-loop",
+    ]
     assert universal_payload["native_training_completed_requirements"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
@@ -11802,7 +11810,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_payload["model_family"] == "hnet-lm"
     assert hnet_payload["status"] == "family-native-trainer-missing"
     assert hnet_payload["native_training_coverage_class"] == "missing-hnet-byte-lm"
-    assert hnet_payload["native_training_missing_requirements"] == []
+    assert hnet_payload["native_training_missing_requirements"] == [
+        "hnet-byte-lm-full-forward-backward-loop",
+    ]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",

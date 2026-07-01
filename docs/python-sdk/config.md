@@ -93,7 +93,8 @@ Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with no missing requirements. Other
-shipped presets are classified by the native trainer loop still required,
+shipped presets are classified by the native trainer loop still required, and
+non-runnable presets always name at least one remaining loop or objective gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal
 transformer families. LLaMA-family entries now list completed smoke-backed
