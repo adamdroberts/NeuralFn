@@ -519,9 +519,11 @@ RMSNorm, rotary, and SwiGLU raw Tile ABI symbols are present.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on
-CUDA and verify them against CPU references without Torch. Real training still
-fails until the family-specific CUDA Tile loop is
-implemented.
+CUDA and verify them against CPU references without Torch. Use
+`nfn_llama_native_train --smoke-llama-train-step --tile-ops-lib PATH` or the
+unified `--native-cuda-smoke-llama-train-step` alias to extend that same slice
+through device-side fill plus one AdamW update and moment verification. Real
+training still fails until the family-specific CUDA Tile loop is implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

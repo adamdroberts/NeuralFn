@@ -481,6 +481,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-list-templates" ||
                                arg == "--native-cuda-check-tile-ops" ||
                                arg == "--native-cuda-smoke-tile-ops" ||
+                               arg == "--native-cuda-smoke-llama-loop" ||
+                               arg == "--native-cuda-smoke-llama-train-step" ||
                                arg == "--native-cuda-smoke-optimizer-step" ||
                                arg == "--native-cuda-smoke-lm-step" ||
                                arg == "--native-cuda-smoke-attention-step" ||
@@ -509,6 +511,10 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--check-tile-ops");
             } else if (arg == "--native-cuda-smoke-tile-ops") {
                 forwarded.push_back("--smoke-tile-ops");
+            } else if (arg == "--native-cuda-smoke-llama-loop") {
+                forwarded.push_back("--smoke-llama-loop");
+            } else if (arg == "--native-cuda-smoke-llama-train-step") {
+                forwarded.push_back("--smoke-llama-train-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a LLaMA native train-step CUDA smoke. `nfn_llama_native_train
+  --smoke-llama-train-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model llama --native-cuda-smoke-llama-train-step`
+  alias now execute the existing RMSNorm/RoPE/SwiGLU loop-composition slice,
+  then run device-side fill plus one AdamW update and moment verification
+  against CPU references. This keeps the new coverage on compiled C++ CUDA
+  Tile boundaries with `torch_required: false` and
+  `graph_editor_tensor_flow: false`; it is still a bounded train-slice smoke,
+  not the complete LLaMA family trainer. Verification: rebuilt missing-family
+  native trainers plus the compiled unified native CLIs; live CUDA smoke passed
+  with max errors at or below `1.19209e-07`; focused missing-family dispatch
+  pytest covered the direct and unified CLI aliases; the no-Torch verifier
+  passed 30 artifact scans, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Routed GPT template selectors for non-dense families to their compiled native
   family binaries. SDK `build_native_train_run_config("gpt", ..., template_name=...)`,
   `nfn train --base-model gpt --template-name ...`, and direct

@@ -992,6 +992,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-check-tile-ops",
                 "--native-cuda-smoke-tile-ops",
                 "--native-cuda-smoke-llama-loop",
+                "--native-cuda-smoke-llama-train-step",
                 "--native-cuda-smoke-optimizer-step",
                 "--native-cuda-smoke-lm-step",
                 "--native-cuda-smoke-attention-step",
@@ -1019,6 +1020,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-tile-ops");
             } else if (arg == "--native-cuda-smoke-llama-loop") {
                 forwarded.push_back("--smoke-llama-loop");
+            } else if (arg == "--native-cuda-smoke-llama-train-step") {
+                forwarded.push_back("--smoke-llama-train-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {
