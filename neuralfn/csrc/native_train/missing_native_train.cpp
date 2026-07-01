@@ -81,6 +81,7 @@ struct Config {
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_moe_jepa_loss_composition_step = false;
+    bool smoke_semantic_jepa_loss_composition_step = false;
     bool smoke_dense_jepa_train_step = false;
     bool smoke_dense_jepa_full_loop_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
@@ -304,6 +305,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-moe-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus MoE router balance loss on CUDA\n"
+        << "  --smoke-semantic-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus semantic-alignment loss on CUDA\n"
         << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
@@ -390,6 +392,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-moe-jepa-loss-composition-step" ||
                    arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
             cfg.smoke_moe_jepa_loss_composition_step = true;
+        } else if (arg == "--smoke-semantic-jepa-loss-composition-step" ||
+                   arg == "--native-cuda-smoke-semantic-jepa-loss-composition-step") {
+            cfg.smoke_semantic_jepa_loss_composition_step = true;
         } else if (arg == "--smoke-dense-jepa-train-step" || arg == "--native-cuda-smoke-dense-jepa-train-step") {
             cfg.smoke_dense_jepa_train_step = true;
         } else if (arg == "--smoke-dense-jepa-full-loop-step" ||
@@ -5052,6 +5057,7 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
     const bool moe_jepa_objective = cfg.smoke_moe_jepa_loss_composition_step;
+    const bool semantic_jepa_objective = cfg.smoke_semantic_jepa_loss_composition_step;
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -5071,6 +5077,10 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
     using RouteBalanceDensityFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
     using RouteBalanceLossFn = int (*)(const float*, float*, std::int64_t, void*);
+    using SemanticAlignmentLossItemsFn = int (*)(
+        const float*, const std::int64_t*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SumAccumulateFn = int (*)(const float*, float*, std::int64_t, void*);
 
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
@@ -5081,6 +5091,8 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     LatentMseLossFn latent_mse_loss = nullptr;
     RouteBalanceDensityFn route_density = nullptr;
     RouteBalanceLossFn route_loss = nullptr;
+    SemanticAlignmentLossItemsFn semantic_alignment_loss_items = nullptr;
+    SumAccumulateFn sum_accumulate = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
@@ -5089,9 +5101,15 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     constexpr std::int64_t kLatentElements = 6;
     constexpr std::int64_t kRouteRows = 2;
     constexpr std::int64_t kExperts = 3;
+    constexpr std::int64_t kSemanticRows = 2;
+    constexpr std::int64_t kSemanticDims = 3;
+    constexpr std::int64_t kSemanticTerms = 4;
+    constexpr std::int64_t kSemanticElements = kSemanticRows * kSemanticDims;
+    constexpr std::int64_t kIgnoreIndex = -1;
     constexpr float kArLossCoef = 1.0f;
     constexpr float kJepaLossCoef = 0.25f;
     constexpr float kRouterLossCoef = 0.01f;
+    constexpr float kSemanticLossCoef = 0.05f;
 
     auto cuda_error = [&](int code, const std::string& context) {
         std::ostringstream out;
@@ -5122,6 +5140,8 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     float ar_loss_max_error = 0.0f;
     float jepa_loss_max_error = 0.0f;
     float router_loss_max_error = 0.0f;
+    float semantic_loss_max_error = 0.0f;
+    float semantic_count_max_error = 0.0f;
     float total_loss_max_error = 0.0f;
 
     std::vector<void*> allocated;
@@ -5156,8 +5176,16 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 route_loss = load_symbol<RouteBalanceLossFn>(
                     tile_handle, "nfn_native_tile_route_balance_loss_float32");
             }
+            if (semantic_jepa_objective) {
+                semantic_alignment_loss_items = load_symbol<SemanticAlignmentLossItemsFn>(
+                    tile_handle, "nfn_native_tile_semantic_alignment_loss_items_float32");
+                sum_accumulate = load_symbol<SumAccumulateFn>(
+                    tile_handle, "nfn_native_tile_sum_accumulate_float32");
+            }
             if (ce_partials == nullptr || latent_mse_loss == nullptr ||
-                (moe_jepa_objective && (route_density == nullptr || route_loss == nullptr))) {
+                (moe_jepa_objective && (route_density == nullptr || route_loss == nullptr)) ||
+                (semantic_jepa_objective &&
+                 (semantic_alignment_loss_items == nullptr || sum_accumulate == nullptr))) {
                 error = "Tile ops library is missing one or more JEPA AR+loss composition symbols";
             }
         }
@@ -5200,6 +5228,13 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             0.10f, 0.45f, -0.15f,
             -0.20f, 0.05f, 0.35f,
         };
+        std::vector<float> semantic_logits(static_cast<std::size_t>(kSemanticElements * kSemanticTerms));
+        for (std::int64_t i = 0; i < kSemanticElements * kSemanticTerms; ++i) {
+            semantic_logits[static_cast<std::size_t>(i)] =
+                0.06f * static_cast<float>(static_cast<int>(i % 11) - 5);
+        }
+        const std::vector<std::int64_t> semantic_targets = {1, 2, kIgnoreIndex, 0, 1, 2};
+        const std::vector<std::int64_t> semantic_term_counts = {3, 2, 4};
 
         float* d_logits = nullptr;
         float* d_ar_loss = nullptr;
@@ -5209,7 +5244,14 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         float* d_route_logits = nullptr;
         float* d_density = nullptr;
         float* d_router_loss = nullptr;
+        float* d_semantic_logits = nullptr;
+        float* d_semantic_losses = nullptr;
+        float* d_semantic_counts = nullptr;
+        float* d_semantic_loss_total = nullptr;
+        float* d_semantic_count_total = nullptr;
         std::int64_t* d_targets = nullptr;
+        std::int64_t* d_semantic_targets = nullptr;
+        std::int64_t* d_semantic_term_counts = nullptr;
         auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
             if (status != 0) {
@@ -5237,7 +5279,15 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             (!moe_jepa_objective ||
              (alloc(&d_route_logits, route_logits.size(), "route_logits") &&
               alloc(&d_density, kExperts, "density") &&
-              alloc(&d_router_loss, 1, "router_loss")))) {
+              alloc(&d_router_loss, 1, "router_loss"))) &&
+            (!semantic_jepa_objective ||
+             (alloc(&d_semantic_logits, semantic_logits.size(), "semantic_logits") &&
+              alloc_i64(&d_semantic_targets, semantic_targets.size(), "semantic_targets") &&
+              alloc_i64(&d_semantic_term_counts, semantic_term_counts.size(), "semantic_term_counts") &&
+              alloc(&d_semantic_losses, kSemanticElements, "semantic_losses") &&
+              alloc(&d_semantic_counts, kSemanticElements, "semantic_counts") &&
+              alloc(&d_semantic_loss_total, 1, "semantic_loss_total") &&
+              alloc(&d_semantic_count_total, 1, "semantic_count_total")))) {
             int status = cuda_memcpy(
                 d_logits, logits.data(), logits.size() * sizeof(float), kCudaMemcpyHostToDevice);
             if (status == 0) {
@@ -5256,6 +5306,27 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                     d_route_logits,
                     route_logits.data(),
                     route_logits.size() * sizeof(float),
+                    kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && semantic_jepa_objective) {
+                status = cuda_memcpy(
+                    d_semantic_logits,
+                    semantic_logits.data(),
+                    semantic_logits.size() * sizeof(float),
+                    kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && semantic_jepa_objective) {
+                status = cuda_memcpy(
+                    d_semantic_targets,
+                    semantic_targets.data(),
+                    semantic_targets.size() * sizeof(std::int64_t),
+                    kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && semantic_jepa_objective) {
+                status = cuda_memcpy(
+                    d_semantic_term_counts,
+                    semantic_term_counts.data(),
+                    semantic_term_counts.size() * sizeof(std::int64_t),
                     kCudaMemcpyHostToDevice);
             }
             if (status != 0) {
@@ -5285,6 +5356,31 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_route_balance_loss_float32");
                 }
             }
+            if (error.empty() && semantic_jepa_objective) {
+                status = semantic_alignment_loss_items(
+                    d_semantic_logits,
+                    d_semantic_targets,
+                    d_semantic_term_counts,
+                    d_semantic_losses,
+                    d_semantic_counts,
+                    kSemanticElements,
+                    kSemanticDims,
+                    kSemanticTerms,
+                    kIgnoreIndex,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_semantic_alignment_loss_items_float32");
+                }
+            }
+            if (error.empty() && semantic_jepa_objective) {
+                status = sum_accumulate(d_semantic_losses, d_semantic_loss_total, kSemanticElements, nullptr);
+                if (status == 0) {
+                    status = sum_accumulate(d_semantic_counts, d_semantic_count_total, kSemanticElements, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_sum_accumulate_float32 semantic objective");
+                }
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -5294,6 +5390,8 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             std::vector<float> actual_ar_loss(1, 0.0f);
             std::vector<float> actual_jepa_loss(1, 0.0f);
             std::vector<float> actual_router_loss(1, 0.0f);
+            std::vector<float> actual_semantic_loss(1, 0.0f);
+            std::vector<float> actual_semantic_count(1, 0.0f);
             if (error.empty()) {
                 status = cuda_memcpy(
                     actual_ar_loss.data(), d_ar_loss, sizeof(float), kCudaMemcpyDeviceToHost);
@@ -5304,6 +5402,20 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 if (status == 0 && moe_jepa_objective) {
                     status = cuda_memcpy(
                         actual_router_loss.data(), d_router_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && semantic_jepa_objective) {
+                    status = cuda_memcpy(
+                        actual_semantic_loss.data(),
+                        d_semantic_loss_total,
+                        sizeof(float),
+                        kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && semantic_jepa_objective) {
+                    status = cuda_memcpy(
+                        actual_semantic_count.data(),
+                        d_semantic_count_total,
+                        sizeof(float),
+                        kCudaMemcpyDeviceToHost);
                 }
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy JEPA AR+loss D2H");
@@ -5355,18 +5467,53 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 }
                 expected_router_loss *= static_cast<float>(kExperts);
             }
+            float expected_semantic_loss = 0.0f;
+            float expected_semantic_count = 0.0f;
+            if (semantic_jepa_objective) {
+                for (std::int64_t row = 0; row < kSemanticRows; ++row) {
+                    for (std::int64_t dim = 0; dim < kSemanticDims; ++dim) {
+                        const std::size_t item_idx = static_cast<std::size_t>(row * kSemanticDims + dim);
+                        const std::int64_t target = semantic_targets[item_idx];
+                        const std::int64_t term_count =
+                            std::min<std::int64_t>(semantic_term_counts[static_cast<std::size_t>(dim)], kSemanticTerms);
+                        if (target == kIgnoreIndex || target < 0 || target >= term_count) {
+                            continue;
+                        }
+                        const std::int64_t base = (row * kSemanticDims + dim) * kSemanticTerms;
+                        float max_value = -3.4028234663852886e38f;
+                        for (std::int64_t term = 0; term < term_count; ++term) {
+                            max_value = std::max(max_value, semantic_logits[static_cast<std::size_t>(base + term)]);
+                        }
+                        float sum_exp = 0.0f;
+                        for (std::int64_t term = 0; term < term_count; ++term) {
+                            sum_exp += std::exp(semantic_logits[static_cast<std::size_t>(base + term)] - max_value);
+                        }
+                        expected_semantic_loss +=
+                            std::log(sum_exp) + max_value - semantic_logits[static_cast<std::size_t>(base + target)];
+                        expected_semantic_count += 1.0f;
+                    }
+                }
+            }
             const float actual_total =
                 kArLossCoef * actual_ar_loss[0] +
                 kJepaLossCoef * actual_jepa_loss[0] +
-                (moe_jepa_objective ? kRouterLossCoef * actual_router_loss[0] : 0.0f);
+                (moe_jepa_objective ? kRouterLossCoef * actual_router_loss[0] : 0.0f) +
+                (semantic_jepa_objective ? kSemanticLossCoef * actual_semantic_loss[0] : 0.0f);
             const float expected_total =
                 kArLossCoef * expected_ar_loss +
                 kJepaLossCoef * expected_jepa_loss +
-                (moe_jepa_objective ? kRouterLossCoef * expected_router_loss : 0.0f);
+                (moe_jepa_objective ? kRouterLossCoef * expected_router_loss : 0.0f) +
+                (semantic_jepa_objective ? kSemanticLossCoef * expected_semantic_loss : 0.0f);
             ar_loss_max_error = std::fabs(actual_ar_loss[0] - expected_ar_loss);
             jepa_loss_max_error = std::fabs(actual_jepa_loss[0] - expected_jepa_loss);
             router_loss_max_error = moe_jepa_objective
                 ? std::fabs(actual_router_loss[0] - expected_router_loss)
+                : 0.0f;
+            semantic_loss_max_error = semantic_jepa_objective
+                ? std::fabs(actual_semantic_loss[0] - expected_semantic_loss)
+                : 0.0f;
+            semantic_count_max_error = semantic_jepa_objective
+                ? std::fabs(actual_semantic_count[0] - expected_semantic_count)
                 : 0.0f;
             total_loss_max_error = std::fabs(actual_total - expected_total);
             constexpr float kTolerance = 2e-6f;
@@ -5374,6 +5521,8 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 ar_loss_max_error <= kTolerance &&
                 jepa_loss_max_error <= kTolerance &&
                 router_loss_max_error <= kTolerance &&
+                semantic_loss_max_error <= kTolerance &&
+                semantic_count_max_error <= kTolerance &&
                 total_loss_max_error <= kTolerance;
             if (!passed && error.empty()) {
                 error = "JEPA AR+loss composition smoke exceeded tolerance";
@@ -5388,8 +5537,10 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (moe_jepa_objective ? "moe_jepa_ar_jepa_router_loss_composition_slice"
-                               : "jepa_ar_loss_composition_slice")
+        << (semantic_jepa_objective
+                ? "semantic_jepa_ar_semantic_jepa_loss_composition_slice"
+                : (moe_jepa_objective ? "moe_jepa_ar_jepa_router_loss_composition_slice"
+                                      : "jepa_ar_loss_composition_slice"))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -5403,21 +5554,29 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         << "  \"shape\": {\"rows\": " << kRows << ", \"vocab\": " << kVocab
         << ", \"latent_elements\": " << kLatentElements
         << ", \"route_rows\": " << (moe_jepa_objective ? kRouteRows : 0)
-        << ", \"experts\": " << (moe_jepa_objective ? kExperts : 0) << "},\n"
+        << ", \"experts\": " << (moe_jepa_objective ? kExperts : 0)
+        << ", \"semantic_rows\": " << (semantic_jepa_objective ? kSemanticRows : 0)
+        << ", \"semantic_dims\": " << (semantic_jepa_objective ? kSemanticDims : 0)
+        << ", \"semantic_terms\": " << (semantic_jepa_objective ? kSemanticTerms : 0) << "},\n"
         << "  \"loss_coefficients\": {\"ar\": " << kArLossCoef
         << ", \"jepa\": " << kJepaLossCoef
-        << ", \"router\": " << (moe_jepa_objective ? kRouterLossCoef : 0.0f) << "},\n"
+        << ", \"router\": " << (moe_jepa_objective ? kRouterLossCoef : 0.0f)
+        << ", \"semantic\": " << (semantic_jepa_objective ? kSemanticLossCoef : 0.0f) << "},\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
         << "    \"nfn_native_tile_latent_mse_loss_float32\""
         << (moe_jepa_objective
                 ? ",\n    \"nfn_native_tile_route_balance_density_float32\",\n    \"nfn_native_tile_route_balance_loss_float32\"\n"
-                : "\n")
+                : (semantic_jepa_objective
+                       ? ",\n    \"nfn_native_tile_semantic_alignment_loss_items_float32\",\n    \"nfn_native_tile_sum_accumulate_float32\"\n"
+                       : "\n"))
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"ar_loss\":" << ar_loss_max_error
         << ", \"jepa_loss\":" << jepa_loss_max_error
         << ", \"router_loss\":" << router_loss_max_error
+        << ", \"semantic_loss\":" << semantic_loss_max_error
+        << ", \"semantic_count\":" << semantic_count_max_error
         << ", \"total_loss\":" << total_loss_max_error
         << "}\n"
         << "}\n";
@@ -12648,7 +12807,9 @@ int main(int argc, char** argv) {
         if (cfg.smoke_jepa_target_encoder_step) {
             return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_jepa_ar_loss_step || cfg.smoke_moe_jepa_loss_composition_step) {
+        if (cfg.smoke_jepa_ar_loss_step ||
+            cfg.smoke_moe_jepa_loss_composition_step ||
+            cfg.smoke_semantic_jepa_loss_composition_step) {
             return print_jepa_ar_loss_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_alignment_step) {

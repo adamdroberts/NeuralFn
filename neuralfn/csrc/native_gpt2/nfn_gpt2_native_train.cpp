@@ -896,9 +896,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     if (coverage_class == "missing-semantic-dense-jepa-objective") {
         return {
             "semantic-target-shard-resolver",
-            "semantic-planner-forward-backward",
-            "semantic-alignment-loss-device-reduction",
-            "ar-plus-semantic-plus-jepa-loss-composition",
         };
     }
     if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
@@ -1004,6 +1001,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
             "semantic-hash-alignment-loss-items-smoke",
             "semantic-dense-planner-alignment-adamw-smoke",
+            "semantic-planner-forward-backward-smoke",
+            "semantic-alignment-loss-device-reduction-smoke",
+            "ar-plus-semantic-plus-jepa-loss-composition-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }

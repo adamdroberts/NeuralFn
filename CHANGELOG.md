@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Added a semantic JEPA AR+semantic+JEPA objective native smoke.
+  `nfn_semantic_dense_jepa_native_train
+  --smoke-semantic-jepa-loss-composition-step --tile-ops-lib PATH` and the
+  unified `nfn-native-train --base-model semantic-dense-jepa-evo
+  --native-cuda-smoke-semantic-jepa-loss-composition-step` alias now launch
+  token CE partials, JEPA latent MSE, semantic-alignment loss items,
+  device-side semantic loss/count reduction, and the combined weighted
+  objective check without Torch or graph-editor tensor flow. Semantic-dense
+  JEPA preflight JSON now reports semantic planner forward/backward,
+  semantic-alignment device reduction, and
+  `ar-plus-semantic-plus-jepa-loss-composition-smoke` in completed requirements,
+  leaving only semantic target shard resolution as missing. Verification:
+  rebuilt missing-family native trainers and unified/native catalog frontends;
+  live CUDA direct and unified semantic JEPA objective smokes passed; semantic
+  dense JEPA preflight reports only semantic target shard resolution missing;
+  focused native pytest passed; no-Torch verifier passed with 30/30 artifacts
+  and 0 stale artifacts.
+
 - Added a MoE-JEPA AR+JEPA+router objective native smoke.
   `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
