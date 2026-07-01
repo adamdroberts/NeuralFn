@@ -70,6 +70,7 @@ struct Config {
     bool smoke_llama_rope_attention_block_step = false;
     bool smoke_moe_route_expert_step = false;
     bool smoke_moe_transformer_block_step = false;
+    bool smoke_moe_transformer_block_train_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -273,6 +274,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-rope-attention-block-step Launch RMSNorm, QKV split, RoPE, attention, and residual kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
+        << "  --smoke-moe-transformer-block-train-step Launch MoE transformer block forward plus expert backward/AdamW kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -329,6 +331,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--smoke-moe-transformer-block-step" || arg == "--native-cuda-smoke-moe-transformer-block-step") {
             cfg.smoke_moe_transformer_block_step = true;
+        } else if (arg == "--smoke-moe-transformer-block-train-step" || arg == "--native-cuda-smoke-moe-transformer-block-train-step") {
+            cfg.smoke_moe_transformer_block_train_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -2763,6 +2767,7 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
 }
 
 int print_moe_transformer_block_smoke_json(const Config& cfg, const char* program) {
+    const bool train_step = cfg.smoke_moe_transformer_block_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_family =
         family.find("moe") != std::string::npos ||
@@ -2798,6 +2803,12 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     using MoeSwiGluForwardFn = int (*)(
         const float*, const float*, const std::int64_t*, const float*, const float*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MoeSwiGluBackwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*, const float*,
+        float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
 
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
@@ -2811,6 +2822,9 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     ScaledResidualAddFn residual_add = nullptr;
     TopKRouteFn topk_route = nullptr;
     MoeSwiGluForwardFn moe_forward = nullptr;
+    MoeSwiGluBackwardFn moe_backward = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
@@ -2870,6 +2884,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     float route_weight_max_abs = 0.0f;
     float moe_max_abs = 0.0f;
     float block_residual_delta_max_abs = 0.0f;
+    float moe_grad_x_max_abs = 0.0f;
+    float moe_grad_w1_max_abs = 0.0f;
+    float moe_grad_w2_max_abs = 0.0f;
+    float moe_grad_w3_max_abs = 0.0f;
+    float adamw_w1_delta_max_abs = 0.0f;
     std::int64_t route_index_max = -1;
     const float residual_scale_value = 1.0f;
 
@@ -2905,9 +2924,15 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
             topk_route = load_symbol<TopKRouteFn>(tile_handle, "nfn_native_tile_topk_route_float32");
             moe_forward = load_symbol<MoeSwiGluForwardFn>(
                 tile_handle, "nfn_native_tile_moe_swiglu_forward_float32");
+            if (train_step) {
+                moe_backward = load_symbol<MoeSwiGluBackwardFn>(
+                    tile_handle, "nfn_native_tile_moe_swiglu_backward_float32");
+                fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+                adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            }
             if (rms_norm == nullptr || linear_bf16_output == nullptr || packed_attention == nullptr ||
                 bf16_to_float32 == nullptr || residual_add == nullptr || topk_route == nullptr ||
-                moe_forward == nullptr) {
+                moe_forward == nullptr || (train_step && (moe_backward == nullptr || fill == nullptr || adamw == nullptr))) {
                 error = "Tile ops library is missing one or more MoE transformer-block symbols";
             }
         }
@@ -2945,11 +2970,15 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         std::vector<float> w2(static_cast<std::size_t>(kW2Elements), 0.0f);
         std::vector<float> w3(static_cast<std::size_t>(kW13Elements), 0.0f);
         std::vector<float> residual_scale = {residual_scale_value};
+        std::vector<float> grad_block(static_cast<std::size_t>(kElements), 0.0f);
         for (std::int64_t row = 0; row < kRows; ++row) {
             for (std::int64_t dim = 0; dim < kDim; ++dim) {
                 hidden[static_cast<std::size_t>(row * kDim + dim)] =
                     0.001f * static_cast<float>((row % 19) + 1) +
                     0.0001f * static_cast<float>((dim % 37) + 1);
+                grad_block[static_cast<std::size_t>(row * kDim + dim)] =
+                    0.0003f * static_cast<float>((row % 7) + 1) -
+                    0.00002f * static_cast<float>((dim % 23) + 1);
             }
             for (std::int64_t expert = 0; expert < kExperts; ++expert) {
                 route_logits[static_cast<std::size_t>(row * kExperts + expert)] =
@@ -2991,6 +3020,13 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         float* d_w2 = nullptr;
         float* d_w3 = nullptr;
         float* d_residual_scale = nullptr;
+        float* d_grad_block = nullptr;
+        float* d_grad_moe_x = nullptr;
+        float* d_grad_w1 = nullptr;
+        float* d_grad_w2 = nullptr;
+        float* d_grad_w3 = nullptr;
+        float* d_w1_exp_avg = nullptr;
+        float* d_w1_exp_avg_sq = nullptr;
         std::uint16_t* d_qkv_bf16 = nullptr;
         std::uint16_t* d_attention_bf16 = nullptr;
         std::int64_t* d_route_indices = nullptr;
@@ -3034,6 +3070,13 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
             alloc_float(&d_w2, w2.size(), "w2") &&
             alloc_float(&d_w3, w3.size(), "w3") &&
             alloc_float(&d_residual_scale, residual_scale.size(), "residual_scale") &&
+            (!train_step || alloc_float(&d_grad_block, grad_block.size(), "grad_block")) &&
+            (!train_step || alloc_float(&d_grad_moe_x, hidden.size(), "grad_moe_x")) &&
+            (!train_step || alloc_float(&d_grad_w1, w1.size(), "grad_w1")) &&
+            (!train_step || alloc_float(&d_grad_w2, w2.size(), "grad_w2")) &&
+            (!train_step || alloc_float(&d_grad_w3, w3.size(), "grad_w3")) &&
+            (!train_step || alloc_float(&d_w1_exp_avg, w1.size(), "w1_exp_avg")) &&
+            (!train_step || alloc_float(&d_w1_exp_avg_sq, w1.size(), "w1_exp_avg_sq")) &&
             alloc_bf16(&d_qkv_bf16, static_cast<std::size_t>(kQkvElements), "qkv_bf16") &&
             alloc_bf16(&d_attention_bf16, hidden.size(), "attention_bf16") &&
             alloc_i64(&d_route_indices, static_cast<std::size_t>(kRouteElements), "route_indices")) {
@@ -3056,8 +3099,32 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
             if (status == 0) {
                 status = cuda_memcpy(d_residual_scale, residual_scale.data(), sizeof(float), kCudaMemcpyHostToDevice);
             }
+            if (status == 0 && train_step) {
+                status = cuda_memcpy(d_grad_block, grad_block.data(), grad_block.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
             if (status != 0) {
                 error = cuda_error(status, "cudaMemcpy MoE transformer block H2D");
+            }
+            if (error.empty() && train_step) {
+                status = fill(d_grad_moe_x, kElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_grad_w1, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_grad_w2, kW2Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_grad_w3, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_w1_exp_avg, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_w1_exp_avg_sq, kW13Elements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero MoE transformer block train-step buffers");
+                }
             }
             if (error.empty()) {
                 status = rms_norm(d_hidden, d_normed, kRows, kDim, kEps, nullptr);
@@ -3111,6 +3178,48 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                     error = cuda_error(status, "nfn_native_tile_scaled_residual_add_float32 moe");
                 }
             }
+            if (error.empty() && train_step) {
+                status = moe_backward(
+                    d_attn_residual,
+                    d_route_weights,
+                    d_route_indices,
+                    d_w1,
+                    d_w2,
+                    d_w3,
+                    d_grad_block,
+                    d_grad_moe_x,
+                    d_grad_w1,
+                    d_grad_w2,
+                    d_grad_w3,
+                    kRows,
+                    kDim,
+                    kMoeHidden,
+                    kExperts,
+                    kTopK,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_moe_swiglu_backward_float32");
+                }
+            }
+            if (error.empty() && train_step) {
+                status = adamw(
+                    d_w1,
+                    d_grad_w1,
+                    d_w1_exp_avg,
+                    d_w1_exp_avg_sq,
+                    kW13Elements,
+                    0.001f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.01f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 w1");
+                }
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -3124,6 +3233,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 std::vector<std::int64_t> route_index_actual(static_cast<std::size_t>(kRouteElements), -1);
                 std::vector<float> moe_actual(hidden.size(), 0.0f);
                 std::vector<float> block_actual(hidden.size(), 0.0f);
+                std::vector<float> grad_moe_x_actual(hidden.size(), 0.0f);
+                std::vector<float> grad_w1_actual(w1.size(), 0.0f);
+                std::vector<float> grad_w2_actual(w2.size(), 0.0f);
+                std::vector<float> grad_w3_actual(w3.size(), 0.0f);
+                std::vector<float> w1_updated_actual(w1.size(), 0.0f);
                 status = cuda_memcpy(attention_actual.data(), d_attention_float, attention_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status == 0) {
                     status = cuda_memcpy(attn_residual_actual.data(), d_attn_residual, attn_residual_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
@@ -3139,6 +3253,21 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 }
                 if (status == 0) {
                     status = cuda_memcpy(block_actual.data(), d_block_out, block_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(grad_moe_x_actual.data(), d_grad_moe_x, grad_moe_x_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(grad_w1_actual.data(), d_grad_w1, grad_w1_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(grad_w2_actual.data(), d_grad_w2, grad_w2_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(grad_w3_actual.data(), d_grad_w3, grad_w3_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(w1_updated_actual.data(), d_w1, w1_updated_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 }
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy MoE transformer block D2H");
@@ -3157,6 +3286,17 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                             block_residual_delta_max_abs,
                             std::fabs(block_actual[i] - attn_residual_actual[i]));
                     }
+                    if (train_step) {
+                        moe_grad_x_max_abs = max_abs(grad_moe_x_actual);
+                        moe_grad_w1_max_abs = max_abs(grad_w1_actual);
+                        moe_grad_w2_max_abs = max_abs(grad_w2_actual);
+                        moe_grad_w3_max_abs = max_abs(grad_w3_actual);
+                        for (std::size_t i = 0; i < w1.size(); ++i) {
+                            adamw_w1_delta_max_abs = std::max(
+                                adamw_w1_delta_max_abs,
+                                std::fabs(w1_updated_actual[i] - w1[i]));
+                        }
+                    }
                 }
             }
             passed = error.empty() &&
@@ -3165,7 +3305,12 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 route_weight_max_abs > 0.0f &&
                 route_index_max >= 0 &&
                 moe_max_abs > 0.0f &&
-                block_residual_delta_max_abs > 0.0f;
+                block_residual_delta_max_abs > 0.0f &&
+                (!train_step || (moe_grad_x_max_abs > 0.0f &&
+                                 moe_grad_w1_max_abs > 0.0f &&
+                                 moe_grad_w2_max_abs > 0.0f &&
+                                 moe_grad_w3_max_abs > 0.0f &&
+                                 adamw_w1_delta_max_abs > 0.0f));
             if (!passed && error.empty()) {
                 error = "MoE transformer-block smoke produced a degenerate output";
             }
@@ -3178,7 +3323,7 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"moe_transformer_block_forward_slice\",\n"
+        << "  \"smoke\": \"" << (train_step ? "moe_transformer_block_train_step_slice" : "moe_transformer_block_forward_slice") << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -3199,7 +3344,8 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << "    \"nfn_native_tile_bf16_bits_to_float32\",\n"
         << "    \"nfn_native_tile_scaled_residual_add_float32\",\n"
         << "    \"nfn_native_tile_topk_route_float32\",\n"
-        << "    \"nfn_native_tile_moe_swiglu_forward_float32\"\n"
+        << "    \"nfn_native_tile_moe_swiglu_forward_float32\""
+        << (train_step ? ",\n    \"nfn_native_tile_moe_swiglu_backward_float32\",\n    \"nfn_native_tile_adamw_step_float32\"\n" : "\n")
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"attention_max_abs\":" << attention_max_abs
@@ -3208,6 +3354,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << ", \"route_index_max\":" << route_index_max
         << ", \"moe_max_abs\":" << moe_max_abs
         << ", \"block_residual_delta_max_abs\":" << block_residual_delta_max_abs
+        << ", \"moe_grad_x_max_abs\":" << moe_grad_x_max_abs
+        << ", \"moe_grad_w1_max_abs\":" << moe_grad_w1_max_abs
+        << ", \"moe_grad_w2_max_abs\":" << moe_grad_w2_max_abs
+        << ", \"moe_grad_w3_max_abs\":" << moe_grad_w3_max_abs
+        << ", \"adamw_w1_delta_max_abs\":" << adamw_w1_delta_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -10417,7 +10568,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_moe_transformer_block_step) {
+        if (cfg.smoke_moe_transformer_block_step || cfg.smoke_moe_transformer_block_train_step) {
             return print_moe_transformer_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_jepa_projector_step) {

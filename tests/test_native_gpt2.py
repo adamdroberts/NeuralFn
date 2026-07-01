@@ -5236,7 +5236,6 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
     assert missing_requirements["mixllama"] == [
-        "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
     ]
     assert completed_requirements["mixllama"] == [
@@ -5244,13 +5243,16 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
     assert "standard-moe-full-forward-backward-loop" in missing_requirements["moe_jepa_evo"]
+    assert "standard-moe-transformer-block-integration" not in missing_requirements["moe_jepa_evo"]
     assert "jepa-target-encoder-forward" not in missing_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-forward-backward" not in missing_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-block-forward-smoke" in completed_requirements["moe_jepa_evo"]
+    assert "standard-moe-transformer-block-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
@@ -11325,7 +11327,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_payload["status"] == "family-native-trainer-missing"
     assert mixllama_payload["native_training_coverage_class"] == "missing-standard-moe-transformer-lm"
     assert mixllama_payload["native_training_missing_requirements"] == [
-        "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
     ]
     assert mixllama_payload["native_training_completed_requirements"] == [
@@ -11333,6 +11334,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert mixllama_payload["compiled_native_boundary"] is True
@@ -11391,7 +11393,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_payload["native_training_missing_requirements"] == [
-        "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
     ]
@@ -11400,6 +11401,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
@@ -11951,7 +11953,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_unified_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_unified_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_unified_payload["native_training_missing_requirements"] == [
-        "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
     ]
@@ -11960,6 +11961,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
@@ -12056,6 +12058,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-moe-transformer-block-step" in unified_moe_block_smoke_command.stdout
     assert "--tile-ops-lib" in unified_moe_block_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_moe_block_smoke_command.stdout
+
+    unified_moe_block_train_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-smoke-moe-transformer-block-train-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_moe_block_train_smoke_command.returncode == 0, unified_moe_block_train_smoke_command.stderr
+    assert str(moe_jepa) in unified_moe_block_train_smoke_command.stdout
+    assert "--smoke-moe-transformer-block-train-step" in unified_moe_block_train_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_moe_block_train_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_moe_block_train_smoke_command.stdout
 
     unified_jepa_smoke_command = subprocess.run(
         [

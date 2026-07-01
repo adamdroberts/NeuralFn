@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a shared standard-MoE transformer-block train-step smoke.
+  `nfn_mixllama_native_train --smoke-moe-transformer-block-train-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  moe-jepa-evo --native-cuda-smoke-moe-transformer-block-train-step` alias now
+  run the integrated RMSNorm/QKV/attention/residual/router/MoE block path, then
+  launch routed SwiGLU expert backward and an AdamW update through raw CUDA Tile
+  ABI calls without Torch or graph-editor tensor flow. Standard MoE and
+  MoE+JEPA catalog/preflight JSON now report
+  `standard-moe-transformer-block-forward-backward-adamw-smoke` in
+  `native_training_completed_requirements`; the remaining full native
+  forward/backward loop and MoE+JEPA composite objective stay visible in
+  `native_training_missing_requirements`. Verification: rebuilt missing-family
+  native trainers, unified native frontends, dense GPT catalog binaries, and the
+  linked dense GPT binary; live CUDA direct and unified MoE block train-step
+  smokes passed with `moe_grad_w1_max_abs=0.000193637` and
+  `adamw_w1_delta_max_abs=0.000999942`; focused native GPT catalog/dispatch
+  pytest passed (`2 passed`); the no-Torch verifier passed 30 native artifacts
+  with 0 stale artifacts, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Added a shared missing-family parameter-layout/checkpoint/inference metadata
   native smoke. Every compiled non-dense GPT-family preflight now accepts
   `--smoke-family-layout-checkpoint-step`, and the unified frontend forwards

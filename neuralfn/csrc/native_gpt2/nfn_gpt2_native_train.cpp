@@ -888,7 +888,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-standard-moe-transformer-lm") {
         return {
-            "standard-moe-transformer-block-integration",
             "standard-moe-full-forward-backward-loop",
         };
     }
@@ -897,7 +896,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-moe-jepa-objective") {
         return {
-            "standard-moe-transformer-block-integration",
             "standard-moe-full-forward-backward-loop",
             "ar-plus-jepa-plus-router-loss-composition",
         };
@@ -974,6 +972,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         if (coverage_class == "missing-standard-moe-transformer-lm" ||
             coverage_class == "missing-moe-jepa-objective") {
             completed.push_back("standard-moe-transformer-block-forward-smoke");
+            completed.push_back("standard-moe-transformer-block-forward-backward-adamw-smoke");
         }
         if (coverage_class == "missing-moe-jepa-objective" ||
             (coverage_class == "missing-semantic-moe-router-jepa-objective" &&

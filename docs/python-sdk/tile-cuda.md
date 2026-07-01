@@ -570,6 +570,11 @@ PATH` or the unified `--native-cuda-smoke-moe-transformer-block-step` alias on
 standard MoE families to compose RMSNorm, BF16 QKV projection, packed causal
 attention, residual add, per-token top-k routing, routed SwiGLU expert forward,
 and the second residual add in one native forward block slice. Use
+`nfn_mixllama_native_train --smoke-moe-transformer-block-train-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-moe-transformer-block-train-step` alias on standard MoE
+families to extend the integrated block path through routed SwiGLU expert
+backward and an AdamW update without Torch or graph-editor tensor flow. Use
 `nfn_jepa_native_train --smoke-jepa-projector-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-jepa-projector-step` alias on JEPA families to run
 projector/predictor linear stages, latent MSE partials, linear backward, and
