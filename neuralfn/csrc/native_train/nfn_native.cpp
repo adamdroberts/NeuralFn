@@ -261,6 +261,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-ttt-linear-inner-step",
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
+        "--smoke-universal-transformer-loop-step",
         "--smoke-tile-ops",
         "--smoke-token-train-step",
         "--smoke-training-loop-step",
@@ -546,6 +547,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-ttt-linear-inner-step" ||
                                arg == "--native-cuda-smoke-universal-act-halt-step" ||
                                arg == "--native-cuda-smoke-universal-recurrent-step" ||
+                               arg == "--native-cuda-smoke-universal-transformer-loop-step" ||
                                arg == "--native-cuda-smoke-optimizer-step" ||
                                arg == "--native-cuda-smoke-lm-step" ||
                                arg == "--native-cuda-smoke-attention-step" ||
@@ -646,6 +648,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-universal-act-halt-step");
             } else if (arg == "--native-cuda-smoke-universal-recurrent-step") {
                 forwarded.push_back("--smoke-universal-recurrent-step");
+            } else if (arg == "--native-cuda-smoke-universal-transformer-loop-step") {
+                forwarded.push_back("--smoke-universal-transformer-loop-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {

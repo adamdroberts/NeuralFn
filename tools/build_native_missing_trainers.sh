@@ -122,5 +122,5 @@ build_one "universal-llama" "nfn_universal_llama_native_train" \
   "universal transformer recurrent layer and halting CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_act_halting_bce_grad_float32,nfn_native_tile_act_weighted_sum_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-universal-transformer-lm" \
-  "universal-transformer-full-forward-backward-loop" \
-  "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke,family-parameter-layout-checkpoint-inference-smoke"
+  "" \
+  "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke,universal-transformer-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"

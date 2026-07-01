@@ -81,6 +81,9 @@ nfn-native-train --base-model jamba \
 nfn-native-train --base-model hnet-lm \
   --native-cuda-smoke-hnet-byte-lm-loop-step \
   --native-cuda-tile-ops-lib PATH
+nfn-native-train --base-model universal-llama \
+  --native-cuda-smoke-universal-transformer-loop-step \
+  --native-cuda-tile-ops-lib PATH
 ```
 
 Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
@@ -597,6 +600,10 @@ production train loop, checkpoint writer, and inference artifact path are
 implemented.
 HNet entries now list byte-patch embed/merge/head AdamW, byte-patch backward
 AdamW, byte-LM loop, byte-token shard resolver, and family metadata smokes as
+completed while keeping the production train loop and artifact writer separate
+from preflight coverage.
+Universal entries now list recurrent linear/MSE/AdamW, ACT halt
+loss/gradient, the scheduled transformer-loop smoke, and family metadata as
 completed while keeping the production train loop and artifact writer separate
 from preflight coverage.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified

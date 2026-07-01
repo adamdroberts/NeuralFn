@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added a universal-transformer loop native smoke. `nfn_universal_llama_native_train
+  --smoke-universal-transformer-loop-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model universal-llama
+  --native-cuda-smoke-universal-transformer-loop-step` alias now report the
+  recurrent linear/MSE/AdamW plus ACT halt/weighted-sum/AdamW loop slice
+  without Torch or graph-editor tensor flow. Universal preflight JSON now
+  reports `universal-transformer-loop-smoke` in completed requirements; the
+  family remains `family-native-loop-missing` until the production trainer loop
+  and artifacts are implemented. Verification: rebuilt missing-family native
+  trainers and unified/native catalog frontends; live CUDA direct and unified
+  Universal transformer-loop smokes passed; focused native pytest passed;
+  no-Torch verifier passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added an HNet byte-LM loop native smoke. `nfn_hnet_lm_native_train
   --smoke-hnet-byte-lm-loop-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model hnet-lm

@@ -91,6 +91,7 @@ struct Config {
     bool smoke_ttt_composite_inner_step = false;
     bool smoke_universal_recurrent_step = false;
     bool smoke_universal_act_halt_step = false;
+    bool smoke_universal_transformer_loop_step = false;
     bool smoke_hnet_byte_patch_step = false;
     bool smoke_hnet_byte_patch_backward_step = false;
     bool smoke_hnet_byte_lm_loop_step = false;
@@ -304,6 +305,7 @@ void print_usage(const char* program) {
         << "  --smoke-ttt-composite-inner-step Launch TTT base/down/tanh/up residual, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-recurrent-step Launch universal recurrent linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-act-halt-step Launch universal ACT halt gate, weighted sum, BCE-gradient, and AdamW kernels on CUDA\n"
+        << "  --smoke-universal-transformer-loop-step Launch universal recurrent/ACT native loop smoke on CUDA\n"
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-backward-step Launch HNet byte patch merge/embed backward and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-lm-loop-step Launch HNet byte-LM native loop smoke over byte patch/head kernels\n"
@@ -396,6 +398,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_universal_recurrent_step = true;
         } else if (arg == "--smoke-universal-act-halt-step" || arg == "--native-cuda-smoke-universal-act-halt-step") {
             cfg.smoke_universal_act_halt_step = true;
+        } else if (arg == "--smoke-universal-transformer-loop-step" ||
+                   arg == "--native-cuda-smoke-universal-transformer-loop-step") {
+            cfg.smoke_universal_transformer_loop_step = true;
         } else if (arg == "--smoke-hnet-byte-patch-step" || arg == "--native-cuda-smoke-hnet-byte-patch-step") {
             cfg.smoke_hnet_byte_patch_step = true;
         } else if (arg == "--smoke-hnet-byte-patch-backward-step" || arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
@@ -9145,7 +9150,11 @@ int print_universal_act_halt_smoke_json(const Config& cfg, const char* program) 
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"universal_act_halt_train_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (cfg.smoke_universal_transformer_loop_step
+                ? "universal_transformer_loop_train_step_slice"
+                : "universal_act_halt_train_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -9156,6 +9165,7 @@ int print_universal_act_halt_smoke_json(const Config& cfg, const char* program) 
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"shape\": {\"batch\": " << kBatch << ", \"steps\": " << kSteps << ", \"dim\": " << kDim << "},\n"
+        << "  \"universal_loop\": [\"recurrent_linear_mse_adamw\", \"act_halt_bce_weighted_sum_adamw\"],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_linear_float32\",\n"
         << "    \"nfn_native_tile_act_halting_bce_grad_float32\",\n"
@@ -12501,7 +12511,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_universal_recurrent_step) {
             return print_universal_recurrent_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_universal_act_halt_step) {
+        if (cfg.smoke_universal_act_halt_step || cfg.smoke_universal_transformer_loop_step) {
             return print_universal_act_halt_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_hnet_byte_patch_step || cfg.smoke_hnet_byte_lm_loop_step) {

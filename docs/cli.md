@@ -92,6 +92,7 @@ nfn train --base-model gpt3 --dataset tinystories --native-cuda-print-command --
 nfn-native-train --base-model jamba --native-cuda-smoke-jamba-mamba-state-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn-native-train --base-model jamba --native-cuda-smoke-jamba-layer-schedule-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn-native-train --base-model hnet-lm --native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
+nfn-native-train --base-model universal-llama --native-cuda-smoke-universal-transformer-loop-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
 nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2_evo --prompt-tokens 50256 --max-new-tokens 64
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
@@ -163,6 +164,10 @@ HNet native coverage exposes `--native-cuda-smoke-hnet-byte-lm-loop-step` for
 the byte-patch embed/merge, head loss/backward, byte-patch backward smoke, and
 AdamW schedule. It stays on compiled CUDA Tile binaries and keeps
 `graph_editor_tensor_flow: false`.
+Universal transformer coverage exposes
+`--native-cuda-smoke-universal-transformer-loop-step` for the recurrent
+linear/MSE/AdamW and ACT halt/weighted-sum/AdamW schedule, again without
+graph-editor tensor flow.
 The related rejected profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
 keeps the forced 256-versus-512 target-correction thread-count comparison

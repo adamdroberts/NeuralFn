@@ -941,9 +941,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "missing-universal-transformer-lm") {
-        return {
-            "universal-transformer-full-forward-backward-loop",
-        };
+        return {};
     }
     return {"classify-template-native-requirements"};
 }
@@ -1051,6 +1049,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "universal-recurrent-linear-mse-adamw-smoke",
             "universal-act-halt-loss-gradient-smoke",
+            "universal-transformer-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }

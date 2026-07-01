@@ -39,6 +39,11 @@ HNet byte-LM preflight has the same native-only shape:
 --native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib PATH`
 verifies the scheduled byte-patch/head/backward/AdamW loop slice while keeping
 real tensors out of graph-editor nodes.
+Universal transformer preflight now has the matching loop smoke:
+`nfn-native-train --base-model universal-llama
+--native-cuda-smoke-universal-transformer-loop-step
+--native-cuda-tile-ops-lib PATH` verifies the recurrent and ACT halt native
+loop slices without entering Torch.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
 shim: `from nfn import main; main()` can serve root help, direct dense GPT
