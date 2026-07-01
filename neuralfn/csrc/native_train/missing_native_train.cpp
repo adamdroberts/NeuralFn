@@ -80,6 +80,7 @@ struct Config {
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
+    bool smoke_moe_jepa_loss_composition_step = false;
     bool smoke_dense_jepa_train_step = false;
     bool smoke_dense_jepa_full_loop_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
@@ -302,6 +303,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
+        << "  --smoke-moe-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus MoE router balance loss on CUDA\n"
         << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
@@ -385,6 +387,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_target_encoder_step = true;
         } else if (arg == "--smoke-jepa-ar-loss-step" || arg == "--native-cuda-smoke-jepa-ar-loss-step") {
             cfg.smoke_jepa_ar_loss_step = true;
+        } else if (arg == "--smoke-moe-jepa-loss-composition-step" ||
+                   arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
+            cfg.smoke_moe_jepa_loss_composition_step = true;
         } else if (arg == "--smoke-dense-jepa-train-step" || arg == "--native-cuda-smoke-dense-jepa-train-step") {
             cfg.smoke_dense_jepa_train_step = true;
         } else if (arg == "--smoke-dense-jepa-full-loop-step" ||
@@ -5046,6 +5051,7 @@ int print_jepa_target_encoder_smoke_json(const Config& cfg, const char* program)
 int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
+    const bool moe_jepa_objective = cfg.smoke_moe_jepa_loss_composition_step;
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -5063,6 +5069,8 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     using TokenCrossEntropyPartialsFn =
         int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using RouteBalanceDensityFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
+    using RouteBalanceLossFn = int (*)(const float*, float*, std::int64_t, void*);
 
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
@@ -5071,14 +5079,19 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
     LatentMseLossFn latent_mse_loss = nullptr;
+    RouteBalanceDensityFn route_density = nullptr;
+    RouteBalanceLossFn route_loss = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
     constexpr std::int64_t kRows = 3;
     constexpr std::int64_t kVocab = 5;
     constexpr std::int64_t kLatentElements = 6;
+    constexpr std::int64_t kRouteRows = 2;
+    constexpr std::int64_t kExperts = 3;
     constexpr float kArLossCoef = 1.0f;
     constexpr float kJepaLossCoef = 0.25f;
+    constexpr float kRouterLossCoef = 0.01f;
 
     auto cuda_error = [&](int code, const std::string& context) {
         std::ostringstream out;
@@ -5108,6 +5121,7 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     bool passed = false;
     float ar_loss_max_error = 0.0f;
     float jepa_loss_max_error = 0.0f;
+    float router_loss_max_error = 0.0f;
     float total_loss_max_error = 0.0f;
 
     std::vector<void*> allocated;
@@ -5136,7 +5150,14 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
             latent_mse_loss = load_symbol<LatentMseLossFn>(
                 tile_handle, "nfn_native_tile_latent_mse_loss_float32");
-            if (ce_partials == nullptr || latent_mse_loss == nullptr) {
+            if (moe_jepa_objective) {
+                route_density = load_symbol<RouteBalanceDensityFn>(
+                    tile_handle, "nfn_native_tile_route_balance_density_float32");
+                route_loss = load_symbol<RouteBalanceLossFn>(
+                    tile_handle, "nfn_native_tile_route_balance_loss_float32");
+            }
+            if (ce_partials == nullptr || latent_mse_loss == nullptr ||
+                (moe_jepa_objective && (route_density == nullptr || route_loss == nullptr))) {
                 error = "Tile ops library is missing one or more JEPA AR+loss composition symbols";
             }
         }
@@ -5175,12 +5196,19 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         const std::vector<std::int64_t> targets = {2, 1, 3};
         const std::vector<float> pred = {0.05f, -0.10f, 0.20f, 0.30f, -0.15f, 0.12f};
         const std::vector<float> latent_target = {0.01f, -0.05f, 0.25f, 0.10f, -0.20f, 0.08f};
+        const std::vector<float> route_logits = {
+            0.10f, 0.45f, -0.15f,
+            -0.20f, 0.05f, 0.35f,
+        };
 
         float* d_logits = nullptr;
         float* d_ar_loss = nullptr;
         float* d_pred = nullptr;
         float* d_latent_target = nullptr;
         float* d_jepa_loss = nullptr;
+        float* d_route_logits = nullptr;
+        float* d_density = nullptr;
+        float* d_router_loss = nullptr;
         std::int64_t* d_targets = nullptr;
         auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
@@ -5205,7 +5233,11 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             alloc(&d_ar_loss, 1, "ar_loss") &&
             alloc(&d_pred, pred.size(), "pred") &&
             alloc(&d_latent_target, latent_target.size(), "latent_target") &&
-            alloc(&d_jepa_loss, 1, "jepa_loss")) {
+            alloc(&d_jepa_loss, 1, "jepa_loss") &&
+            (!moe_jepa_objective ||
+             (alloc(&d_route_logits, route_logits.size(), "route_logits") &&
+              alloc(&d_density, kExperts, "density") &&
+              alloc(&d_router_loss, 1, "router_loss")))) {
             int status = cuda_memcpy(
                 d_logits, logits.data(), logits.size() * sizeof(float), kCudaMemcpyHostToDevice);
             if (status == 0) {
@@ -5218,6 +5250,13 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             if (status == 0) {
                 status = cuda_memcpy(
                     d_latent_target, latent_target.data(), latent_target.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && moe_jepa_objective) {
+                status = cuda_memcpy(
+                    d_route_logits,
+                    route_logits.data(),
+                    route_logits.size() * sizeof(float),
+                    kCudaMemcpyHostToDevice);
             }
             if (status != 0) {
                 error = cuda_error(status, "cudaMemcpy JEPA AR+loss H2D");
@@ -5234,6 +5273,18 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32");
                 }
             }
+            if (error.empty() && moe_jepa_objective) {
+                status = route_density(d_route_logits, d_density, kRouteRows, kExperts, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_route_balance_density_float32");
+                }
+            }
+            if (error.empty() && moe_jepa_objective) {
+                status = route_loss(d_density, d_router_loss, kExperts, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_route_balance_loss_float32");
+                }
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -5242,12 +5293,17 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
             }
             std::vector<float> actual_ar_loss(1, 0.0f);
             std::vector<float> actual_jepa_loss(1, 0.0f);
+            std::vector<float> actual_router_loss(1, 0.0f);
             if (error.empty()) {
                 status = cuda_memcpy(
                     actual_ar_loss.data(), d_ar_loss, sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status == 0) {
                     status = cuda_memcpy(
                         actual_jepa_loss.data(), d_jepa_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && moe_jepa_objective) {
+                    status = cuda_memcpy(
+                        actual_router_loss.data(), d_router_loss, sizeof(float), kCudaMemcpyDeviceToHost);
                 }
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy JEPA AR+loss D2H");
@@ -5273,17 +5329,51 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
                 const float diff = pred[i] - latent_target[i];
                 expected_jepa_loss += diff * diff;
             }
+            float expected_router_loss = 0.0f;
+            if (moe_jepa_objective) {
+                std::vector<float> density(static_cast<std::size_t>(kExperts), 0.0f);
+                for (std::int64_t row = 0; row < kRouteRows; ++row) {
+                    float row_max = route_logits[static_cast<std::size_t>(row * kExperts)];
+                    for (std::int64_t col = 1; col < kExperts; ++col) {
+                        row_max = std::max(
+                            row_max,
+                            route_logits[static_cast<std::size_t>(row * kExperts + col)]);
+                    }
+                    float denom = 0.0f;
+                    for (std::int64_t col = 0; col < kExperts; ++col) {
+                        denom += std::exp(route_logits[static_cast<std::size_t>(row * kExperts + col)] - row_max);
+                    }
+                    for (std::int64_t col = 0; col < kExperts; ++col) {
+                        density[static_cast<std::size_t>(col)] +=
+                            std::exp(route_logits[static_cast<std::size_t>(row * kExperts + col)] - row_max) /
+                            denom /
+                            static_cast<float>(kRouteRows);
+                    }
+                }
+                for (float value : density) {
+                    expected_router_loss += value * value;
+                }
+                expected_router_loss *= static_cast<float>(kExperts);
+            }
             const float actual_total =
-                kArLossCoef * actual_ar_loss[0] + kJepaLossCoef * actual_jepa_loss[0];
+                kArLossCoef * actual_ar_loss[0] +
+                kJepaLossCoef * actual_jepa_loss[0] +
+                (moe_jepa_objective ? kRouterLossCoef * actual_router_loss[0] : 0.0f);
             const float expected_total =
-                kArLossCoef * expected_ar_loss + kJepaLossCoef * expected_jepa_loss;
+                kArLossCoef * expected_ar_loss +
+                kJepaLossCoef * expected_jepa_loss +
+                (moe_jepa_objective ? kRouterLossCoef * expected_router_loss : 0.0f);
             ar_loss_max_error = std::fabs(actual_ar_loss[0] - expected_ar_loss);
             jepa_loss_max_error = std::fabs(actual_jepa_loss[0] - expected_jepa_loss);
+            router_loss_max_error = moe_jepa_objective
+                ? std::fabs(actual_router_loss[0] - expected_router_loss)
+                : 0.0f;
             total_loss_max_error = std::fabs(actual_total - expected_total);
             constexpr float kTolerance = 2e-6f;
             passed = error.empty() &&
                 ar_loss_max_error <= kTolerance &&
                 jepa_loss_max_error <= kTolerance &&
+                router_loss_max_error <= kTolerance &&
                 total_loss_max_error <= kTolerance;
             if (!passed && error.empty()) {
                 error = "JEPA AR+loss composition smoke exceeded tolerance";
@@ -5297,7 +5387,10 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"jepa_ar_loss_composition_slice\",\n"
+        << "  \"smoke\": \""
+        << (moe_jepa_objective ? "moe_jepa_ar_jepa_router_loss_composition_slice"
+                               : "jepa_ar_loss_composition_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -5308,16 +5401,23 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"shape\": {\"rows\": " << kRows << ", \"vocab\": " << kVocab
-        << ", \"latent_elements\": " << kLatentElements << "},\n"
+        << ", \"latent_elements\": " << kLatentElements
+        << ", \"route_rows\": " << (moe_jepa_objective ? kRouteRows : 0)
+        << ", \"experts\": " << (moe_jepa_objective ? kExperts : 0) << "},\n"
         << "  \"loss_coefficients\": {\"ar\": " << kArLossCoef
-        << ", \"jepa\": " << kJepaLossCoef << "},\n"
+        << ", \"jepa\": " << kJepaLossCoef
+        << ", \"router\": " << (moe_jepa_objective ? kRouterLossCoef : 0.0f) << "},\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
-        << "    \"nfn_native_tile_latent_mse_loss_float32\"\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\""
+        << (moe_jepa_objective
+                ? ",\n    \"nfn_native_tile_route_balance_density_float32\",\n    \"nfn_native_tile_route_balance_loss_float32\"\n"
+                : "\n")
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"ar_loss\":" << ar_loss_max_error
         << ", \"jepa_loss\":" << jepa_loss_max_error
+        << ", \"router_loss\":" << router_loss_max_error
         << ", \"total_loss\":" << total_loss_max_error
         << "}\n"
         << "}\n";
@@ -12548,7 +12648,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_jepa_target_encoder_step) {
             return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_jepa_ar_loss_step) {
+        if (cfg.smoke_jepa_ar_loss_step || cfg.smoke_moe_jepa_loss_composition_step) {
             return print_jepa_ar_loss_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_alignment_step) {

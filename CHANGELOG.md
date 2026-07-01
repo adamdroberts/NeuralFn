@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a MoE-JEPA AR+JEPA+router objective native smoke.
+  `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step` alias now
+  launch token CE partials, JEPA latent MSE, route-balance density/loss, and
+  the combined weighted objective check without Torch or graph-editor tensor
+  flow. MoE-JEPA preflight JSON now reports
+  `ar-plus-jepa-plus-router-loss-composition-smoke` in completed requirements
+  and no longer lists `ar-plus-jepa-plus-router-loss-composition` as missing.
+  Verification: rebuilt missing-family native trainers and unified/native
+  catalog frontends; live CUDA direct and unified MoE-JEPA objective smokes
+  passed; MoE-JEPA preflight reports no missing native-training requirements;
+  focused native pytest passed; no-Torch verifier passed with 30/30 artifacts
+  and 0 stale artifacts.
+
 - Added a dense JEPA full forward/backward-loop native smoke.
   `nfn_jepa_native_train --smoke-dense-jepa-full-loop-step --tile-ops-lib
   PATH` and the unified `nfn-native-train --base-model dense-jepa-evo

@@ -4844,6 +4844,8 @@ For the semantic-router MoE route/expert train-step slice, use `nfn_semantic_rou
 
 For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-full-loop-step`; it reports the RMSNorm/packed-attention/top-k-route/routed-SwiGLU/LM-head CE/backward/AdamW loop smoke without Torch or graph-editor tensor flow.
 
+For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, route-balance density/loss, and the combined objective check without Torch or graph-editor tensor flow.
+
 For the dense JEPA full forward/backward-loop slice, use `nfn_jepa_native_train --smoke-dense-jepa-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-full-loop-step`; it reports the target latent pooling/projection, projector/predictor, AR logits, token CE backward, JEPA/LM gradient accumulation, and AdamW loop smoke without Torch or graph-editor tensor flow.
 
 For the seq2seq loss-composition slice, use `nfn_seq2seq_native_train --smoke-seq2seq-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-smoke-seq2seq-loss-composition-step`; it runs decoder-to-encoder attention plus CE loss/backward and LM-head AdamW as the explicit no-Torch loss-composition coverage smoke.

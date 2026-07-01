@@ -86,6 +86,19 @@ nfn-native-train --base-model universal-llama \
   --native-cuda-tile-ops-lib PATH
 ```
 
+MoE-JEPA coverage includes an AR+JEPA+router objective smoke that stays on raw
+CUDA Tile ABI calls for token CE partials, latent MSE, route-balance
+density/loss, and the combined weighted objective:
+
+```bash
+nfn_moe_jepa_evo_native_train \
+  --smoke-moe-jepa-loss-composition-step \
+  --tile-ops-lib PATH
+nfn-native-train --base-model moe-jepa-evo \
+  --native-cuda-smoke-moe-jepa-loss-composition-step \
+  --native-cuda-tile-ops-lib PATH
+```
+
 Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
 ABI calls from target latent pooling through AR+JEPA loss/backward and AdamW:
 

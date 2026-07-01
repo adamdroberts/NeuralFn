@@ -542,6 +542,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-moe-transformer-block-train-step",
         "--smoke-moe-transformer-lm-train-step",
         "--smoke-moe-full-loop-step",
+        "--smoke-moe-jepa-loss-composition-step",
         "--smoke-norm-residual-step",
         "--smoke-optimizer-step",
         "--smoke-semantic-alignment-step",
@@ -612,6 +613,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-moe-transformer-block-train-step",
         "--smoke-moe-transformer-lm-train-step",
         "--smoke-moe-full-loop-step",
+        "--smoke-moe-jepa-loss-composition-step",
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
         "--smoke-semantic-router-moe-train-step",
@@ -1105,6 +1107,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-moe-transformer-block-train-step",
                 "--native-cuda-smoke-moe-transformer-lm-train-step",
                 "--native-cuda-smoke-moe-full-loop-step",
+                "--native-cuda-smoke-moe-jepa-loss-composition-step",
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-semantic-dense-jepa-train-step",
                 "--native-cuda-smoke-semantic-router-moe-train-step",
@@ -1203,6 +1206,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-moe-transformer-lm-train-step");
             } else if (arg == "--native-cuda-smoke-moe-full-loop-step") {
                 forwarded.push_back("--smoke-moe-full-loop-step");
+            } else if (arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
+                forwarded.push_back("--smoke-moe-jepa-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {
                 forwarded.push_back("--smoke-semantic-alignment-step");
             } else if (arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {

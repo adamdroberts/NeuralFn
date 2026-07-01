@@ -228,6 +228,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-family-layout-checkpoint-step",
         "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
+        "--smoke-moe-jepa-loss-composition-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-hnet-byte-lm-loop-step",
@@ -526,6 +527,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-family-layout-checkpoint-step" ||
                                arg == "--native-cuda-smoke-dense-jepa-full-loop-step" ||
                                arg == "--native-cuda-smoke-dense-jepa-train-step" ||
+                               arg == "--native-cuda-smoke-moe-jepa-loss-composition-step" ||
                                arg == "--native-cuda-smoke-llama-loop" ||
                                arg == "--native-cuda-smoke-llama-lm-head-step" ||
                                arg == "--native-cuda-smoke-llama-token-lm-train-step" ||
@@ -606,6 +608,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-dense-jepa-full-loop-step");
             } else if (arg == "--native-cuda-smoke-dense-jepa-train-step") {
                 forwarded.push_back("--smoke-dense-jepa-train-step");
+            } else if (arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
+                forwarded.push_back("--smoke-moe-jepa-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-llama-loop") {
                 forwarded.push_back("--smoke-llama-loop");
             } else if (arg == "--native-cuda-smoke-llama-lm-head-step") {
