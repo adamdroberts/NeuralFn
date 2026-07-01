@@ -468,6 +468,30 @@ void launch_merge_heads_float32(
     std::int64_t seq_len,
     std::int64_t head_dim,
     cudaStream_t stream);
+void launch_broadcast_expert_routes_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    float* out_weights,
+    std::int64_t* out_indices,
+    std::int64_t batch,
+    std::int64_t route_seq,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    cudaStream_t stream);
+void launch_latent_mse_partials_float32(
+    const float* pred,
+    const float* target,
+    float* partials,
+    std::int64_t n,
+    cudaStream_t stream);
+void launch_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream);
 void launch_adamw_step_float32(
     float* param,
     const float* grad,
@@ -1487,6 +1511,17 @@ void launch_masked_token_cross_entropy_partials_float32(
     std::int64_t rows,
     std::int64_t vocab,
     std::int64_t ignore_index,
+    cudaStream_t stream);
+void launch_route_balance_density_float32(
+    const float* route_logits,
+    float* density,
+    std::int64_t rows,
+    std::int64_t experts,
+    cudaStream_t stream);
+void launch_route_balance_loss_float32(
+    const float* density,
+    float* out,
+    std::int64_t experts,
     cudaStream_t stream);
 void launch_token_cross_entropy_backward_float32(
     const float* logits,
@@ -3869,6 +3904,41 @@ int nfn_native_tile_merge_heads_float32(
     return launch_status();
 }
 
+int nfn_native_tile_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 || top_k <= 0 || top_k > experts || top_k > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_topk_route_float32(
+        logits, weights, indices, rows, experts, top_k, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_broadcast_expert_routes_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    float* out_weights,
+    std::int64_t* out_indices,
+    std::int64_t batch,
+    std::int64_t route_seq,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    void* cuda_stream) {
+    if (batch <= 0 || route_seq <= 0 || seq_len < 0 || route_width <= 0 ||
+        (route_seq != 1 && route_seq != seq_len)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_broadcast_expert_routes_float32(
+        weights, indices, out_weights, out_indices, batch, route_seq, seq_len, route_width, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_adamw_step_float32(
     float* param,
     const float* grad,
@@ -5805,6 +5875,47 @@ int nfn_native_tile_masked_token_cross_entropy_partials_float32(
         vocab,
         ignore_index,
         as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_latent_mse_loss_float32(
+    const float* pred,
+    const float* target,
+    float* partials,
+    std::int64_t n,
+    void* cuda_stream) {
+    if (n <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_latent_mse_partials_float32(
+        pred, target, partials, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_route_balance_density_float32(
+    const float* route_logits,
+    float* density,
+    std::int64_t rows,
+    std::int64_t experts,
+    void* cuda_stream) {
+    if (rows <= 0 || rows > 1024 || experts <= 0 || experts > 1024) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_route_balance_density_float32(
+        route_logits, density, rows, experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_route_balance_loss_float32(
+    const float* density,
+    float* out,
+    std::int64_t experts,
+    void* cuda_stream) {
+    if (experts <= 0 || experts > 1024) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_route_balance_loss_float32(
+        density, out, experts, as_stream(cuda_stream));
     return launch_status();
 }
 

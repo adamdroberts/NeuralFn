@@ -11049,6 +11049,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_topk_route_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_mse_loss_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_route_balance_density_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_route_balance_loss_float32" in moe_jepa_payload["required_tile_symbols"]
 
     jamba_plan = subprocess.run(
         [
@@ -13256,6 +13259,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "rotary_embedding_backward_float32_kernel" in kernels_text
     assert "nfn_native_tile_swiglu_float32" in header_text
     assert "nfn_native_tile_swiglu_backward_float32" in header_text
+    assert "nfn_native_tile_topk_route_float32" in header_text
+    assert "nfn_native_tile_broadcast_expert_routes_float32" in header_text
+    assert "nfn_native_tile_latent_mse_loss_float32" in header_text
+    assert "nfn_native_tile_route_balance_density_float32" in header_text
+    assert "nfn_native_tile_route_balance_loss_float32" in header_text
+    assert "launch_topk_route_float32" in source_text
+    assert "launch_broadcast_expert_routes_float32" in source_text
+    assert "launch_latent_mse_partials_float32" in source_text
+    assert "launch_route_balance_density_float32" in source_text
+    assert "launch_route_balance_loss_float32" in source_text
     assert "launch_swiglu_float32" in source_text
     assert "launch_swiglu_backward_float32" in source_text
     assert "swiglu_float32_kernel" in kernels_text
@@ -14795,6 +14808,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_rotary_embedding_backward_float32" in exported
         assert "nfn_native_tile_swiglu_float32" in exported
         assert "nfn_native_tile_swiglu_backward_float32" in exported
+        assert "nfn_native_tile_topk_route_float32" in exported
+        assert "nfn_native_tile_broadcast_expert_routes_float32" in exported
+        assert "nfn_native_tile_latent_mse_loss_float32" in exported
+        assert "nfn_native_tile_route_balance_density_float32" in exported
+        assert "nfn_native_tile_route_balance_loss_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in exported
         assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in exported

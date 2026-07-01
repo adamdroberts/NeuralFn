@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added trainer-facing raw CUDA Tile ABI exports for standard MoE and JEPA
+  routing/loss work. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_topk_route_float32`,
+  `nfn_native_tile_broadcast_expert_routes_float32`,
+  `nfn_native_tile_latent_mse_loss_float32`,
+  `nfn_native_tile_route_balance_density_float32`, and
+  `nfn_native_tile_route_balance_loss_float32`; MixLLaMA, MoE+JEPA, and
+  DeepSeek-V4 missing-family preflights now require and successfully bind the
+  relevant route and load-balance symbols. Verification: rebuilt the Tile ops
+  shared library and missing-family native binaries; confirmed exports with
+  `nm -D`; ran live CUDA ctypes smoke for top-k route, route broadcast,
+  route-balance density/loss, and latent MSE with max error below `4e-08`;
+  preflight checks for MixLLaMA, MoE+JEPA, and DeepSeek-V4 report
+  `required-tile-symbols-present`.
+
 - Added a compiled LLaMA loop-composition CUDA smoke to the missing-family
   native preflight. `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib
   PATH` and the unified `--native-cuda-smoke-llama-loop` alias now launch

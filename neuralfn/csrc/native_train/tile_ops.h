@@ -744,6 +744,26 @@ int nfn_native_tile_merge_heads_float32(
     std::int64_t head_dim,
     void* cuda_stream);
 
+int nfn_native_tile_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream);
+
+int nfn_native_tile_broadcast_expert_routes_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    float* out_weights,
+    std::int64_t* out_indices,
+    std::int64_t batch,
+    std::int64_t route_seq,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    void* cuda_stream);
+
 int nfn_native_tile_adamw_step_float32(
     float* param,
     const float* grad,
@@ -1824,6 +1844,26 @@ int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     std::int64_t rows,
     std::int64_t vocab,
     std::int64_t ignore_index,
+    void* cuda_stream);
+
+int nfn_native_tile_latent_mse_loss_float32(
+    const float* pred,
+    const float* target,
+    float* partials,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_route_balance_density_float32(
+    const float* route_logits,
+    float* density,
+    std::int64_t rows,
+    std::int64_t experts,
+    void* cuda_stream);
+
+int nfn_native_tile_route_balance_loss_float32(
+    const float* density,
+    float* out,
+    std::int64_t experts,
     void* cuda_stream);
 
 int nfn_native_tile_token_cross_entropy_backward_float32(
