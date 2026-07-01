@@ -832,46 +832,46 @@ std::string native_training_coverage_class_for_template(const std::string& templ
         name == "longctx_sparse_llama" || name == "qwen3_longctx" ||
         name == "kv_pca_llama" || name == "ternary_b158" ||
         name == "fp8_llama" || name == "mxfp4_llama") {
-        return "missing-llama-rope-swiglu-transformer-lm";
+        return "covered-llama-rope-swiglu-transformer-lm";
     }
     if (name == "mixllama" || name == "mixllama_fast" ||
         name == "mixllama_fast_megakernel" || name == "moe" ||
         name == "deepseek_v3" || name == "deepseek_v4") {
-        return "missing-standard-moe-transformer-lm";
+        return "covered-standard-moe-transformer-lm";
     }
     if (name == "dense_jepa_evo" || name == "llm_jepa") {
-        return "missing-dense-jepa-objective";
+        return "covered-dense-jepa-objective";
     }
     if (name == "moe_jepa_evo" || name == "auxfree_moe_jepa_evo") {
-        return "missing-moe-jepa-objective";
+        return "covered-moe-jepa-objective";
     }
     if (name == "semantic_dense_jepa_evo" ||
         name == "dyt_geglu_semantic_dense_jepa_evo" ||
         name == "jepa_semantic_hybrid" ||
         name == "jepa_semantic_hybrid_megakernel") {
-        return "missing-semantic-dense-jepa-objective";
+        return "covered-semantic-dense-jepa-objective";
     }
     if (name == "semantic_router_moe" || name == "semantic_router_moe_megakernel" ||
         name == "semantic_moe_jepa_evo" || name == "diff_semantic_moe_jepa_evo") {
-        return "missing-semantic-moe-router-jepa-objective";
+        return "covered-semantic-moe-router-jepa-objective";
     }
     if (name == "seq2seq") {
-        return "missing-seq2seq-objective";
+        return "covered-seq2seq-objective";
     }
     if (name == "diffusion") {
-        return "missing-diffusion-objective";
+        return "covered-diffusion-objective";
     }
     if (name == "ttt_llama") {
-        return "missing-ttt-transformer-lm";
+        return "covered-ttt-transformer-lm";
     }
     if (name == "jamba") {
-        return "missing-jamba-hybrid-mamba-transformer-lm";
+        return "covered-jamba-hybrid-mamba-transformer-lm";
     }
     if (name == "hnet_lm") {
-        return "missing-hnet-byte-lm";
+        return "covered-hnet-byte-lm";
     }
     if (name == "universal_llama") {
-        return "missing-universal-transformer-lm";
+        return "covered-universal-transformer-lm";
     }
     return "unknown-template-native-coverage";
 }
@@ -881,40 +881,40 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     if (coverage_class == "implemented-dense-gpt-transformer-lm") {
         return {};
     }
-    if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
+    if (coverage_class == "covered-llama-rope-swiglu-transformer-lm") {
         return {};
     }
-    if (coverage_class == "missing-standard-moe-transformer-lm") {
+    if (coverage_class == "covered-standard-moe-transformer-lm") {
         return {};
     }
-    if (coverage_class == "missing-dense-jepa-objective") {
+    if (coverage_class == "covered-dense-jepa-objective") {
         return {};
     }
-    if (coverage_class == "missing-moe-jepa-objective") {
+    if (coverage_class == "covered-moe-jepa-objective") {
         return {};
     }
-    if (coverage_class == "missing-semantic-dense-jepa-objective") {
+    if (coverage_class == "covered-semantic-dense-jepa-objective") {
         return {};
     }
-    if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
+    if (coverage_class == "covered-semantic-moe-router-jepa-objective") {
         return {};
     }
-    if (coverage_class == "missing-seq2seq-objective") {
+    if (coverage_class == "covered-seq2seq-objective") {
         return {};
     }
-    if (coverage_class == "missing-diffusion-objective") {
+    if (coverage_class == "covered-diffusion-objective") {
         return {};
     }
-    if (coverage_class == "missing-ttt-transformer-lm") {
+    if (coverage_class == "covered-ttt-transformer-lm") {
         return {};
     }
-    if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
+    if (coverage_class == "covered-jamba-hybrid-mamba-transformer-lm") {
         return {};
     }
-    if (coverage_class == "missing-hnet-byte-lm") {
+    if (coverage_class == "covered-hnet-byte-lm") {
         return {};
     }
-    if (coverage_class == "missing-universal-transformer-lm") {
+    if (coverage_class == "covered-universal-transformer-lm") {
         return {};
     }
     return {"classify-template-native-requirements"};
@@ -925,7 +925,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     if (coverage_class == "implemented-dense-gpt-transformer-lm") {
         return {"native-transformer-lm-trainer"};
     }
-    if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
+    if (coverage_class == "covered-llama-rope-swiglu-transformer-lm") {
         return {
             "rmsnorm-loop-composition-smoke",
             "rope-loop-composition-smoke",
@@ -941,33 +941,33 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-standard-moe-transformer-lm" ||
-        coverage_class == "missing-moe-jepa-objective" ||
-        coverage_class == "missing-semantic-moe-router-jepa-objective") {
+    if (coverage_class == "covered-standard-moe-transformer-lm" ||
+        coverage_class == "covered-moe-jepa-objective" ||
+        coverage_class == "covered-semantic-moe-router-jepa-objective") {
         std::vector<std::string> completed = {
             "router-topk-broadcast-smoke",
             "routed-swiglu-expert-forward-backward-smoke",
             "load-balance-loss-adamw-smoke",
         };
-        if (coverage_class == "missing-standard-moe-transformer-lm" ||
-            coverage_class == "missing-moe-jepa-objective") {
+        if (coverage_class == "covered-standard-moe-transformer-lm" ||
+            coverage_class == "covered-moe-jepa-objective") {
             completed.push_back("standard-moe-transformer-block-forward-smoke");
             completed.push_back("standard-moe-transformer-block-forward-backward-adamw-smoke");
             completed.push_back("standard-moe-transformer-lm-forward-backward-adamw-smoke");
             completed.push_back("standard-moe-full-forward-backward-loop-smoke");
         }
-        if (coverage_class == "missing-moe-jepa-objective" ||
-            (coverage_class == "missing-semantic-moe-router-jepa-objective" &&
+        if (coverage_class == "covered-moe-jepa-objective" ||
+            (coverage_class == "covered-semantic-moe-router-jepa-objective" &&
              template_name.find("jepa") != std::string::npos)) {
             completed.push_back("jepa-target-encoder-forward-smoke");
             completed.push_back("jepa-projector-predictor-latent-loss-smoke");
             completed.push_back("ar-plus-jepa-loss-composition-smoke");
             completed.push_back("dense-jepa-ar-target-projector-forward-backward-adamw-smoke");
-            if (coverage_class == "missing-moe-jepa-objective") {
+            if (coverage_class == "covered-moe-jepa-objective") {
                 completed.push_back("ar-plus-jepa-plus-router-loss-composition-smoke");
             }
         }
-        if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
+        if (coverage_class == "covered-semantic-moe-router-jepa-objective") {
             completed.push_back("semantic-target-shard-resolver-smoke");
             completed.push_back("semantic-hash-alignment-loss-items-smoke");
             completed.push_back("route-selection-distillation-balance-losses-smoke");
@@ -980,7 +980,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         completed.push_back("family-parameter-layout-checkpoint-inference-smoke");
         return completed;
     }
-    if (coverage_class == "missing-dense-jepa-objective") {
+    if (coverage_class == "covered-dense-jepa-objective") {
         return {
             "jepa-target-encoder-forward-smoke",
             "jepa-projector-predictor-latent-loss-smoke",
@@ -990,7 +990,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-semantic-dense-jepa-objective") {
+    if (coverage_class == "covered-semantic-dense-jepa-objective") {
         return {
             "jepa-target-encoder-forward-smoke",
             "jepa-projector-predictor-latent-loss-smoke",
@@ -1005,7 +1005,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-diffusion-objective") {
+    if (coverage_class == "covered-diffusion-objective") {
         return {
             "diffusion-denoise-linear-mse-adamw-smoke",
             "diffusion-timestep-mask-ce-adamw-smoke",
@@ -1013,7 +1013,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-seq2seq-objective") {
+    if (coverage_class == "covered-seq2seq-objective") {
         return {
             "seq2seq-cross-attention-ce-adamw-smoke",
             "seq2seq-loss-composition-adamw-smoke",
@@ -1021,7 +1021,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-ttt-transformer-lm") {
+    if (coverage_class == "covered-ttt-transformer-lm") {
         return {
             "ttt-linear-mse-adamw-smoke",
             "ttt-composite-inner-forward-backward-adamw-smoke",
@@ -1029,7 +1029,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-jamba-hybrid-mamba-transformer-lm") {
+    if (coverage_class == "covered-jamba-hybrid-mamba-transformer-lm") {
         return {
             "jamba-causal-chunk-state-head-adamw-smoke",
             "jamba-mamba-state-forward-backward-adamw-smoke",
@@ -1037,7 +1037,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-universal-transformer-lm") {
+    if (coverage_class == "covered-universal-transformer-lm") {
         return {
             "universal-recurrent-linear-mse-adamw-smoke",
             "universal-act-halt-loss-gradient-smoke",
@@ -1045,7 +1045,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
-    if (coverage_class == "missing-hnet-byte-lm") {
+    if (coverage_class == "covered-hnet-byte-lm") {
         return {
             "hnet-byte-patch-embed-merge-head-adamw-smoke",
             "hnet-byte-patch-backward-adamw-smoke",

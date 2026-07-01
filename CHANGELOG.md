@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Breaking changes: native GPT template coverage JSON now reports completed
+  non-dense coverage classes with `covered-*` names instead of the older
+  `missing-*` class labels once their native coverage checklist is empty. The
+  no-Torch verifier report field was also renamed from `missing_native_sentinels`
+  to `covered_native_sentinels`. Callers reading
+  `native_training_coverage_class` or verifier JSON should match the new
+  `covered-...` values and use `native_training_missing_requirements` to detect
+  actual remaining work.
+
 - Added a semantic-router route-evo device-controller native smoke.
   `nfn_semantic_router_moe_native_train
   --smoke-route-evo-device-controller-step --tile-ops-lib PATH` and the

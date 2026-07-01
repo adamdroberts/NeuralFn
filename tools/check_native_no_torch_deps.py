@@ -2116,7 +2116,7 @@ def _validate_native_template_catalog(
         "entrypoint": entrypoint_name,
         "passed": False,
         "required_dense_templates": {},
-        "missing_native_sentinels": {},
+        "covered_native_sentinels": {},
         "errors": [],
     }
     errors = report["errors"]
@@ -2220,7 +2220,7 @@ def _validate_native_template_catalog(
             errors.append(f"{template_name}: {'; '.join(template_errors)}")
         sentinel_reports[template_name] = template_report
     report["required_dense_templates"] = dense_reports
-    report["missing_native_sentinels"] = sentinel_reports
+    report["covered_native_sentinels"] = sentinel_reports
     report["passed"] = not errors
     return report
 
