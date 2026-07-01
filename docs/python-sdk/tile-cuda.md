@@ -558,11 +558,11 @@ visible. JEPA-family entries now list the
 completed projector/predictor/latent-loss, target-encoder, and base AR+JEPA
 objective CUDA smokes plus family metadata; dense JEPA has no shared metadata
 item left in the missing list, while router/semantic objective composition
-remains visible for those families. Semantic-family entries now list the completed semantic
-hash/alignment-loss-items CUDA smoke, and semantic-router MoE entries also list
-the completed route-selection/distillation/balance-loss CUDA smoke while keeping
-full semantic planner/router, device reduction, objective composition,
-in the missing list. Universal-family
+remains visible for those families. Semantic-family entries now list completed
+semantic hash/alignment-loss-items CUDA smoke, and semantic-router MoE entries
+also list the completed route-selection/distillation/balance-loss and
+route/expert/AdamW CUDA smokes while keeping full semantic planner/router,
+device reduction, and objective composition in the missing list. Universal-family
 entries now list recurrent linear/MSE/AdamW
 and ACT halt loss/gradient CUDA smokes plus family metadata as completed.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
@@ -679,7 +679,13 @@ raw CUDA Tile train-step slice. Use
 `nfn_semantic_router_moe_native_train --smoke-semantic-alignment-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-semantic-alignment-step` alias on semantic families to run
-semantic hash and alignment loss-item kernels as a raw CUDA Tile slice. Real
+semantic hash and alignment loss-item kernels as a raw CUDA Tile slice.
+Use `nfn_semantic_router_moe_native_train
+--smoke-semantic-router-moe-train-step --tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-semantic-router-moe-train-step` alias on semantic-router
+MoE families to run top-k routing, route broadcast, routed SwiGLU expert
+forward/backward, load-balance density/loss, and AdamW as a raw CUDA Tile
+train-step slice.
 Use `nfn_semantic_router_moe_native_train --smoke-semantic-route-loss-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-semantic-route-loss-step` alias on semantic-router MoE

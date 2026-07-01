@@ -999,6 +999,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
             completed.push_back("semantic-hash-alignment-loss-items-smoke");
             completed.push_back("route-selection-distillation-balance-losses-smoke");
+            completed.push_back("semantic-router-moe-route-expert-adamw-smoke");
         }
         completed.push_back("family-parameter-layout-checkpoint-inference-smoke");
         return completed;

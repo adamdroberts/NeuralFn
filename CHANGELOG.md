@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a semantic-router MoE route/expert train-step native smoke.
+  `nfn_semantic_router_moe_native_train
+  --smoke-semantic-router-moe-train-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model semantic-router-moe
+  --native-cuda-smoke-semantic-router-moe-train-step` alias now run top-k
+  routing, route broadcast, routed SwiGLU expert forward/backward,
+  load-balance density/loss, and AdamW through raw CUDA Tile ABI calls without
+  Torch or graph-editor tensor flow. Semantic MoE/JEPA catalog and preflight
+  JSON now report `semantic-router-moe-route-expert-adamw-smoke` in completed
+  requirements while keeping semantic target resolution, router/expert loop
+  wiring, route-evolution device control, final objective composition, and full
+  native-loop work visible in missing requirements. Verification: rebuilt
+  missing-family native trainers, unified native frontends, dense GPT frontends,
+  and the linked GPT frontend; live CUDA direct and unified semantic-router MoE
+  route/expert train-step smokes passed.
+
 - Added a semantic dense JEPA planner/alignment train-step native smoke.
   `nfn_semantic_dense_jepa_native_train
   --smoke-semantic-dense-jepa-train-step --tile-ops-lib PATH` and the unified

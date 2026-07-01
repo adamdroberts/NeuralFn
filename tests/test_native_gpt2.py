@@ -5271,6 +5271,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses" not in missing_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "semantic-router-moe-route-expert-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "missing-seq2seq-objective"
     assert missing_requirements["seq2seq"] == [
         "encoder-decoder-native-loop",
@@ -11727,6 +11728,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "load-balance-loss-adamw-smoke",
         "semantic-hash-alignment-loss-items-smoke",
         "route-selection-distillation-balance-losses-smoke",
+        "semantic-router-moe-route-expert-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
@@ -12379,6 +12381,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-route-loss-step" in unified_semantic_route_loss_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_route_loss_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_route_loss_smoke_command.stdout
+
+    unified_semantic_router_moe_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-smoke-semantic-router-moe-train-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_router_moe_smoke_command.returncode == 0
+    ), unified_semantic_router_moe_smoke_command.stderr
+    assert str(semantic_router_moe) in unified_semantic_router_moe_smoke_command.stdout
+    assert "--smoke-semantic-router-moe-train-step" in unified_semantic_router_moe_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_router_moe_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_router_moe_smoke_command.stdout
 
     unified_hnet_smoke_command = subprocess.run(
         [

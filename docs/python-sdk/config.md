@@ -486,7 +486,8 @@ AR+target/projector train-step smoke
 (`dense-jepa-ar-target-projector-forward-backward-adamw-smoke`) as completed
 requirements.
 Semantic MoE JEPA entries also report
-`route-selection-distillation-balance-losses-smoke` as completed. The remaining
+`route-selection-distillation-balance-losses-smoke` and
+`semantic-router-moe-route-expert-adamw-smoke` as completed. The remaining
 missing requirements are family loop/checkpoint/inference wiring for dense JEPA
 and semantic target/router/expert wiring, route-evolution device control, final
 objective composition, family loop, checkpointing, and inference wiring for the

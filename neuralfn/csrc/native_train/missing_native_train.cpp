@@ -80,6 +80,7 @@ struct Config {
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_dense_jepa_train_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
+    bool smoke_semantic_router_moe_train_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_semantic_route_loss_step = false;
     bool smoke_diffusion_denoise_step = false;
@@ -289,6 +290,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
+        << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
         << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-diffusion-objective-step Launch diffusion timestep, mask scheduler, CE objective, backward, and AdamW kernels on CUDA\n"
@@ -362,6 +364,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-semantic-dense-jepa-train-step" ||
                    arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
             cfg.smoke_semantic_dense_jepa_train_step = true;
+        } else if (arg == "--smoke-semantic-router-moe-train-step" ||
+                   arg == "--native-cuda-smoke-semantic-router-moe-train-step") {
+            cfg.smoke_semantic_router_moe_train_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-semantic-route-loss-step" || arg == "--native-cuda-smoke-semantic-route-loss-step") {
@@ -4652,7 +4657,11 @@ int print_moe_route_expert_smoke_json(const Config& cfg, const char* program) {
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"moe_route_expert_train_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (cfg.smoke_semantic_router_moe_train_step
+                ? "semantic_router_moe_route_expert_train_step_slice"
+                : "moe_route_expert_train_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -12375,7 +12384,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_llama_rope_attention_block_step || cfg.smoke_llama_rope_block_train_step) {
             return print_llama_rope_attention_block_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_moe_route_expert_step) {
+        if (cfg.smoke_moe_route_expert_step || cfg.smoke_semantic_router_moe_train_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_moe_transformer_block_step || cfg.smoke_moe_transformer_block_train_step ||
