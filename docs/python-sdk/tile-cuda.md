@@ -556,6 +556,10 @@ BF16 causal attention with saved LSE and backward-to-QKV. Use
 or the unified `--native-cuda-smoke-llama-attention-block-step` alias to
 compose RMSNorm, BF16 QKV projection, packed-QKV causal attention, BF16 unpack,
 and residual add in one native forward block slice. Use
+`nfn_llama_native_train --smoke-llama-rope-attention-block-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-llama-rope-attention-block-step`
+alias to compose RMSNorm, QKV projection, head-major QKV split, RoPE, SDPA, and
+residual add through raw CUDA Tile ABI calls. Use
 `nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-moe-route-expert-step` alias on MoE families to run top-k

@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Added a LLaMA-family RoPE attention-block integration native smoke.
+  `nfn_llama_native_train --smoke-llama-rope-attention-block-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-rope-attention-block-step` alias now compose
+  RMSNorm, QKV projection, head-major QKV split, RoPE on the attention path,
+  SDPA, and residual add through raw CUDA Tile ABI calls without Torch or
+  graph-editor tensor flow. LLaMA-family catalog/preflight JSON now reports
+  `packed-qkv-rope-attention-block-integration-smoke` in
+  `native_training_completed_requirements`; the full LLaMA block
+  forward/backward loop plus family parameter layout, checkpointing, and
+  inference wiring remain visible as outstanding requirements. Verification:
+  rebuilt missing-family native trainers, unified native CLIs, dense GPT catalog
+  binaries, and the linked dense GPT binary; live CUDA LLaMA smoke passed with
+  `q_rope_delta_max_abs=0.0447169` and `attention_max_abs=0.0976635`; focused
+  native GPT catalog/dispatch pytest passed (`2 passed`); the no-Torch verifier
+  passed 30 native artifacts with 0 stale artifacts, 69 Python entrypoints, 24
+  shell entrypoints, and 4 native template catalogs.
+
 - Added native HNet byte-token shard resolution for compiled missing-family
   preflights. `nfn_hnet_lm_native_train --sample-token-batch --dataset-alias
   PATH --train-seq-len N --batch-size B` now reads `byte_train_*.bin`,

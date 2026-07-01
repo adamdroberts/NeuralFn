@@ -5222,7 +5222,6 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
     assert missing_requirements["llama"] == [
-        "packed-qkv-rope-attention-block-integration",
         "llama-block-forward-backward-loop",
         "family-parameter-layout-checkpoint-inference",
     ]
@@ -5233,6 +5232,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "lm-head-linear-ce-backward-adamw-smoke",
         "packed-qkv-attention-forward-backward-smoke",
         "packed-qkv-attention-block-forward-smoke",
+        "packed-qkv-rope-attention-block-integration-smoke",
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
     assert missing_requirements["mixllama"] == [
@@ -11067,7 +11067,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
     assert llama_payload["native_training_missing_requirements"] == [
-        "packed-qkv-rope-attention-block-integration",
         "llama-block-forward-backward-loop",
         "family-parameter-layout-checkpoint-inference",
     ]
@@ -11078,6 +11077,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "lm-head-linear-ce-backward-adamw-smoke",
         "packed-qkv-attention-forward-backward-smoke",
         "packed-qkv-attention-block-forward-smoke",
+        "packed-qkv-rope-attention-block-integration-smoke",
     ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_rotary_embedding_float32" in llama_payload["required_tile_symbols"]
@@ -11201,6 +11201,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_attention_block_smoke_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_linear_bf16_output_float32" in llama_attention_block_smoke_payload["loop_composition_stages"]
     assert "nfn_native_tile_scaled_residual_add_float32" in llama_attention_block_smoke_payload["loop_composition_stages"]
+
+    llama_rope_attention_block_smoke_missing_lib = subprocess.run(
+        [
+            str(llama),
+            "--smoke-llama-rope-attention-block-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert llama_rope_attention_block_smoke_missing_lib.returncode == 2
+    llama_rope_attention_block_smoke_payload = json.loads(llama_rope_attention_block_smoke_missing_lib.stdout)
+    assert llama_rope_attention_block_smoke_payload["smoke"] == "llama_packed_qkv_rope_attention_block_forward_slice"
+    assert llama_rope_attention_block_smoke_payload["passed"] is False
+    assert llama_rope_attention_block_smoke_payload["compiled_native_boundary"] is True
+    assert llama_rope_attention_block_smoke_payload["torch_required"] is False
+    assert llama_rope_attention_block_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_split_qkv_to_heads_float32" in llama_rope_attention_block_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_rotary_embedding_float32" in llama_rope_attention_block_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_scaled_dot_product_attention_float32" in llama_rope_attention_block_smoke_payload["loop_composition_stages"]
 
     dataset_path = _write_uint16_shard_dataset(tmp_path)
     llama_sample = subprocess.run(
@@ -12404,6 +12427,26 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(llama) in unified_llama_attention_block_smoke_command.stdout
     assert "--smoke-llama-attention-block-step" in unified_llama_attention_block_smoke_command.stdout
     assert "--tile-ops-lib" in unified_llama_attention_block_smoke_command.stdout
+
+    unified_llama_rope_attention_block_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "llama",
+            "--native-cuda-smoke-llama-rope-attention-block-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_llama_rope_attention_block_smoke_command.returncode == 0, unified_llama_rope_attention_block_smoke_command.stderr
+    assert str(llama) in unified_llama_rope_attention_block_smoke_command.stdout
+    assert "--smoke-llama-rope-attention-block-step" in unified_llama_rope_attention_block_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_llama_rope_attention_block_smoke_command.stdout
 
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],

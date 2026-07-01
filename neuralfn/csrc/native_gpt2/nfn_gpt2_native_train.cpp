@@ -883,7 +883,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-llama-rope-swiglu-transformer-lm") {
         return {
-            "packed-qkv-rope-attention-block-integration",
             "llama-block-forward-backward-loop",
             "family-parameter-layout-checkpoint-inference",
         };
@@ -973,6 +972,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "lm-head-linear-ce-backward-adamw-smoke",
             "packed-qkv-attention-forward-backward-smoke",
             "packed-qkv-attention-block-forward-smoke",
+            "packed-qkv-rope-attention-block-integration-smoke",
         };
     }
     if (coverage_class == "missing-standard-moe-transformer-lm" ||

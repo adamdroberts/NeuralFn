@@ -66,6 +66,7 @@ struct Config {
     bool smoke_llama_lm_head_step = false;
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
+    bool smoke_llama_rope_attention_block_step = false;
     bool smoke_moe_route_expert_step = false;
     bool smoke_moe_transformer_block_step = false;
     bool smoke_jepa_projector_step = false;
@@ -267,6 +268,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
         << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-llama-attention-block-step Launch RMSNorm, QKV projection, packed attention, and residual kernels on CUDA\n"
+        << "  --smoke-llama-rope-attention-block-step Launch RMSNorm, QKV split, RoPE, attention, and residual kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
@@ -318,6 +320,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_packed_attention_step = true;
         } else if (arg == "--smoke-llama-attention-block-step" || arg == "--native-cuda-smoke-llama-attention-block-step") {
             cfg.smoke_llama_attention_block_step = true;
+        } else if (arg == "--smoke-llama-rope-attention-block-step" || arg == "--native-cuda-smoke-llama-rope-attention-block-step") {
+            cfg.smoke_llama_rope_attention_block_step = true;
         } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
             cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--smoke-moe-transformer-block-step" || arg == "--native-cuda-smoke-moe-transformer-block-step") {
@@ -2153,6 +2157,422 @@ int print_llama_attention_block_smoke_json(const Config& cfg, const char* progra
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"qkv_nonzero\":" << qkv_max_abs
+        << ", \"attention_max_abs\":" << attention_max_abs
+        << ", \"residual_delta_max_abs\":" << residual_delta_max_abs
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool llama_family =
+        family.find("llama") != std::string::npos ||
+        family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using RmsNormFn = int (*)(const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using SplitQkvToHeadsFn = int (*)(
+        const float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using RotaryFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using AttentionFn = int (*)(
+        const float*,
+        const float*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        float,
+        bool,
+        bool,
+        bool,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
+    using ScaledResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    RmsNormFn rms_norm = nullptr;
+    LinearFn linear = nullptr;
+    SplitQkvToHeadsFn split_qkv_to_heads = nullptr;
+    RotaryFn rotary = nullptr;
+    AttentionFn attention = nullptr;
+    ScaledResidualAddFn residual_add = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 1;
+    constexpr std::int64_t kHeads = 4;
+    constexpr std::int64_t kSeqLen = 2;
+    constexpr std::int64_t kHeadDim = 64;
+    constexpr std::int64_t kDim = kHeads * kHeadDim;
+    constexpr std::int64_t kRows = kBatch * kSeqLen;
+    constexpr std::int64_t kQkvDim = 3 * kDim;
+    constexpr std::int64_t kElements = kRows * kDim;
+    constexpr std::int64_t kQkvElements = kRows * kQkvDim;
+    constexpr float kEps = 1e-6f;
+    constexpr float kScale = 1.0f / 8.0f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs = [](const std::vector<float>& values) {
+        float out = 0.0f;
+        for (float value : values) {
+            out = std::max(out, std::fabs(value));
+        }
+        return out;
+    };
+
+    auto sync_stage = [&](const std::string& context) {
+        if (!error.empty() || cuda_device_synchronize == nullptr) {
+            return;
+        }
+        const int status = cuda_device_synchronize();
+        if (status != 0) {
+            error = cuda_error(status, context);
+        }
+    };
+    bool passed = false;
+    float q_rope_delta_max_abs = 0.0f;
+    float k_rope_delta_max_abs = 0.0f;
+    float attention_max_abs = 0.0f;
+    float residual_delta_max_abs = 0.0f;
+    const float residual_scale_value = 1.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!llama_family) {
+        error = "LLaMA RoPE attention-block smoke commands are only valid for LLaMA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            rms_norm = load_symbol<RmsNormFn>(tile_handle, "nfn_native_tile_rms_norm_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            split_qkv_to_heads = load_symbol<SplitQkvToHeadsFn>(tile_handle, "nfn_native_tile_split_qkv_to_heads_float32");
+            rotary = load_symbol<RotaryFn>(tile_handle, "nfn_native_tile_rotary_embedding_float32");
+            attention = load_symbol<AttentionFn>(tile_handle, "nfn_native_tile_scaled_dot_product_attention_float32");
+            residual_add = load_symbol<ScaledResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
+            if (rms_norm == nullptr || linear == nullptr || split_qkv_to_heads == nullptr || rotary == nullptr ||
+                attention == nullptr || residual_add == nullptr) {
+                error = "Tile ops library is missing one or more LLaMA RoPE attention-block symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> hidden(static_cast<std::size_t>(kElements), 0.0f);
+        std::vector<float> qkv_weight(static_cast<std::size_t>(kDim * kQkvDim), 0.0f);
+        std::vector<float> inv_freq(static_cast<std::size_t>(kHeadDim / 2), 0.0f);
+        std::vector<float> residual_scale = {residual_scale_value};
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                hidden[static_cast<std::size_t>(row * kDim + dim)] =
+                    0.001f * static_cast<float>((row % 17) + 1) +
+                    0.0002f * static_cast<float>((dim % 31) + 1);
+            }
+        }
+        for (std::int64_t out_dim = 0; out_dim < kQkvDim; ++out_dim) {
+            const std::int64_t in_dim = out_dim % kDim;
+            qkv_weight[static_cast<std::size_t>(out_dim * kDim + in_dim)] =
+                0.05f + 0.0007f * static_cast<float>(out_dim % 19);
+        }
+        for (std::int64_t i = 0; i < kHeadDim / 2; ++i) {
+            inv_freq[static_cast<std::size_t>(i)] =
+                1.0f / std::pow(10000.0f, static_cast<float>(2 * i) / static_cast<float>(kHeadDim));
+        }
+
+        float* d_hidden = nullptr;
+        float* d_normed = nullptr;
+        float* d_qkv = nullptr;
+        float* d_q = nullptr;
+        float* d_k = nullptr;
+        float* d_v = nullptr;
+        float* d_q_rope = nullptr;
+        float* d_k_rope = nullptr;
+        float* d_attention = nullptr;
+        float* d_residual_out = nullptr;
+        float* d_qkv_weight = nullptr;
+        float* d_inv_freq = nullptr;
+        float* d_residual_scale = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_float(&d_hidden, hidden.size(), "hidden") &&
+            alloc_float(&d_normed, hidden.size(), "normed") &&
+            alloc_float(&d_qkv, static_cast<std::size_t>(kQkvElements), "qkv") &&
+            alloc_float(&d_q, hidden.size(), "q") &&
+            alloc_float(&d_k, hidden.size(), "k") &&
+            alloc_float(&d_v, hidden.size(), "v") &&
+            alloc_float(&d_q_rope, hidden.size(), "q_rope") &&
+            alloc_float(&d_k_rope, hidden.size(), "k_rope") &&
+            alloc_float(&d_attention, hidden.size(), "attention") &&
+            alloc_float(&d_residual_out, hidden.size(), "residual_out") &&
+            alloc_float(&d_qkv_weight, qkv_weight.size(), "qkv_weight") &&
+            alloc_float(&d_inv_freq, inv_freq.size(), "inv_freq") &&
+            alloc_float(&d_residual_scale, residual_scale.size(), "residual_scale")) {
+            int status = cuda_memcpy(d_hidden, hidden.data(), hidden.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_qkv_weight, qkv_weight.data(), qkv_weight.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_inv_freq, inv_freq.data(), inv_freq.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_residual_scale, residual_scale.data(), residual_scale.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy LLaMA RoPE attention block H2D");
+            }
+            if (error.empty()) {
+                status = rms_norm(d_hidden, d_normed, kRows, kDim, kEps, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rms_norm_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rms_norm_float32");
+            }
+            if (error.empty()) {
+                status = linear(d_normed, d_qkv_weight, nullptr, d_qkv, kRows, kDim, kQkvDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_linear_float32");
+            }
+            if (error.empty()) {
+                status = split_qkv_to_heads(d_qkv, d_q, d_k, d_v, kBatch, kSeqLen, kHeads, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_split_qkv_to_heads_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_split_qkv_to_heads_float32");
+            }
+            if (error.empty()) {
+                status = rotary(d_q, d_inv_freq, d_q_rope, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_float32 q");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rotary_embedding_float32 q");
+            }
+            if (error.empty()) {
+                status = rotary(d_k, d_inv_freq, d_k_rope, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_float32 k");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rotary_embedding_float32 k");
+            }
+            if (error.empty()) {
+                status = attention(
+                    d_q_rope,
+                    d_k_rope,
+                    d_v,
+                    d_attention,
+                    kElements,
+                    kHeads,
+                    kHeads,
+                    kSeqLen,
+                    kSeqLen,
+                    kHeadDim,
+                    kHeadDim,
+                    kScale,
+                    true,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_dot_product_attention_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_scaled_dot_product_attention_float32");
+            }
+            if (error.empty()) {
+                status = residual_add(d_hidden, d_attention, d_residual_scale, d_residual_out, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_residual_add_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_scaled_residual_add_float32");
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize LLaMA RoPE attention block smoke");
+                }
+            }
+            if (error.empty()) {
+                std::vector<float> q_actual(hidden.size(), 0.0f);
+                std::vector<float> k_actual(hidden.size(), 0.0f);
+                std::vector<float> q_rope_actual(hidden.size(), 0.0f);
+                std::vector<float> k_rope_actual(hidden.size(), 0.0f);
+                std::vector<float> attention_actual(hidden.size(), 0.0f);
+                std::vector<float> residual_actual(hidden.size(), 0.0f);
+                status = cuda_memcpy(q_actual.data(), d_q, q_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status == 0) {
+                    status = cuda_memcpy(k_actual.data(), d_k, k_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(q_rope_actual.data(), d_q_rope, q_rope_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(k_rope_actual.data(), d_k_rope, k_rope_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(attention_actual.data(), d_attention, attention_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(residual_actual.data(), d_residual_out, residual_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy LLaMA RoPE attention block D2H");
+                } else {
+                    attention_max_abs = max_abs(attention_actual);
+                    for (std::size_t i = 0; i < hidden.size(); ++i) {
+                        q_rope_delta_max_abs = std::max(
+                            q_rope_delta_max_abs,
+                            std::fabs(q_rope_actual[i] - q_actual[i]));
+                        k_rope_delta_max_abs = std::max(
+                            k_rope_delta_max_abs,
+                            std::fabs(k_rope_actual[i] - k_actual[i]));
+                        residual_delta_max_abs = std::max(
+                            residual_delta_max_abs,
+                            std::fabs(residual_actual[i] - hidden[i]));
+                    }
+                }
+            }
+            passed = error.empty() &&
+                q_rope_delta_max_abs > 0.0f &&
+                attention_max_abs > 0.0f;
+            if (!passed && error.empty()) {
+                error = "LLaMA RoPE attention-block smoke produced a degenerate output";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"llama_packed_qkv_rope_attention_block_forward_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"heads\": " << kHeads
+        << ", \"seq_len\": " << kSeqLen << ", \"head_dim\": " << kHeadDim
+        << ", \"model_dim\": " << kDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_rms_norm_float32\",\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_split_qkv_to_heads_float32\",\n"
+        << "    \"nfn_native_tile_rotary_embedding_float32\",\n"
+        << "    \"nfn_native_tile_scaled_dot_product_attention_float32\",\n"
+        << "    \"nfn_native_tile_scaled_residual_add_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"q_rope_delta_max_abs\":" << q_rope_delta_max_abs
+        << ", \"k_rope_delta_max_abs\":" << k_rope_delta_max_abs
         << ", \"attention_max_abs\":" << attention_max_abs
         << ", \"residual_delta_max_abs\":" << residual_delta_max_abs
         << "}\n"
@@ -9808,6 +10228,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_llama_attention_block_step) {
             return print_llama_attention_block_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_llama_rope_attention_block_step) {
+            return print_llama_rope_attention_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
