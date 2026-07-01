@@ -558,6 +558,14 @@ void launch_latent_mse_partials_float32(
     float* partials,
     std::int64_t n,
     cudaStream_t stream);
+void launch_latent_pool_float32(
+    const float* x,
+    const float* mask_values,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    cudaStream_t stream);
 void launch_semantic_alignment_loss_items_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -6206,6 +6214,22 @@ int nfn_native_tile_latent_mse_loss_float32(
     }
     neuralfn::tile_cuda::launch_latent_mse_partials_float32(
         pred, target, partials, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_latent_pool_float32(
+    const float* x,
+    const float* mask_values,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || dim <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_latent_pool_float32(
+        x, mask_values, out, batch, seq_len, dim, as_stream(cuda_stream));
     return launch_status();
 }
 

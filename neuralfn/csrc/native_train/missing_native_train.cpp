@@ -69,6 +69,7 @@ struct Config {
     bool smoke_moe_route_expert_step = false;
     bool smoke_moe_transformer_block_step = false;
     bool smoke_jepa_projector_step = false;
+    bool smoke_jepa_target_encoder_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_diffusion_denoise_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
@@ -263,6 +264,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
@@ -310,6 +312,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_transformer_block_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
+        } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
+            cfg.smoke_jepa_target_encoder_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
@@ -3175,6 +3179,289 @@ int print_moe_route_expert_smoke_json(const Config& cfg, const char* program) {
         << ", \"balance_density\":" << balance_density_max_error
         << ", \"balance_loss\":" << balance_loss_max_error
         << ", \"adamw_w1\":" << adamw_w1_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_jepa_target_encoder_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LatentPoolFn = int (*)(const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LatentPoolFn latent_pool = nullptr;
+    LinearFn linear = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 2;
+    constexpr std::int64_t kSeqLen = 4;
+    constexpr std::int64_t kDim = 3;
+    constexpr std::int64_t kLatentDim = 2;
+    constexpr std::int64_t kInputElements = kBatch * kSeqLen * kDim;
+    constexpr std::int64_t kPooledElements = kBatch * kDim;
+    constexpr std::int64_t kProjectedElements = kBatch * kLatentDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    float pooled_max_error = 0.0f;
+    float projected_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!jepa_family) {
+        error = "JEPA target-encoder smoke commands are only valid for JEPA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            latent_pool = load_symbol<LatentPoolFn>(tile_handle, "nfn_native_tile_latent_pool_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            if (latent_pool == nullptr || linear == nullptr) {
+                error = "Tile ops library is missing one or more JEPA target-encoder symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> target_hidden(static_cast<std::size_t>(kInputElements));
+        const std::vector<float> mask = {
+            1.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f,
+        };
+        const std::vector<float> weight = {
+            0.2f, -0.1f, 0.05f,
+            -0.03f, 0.07f, 0.11f,
+        };
+        const std::vector<float> bias = {0.01f, -0.02f};
+        for (std::int64_t i = 0; i < kInputElements; ++i) {
+            target_hidden[static_cast<std::size_t>(i)] =
+                0.05f * static_cast<float>((i % 9) + 1) - 0.01f * static_cast<float>(i / 3);
+        }
+
+        float* d_target_hidden = nullptr;
+        float* d_mask = nullptr;
+        float* d_pooled = nullptr;
+        float* d_weight = nullptr;
+        float* d_bias = nullptr;
+        float* d_projected = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_target_hidden, target_hidden.size(), "target_hidden") &&
+            alloc(&d_mask, mask.size(), "mask") &&
+            alloc(&d_pooled, static_cast<std::size_t>(kPooledElements), "pooled") &&
+            alloc(&d_weight, weight.size(), "weight") &&
+            alloc(&d_bias, bias.size(), "bias") &&
+            alloc(&d_projected, static_cast<std::size_t>(kProjectedElements), "projected")) {
+            int status = cuda_memcpy(
+                d_target_hidden, target_hidden.data(), target_hidden.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status == 0) {
+                status = cuda_memcpy(d_mask, mask.data(), mask.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_weight, weight.data(), weight.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = cuda_memcpy(d_bias, bias.data(), bias.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy JEPA target encoder H2D");
+            }
+            if (error.empty()) {
+                status = latent_pool(d_target_hidden, d_mask, d_pooled, kBatch, kSeqLen, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_pool_float32");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_pooled, d_weight, d_bias, d_projected, kBatch, kDim, kLatentDim, true, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 target projection");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize JEPA target encoder");
+                }
+            }
+            std::vector<float> actual_pooled(static_cast<std::size_t>(kPooledElements), 0.0f);
+            std::vector<float> actual_projected(static_cast<std::size_t>(kProjectedElements), 0.0f);
+            if (error.empty()) {
+                status = cuda_memcpy(actual_pooled.data(), d_pooled, actual_pooled.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status == 0) {
+                    status = cuda_memcpy(
+                        actual_projected.data(), d_projected, actual_projected.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy JEPA target encoder D2H");
+                }
+            }
+
+            std::vector<float> expected_pooled(static_cast<std::size_t>(kPooledElements), 0.0f);
+            for (std::int64_t batch = 0; batch < kBatch; ++batch) {
+                float count = 0.0f;
+                for (std::int64_t pos = 0; pos < kSeqLen; ++pos) {
+                    count += mask[static_cast<std::size_t>(batch * kSeqLen + pos)] > 0.0f ? 1.0f : 0.0f;
+                }
+                const bool fallback_mean = count == 0.0f;
+                const float denom = fallback_mean ? static_cast<float>(kSeqLen) : count;
+                for (std::int64_t pos = 0; pos < kSeqLen; ++pos) {
+                    const float include =
+                        fallback_mean || mask[static_cast<std::size_t>(batch * kSeqLen + pos)] > 0.0f ? 1.0f : 0.0f;
+                    for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                        expected_pooled[static_cast<std::size_t>(batch * kDim + dim)] +=
+                            include *
+                            target_hidden[static_cast<std::size_t>((batch * kSeqLen + pos) * kDim + dim)] / denom;
+                    }
+                }
+            }
+            std::vector<float> expected_projected(static_cast<std::size_t>(kProjectedElements), 0.0f);
+            for (std::int64_t batch = 0; batch < kBatch; ++batch) {
+                for (std::int64_t out_dim = 0; out_dim < kLatentDim; ++out_dim) {
+                    float value = bias[static_cast<std::size_t>(out_dim)];
+                    for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                        value += expected_pooled[static_cast<std::size_t>(batch * kDim + dim)] *
+                            weight[static_cast<std::size_t>(out_dim * kDim + dim)];
+                    }
+                    expected_projected[static_cast<std::size_t>(batch * kLatentDim + out_dim)] = value;
+                }
+            }
+            if (error.empty()) {
+                pooled_max_error = max_abs_error(actual_pooled, expected_pooled);
+                projected_max_error = max_abs_error(actual_projected, expected_projected);
+            }
+            constexpr float kTolerance = 2e-6f;
+            passed = error.empty() && pooled_max_error <= kTolerance && projected_max_error <= kTolerance;
+            if (!passed && error.empty()) {
+                error = "JEPA target-encoder smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"jepa_target_encoder_forward_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"seq_len\": " << kSeqLen
+        << ", \"dim\": " << kDim << ", \"latent_dim\": " << kLatentDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_latent_pool_float32\",\n"
+        << "    \"nfn_native_tile_linear_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"pooled\":" << pooled_max_error
+        << ", \"projected\":" << projected_max_error
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -6708,6 +6995,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_jepa_target_encoder_step) {
+            return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_alignment_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);

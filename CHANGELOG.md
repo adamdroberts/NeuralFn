@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Added a JEPA target-encoder forward native smoke for missing-family compiled
+  preflights. `nfn_jepa_native_train --smoke-jepa-target-encoder-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  moe-jepa-evo --native-cuda-smoke-jepa-target-encoder-step` alias now execute
+  masked JEPA latent pooling plus the target projection through raw CUDA Tile
+  ABI calls with CPU-reference checks, without Torch or graph-editor tensor
+  flow. Dense JEPA, semantic dense JEPA, and MoE+JEPA catalog/preflight JSON now
+  report `jepa-target-encoder-forward-smoke` in
+  `native_training_completed_requirements`; their missing lists keep full
+  AR+JEPA/semantic/route objective composition, family loop integration,
+  checkpointing, and inference wiring visible without re-listing the completed
+  target-encoder forward slice. Real JEPA-family training remains
+  `family-native-loop-missing` until those full loops are implemented.
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`, missing-family
+  native trainers, GPT/GPT-2 native CLIs, and unified native CLIs; live CUDA
+  JEPA target-encoder smoke passed with pooled max error `0` and projected max
+  error `3.72529e-09` against `/usr/local/cuda/lib64/libcudart.so.13`; unified
+  command forwarding emitted `nfn_moe_jepa_evo_native_train
+  --smoke-jepa-target-encoder-step`; focused catalog and missing-family
+  dispatch pytest passed (`2 passed`); the no-Torch verifier passed 30 artifact
+  scans, 69 Python entrypoints, 24 shell entrypoints, and 4 native template
+  catalogs.
+
 - Added a shared standard-MoE transformer-block forward native smoke.
   `nfn_mixllama_native_train --smoke-moe-transformer-block-step --tile-ops-lib
   PATH`, `nfn_moe_jepa_evo_native_train --smoke-moe-transformer-block-step`,

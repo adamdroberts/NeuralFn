@@ -897,7 +897,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-dense-jepa-objective") {
         return {
-            "jepa-target-encoder-forward",
             "ar-plus-jepa-loss-composition",
             "family-parameter-layout-checkpoint-inference",
         };
@@ -906,7 +905,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {
             "standard-moe-transformer-block-integration",
             "standard-moe-full-forward-backward-loop",
-            "jepa-target-encoder-forward",
             "ar-plus-jepa-plus-router-loss-composition",
             "family-parameter-layout-checkpoint-inference",
         };
@@ -916,7 +914,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
             "semantic-target-shard-resolver",
             "semantic-planner-forward-backward",
             "semantic-alignment-loss-device-reduction",
-            "jepa-target-encoder-forward",
             "ar-plus-semantic-plus-jepa-loss-composition",
             "family-parameter-layout-checkpoint-inference",
         };
@@ -999,6 +996,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         if (coverage_class == "missing-moe-jepa-objective" ||
             (coverage_class == "missing-semantic-moe-router-jepa-objective" &&
              template_name.find("jepa") != std::string::npos)) {
+            completed.push_back("jepa-target-encoder-forward-smoke");
             completed.push_back("jepa-projector-predictor-latent-loss-smoke");
         }
         if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
@@ -1007,10 +1005,14 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return completed;
     }
     if (coverage_class == "missing-dense-jepa-objective") {
-        return {"jepa-projector-predictor-latent-loss-smoke"};
+        return {
+            "jepa-target-encoder-forward-smoke",
+            "jepa-projector-predictor-latent-loss-smoke",
+        };
     }
     if (coverage_class == "missing-semantic-dense-jepa-objective") {
         return {
+            "jepa-target-encoder-forward-smoke",
             "jepa-projector-predictor-latent-loss-smoke",
             "semantic-hash-alignment-loss-items-smoke",
         };

@@ -107,9 +107,9 @@ SwiGLU expert forward/backward, load-balance/AdamW, and
 RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
 smokes while keeping the full family loop, JEPA or semantic objective,
 checkpoint, and inference blockers in the missing list. JEPA-family entries
-list completed projector/predictor linear, latent-loss, backward, and AdamW
-smokes while keeping target encoder, full objective composition, checkpoint,
-and inference blockers in the missing list. Semantic-family entries list
+list completed target-encoder forward, projector/predictor linear, latent-loss,
+backward, and AdamW smokes while keeping full objective composition,
+checkpoint, and inference blockers in the missing list. Semantic-family entries list
 completed semantic hash/alignment-loss-items smokes while keeping full
 semantic planner/router, reduction, objective
 composition, checkpoint, and inference blockers in the missing list. Diffusion
@@ -465,6 +465,13 @@ def build_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec
 ```
 
 Build the non-semantic MoE counterpart. It uses the same `(tokens, targets)` AR+JEPA contract as `dense_jepa_evo`, but swaps dense FFNs for standard MoE blocks with `experts`, `top_k`, and `router_aux_loss_coef`.
+
+Native CUDA Tile preflight JSON for `dense_jepa_evo`, `moe_jepa_evo`, and the
+semantic JEPA families now reports the target-encoder forward smoke
+(`jepa-target-encoder-forward-smoke`) and projector/predictor latent-loss smoke
+(`jepa-projector-predictor-latent-loss-smoke`) as completed requirements. The
+remaining missing requirements are the full AR+JEPA, semantic, or route-objective
+composition, family loop integration, checkpointing, and inference wiring.
 
 ---
 
