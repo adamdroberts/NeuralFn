@@ -100,9 +100,10 @@ build_one "seq2seq" "nfn_seq2seq_native_train" \
   "encoder-decoder-native-loop,cross-attention-forward-backward,seq2seq-loss-contract"
 build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
-  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-diffusion-objective" \
-  "timestep-scheduler-native-loop,denoise-head-forward-backward,diffusion-loss-contract"
+  "timestep-scheduler-native-loop,diffusion-full-objective-composition,family-parameter-layout-checkpoint-inference" \
+  "diffusion-denoise-linear-mse-adamw-smoke"
 build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

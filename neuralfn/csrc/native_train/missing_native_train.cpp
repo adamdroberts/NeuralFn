@@ -67,6 +67,7 @@ struct Config {
     bool smoke_moe_route_expert_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_semantic_alignment_step = false;
+    bool smoke_diffusion_denoise_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -252,6 +253,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
+        << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -288,6 +290,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
+        } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
+            cfg.smoke_diffusion_denoise_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -2358,6 +2362,399 @@ int print_jepa_projector_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_diffusion_denoise_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool diffusion_family = family.find("diffusion") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kDim = 4;
+    constexpr std::int64_t kElements = kRows * kDim;
+    constexpr std::int64_t kWeightElements = kDim * kDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    float denoise_forward_max_error = 0.0f;
+    float denoise_loss_max_error = 0.0f;
+    float denoise_grad_input_max_error = 0.0f;
+    float denoise_grad_weight_max_error = 0.0f;
+    float denoise_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!diffusion_family) {
+        error = "Diffusion smoke commands are only valid for diffusion-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (linear == nullptr || linear_backward_input == nullptr ||
+                linear_backward_weight_accumulate == nullptr || latent_mse_loss == nullptr ||
+                fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more diffusion denoise train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> noisy_latent = {
+            0.15f, -0.20f, 0.35f, 0.05f,
+            -0.10f, 0.25f, -0.30f, 0.40f,
+        };
+        const std::vector<float> target_noise = {
+            0.02f, -0.04f, 0.06f, 0.08f,
+            -0.01f, 0.03f, -0.05f, 0.07f,
+        };
+        std::vector<float> denoise_weight(static_cast<std::size_t>(kWeightElements));
+        for (std::size_t i = 0; i < denoise_weight.size(); ++i) {
+            denoise_weight[i] = 0.025f * static_cast<float>(static_cast<int>(i % 9) - 4);
+        }
+
+        std::vector<float> expected_pred(static_cast<std::size_t>(kElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                float acc = 0.0f;
+                for (std::int64_t in_d = 0; in_d < kDim; ++in_d) {
+                    acc += noisy_latent[static_cast<std::size_t>(row * kDim + in_d)] *
+                        denoise_weight[static_cast<std::size_t>(out_d * kDim + in_d)];
+                }
+                expected_pred[static_cast<std::size_t>(row * kDim + out_d)] = acc;
+            }
+        }
+        std::vector<float> grad_pred(static_cast<std::size_t>(kElements), 0.0f);
+        float expected_loss = 0.0f;
+        for (std::size_t i = 0; i < expected_pred.size(); ++i) {
+            const float diff = expected_pred[i] - target_noise[i];
+            expected_loss += diff * diff;
+            grad_pred[i] = 2.0f * diff;
+        }
+        std::vector<float> expected_grad_input(static_cast<std::size_t>(kElements), 0.0f);
+        std::vector<float> expected_grad_weight(denoise_weight.size(), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                const float grad = grad_pred[static_cast<std::size_t>(row * kDim + out_d)];
+                for (std::int64_t in_d = 0; in_d < kDim; ++in_d) {
+                    expected_grad_weight[static_cast<std::size_t>(out_d * kDim + in_d)] +=
+                        noisy_latent[static_cast<std::size_t>(row * kDim + in_d)] * grad;
+                    expected_grad_input[static_cast<std::size_t>(row * kDim + in_d)] +=
+                        grad * denoise_weight[static_cast<std::size_t>(out_d * kDim + in_d)];
+                }
+            }
+        }
+
+        float* d_noisy_latent = nullptr;
+        float* d_target_noise = nullptr;
+        float* d_denoise_weight = nullptr;
+        float* d_pred = nullptr;
+        float* d_loss = nullptr;
+        float* d_grad_pred = nullptr;
+        float* d_grad_input = nullptr;
+        float* d_grad_weight = nullptr;
+        float* d_exp_avg = nullptr;
+        float* d_exp_avg_sq = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_noisy_latent, noisy_latent.size(), "noisy_latent") &&
+            alloc(&d_target_noise, target_noise.size(), "target_noise") &&
+            alloc(&d_denoise_weight, denoise_weight.size(), "denoise_weight") &&
+            alloc(&d_pred, kElements, "pred") &&
+            alloc(&d_loss, 1, "loss") &&
+            alloc(&d_grad_pred, grad_pred.size(), "grad_pred") &&
+            alloc(&d_grad_input, kElements, "grad_input") &&
+            alloc(&d_grad_weight, denoise_weight.size(), "grad_weight") &&
+            alloc(&d_exp_avg, denoise_weight.size(), "exp_avg") &&
+            alloc(&d_exp_avg_sq, denoise_weight.size(), "exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_noisy_latent, noisy_latent, "noisy_latent") &&
+                copy_float(d_target_noise, target_noise, "target_noise") &&
+                copy_float(d_denoise_weight, denoise_weight, "denoise_weight") &&
+                copy_float(d_grad_pred, grad_pred, "grad_pred");
+            int status = 0;
+            if (error.empty()) {
+                status = fill(d_grad_weight, kWeightElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_exp_avg, kWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_exp_avg_sq, kWeightElements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero diffusion gradients/moments");
+                }
+            }
+            if (error.empty()) {
+                status = linear(
+                    d_noisy_latent, d_denoise_weight, nullptr, d_pred,
+                    kRows, kDim, kDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 denoise");
+                }
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_pred, d_target_noise, d_loss, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(
+                    d_grad_pred, d_denoise_weight, d_grad_input,
+                    kRows, kDim, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 denoise");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_noisy_latent, d_grad_pred, d_grad_weight,
+                    kRows, kDim, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 denoise");
+                }
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_denoise_weight,
+                    d_grad_weight,
+                    d_exp_avg,
+                    d_exp_avg_sq,
+                    kWeightElements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 denoise");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_pred(static_cast<std::size_t>(kElements), 0.0f);
+            std::vector<float> actual_loss(1, 0.0f);
+            std::vector<float> actual_grad_input(static_cast<std::size_t>(kElements), 0.0f);
+            std::vector<float> actual_grad_weight(denoise_weight.size(), 0.0f);
+            std::vector<float> actual_denoise_weight(denoise_weight.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_pred, d_pred, "pred") &&
+                    copy_back_float(actual_loss, d_loss, "loss") &&
+                    copy_back_float(actual_grad_input, d_grad_input, "grad_input") &&
+                    copy_back_float(actual_grad_weight, d_grad_weight, "grad_weight") &&
+                    copy_back_float(actual_denoise_weight, d_denoise_weight, "denoise_weight");
+            }
+
+            std::vector<float> expected_denoise_weight = denoise_weight;
+            for (std::size_t i = 0; i < expected_denoise_weight.size(); ++i) {
+                const float grad = expected_grad_weight[i];
+                const float next_m = 0.1f * grad;
+                const float next_v = 0.05f * grad * grad;
+                const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                const float decayed = expected_denoise_weight[i] * (1.0f - 0.01f * 0.02f);
+                expected_denoise_weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+            }
+            if (error.empty()) {
+                denoise_forward_max_error = max_abs_error(actual_pred, expected_pred);
+                denoise_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
+                denoise_grad_input_max_error = max_abs_error(actual_grad_input, expected_grad_input);
+                denoise_grad_weight_max_error = max_abs_error(actual_grad_weight, expected_grad_weight);
+                denoise_weight_update_max_error = max_abs_error(actual_denoise_weight, expected_denoise_weight);
+            }
+            constexpr float kTolerance = 5e-5f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                denoise_forward_max_error <= kTolerance &&
+                denoise_loss_max_error <= kTolerance &&
+                denoise_grad_input_max_error <= kTolerance &&
+                denoise_grad_weight_max_error <= kTolerance &&
+                denoise_weight_update_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "Diffusion denoise train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"diffusion_denoise_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"latent_dim\": " << kDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"denoise_forward\":" << denoise_forward_max_error
+        << ", \"denoise_loss\":" << denoise_loss_max_error
+        << ", \"denoise_grad_input\":" << denoise_grad_input_max_error
+        << ", \"denoise_grad_weight\":" << denoise_grad_weight_max_error
+        << ", \"denoise_weight_update\":" << denoise_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
@@ -2764,6 +3161,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_semantic_alignment_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_diffusion_denoise_step) {
+            return print_diffusion_denoise_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

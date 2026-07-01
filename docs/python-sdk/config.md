@@ -108,7 +108,10 @@ linear, latent-loss, backward, and AdamW smokes while keeping target encoder,
 full objective composition, checkpoint, and inference blockers in the missing
 list. Semantic-family entries list completed semantic hash/alignment-loss-items
 smokes while keeping full semantic planner/router, reduction, objective
-composition, checkpoint, and inference blockers in the missing list. Treat this manifest as the
+composition, checkpoint, and inference blockers in the missing list. Diffusion
+entries list the completed denoise linear/MSE/backward/AdamW smoke while
+keeping timestep scheduling, full objective composition, checkpointing, and
+inference in the missing list. Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
 

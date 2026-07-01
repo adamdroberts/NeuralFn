@@ -5250,6 +5250,15 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert coverage["diffusion"] == "missing-diffusion-objective"
+    assert missing_requirements["diffusion"] == [
+        "timestep-scheduler-native-loop",
+        "diffusion-full-objective-composition",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert completed_requirements["diffusion"] == [
+        "diffusion-denoise-linear-mse-adamw-smoke",
+    ]
     assert missing_requirements["gpt2"] == []
 
 
@@ -10958,10 +10967,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_jepa.exists()
     semantic_router_moe = tmp_path / "nfn_semantic_router_moe_native_train"
     assert semantic_router_moe.exists()
+    diffusion = tmp_path / "nfn_diffusion_native_train"
+    assert diffusion.exists()
     jamba = tmp_path / "nfn_jamba_native_train"
     assert jamba.exists()
     assert (tmp_path / "nfn_seq2seq_native_train").exists()
-    assert (tmp_path / "nfn_diffusion_native_train").exists()
     assert (tmp_path / "nfn_ttt_llama_native_train").exists()
     assert (tmp_path / "nfn_hnet_lm_native_train").exists()
     assert (tmp_path / "nfn_universal_llama_native_train").exists()
@@ -11335,6 +11345,44 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ):
         assert symbol in semantic_router_payload["required_tile_symbols"]
 
+    diffusion_plan = subprocess.run(
+        [
+            str(diffusion),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert diffusion_plan.returncode == 0, diffusion_plan.stderr
+    diffusion_payload = json.loads(diffusion_plan.stdout)
+    assert diffusion_payload["model_family"] == "diffusion"
+    assert diffusion_payload["status"] == "family-native-trainer-missing"
+    assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
+    assert diffusion_payload["native_training_missing_requirements"] == [
+        "timestep-scheduler-native-loop",
+        "diffusion-full-objective-composition",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert diffusion_payload["native_training_completed_requirements"] == [
+        "diffusion-denoise-linear-mse-adamw-smoke",
+    ]
+    assert diffusion_payload["compiled_native_boundary"] is True
+    assert diffusion_payload["torch_required"] is False
+    assert diffusion_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_linear_float32",
+        "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_fill_float32",
+        "nfn_native_tile_adamw_step_float32",
+    ):
+        assert symbol in diffusion_payload["required_tile_symbols"]
+
     jamba_plan = subprocess.run(
         [
             str(jamba),
@@ -11556,6 +11604,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-alignment-step" in unified_semantic_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_smoke_command.stdout
+
+    unified_diffusion_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "diffusion",
+            "--native-cuda-smoke-diffusion-denoise-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_diffusion_smoke_command.returncode == 0, unified_diffusion_smoke_command.stderr
+    assert str(diffusion) in unified_diffusion_smoke_command.stdout
+    assert "--smoke-diffusion-denoise-step" in unified_diffusion_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_diffusion_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_diffusion_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

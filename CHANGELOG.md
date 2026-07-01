@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a diffusion denoise native train-step CUDA smoke for diffusion-family
+  compiled preflights. `nfn_diffusion_native_train
+  --smoke-diffusion-denoise-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model diffusion
+  --native-cuda-smoke-diffusion-denoise-step` alias now execute denoise linear
+  forward, latent MSE, linear input/weight backward, and AdamW through raw CUDA
+  Tile ABI calls with CPU-reference checks. Diffusion catalog/preflight JSON now
+  reports `diffusion-denoise-linear-mse-adamw-smoke` in
+  `native_training_completed_requirements`, while timestep scheduling, full
+  objective composition, checkpointing, and inference wiring remain visible in
+  the missing list. Real diffusion-family training remains
+  `family-native-loop-missing` until those full loops are implemented.
+  Verification: rebuilt dense GPT native CLIs, GPT-2 compatibility CLI,
+  missing-family native trainers, and unified native CLIs; live CUDA diffusion
+  smoke passed with max errors at or below `2.80738e-05`; unified command
+  forwarding emitted `nfn_diffusion_native_train
+  --smoke-diffusion-denoise-step`; focused catalog and missing-family dispatch
+  pytest passed (`2 passed`); the no-Torch verifier passed 30 artifact scans,
+  69 Python entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a semantic hash/alignment native CUDA smoke for semantic-family
   compiled preflights. `nfn_semantic_router_moe_native_train
   --smoke-semantic-alignment-step --tile-ops-lib PATH` and the unified

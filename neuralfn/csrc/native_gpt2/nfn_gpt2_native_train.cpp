@@ -936,7 +936,11 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"encoder-decoder-native-loop", "cross-attention-forward-backward", "seq2seq-loss-contract"};
     }
     if (coverage_class == "missing-diffusion-objective") {
-        return {"timestep-scheduler-native-loop", "denoise-head-forward-backward", "diffusion-loss-contract"};
+        return {
+            "timestep-scheduler-native-loop",
+            "diffusion-full-objective-composition",
+            "family-parameter-layout-checkpoint-inference",
+        };
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
         return {"ttt-inner-update-native-loop", "ttt-linear-forward-backward-integration"};
@@ -992,6 +996,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "jepa-projector-predictor-latent-loss-smoke",
             "semantic-hash-alignment-loss-items-smoke",
         };
+    }
+    if (coverage_class == "missing-diffusion-objective") {
+        return {"diffusion-denoise-linear-mse-adamw-smoke"};
     }
     return {};
 }
