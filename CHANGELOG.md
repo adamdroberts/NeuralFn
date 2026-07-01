@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Added a LLaMA-family attention-block forward native smoke.
+  `nfn_llama_native_train --smoke-llama-attention-block-step --tile-ops-lib
+  PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-attention-block-step` alias now compose RMSNorm,
+  BF16 QKV projection, packed-QKV causal attention, BF16 unpack, and residual
+  add through raw CUDA Tile ABI calls. LLaMA-family catalog/preflight JSON now
+  reports `packed-qkv-attention-block-forward-smoke` in
+  `native_training_completed_requirements`; RoPE-aware packed block
+  integration, the full LLaMA block forward/backward loop, checkpointing, and
+  inference wiring remain visible in the missing list until those paths are
+  implemented and verified. Verification: rebuilt missing-family native
+  trainers, unified native CLIs, and dense GPT catalog binaries; live CUDA
+  smoke passed with `attention_max_abs=0.141602` and
+  `residual_delta_max_abs=0.141602`; unified command forwarding emitted
+  `nfn_llama_native_train --smoke-llama-attention-block-step`; focused native
+  GPT tests passed; the no-Torch dependency verifier passed all 30 native
+  artifacts with no stale outputs, 69 Python entrypoints, 24 shell entrypoints,
+  and four native template catalogs.
+
 - Added a LLaMA-family packed-QKV BF16 attention native smoke.
   `nfn_llama_native_train --smoke-llama-packed-attention-step --tile-ops-lib
   PATH` and the unified `nfn-native-train --base-model llama

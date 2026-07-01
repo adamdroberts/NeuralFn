@@ -515,9 +515,10 @@ missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
 wired. LLaMA-family entries now separate completed smoke-backed slices from the
 remaining blockers: `native_training_completed_requirements` names RMSNorm,
-RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, and packed-QKV attention
-forward/backward CUDA smokes, while `native_training_missing_requirements`
-keeps packed-QKV RoPE attention block integration, the full LLaMA block
+RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, packed-QKV attention
+forward/backward, and RMSNorm/QKV-projection/packed-attention/residual forward
+block CUDA smokes, while `native_training_missing_requirements` keeps
+packed-QKV RoPE attention block integration, the full LLaMA block
 forward/backward loop, and family checkpoint/inference wiring. MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
@@ -544,6 +545,10 @@ AdamW slice. Use `nfn_llama_native_train --smoke-llama-packed-attention-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-llama-packed-attention-step` alias to cover packed-QKV
 BF16 causal attention with saved LSE and backward-to-QKV. Use
+`nfn_llama_native_train --smoke-llama-attention-block-step --tile-ops-lib PATH`
+or the unified `--native-cuda-smoke-llama-attention-block-step` alias to
+compose RMSNorm, BF16 QKV projection, packed-QKV causal attention, BF16 unpack,
+and residual add in one native forward block slice. Use
 `nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-moe-route-expert-step` alias on MoE families to run top-k
