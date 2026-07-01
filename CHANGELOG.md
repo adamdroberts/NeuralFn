@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added a seq2seq loss-composition native smoke. `nfn_seq2seq_native_train
+  --smoke-seq2seq-loss-composition-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model seq2seq
+  --native-cuda-smoke-seq2seq-loss-composition-step` alias now run the
+  decoder-to-encoder SDPA, LM logits, token CE forward/backward, LM-head
+  backward, cross-attention backward, and AdamW device path as the explicit
+  seq2seq loss-composition slice without Torch or graph-editor tensor flow.
+  Seq2seq catalog and preflight JSON now report
+  `seq2seq-loss-composition-adamw-smoke` in completed requirements while
+  keeping only the full encoder-decoder native loop visible as the outstanding
+  seq2seq requirement. Verification: rebuilt missing-family native trainers,
+  unified native frontends, dense GPT frontends, and the linked GPT frontend;
+  live CUDA direct and unified seq2seq loss-composition smokes passed.
+
 - Added a semantic-router MoE route/expert train-step native smoke.
   `nfn_semantic_router_moe_native_train
   --smoke-semantic-router-moe-train-step --tile-ops-lib PATH` and the unified

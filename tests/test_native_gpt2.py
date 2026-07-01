@@ -5275,10 +5275,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["seq2seq"] == "missing-seq2seq-objective"
     assert missing_requirements["seq2seq"] == [
         "encoder-decoder-native-loop",
-        "full-seq2seq-loss-composition",
     ]
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
+        "seq2seq-loss-composition-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "missing-ttt-transformer-lm"
@@ -11815,10 +11815,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_payload["native_training_coverage_class"] == "missing-seq2seq-objective"
     assert seq2seq_payload["native_training_missing_requirements"] == [
         "encoder-decoder-native-loop",
-        "full-seq2seq-loss-composition",
     ]
     assert seq2seq_payload["native_training_completed_requirements"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
+        "seq2seq-loss-composition-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert seq2seq_payload["compiled_native_boundary"] is True
@@ -12532,6 +12532,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-seq2seq-cross-attention-step" in unified_seq2seq_smoke_command.stdout
     assert "--tile-ops-lib" in unified_seq2seq_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_seq2seq_smoke_command.stdout
+
+    unified_seq2seq_loss_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "seq2seq",
+            "--native-cuda-smoke-seq2seq-loss-composition-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_seq2seq_loss_smoke_command.returncode == 0, unified_seq2seq_loss_smoke_command.stderr
+    assert str(seq2seq) in unified_seq2seq_loss_smoke_command.stdout
+    assert "--smoke-seq2seq-loss-composition-step" in unified_seq2seq_loss_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_seq2seq_loss_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_seq2seq_loss_smoke_command.stdout
 
     unified_ttt_smoke_command = subprocess.run(
         [

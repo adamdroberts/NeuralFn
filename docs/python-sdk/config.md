@@ -126,8 +126,9 @@ Diffusion
 entries list the completed denoise linear/MSE/backward/AdamW and
 timestep/mask/token-CE/backward/AdamW smokes while keeping checkpointing and
 inference in the missing list. Seq2seq entries list the completed
-cross-attention/CE/backward/AdamW smoke while keeping the full encoder-decoder
-loop, full loss composition, checkpointing, and inference in the missing list.
+cross-attention/CE/backward/AdamW and loss-composition/AdamW smokes while
+keeping the full encoder-decoder loop, checkpointing, and inference in the
+missing list.
 TTT entries list the completed inner linear/MSE/backward/AdamW smoke plus the
 composite base/down/tanh/up residual forward/backward/AdamW smoke while keeping
 checkpointing and inference in the missing list. Universal transformer entries list recurrent linear/MSE/backward/AdamW
