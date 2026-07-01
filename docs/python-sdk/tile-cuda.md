@@ -61,7 +61,8 @@ bash tools/build_native_train_tile_ops.sh
 The same trainer-facing library exports the semantic/MoE/JEPA route surface
 used by semantic-router native preflight: top-k routing, expert-route broadcast,
 chunk-route broadcast, routed expert SwiGLU forward/backward, semantic hash,
-semantic-alignment item losses, attentionless decoder projection, expert bias
+semantic-alignment item losses, route-selection loss partials,
+softmax-distillation partials, attentionless decoder projection, expert bias
 add, route-balance density/loss, latent MSE, and AdamW.
 `nfn_semantic_router_moe_native_train --print-plan
 --check-tile-ops --tile-ops-lib PATH` verifies those symbols without importing
@@ -530,9 +531,11 @@ completed projector/predictor/latent-loss, target-encoder, and base AR+JEPA
 objective CUDA smokes while keeping checkpointing and inference wiring visible
 for dense JEPA and router/semantic objective composition visible for those
 families. Semantic-family entries now list the completed semantic
-hash/alignment-loss-items CUDA smoke while keeping full semantic planner/router,
-device reduction, objective composition, checkpointing, and inference wiring in
-the missing list. Universal-family entries now list recurrent linear/MSE/AdamW
+hash/alignment-loss-items CUDA smoke, and semantic-router MoE entries also list
+the completed route-selection/distillation/balance-loss CUDA smoke while keeping
+full semantic planner/router, device reduction, objective composition,
+checkpointing, and inference wiring in the missing list. Universal-family
+entries now list recurrent linear/MSE/AdamW
 and ACT halt loss/gradient CUDA smokes as completed while keeping
 checkpoint/inference wiring visible.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
@@ -616,7 +619,12 @@ raw CUDA Tile train-step slice. Use
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-semantic-alignment-step` alias on semantic families to run
 semantic hash and alignment loss-item kernels as a raw CUDA Tile slice. Real
-training still fails until the family-specific CUDA Tile loop is implemented.
+Use `nfn_semantic_router_moe_native_train --smoke-semantic-route-loss-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-semantic-route-loss-step` alias on semantic-router MoE
+families to run route-selection loss, softmax distillation, and route-balance
+loss kernels as a raw CUDA Tile slice. Real training still fails until the
+family-specific CUDA Tile loop is implemented.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

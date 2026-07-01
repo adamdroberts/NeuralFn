@@ -529,6 +529,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-smoke-moe-route-expert-step": "--smoke-moe-route-expert-step",
         "--native-cuda-smoke-moe-transformer-block-step": "--smoke-moe-transformer-block-step",
         "--native-cuda-smoke-semantic-alignment-step": "--smoke-semantic-alignment-step",
+        "--native-cuda-smoke-semantic-route-loss-step": "--smoke-semantic-route-loss-step",
         "--native-cuda-smoke-seq2seq-cross-attention-step": "--smoke-seq2seq-cross-attention-step",
         "--native-cuda-smoke-ttt-composite-inner-step": "--smoke-ttt-composite-inner-step",
         "--native-cuda-smoke-ttt-linear-inner-step": "--smoke-ttt-linear-inner-step",

@@ -1677,6 +1677,18 @@ void launch_masked_token_cross_entropy_partials_float32(
     std::int64_t vocab,
     std::int64_t ignore_index,
     cudaStream_t stream);
+void launch_route_selection_loss_partials_float32(
+    const float* route_logits,
+    const std::int64_t* sem_targets,
+    float* loss_partials,
+    float* count_partials,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t num_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t ignore_index,
+    cudaStream_t stream);
 void launch_route_balance_density_float32(
     const float* route_logits,
     float* density,
@@ -1687,6 +1699,13 @@ void launch_route_balance_loss_float32(
     const float* density,
     float* out,
     std::int64_t experts,
+    cudaStream_t stream);
+void launch_softmax_distillation_partials_float32(
+    const float* teacher_logits,
+    const float* student_logits,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
     cudaStream_t stream);
 void launch_token_cross_entropy_backward_float32(
     const float* logits,
@@ -6466,6 +6485,38 @@ int nfn_native_tile_route_balance_density_float32(
     return launch_status();
 }
 
+int nfn_native_tile_route_selection_loss_partials_float32(
+    const float* route_logits,
+    const std::int64_t* sem_targets,
+    float* loss_partials,
+    float* count_partials,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t num_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t ignore_index,
+    void* cuda_stream) {
+    if (rows <= 0 || seq_len <= 0 || experts <= 0 || num_vocab_dims <= 0 ||
+        shared_experts < 0 || shared_experts + num_vocab_dims > experts) {
+        return 1;
+    }
+    const std::int64_t n = rows * seq_len * num_vocab_dims;
+    neuralfn::tile_cuda::launch_route_selection_loss_partials_float32(
+        route_logits,
+        sem_targets,
+        loss_partials,
+        count_partials,
+        n,
+        seq_len,
+        experts,
+        num_vocab_dims,
+        shared_experts,
+        ignore_index,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_route_balance_loss_float32(
     const float* density,
     float* out,
@@ -6476,6 +6527,21 @@ int nfn_native_tile_route_balance_loss_float32(
     }
     neuralfn::tile_cuda::launch_route_balance_loss_float32(
         density, out, experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_softmax_distillation_partials_float32(
+    const float* teacher_logits,
+    const float* student_logits,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    void* cuda_stream) {
+    if (rows <= 0 || vocab <= 0 || vocab > 1024) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_softmax_distillation_partials_float32(
+        teacher_logits, student_logits, partials, rows, vocab, as_stream(cuda_stream));
     return launch_status();
 }
 

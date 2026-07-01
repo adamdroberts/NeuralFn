@@ -72,6 +72,7 @@ struct Config {
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_semantic_alignment_step = false;
+    bool smoke_semantic_route_loss_step = false;
     bool smoke_diffusion_denoise_step = false;
     bool smoke_diffusion_objective_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
@@ -272,6 +273,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
+        << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-diffusion-objective-step Launch diffusion timestep, mask scheduler, CE objective, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
@@ -328,6 +330,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_ar_loss_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
+        } else if (arg == "--smoke-semantic-route-loss-step" || arg == "--native-cuda-smoke-semantic-route-loss-step") {
+            cfg.smoke_semantic_route_loss_step = true;
         } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
             cfg.smoke_diffusion_denoise_step = true;
         } else if (arg == "--smoke-diffusion-objective-step" || arg == "--native-cuda-smoke-diffusion-objective-step") {
@@ -8968,6 +8972,405 @@ int print_seq2seq_cross_attention_smoke_json(const Config& cfg, const char* prog
     return passed ? 0 : 2;
 }
 
+int print_semantic_route_loss_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using RouteSelectionLossFn = int (*)(
+        const float*, const std::int64_t*, float*, float*, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SoftmaxDistillationFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, void*);
+    using RouteBalanceDensityFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
+    using RouteBalanceLossFn = int (*)(const float*, float*, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    RouteSelectionLossFn route_selection_loss = nullptr;
+    SoftmaxDistillationFn softmax_distillation = nullptr;
+    RouteBalanceDensityFn route_balance_density = nullptr;
+    RouteBalanceLossFn route_balance_loss = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kSeqLen = 2;
+    constexpr std::int64_t kExperts = 5;
+    constexpr std::int64_t kDims = 2;
+    constexpr std::int64_t kSharedExperts = 1;
+    constexpr std::int64_t kIgnoreIndex = -1;
+    constexpr std::int64_t kRouteElements = kRows * kSeqLen * kExperts;
+    constexpr std::int64_t kDistillRows = 2;
+    constexpr std::int64_t kDistillVocab = 3;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto softplus_neg = [](float x) {
+        return std::log(1.0f + std::exp(-x));
+    };
+
+    bool passed = false;
+    float route_selection_loss_max_error = 0.0f;
+    float route_selection_count_max_error = 0.0f;
+    float distillation_partials_max_error = 0.0f;
+    float balance_density_max_error = 0.0f;
+    float balance_loss_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!semantic_family) {
+        error = "Semantic route-loss smoke commands are only valid for semantic-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            route_selection_loss = load_symbol<RouteSelectionLossFn>(
+                tile_handle, "nfn_native_tile_route_selection_loss_partials_float32");
+            softmax_distillation = load_symbol<SoftmaxDistillationFn>(
+                tile_handle, "nfn_native_tile_softmax_distillation_partials_float32");
+            route_balance_density = load_symbol<RouteBalanceDensityFn>(
+                tile_handle, "nfn_native_tile_route_balance_density_float32");
+            route_balance_loss = load_symbol<RouteBalanceLossFn>(
+                tile_handle, "nfn_native_tile_route_balance_loss_float32");
+            if (route_selection_loss == nullptr || softmax_distillation == nullptr ||
+                route_balance_density == nullptr || route_balance_loss == nullptr) {
+                error = "Tile ops library is missing one or more semantic route-loss symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        std::vector<float> route_logits(static_cast<std::size_t>(kRouteElements));
+        for (std::int64_t i = 0; i < kRouteElements; ++i) {
+            route_logits[static_cast<std::size_t>(i)] =
+                0.11f * static_cast<float>(static_cast<int>(i % 9) - 4);
+        }
+        const std::vector<std::int64_t> sem_targets = {0, 1, kIgnoreIndex, 0};
+        const std::vector<float> teacher_logits = {
+            0.20f, -0.10f, 0.05f,
+            -0.25f, 0.30f, 0.10f,
+        };
+        const std::vector<float> student_logits = {
+            0.10f, 0.00f, -0.05f,
+            -0.10f, 0.20f, 0.15f,
+        };
+
+        float expected_route_loss = 0.0f;
+        float expected_route_count = 0.0f;
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t seq = 0; seq < kSeqLen; ++seq) {
+                for (std::int64_t dim = 0; dim < kDims; ++dim) {
+                    const std::int64_t target = sem_targets[static_cast<std::size_t>(row * kDims + dim)];
+                    if (target == kIgnoreIndex) {
+                        continue;
+                    }
+                    const std::int64_t expert = kSharedExperts + dim;
+                    const float logit =
+                        route_logits[static_cast<std::size_t>((row * kSeqLen + seq) * kExperts + expert)];
+                    expected_route_loss += softplus_neg(logit);
+                    expected_route_count += 1.0f;
+                }
+            }
+        }
+        std::vector<float> expected_distill(static_cast<std::size_t>(kDistillRows), 0.0f);
+        for (std::int64_t row = 0; row < kDistillRows; ++row) {
+            const std::int64_t base = row * kDistillVocab;
+            float teacher_sum = 0.0f;
+            float student_sum = 0.0f;
+            for (std::int64_t col = 0; col < kDistillVocab; ++col) {
+                teacher_sum += std::exp(teacher_logits[static_cast<std::size_t>(base + col)]);
+                student_sum += std::exp(student_logits[static_cast<std::size_t>(base + col)]);
+            }
+            const float teacher_logsum = std::log(teacher_sum);
+            const float student_logsum = std::log(student_sum);
+            for (std::int64_t col = 0; col < kDistillVocab; ++col) {
+                const float teacher = teacher_logits[static_cast<std::size_t>(base + col)];
+                const float student = student_logits[static_cast<std::size_t>(base + col)];
+                const float teacher_prob = std::exp(teacher - teacher_logsum);
+                expected_distill[static_cast<std::size_t>(row)] +=
+                    teacher_prob * ((teacher - teacher_logsum) - (student - student_logsum));
+            }
+        }
+        std::vector<float> expected_density(static_cast<std::size_t>(kExperts), 0.0f);
+        for (std::int64_t row = 0; row < kRows * kSeqLen; ++row) {
+            const std::int64_t base = row * kExperts;
+            float max_value = -3.4028234663852886e38f;
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                max_value = std::max(max_value, route_logits[static_cast<std::size_t>(base + expert)]);
+            }
+            float denom = 0.0f;
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                denom += std::exp(route_logits[static_cast<std::size_t>(base + expert)] - max_value);
+            }
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                expected_density[static_cast<std::size_t>(expert)] +=
+                    std::exp(route_logits[static_cast<std::size_t>(base + expert)] - max_value) /
+                    denom / static_cast<float>(kRows * kSeqLen);
+            }
+        }
+        float expected_balance_loss = 0.0f;
+        for (float value : expected_density) {
+            expected_balance_loss += value * value;
+        }
+        expected_balance_loss *= static_cast<float>(kExperts);
+
+        float* d_route_logits = nullptr;
+        std::int64_t* d_sem_targets = nullptr;
+        float* d_route_loss_partials = nullptr;
+        float* d_route_count_partials = nullptr;
+        float* d_teacher_logits = nullptr;
+        float* d_student_logits = nullptr;
+        float* d_distill_partials = nullptr;
+        float* d_density = nullptr;
+        float* d_balance_loss = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_route_logits, route_logits.size(), "route_logits") &&
+            alloc_i64(&d_sem_targets, sem_targets.size(), "sem_targets") &&
+            alloc(&d_route_loss_partials, 1, "route_loss_partials") &&
+            alloc(&d_route_count_partials, 1, "route_count_partials") &&
+            alloc(&d_teacher_logits, teacher_logits.size(), "teacher_logits") &&
+            alloc(&d_student_logits, student_logits.size(), "student_logits") &&
+            alloc(&d_distill_partials, kDistillRows, "distill_partials") &&
+            alloc(&d_density, kExperts, "density") &&
+            alloc(&d_balance_loss, 1, "balance_loss")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_route_logits, route_logits, "route_logits") &&
+                copy_i64(d_sem_targets, sem_targets, "sem_targets") &&
+                copy_float(d_teacher_logits, teacher_logits, "teacher_logits") &&
+                copy_float(d_student_logits, student_logits, "student_logits");
+        }
+        int status = 0;
+        if (error.empty()) {
+            status = route_selection_loss(
+                d_route_logits,
+                d_sem_targets,
+                d_route_loss_partials,
+                d_route_count_partials,
+                kRows,
+                kSeqLen,
+                kExperts,
+                kDims,
+                kSharedExperts,
+                kIgnoreIndex,
+                nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_route_selection_loss_partials_float32");
+            }
+        }
+        if (error.empty()) {
+            status = softmax_distillation(
+                d_teacher_logits, d_student_logits, d_distill_partials, kDistillRows, kDistillVocab, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_softmax_distillation_partials_float32");
+            }
+        }
+        if (error.empty()) {
+            status = route_balance_density(d_route_logits, d_density, kRows * kSeqLen, kExperts, nullptr);
+            if (status == 0) {
+                status = route_balance_loss(d_density, d_balance_loss, kExperts, nullptr);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "semantic route balance kernels");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_device_synchronize();
+            if (status != 0) {
+                error = cuda_error(status, "cudaDeviceSynchronize");
+            }
+        }
+
+        std::vector<float> actual_route_loss(1, 0.0f);
+        std::vector<float> actual_route_count(1, 0.0f);
+        std::vector<float> actual_distill(static_cast<std::size_t>(kDistillRows), 0.0f);
+        std::vector<float> actual_density(static_cast<std::size_t>(kExperts), 0.0f);
+        std::vector<float> actual_balance_loss(1, 0.0f);
+        auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        if (error.empty()) {
+            copy_back_float(actual_route_loss, d_route_loss_partials, "route_loss_partials") &&
+                copy_back_float(actual_route_count, d_route_count_partials, "route_count_partials") &&
+                copy_back_float(actual_distill, d_distill_partials, "distill_partials") &&
+                copy_back_float(actual_density, d_density, "density") &&
+                copy_back_float(actual_balance_loss, d_balance_loss, "balance_loss");
+        }
+        if (error.empty()) {
+            route_selection_loss_max_error = std::fabs(actual_route_loss[0] - expected_route_loss);
+            route_selection_count_max_error = std::fabs(actual_route_count[0] - expected_route_count);
+            distillation_partials_max_error = max_abs_error(actual_distill, expected_distill);
+            balance_density_max_error = max_abs_error(actual_density, expected_density);
+            balance_loss_max_error = std::fabs(actual_balance_loss[0] - expected_balance_loss);
+        }
+        constexpr float kTolerance = 2e-6f;
+        passed = error.empty() &&
+            route_selection_loss_max_error <= kTolerance &&
+            route_selection_count_max_error <= kTolerance &&
+            distillation_partials_max_error <= kTolerance &&
+            balance_density_max_error <= kTolerance &&
+            balance_loss_max_error <= kTolerance;
+        if (!passed && error.empty()) {
+            error = "Semantic route-loss smoke exceeded tolerance";
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"semantic_route_loss_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"seq_len\": " << kSeqLen
+        << ", \"experts\": " << kExperts << ", \"semantic_dims\": " << kDims << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_route_selection_loss_partials_float32\",\n"
+        << "    \"nfn_native_tile_softmax_distillation_partials_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_density_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_loss_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"route_selection_loss\":" << route_selection_loss_max_error
+        << ", \"route_selection_count\":" << route_selection_count_max_error
+        << ", \"distillation_partials\":" << distillation_partials_max_error
+        << ", \"balance_density\":" << balance_density_max_error
+        << ", \"balance_loss\":" << balance_loss_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
@@ -9389,6 +9792,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_semantic_alignment_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_semantic_route_loss_step) {
+            return print_semantic_route_loss_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_diffusion_denoise_step) {
             return print_diffusion_denoise_smoke_json(cfg, argv[0]);

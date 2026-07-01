@@ -5259,6 +5259,8 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "route-selection-distillation-balance-losses" not in missing_requirements["semantic_moe_jepa_evo"]
+    assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "missing-seq2seq-objective"
     assert missing_requirements["seq2seq"] == [
         "encoder-decoder-native-loop",
@@ -11500,11 +11502,15 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_payload["model_family"] == "semantic-router-moe"
     assert semantic_router_payload["status"] == "family-native-trainer-missing"
     assert semantic_router_payload["native_training_coverage_class"] == "missing-semantic-moe-router-jepa-objective"
+    assert "route-selection-distillation-balance-losses" not in semantic_router_payload[
+        "native_training_missing_requirements"
+    ]
     assert semantic_router_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "semantic-hash-alignment-loss-items-smoke",
+        "route-selection-distillation-balance-losses-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
     assert semantic_router_payload["torch_required"] is False
@@ -11517,6 +11523,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_moe_swiglu_backward_float32",
         "nfn_native_tile_semantic_hash_int64",
         "nfn_native_tile_semantic_alignment_loss_items_float32",
+        "nfn_native_tile_route_selection_loss_partials_float32",
+        "nfn_native_tile_softmax_distillation_partials_float32",
         "nfn_native_tile_attentionless_decoder_float32",
         "nfn_native_tile_expert_bias_add_float32",
         "nfn_native_tile_route_balance_density_float32",
@@ -12020,6 +12028,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-alignment-step" in unified_semantic_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_smoke_command.stdout
+
+    unified_semantic_route_loss_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-smoke-semantic-route-loss-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_route_loss_smoke_command.returncode == 0
+    ), unified_semantic_route_loss_smoke_command.stderr
+    assert str(semantic_router_moe) in unified_semantic_route_loss_smoke_command.stdout
+    assert "--smoke-semantic-route-loss-step" in unified_semantic_route_loss_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_route_loss_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_route_loss_smoke_command.stdout
 
     unified_hnet_smoke_command = subprocess.run(
         [

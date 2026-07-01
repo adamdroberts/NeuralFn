@@ -512,6 +512,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-moe-route-expert-step" ||
                                arg == "--native-cuda-smoke-moe-transformer-block-step" ||
                                arg == "--native-cuda-smoke-semantic-alignment-step" ||
+                               arg == "--native-cuda-smoke-semantic-route-loss-step" ||
                                arg == "--native-cuda-smoke-seq2seq-cross-attention-step" ||
                                arg == "--native-cuda-smoke-ttt-composite-inner-step" ||
                                arg == "--native-cuda-smoke-ttt-linear-inner-step" ||
@@ -577,6 +578,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-moe-transformer-block-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {
                 forwarded.push_back("--smoke-semantic-alignment-step");
+            } else if (arg == "--native-cuda-smoke-semantic-route-loss-step") {
+                forwarded.push_back("--smoke-semantic-route-loss-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
                 forwarded.push_back("--smoke-seq2seq-cross-attention-step");
             } else if (arg == "--native-cuda-smoke-ttt-composite-inner-step") {

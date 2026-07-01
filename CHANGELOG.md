@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Added semantic-router route-loss CUDA Tile smoke coverage and raw native-train
+  ABI wrappers for route-selection and softmax-distillation partials.
+  `nfn_semantic_router_moe_native_train --smoke-semantic-route-loss-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  semantic-router-moe --native-cuda-smoke-semantic-route-loss-step` alias now
+  run route-selection loss, softmax distillation, route-balance density/loss,
+  and CPU-reference parity checks without Torch or graph-editor tensor flow.
+  Semantic MoE JEPA catalog/preflight JSON now reports
+  `route-selection-distillation-balance-losses-smoke` in
+  `native_training_completed_requirements`; semantic target shard resolution,
+  router/expert loop wiring, route-evolution device control, final objective
+  composition, and checkpoint/inference wiring remain visible as outstanding
+  requirements. Verification: rebuilt Tile ops, missing-family native trainers,
+  unified native frontends, dense GPT frontends, linked GPT and benchmark
+  artifacts, and the TK Tile sidecar; live CUDA semantic route-loss smoke
+  passed with route-selection loss max error `4.76837e-07`, distillation max
+  error `1.22003e-07`, balance-density max error `1.49012e-08`, and
+  balance-loss max error `1.19209e-07`; focused native GPT catalog/dispatch
+  pytest passed (`2 passed`); the no-Torch verifier passed 30 native artifacts
+  with 0 stale artifacts, 69 Python entrypoints, 24 shell entrypoints, and 4
+  native template catalogs.
+
 - Added HNet byte-patch backward CUDA Tile kernels and raw native-train ABI
   wrappers. `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-backward-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model hnet-lm

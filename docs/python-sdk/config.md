@@ -474,9 +474,12 @@ semantic JEPA families now reports the target-encoder forward smoke
 (`jepa-target-encoder-forward-smoke`) and projector/predictor latent-loss smoke
 (`jepa-projector-predictor-latent-loss-smoke`) plus base AR+JEPA loss
 composition (`ar-plus-jepa-loss-composition-smoke`) as completed requirements.
-The remaining missing requirements are family loop/checkpoint/inference wiring
-for dense JEPA and the semantic or route-objective composition plus family loop,
-checkpointing, and inference wiring for the semantic/MoE JEPA variants.
+Semantic MoE JEPA entries also report
+`route-selection-distillation-balance-losses-smoke` as completed. The remaining
+missing requirements are family loop/checkpoint/inference wiring for dense JEPA
+and semantic target/router/expert wiring, route-evolution device control, final
+objective composition, family loop, checkpointing, and inference wiring for the
+semantic/MoE JEPA variants.
 
 ---
 

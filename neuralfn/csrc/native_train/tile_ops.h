@@ -2061,10 +2061,31 @@ int nfn_native_tile_route_balance_density_float32(
     std::int64_t experts,
     void* cuda_stream);
 
+int nfn_native_tile_route_selection_loss_partials_float32(
+    const float* route_logits,
+    const std::int64_t* sem_targets,
+    float* loss_partials,
+    float* count_partials,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t num_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t ignore_index,
+    void* cuda_stream);
+
 int nfn_native_tile_route_balance_loss_float32(
     const float* density,
     float* out,
     std::int64_t experts,
+    void* cuda_stream);
+
+int nfn_native_tile_softmax_distillation_partials_float32(
+    const float* teacher_logits,
+    const float* student_logits,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
     void* cuda_stream);
 
 int nfn_native_tile_token_cross_entropy_backward_float32(
