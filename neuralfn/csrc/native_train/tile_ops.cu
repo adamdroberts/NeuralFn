@@ -528,6 +528,16 @@ void launch_causal_chunk_state_float32(
     std::int64_t chunks,
     int mode,
     cudaStream_t stream);
+void launch_causal_chunk_state_backward_float32(
+    const float* grad_out,
+    float* grad_hidden,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    int mode,
+    cudaStream_t stream);
 void launch_broadcast_expert_routes_float32(
     const float* weights,
     const std::int64_t* indices,
@@ -4250,6 +4260,25 @@ int nfn_native_tile_causal_chunk_state_float32(
     }
     neuralfn::tile_cuda::launch_causal_chunk_state_float32(
         hidden, out, batch, seq_len, dim, chunk_size, chunks, static_cast<int>(mode), as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_causal_chunk_state_backward_float32(
+    const float* grad_out,
+    float* grad_hidden,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    std::int64_t mode,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || dim <= 0 || chunk_size <= 0 || chunks <= 0 ||
+        (mode != 0 && mode != 1)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_causal_chunk_state_backward_float32(
+        grad_out, grad_hidden, batch, seq_len, dim, chunk_size, chunks, static_cast<int>(mode), as_stream(cuda_stream));
     return launch_status();
 }
 

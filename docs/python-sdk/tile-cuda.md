@@ -58,6 +58,25 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+The raw ABI and optional PyTorch Tile extension expose Jamba-style causal
+chunk-state forward/backward helpers. Native trainer code uses
+`nfn_native_tile_causal_chunk_state_float32` and
+`nfn_native_tile_causal_chunk_state_backward_float32`; extension callers can
+use `tile_causal_chunk_state(hidden, chunk_size, "mean"|"prefix")` and
+`tile_causal_chunk_state_backward(grad_out, seq_len, chunk_size,
+"mean"|"prefix")` for the same mean/prefix chunk contracts.
+
+Jamba coverage includes a Mamba chunk-state train-step smoke that stays on raw
+CUDA Tile ABI calls from chunk-state forward through chunk-state backward,
+projection head loss/backward, and AdamW:
+
+```bash
+nfn_jamba_native_train --smoke-jamba-mamba-state-step --tile-ops-lib PATH
+nfn-native-train --base-model jamba \
+  --native-cuda-smoke-jamba-mamba-state-step \
+  --native-cuda-tile-ops-lib PATH
+```
+
 Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
 ABI calls from target latent pooling through AR+JEPA loss/backward and AdamW:
 
@@ -529,7 +548,7 @@ graph paths still fail explicitly with `custom-graph-native-trainer-missing` or
 `custom-graph-file-missing` instead of routing batches through graph-editor
 nodes or Torch.
 The compiled missing-family binaries for LLaMA, MixLLaMA, JEPA,
-semantic-router MoE, and DeepSeek-V4 now expose the same native boundary as
+semantic-router MoE, DeepSeek-V4, and Jamba now expose the same native boundary as
 JSON preflights: `--print-plan`, `--dry-run`, and
 `--check-tile-ops --tile-ops-lib PATH` report parsed schedule fields,
 `compiled_native_boundary: true`, `torch_required: false`,
@@ -565,6 +584,9 @@ route/expert/AdamW CUDA smokes while keeping full semantic planner/router,
 device reduction, and objective composition in the missing list. Universal-family
 entries now list recurrent linear/MSE/AdamW
 and ACT halt loss/gradient CUDA smokes plus family metadata as completed.
+Jamba entries now list causal chunk-state/head AdamW and Mamba chunk-state
+forward/backward/head AdamW CUDA smokes as completed while keeping the
+Jamba layer-schedule native loop visible as the remaining blocker.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on

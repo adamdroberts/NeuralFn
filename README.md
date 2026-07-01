@@ -23,6 +23,14 @@ frontend. For direct family binaries, `nfn train --base-model ... --dry-run
 --print-command` runs the family frontend so GPT-2-evo and similar targets can
 print their final compiled delegate command instead of the Python wrapper's
 intermediate argv.
+Jamba native preflight includes a CUDA Tile Mamba chunk-state
+forward/backward smoke:
+`nfn_jamba_native_train --smoke-jamba-mamba-state-step --tile-ops-lib PATH` or
+`nfn-native-train --base-model jamba
+--native-cuda-smoke-jamba-mamba-state-step --native-cuda-tile-ops-lib PATH`.
+It stays on raw C++/CUDA Tile kernels, reports `torch_required: false` and
+`graph_editor_tensor_flow: false`, and leaves the family layer-schedule native
+loop as the visible remaining Jamba trainer requirement.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
 shim: `from nfn import main; main()` can serve root help, direct dense GPT

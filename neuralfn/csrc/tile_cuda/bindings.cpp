@@ -195,6 +195,16 @@ void launch_causal_chunk_state_float32(
     std::int64_t chunks,
     int mode,
     cudaStream_t stream);
+void launch_causal_chunk_state_backward_float32(
+    const float* grad_out,
+    float* grad_hidden,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    int mode,
+    cudaStream_t stream);
 void launch_latent_mse_partials_float32(
     const float* pred,
     const float* target,
@@ -969,6 +979,37 @@ torch::Tensor tile_causal_chunk_state(torch::Tensor hidden, std::int64_t chunk_s
       at::cuda::getCurrentCUDAStream());
   C10_CUDA_KERNEL_LAUNCH_CHECK();
   return out;
+}
+
+torch::Tensor tile_causal_chunk_state_backward(
+    torch::Tensor grad_out,
+    std::int64_t seq_len,
+    std::int64_t chunk_size,
+    std::string mode) {
+  TORCH_CHECK(grad_out.is_cuda(), "tile_causal_chunk_state_backward expects a CUDA tensor");
+  TORCH_CHECK(grad_out.scalar_type() == torch::kFloat32, "tile_causal_chunk_state_backward only supports float32 tensors");
+  TORCH_CHECK(grad_out.is_contiguous(), "tile_causal_chunk_state_backward expects a contiguous tensor");
+  TORCH_CHECK(grad_out.dim() == 3, "tile_causal_chunk_state_backward expects grad_out shaped [B,C,D]");
+  TORCH_CHECK(seq_len > 0, "tile_causal_chunk_state_backward expects seq_len > 0");
+  TORCH_CHECK(chunk_size >= 1, "tile_causal_chunk_state_backward expects chunk_size >= 1");
+  TORCH_CHECK(mode == "mean" || mode == "prefix", "tile_causal_chunk_state_backward mode must be 'mean' or 'prefix'");
+  const auto batch = grad_out.size(0);
+  const auto chunks = grad_out.size(1);
+  const auto dim = grad_out.size(2);
+  TORCH_CHECK(chunks > 0 && dim > 0, "tile_causal_chunk_state_backward expects non-empty chunk and feature dimensions");
+  auto grad_hidden = torch::empty({batch, seq_len, dim}, grad_out.options());
+  launch_causal_chunk_state_backward_float32(
+      grad_out.data_ptr<float>(),
+      grad_hidden.data_ptr<float>(),
+      batch,
+      seq_len,
+      dim,
+      chunk_size,
+      chunks,
+      mode == "mean" ? 0 : 1,
+      at::cuda::getCurrentCUDAStream());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return grad_hidden;
 }
 
 torch::Tensor tile_latent_mse_loss(torch::Tensor pred, torch::Tensor target) {
@@ -2231,6 +2272,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("tile_byte_patch_merge", &neuralfn::tile_cuda::tile_byte_patch_merge);
   m.def("tile_byte_patch_embed", &neuralfn::tile_cuda::tile_byte_patch_embed);
   m.def("tile_causal_chunk_state", &neuralfn::tile_cuda::tile_causal_chunk_state);
+  m.def("tile_causal_chunk_state_backward", &neuralfn::tile_cuda::tile_causal_chunk_state_backward);
   m.def("tile_latent_mse_loss", &neuralfn::tile_cuda::tile_latent_mse_loss);
   m.def("tile_semantic_alignment_loss", &neuralfn::tile_cuda::tile_semantic_alignment_loss);
   m.def("tile_kv_cache_read", &neuralfn::tile_cuda::tile_kv_cache_read);

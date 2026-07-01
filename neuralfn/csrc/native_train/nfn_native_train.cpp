@@ -517,6 +517,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-jamba-chunk-state-step",
+        "--smoke-jamba-mamba-state-step",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
         "--smoke-jepa-target-encoder-step",
@@ -581,6 +582,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-jamba-chunk-state-step",
+        "--smoke-jamba-mamba-state-step",
         "--smoke-jepa-target-encoder-step",
         "--smoke-llama-attention-block-step",
         "--smoke-llama-lm-head-step",
@@ -1073,6 +1075,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
                 "--native-cuda-smoke-jamba-chunk-state-step",
+                "--native-cuda-smoke-jamba-mamba-state-step",
                 "--native-cuda-smoke-family-layout-checkpoint-step",
                 "--native-cuda-smoke-moe-route-expert-step",
                 "--native-cuda-smoke-moe-transformer-block-step",
@@ -1149,6 +1152,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-hnet-byte-patch-backward-step");
             } else if (arg == "--native-cuda-smoke-jamba-chunk-state-step") {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
+            } else if (arg == "--native-cuda-smoke-jamba-mamba-state-step") {
+                forwarded.push_back("--smoke-jamba-mamba-state-step");
             } else if (arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
                 forwarded.push_back("--smoke-family-layout-checkpoint-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {

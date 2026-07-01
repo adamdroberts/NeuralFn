@@ -94,6 +94,7 @@ struct Config {
     bool smoke_hnet_byte_patch_step = false;
     bool smoke_hnet_byte_patch_backward_step = false;
     bool smoke_jamba_chunk_state_step = false;
+    bool smoke_jamba_mamba_state_step = false;
     bool smoke_family_layout_checkpoint_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
@@ -304,6 +305,7 @@ void print_usage(const char* program) {
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-backward-step Launch HNet byte patch merge/embed backward and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-chunk-state-step Launch Jamba chunk state, head loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-jamba-mamba-state-step Launch Jamba chunk-state forward/backward, head loss, and AdamW kernels on CUDA\n"
         << "  --smoke-family-layout-checkpoint-step Emit family parameter layout, checkpoint metadata, and inference contract\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
@@ -396,6 +398,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_hnet_byte_patch_backward_step = true;
         } else if (arg == "--smoke-jamba-chunk-state-step" || arg == "--native-cuda-smoke-jamba-chunk-state-step") {
             cfg.smoke_jamba_chunk_state_step = true;
+        } else if (arg == "--smoke-jamba-mamba-state-step" ||
+                   arg == "--native-cuda-smoke-jamba-mamba-state-step") {
+            cfg.smoke_jamba_mamba_state_step = true;
         } else if (arg == "--smoke-family-layout-checkpoint-step" ||
                    arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
             cfg.smoke_family_layout_checkpoint_step = true;
@@ -10121,6 +10126,9 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
     using CausalChunkStateFn = int (*)(
         const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, std::int64_t, void*);
+    using CausalChunkStateBackwardFn = int (*)(
+        const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, void*);
     using LinearFn = int (*)(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearBackwardInputFn = int (*)(
@@ -10138,6 +10146,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
     CausalChunkStateFn causal_chunk_state = nullptr;
+    CausalChunkStateBackwardFn causal_chunk_state_backward = nullptr;
     LinearFn linear = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
@@ -10194,6 +10203,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
     float head_forward_max_error = 0.0f;
     float jamba_loss_max_error = 0.0f;
     float head_grad_state_max_error = 0.0f;
+    float chunk_state_grad_hidden_max_error = 0.0f;
     float head_grad_weight_max_error = 0.0f;
     float head_weight_update_max_error = 0.0f;
 
@@ -10221,6 +10231,8 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
             tile_ops_loaded = true;
             causal_chunk_state = load_symbol<CausalChunkStateFn>(
                 tile_handle, "nfn_native_tile_causal_chunk_state_float32");
+            causal_chunk_state_backward = load_symbol<CausalChunkStateBackwardFn>(
+                tile_handle, "nfn_native_tile_causal_chunk_state_backward_float32");
             linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
             linear_backward_input = load_symbol<LinearBackwardInputFn>(
                 tile_handle, "nfn_native_tile_linear_backward_input_float32");
@@ -10230,7 +10242,8 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                 tile_handle, "nfn_native_tile_latent_mse_loss_float32");
             fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
             adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
-            if (causal_chunk_state == nullptr || linear == nullptr || linear_backward_input == nullptr ||
+            if (causal_chunk_state == nullptr || causal_chunk_state_backward == nullptr ||
+                linear == nullptr || linear_backward_input == nullptr ||
                 linear_backward_weight_accumulate == nullptr || latent_mse_loss == nullptr ||
                 fill == nullptr || adamw == nullptr) {
                 error = "Tile ops library is missing one or more Jamba chunk-state train-step symbols";
@@ -10310,6 +10323,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
             grad_pred[i] = 2.0f * diff;
         }
         std::vector<float> expected_grad_state(static_cast<std::size_t>(kStateElements), 0.0f);
+        std::vector<float> expected_grad_hidden(hidden.size(), 0.0f);
         std::vector<float> expected_grad_weight(head_weight.size(), 0.0f);
         for (std::int64_t row = 0; row < kChunks; ++row) {
             for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
@@ -10322,6 +10336,17 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                 }
             }
         }
+        for (std::int64_t chunk = 0; chunk < kChunks; ++chunk) {
+            const std::int64_t start = chunk * kChunkSize;
+            const std::int64_t end = std::min<std::int64_t>(start + kChunkSize, kSeqLen);
+            const float denom = static_cast<float>(std::max<std::int64_t>(end - start, 1));
+            for (std::int64_t t = start; t < end; ++t) {
+                for (std::int64_t d = 0; d < kDim; ++d) {
+                    expected_grad_hidden[static_cast<std::size_t>(t * kDim + d)] +=
+                        expected_grad_state[static_cast<std::size_t>(chunk * kDim + d)] / denom;
+                }
+            }
+        }
 
         float* d_hidden = nullptr;
         float* d_state = nullptr;
@@ -10331,6 +10356,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         float* d_loss = nullptr;
         float* d_grad_pred = nullptr;
         float* d_grad_state = nullptr;
+        float* d_grad_hidden = nullptr;
         float* d_grad_weight = nullptr;
         float* d_exp_avg = nullptr;
         float* d_exp_avg_sq = nullptr;
@@ -10351,6 +10377,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
             alloc_float(&d_loss, 1, "loss") &&
             alloc_float(&d_grad_pred, grad_pred.size(), "grad_pred") &&
             alloc_float(&d_grad_state, kStateElements, "grad_state") &&
+            alloc_float(&d_grad_hidden, hidden.size(), "grad_hidden") &&
             alloc_float(&d_grad_weight, head_weight.size(), "grad_weight") &&
             alloc_float(&d_exp_avg, head_weight.size(), "exp_avg") &&
             alloc_float(&d_exp_avg_sq, head_weight.size(), "exp_avg_sq")) {
@@ -10405,6 +10432,13 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                 }
             }
             if (error.empty()) {
+                status = causal_chunk_state_backward(
+                    d_grad_state, d_grad_hidden, kBatch, kSeqLen, kDim, kChunkSize, kChunks, kModeMean, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_causal_chunk_state_backward_float32");
+                }
+            }
+            if (error.empty()) {
                 status = linear_backward_weight_accumulate(
                     d_state, d_grad_pred, d_grad_weight, kChunks, kDim, kDim, nullptr);
                 if (status != 0) {
@@ -10441,6 +10475,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
             std::vector<float> actual_pred(static_cast<std::size_t>(kStateElements), 0.0f);
             std::vector<float> actual_loss(1, 0.0f);
             std::vector<float> actual_grad_state(static_cast<std::size_t>(kStateElements), 0.0f);
+            std::vector<float> actual_grad_hidden(hidden.size(), 0.0f);
             std::vector<float> actual_grad_weight(head_weight.size(), 0.0f);
             std::vector<float> actual_head_weight(head_weight.size(), 0.0f);
             auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
@@ -10456,6 +10491,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                     copy_back_float(actual_pred, d_pred, "pred") &&
                     copy_back_float(actual_loss, d_loss, "loss") &&
                     copy_back_float(actual_grad_state, d_grad_state, "grad_state") &&
+                    copy_back_float(actual_grad_hidden, d_grad_hidden, "grad_hidden") &&
                     copy_back_float(actual_grad_weight, d_grad_weight, "grad_weight") &&
                     copy_back_float(actual_head_weight, d_head_weight, "head_weight");
             }
@@ -10474,6 +10510,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                 head_forward_max_error = max_abs_error(actual_pred, expected_pred);
                 jamba_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
                 head_grad_state_max_error = max_abs_error(actual_grad_state, expected_grad_state);
+                chunk_state_grad_hidden_max_error = max_abs_error(actual_grad_hidden, expected_grad_hidden);
                 head_grad_weight_max_error = max_abs_error(actual_grad_weight, expected_grad_weight);
                 head_weight_update_max_error = max_abs_error(actual_head_weight, expected_head_weight);
             }
@@ -10484,6 +10521,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
                 head_forward_max_error <= kTolerance &&
                 jamba_loss_max_error <= kTolerance &&
                 head_grad_state_max_error <= kTolerance &&
+                chunk_state_grad_hidden_max_error <= kTolerance &&
                 head_grad_weight_max_error <= kTolerance &&
                 head_weight_update_max_error <= kAdamTolerance;
             if (!passed && error.empty()) {
@@ -10498,7 +10536,9 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"jamba_chunk_state_train_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (cfg.smoke_jamba_mamba_state_step ? "jamba_mamba_state_train_step_slice" : "jamba_chunk_state_train_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -10513,6 +10553,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         << ", \"dim\": " << kDim << "},\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_causal_chunk_state_float32\",\n"
+        << "    \"nfn_native_tile_causal_chunk_state_backward_float32\",\n"
         << "    \"nfn_native_tile_linear_float32\",\n"
         << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
         << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
@@ -10524,6 +10565,7 @@ int print_jamba_chunk_state_smoke_json(const Config& cfg, const char* program) {
         << ", \"head_forward\":" << head_forward_max_error
         << ", \"jamba_loss\":" << jamba_loss_max_error
         << ", \"head_grad_state\":" << head_grad_state_max_error
+        << ", \"chunk_state_grad_hidden\":" << chunk_state_grad_hidden_max_error
         << ", \"head_grad_weight\":" << head_grad_weight_max_error
         << ", \"head_weight_update\":" << head_weight_update_max_error
         << "}\n"
@@ -12448,7 +12490,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_hnet_byte_patch_backward_step) {
             return print_hnet_byte_patch_backward_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_jamba_chunk_state_step) {
+        if (cfg.smoke_jamba_chunk_state_step || cfg.smoke_jamba_mamba_state_step) {
             return print_jamba_chunk_state_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_family_layout_checkpoint_step) {

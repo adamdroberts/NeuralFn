@@ -9004,6 +9004,65 @@ __tile_global__ void causal_chunk_state_float32_kernel(
   ct::store_masked(out + idx, sum / denom, mask);
 }
 
+__tile_global__ void causal_chunk_state_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_hidden,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    int mode) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_hidden = ct::assume_aligned(grad_hidden, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto chunk_size_tile = ct::full<IndexTile>(chunk_size);
+  auto chunks_tile = ct::full<IndexTile>(chunks);
+  auto d = idx % dim_tile;
+  auto t = (idx / dim_tile) % seq_tile;
+  auto b = idx / (seq_tile * dim_tile);
+  auto zero_i = ct::full<IndexTile>(0);
+  auto one_i = ct::full<IndexTile>(1);
+
+  auto grad = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  if (mode == 0) {
+    auto chunk = t / chunk_size_tile;
+    auto valid_chunk = chunk < chunks_tile;
+    auto start = chunk * chunk_size_tile;
+    auto end = start + chunk_size_tile;
+    end = ct::select(end > seq_tile, seq_tile, end);
+    auto count_i = end - start;
+    auto count_f = ct::element_cast<float>(ct::select(count_i > zero_i, count_i, one_i));
+    auto out_idx = (b * chunks_tile + chunk) * dim_tile + d;
+    auto out_grad = ct::load_masked(grad_out + out_idx, mask & valid_chunk);
+    grad = ct::select(mask & valid_chunk, out_grad / count_f, grad);
+  } else {
+    for (std::int64_t chunk_value = 0; chunk_value < chunks; ++chunk_value) {
+      auto chunk = ct::full<IndexTile>(chunk_value);
+      auto start = chunk * chunk_size_tile;
+      auto boundary = start - one_i;
+      boundary = ct::select(boundary < zero_i, zero_i, boundary);
+      boundary = ct::select(boundary >= seq_tile, seq_tile - one_i, boundary);
+      auto active = mask & (t <= boundary);
+      auto count_i = boundary + one_i;
+      auto count_f = ct::element_cast<float>(ct::select(count_i > zero_i, count_i, one_i));
+      auto out_idx = (b * chunks_tile + chunk) * dim_tile + d;
+      auto out_grad = ct::load_masked(grad_out + out_idx, active);
+      grad = grad + ct::select(active, out_grad / count_f, ct::full<decltype(out_grad)>(0.0f));
+    }
+  }
+  ct::store_masked(grad_hidden + idx, grad, mask);
+}
+
 __tile_global__ void latent_mse_partials_float32_kernel(
     const float* __restrict__ pred,
     const float* __restrict__ target,
@@ -17932,6 +17991,22 @@ void launch_causal_chunk_state_float32(
   const std::int64_t n = batch * chunks * dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   causal_chunk_state_float32_kernel<<<blocks, 1, 0, stream>>>(hidden, out, n, seq_len, dim, chunk_size, chunks, mode);
+}
+
+void launch_causal_chunk_state_backward_float32(
+    const float* grad_out,
+    float* grad_hidden,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    std::int64_t chunk_size,
+    std::int64_t chunks,
+    int mode,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  causal_chunk_state_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_hidden, n, seq_len, dim, chunk_size, chunks, mode);
 }
 
 void launch_latent_mse_partials_float32(

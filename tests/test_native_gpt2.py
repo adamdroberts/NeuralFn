@@ -5297,11 +5297,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     ]
     assert coverage["jamba"] == "missing-jamba-hybrid-mamba-transformer-lm"
     assert missing_requirements["jamba"] == [
-        "mamba-state-space-forward-backward",
         "jamba-layer-schedule-native-loop",
     ]
     assert completed_requirements["jamba"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
+        "jamba-mamba-state-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "missing-hnet-byte-lm"
@@ -11971,11 +11971,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_payload["status"] == "family-native-trainer-missing"
     assert jamba_payload["native_training_coverage_class"] == "missing-jamba-hybrid-mamba-transformer-lm"
     assert jamba_payload["native_training_missing_requirements"] == [
-        "mamba-state-space-forward-backward",
         "jamba-layer-schedule-native-loop",
     ]
     assert jamba_payload["native_training_completed_requirements"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
+        "jamba-mamba-state-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jamba_payload["compiled_native_boundary"] is True
@@ -11983,6 +11983,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_payload["graph_editor_tensor_flow"] is False
     for symbol in (
         "nfn_native_tile_causal_chunk_state_float32",
+        "nfn_native_tile_causal_chunk_state_backward_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_latent_mse_loss_float32",
@@ -12469,6 +12470,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-jamba-chunk-state-step" in unified_jamba_smoke_command.stdout
     assert "--tile-ops-lib" in unified_jamba_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_jamba_smoke_command.stdout
+
+    unified_jamba_mamba_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "jamba",
+            "--native-cuda-smoke-jamba-mamba-state-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_jamba_mamba_smoke_command.returncode == 0, unified_jamba_mamba_smoke_command.stderr
+    assert str(jamba) in unified_jamba_mamba_smoke_command.stdout
+    assert "--smoke-jamba-mamba-state-step" in unified_jamba_mamba_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_jamba_mamba_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_jamba_mamba_smoke_command.stdout
 
     unified_diffusion_smoke_command = subprocess.run(
         [

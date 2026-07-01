@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added Jamba Mamba chunk-state backward coverage to the native CUDA Tile
+  surface. The trainer-facing raw ABI and PyTorch Tile extension now export
+  `nfn_native_tile_causal_chunk_state_backward_float32` /
+  `tile_causal_chunk_state_backward`, and
+  `nfn_jamba_native_train --smoke-jamba-mamba-state-step --tile-ops-lib PATH`
+  plus the unified `nfn-native-train --base-model jamba
+  --native-cuda-smoke-jamba-mamba-state-step` alias run chunk-state
+  forward/backward, head loss/backward, and AdamW without Torch or
+  graph-editor tensor flow. Jamba catalog/preflight JSON now reports
+  `jamba-mamba-state-forward-backward-adamw-smoke` in completed requirements
+  and keeps `jamba-layer-schedule-native-loop` as the remaining family blocker.
+  Verification: rebuilt Tile ops, the TK sidecar, benchmark binaries, native
+  family trainers, and unified native frontends; live CUDA direct and unified
+  Jamba Mamba-state smokes passed; focused native pytest passed; no-Torch
+  verifier passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added a seq2seq loss-composition native smoke. `nfn_seq2seq_native_train
   --smoke-seq2seq-loss-composition-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model seq2seq
