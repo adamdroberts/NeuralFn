@@ -68,6 +68,19 @@ nfn-native-train --base-model dense-jepa-evo \
   --native-cuda-tile-ops-lib PATH
 ```
 
+Semantic dense JEPA coverage also includes a planner/alignment train-step smoke
+that launches semantic planner forward/backward, semantic hash, alignment loss
+items, device-side loss/count reduction, and AdamW:
+
+```bash
+nfn_semantic_dense_jepa_native_train \
+  --smoke-semantic-dense-jepa-train-step \
+  --tile-ops-lib PATH
+nfn-native-train --base-model semantic-dense-jepa-evo \
+  --native-cuda-smoke-semantic-dense-jepa-train-step \
+  --native-cuda-tile-ops-lib PATH
+```
+
 The same trainer-facing library exports the semantic/MoE/JEPA route surface
 used by semantic-router native preflight: top-k routing, expert-route broadcast,
 chunk-route broadcast, routed expert SwiGLU forward/backward, semantic hash,

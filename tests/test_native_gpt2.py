@@ -11676,6 +11676,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "ar-plus-jepa-loss-composition-smoke",
         "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "semantic-hash-alignment-loss-items-smoke",
+        "semantic-dense-planner-alignment-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_dense_payload["compiled_native_boundary"] is True
@@ -11685,7 +11686,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_semantic_hash_int64",
         "nfn_native_tile_semantic_alignment_loss_items_float32",
+        "nfn_native_tile_sum_accumulate_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
@@ -12332,6 +12335,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-alignment-step" in unified_semantic_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_smoke_command.stdout
+
+    unified_semantic_dense_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-dense-jepa-evo",
+            "--native-cuda-smoke-semantic-dense-jepa-train-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_semantic_dense_smoke_command.returncode == 0, unified_semantic_dense_smoke_command.stderr
+    assert str(semantic_dense_jepa) in unified_semantic_dense_smoke_command.stdout
+    assert "--smoke-semantic-dense-jepa-train-step" in unified_semantic_dense_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_dense_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_dense_smoke_command.stdout
 
     unified_semantic_route_loss_smoke_command = subprocess.run(
         [

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a semantic dense JEPA planner/alignment train-step native smoke.
+  `nfn_semantic_dense_jepa_native_train
+  --smoke-semantic-dense-jepa-train-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model semantic-dense-jepa-evo
+  --native-cuda-smoke-semantic-dense-jepa-train-step` alias now run semantic
+  planner linear forward, semantic hash, alignment loss items, device-side
+  loss/count reduction with `nfn_native_tile_sum_accumulate_float32`, planner
+  weight-gradient accumulation, and AdamW through raw CUDA Tile ABI calls
+  without Torch or graph-editor tensor flow. Semantic dense JEPA catalog and
+  preflight JSON now report `semantic-dense-planner-alignment-adamw-smoke` in
+  completed requirements while keeping semantic target/planner/full objective
+  wiring visible in missing requirements. Verification: rebuilt missing-family
+  native trainers and unified native frontends; live CUDA direct and unified
+  semantic dense JEPA smokes passed.
+
 - Added a dense JEPA composed AR+target/projector train-step native smoke.
   `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH`
   and the unified `nfn-native-train --base-model dense-jepa-evo

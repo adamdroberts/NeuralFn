@@ -117,7 +117,12 @@ still keep router/semantic objective composition
 blockers in the missing list. Semantic-family entries list
 completed semantic hash/alignment-loss-items smokes while keeping full
 semantic planner/router, reduction, objective
-composition, checkpoint, and inference blockers in the missing list. Diffusion
+composition, checkpoint, and inference blockers in the missing list.
+Semantic dense JEPA entries additionally report the planner/alignment/AdamW
+smoke (`semantic-dense-planner-alignment-adamw-smoke`) once the native preflight
+has the semantic planner forward/backward path and device-side alignment
+loss/count reduction available.
+Diffusion
 entries list the completed denoise linear/MSE/backward/AdamW and
 timestep/mask/token-CE/backward/AdamW smokes while keeping checkpointing and
 inference in the missing list. Seq2seq entries list the completed

@@ -1019,6 +1019,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "ar-plus-jepa-loss-composition-smoke",
             "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
             "semantic-hash-alignment-loss-items-smoke",
+            "semantic-dense-planner-alignment-adamw-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }

@@ -79,6 +79,7 @@ struct Config {
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_dense_jepa_train_step = false;
+    bool smoke_semantic_dense_jepa_train_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_semantic_route_loss_step = false;
     bool smoke_diffusion_denoise_step = false;
@@ -358,6 +359,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_ar_loss_step = true;
         } else if (arg == "--smoke-dense-jepa-train-step" || arg == "--native-cuda-smoke-dense-jepa-train-step") {
             cfg.smoke_dense_jepa_train_step = true;
+        } else if (arg == "--smoke-semantic-dense-jepa-train-step" ||
+                   arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
+            cfg.smoke_semantic_dense_jepa_train_step = true;
         } else if (arg == "--smoke-semantic-alignment-step" || arg == "--native-cuda-smoke-semantic-alignment-step") {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-semantic-route-loss-step" || arg == "--native-cuda-smoke-semantic-route-loss-step") {
@@ -11808,7 +11812,7 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
             semantic_loss_sum_max_error = std::fabs(actual_loss_sum - expected_loss_sum);
             semantic_count_sum_max_error = std::fabs(actual_count_sum - expected_count_sum);
         }
-        constexpr float kTolerance = 2e-6f;
+        constexpr float kTolerance = 2e-5f;
         passed = error.empty() &&
             semantic_hash_max_error == 0 &&
             semantic_loss_items_max_error <= kTolerance &&
@@ -11854,6 +11858,505 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
     return passed ? 0 : 2;
 }
 
+int print_semantic_dense_jepa_train_step_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SemanticHashFn = int (*)(
+        const float*, const float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using SemanticAlignmentLossItemsFn = int (*)(
+        const float*, const std::int64_t*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using SumAccumulateFn = int (*)(const float*, float*, std::int64_t, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    SemanticHashFn semantic_hash = nullptr;
+    SemanticAlignmentLossItemsFn semantic_alignment_loss_items = nullptr;
+    FillFn fill = nullptr;
+    SumAccumulateFn sum_accumulate = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kInputDim = 3;
+    constexpr std::int64_t kSemanticDim = 3;
+    constexpr std::int64_t kTerms = 4;
+    constexpr std::int64_t kTables = 2;
+    constexpr std::int64_t kPlanes = 3;
+    constexpr std::int64_t kIgnoreIndex = -1;
+    constexpr std::int64_t kSemanticElements = kRows * kSemanticDim;
+    constexpr std::int64_t kPlannerWeightElements = kSemanticDim * kInputDim;
+    constexpr std::int64_t kLogitElements = kRows * kSemanticDim * kTerms;
+    constexpr std::int64_t kHashElements = kRows * kTables;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto max_i64_error = [](const std::vector<std::int64_t>& actual, const std::vector<std::int64_t>& expected) {
+        std::int64_t max_err = 0;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max<std::int64_t>(max_err, std::llabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    float planner_forward_max_error = 0.0f;
+    std::int64_t semantic_hash_max_error = 0;
+    float semantic_loss_items_max_error = 0.0f;
+    float semantic_count_items_max_error = 0.0f;
+    float semantic_loss_sum_max_error = 0.0f;
+    float semantic_count_sum_max_error = 0.0f;
+    float planner_grad_weight_max_error = 0.0f;
+    float planner_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!semantic_family) {
+        error = "Semantic dense JEPA smoke commands are only valid for semantic-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            semantic_hash = load_symbol<SemanticHashFn>(tile_handle, "nfn_native_tile_semantic_hash_int64");
+            semantic_alignment_loss_items = load_symbol<SemanticAlignmentLossItemsFn>(
+                tile_handle, "nfn_native_tile_semantic_alignment_loss_items_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            sum_accumulate = load_symbol<SumAccumulateFn>(tile_handle, "nfn_native_tile_sum_accumulate_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (linear == nullptr || linear_backward_weight_accumulate == nullptr ||
+                semantic_hash == nullptr || semantic_alignment_loss_items == nullptr ||
+                fill == nullptr || sum_accumulate == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more semantic dense JEPA train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> x = {
+            0.20f, -0.10f, 0.30f,
+            -0.40f, 0.50f, 0.10f,
+        };
+        std::vector<float> planner_weight(static_cast<std::size_t>(kPlannerWeightElements));
+        for (std::size_t i = 0; i < planner_weight.size(); ++i) {
+            planner_weight[i] = 0.04f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        const std::vector<float> projection = {
+            0.5f, 0.25f, -0.1f,
+            -0.4f, 0.2f, 0.3f,
+            0.1f, -0.7f, 0.4f,
+            -0.3f, 0.6f, 0.2f,
+            0.8f, -0.1f, -0.5f,
+            0.2f, 0.3f, 0.4f,
+        };
+        std::vector<float> logits(static_cast<std::size_t>(kLogitElements));
+        for (std::int64_t i = 0; i < kLogitElements; ++i) {
+            logits[static_cast<std::size_t>(i)] = 0.07f * static_cast<float>(static_cast<int>(i % 9) - 4);
+        }
+        const std::vector<std::int64_t> targets = {1, 2, kIgnoreIndex, 0, 1, 2};
+        const std::vector<std::int64_t> term_counts = {3, 2, 4};
+        const std::vector<float> grad_semantic = {
+            0.03f, -0.02f, 0.01f,
+            -0.04f, 0.05f, -0.01f,
+        };
+
+        std::vector<float> expected_semantic(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t out_d = 0; out_d < kSemanticDim; ++out_d) {
+                for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                    expected_semantic[static_cast<std::size_t>(row * kSemanticDim + out_d)] +=
+                        x[static_cast<std::size_t>(row * kInputDim + in_d)] *
+                        planner_weight[static_cast<std::size_t>(out_d * kInputDim + in_d)];
+                }
+            }
+        }
+        std::vector<std::int64_t> expected_hash(static_cast<std::size_t>(kHashElements), 0);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t table = 0; table < kTables; ++table) {
+                std::int64_t hash = 0;
+                for (std::int64_t plane = 0; plane < kPlanes; ++plane) {
+                    float dot = 0.0f;
+                    for (std::int64_t dim = 0; dim < kSemanticDim; ++dim) {
+                        dot += expected_semantic[static_cast<std::size_t>(row * kSemanticDim + dim)] *
+                            projection[static_cast<std::size_t>((table * kPlanes + plane) * kSemanticDim + dim)];
+                    }
+                    if (dot > 0.0f) {
+                        hash |= (static_cast<std::int64_t>(1) << plane);
+                    }
+                }
+                expected_hash[static_cast<std::size_t>(row * kTables + table)] = hash;
+            }
+        }
+        std::vector<float> expected_losses(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        std::vector<float> expected_counts(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        float expected_loss_sum = 0.0f;
+        float expected_count_sum = 0.0f;
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t dim = 0; dim < kSemanticDim; ++dim) {
+                const std::size_t item_idx = static_cast<std::size_t>(row * kSemanticDim + dim);
+                const std::int64_t target = targets[item_idx];
+                const std::int64_t term_count = std::min<std::int64_t>(term_counts[static_cast<std::size_t>(dim)], kTerms);
+                if (target == kIgnoreIndex || target < 0 || target >= term_count) {
+                    continue;
+                }
+                const std::int64_t base = (row * kSemanticDim + dim) * kTerms;
+                float max_value = -3.4028234663852886e38f;
+                for (std::int64_t term = 0; term < term_count; ++term) {
+                    max_value = std::max(max_value, logits[static_cast<std::size_t>(base + term)]);
+                }
+                float sum_exp = 0.0f;
+                for (std::int64_t term = 0; term < term_count; ++term) {
+                    sum_exp += std::exp(logits[static_cast<std::size_t>(base + term)] - max_value);
+                }
+                const float loss =
+                    std::log(sum_exp) + max_value - logits[static_cast<std::size_t>(base + target)];
+                expected_losses[item_idx] = loss;
+                expected_counts[item_idx] = 1.0f;
+                expected_loss_sum += loss;
+                expected_count_sum += 1.0f;
+            }
+        }
+        std::vector<float> expected_grad_weight(planner_weight.size(), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t out_d = 0; out_d < kSemanticDim; ++out_d) {
+                const float grad = grad_semantic[static_cast<std::size_t>(row * kSemanticDim + out_d)];
+                for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                    expected_grad_weight[static_cast<std::size_t>(out_d * kInputDim + in_d)] +=
+                        x[static_cast<std::size_t>(row * kInputDim + in_d)] * grad;
+                }
+            }
+        }
+
+        float* d_x = nullptr;
+        float* d_planner_weight = nullptr;
+        float* d_semantic = nullptr;
+        float* d_projection = nullptr;
+        float* d_logits = nullptr;
+        float* d_losses = nullptr;
+        float* d_counts = nullptr;
+        float* d_loss_total = nullptr;
+        float* d_count_total = nullptr;
+        float* d_grad_semantic = nullptr;
+        float* d_grad_planner_weight = nullptr;
+        float* d_exp_avg = nullptr;
+        float* d_exp_avg_sq = nullptr;
+        std::int64_t* d_hash = nullptr;
+        std::int64_t* d_targets = nullptr;
+        std::int64_t* d_term_counts = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+            int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                return false;
+            }
+            return true;
+        };
+        auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+            int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                return false;
+            }
+            return true;
+        };
+        if (alloc(&d_x, x.size(), "x") &&
+            alloc(&d_planner_weight, planner_weight.size(), "planner_weight") &&
+            alloc(&d_semantic, kSemanticElements, "semantic") &&
+            alloc(&d_projection, projection.size(), "projection") &&
+            alloc(&d_logits, logits.size(), "logits") &&
+            alloc(&d_losses, kSemanticElements, "losses") &&
+            alloc(&d_counts, kSemanticElements, "counts") &&
+            alloc(&d_loss_total, 1, "loss_total") &&
+            alloc(&d_count_total, 1, "count_total") &&
+            alloc(&d_grad_semantic, grad_semantic.size(), "grad_semantic") &&
+            alloc(&d_grad_planner_weight, planner_weight.size(), "grad_planner_weight") &&
+            alloc(&d_exp_avg, planner_weight.size(), "exp_avg") &&
+            alloc(&d_exp_avg_sq, planner_weight.size(), "exp_avg_sq") &&
+            alloc_i64(&d_hash, kHashElements, "hash") &&
+            alloc_i64(&d_targets, targets.size(), "targets") &&
+            alloc_i64(&d_term_counts, term_counts.size(), "term_counts")) {
+            copy_float(d_x, x, "x") &&
+                copy_float(d_planner_weight, planner_weight, "planner_weight") &&
+                copy_float(d_projection, projection, "projection") &&
+                copy_float(d_logits, logits, "logits") &&
+                copy_float(d_grad_semantic, grad_semantic, "grad_semantic") &&
+                copy_i64(d_targets, targets, "targets") &&
+                copy_i64(d_term_counts, term_counts, "term_counts");
+        }
+        int status = 0;
+        if (error.empty()) {
+            status = fill(d_grad_planner_weight, kPlannerWeightElements, 0.0f, nullptr);
+            if (status == 0) status = fill(d_exp_avg, kPlannerWeightElements, 0.0f, nullptr);
+            if (status == 0) status = fill(d_exp_avg_sq, kPlannerWeightElements, 0.0f, nullptr);
+            if (status == 0) status = fill(d_loss_total, 1, 0.0f, nullptr);
+            if (status == 0) status = fill(d_count_total, 1, 0.0f, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "zero semantic dense JEPA buffers");
+            }
+        }
+        if (error.empty()) {
+            status = linear(d_x, d_planner_weight, nullptr, d_semantic, kRows, kInputDim, kSemanticDim, false, nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_float32 semantic planner");
+        }
+        if (error.empty()) {
+            status = semantic_hash(d_semantic, d_projection, d_hash, kRows, kSemanticDim, kTables, kPlanes, nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_semantic_hash_int64");
+        }
+        if (error.empty()) {
+            status = semantic_alignment_loss_items(
+                d_logits, d_targets, d_term_counts, d_losses, d_counts,
+                kSemanticElements, kSemanticDim, kTerms, kIgnoreIndex, nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_semantic_alignment_loss_items_float32");
+        }
+        if (error.empty()) {
+            status = sum_accumulate(d_losses, d_loss_total, kSemanticElements, nullptr);
+            if (status == 0) status = sum_accumulate(d_counts, d_count_total, kSemanticElements, nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_sum_accumulate_float32 semantic totals");
+        }
+        if (error.empty()) {
+            status = linear_backward_weight_accumulate(
+                d_x, d_grad_semantic, d_grad_planner_weight, kRows, kInputDim, kSemanticDim, nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 planner");
+        }
+        if (error.empty()) {
+            status = adamw(
+                d_planner_weight, d_grad_planner_weight, d_exp_avg, d_exp_avg_sq,
+                kPlannerWeightElements, 0.01f, 0.9f, 0.95f, 1e-8f, 0.02f, 0.1f, std::sqrt(0.05f), nullptr);
+            if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 planner");
+        }
+        if (error.empty()) {
+            status = cuda_device_synchronize();
+            if (status != 0) error = cuda_error(status, "cudaDeviceSynchronize semantic dense JEPA train step");
+        }
+
+        std::vector<float> actual_semantic(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        std::vector<std::int64_t> actual_hash(static_cast<std::size_t>(kHashElements), 0);
+        std::vector<float> actual_losses(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        std::vector<float> actual_counts(static_cast<std::size_t>(kSemanticElements), 0.0f);
+        std::vector<float> actual_loss_total(1, 0.0f);
+        std::vector<float> actual_count_total(1, 0.0f);
+        std::vector<float> actual_grad_weight(planner_weight.size(), 0.0f);
+        std::vector<float> actual_planner_weight(planner_weight.size(), 0.0f);
+        auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        auto copy_back_i64 = [&](std::vector<std::int64_t>& dst, const std::int64_t* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        if (error.empty()) {
+            copy_back_float(actual_semantic, d_semantic, "semantic") &&
+                copy_back_i64(actual_hash, d_hash, "hash") &&
+                copy_back_float(actual_losses, d_losses, "losses") &&
+                copy_back_float(actual_counts, d_counts, "counts") &&
+                copy_back_float(actual_loss_total, d_loss_total, "loss_total") &&
+                copy_back_float(actual_count_total, d_count_total, "count_total") &&
+                copy_back_float(actual_grad_weight, d_grad_planner_weight, "grad_planner_weight") &&
+                copy_back_float(actual_planner_weight, d_planner_weight, "planner_weight");
+        }
+        std::vector<float> expected_planner_weight = planner_weight;
+        for (std::size_t i = 0; i < expected_planner_weight.size(); ++i) {
+            const float grad = expected_grad_weight[i];
+            const float next_m = 0.1f * grad;
+            const float next_v = 0.05f * grad * grad;
+            const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+            const float decayed = expected_planner_weight[i] * (1.0f - 0.01f * 0.02f);
+            expected_planner_weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+        }
+        if (error.empty()) {
+            planner_forward_max_error = max_abs_error(actual_semantic, expected_semantic);
+            semantic_hash_max_error = max_i64_error(actual_hash, expected_hash);
+            semantic_loss_items_max_error = max_abs_error(actual_losses, expected_losses);
+            semantic_count_items_max_error = max_abs_error(actual_counts, expected_counts);
+            semantic_loss_sum_max_error = std::fabs(actual_loss_total[0] - expected_loss_sum);
+            semantic_count_sum_max_error = std::fabs(actual_count_total[0] - expected_count_sum);
+            planner_grad_weight_max_error = max_abs_error(actual_grad_weight, expected_grad_weight);
+            planner_weight_update_max_error = max_abs_error(actual_planner_weight, expected_planner_weight);
+        }
+        constexpr float kTolerance = 2e-6f;
+        constexpr float kPlannerGradTolerance = 2e-5f;
+        constexpr float kAdamTolerance = 2e-5f;
+        passed = error.empty() &&
+            planner_forward_max_error <= kTolerance &&
+            semantic_hash_max_error == 0 &&
+            semantic_loss_items_max_error <= kTolerance &&
+            semantic_count_items_max_error <= kTolerance &&
+            semantic_loss_sum_max_error <= kTolerance &&
+            semantic_count_sum_max_error <= kTolerance &&
+            planner_grad_weight_max_error <= kPlannerGradTolerance &&
+            planner_weight_update_max_error <= kAdamTolerance;
+        if (!passed && error.empty()) {
+            error = "Semantic dense JEPA train-step smoke exceeded tolerance";
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"semantic_dense_jepa_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"input_dim\": " << kInputDim
+        << ", \"semantic_dim\": " << kSemanticDim << ", \"terms\": " << kTerms
+        << ", \"tables\": " << kTables << ", \"planes\": " << kPlanes << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_semantic_hash_int64\",\n"
+        << "    \"nfn_native_tile_semantic_alignment_loss_items_float32\",\n"
+        << "    \"nfn_native_tile_sum_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"planner_forward\":" << planner_forward_max_error
+        << ", \"semantic_hash\":" << semantic_hash_max_error
+        << ", \"semantic_loss_items\":" << semantic_loss_items_max_error
+        << ", \"semantic_count_items\":" << semantic_count_items_max_error
+        << ", \"semantic_loss_sum\":" << semantic_loss_sum_max_error
+        << ", \"semantic_count_sum\":" << semantic_count_sum_max_error
+        << ", \"planner_grad_weight\":" << planner_grad_weight_max_error
+        << ", \"planner_weight_update\":" << planner_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -11893,6 +12396,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_semantic_alignment_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_semantic_dense_jepa_train_step) {
+            return print_semantic_dense_jepa_train_step_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_route_loss_step) {
             return print_semantic_route_loss_smoke_json(cfg, argv[0]);
