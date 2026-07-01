@@ -98,20 +98,21 @@ non-runnable presets always name at least one remaining loop or objective gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal
 transformer families. LLaMA-family entries now list completed smoke-backed
-slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, and
-packed-QKV attention forward/backward plus the
-RMSNorm/QKV-projection/packed-attention/residual forward block slice, while
-their missing list keeps packed-QKV RoPE attention block integration, the full
-LLaMA block forward/backward loop, and family checkpoint/inference wiring.
+slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
+packed-QKV attention forward/backward,
+RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
+RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
+and family checkpoint/inference metadata, while their missing list keeps the
+full LLaMA-family forward/backward/optimizer loop.
 Standard MoE-family entries list completed top-k route/broadcast, routed
 SwiGLU expert forward/backward, load-balance/AdamW, and
 RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
 smokes while keeping the full family loop, JEPA or semantic objective,
-checkpoint, and inference blockers in the missing list. JEPA-family entries
+and remaining objective blockers in the missing list. JEPA-family entries
 list completed target-encoder forward, projector/predictor linear, latent-loss,
 backward, AdamW, and base AR+JEPA loss-composition smokes. Dense JEPA keeps
-family checkpoint/inference wiring as missing, while MoE+JEPA and semantic JEPA
-still keep router/semantic objective composition, checkpoint, and inference
+the full JEPA-family loop as missing, while MoE+JEPA and semantic JEPA
+still keep router/semantic objective composition
 blockers in the missing list. Semantic-family entries list
 completed semantic hash/alignment-loss-items smokes while keeping full
 semantic planner/router, reduction, objective

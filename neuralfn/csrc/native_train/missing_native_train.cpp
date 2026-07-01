@@ -68,6 +68,7 @@ struct Config {
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
     bool smoke_llama_rope_attention_block_step = false;
+    bool smoke_llama_rope_block_train_step = false;
     bool smoke_moe_route_expert_step = false;
     bool smoke_moe_transformer_block_step = false;
     bool smoke_moe_transformer_block_train_step = false;
@@ -272,6 +273,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-llama-attention-block-step Launch RMSNorm, QKV projection, packed attention, and residual kernels on CUDA\n"
         << "  --smoke-llama-rope-attention-block-step Launch RMSNorm, QKV split, RoPE, attention, and residual kernels on CUDA\n"
+        << "  --smoke-llama-rope-block-train-step Launch RoPE attention backward, SwiGLU backward, and AdamW on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-train-step Launch MoE transformer block forward plus expert backward/AdamW kernels on CUDA\n"
@@ -327,6 +329,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_attention_block_step = true;
         } else if (arg == "--smoke-llama-rope-attention-block-step" || arg == "--native-cuda-smoke-llama-rope-attention-block-step") {
             cfg.smoke_llama_rope_attention_block_step = true;
+        } else if (arg == "--smoke-llama-rope-block-train-step" || arg == "--native-cuda-smoke-llama-rope-block-train-step") {
+            cfg.smoke_llama_rope_block_train_step = true;
         } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
             cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--smoke-moe-transformer-block-step" || arg == "--native-cuda-smoke-moe-transformer-block-step") {
@@ -2351,6 +2355,7 @@ int print_llama_attention_block_smoke_json(const Config& cfg, const char* progra
 }
 
 int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* program) {
+    const bool train_step = cfg.smoke_llama_rope_block_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool llama_family =
         family.find("llama") != std::string::npos ||
@@ -2374,6 +2379,8 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using SplitQkvToHeadsFn = int (*)(
         const float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MergeHeadsToQkvFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using RotaryFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using AttentionFn = int (*)(
@@ -2397,7 +2404,41 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         std::int64_t,
         std::int64_t,
         void*);
+    using AttentionBackwardFn = int (*)(
+        const float*,
+        const float*,
+        const float*,
+        const float*,
+        float*,
+        float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        float,
+        bool,
+        bool,
+        bool,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
     using ScaledResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using RmsNormBackwardInputFn = int (*)(const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using SwigluFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using SwigluBackwardFn = int (*)(const float*, const float*, const float*, float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
 
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
@@ -2407,9 +2448,19 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
     RmsNormFn rms_norm = nullptr;
     LinearFn linear = nullptr;
     SplitQkvToHeadsFn split_qkv_to_heads = nullptr;
+    MergeHeadsToQkvFn merge_heads_to_qkv = nullptr;
     RotaryFn rotary = nullptr;
+    RotaryFn rotary_backward = nullptr;
     AttentionFn attention = nullptr;
+    AttentionBackwardFn attention_backward = nullptr;
     ScaledResidualAddFn residual_add = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightFn linear_backward_weight = nullptr;
+    RmsNormBackwardInputFn rms_norm_backward_input = nullptr;
+    SwigluFn swiglu = nullptr;
+    SwigluBackwardFn swiglu_backward = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
@@ -2471,6 +2522,12 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
     float k_rope_delta_max_abs = 0.0f;
     float attention_max_abs = 0.0f;
     float residual_delta_max_abs = 0.0f;
+    float grad_qkv_weight_max_abs = 0.0f;
+    float grad_normed_max_abs = 0.0f;
+    float grad_hidden_max_abs = 0.0f;
+    float swiglu_max_abs = 0.0f;
+    float swiglu_grad_gate_max_abs = 0.0f;
+    float adamw_qkv_delta_max_abs = 0.0f;
     const float residual_scale_value = 1.0f;
 
     std::vector<void*> allocated;
@@ -2498,11 +2555,33 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
             rms_norm = load_symbol<RmsNormFn>(tile_handle, "nfn_native_tile_rms_norm_float32");
             linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
             split_qkv_to_heads = load_symbol<SplitQkvToHeadsFn>(tile_handle, "nfn_native_tile_split_qkv_to_heads_float32");
+            merge_heads_to_qkv = load_symbol<MergeHeadsToQkvFn>(tile_handle, "nfn_native_tile_merge_heads_to_qkv_float32");
             rotary = load_symbol<RotaryFn>(tile_handle, "nfn_native_tile_rotary_embedding_float32");
             attention = load_symbol<AttentionFn>(tile_handle, "nfn_native_tile_scaled_dot_product_attention_float32");
             residual_add = load_symbol<ScaledResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
+            if (train_step) {
+                rotary_backward = load_symbol<RotaryFn>(tile_handle, "nfn_native_tile_rotary_embedding_backward_float32");
+                attention_backward = load_symbol<AttentionBackwardFn>(
+                    tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_float32");
+                linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                    tile_handle, "nfn_native_tile_linear_backward_input_float32");
+                linear_backward_weight = load_symbol<LinearBackwardWeightFn>(
+                    tile_handle, "nfn_native_tile_linear_backward_weight_float32");
+                rms_norm_backward_input = load_symbol<RmsNormBackwardInputFn>(
+                    tile_handle, "nfn_native_tile_rms_norm_backward_input_float32");
+                swiglu = load_symbol<SwigluFn>(tile_handle, "nfn_native_tile_swiglu_float32");
+                swiglu_backward = load_symbol<SwigluBackwardFn>(
+                    tile_handle, "nfn_native_tile_swiglu_backward_float32");
+                fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+                adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            }
             if (rms_norm == nullptr || linear == nullptr || split_qkv_to_heads == nullptr || rotary == nullptr ||
-                attention == nullptr || residual_add == nullptr) {
+                attention == nullptr || residual_add == nullptr ||
+                (train_step && (merge_heads_to_qkv == nullptr || rotary_backward == nullptr ||
+                                attention_backward == nullptr || linear_backward_input == nullptr ||
+                                linear_backward_weight == nullptr || rms_norm_backward_input == nullptr ||
+                                swiglu == nullptr || swiglu_backward == nullptr ||
+                                fill == nullptr || adamw == nullptr))) {
                 error = "Tile ops library is missing one or more LLaMA RoPE attention-block symbols";
             }
         }
@@ -2537,11 +2616,19 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         std::vector<float> qkv_weight(static_cast<std::size_t>(kDim * kQkvDim), 0.0f);
         std::vector<float> inv_freq(static_cast<std::size_t>(kHeadDim / 2), 0.0f);
         std::vector<float> residual_scale = {residual_scale_value};
+        std::vector<float> grad_attention(static_cast<std::size_t>(kElements), 0.0f);
+        std::vector<float> grad_swiglu(static_cast<std::size_t>(kElements), 0.0f);
         for (std::int64_t row = 0; row < kRows; ++row) {
             for (std::int64_t dim = 0; dim < kDim; ++dim) {
                 hidden[static_cast<std::size_t>(row * kDim + dim)] =
                     0.001f * static_cast<float>((row % 17) + 1) +
                     0.0002f * static_cast<float>((dim % 31) + 1);
+                grad_attention[static_cast<std::size_t>(row * kDim + dim)] =
+                    0.0004f * static_cast<float>((row % 5) + 1) -
+                    0.00003f * static_cast<float>((dim % 29) + 1);
+                grad_swiglu[static_cast<std::size_t>(row * kDim + dim)] =
+                    0.0002f * static_cast<float>((row % 7) + 1) +
+                    0.00001f * static_cast<float>((dim % 23) + 1);
             }
         }
         for (std::int64_t out_dim = 0; out_dim < kQkvDim; ++out_dim) {
@@ -2567,6 +2654,22 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         float* d_qkv_weight = nullptr;
         float* d_inv_freq = nullptr;
         float* d_residual_scale = nullptr;
+        float* d_grad_attention = nullptr;
+        float* d_grad_q_rope = nullptr;
+        float* d_grad_k_rope = nullptr;
+        float* d_grad_v = nullptr;
+        float* d_grad_q = nullptr;
+        float* d_grad_k = nullptr;
+        float* d_grad_qkv = nullptr;
+        float* d_grad_normed = nullptr;
+        float* d_grad_qkv_weight = nullptr;
+        float* d_grad_hidden = nullptr;
+        float* d_qkv_exp_avg = nullptr;
+        float* d_qkv_exp_avg_sq = nullptr;
+        float* d_swiglu_out = nullptr;
+        float* d_grad_swiglu = nullptr;
+        float* d_grad_swiglu_gate = nullptr;
+        float* d_grad_swiglu_up = nullptr;
         auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
             if (status != 0) {
@@ -2588,7 +2691,23 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
             alloc_float(&d_residual_out, hidden.size(), "residual_out") &&
             alloc_float(&d_qkv_weight, qkv_weight.size(), "qkv_weight") &&
             alloc_float(&d_inv_freq, inv_freq.size(), "inv_freq") &&
-            alloc_float(&d_residual_scale, residual_scale.size(), "residual_scale")) {
+            alloc_float(&d_residual_scale, residual_scale.size(), "residual_scale") &&
+            (!train_step || alloc_float(&d_grad_attention, grad_attention.size(), "grad_attention")) &&
+            (!train_step || alloc_float(&d_grad_q_rope, hidden.size(), "grad_q_rope")) &&
+            (!train_step || alloc_float(&d_grad_k_rope, hidden.size(), "grad_k_rope")) &&
+            (!train_step || alloc_float(&d_grad_v, hidden.size(), "grad_v")) &&
+            (!train_step || alloc_float(&d_grad_q, hidden.size(), "grad_q")) &&
+            (!train_step || alloc_float(&d_grad_k, hidden.size(), "grad_k")) &&
+            (!train_step || alloc_float(&d_grad_qkv, static_cast<std::size_t>(kQkvElements), "grad_qkv")) &&
+            (!train_step || alloc_float(&d_grad_normed, hidden.size(), "grad_normed")) &&
+            (!train_step || alloc_float(&d_grad_qkv_weight, qkv_weight.size(), "grad_qkv_weight")) &&
+            (!train_step || alloc_float(&d_grad_hidden, hidden.size(), "grad_hidden")) &&
+            (!train_step || alloc_float(&d_qkv_exp_avg, qkv_weight.size(), "qkv_exp_avg")) &&
+            (!train_step || alloc_float(&d_qkv_exp_avg_sq, qkv_weight.size(), "qkv_exp_avg_sq")) &&
+            (!train_step || alloc_float(&d_swiglu_out, hidden.size(), "swiglu_out")) &&
+            (!train_step || alloc_float(&d_grad_swiglu, grad_swiglu.size(), "grad_swiglu")) &&
+            (!train_step || alloc_float(&d_grad_swiglu_gate, hidden.size(), "grad_swiglu_gate")) &&
+            (!train_step || alloc_float(&d_grad_swiglu_up, hidden.size(), "grad_swiglu_up"))) {
             int status = cuda_memcpy(d_hidden, hidden.data(), hidden.size() * sizeof(float), kCudaMemcpyHostToDevice);
             if (status == 0) {
                 status = cuda_memcpy(
@@ -2602,8 +2721,28 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
                 status = cuda_memcpy(
                     d_residual_scale, residual_scale.data(), residual_scale.size() * sizeof(float), kCudaMemcpyHostToDevice);
             }
+            if (status == 0 && train_step) {
+                status = cuda_memcpy(
+                    d_grad_attention, grad_attention.data(), grad_attention.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && train_step) {
+                status = cuda_memcpy(
+                    d_grad_swiglu, grad_swiglu.data(), grad_swiglu.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
             if (status != 0) {
                 error = cuda_error(status, "cudaMemcpy LLaMA RoPE attention block H2D");
+            }
+            if (error.empty() && train_step) {
+                status = fill(d_grad_qkv_weight, static_cast<std::int64_t>(qkv_weight.size()), 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_qkv_exp_avg, static_cast<std::int64_t>(qkv_weight.size()), 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_qkv_exp_avg_sq, static_cast<std::int64_t>(qkv_weight.size()), 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero LLaMA RoPE block train-step buffers");
+                }
             }
             if (error.empty()) {
                 status = rms_norm(d_hidden, d_normed, kRows, kDim, kEps, nullptr);
@@ -2674,6 +2813,120 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
                 }
                 sync_stage("cudaDeviceSynchronize after nfn_native_tile_scaled_residual_add_float32");
             }
+            if (error.empty() && train_step) {
+                status = attention_backward(
+                    d_q_rope,
+                    d_k_rope,
+                    d_v,
+                    d_grad_attention,
+                    d_grad_q_rope,
+                    d_grad_k_rope,
+                    d_grad_v,
+                    kBatch,
+                    kHeads,
+                    kHeads,
+                    kSeqLen,
+                    kSeqLen,
+                    kHeadDim,
+                    kHeadDim,
+                    kScale,
+                    true,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_dot_product_attention_backward_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_scaled_dot_product_attention_backward_float32");
+            }
+            if (error.empty() && train_step) {
+                status = rotary_backward(d_grad_q_rope, d_inv_freq, d_grad_q, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_backward_float32 q");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rotary_embedding_backward_float32 q");
+            }
+            if (error.empty() && train_step) {
+                status = rotary_backward(d_grad_k_rope, d_inv_freq, d_grad_k, kElements, kHeads, kSeqLen, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rotary_embedding_backward_float32 k");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rotary_embedding_backward_float32 k");
+            }
+            if (error.empty() && train_step) {
+                status = merge_heads_to_qkv(
+                    d_grad_q, d_grad_k, d_grad_v, d_grad_qkv, kBatch, kSeqLen, kHeads, kHeadDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_merge_heads_to_qkv_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_merge_heads_to_qkv_float32");
+            }
+            if (error.empty() && train_step) {
+                status = linear_backward_input(d_grad_qkv, d_qkv_weight, d_grad_normed, kRows, kDim, kQkvDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 qkv");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_linear_backward_input_float32 qkv");
+            }
+            if (error.empty() && train_step) {
+                status = linear_backward_weight(d_normed, d_grad_qkv, d_grad_qkv_weight, kRows, kDim, kQkvDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_float32 qkv");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_linear_backward_weight_float32 qkv");
+            }
+            if (error.empty() && train_step) {
+                status = rms_norm_backward_input(d_hidden, d_grad_normed, d_grad_hidden, kRows, kDim, kEps, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_rms_norm_backward_input_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_rms_norm_backward_input_float32");
+            }
+            if (error.empty() && train_step) {
+                status = swiglu(d_residual_out, d_attention, d_swiglu_out, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_swiglu_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_swiglu_float32");
+            }
+            if (error.empty() && train_step) {
+                status = swiglu_backward(
+                    d_residual_out,
+                    d_attention,
+                    d_grad_swiglu,
+                    d_grad_swiglu_gate,
+                    d_grad_swiglu_up,
+                    kElements,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_swiglu_backward_float32");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_swiglu_backward_float32");
+            }
+            if (error.empty() && train_step) {
+                status = adamw(
+                    d_qkv_weight,
+                    d_grad_qkv_weight,
+                    d_qkv_exp_avg,
+                    d_qkv_exp_avg_sq,
+                    static_cast<std::int64_t>(qkv_weight.size()),
+                    0.001f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.01f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 qkv");
+                }
+                sync_stage("cudaDeviceSynchronize after nfn_native_tile_adamw_step_float32 qkv");
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -2687,6 +2940,12 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
                 std::vector<float> k_rope_actual(hidden.size(), 0.0f);
                 std::vector<float> attention_actual(hidden.size(), 0.0f);
                 std::vector<float> residual_actual(hidden.size(), 0.0f);
+                std::vector<float> grad_qkv_weight_actual(qkv_weight.size(), 0.0f);
+                std::vector<float> grad_normed_actual(hidden.size(), 0.0f);
+                std::vector<float> grad_hidden_actual(hidden.size(), 0.0f);
+                std::vector<float> swiglu_actual(hidden.size(), 0.0f);
+                std::vector<float> swiglu_grad_gate_actual(hidden.size(), 0.0f);
+                std::vector<float> qkv_weight_updated_actual(qkv_weight.size(), 0.0f);
                 status = cuda_memcpy(q_actual.data(), d_q, q_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status == 0) {
                     status = cuda_memcpy(k_actual.data(), d_k, k_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
@@ -2703,6 +2962,39 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
                 if (status == 0) {
                     status = cuda_memcpy(residual_actual.data(), d_residual_out, residual_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        grad_qkv_weight_actual.data(),
+                        d_grad_qkv_weight,
+                        grad_qkv_weight_actual.size() * sizeof(float),
+                        kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        grad_normed_actual.data(), d_grad_normed, grad_normed_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        grad_hidden_actual.data(), d_grad_hidden, grad_hidden_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        swiglu_actual.data(), d_swiglu_out, swiglu_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        swiglu_grad_gate_actual.data(),
+                        d_grad_swiglu_gate,
+                        swiglu_grad_gate_actual.size() * sizeof(float),
+                        kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && train_step) {
+                    status = cuda_memcpy(
+                        qkv_weight_updated_actual.data(),
+                        d_qkv_weight,
+                        qkv_weight_updated_actual.size() * sizeof(float),
+                        kCudaMemcpyDeviceToHost);
+                }
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy LLaMA RoPE attention block D2H");
                 } else {
@@ -2718,11 +3010,29 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
                             residual_delta_max_abs,
                             std::fabs(residual_actual[i] - hidden[i]));
                     }
+                    if (train_step) {
+                        grad_qkv_weight_max_abs = max_abs(grad_qkv_weight_actual);
+                        grad_normed_max_abs = max_abs(grad_normed_actual);
+                        grad_hidden_max_abs = max_abs(grad_hidden_actual);
+                        swiglu_max_abs = max_abs(swiglu_actual);
+                        swiglu_grad_gate_max_abs = max_abs(swiglu_grad_gate_actual);
+                        for (std::size_t i = 0; i < qkv_weight.size(); ++i) {
+                            adamw_qkv_delta_max_abs = std::max(
+                                adamw_qkv_delta_max_abs,
+                                std::fabs(qkv_weight_updated_actual[i] - qkv_weight[i]));
+                        }
+                    }
                 }
             }
             passed = error.empty() &&
                 q_rope_delta_max_abs > 0.0f &&
-                attention_max_abs > 0.0f;
+                attention_max_abs > 0.0f &&
+                (!train_step || (grad_qkv_weight_max_abs > 0.0f &&
+                                 grad_normed_max_abs > 0.0f &&
+                                 grad_hidden_max_abs > 0.0f &&
+                                 swiglu_max_abs > 0.0f &&
+                                 swiglu_grad_gate_max_abs > 0.0f &&
+                                 adamw_qkv_delta_max_abs > 0.0f));
             if (!passed && error.empty()) {
                 error = "LLaMA RoPE attention-block smoke produced a degenerate output";
             }
@@ -2735,7 +3045,7 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"llama_packed_qkv_rope_attention_block_forward_slice\",\n"
+        << "  \"smoke\": \"" << (train_step ? "llama_rope_swiglu_block_train_step_slice" : "llama_packed_qkv_rope_attention_block_forward_slice") << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -2754,13 +3064,20 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
         << "    \"nfn_native_tile_split_qkv_to_heads_float32\",\n"
         << "    \"nfn_native_tile_rotary_embedding_float32\",\n"
         << "    \"nfn_native_tile_scaled_dot_product_attention_float32\",\n"
-        << "    \"nfn_native_tile_scaled_residual_add_float32\"\n"
+        << "    \"nfn_native_tile_scaled_residual_add_float32\""
+        << (train_step ? ",\n    \"nfn_native_tile_scaled_dot_product_attention_backward_float32\",\n    \"nfn_native_tile_rotary_embedding_backward_float32\",\n    \"nfn_native_tile_merge_heads_to_qkv_float32\",\n    \"nfn_native_tile_linear_backward_input_float32\",\n    \"nfn_native_tile_linear_backward_weight_float32\",\n    \"nfn_native_tile_rms_norm_backward_input_float32\",\n    \"nfn_native_tile_swiglu_float32\",\n    \"nfn_native_tile_swiglu_backward_float32\",\n    \"nfn_native_tile_adamw_step_float32\"\n" : "\n")
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"q_rope_delta_max_abs\":" << q_rope_delta_max_abs
         << ", \"k_rope_delta_max_abs\":" << k_rope_delta_max_abs
         << ", \"attention_max_abs\":" << attention_max_abs
         << ", \"residual_delta_max_abs\":" << residual_delta_max_abs
+        << ", \"grad_qkv_weight_max_abs\":" << grad_qkv_weight_max_abs
+        << ", \"grad_normed_max_abs\":" << grad_normed_max_abs
+        << ", \"grad_hidden_max_abs\":" << grad_hidden_max_abs
+        << ", \"swiglu_max_abs\":" << swiglu_max_abs
+        << ", \"swiglu_grad_gate_max_abs\":" << swiglu_grad_gate_max_abs
+        << ", \"adamw_qkv_delta_max_abs\":" << adamw_qkv_delta_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -10562,7 +10879,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_llama_attention_block_step) {
             return print_llama_attention_block_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_llama_rope_attention_block_step) {
+        if (cfg.smoke_llama_rope_attention_block_step || cfg.smoke_llama_rope_block_train_step) {
             return print_llama_rope_attention_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_moe_route_expert_step) {

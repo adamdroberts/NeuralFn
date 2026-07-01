@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added a LLaMA-family RoPE/SwiGLU block train-step native smoke.
+  `nfn_llama_native_train --smoke-llama-rope-block-train-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-rope-block-train-step` alias now run RMSNorm, QKV
+  projection, QKV head split, RoPE, SDPA, residual add, SDPA backward, RoPE
+  backward, QKV gradient merge, fused-QKV linear backward, RMSNorm backward,
+  SwiGLU forward/backward, and AdamW through raw CUDA Tile ABI calls without
+  Torch or graph-editor tensor flow. LLaMA-family catalog/preflight JSON now
+  reports `rope-swiglu-block-forward-backward-adamw-smoke` as completed and
+  keeps the remaining blocker as `llama-full-forward-backward-loop`.
+  Verification: rebuilt missing-family native trainers, unified native
+  frontends, dense GPT catalog binaries, and the linked dense GPT binary; live
+  CUDA direct and unified LLaMA RoPE/SwiGLU block train-step smokes passed with
+  `grad_qkv_weight_max_abs=0.0941868`,
+  `swiglu_grad_gate_max_abs=3.1004e-05`, and
+  `adamw_qkv_delta_max_abs=0.0976625`.
+
 - Tightened native GPT template coverage metadata so every non-runnable shipped
   template class now reports at least one explicit missing native loop or
   objective requirement. Dense JEPA, diffusion, TTT, HNet byte-LM, and universal
@@ -58,9 +75,10 @@
   SDPA, and residual add through raw CUDA Tile ABI calls without Torch or
   graph-editor tensor flow. LLaMA-family catalog/preflight JSON now reports
   `packed-qkv-rope-attention-block-integration-smoke` in
-  `native_training_completed_requirements`; the full LLaMA block
-  forward/backward loop plus family parameter layout, checkpointing, and
-  inference wiring remain visible as outstanding requirements. Verification:
+  `native_training_completed_requirements`; later Unreleased entries extend
+  that same coverage class through RoPE/SwiGLU block train-step and family
+  checkpoint metadata, leaving only the full LLaMA-family native loop blocker.
+  Verification:
   rebuilt missing-family native trainers, unified native CLIs, dense GPT catalog
   binaries, and the linked dense GPT binary; live CUDA LLaMA smoke passed with
   `q_rope_delta_max_abs=0.0447169` and `attention_max_abs=0.0976635`; focused
@@ -257,9 +275,9 @@
   add through raw CUDA Tile ABI calls. LLaMA-family catalog/preflight JSON now
   reports `packed-qkv-attention-block-forward-smoke` in
   `native_training_completed_requirements`; RoPE-aware packed block
-  integration, the full LLaMA block forward/backward loop, checkpointing, and
-  inference wiring remain visible in the missing list until those paths are
-  implemented and verified. Verification: rebuilt missing-family native
+  integration, full-loop wiring, checkpointing, and inference metadata were
+  still outstanding at that point and are refined by later Unreleased entries.
+  Verification: rebuilt missing-family native
   trainers, unified native CLIs, and dense GPT catalog binaries; live CUDA
   smoke passed with `attention_max_abs=0.141602` and
   `residual_delta_max_abs=0.141602`; unified command forwarding emitted
@@ -276,8 +294,9 @@
   Tile ABI calls. LLaMA-family catalog/preflight JSON now reports
   `packed-qkv-attention-forward-backward-smoke` in
   `native_training_completed_requirements`, while full packed-QKV/RoPE block
-  integration, the LLaMA block forward/backward loop, checkpointing, and
-  inference wiring remain visible in the missing list. Verification: rebuilt
+  integration, full-loop wiring, checkpointing, and inference metadata were
+  still outstanding at that point and are refined by later Unreleased entries.
+  Verification: rebuilt
   missing-family native trainers, unified native CLIs, and dense GPT catalog
   binaries; live CUDA LLaMA packed-attention smoke passed with forward max
   error `0.00126648`, finite saved LSE, and nonzero QKV gradients; unified
@@ -474,8 +493,10 @@
   catalog, per-template plan JSON, and missing-family preflight JSON. LLaMA
   coverage now reports the RMSNorm, RoPE, SwiGLU/GEGLU, and LM-head
   CE/backward/AdamW CUDA smokes as completed requirements, while its missing
-  list is narrowed to packed-QKV RoPE attention block integration, the full
-  LLaMA block forward/backward loop, and family checkpoint/inference wiring.
+  list was narrowed at that point to packed-QKV RoPE attention block
+  integration, full-loop wiring, and family checkpoint/inference metadata;
+  later Unreleased entries clear those slice-level blockers and keep the full
+  family loop visible.
   This keeps the coverage audit honest without marking the family trainer
   runnable before the full loop exists. Verification: rebuilt dense GPT,
   GPT2-compatible, linked dense GPT, and missing-family native binaries; checked

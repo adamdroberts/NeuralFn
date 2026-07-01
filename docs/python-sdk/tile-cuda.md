@@ -518,10 +518,11 @@ wired. LLaMA-family entries now separate completed smoke-backed slices from the
 remaining blockers: `native_training_completed_requirements` names RMSNorm,
 RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, packed-QKV attention
 forward/backward, RMSNorm/QKV-projection/packed-attention/residual forward
-block, packed-QKV RoPE attention-block integration, and family
+block, packed-QKV RoPE attention-block integration, RoPE/SwiGLU block
+forward/backward/AdamW, and family
 parameter-layout/checkpoint/inference metadata CUDA smokes, while
-`native_training_missing_requirements` keeps the full LLaMA block
-forward/backward loop. MoE-family
+`native_training_missing_requirements` keeps the full LLaMA-family
+forward/backward/optimizer loop. MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
 routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
@@ -560,6 +561,11 @@ and residual add in one native forward block slice. Use
 PATH` or the unified `--native-cuda-smoke-llama-rope-attention-block-step`
 alias to compose RMSNorm, QKV projection, head-major QKV split, RoPE, SDPA, and
 residual add through raw CUDA Tile ABI calls. Use
+`nfn_llama_native_train --smoke-llama-rope-block-train-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-llama-rope-block-train-step` alias
+to launch SDPA backward, RoPE backward, fused-QKV linear backward, RMSNorm
+backward, SwiGLU backward, and AdamW without Torch or graph-editor tensor flow.
+Use
 `nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-moe-route-expert-step` alias on MoE families to run top-k
