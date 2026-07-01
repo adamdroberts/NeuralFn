@@ -62,18 +62,20 @@ build_one "moe-jepa-evo" "nfn_moe_jepa_evo_native_train" \
   "standard MoE transformer loop plus JEPA target encoder/projector/predictor and AR+JEPA+router loss CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-moe-jepa-objective" \
-  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,jepa-target-encoder-forward,jepa-projector-predictor-forward-backward,latent-mse-loss-device-reduction,ar-plus-jepa-plus-router-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke"
+  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,jepa-target-encoder-forward,ar-plus-jepa-plus-router-loss-composition,family-parameter-layout-checkpoint-inference" \
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,jepa-projector-predictor-latent-loss-smoke"
 build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-dense-jepa-objective" \
-  "jepa-target-encoder-forward,jepa-projector-predictor-forward-backward,latent-mse-loss-device-reduction,ar-plus-jepa-loss-composition"
+  "jepa-target-encoder-forward,ar-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
+  "jepa-projector-predictor-latent-loss-smoke"
 build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-dense-jepa-objective" \
-  "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,jepa-target-encoder-forward,ar-plus-semantic-plus-jepa-loss-composition"
+  "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,jepa-target-encoder-forward,ar-plus-semantic-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
+  "jepa-projector-predictor-latent-loss-smoke"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

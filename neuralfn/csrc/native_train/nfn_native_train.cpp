@@ -510,6 +510,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-fused-qkv-attention-step",
+        "--smoke-jepa-projector-step",
         "--smoke-llama-lm-head-step",
         "--smoke-llama-loop",
         "--smoke-llama-train-step",
@@ -543,6 +544,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--check-tile-ops",
         "--startup-only",
         "--smoke-tile-ops",
+        "--smoke-jepa-projector-step",
         "--smoke-llama-lm-head-step",
         "--smoke-llama-loop",
         "--smoke-llama-train-step",
@@ -1000,6 +1002,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-llama-loop",
                 "--native-cuda-smoke-llama-lm-head-step",
                 "--native-cuda-smoke-llama-train-step",
+                "--native-cuda-smoke-jepa-projector-step",
                 "--native-cuda-smoke-moe-route-expert-step",
                 "--native-cuda-smoke-optimizer-step",
                 "--native-cuda-smoke-lm-step",
@@ -1032,6 +1035,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-llama-lm-head-step");
             } else if (arg == "--native-cuda-smoke-llama-train-step") {
                 forwarded.push_back("--smoke-llama-train-step");
+            } else if (arg == "--native-cuda-smoke-jepa-projector-step") {
+                forwarded.push_back("--smoke-jepa-projector-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
                 forwarded.push_back("--smoke-moe-route-expert-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {

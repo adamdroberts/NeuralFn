@@ -898,9 +898,8 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     if (coverage_class == "missing-dense-jepa-objective") {
         return {
             "jepa-target-encoder-forward",
-            "jepa-projector-predictor-forward-backward",
-            "latent-mse-loss-device-reduction",
             "ar-plus-jepa-loss-composition",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-moe-jepa-objective") {
@@ -908,8 +907,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
             "standard-moe-transformer-block-integration",
             "standard-moe-full-forward-backward-loop",
             "jepa-target-encoder-forward",
-            "jepa-projector-predictor-forward-backward",
-            "latent-mse-loss-device-reduction",
             "ar-plus-jepa-plus-router-loss-composition",
             "family-parameter-layout-checkpoint-inference",
         };
@@ -921,6 +918,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
             "semantic-alignment-loss-device-reduction",
             "jepa-target-encoder-forward",
             "ar-plus-semantic-plus-jepa-loss-composition",
+            "family-parameter-layout-checkpoint-inference",
         };
     }
     if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
@@ -971,15 +969,21 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     if (coverage_class == "missing-standard-moe-transformer-lm" ||
         coverage_class == "missing-moe-jepa-objective" ||
         coverage_class == "missing-semantic-moe-router-jepa-objective") {
-        return {
+        std::vector<std::string> completed = {
             "router-topk-broadcast-smoke",
             "routed-swiglu-expert-forward-backward-smoke",
             "load-balance-loss-adamw-smoke",
         };
+        if (coverage_class == "missing-moe-jepa-objective" ||
+            (coverage_class == "missing-semantic-moe-router-jepa-objective" &&
+             template_name.find("jepa") != std::string::npos)) {
+            completed.push_back("jepa-projector-predictor-latent-loss-smoke");
+        }
+        return completed;
     }
     if (coverage_class == "missing-dense-jepa-objective" ||
         coverage_class == "missing-semantic-dense-jepa-objective") {
-        return {"required-linear-latent-loss-tile-abi-symbols"};
+        return {"jepa-projector-predictor-latent-loss-smoke"};
     }
     return {};
 }

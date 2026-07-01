@@ -103,7 +103,10 @@ the full LLaMA block forward/backward loop, and family checkpoint/inference
 wiring. MoE-family entries list completed top-k route/broadcast, routed SwiGLU
 expert forward/backward, and load-balance/AdamW smokes while keeping the full
 family loop, JEPA or semantic objective, checkpoint, and inference blockers in
-the missing list. Treat this manifest as the
+the missing list. JEPA-family entries list completed projector/predictor
+linear, latent-loss, backward, and AdamW smokes while keeping target encoder,
+full objective composition, checkpoint, and inference blockers in the missing
+list. Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
 

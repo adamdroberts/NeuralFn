@@ -484,6 +484,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-llama-loop" ||
                                arg == "--native-cuda-smoke-llama-lm-head-step" ||
                                arg == "--native-cuda-smoke-llama-train-step" ||
+                               arg == "--native-cuda-smoke-jepa-projector-step" ||
                                arg == "--native-cuda-smoke-moe-route-expert-step" ||
                                arg == "--native-cuda-smoke-optimizer-step" ||
                                arg == "--native-cuda-smoke-lm-step" ||
@@ -519,6 +520,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-llama-lm-head-step");
             } else if (arg == "--native-cuda-smoke-llama-train-step") {
                 forwarded.push_back("--smoke-llama-train-step");
+            } else if (arg == "--native-cuda-smoke-jepa-projector-step") {
+                forwarded.push_back("--smoke-jepa-projector-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
                 forwarded.push_back("--smoke-moe-route-expert-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {

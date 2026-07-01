@@ -65,6 +65,7 @@ struct Config {
     bool smoke_llama_train_step = false;
     bool smoke_llama_lm_head_step = false;
     bool smoke_moe_route_expert_step = false;
+    bool smoke_jepa_projector_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -248,6 +249,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
+        << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -280,6 +282,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_lm_head_step = true;
         } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
             cfg.smoke_moe_route_expert_step = true;
+        } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
+            cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -1890,6 +1894,466 @@ int print_moe_route_expert_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_jepa_projector_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kRows = 2;
+    constexpr std::int64_t kInputDim = 3;
+    constexpr std::int64_t kHiddenDim = 4;
+    constexpr std::int64_t kLatentDim = 3;
+    constexpr std::int64_t kHiddenElements = kRows * kHiddenDim;
+    constexpr std::int64_t kLatentElements = kRows * kLatentDim;
+    constexpr std::int64_t kProjectorWeightElements = kHiddenDim * kInputDim;
+    constexpr std::int64_t kPredictorWeightElements = kLatentDim * kHiddenDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    float projector_forward_max_error = 0.0f;
+    float predictor_forward_max_error = 0.0f;
+    float latent_loss_max_error = 0.0f;
+    float predictor_grad_hidden_max_error = 0.0f;
+    float predictor_grad_weight_max_error = 0.0f;
+    float projector_grad_weight_max_error = 0.0f;
+    float predictor_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!jepa_family) {
+        error = "JEPA smoke commands are only valid for JEPA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (linear == nullptr || linear_backward_input == nullptr ||
+                linear_backward_weight_accumulate == nullptr || latent_mse_loss == nullptr ||
+                fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more JEPA projector train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> x = {
+            0.2f, -0.1f, 0.3f,
+            -0.4f, 0.5f, 0.1f,
+        };
+        const std::vector<float> target = {
+            0.05f, -0.02f, 0.08f,
+            -0.03f, 0.04f, 0.01f,
+        };
+        std::vector<float> projector_weight(static_cast<std::size_t>(kProjectorWeightElements));
+        std::vector<float> predictor_weight(static_cast<std::size_t>(kPredictorWeightElements));
+        for (std::size_t i = 0; i < projector_weight.size(); ++i) {
+            projector_weight[i] = 0.03f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        for (std::size_t i = 0; i < predictor_weight.size(); ++i) {
+            predictor_weight[i] = -0.02f * static_cast<float>(static_cast<int>(i % 5) - 2);
+        }
+
+        float* d_x = nullptr;
+        float* d_target = nullptr;
+        float* d_projector_weight = nullptr;
+        float* d_predictor_weight = nullptr;
+        float* d_projector_out = nullptr;
+        float* d_pred = nullptr;
+        float* d_loss = nullptr;
+        float* d_grad_pred = nullptr;
+        float* d_grad_hidden = nullptr;
+        float* d_grad_projector_weight = nullptr;
+        float* d_grad_predictor_weight = nullptr;
+        float* d_predictor_exp_avg = nullptr;
+        float* d_predictor_exp_avg_sq = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(&d_x, x.size(), "x") &&
+            alloc(&d_target, target.size(), "target") &&
+            alloc(&d_projector_weight, projector_weight.size(), "projector_weight") &&
+            alloc(&d_predictor_weight, predictor_weight.size(), "predictor_weight") &&
+            alloc(&d_projector_out, kHiddenElements, "projector_out") &&
+            alloc(&d_pred, kLatentElements, "pred") &&
+            alloc(&d_loss, 1, "loss") &&
+            alloc(&d_grad_pred, kLatentElements, "grad_pred") &&
+            alloc(&d_grad_hidden, kHiddenElements, "grad_hidden") &&
+            alloc(&d_grad_projector_weight, projector_weight.size(), "grad_projector_weight") &&
+            alloc(&d_grad_predictor_weight, predictor_weight.size(), "grad_predictor_weight") &&
+            alloc(&d_predictor_exp_avg, predictor_weight.size(), "predictor_exp_avg") &&
+            alloc(&d_predictor_exp_avg_sq, predictor_weight.size(), "predictor_exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            if (copy_float(d_x, x, "x") &&
+                copy_float(d_target, target, "target") &&
+                copy_float(d_projector_weight, projector_weight, "projector_weight") &&
+                copy_float(d_predictor_weight, predictor_weight, "predictor_weight")) {
+                int status = fill(d_grad_projector_weight, kProjectorWeightElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_grad_predictor_weight, kPredictorWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_predictor_exp_avg, kPredictorWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_predictor_exp_avg_sq, kPredictorWeightElements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero JEPA gradients/moments");
+                }
+            }
+
+            std::vector<float> expected_projector_out(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> expected_pred(static_cast<std::size_t>(kLatentElements), 0.0f);
+            for (std::int64_t row = 0; row < kRows; ++row) {
+                for (std::int64_t out_d = 0; out_d < kHiddenDim; ++out_d) {
+                    float acc = 0.0f;
+                    for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                        acc += x[static_cast<std::size_t>(row * kInputDim + in_d)] *
+                            projector_weight[static_cast<std::size_t>(out_d * kInputDim + in_d)];
+                    }
+                    expected_projector_out[static_cast<std::size_t>(row * kHiddenDim + out_d)] = acc;
+                }
+                for (std::int64_t out_d = 0; out_d < kLatentDim; ++out_d) {
+                    float acc = 0.0f;
+                    for (std::int64_t in_d = 0; in_d < kHiddenDim; ++in_d) {
+                        acc += expected_projector_out[static_cast<std::size_t>(row * kHiddenDim + in_d)] *
+                            predictor_weight[static_cast<std::size_t>(out_d * kHiddenDim + in_d)];
+                    }
+                    expected_pred[static_cast<std::size_t>(row * kLatentDim + out_d)] = acc;
+                }
+            }
+            std::vector<float> grad_pred(static_cast<std::size_t>(kLatentElements), 0.0f);
+            float expected_loss = 0.0f;
+            for (std::size_t i = 0; i < expected_pred.size(); ++i) {
+                const float diff = expected_pred[i] - target[i];
+                expected_loss += diff * diff;
+                grad_pred[i] = 2.0f * diff;
+            }
+            std::vector<float> expected_grad_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> expected_grad_predictor_weight(predictor_weight.size(), 0.0f);
+            std::vector<float> expected_grad_projector_weight(projector_weight.size(), 0.0f);
+            for (std::int64_t row = 0; row < kRows; ++row) {
+                for (std::int64_t latent = 0; latent < kLatentDim; ++latent) {
+                    const float grad = grad_pred[static_cast<std::size_t>(row * kLatentDim + latent)];
+                    for (std::int64_t hidden = 0; hidden < kHiddenDim; ++hidden) {
+                        expected_grad_predictor_weight[static_cast<std::size_t>(latent * kHiddenDim + hidden)] +=
+                            expected_projector_out[static_cast<std::size_t>(row * kHiddenDim + hidden)] * grad;
+                        expected_grad_hidden[static_cast<std::size_t>(row * kHiddenDim + hidden)] +=
+                            grad * predictor_weight[static_cast<std::size_t>(latent * kHiddenDim + hidden)];
+                    }
+                }
+                for (std::int64_t hidden = 0; hidden < kHiddenDim; ++hidden) {
+                    const float grad = expected_grad_hidden[static_cast<std::size_t>(row * kHiddenDim + hidden)];
+                    for (std::int64_t in_d = 0; in_d < kInputDim; ++in_d) {
+                        expected_grad_projector_weight[static_cast<std::size_t>(hidden * kInputDim + in_d)] +=
+                            x[static_cast<std::size_t>(row * kInputDim + in_d)] * grad;
+                    }
+                }
+            }
+
+            if (error.empty() && !copy_float(d_grad_pred, grad_pred, "grad_pred")) {
+                // copy_float set error.
+            }
+            int status = 0;
+            if (error.empty()) {
+                status = linear(
+                    d_x, d_projector_weight, nullptr, d_projector_out,
+                    kRows, kInputDim, kHiddenDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 projector");
+                }
+            }
+            if (error.empty()) {
+                status = linear(
+                    d_projector_out, d_predictor_weight, nullptr, d_pred,
+                    kRows, kHiddenDim, kLatentDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 predictor");
+                }
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_pred, d_target, d_loss, kLatentElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(
+                    d_grad_pred, d_predictor_weight, d_grad_hidden,
+                    kRows, kHiddenDim, kLatentDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 predictor");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_projector_out, d_grad_pred, d_grad_predictor_weight,
+                    kRows, kHiddenDim, kLatentDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 predictor");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_x, d_grad_hidden, d_grad_projector_weight,
+                    kRows, kInputDim, kHiddenDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 projector");
+                }
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_predictor_weight,
+                    d_grad_predictor_weight,
+                    d_predictor_exp_avg,
+                    d_predictor_exp_avg_sq,
+                    kPredictorWeightElements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 predictor");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_projector_out(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> actual_pred(static_cast<std::size_t>(kLatentElements), 0.0f);
+            std::vector<float> actual_loss(1, 0.0f);
+            std::vector<float> actual_grad_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> actual_grad_projector_weight(projector_weight.size(), 0.0f);
+            std::vector<float> actual_grad_predictor_weight(predictor_weight.size(), 0.0f);
+            std::vector<float> actual_predictor_weight(predictor_weight.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_projector_out, d_projector_out, "projector_out") &&
+                    copy_back_float(actual_pred, d_pred, "pred") &&
+                    copy_back_float(actual_loss, d_loss, "loss") &&
+                    copy_back_float(actual_grad_hidden, d_grad_hidden, "grad_hidden") &&
+                    copy_back_float(actual_grad_projector_weight, d_grad_projector_weight, "grad_projector_weight") &&
+                    copy_back_float(actual_grad_predictor_weight, d_grad_predictor_weight, "grad_predictor_weight") &&
+                    copy_back_float(actual_predictor_weight, d_predictor_weight, "predictor_weight");
+            }
+
+            std::vector<float> expected_predictor_weight = predictor_weight;
+            for (std::size_t i = 0; i < expected_predictor_weight.size(); ++i) {
+                const float grad = expected_grad_predictor_weight[i];
+                const float next_m = 0.1f * grad;
+                const float next_v = 0.05f * grad * grad;
+                const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                const float decayed = expected_predictor_weight[i] * (1.0f - 0.01f * 0.02f);
+                expected_predictor_weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+            }
+
+            if (error.empty()) {
+                projector_forward_max_error = max_abs_error(actual_projector_out, expected_projector_out);
+                predictor_forward_max_error = max_abs_error(actual_pred, expected_pred);
+                latent_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
+                predictor_grad_hidden_max_error = max_abs_error(actual_grad_hidden, expected_grad_hidden);
+                predictor_grad_weight_max_error = max_abs_error(actual_grad_predictor_weight, expected_grad_predictor_weight);
+                projector_grad_weight_max_error = max_abs_error(actual_grad_projector_weight, expected_grad_projector_weight);
+                predictor_weight_update_max_error = max_abs_error(actual_predictor_weight, expected_predictor_weight);
+            }
+            constexpr float kTolerance = 5e-6f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                projector_forward_max_error <= kTolerance &&
+                predictor_forward_max_error <= kTolerance &&
+                latent_loss_max_error <= kTolerance &&
+                predictor_grad_hidden_max_error <= kTolerance &&
+                predictor_grad_weight_max_error <= kTolerance &&
+                projector_grad_weight_max_error <= kTolerance &&
+                predictor_weight_update_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "JEPA projector train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"jepa_projector_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << kRows << ", \"input_dim\": " << kInputDim
+        << ", \"hidden_dim\": " << kHiddenDim << ", \"latent_dim\": " << kLatentDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"projector_forward\":" << projector_forward_max_error
+        << ", \"predictor_forward\":" << predictor_forward_max_error
+        << ", \"latent_loss\":" << latent_loss_max_error
+        << ", \"predictor_grad_hidden\":" << predictor_grad_hidden_max_error
+        << ", \"predictor_grad_weight\":" << predictor_grad_weight_max_error
+        << ", \"projector_grad_weight\":" << projector_grad_weight_max_error
+        << ", \"predictor_weight_update\":" << predictor_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1900,6 +2364,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_jepa_projector_step) {
+            return print_jepa_projector_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Added a JEPA projector/predictor native train-step CUDA smoke for
+  missing-family compiled preflights. `nfn_jepa_native_train
+  --smoke-jepa-projector-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model moe-jepa-evo
+  --native-cuda-smoke-jepa-projector-step` alias now execute projector linear,
+  predictor linear, latent MSE partials, predictor backward-input/weight,
+  projector weight-gradient accumulation, and AdamW through raw CUDA Tile ABI
+  calls with CPU-reference checks. Dense JEPA, semantic dense JEPA, and
+  MoE+JEPA catalog/preflight JSON now report
+  `jepa-projector-predictor-latent-loss-smoke` in
+  `native_training_completed_requirements`; their missing lists now keep target
+  encoder, full objective composition, family loop, checkpointing, and
+  inference wiring visible without re-listing the completed projector/loss
+  slice. Real JEPA-family training remains `family-native-loop-missing` until
+  those full loops are implemented. Verification: rebuilt dense GPT native
+  CLIs, GPT-2 compatibility CLI, missing-family native trainers, and unified
+  native CLIs; live CUDA JEPA smoke passed with max errors at or below
+  `2.65706e-06`; focused catalog and missing-family dispatch pytest passed
+  (`2 passed`); the no-Torch verifier passed 30 artifact scans, 69 Python
+  entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a MoE route/expert native train-step CUDA smoke for missing-family
   compiled preflights. `nfn_moe_jepa_evo_native_train
   --smoke-moe-route-expert-step --tile-ops-lib PATH` and the unified
