@@ -58,6 +58,15 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+The same trainer-facing library exports the semantic/MoE/JEPA route surface
+used by semantic-router native preflight: top-k routing, expert-route broadcast,
+chunk-route broadcast, semantic hash, semantic-alignment item losses,
+attentionless decoder projection, expert bias add, route-balance density/loss,
+latent MSE, and AdamW. `nfn_semantic_router_moe_native_train --print-plan
+--check-tile-ops --tile-ops-lib PATH` verifies those symbols without importing
+Torch or sending real tensors through graph-editor nodes; a passing symbol check
+does not yet mean the full semantic trainer loop is implemented.
+
 Direct compiled native GPT binaries resolve symbolic CUDA device selectors
 before they load CUDA. Set `CUDA_VISIBLE_DEVICES=dedicated`, `auto`, or
 `dedicated-auto` when invoking `build/nfn_gpt_native_train_linked`,

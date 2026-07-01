@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added trainer-facing raw CUDA Tile ABI exports for semantic routing and
+  semantic-alignment coverage. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_broadcast_chunk_routes_float32`,
+  `nfn_native_tile_semantic_hash_int64`,
+  `nfn_native_tile_semantic_alignment_loss_items_float32`,
+  `nfn_native_tile_attentionless_decoder_float32`, and
+  `nfn_native_tile_expert_bias_add_float32`; the semantic-router MoE
+  missing-family preflight now requires those symbols alongside top-k routing,
+  expert-route broadcast, route-balance, latent MSE, and AdamW. This tightens
+  the semantic/MoE/JEPA native coverage boundary without changing the fact that
+  the full semantic trainer loop still reports `family-native-loop-missing`.
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`,
+  `libnfn_native_train_tile_ops_tk.so`, dense GPT native binaries, benchmark
+  helpers, and missing-family native binaries; confirmed exports with `nm -D`;
+  `nfn_semantic_router_moe_native_train --print-plan --check-tile-ops` reported
+  `required-tile-symbols-present`; live CUDA ctypes smoke covered all five new
+  ABI exports with max error `0.0`; focused native pytest passed (`1 passed, 1
+  skipped`); the no-Torch verifier passed 30 artifact scans, 69 Python
+  entrypoints, 24 shell entrypoints, and 2 native template catalogs.
+
 - Added trainer-facing raw CUDA Tile ABI exports for standard MoE and JEPA
   routing/loss work. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_topk_route_float32`,

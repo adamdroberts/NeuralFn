@@ -868,6 +868,13 @@ DeepSeek-V4 binaries also accept `--print-plan`, `--dry-run`, and
 `graph_editor_tensor_flow: false`, plus the parsed schedule, required raw Tile
 symbols, and remaining family-native work; no-action training still exits
 nonzero until the real family loop lands.
+For semantic-router MoE, that required-symbol list now includes semantic hash
+routing, chunk-route broadcast, semantic-alignment item losses, attentionless
+decoder projection, expert bias add, standard top-k/expert-route broadcast,
+route-balance loss, latent MSE, and AdamW. A
+`required-tile-symbols-present` preflight proves the loaded Tile ops library
+exports that semantic/MoE/JEPA ABI surface while `family-native-loop-missing`
+continues to mark the unwired model-specific trainer loop.
 
 Use `nfn_gpt_native_train --list-templates`, `nfn train --base-model gpt
 --list-templates`, `nfn-native-train --base-model gpt --list-templates`, or

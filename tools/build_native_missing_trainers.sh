@@ -66,7 +66,7 @@ build_one "jepa" "nfn_jepa_native_train" \
   "jepa-target-encoder-forward,jepa-projector-predictor-forward-backward,latent-mse-loss-device-reduction,ar-plus-jepa-loss-composition"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
-  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-moe-router-jepa-objective" \
   "semantic-target-shard-resolver,semantic-router-forward-backward,semantic-expert-dispatch-combine,route-selection-distillation-balance-losses,route-evo-device-controller,ar-plus-semantic-plus-jepa-loss-composition"
 build_one "deepseek-v4" "nfn_deepseek_v4_native_train" \

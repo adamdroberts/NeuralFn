@@ -10903,6 +10903,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama.exists()
     moe_jepa = tmp_path / "nfn_moe_jepa_evo_native_train"
     assert moe_jepa.exists()
+    semantic_router_moe = tmp_path / "nfn_semantic_router_moe_native_train"
+    assert semantic_router_moe.exists()
     jamba = tmp_path / "nfn_jamba_native_train"
     assert jamba.exists()
     assert (tmp_path / "nfn_seq2seq_native_train").exists()
@@ -11052,6 +11054,46 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_density_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_loss_float32" in moe_jepa_payload["required_tile_symbols"]
+
+    semantic_router_plan = subprocess.run(
+        [
+            str(semantic_router_moe),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_router_plan.returncode == 0, semantic_router_plan.stderr
+    semantic_router_payload = json.loads(semantic_router_plan.stdout)
+    assert semantic_router_payload["model_family"] == "semantic-router-moe"
+    assert semantic_router_payload["status"] == "family-native-trainer-missing"
+    assert semantic_router_payload["native_training_coverage_class"] == "missing-semantic-moe-router-jepa-objective"
+    assert semantic_router_payload["compiled_native_boundary"] is True
+    assert semantic_router_payload["torch_required"] is False
+    assert semantic_router_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_topk_route_float32",
+        "nfn_native_tile_broadcast_expert_routes_float32",
+        "nfn_native_tile_broadcast_chunk_routes_float32",
+        "nfn_native_tile_semantic_hash_int64",
+        "nfn_native_tile_semantic_alignment_loss_items_float32",
+        "nfn_native_tile_attentionless_decoder_float32",
+        "nfn_native_tile_expert_bias_add_float32",
+        "nfn_native_tile_route_balance_density_float32",
+        "nfn_native_tile_route_balance_loss_float32",
+        "nfn_native_tile_latent_mse_loss_float32",
+    ):
+        assert symbol in semantic_router_payload["required_tile_symbols"]
 
     jamba_plan = subprocess.run(
         [
@@ -13261,11 +13303,21 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_swiglu_backward_float32" in header_text
     assert "nfn_native_tile_topk_route_float32" in header_text
     assert "nfn_native_tile_broadcast_expert_routes_float32" in header_text
+    assert "nfn_native_tile_broadcast_chunk_routes_float32" in header_text
+    assert "nfn_native_tile_semantic_hash_int64" in header_text
+    assert "nfn_native_tile_semantic_alignment_loss_items_float32" in header_text
+    assert "nfn_native_tile_attentionless_decoder_float32" in header_text
+    assert "nfn_native_tile_expert_bias_add_float32" in header_text
     assert "nfn_native_tile_latent_mse_loss_float32" in header_text
     assert "nfn_native_tile_route_balance_density_float32" in header_text
     assert "nfn_native_tile_route_balance_loss_float32" in header_text
     assert "launch_topk_route_float32" in source_text
     assert "launch_broadcast_expert_routes_float32" in source_text
+    assert "launch_broadcast_chunk_routes_float32" in source_text
+    assert "launch_semantic_hash_int64" in source_text
+    assert "launch_semantic_alignment_loss_items_float32" in source_text
+    assert "launch_attentionless_decoder_float32" in source_text
+    assert "launch_expert_bias_add_float32" in source_text
     assert "launch_latent_mse_partials_float32" in source_text
     assert "launch_route_balance_density_float32" in source_text
     assert "launch_route_balance_loss_float32" in source_text
@@ -14810,6 +14862,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_swiglu_backward_float32" in exported
         assert "nfn_native_tile_topk_route_float32" in exported
         assert "nfn_native_tile_broadcast_expert_routes_float32" in exported
+        assert "nfn_native_tile_broadcast_chunk_routes_float32" in exported
+        assert "nfn_native_tile_semantic_hash_int64" in exported
+        assert "nfn_native_tile_semantic_alignment_loss_items_float32" in exported
+        assert "nfn_native_tile_attentionless_decoder_float32" in exported
+        assert "nfn_native_tile_expert_bias_add_float32" in exported
         assert "nfn_native_tile_latent_mse_loss_float32" in exported
         assert "nfn_native_tile_route_balance_density_float32" in exported
         assert "nfn_native_tile_route_balance_loss_float32" in exported

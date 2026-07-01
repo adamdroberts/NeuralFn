@@ -764,6 +764,48 @@ int nfn_native_tile_broadcast_expert_routes_float32(
     std::int64_t route_width,
     void* cuda_stream);
 
+int nfn_native_tile_broadcast_chunk_routes_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    float* out_weights,
+    std::int64_t* out_indices,
+    std::int64_t batch,
+    std::int64_t chunks,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_hash_int64(
+    const float* sem_vec,
+    const float* proj,
+    std::int64_t* out,
+    std::int64_t batch,
+    std::int64_t dim,
+    std::int64_t tables,
+    std::int64_t planes,
+    void* cuda_stream);
+
+int nfn_native_tile_attentionless_decoder_float32(
+    const std::int64_t* bucket_indices,
+    const float* expert_output,
+    const float* bucket_embed,
+    const float* out_weight,
+    float* out,
+    std::int64_t batch,
+    std::int64_t residual_dim,
+    std::int64_t vocab_size,
+    std::int64_t n_buckets,
+    void* cuda_stream);
+
+int nfn_native_tile_expert_bias_add_float32(
+    const float* logits,
+    const float* bias,
+    float* out,
+    std::int64_t n,
+    std::int64_t experts,
+    void* cuda_stream);
+
 int nfn_native_tile_adamw_step_float32(
     float* param,
     const float* grad,
@@ -1851,6 +1893,18 @@ int nfn_native_tile_latent_mse_loss_float32(
     const float* target,
     float* partials,
     std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_alignment_loss_items_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const std::int64_t* term_counts,
+    float* losses,
+    float* counts,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t terms,
+    std::int64_t ignore_index,
     void* cuda_stream);
 
 int nfn_native_tile_route_balance_density_float32(
