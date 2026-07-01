@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Added a diffusion objective native train-step CUDA smoke and exposed raw
+  CUDA Tile ABI wrappers for random timestep generation and mask scheduling.
+  `nfn_diffusion_native_train --smoke-diffusion-objective-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  diffusion --native-cuda-smoke-diffusion-objective-step` alias now run
+  timestep sampling, mask scheduling, masked token embedding, denoise logits,
+  token cross-entropy forward/backward, linear backward, embedding-weight
+  backward, and AdamW updates without Torch or graph-editor tensor flow.
+  Diffusion catalog/preflight JSON now reports
+  `diffusion-timestep-mask-ce-adamw-smoke` in
+  `native_training_completed_requirements`; checkpoint/inference wiring remains
+  visible as the outstanding diffusion requirement. Verification: rebuilt the
+  Tile ops library, missing-family native trainers, unified native frontends,
+  dense GPT frontends, benchmark binaries, and the TK Tile sidecar; live CUDA
+  diffusion objective smoke passed with timestep max error `0`, mask mismatch
+  count `0`, CE loss max error `9.53674e-07`, denoise-weight gradient max
+  error `6.38422e-06`, embedding-weight gradient max error `3.72529e-09`,
+  and AdamW update max errors at or below `7.45058e-09`; unified command
+  forwarding emitted `nfn_diffusion_native_train
+  --smoke-diffusion-objective-step`.
+
 - Added a TTT composite inner-update native smoke and exposed the reusable
   `nfn_native_tile_tanh_float32`, `nfn_native_tile_tanh_backward_float32`, and
   `nfn_native_tile_add_float32` raw CUDA Tile ABI calls. `nfn_ttt_llama_native_train
@@ -252,9 +273,10 @@
   forward, latent MSE, linear input/weight backward, and AdamW through raw CUDA
   Tile ABI calls with CPU-reference checks. Diffusion catalog/preflight JSON now
   reports `diffusion-denoise-linear-mse-adamw-smoke` in
-  `native_training_completed_requirements`, while timestep scheduling, full
-  objective composition, checkpointing, and inference wiring remain visible in
-  the missing list. Real diffusion-family training remains
+  `native_training_completed_requirements`; the later objective smoke in this
+  Unreleased section covers timestep scheduling and token-CE objective
+  composition, leaving checkpointing and inference wiring visible in the
+  missing list. Real diffusion-family training remains
   `family-native-loop-missing` until those full loops are implemented.
   Verification: rebuilt dense GPT native CLIs, GPT-2 compatibility CLI,
   missing-family native trainers, and unified native CLIs; live CUDA diffusion

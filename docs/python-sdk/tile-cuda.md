@@ -526,9 +526,10 @@ routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
 transformer-block forward CUDA smokes, while
 missing requirements keep the full family loop, JEPA or semantic objectives,
 checkpointing, and inference wiring visible. JEPA-family entries now list the
-completed projector/predictor/latent-loss CUDA smoke while keeping target
-encoder, full objective composition, checkpointing, and inference wiring in the
-missing list. Semantic-family entries now list the completed semantic
+completed projector/predictor/latent-loss, target-encoder, and base AR+JEPA
+objective CUDA smokes while keeping checkpointing and inference wiring visible
+for dense JEPA and router/semantic objective composition visible for those
+families. Semantic-family entries now list the completed semantic
 hash/alignment-loss-items CUDA smoke while keeping full semantic planner/router,
 device reduction, objective composition, checkpointing, and inference wiring in
 the missing list. Universal-family entries now list recurrent linear/MSE/AdamW
@@ -602,6 +603,11 @@ head backward, and AdamW as a raw CUDA Tile train-step slice. Use
 or the unified `--native-cuda-smoke-diffusion-denoise-step` alias on diffusion
 families to run denoise linear forward, latent MSE, linear input/weight
 backward, and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_diffusion_native_train --smoke-diffusion-objective-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-diffusion-objective-step` alias on
+diffusion families to run timestep sampling, mask scheduling, masked token
+embedding, token CE forward/backward, linear/embedding backward, and AdamW as a
+raw CUDA Tile train-step slice. Use
 `nfn_semantic_router_moe_native_train --smoke-semantic-alignment-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-semantic-alignment-step` alias on semantic families to run

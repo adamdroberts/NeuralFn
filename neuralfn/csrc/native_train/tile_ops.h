@@ -1713,6 +1713,22 @@ int nfn_native_tile_token_embedding_backward_weight_u16_float32(
     std::int64_t model_dim,
     void* cuda_stream);
 
+int nfn_native_tile_random_timesteps_float32(
+    float* out,
+    std::int64_t batch,
+    std::int64_t counter,
+    void* cuda_stream);
+
+int nfn_native_tile_mask_scheduler_int64(
+    const std::int64_t* tokens,
+    const float* timesteps,
+    std::int64_t* out,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t mask_token_id,
+    std::int64_t counter,
+    void* cuda_stream);
+
 int nfn_native_tile_rotary_embedding_float32(
     const float* x,
     const float* inv_freq,

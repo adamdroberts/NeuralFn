@@ -73,6 +73,7 @@ struct Config {
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_diffusion_denoise_step = false;
+    bool smoke_diffusion_objective_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_ttt_linear_inner_step = false;
     bool smoke_ttt_composite_inner_step = false;
@@ -271,6 +272,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-diffusion-objective-step Launch diffusion timestep, mask scheduler, CE objective, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-composite-inner-step Launch TTT base/down/tanh/up residual, loss, backward, and AdamW kernels on CUDA\n"
@@ -326,6 +328,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
             cfg.smoke_diffusion_denoise_step = true;
+        } else if (arg == "--smoke-diffusion-objective-step" || arg == "--native-cuda-smoke-diffusion-objective-step") {
+            cfg.smoke_diffusion_objective_step = true;
         } else if (arg == "--smoke-seq2seq-cross-attention-step" || arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
             cfg.smoke_seq2seq_cross_attention_step = true;
         } else if (arg == "--smoke-ttt-linear-inner-step" || arg == "--native-cuda-smoke-ttt-linear-inner-step") {
@@ -4613,6 +4617,614 @@ int print_diffusion_denoise_smoke_json(const Config& cfg, const char* program) {
     return passed ? 0 : 2;
 }
 
+int print_diffusion_objective_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool diffusion_family = family.find("diffusion") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using RandomTimestepsFn = int (*)(float*, std::int64_t, std::int64_t, void*);
+    using MaskSchedulerFn = int (*)(
+        const std::int64_t*, const float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingBackwardWeightFn = int (*)(
+        const std::int64_t*, const float*, float*, std::int64_t, std::int64_t, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyBackwardFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, float, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    RandomTimestepsFn random_timesteps = nullptr;
+    MaskSchedulerFn mask_scheduler = nullptr;
+    TokenEmbeddingFn token_embedding = nullptr;
+    TokenEmbeddingBackwardWeightFn token_embedding_backward_weight = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    TokenCrossEntropyBackwardFn ce_backward = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 2;
+    constexpr std::int64_t kSeqLen = 3;
+    constexpr std::int64_t kRows = kBatch * kSeqLen;
+    constexpr std::int64_t kDim = 4;
+    constexpr std::int64_t kVocab = 5;
+    constexpr std::int64_t kMaskToken = 0;
+    constexpr std::int64_t kTokenElements = kRows;
+    constexpr std::int64_t kHiddenElements = kRows * kDim;
+    constexpr std::int64_t kLogitElements = kRows * kVocab;
+    constexpr std::int64_t kEmbeddingWeightElements = kVocab * kDim;
+    constexpr std::int64_t kDenoiseWeightElements = kVocab * kDim;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto max_i64_mismatch = [](const std::vector<std::int64_t>& actual, const std::vector<std::int64_t>& expected) {
+        std::int64_t mismatches = 0;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            if (actual[i] != expected[i]) {
+                mismatches += 1;
+            }
+        }
+        return mismatches + static_cast<std::int64_t>(actual.size() > expected.size()
+            ? actual.size() - expected.size()
+            : expected.size() - actual.size());
+    };
+    auto deterministic_uniform = [](std::int64_t idx, std::int64_t counter, std::int64_t salt) {
+        constexpr std::uint64_t modulus = 16777216ULL;
+        const std::uint64_t value =
+            (static_cast<std::uint64_t>(idx) * 1103515245ULL +
+             static_cast<std::uint64_t>(counter) * 12345ULL +
+             static_cast<std::uint64_t>(salt)) %
+            modulus;
+        return static_cast<float>(value) / 16777216.0f;
+    };
+    auto adamw_expected = [](std::vector<float> weight, const std::vector<float>& grad) {
+        for (std::size_t i = 0; i < weight.size(); ++i) {
+            const float next_m = 0.1f * grad[i];
+            const float next_v = 0.05f * grad[i] * grad[i];
+            const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+            const float decayed = weight[i] * (1.0f - 0.01f * 0.02f);
+            weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+        }
+        return weight;
+    };
+
+    bool passed = false;
+    float timestep_max_error = 0.0f;
+    std::int64_t mask_mismatch_count = 0;
+    float embedding_max_error = 0.0f;
+    float logits_max_error = 0.0f;
+    float ce_loss_max_error = 0.0f;
+    float grad_logits_max_error = 0.0f;
+    float grad_hidden_max_error = 0.0f;
+    float grad_denoise_weight_max_error = 0.0f;
+    float grad_embedding_weight_max_error = 0.0f;
+    float denoise_weight_update_max_error = 0.0f;
+    float embedding_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!diffusion_family) {
+        error = "Diffusion smoke commands are only valid for diffusion-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            random_timesteps = load_symbol<RandomTimestepsFn>(tile_handle, "nfn_native_tile_random_timesteps_float32");
+            mask_scheduler = load_symbol<MaskSchedulerFn>(tile_handle, "nfn_native_tile_mask_scheduler_int64");
+            token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
+            token_embedding_backward_weight = load_symbol<TokenEmbeddingBackwardWeightFn>(
+                tile_handle, "nfn_native_tile_token_embedding_backward_weight_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+            ce_backward = load_symbol<TokenCrossEntropyBackwardFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_backward_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (random_timesteps == nullptr || mask_scheduler == nullptr || token_embedding == nullptr ||
+                token_embedding_backward_weight == nullptr || linear == nullptr ||
+                linear_backward_input == nullptr || linear_backward_weight_accumulate == nullptr ||
+                ce_partials == nullptr || ce_backward == nullptr || fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more diffusion objective train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<std::int64_t> tokens = {1, 2, 3, 4, 1, 2};
+        std::vector<float> embedding_weight(static_cast<std::size_t>(kEmbeddingWeightElements));
+        std::vector<float> denoise_weight(static_cast<std::size_t>(kDenoiseWeightElements));
+        for (std::size_t i = 0; i < embedding_weight.size(); ++i) {
+            embedding_weight[i] = 0.031f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        for (std::size_t i = 0; i < denoise_weight.size(); ++i) {
+            denoise_weight[i] = 0.026f * static_cast<float>(static_cast<int>(i % 9) - 4);
+        }
+
+        std::vector<float> expected_timesteps(static_cast<std::size_t>(kBatch), 0.0f);
+        for (std::int64_t i = 0; i < kBatch; ++i) {
+            expected_timesteps[static_cast<std::size_t>(i)] = deterministic_uniform(i, 0, 17);
+        }
+        std::vector<std::int64_t> expected_masked = tokens;
+        for (std::int64_t i = 0; i < kRows; ++i) {
+            const std::int64_t batch = i / kSeqLen;
+            const float noise = deterministic_uniform(i, 0, 53);
+            if (noise < expected_timesteps[static_cast<std::size_t>(batch)]) {
+                expected_masked[static_cast<std::size_t>(i)] = kMaskToken;
+            }
+        }
+        std::vector<float> expected_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            const std::int64_t token = expected_masked[static_cast<std::size_t>(row)];
+            for (std::int64_t d = 0; d < kDim; ++d) {
+                expected_hidden[static_cast<std::size_t>(row * kDim + d)] =
+                    embedding_weight[static_cast<std::size_t>(token * kDim + d)];
+            }
+        }
+        std::vector<float> expected_logits(static_cast<std::size_t>(kLogitElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t vocab = 0; vocab < kVocab; ++vocab) {
+                float acc = 0.0f;
+                for (std::int64_t d = 0; d < kDim; ++d) {
+                    acc += expected_hidden[static_cast<std::size_t>(row * kDim + d)] *
+                        denoise_weight[static_cast<std::size_t>(vocab * kDim + d)];
+                }
+                expected_logits[static_cast<std::size_t>(row * kVocab + vocab)] = acc;
+            }
+        }
+        float expected_loss = 0.0f;
+        std::vector<float> expected_grad_logits(static_cast<std::size_t>(kLogitElements), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            float maxv = expected_logits[static_cast<std::size_t>(row * kVocab)];
+            for (std::int64_t vocab = 1; vocab < kVocab; ++vocab) {
+                maxv = std::max(maxv, expected_logits[static_cast<std::size_t>(row * kVocab + vocab)]);
+            }
+            float denom = 0.0f;
+            for (std::int64_t vocab = 0; vocab < kVocab; ++vocab) {
+                denom += std::exp(expected_logits[static_cast<std::size_t>(row * kVocab + vocab)] - maxv);
+            }
+            const std::int64_t target = tokens[static_cast<std::size_t>(row)];
+            expected_loss += std::log(denom) + maxv - expected_logits[static_cast<std::size_t>(row * kVocab + target)];
+            for (std::int64_t vocab = 0; vocab < kVocab; ++vocab) {
+                float grad = std::exp(expected_logits[static_cast<std::size_t>(row * kVocab + vocab)] - maxv) / denom;
+                if (vocab == target) {
+                    grad -= 1.0f;
+                }
+                expected_grad_logits[static_cast<std::size_t>(row * kVocab + vocab)] = grad / static_cast<float>(kRows);
+            }
+        }
+        std::vector<float> expected_grad_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+        std::vector<float> expected_grad_denoise_weight(denoise_weight.size(), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            for (std::int64_t vocab = 0; vocab < kVocab; ++vocab) {
+                const float grad = expected_grad_logits[static_cast<std::size_t>(row * kVocab + vocab)];
+                for (std::int64_t d = 0; d < kDim; ++d) {
+                    expected_grad_denoise_weight[static_cast<std::size_t>(vocab * kDim + d)] +=
+                        expected_hidden[static_cast<std::size_t>(row * kDim + d)] * grad;
+                    expected_grad_hidden[static_cast<std::size_t>(row * kDim + d)] +=
+                        grad * denoise_weight[static_cast<std::size_t>(vocab * kDim + d)];
+                }
+            }
+        }
+        std::vector<float> expected_grad_embedding_weight(embedding_weight.size(), 0.0f);
+        for (std::int64_t row = 0; row < kRows; ++row) {
+            const std::int64_t token = expected_masked[static_cast<std::size_t>(row)];
+            for (std::int64_t d = 0; d < kDim; ++d) {
+                expected_grad_embedding_weight[static_cast<std::size_t>(token * kDim + d)] +=
+                    expected_grad_hidden[static_cast<std::size_t>(row * kDim + d)];
+            }
+        }
+
+        float* d_timesteps = nullptr;
+        float* d_embedding_weight = nullptr;
+        float* d_denoise_weight = nullptr;
+        float* d_hidden = nullptr;
+        float* d_logits = nullptr;
+        float* d_loss = nullptr;
+        float* d_grad_logits = nullptr;
+        float* d_grad_hidden = nullptr;
+        float* d_grad_embedding_weight = nullptr;
+        float* d_grad_denoise_weight = nullptr;
+        float* d_embedding_exp_avg = nullptr;
+        float* d_embedding_exp_avg_sq = nullptr;
+        float* d_denoise_exp_avg = nullptr;
+        float* d_denoise_exp_avg_sq = nullptr;
+        std::int64_t* d_tokens = nullptr;
+        std::int64_t* d_masked_tokens = nullptr;
+        auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_i64(&d_tokens, tokens.size(), "tokens") &&
+            alloc_i64(&d_masked_tokens, tokens.size(), "masked_tokens") &&
+            alloc(&d_timesteps, kBatch, "timesteps") &&
+            alloc(&d_embedding_weight, embedding_weight.size(), "embedding_weight") &&
+            alloc(&d_denoise_weight, denoise_weight.size(), "denoise_weight") &&
+            alloc(&d_hidden, kHiddenElements, "hidden") &&
+            alloc(&d_logits, kLogitElements, "logits") &&
+            alloc(&d_loss, 1, "loss") &&
+            alloc(&d_grad_logits, kLogitElements, "grad_logits") &&
+            alloc(&d_grad_hidden, kHiddenElements, "grad_hidden") &&
+            alloc(&d_grad_embedding_weight, embedding_weight.size(), "grad_embedding_weight") &&
+            alloc(&d_grad_denoise_weight, denoise_weight.size(), "grad_denoise_weight") &&
+            alloc(&d_embedding_exp_avg, embedding_weight.size(), "embedding_exp_avg") &&
+            alloc(&d_embedding_exp_avg_sq, embedding_weight.size(), "embedding_exp_avg_sq") &&
+            alloc(&d_denoise_exp_avg, denoise_weight.size(), "denoise_exp_avg") &&
+            alloc(&d_denoise_exp_avg_sq, denoise_weight.size(), "denoise_exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_i64(d_tokens, tokens, "tokens") &&
+                copy_float(d_embedding_weight, embedding_weight, "embedding_weight") &&
+                copy_float(d_denoise_weight, denoise_weight, "denoise_weight");
+            int status = 0;
+            auto zero = [&](float* ptr, std::int64_t n, const std::string& name) {
+                if (status == 0) {
+                    status = fill(ptr, n, 0.0f, nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "zero " + name);
+                    }
+                }
+            };
+            zero(d_grad_embedding_weight, kEmbeddingWeightElements, "grad_embedding_weight");
+            zero(d_grad_denoise_weight, kDenoiseWeightElements, "grad_denoise_weight");
+            zero(d_embedding_exp_avg, kEmbeddingWeightElements, "embedding_exp_avg");
+            zero(d_embedding_exp_avg_sq, kEmbeddingWeightElements, "embedding_exp_avg_sq");
+            zero(d_denoise_exp_avg, kDenoiseWeightElements, "denoise_exp_avg");
+            zero(d_denoise_exp_avg_sq, kDenoiseWeightElements, "denoise_exp_avg_sq");
+            if (error.empty()) {
+                status = random_timesteps(d_timesteps, kBatch, 0, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_random_timesteps_float32");
+                }
+            }
+            if (error.empty()) {
+                status = mask_scheduler(d_tokens, d_timesteps, d_masked_tokens, kTokenElements, kSeqLen, kMaskToken, 0, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_mask_scheduler_int64");
+                }
+            }
+            if (error.empty()) {
+                status = token_embedding(d_embedding_weight, d_masked_tokens, d_hidden, kRows, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_embedding_float32 diffusion");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_hidden, d_denoise_weight, nullptr, d_logits, kRows, kDim, kVocab, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 diffusion denoise logits");
+                }
+            }
+            if (error.empty()) {
+                status = ce_partials(d_logits, d_tokens, d_loss, kRows, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32 diffusion");
+                }
+            }
+            if (error.empty()) {
+                status = ce_backward(d_logits, d_tokens, d_grad_logits, kRows, kVocab, 1.0f / static_cast<float>(kRows), nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_backward_float32 diffusion");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_logits, d_denoise_weight, d_grad_hidden, kRows, kDim, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 diffusion");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(d_hidden, d_grad_logits, d_grad_denoise_weight, kRows, kDim, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 diffusion");
+                }
+            }
+            if (error.empty()) {
+                status = token_embedding_backward_weight(
+                    d_masked_tokens, d_grad_hidden, d_grad_embedding_weight, kRows, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_embedding_backward_weight_float32 diffusion");
+                }
+            }
+            auto update_weight = [&](float* weight, const float* grad, float* exp_avg, float* exp_avg_sq,
+                                     std::int64_t n, const std::string& name) {
+                if (error.empty()) {
+                    const int adam_status = adamw(
+                        weight,
+                        grad,
+                        exp_avg,
+                        exp_avg_sq,
+                        n,
+                        0.01f,
+                        0.9f,
+                        0.95f,
+                        1e-8f,
+                        0.02f,
+                        0.1f,
+                        std::sqrt(0.05f),
+                        nullptr);
+                    if (adam_status != 0) {
+                        error = cuda_error(adam_status, "nfn_native_tile_adamw_step_float32 " + name);
+                    }
+                }
+            };
+            update_weight(
+                d_denoise_weight, d_grad_denoise_weight, d_denoise_exp_avg, d_denoise_exp_avg_sq,
+                kDenoiseWeightElements, "diffusion denoise");
+            update_weight(
+                d_embedding_weight, d_grad_embedding_weight, d_embedding_exp_avg, d_embedding_exp_avg_sq,
+                kEmbeddingWeightElements, "diffusion embedding");
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_timesteps(static_cast<std::size_t>(kBatch), 0.0f);
+            std::vector<std::int64_t> actual_masked(tokens.size(), 0);
+            std::vector<float> actual_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> actual_logits(static_cast<std::size_t>(kLogitElements), 0.0f);
+            std::vector<float> actual_loss(1, 0.0f);
+            std::vector<float> actual_grad_logits(static_cast<std::size_t>(kLogitElements), 0.0f);
+            std::vector<float> actual_grad_hidden(static_cast<std::size_t>(kHiddenElements), 0.0f);
+            std::vector<float> actual_grad_embedding_weight(embedding_weight.size(), 0.0f);
+            std::vector<float> actual_grad_denoise_weight(denoise_weight.size(), 0.0f);
+            std::vector<float> actual_embedding_weight(embedding_weight.size(), 0.0f);
+            std::vector<float> actual_denoise_weight(denoise_weight.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_back_i64 = [&](std::vector<std::int64_t>& dst, const std::int64_t* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_timesteps, d_timesteps, "timesteps") &&
+                    copy_back_i64(actual_masked, d_masked_tokens, "masked_tokens") &&
+                    copy_back_float(actual_hidden, d_hidden, "hidden") &&
+                    copy_back_float(actual_logits, d_logits, "logits") &&
+                    copy_back_float(actual_loss, d_loss, "loss") &&
+                    copy_back_float(actual_grad_logits, d_grad_logits, "grad_logits") &&
+                    copy_back_float(actual_grad_hidden, d_grad_hidden, "grad_hidden") &&
+                    copy_back_float(actual_grad_embedding_weight, d_grad_embedding_weight, "grad_embedding_weight") &&
+                    copy_back_float(actual_grad_denoise_weight, d_grad_denoise_weight, "grad_denoise_weight") &&
+                    copy_back_float(actual_embedding_weight, d_embedding_weight, "embedding_weight") &&
+                    copy_back_float(actual_denoise_weight, d_denoise_weight, "denoise_weight");
+            }
+            if (error.empty()) {
+                const std::vector<float> expected_embedding_weight =
+                    adamw_expected(embedding_weight, expected_grad_embedding_weight);
+                const std::vector<float> expected_denoise_weight =
+                    adamw_expected(denoise_weight, expected_grad_denoise_weight);
+                timestep_max_error = max_abs_error(actual_timesteps, expected_timesteps);
+                mask_mismatch_count = max_i64_mismatch(actual_masked, expected_masked);
+                embedding_max_error = max_abs_error(actual_hidden, expected_hidden);
+                logits_max_error = max_abs_error(actual_logits, expected_logits);
+                ce_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
+                grad_logits_max_error = max_abs_error(actual_grad_logits, expected_grad_logits);
+                grad_hidden_max_error = max_abs_error(actual_grad_hidden, expected_grad_hidden);
+                grad_denoise_weight_max_error =
+                    max_abs_error(actual_grad_denoise_weight, expected_grad_denoise_weight);
+                grad_embedding_weight_max_error =
+                    max_abs_error(actual_grad_embedding_weight, expected_grad_embedding_weight);
+                denoise_weight_update_max_error =
+                    max_abs_error(actual_denoise_weight, expected_denoise_weight);
+                embedding_weight_update_max_error =
+                    max_abs_error(actual_embedding_weight, expected_embedding_weight);
+            }
+            constexpr float kTolerance = 5e-5f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                timestep_max_error <= kTolerance &&
+                mask_mismatch_count == 0 &&
+                embedding_max_error <= kTolerance &&
+                logits_max_error <= kTolerance &&
+                ce_loss_max_error <= kTolerance &&
+                grad_logits_max_error <= kTolerance &&
+                grad_hidden_max_error <= kTolerance &&
+                grad_denoise_weight_max_error <= kTolerance &&
+                grad_embedding_weight_max_error <= kTolerance &&
+                denoise_weight_update_max_error <= kAdamTolerance &&
+                embedding_weight_update_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "Diffusion objective train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"diffusion_timestep_mask_ce_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch
+        << ", \"seq_len\": " << kSeqLen
+        << ", \"rows\": " << kRows
+        << ", \"model_dim\": " << kDim
+        << ", \"vocab\": " << kVocab << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_random_timesteps_float32\",\n"
+        << "    \"nfn_native_tile_mask_scheduler_int64\",\n"
+        << "    \"nfn_native_tile_token_embedding_float32\",\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
+        << "    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_token_embedding_backward_weight_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"timesteps\":" << timestep_max_error
+        << ", \"mask_mismatches\":" << mask_mismatch_count
+        << ", \"embedding\":" << embedding_max_error
+        << ", \"logits\":" << logits_max_error
+        << ", \"ce_loss\":" << ce_loss_max_error
+        << ", \"grad_logits\":" << grad_logits_max_error
+        << ", \"grad_hidden\":" << grad_hidden_max_error
+        << ", \"grad_denoise_weight\":" << grad_denoise_weight_max_error
+        << ", \"grad_embedding_weight\":" << grad_embedding_weight_max_error
+        << ", \"denoise_weight_update\":" << denoise_weight_update_max_error
+        << ", \"embedding_weight_update\":" << embedding_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_ttt_linear_inner_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool ttt_family = family.find("ttt") != std::string::npos || family == "unknown";
@@ -8343,6 +8955,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_diffusion_denoise_step) {
             return print_diffusion_denoise_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_diffusion_objective_step) {
+            return print_diffusion_objective_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_seq2seq_cross_attention_step) {
             return print_seq2seq_cross_attention_smoke_json(cfg, argv[0]);

@@ -5304,12 +5304,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
-        "timestep-scheduler-native-loop",
-        "diffusion-full-objective-composition",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
+        "diffusion-timestep-mask-ce-adamw-smoke",
     ]
     assert missing_requirements["gpt2"] == []
 
@@ -11544,18 +11543,23 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_payload["status"] == "family-native-trainer-missing"
     assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
     assert diffusion_payload["native_training_missing_requirements"] == [
-        "timestep-scheduler-native-loop",
-        "diffusion-full-objective-composition",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
+        "diffusion-timestep-mask-ce-adamw-smoke",
     ]
     assert diffusion_payload["compiled_native_boundary"] is True
     assert diffusion_payload["torch_required"] is False
     assert diffusion_payload["graph_editor_tensor_flow"] is False
     for symbol in (
         "nfn_native_tile_linear_float32",
+        "nfn_native_tile_random_timesteps_float32",
+        "nfn_native_tile_mask_scheduler_int64",
+        "nfn_native_tile_token_embedding_float32",
+        "nfn_native_tile_token_embedding_backward_weight_float32",
+        "nfn_native_tile_token_cross_entropy_partials_float32",
+        "nfn_native_tile_token_cross_entropy_backward_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_latent_mse_loss_float32",
@@ -12077,6 +12081,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-diffusion-denoise-step" in unified_diffusion_smoke_command.stdout
     assert "--tile-ops-lib" in unified_diffusion_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_diffusion_smoke_command.stdout
+
+    unified_diffusion_objective_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "diffusion",
+            "--native-cuda-smoke-diffusion-objective-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_diffusion_objective_smoke_command.returncode == 0, unified_diffusion_objective_smoke_command.stderr
+    assert str(diffusion) in unified_diffusion_objective_smoke_command.stdout
+    assert "--smoke-diffusion-objective-step" in unified_diffusion_objective_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_diffusion_objective_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_diffusion_objective_smoke_command.stdout
 
     unified_seq2seq_smoke_command = subprocess.run(
         [

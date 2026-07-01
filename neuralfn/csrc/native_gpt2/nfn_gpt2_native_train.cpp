@@ -937,8 +937,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-diffusion-objective") {
         return {
-            "timestep-scheduler-native-loop",
-            "diffusion-full-objective-composition",
             "family-parameter-layout-checkpoint-inference",
         };
     }
@@ -1020,7 +1018,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         };
     }
     if (coverage_class == "missing-diffusion-objective") {
-        return {"diffusion-denoise-linear-mse-adamw-smoke"};
+        return {"diffusion-denoise-linear-mse-adamw-smoke", "diffusion-timestep-mask-ce-adamw-smoke"};
     }
     if (coverage_class == "missing-seq2seq-objective") {
         return {"seq2seq-cross-attention-ce-adamw-smoke"};

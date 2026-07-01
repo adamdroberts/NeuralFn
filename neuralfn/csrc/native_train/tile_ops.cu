@@ -103,6 +103,9 @@ void launch_lm_head_prob_only_combined_target_correction_bf16_bits(
 void launch_unary_float32(const float*, float*, std::int64_t, int, cudaStream_t);
 void launch_binary_float32(const float*, const float*, float*, std::int64_t, int, cudaStream_t);
 void launch_tanh_backward_float32(const float*, const float*, float*, std::int64_t, cudaStream_t);
+void launch_random_timesteps_float32(float*, std::int64_t, std::int64_t, cudaStream_t);
+void launch_mask_scheduler_int64(
+    const std::int64_t*, const float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, cudaStream_t);
 std::int64_t attention_forward_row_fallback_count();
 std::int64_t attention_forward_scalar_launch_count();
 int attention_forward_row_last_error();
@@ -5879,6 +5882,35 @@ int nfn_native_tile_token_embedding_backward_weight_u16_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_embedding_backward_weight_u16_float32(
         token_ids, grad_out, grad_weight, tokens, model_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_random_timesteps_float32(
+    float* out,
+    std::int64_t batch,
+    std::int64_t counter,
+    void* cuda_stream) {
+    if (batch <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_random_timesteps_float32(out, batch, counter, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_mask_scheduler_int64(
+    const std::int64_t* tokens,
+    const float* timesteps,
+    std::int64_t* out,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t mask_token_id,
+    std::int64_t counter,
+    void* cuda_stream) {
+    if (n <= 0 || seq_len <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_mask_scheduler_int64(
+        tokens, timesteps, out, n, seq_len, mask_token_id, counter, as_stream(cuda_stream));
     return launch_status();
 }
 

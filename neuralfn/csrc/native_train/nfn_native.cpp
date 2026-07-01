@@ -230,6 +230,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-target-encoder-step",
         "--smoke-diffusion-denoise-step",
+        "--smoke-diffusion-objective-step",
         "--smoke-fused-qkv-attention-step",
         "--smoke-llama-attention-block-step",
         "--smoke-llama-packed-attention-step",
@@ -505,6 +506,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-jepa-projector-step" ||
                                arg == "--native-cuda-smoke-jepa-target-encoder-step" ||
                                arg == "--native-cuda-smoke-diffusion-denoise-step" ||
+                               arg == "--native-cuda-smoke-diffusion-objective-step" ||
                                arg == "--native-cuda-smoke-moe-route-expert-step" ||
                                arg == "--native-cuda-smoke-moe-transformer-block-step" ||
                                arg == "--native-cuda-smoke-semantic-alignment-step" ||
@@ -563,6 +565,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-jepa-target-encoder-step");
             } else if (arg == "--native-cuda-smoke-diffusion-denoise-step") {
                 forwarded.push_back("--smoke-diffusion-denoise-step");
+            } else if (arg == "--native-cuda-smoke-diffusion-objective-step") {
+                forwarded.push_back("--smoke-diffusion-objective-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
                 forwarded.push_back("--smoke-moe-route-expert-step");
             } else if (arg == "--native-cuda-smoke-moe-transformer-block-step") {
