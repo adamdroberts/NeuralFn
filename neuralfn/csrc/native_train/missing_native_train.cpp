@@ -71,6 +71,7 @@ struct Config {
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_ttt_linear_inner_step = false;
     bool smoke_universal_recurrent_step = false;
+    bool smoke_hnet_byte_patch_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -260,6 +261,7 @@ void print_usage(const char* program) {
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-universal-recurrent-step Launch universal recurrent linear loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -304,6 +306,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_ttt_linear_inner_step = true;
         } else if (arg == "--smoke-universal-recurrent-step" || arg == "--native-cuda-smoke-universal-recurrent-step") {
             cfg.smoke_universal_recurrent_step = true;
+        } else if (arg == "--smoke-hnet-byte-patch-step" || arg == "--native-cuda-smoke-hnet-byte-patch-step") {
+            cfg.smoke_hnet_byte_patch_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -3541,6 +3545,513 @@ int print_universal_recurrent_smoke_json(const Config& cfg, const char* program)
     return passed ? 0 : 2;
 }
 
+int print_hnet_byte_patch_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool hnet_family = family.find("hnet") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using BytePatchEmbedFn = int (*)(
+        const std::int64_t*, const float*, const float*, float*, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using BytePatchMergeFn = int (*)(
+        const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    BytePatchEmbedFn byte_patch_embed = nullptr;
+    BytePatchMergeFn byte_patch_merge = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 1;
+    constexpr std::int64_t kSeqLen = 4;
+    constexpr std::int64_t kDim = 2;
+    constexpr std::int64_t kPatchSize = 2;
+    constexpr std::int64_t kStride = 2;
+    constexpr std::int64_t kOutLen = 2;
+    constexpr std::int64_t kVocab = 5;
+    constexpr std::int64_t kPatchElements = kBatch * kOutLen * kDim;
+    constexpr std::int64_t kMergedElements = kBatch * kSeqLen * kDim;
+    constexpr std::int64_t kHeadWeightElements = kDim * kDim;
+    constexpr std::int64_t kProjectionElements = kDim * kDim * kPatchSize;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+
+    bool passed = false;
+    float byte_patch_embed_max_error = 0.0f;
+    float byte_patch_merge_max_error = 0.0f;
+    float head_forward_max_error = 0.0f;
+    float hnet_loss_max_error = 0.0f;
+    float head_grad_hidden_max_error = 0.0f;
+    float head_grad_weight_max_error = 0.0f;
+    float head_weight_update_max_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!hnet_family) {
+        error = "HNet smoke commands are only valid for hnet-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            byte_patch_embed = load_symbol<BytePatchEmbedFn>(tile_handle, "nfn_native_tile_byte_patch_embed_float32");
+            byte_patch_merge = load_symbol<BytePatchMergeFn>(tile_handle, "nfn_native_tile_byte_patch_merge_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (byte_patch_embed == nullptr || byte_patch_merge == nullptr || linear == nullptr ||
+                linear_backward_input == nullptr || linear_backward_weight_accumulate == nullptr ||
+                latent_mse_loss == nullptr || fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more HNet byte patch train-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<std::int64_t> tokens = {0, 1, 2, 3};
+        const std::vector<float> embedding = {
+            0.10f, -0.05f,
+            0.20f, 0.03f,
+            -0.08f, 0.12f,
+            0.04f, -0.15f,
+            0.06f, 0.09f,
+        };
+        std::vector<float> projection(static_cast<std::size_t>(kProjectionElements));
+        std::vector<float> head_weight(static_cast<std::size_t>(kHeadWeightElements));
+        for (std::size_t i = 0; i < projection.size(); ++i) {
+            projection[i] = 0.025f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        for (std::size_t i = 0; i < head_weight.size(); ++i) {
+            head_weight[i] = -0.03f * static_cast<float>(static_cast<int>(i % 5) - 2);
+        }
+        const std::vector<float> target = {
+            0.02f, -0.01f,
+            0.03f, 0.01f,
+            -0.02f, 0.04f,
+            0.01f, -0.03f,
+        };
+
+        std::vector<float> expected_patch(static_cast<std::size_t>(kPatchElements), 0.0f);
+        for (std::int64_t patch = 0; patch < kOutLen; ++patch) {
+            for (std::int64_t out_c = 0; out_c < kDim; ++out_c) {
+                float acc = 0.0f;
+                for (std::int64_t k = 0; k < kPatchSize; ++k) {
+                    const std::int64_t token_pos = patch * kStride + k;
+                    if (token_pos >= kSeqLen) {
+                        continue;
+                    }
+                    std::int64_t token_id = tokens[static_cast<std::size_t>(token_pos)];
+                    token_id = std::max<std::int64_t>(0, std::min<std::int64_t>(token_id, kVocab - 1));
+                    for (std::int64_t in_c = 0; in_c < kDim; ++in_c) {
+                        acc += embedding[static_cast<std::size_t>(token_id * kDim + in_c)] *
+                            projection[static_cast<std::size_t>((out_c * kDim + in_c) * kPatchSize + k)];
+                    }
+                }
+                expected_patch[static_cast<std::size_t>(patch * kDim + out_c)] = acc;
+            }
+        }
+        std::vector<float> expected_merged(static_cast<std::size_t>(kMergedElements), 0.0f);
+        for (std::int64_t t = 0; t < kSeqLen; ++t) {
+            const std::int64_t src_t = (t * kOutLen) / kSeqLen;
+            for (std::int64_t d = 0; d < kDim; ++d) {
+                expected_merged[static_cast<std::size_t>(t * kDim + d)] =
+                    expected_patch[static_cast<std::size_t>(src_t * kDim + d)];
+            }
+        }
+        std::vector<float> expected_pred(static_cast<std::size_t>(kMergedElements), 0.0f);
+        for (std::int64_t row = 0; row < kSeqLen; ++row) {
+            for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                for (std::int64_t in_d = 0; in_d < kDim; ++in_d) {
+                    expected_pred[static_cast<std::size_t>(row * kDim + out_d)] +=
+                        expected_merged[static_cast<std::size_t>(row * kDim + in_d)] *
+                        head_weight[static_cast<std::size_t>(out_d * kDim + in_d)];
+                }
+            }
+        }
+        std::vector<float> grad_pred(static_cast<std::size_t>(kMergedElements), 0.0f);
+        float expected_loss = 0.0f;
+        for (std::size_t i = 0; i < expected_pred.size(); ++i) {
+            const float diff = expected_pred[i] - target[i];
+            expected_loss += diff * diff;
+            grad_pred[i] = 2.0f * diff;
+        }
+        std::vector<float> expected_grad_merged(static_cast<std::size_t>(kMergedElements), 0.0f);
+        std::vector<float> expected_grad_head_weight(head_weight.size(), 0.0f);
+        for (std::int64_t row = 0; row < kSeqLen; ++row) {
+            for (std::int64_t out_d = 0; out_d < kDim; ++out_d) {
+                const float grad = grad_pred[static_cast<std::size_t>(row * kDim + out_d)];
+                for (std::int64_t in_d = 0; in_d < kDim; ++in_d) {
+                    expected_grad_head_weight[static_cast<std::size_t>(out_d * kDim + in_d)] +=
+                        expected_merged[static_cast<std::size_t>(row * kDim + in_d)] * grad;
+                    expected_grad_merged[static_cast<std::size_t>(row * kDim + in_d)] +=
+                        grad * head_weight[static_cast<std::size_t>(out_d * kDim + in_d)];
+                }
+            }
+        }
+
+        std::int64_t* d_tokens = nullptr;
+        float* d_embedding = nullptr;
+        float* d_projection = nullptr;
+        float* d_patch = nullptr;
+        float* d_merged = nullptr;
+        float* d_head_weight = nullptr;
+        float* d_pred = nullptr;
+        float* d_target = nullptr;
+        float* d_loss = nullptr;
+        float* d_grad_pred = nullptr;
+        float* d_grad_merged = nullptr;
+        float* d_grad_head_weight = nullptr;
+        float* d_exp_avg = nullptr;
+        float* d_exp_avg_sq = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_i64(&d_tokens, tokens.size(), "tokens") &&
+            alloc_float(&d_embedding, embedding.size(), "embedding") &&
+            alloc_float(&d_projection, projection.size(), "projection") &&
+            alloc_float(&d_patch, kPatchElements, "patch") &&
+            alloc_float(&d_merged, kMergedElements, "merged") &&
+            alloc_float(&d_head_weight, head_weight.size(), "head_weight") &&
+            alloc_float(&d_pred, kMergedElements, "pred") &&
+            alloc_float(&d_target, target.size(), "target") &&
+            alloc_float(&d_loss, 1, "loss") &&
+            alloc_float(&d_grad_pred, grad_pred.size(), "grad_pred") &&
+            alloc_float(&d_grad_merged, kMergedElements, "grad_merged") &&
+            alloc_float(&d_grad_head_weight, head_weight.size(), "grad_head_weight") &&
+            alloc_float(&d_exp_avg, head_weight.size(), "exp_avg") &&
+            alloc_float(&d_exp_avg_sq, head_weight.size(), "exp_avg_sq")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_i64(d_tokens, tokens, "tokens") &&
+                copy_float(d_embedding, embedding, "embedding") &&
+                copy_float(d_projection, projection, "projection") &&
+                copy_float(d_head_weight, head_weight, "head_weight") &&
+                copy_float(d_target, target, "target") &&
+                copy_float(d_grad_pred, grad_pred, "grad_pred");
+            int status = 0;
+            if (error.empty()) {
+                status = fill(d_grad_head_weight, kHeadWeightElements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(d_exp_avg, kHeadWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0) {
+                    status = fill(d_exp_avg_sq, kHeadWeightElements, 0.0f, nullptr);
+                }
+                if (status != 0) {
+                    error = cuda_error(status, "zero HNet gradients/moments");
+                }
+            }
+            if (error.empty()) {
+                status = byte_patch_embed(
+                    d_tokens,
+                    d_embedding,
+                    d_projection,
+                    d_patch,
+                    kBatch,
+                    kSeqLen,
+                    kDim,
+                    kPatchSize,
+                    kStride,
+                    kOutLen,
+                    kVocab,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_byte_patch_embed_float32");
+                }
+            }
+            if (error.empty()) {
+                status = byte_patch_merge(d_patch, d_merged, kBatch, kOutLen, kSeqLen, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_byte_patch_merge_float32");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_merged, d_head_weight, nullptr, d_pred, kSeqLen, kDim, kDim, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 HNet head");
+                }
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_pred, d_target, d_loss, kMergedElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32 HNet");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_pred, d_head_weight, d_grad_merged, kSeqLen, kDim, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 HNet head");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_merged, d_grad_pred, d_grad_head_weight, kSeqLen, kDim, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 HNet head");
+                }
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_head_weight,
+                    d_grad_head_weight,
+                    d_exp_avg,
+                    d_exp_avg_sq,
+                    kHeadWeightElements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 HNet head");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+
+            std::vector<float> actual_patch(static_cast<std::size_t>(kPatchElements), 0.0f);
+            std::vector<float> actual_merged(static_cast<std::size_t>(kMergedElements), 0.0f);
+            std::vector<float> actual_pred(static_cast<std::size_t>(kMergedElements), 0.0f);
+            std::vector<float> actual_loss(1, 0.0f);
+            std::vector<float> actual_grad_merged(static_cast<std::size_t>(kMergedElements), 0.0f);
+            std::vector<float> actual_grad_head_weight(head_weight.size(), 0.0f);
+            std::vector<float> actual_head_weight(head_weight.size(), 0.0f);
+            auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+                int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (copy_status != 0) {
+                    error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                    return false;
+                }
+                return true;
+            };
+            if (error.empty()) {
+                copy_back_float(actual_patch, d_patch, "patch") &&
+                    copy_back_float(actual_merged, d_merged, "merged") &&
+                    copy_back_float(actual_pred, d_pred, "pred") &&
+                    copy_back_float(actual_loss, d_loss, "loss") &&
+                    copy_back_float(actual_grad_merged, d_grad_merged, "grad_merged") &&
+                    copy_back_float(actual_grad_head_weight, d_grad_head_weight, "grad_head_weight") &&
+                    copy_back_float(actual_head_weight, d_head_weight, "head_weight");
+            }
+
+            std::vector<float> expected_head_weight = head_weight;
+            for (std::size_t i = 0; i < expected_head_weight.size(); ++i) {
+                const float grad = expected_grad_head_weight[i];
+                const float next_m = 0.1f * grad;
+                const float next_v = 0.05f * grad * grad;
+                const float denom = std::sqrt(next_v) / std::sqrt(0.05f) + 1e-8f;
+                const float decayed = expected_head_weight[i] * (1.0f - 0.01f * 0.02f);
+                expected_head_weight[i] = decayed - 0.01f * (next_m / 0.1f) / denom;
+            }
+            if (error.empty()) {
+                byte_patch_embed_max_error = max_abs_error(actual_patch, expected_patch);
+                byte_patch_merge_max_error = max_abs_error(actual_merged, expected_merged);
+                head_forward_max_error = max_abs_error(actual_pred, expected_pred);
+                hnet_loss_max_error = std::fabs(actual_loss[0] - expected_loss);
+                head_grad_hidden_max_error = max_abs_error(actual_grad_merged, expected_grad_merged);
+                head_grad_weight_max_error = max_abs_error(actual_grad_head_weight, expected_grad_head_weight);
+                head_weight_update_max_error = max_abs_error(actual_head_weight, expected_head_weight);
+            }
+            constexpr float kTolerance = 5e-5f;
+            constexpr float kAdamTolerance = 2e-5f;
+            passed = error.empty() &&
+                byte_patch_embed_max_error <= kTolerance &&
+                byte_patch_merge_max_error <= kTolerance &&
+                head_forward_max_error <= kTolerance &&
+                hnet_loss_max_error <= kTolerance &&
+                head_grad_hidden_max_error <= kTolerance &&
+                head_grad_weight_max_error <= kTolerance &&
+                head_weight_update_max_error <= kAdamTolerance;
+            if (!passed && error.empty()) {
+                error = "HNet byte patch train-step smoke exceeded tolerance";
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"hnet_byte_patch_train_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"seq_len\": " << kSeqLen
+        << ", \"patch_len\": " << kOutLen << ", \"dim\": " << kDim
+        << ", \"patch_size\": " << kPatchSize << ", \"stride\": " << kStride << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_byte_patch_embed_float32\",\n"
+        << "    \"nfn_native_tile_byte_patch_merge_float32\",\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
+        << "    \"nfn_native_tile_linear_backward_weight_accumulate_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"byte_patch_embed\":" << byte_patch_embed_max_error
+        << ", \"byte_patch_merge\":" << byte_patch_merge_max_error
+        << ", \"head_forward\":" << head_forward_max_error
+        << ", \"hnet_loss\":" << hnet_loss_max_error
+        << ", \"head_grad_hidden\":" << head_grad_hidden_max_error
+        << ", \"head_grad_weight\":" << head_grad_weight_max_error
+        << ", \"head_weight_update\":" << head_weight_update_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_seq2seq_cross_attention_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool seq2seq_family = family.find("seq2seq") != std::string::npos || family == "unknown";
@@ -4511,6 +5022,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_universal_recurrent_step) {
             return print_universal_recurrent_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_hnet_byte_patch_step) {
+            return print_hnet_byte_patch_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added raw CUDA Tile native-train ABI wrappers for byte patch embed/merge and
+  a HNet byte-patch native train-step smoke for HNet-family compiled preflights.
+  `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-step --tile-ops-lib PATH`
+  and the unified `nfn-native-train --base-model hnet-lm
+  --native-cuda-smoke-hnet-byte-patch-step` alias now execute byte patch
+  embed/merge, reconstruction head, latent MSE, linear head backward, and AdamW
+  through raw CUDA Tile ABI calls with CPU-reference checks. HNet
+  catalog/preflight JSON now reports
+  `hnet-byte-patch-embed-merge-head-adamw-smoke` in
+  `native_training_completed_requirements`, while byte-token shard resolution,
+  byte-patch backward, checkpointing, and inference wiring remain visible in the
+  missing list. Real HNet-family training remains `family-native-loop-missing`
+  until the full byte-LM loop is implemented. Verification: rebuilt the native
+  Tile ops library, missing-family native trainers, and unified native CLIs;
+  live CUDA HNet smoke passed with max errors at or below `5.79283e-07`;
+  unified command forwarding emitted `nfn_hnet_lm_native_train
+  --smoke-hnet-byte-patch-step`; focused native GPT tests passed; the no-Torch
+  dependency verifier passed all 30 native artifacts with no stale outputs, 69
+  Python entrypoints, 24 shell entrypoints, and four native template catalogs.
+
 - Added a universal transformer recurrent native train-step CUDA smoke for
   universal-family compiled preflights. `nfn_universal_llama_native_train
   --smoke-universal-recurrent-step --tile-ops-lib PATH` and the unified

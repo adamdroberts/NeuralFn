@@ -562,6 +562,10 @@ and AdamW as a raw CUDA Tile train-step slice. Use
 `--native-cuda-smoke-universal-recurrent-step` alias on universal transformer
 families to run recurrent linear forward, latent MSE, linear input/weight
 backward, and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_hnet_lm_native_train --smoke-hnet-byte-patch-step --tile-ops-lib PATH` or
+the unified `--native-cuda-smoke-hnet-byte-patch-step` alias on HNet families
+to run byte patch embed/merge, reconstruction head, latent MSE, linear head
+backward, and AdamW as a raw CUDA Tile train-step slice. Use
 `nfn_diffusion_native_train --smoke-diffusion-denoise-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-diffusion-denoise-step` alias on diffusion
 families to run denoise linear forward, latent MSE, linear input/weight

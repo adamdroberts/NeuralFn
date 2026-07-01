@@ -468,6 +468,27 @@ void launch_merge_heads_float32(
     std::int64_t seq_len,
     std::int64_t head_dim,
     cudaStream_t stream);
+void launch_byte_patch_embed_float32(
+    const std::int64_t* tokens,
+    const float* embedding,
+    const float* proj,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size,
+    cudaStream_t stream);
+void launch_byte_patch_merge_float32(
+    const float* x,
+    float* out,
+    std::int64_t batch,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim,
+    cudaStream_t stream);
 void launch_broadcast_expert_routes_float32(
     const float* weights,
     const std::int64_t* indices,
@@ -3982,6 +4003,58 @@ int nfn_native_tile_merge_heads_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_merge_heads_float32(
         x, out, batch, heads, seq_len, head_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_byte_patch_embed_float32(
+    const std::int64_t* tokens,
+    const float* embedding,
+    const float* proj,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || model_dim <= 0 || patch_size <= 0 ||
+        stride <= 0 || out_len <= 0 || vocab_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_byte_patch_embed_float32(
+        tokens,
+        embedding,
+        proj,
+        out,
+        batch,
+        seq_len,
+        model_dim,
+        patch_size,
+        stride,
+        out_len,
+        vocab_size,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_byte_patch_merge_float32(
+    const float* x,
+    float* out,
+    std::int64_t batch,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim,
+    void* cuda_stream) {
+    if (batch <= 0 || source_len <= 0 || target_len < 0 || dim <= 0) {
+        return 1;
+    }
+    if (target_len == 0) {
+        return 0;
+    }
+    neuralfn::tile_cuda::launch_byte_patch_merge_float32(
+        x, out, batch, source_len, target_len, dim, as_stream(cuda_stream));
     return launch_status();
 }
 

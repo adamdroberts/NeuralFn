@@ -744,6 +744,29 @@ int nfn_native_tile_merge_heads_float32(
     std::int64_t head_dim,
     void* cuda_stream);
 
+int nfn_native_tile_byte_patch_embed_float32(
+    const std::int64_t* tokens,
+    const float* embedding,
+    const float* proj,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size,
+    void* cuda_stream);
+
+int nfn_native_tile_byte_patch_merge_float32(
+    const float* x,
+    float* out,
+    std::int64_t batch,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim,
+    void* cuda_stream);
+
 int nfn_native_tile_topk_route_float32(
     const float* logits,
     float* weights,

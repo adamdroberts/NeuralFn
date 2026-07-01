@@ -953,7 +953,11 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"mamba-state-space-forward-backward", "jamba-layer-schedule-native-loop"};
     }
     if (coverage_class == "missing-hnet-byte-lm") {
-        return {"byte-token-shard-resolver", "hnet-byte-patch-loop", "byte-patch-merge-forward-backward"};
+        return {
+            "byte-token-shard-resolver",
+            "byte-patch-backward-native-loop",
+            "family-parameter-layout-checkpoint-inference",
+        };
     }
     if (coverage_class == "missing-universal-transformer-lm") {
         return {"act-halting-loss-and-gradient", "family-parameter-layout-checkpoint-inference"};
@@ -1012,6 +1016,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     }
     if (coverage_class == "missing-universal-transformer-lm") {
         return {"universal-recurrent-linear-mse-adamw-smoke"};
+    }
+    if (coverage_class == "missing-hnet-byte-lm") {
+        return {"hnet-byte-patch-embed-merge-head-adamw-smoke"};
     }
     return {};
 }
