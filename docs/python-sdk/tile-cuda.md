@@ -548,6 +548,11 @@ load-balance density/loss, and AdamW as a raw CUDA Tile train-step slice. Use
 unified `--native-cuda-smoke-jepa-projector-step` alias on JEPA families to run
 projector/predictor linear stages, latent MSE partials, linear backward, and
 AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_seq2seq_native_train --smoke-seq2seq-cross-attention-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-seq2seq-cross-attention-step` alias
+on seq2seq families to run decoder-to-encoder SDPA, LM logits, CE
+forward/backward, linear backward, cross-attention backward, and AdamW as a raw
+CUDA Tile train-step slice. Use
 `nfn_diffusion_native_train --smoke-diffusion-denoise-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-diffusion-denoise-step` alias on diffusion
 families to run denoise linear forward, latent MSE, linear input/weight

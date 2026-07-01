@@ -95,9 +95,10 @@ build_one "jamba" "nfn_jamba_native_train" \
   "mamba-state-space-forward-backward,jamba-layer-schedule-native-loop"
 build_one "seq2seq" "nfn_seq2seq_native_train" \
   "encoder-decoder cross-attention and seq2seq loss CUDA Tile trainer" \
-  "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_scaled_dot_product_attention_float32,nfn_native_tile_scaled_dot_product_attention_backward_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-seq2seq-objective" \
-  "encoder-decoder-native-loop,cross-attention-forward-backward,seq2seq-loss-contract"
+  "encoder-decoder-native-loop,full-seq2seq-loss-composition,family-parameter-layout-checkpoint-inference" \
+  "seq2seq-cross-attention-ce-adamw-smoke"
 build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

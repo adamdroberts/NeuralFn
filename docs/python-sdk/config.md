@@ -111,7 +111,10 @@ smokes while keeping full semantic planner/router, reduction, objective
 composition, checkpoint, and inference blockers in the missing list. Diffusion
 entries list the completed denoise linear/MSE/backward/AdamW smoke while
 keeping timestep scheduling, full objective composition, checkpointing, and
-inference in the missing list. Treat this manifest as the
+inference in the missing list. Seq2seq entries list the completed
+cross-attention/CE/backward/AdamW smoke while keeping the full encoder-decoder
+loop, full loss composition, checkpointing, and inference in the missing list.
+Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.
 

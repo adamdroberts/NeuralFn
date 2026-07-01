@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a seq2seq cross-attention native train-step CUDA smoke for seq2seq
+  compiled preflights. `nfn_seq2seq_native_train
+  --smoke-seq2seq-cross-attention-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model seq2seq
+  --native-cuda-smoke-seq2seq-cross-attention-step` alias now execute
+  decoder-to-encoder SDPA, LM logits, token CE forward/backward, linear
+  backward, cross-attention backward, and AdamW through raw CUDA Tile ABI calls
+  with CPU-reference checks. Seq2seq catalog/preflight JSON now reports
+  `seq2seq-cross-attention-ce-adamw-smoke` in
+  `native_training_completed_requirements`, while the full encoder-decoder
+  loop, complete seq2seq loss composition, checkpointing, and inference wiring
+  remain visible in the missing list. Real seq2seq-family training remains
+  `family-native-loop-missing` until those full loops are implemented.
+  Verification: rebuilt missing-family native trainers and unified native CLIs;
+  live CUDA seq2seq smoke passed with max errors at or below `5.25638e-06`;
+  unified command forwarding emitted `nfn_seq2seq_native_train
+  --smoke-seq2seq-cross-attention-step`; focused native GPT tests passed; the
+  no-Torch dependency verifier passed all 30 native artifacts, 69 Python
+  entrypoints, 24 shell entrypoints, and four native template catalogs.
+
 - Added a diffusion denoise native train-step CUDA smoke for diffusion-family
   compiled preflights. `nfn_diffusion_native_train
   --smoke-diffusion-denoise-step --tile-ops-lib PATH` and the unified

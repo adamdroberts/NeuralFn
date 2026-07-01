@@ -5250,6 +5250,15 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert coverage["seq2seq"] == "missing-seq2seq-objective"
+    assert missing_requirements["seq2seq"] == [
+        "encoder-decoder-native-loop",
+        "full-seq2seq-loss-composition",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert completed_requirements["seq2seq"] == [
+        "seq2seq-cross-attention-ce-adamw-smoke",
+    ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
         "timestep-scheduler-native-loop",
@@ -10967,11 +10976,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_jepa.exists()
     semantic_router_moe = tmp_path / "nfn_semantic_router_moe_native_train"
     assert semantic_router_moe.exists()
+    seq2seq = tmp_path / "nfn_seq2seq_native_train"
+    assert seq2seq.exists()
     diffusion = tmp_path / "nfn_diffusion_native_train"
     assert diffusion.exists()
     jamba = tmp_path / "nfn_jamba_native_train"
     assert jamba.exists()
-    assert (tmp_path / "nfn_seq2seq_native_train").exists()
     assert (tmp_path / "nfn_ttt_llama_native_train").exists()
     assert (tmp_path / "nfn_hnet_lm_native_train").exists()
     assert (tmp_path / "nfn_universal_llama_native_train").exists()
@@ -11383,6 +11393,44 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ):
         assert symbol in diffusion_payload["required_tile_symbols"]
 
+    seq2seq_plan = subprocess.run(
+        [
+            str(seq2seq),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert seq2seq_plan.returncode == 0, seq2seq_plan.stderr
+    seq2seq_payload = json.loads(seq2seq_plan.stdout)
+    assert seq2seq_payload["model_family"] == "seq2seq"
+    assert seq2seq_payload["status"] == "family-native-trainer-missing"
+    assert seq2seq_payload["native_training_coverage_class"] == "missing-seq2seq-objective"
+    assert seq2seq_payload["native_training_missing_requirements"] == [
+        "encoder-decoder-native-loop",
+        "full-seq2seq-loss-composition",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert seq2seq_payload["native_training_completed_requirements"] == [
+        "seq2seq-cross-attention-ce-adamw-smoke",
+    ]
+    assert seq2seq_payload["compiled_native_boundary"] is True
+    assert seq2seq_payload["torch_required"] is False
+    assert seq2seq_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_scaled_dot_product_attention_float32",
+        "nfn_native_tile_scaled_dot_product_attention_backward_float32",
+        "nfn_native_tile_token_cross_entropy_partials_float32",
+        "nfn_native_tile_token_cross_entropy_backward_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_adamw_step_float32",
+    ):
+        assert symbol in seq2seq_payload["required_tile_symbols"]
+
     jamba_plan = subprocess.run(
         [
             str(jamba),
@@ -11625,6 +11673,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-diffusion-denoise-step" in unified_diffusion_smoke_command.stdout
     assert "--tile-ops-lib" in unified_diffusion_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_diffusion_smoke_command.stdout
+
+    unified_seq2seq_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "seq2seq",
+            "--native-cuda-smoke-seq2seq-cross-attention-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_seq2seq_smoke_command.returncode == 0, unified_seq2seq_smoke_command.stderr
+    assert str(seq2seq) in unified_seq2seq_smoke_command.stdout
+    assert "--smoke-seq2seq-cross-attention-step" in unified_seq2seq_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_seq2seq_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_seq2seq_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

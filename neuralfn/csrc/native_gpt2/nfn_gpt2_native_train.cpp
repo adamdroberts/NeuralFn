@@ -933,7 +933,11 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-seq2seq-objective") {
-        return {"encoder-decoder-native-loop", "cross-attention-forward-backward", "seq2seq-loss-contract"};
+        return {
+            "encoder-decoder-native-loop",
+            "full-seq2seq-loss-composition",
+            "family-parameter-layout-checkpoint-inference",
+        };
     }
     if (coverage_class == "missing-diffusion-objective") {
         return {
@@ -999,6 +1003,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
     }
     if (coverage_class == "missing-diffusion-objective") {
         return {"diffusion-denoise-linear-mse-adamw-smoke"};
+    }
+    if (coverage_class == "missing-seq2seq-objective") {
+        return {"seq2seq-cross-attention-ce-adamw-smoke"};
     }
     return {};
 }
