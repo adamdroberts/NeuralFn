@@ -5223,7 +5223,6 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["llama"] == "missing-llama-rope-swiglu-transformer-lm"
     assert missing_requirements["llama"] == [
         "llama-block-forward-backward-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["llama"] == [
         "rmsnorm-loop-composition-smoke",
@@ -5233,18 +5232,19 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "packed-qkv-attention-forward-backward-smoke",
         "packed-qkv-attention-block-forward-smoke",
         "packed-qkv-rope-attention-block-integration-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "missing-standard-moe-transformer-lm"
     assert missing_requirements["mixllama"] == [
         "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["mixllama"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["moe_jepa_evo"] == "missing-moe-jepa-objective"
     assert "standard-moe-full-forward-backward-loop" in missing_requirements["moe_jepa_evo"]
@@ -5254,6 +5254,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
+    assert "family-parameter-layout-checkpoint-inference-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["semantic_moe_jepa_evo"]
@@ -5265,52 +5266,48 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert missing_requirements["seq2seq"] == [
         "encoder-decoder-native-loop",
         "full-seq2seq-loss-composition",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "missing-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert missing_requirements["ttt_llama"] == []
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["universal_llama"] == "missing-universal-transformer-lm"
-    assert missing_requirements["universal_llama"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert missing_requirements["universal_llama"] == []
     assert completed_requirements["universal_llama"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["jamba"] == "missing-jamba-hybrid-mamba-transformer-lm"
     assert missing_requirements["jamba"] == [
         "mamba-state-space-forward-backward",
         "jamba-layer-schedule-native-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["jamba"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "missing-hnet-byte-lm"
-    assert missing_requirements["hnet_lm"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert missing_requirements["hnet_lm"] == []
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
         "byte-token-shard-resolver-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
-    assert missing_requirements["diffusion"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert missing_requirements["diffusion"] == []
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert missing_requirements["gpt2"] == []
 
@@ -11068,7 +11065,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["max_steps"] == 3
     assert llama_payload["native_training_missing_requirements"] == [
         "llama-block-forward-backward-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert llama_payload["native_training_completed_requirements"] == [
         "rmsnorm-loop-composition-smoke",
@@ -11078,6 +11074,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "packed-qkv-attention-forward-backward-smoke",
         "packed-qkv-attention-block-forward-smoke",
         "packed-qkv-rope-attention-block-integration-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_rotary_embedding_float32" in llama_payload["required_tile_symbols"]
@@ -11330,13 +11327,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_payload["native_training_missing_requirements"] == [
         "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert mixllama_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
         "standard-moe-transformer-block-forward-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert mixllama_payload["compiled_native_boundary"] is True
     assert mixllama_payload["torch_required"] is False
@@ -11397,7 +11394,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert moe_jepa_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
@@ -11407,6 +11403,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert moe_jepa_payload["compiled_native_boundary"] is True
     assert moe_jepa_payload["torch_required"] is False
@@ -11443,19 +11440,51 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "missing-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert jepa_payload["native_training_missing_requirements"] == []
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
     assert jepa_payload["torch_required"] is False
     assert jepa_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_latent_pool_float32" in jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in jepa_payload["required_tile_symbols"]
+
+    family_layout_smoke = subprocess.run(
+        [
+            str(jepa),
+            "--smoke-family-layout-checkpoint-step",
+            "--output-dir",
+            str(tmp_path / "family-layout-smoke"),
+            "--template-name",
+            "llm_jepa",
+            "--train-seq-len",
+            "128",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert family_layout_smoke.returncode == 0, family_layout_smoke.stderr
+    family_layout_payload = json.loads(family_layout_smoke.stdout)
+    assert family_layout_payload["smoke"] == "family_parameter_layout_checkpoint_inference_metadata_slice"
+    assert family_layout_payload["passed"] is True
+    assert family_layout_payload["compiled_native_boundary"] is True
+    assert family_layout_payload["torch_required"] is False
+    assert family_layout_payload["graph_editor_tensor_flow"] is False
+    assert family_layout_payload["parameter_layout"]["layout_resolved"] is True
+    assert family_layout_payload["parameter_layout"]["parameter_buffer_count"] > 0
+    assert family_layout_payload["checkpoint_contract"]["metadata_written"] is True
+    assert family_layout_payload["checkpoint_contract"]["done_marker_written"] is True
+    assert Path(family_layout_payload["checkpoint_contract"]["metadata_path"]).exists()
+    assert Path(family_layout_payload["checkpoint_contract"]["done_marker_path"]).exists()
+    assert family_layout_payload["inference_contract"]["native_info_supported"] is True
+    assert family_layout_payload["inference_contract"]["checkpoint_metadata_supported"] is True
+    assert family_layout_payload["inference_contract"]["sample_from_checkpoint_requires_family_loop"] is True
 
     jepa_target_smoke_missing_lib = subprocess.run(
         [
@@ -11528,6 +11557,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
         "semantic-hash-alignment-loss-items-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_dense_payload["compiled_native_boundary"] is True
     assert semantic_dense_payload["torch_required"] is False
@@ -11575,6 +11605,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "load-balance-loss-adamw-smoke",
         "semantic-hash-alignment-loss-items-smoke",
         "route-selection-distillation-balance-losses-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
     assert semantic_router_payload["torch_required"] is False
@@ -11614,12 +11645,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_payload["model_family"] == "diffusion"
     assert diffusion_payload["status"] == "family-native-trainer-missing"
     assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert diffusion_payload["native_training_missing_requirements"] == []
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert diffusion_payload["compiled_native_boundary"] is True
     assert diffusion_payload["torch_required"] is False
@@ -11660,10 +11690,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_payload["native_training_missing_requirements"] == [
         "encoder-decoder-native-loop",
         "full-seq2seq-loss-composition",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert seq2seq_payload["native_training_completed_requirements"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert seq2seq_payload["compiled_native_boundary"] is True
     assert seq2seq_payload["torch_required"] is False
@@ -11695,12 +11725,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_payload["model_family"] == "ttt-llama"
     assert ttt_payload["status"] == "family-native-trainer-missing"
     assert ttt_payload["native_training_coverage_class"] == "missing-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert ttt_payload["native_training_missing_requirements"] == []
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert ttt_payload["compiled_native_boundary"] is True
     assert ttt_payload["torch_required"] is False
@@ -11734,12 +11763,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_payload["model_family"] == "universal-llama"
     assert universal_payload["status"] == "family-native-trainer-missing"
     assert universal_payload["native_training_coverage_class"] == "missing-universal-transformer-lm"
-    assert universal_payload["native_training_missing_requirements"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert universal_payload["native_training_missing_requirements"] == []
     assert universal_payload["native_training_completed_requirements"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert universal_payload["compiled_native_boundary"] is True
     assert universal_payload["torch_required"] is False
@@ -11772,13 +11800,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_payload["model_family"] == "hnet-lm"
     assert hnet_payload["status"] == "family-native-trainer-missing"
     assert hnet_payload["native_training_coverage_class"] == "missing-hnet-byte-lm"
-    assert hnet_payload["native_training_missing_requirements"] == [
-        "family-parameter-layout-checkpoint-inference",
-    ]
+    assert hnet_payload["native_training_missing_requirements"] == []
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
         "byte-token-shard-resolver-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert hnet_payload["compiled_native_boundary"] is True
     assert hnet_payload["torch_required"] is False
@@ -11814,10 +11841,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_payload["native_training_missing_requirements"] == [
         "mamba-state-space-forward-backward",
         "jamba-layer-schedule-native-loop",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert jamba_payload["native_training_completed_requirements"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jamba_payload["compiled_native_boundary"] is True
     assert jamba_payload["torch_required"] is False
@@ -11927,7 +11954,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-integration",
         "standard-moe-full-forward-backward-loop",
         "ar-plus-jepa-plus-router-loss-composition",
-        "family-parameter-layout-checkpoint-inference",
     ]
     assert moe_jepa_unified_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
@@ -11937,6 +11963,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
     assert moe_jepa_unified_payload["torch_required"] is False
@@ -11987,6 +12014,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-moe-route-expert-step" in unified_moe_smoke_command.stdout
     assert "--tile-ops-lib" in unified_moe_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_moe_smoke_command.stdout
+
+    unified_family_layout_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-smoke-family-layout-checkpoint-step",
+            "--native-cuda-print-command",
+            "--native-cuda-output-dir",
+            str(tmp_path / "unified-family-layout-smoke"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_family_layout_smoke_command.returncode == 0, unified_family_layout_smoke_command.stderr
+    assert str(moe_jepa) in unified_family_layout_smoke_command.stdout
+    assert "--smoke-family-layout-checkpoint-step" in unified_family_layout_smoke_command.stdout
+    assert "--output-dir" in unified_family_layout_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_family_layout_smoke_command.stdout
 
     unified_moe_block_smoke_command = subprocess.run(
         [

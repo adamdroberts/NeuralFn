@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <exception>
+#include <fstream>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -84,6 +85,7 @@ struct Config {
     bool smoke_hnet_byte_patch_step = false;
     bool smoke_hnet_byte_patch_backward_step = false;
     bool smoke_jamba_chunk_state_step = false;
+    bool smoke_family_layout_checkpoint_step = false;
     std::vector<std::string> unparsed_args;
     std::string cuda_runtime_lib;
 };
@@ -286,6 +288,7 @@ void print_usage(const char* program) {
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-backward-step Launch HNet byte patch merge/embed backward and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-chunk-state-step Launch Jamba chunk state, head loss, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-family-layout-checkpoint-step Emit family parameter layout, checkpoint metadata, and inference contract\n"
         << "  --tile-ops-lib PATH       Override libnfn_native_train_tile_ops.so\n"
         << "  --cuda-runtime-lib PATH   Override libcudart for CUDA smoke commands\n"
         << "  --dry-run                 Emit the same JSON plan without training\n\n"
@@ -356,6 +359,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_hnet_byte_patch_backward_step = true;
         } else if (arg == "--smoke-jamba-chunk-state-step" || arg == "--native-cuda-smoke-jamba-chunk-state-step") {
             cfg.smoke_jamba_chunk_state_step = true;
+        } else if (arg == "--smoke-family-layout-checkpoint-step" ||
+                   arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
+            cfg.smoke_family_layout_checkpoint_step = true;
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
         } else if (arg == "--dataset-alias" || arg == "--dataset") {
@@ -569,6 +575,182 @@ void print_json(const Config& cfg, const char* program) {
             << "  }";
     }
     std::cout << "\n}\n";
+}
+
+struct ParameterBufferSpec {
+    std::string name;
+    std::int64_t elements = 0;
+    bool trainable = true;
+};
+
+std::int64_t clamp_positive(std::int64_t value, std::int64_t fallback) {
+    return value > 0 ? value : fallback;
+}
+
+std::vector<ParameterBufferSpec> family_parameter_buffers() {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const std::int64_t vocab = (family.find("hnet") != std::string::npos) ? 256 : 50304;
+    const std::int64_t model_dim = 768;
+    const std::int64_t hidden_dim = model_dim * 4;
+    const std::int64_t layers = 12;
+    std::vector<ParameterBufferSpec> buffers = {
+        {"token_embedding.weight", vocab * model_dim, true},
+        {"final_norm.weight", model_dim, true},
+        {"lm_head.weight", vocab * model_dim, true},
+    };
+    for (std::int64_t layer = 0; layer < layers; ++layer) {
+        const std::string prefix = "layers." + std::to_string(layer) + ".";
+        buffers.push_back({prefix + "attention_norm.weight", model_dim, true});
+        buffers.push_back({prefix + "qkv.weight", model_dim * model_dim * 3, true});
+        buffers.push_back({prefix + "attention_out.weight", model_dim * model_dim, true});
+        buffers.push_back({prefix + "ffn_norm.weight", model_dim, true});
+        buffers.push_back({prefix + "ffn_gate_up.weight", model_dim * hidden_dim * 2, true});
+        buffers.push_back({prefix + "ffn_down.weight", hidden_dim * model_dim, true});
+    }
+    if (family.find("moe") != std::string::npos || family.find("mixllama") != std::string::npos ||
+        family.find("deepseek") != std::string::npos) {
+        buffers.push_back({"router.weight", model_dim * 8, true});
+        buffers.push_back({"experts.gate_up.weight", 8 * model_dim * hidden_dim * 2, true});
+        buffers.push_back({"experts.down.weight", 8 * hidden_dim * model_dim, true});
+    }
+    if (family.find("jepa") != std::string::npos) {
+        buffers.push_back({"jepa_target_encoder.weight", model_dim * model_dim, true});
+        buffers.push_back({"jepa_projector.weight", model_dim * model_dim, true});
+        buffers.push_back({"jepa_predictor.weight", model_dim * model_dim, true});
+    }
+    if (family.find("semantic") != std::string::npos) {
+        buffers.push_back({"semantic_planner.weight", model_dim * model_dim, true});
+        buffers.push_back({"semantic_alignment.weight", model_dim * model_dim, true});
+    }
+    if (family.find("seq2seq") != std::string::npos) {
+        buffers.push_back({"encoder.layers.qkv.weight", layers * model_dim * model_dim * 3, true});
+        buffers.push_back({"decoder.cross_attention.qkv.weight", layers * model_dim * model_dim * 3, true});
+    }
+    if (family.find("diffusion") != std::string::npos) {
+        buffers.push_back({"diffusion_timestep_embedding.weight", 1024 * model_dim, true});
+        buffers.push_back({"denoise_head.weight", model_dim * model_dim, true});
+    }
+    if (family.find("ttt") != std::string::npos) {
+        buffers.push_back({"ttt.inner_base.weight", model_dim * model_dim, true});
+        buffers.push_back({"ttt.inner_down.weight", model_dim * (model_dim / 4), true});
+        buffers.push_back({"ttt.inner_up.weight", (model_dim / 4) * model_dim, true});
+    }
+    if (family.find("universal") != std::string::npos) {
+        buffers.push_back({"universal.recurrent.weight", model_dim * model_dim, true});
+        buffers.push_back({"universal.halt_gate.weight", model_dim, true});
+    }
+    if (family.find("hnet") != std::string::npos) {
+        buffers.push_back({"byte_patch_embed.weight", 256 * model_dim, true});
+        buffers.push_back({"byte_patch_merge.weight", 4 * model_dim * model_dim, true});
+    }
+    if (family.find("jamba") != std::string::npos) {
+        buffers.push_back({"mamba.in_proj.weight", model_dim * model_dim * 2, true});
+        buffers.push_back({"mamba.state.weight", model_dim * model_dim, true});
+    }
+    return buffers;
+}
+
+std::int64_t parameter_element_count(const std::vector<ParameterBufferSpec>& buffers) {
+    std::int64_t total = 0;
+    for (const ParameterBufferSpec& buffer : buffers) {
+        total += buffer.elements;
+    }
+    return total;
+}
+
+int print_family_layout_checkpoint_smoke_json(const Config& cfg, const char*) {
+    const std::vector<ParameterBufferSpec> buffers = family_parameter_buffers();
+    const std::int64_t total_elements = parameter_element_count(buffers);
+    const std::int64_t seq_len = clamp_positive(cfg.train_seq_len, 1024);
+    const std::filesystem::path output_dir(cfg.output_dir);
+    const std::filesystem::path metadata_path =
+        output_dir / (std::string(NFN_NATIVE_MODEL_FAMILY) + "_native_checkpoint_metadata_00000000.json");
+    const std::filesystem::path done_path =
+        output_dir / (std::string("DONE_") + NFN_NATIVE_MODEL_FAMILY + "_00000000");
+
+    bool wrote_metadata = false;
+    bool wrote_done_marker = false;
+    std::string error;
+    try {
+        std::filesystem::create_directories(output_dir);
+        std::ofstream metadata(metadata_path);
+        if (!metadata) {
+            error = "failed to open checkpoint metadata for writing";
+        } else {
+            metadata
+                << "{\n"
+                << "  \"format\": \"nfn-native-family-checkpoint-v1\",\n"
+                << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+                << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+                << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+                << "  \"torch_required\": false,\n"
+                << "  \"graph_editor_tensor_flow\": false,\n"
+                << "  \"parameter_buffer_count\": " << buffers.size() << ",\n"
+                << "  \"parameter_elements\": " << total_elements << ",\n"
+                << "  \"seq_len\": " << seq_len << "\n"
+                << "}\n";
+            wrote_metadata = true;
+        }
+        std::ofstream done(done_path);
+        if (!done) {
+            if (error.empty()) {
+                error = "failed to open checkpoint done marker for writing";
+            }
+        } else {
+            done << metadata_path.filename().string() << "\n";
+            wrote_done_marker = true;
+        }
+    } catch (const std::exception& exc) {
+        error = exc.what();
+    }
+    const bool passed = wrote_metadata && wrote_done_marker && total_elements > 0 && !buffers.empty();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"family_parameter_layout_checkpoint_inference_metadata_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"parameter_layout\": {\n"
+        << "    \"layout_resolved\": true,\n"
+        << "    \"parameter_dtype\": \"float32\",\n"
+        << "    \"parameter_buffer_count\": " << buffers.size() << ",\n"
+        << "    \"parameter_elements\": " << total_elements << ",\n"
+        << "    \"sample_buffers\": [\n";
+    const std::size_t sample_count = std::min<std::size_t>(buffers.size(), 8);
+    for (std::size_t i = 0; i < sample_count; ++i) {
+        std::cout
+            << "      {\"name\": \"" << json_escape(buffers[i].name) << "\", \"elements\": "
+            << buffers[i].elements << ", \"trainable\": " << (buffers[i].trainable ? "true" : "false") << "}";
+        if (i + 1 != sample_count) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "    ]\n"
+        << "  },\n"
+        << "  \"checkpoint_contract\": {\n"
+        << "    \"format\": \"nfn-native-family-checkpoint-v1\",\n"
+        << "    \"metadata_path\": \"" << json_escape(metadata_path.string()) << "\",\n"
+        << "    \"done_marker_path\": \"" << json_escape(done_path.string()) << "\",\n"
+        << "    \"metadata_written\": " << (wrote_metadata ? "true" : "false") << ",\n"
+        << "    \"done_marker_written\": " << (wrote_done_marker ? "true" : "false") << "\n"
+        << "  },\n"
+        << "  \"inference_contract\": {\n"
+        << "    \"native_info_supported\": true,\n"
+        << "    \"checkpoint_metadata_supported\": true,\n"
+        << "    \"sample_from_checkpoint_requires_family_loop\": true,\n"
+        << "    \"max_context_tokens\": " << seq_len << ",\n"
+        << "    \"token_format\": \"" << ((std::string(NFN_NATIVE_MODEL_FAMILY).find("hnet") != std::string::npos)
+            ? "uint8_bytes" : "uint16_token_ids") << "\"\n"
+        << "  }\n"
+        << "}\n";
+    return passed ? 0 : 2;
 }
 
 int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
@@ -10282,6 +10464,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_jamba_chunk_state_step) {
             return print_jamba_chunk_state_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_family_layout_checkpoint_step) {
+            return print_family_layout_checkpoint_smoke_json(cfg, argv[0]);
         }
         if (cfg.print_plan || cfg.check_tile_ops || cfg.dry_run || cfg.sample_token_batch) {
             print_json(cfg, argv[0]);

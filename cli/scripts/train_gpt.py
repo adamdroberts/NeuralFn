@@ -519,6 +519,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-smoke-hnet-byte-patch-step": "--smoke-hnet-byte-patch-step",
         "--native-cuda-smoke-hnet-byte-patch-backward-step": "--smoke-hnet-byte-patch-backward-step",
         "--native-cuda-smoke-jamba-chunk-state-step": "--smoke-jamba-chunk-state-step",
+        "--native-cuda-smoke-family-layout-checkpoint-step": "--smoke-family-layout-checkpoint-step",
         "--native-cuda-smoke-jepa-projector-step": "--smoke-jepa-projector-step",
         "--native-cuda-smoke-jepa-target-encoder-step": "--smoke-jepa-target-encoder-step",
         "--native-cuda-smoke-jepa-ar-loss-step": "--smoke-jepa-ar-loss-step",

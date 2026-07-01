@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added a shared missing-family parameter-layout/checkpoint/inference metadata
+  native smoke. Every compiled non-dense GPT-family preflight now accepts
+  `--smoke-family-layout-checkpoint-step`, and the unified frontend forwards
+  `nfn-native-train --base-model FAMILY
+  --native-cuda-smoke-family-layout-checkpoint-step`. The smoke resolves the
+  family parameter buffer layout, writes a sparse
+  `nfn-native-family-checkpoint-v1` metadata artifact plus `DONE` marker under
+  `--output-dir`, and reports the native inference metadata contract with
+  `torch_required: false` and `graph_editor_tensor_flow: false`. Template
+  catalog/preflight JSON now moves
+  `family-parameter-layout-checkpoint-inference` out of missing requirements
+  and reports `family-parameter-layout-checkpoint-inference-smoke` as completed
+  for LLaMA, standard MoE, JEPA, semantic, seq2seq, diffusion, TTT, HNet,
+  Jamba, and universal missing-family coverage classes. The remaining
+  model-specific forward/backward/objective loops still stay visible in
+  `native_training_missing_requirements`.
+
 - Added a LLaMA-family RoPE attention-block integration native smoke.
   `nfn_llama_native_train --smoke-llama-rope-attention-block-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama

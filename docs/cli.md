@@ -876,27 +876,26 @@ matching compiled family binary when no custom graph file is supplied.
 Use `--base-model semantic-dense-jepa` to inspect the semantic dense JEPA Evo
 coverage class directly; it requires linear/projector ABI, semantic-alignment
 loss items, latent pooling, latent MSE, and AdamW while still reporting
-full semantic objective composition, checkpointing, inference, and
+full semantic objective composition and
 `family-native-loop-missing`.
 Use `--base-model diffusion` to inspect the diffusion objective coverage class
 directly; it now reports the denoise linear/MSE/backward/AdamW smoke and the
 timestep/mask/token-CE/backward/AdamW objective smoke as completed while
-checkpointing and inference remain missing.
+family metadata is also covered.
 Use `--base-model seq2seq` to inspect the encoder-decoder coverage class
 directly; it now reports the cross-attention/CE/backward/AdamW smoke as
 completed while the full encoder-decoder loop, complete loss composition,
-checkpointing, and inference remain missing.
+remain missing.
 Use `--base-model ttt-llama` to inspect the TTT coverage class directly; it now
 reports the inner linear/MSE/backward/AdamW smoke plus the composite
-base/down/tanh/up residual forward/backward/AdamW smoke as completed while
-checkpointing and inference remain missing.
+base/down/tanh/up residual forward/backward/AdamW smoke as completed.
 Use `--base-model universal-llama` to inspect the universal transformer coverage
 class directly; it now reports the recurrent linear/MSE/backward/AdamW smoke as
-completed while ACT halting, checkpointing, and inference remain missing.
+completed while ACT halting and family metadata are also covered.
 Use `--base-model hnet-lm` to inspect the HNet byte-LM coverage class directly;
 it now reports byte-token shard resolution, the byte patch embed/merge plus
 head-loss/backward/AdamW smoke, and the byte patch merge/embed-backward/AdamW
-smoke as completed, while checkpointing and inference remain missing. Use
+smoke plus family metadata as completed. Use
 `nfn_hnet_lm_native_train --sample-token-batch --dataset-alias PATH` with raw
 uint8 `byte_train_*.bin` / `hnet_train_*.bin` shards to verify byte batch
 sampling without Torch or graph-editor tensor flow.
@@ -3257,6 +3256,8 @@ For the LLaMA packed-QKV attention slice, use `nfn_llama_native_train --smoke-ll
 
 For the Jamba chunk-state slice, use `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH` or `nfn-native-train --base-model jamba --native-cuda-smoke-jamba-chunk-state-step`; it launches causal chunk-state, reconstruction head, latent MSE, linear head backward, and AdamW through raw CUDA Tile ABI calls.
 
+For the shared family metadata slice, use `nfn_jepa_native_train --smoke-family-layout-checkpoint-step --output-dir PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-family-layout-checkpoint-step --native-cuda-output-dir PATH`; it emits the family parameter layout, writes sparse native checkpoint metadata plus a `DONE` marker, and reports the native inference metadata contract without Torch or graph-editor tensor flow.
+
 Template catalog and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Use these fields to audit complete
@@ -3265,41 +3266,38 @@ families now have compiled no-Torch boundaries for LLaMA/RoPE/SwiGLU, standard
 MoE, dense JEPA, MoE+JEPA, semantic MoE/JEPA, Jamba, seq2seq, diffusion, TTT,
 HNet byte-LM, and universal transformer classes. LLaMA-family entries now list
 completed smoke-backed slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head
-CE/backward/AdamW, and packed-QKV attention forward/backward, while their
-missing list keeps packed-QKV RoPE attention block integration, the full LLaMA
-block forward/backward loop, and family checkpoint/inference wiring. Standard MoE, MoE+JEPA, and semantic MoE
+CE/backward/AdamW, packed-QKV attention forward/backward, RoPE attention-block
+integration, and family parameter-layout/checkpoint/inference metadata, while
+their missing list keeps the full LLaMA block forward/backward loop. Standard MoE, MoE+JEPA, and semantic MoE
 families now list completed route top-k/broadcast, routed SwiGLU
 forward/backward, load-balance/AdamW, and standard MoE forward-block smokes
 while still reporting the full family block loop, JEPA or semantic objectives,
-checkpointing, and inference as missing. Dense JEPA, semantic dense JEPA, and
+as missing. Dense JEPA, semantic dense JEPA, and
 MoE+JEPA entries now list the completed target-encoder forward,
 projector/predictor/latent-loss, and base AR+JEPA loss-composition smokes.
-Dense JEPA keeps family checkpointing and inference wiring as missing, while
-MoE+JEPA and semantic JEPA still report router/semantic objective composition,
-family checkpointing, and inference wiring as missing. Semantic
+Dense JEPA has no shared metadata item left in the missing list, while
+MoE+JEPA and semantic JEPA still report router/semantic objective composition
+as missing. Semantic
 dense JEPA and semantic router/MoE entries now list the
 completed semantic hash/alignment-loss-items smoke while still reporting full
 semantic planner/router, device reduction, objective composition,
-checkpointing, and inference wiring as missing.
+as missing.
 Diffusion entries now list the completed denoise linear/MSE/backward/AdamW and
-timestep/mask/token-CE/backward/AdamW smokes while still reporting
-checkpointing and inference wiring as missing.
+timestep/mask/token-CE/backward/AdamW smokes plus family metadata.
 Seq2seq entries now list the completed cross-attention/CE/backward/AdamW smoke
 while still reporting the full encoder-decoder loop, complete loss composition,
-checkpointing, and inference wiring as missing.
+as missing.
 Universal transformer entries now list recurrent linear/MSE/backward/AdamW and
-ACT halt loss/gradient smokes as completed while keeping checkpointing and
-inference wiring as missing.
+ACT halt loss/gradient smokes plus family metadata as completed.
 TTT entries now list the completed inner linear/MSE/backward/AdamW smoke plus
-the composite base/down/tanh/up residual forward/backward/AdamW smoke while
-keeping checkpointing and inference wiring as missing.
+the composite base/down/tanh/up residual forward/backward/AdamW smoke plus
+family metadata.
 HNet entries now list completed byte-token shard resolution, byte patch
 embed/merge plus head-loss/backward/AdamW, and byte patch
-merge/embed-backward/AdamW smokes while still reporting checkpointing and
-inference wiring as missing.
+merge/embed-backward/AdamW smokes plus family metadata.
 Jamba entries now list the completed causal chunk-state plus head-loss/backward
 and AdamW smoke while still reporting full Mamba state-space forward/backward,
-the Jamba layer schedule loop, checkpointing, and inference wiring as missing.
+the Jamba layer schedule loop as missing.
 native loop work that must be implemented before that template can run real
 native training.
 

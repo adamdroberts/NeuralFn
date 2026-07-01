@@ -50,77 +50,77 @@ build_one "llama" "nfn_llama_native_train" \
   "LLaMA RoPE/RMSNorm/SwiGLU attention and MLP CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_rms_norm_backward_input_float32,nfn_native_tile_rotary_embedding_float32,nfn_native_tile_rotary_embedding_backward_float32,nfn_native_tile_swiglu_float32,nfn_native_tile_swiglu_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_split_qkv_to_heads_float32,nfn_native_tile_scaled_dot_product_attention_float32,nfn_native_tile_scaled_residual_add_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32,nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-llama-rope-swiglu-transformer-lm" \
-  "llama-block-forward-backward-loop,family-parameter-layout-checkpoint-inference" \
-  "rmsnorm-loop-composition-smoke,rope-loop-composition-smoke,swiglu-geglu-mlp-loop-composition-smoke,lm-head-linear-ce-backward-adamw-smoke,packed-qkv-attention-forward-backward-smoke,packed-qkv-attention-block-forward-smoke,packed-qkv-rope-attention-block-integration-smoke"
+  "llama-block-forward-backward-loop" \
+  "rmsnorm-loop-composition-smoke,rope-loop-composition-smoke,swiglu-geglu-mlp-loop-composition-smoke,lm-head-linear-ce-backward-adamw-smoke,packed-qkv-attention-forward-backward-smoke,packed-qkv-attention-block-forward-smoke,packed-qkv-rope-attention-block-integration-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "mixllama" "nfn_mixllama_native_train" \
   "LLaMA MoE routing, expert dispatch/combine, and grouped expert CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-standard-moe-transformer-lm" \
-  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke"
+  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop" \
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "moe-jepa-evo" "nfn_moe_jepa_evo_native_train" \
   "standard MoE transformer loop plus JEPA target encoder/projector/predictor and AR+JEPA+router loss CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-moe-jepa-objective" \
-  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,ar-plus-jepa-plus-router-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke"
+  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,ar-plus-jepa-plus-router-loss-composition" \
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-dense-jepa-objective" \
-  "family-parameter-layout-checkpoint-inference" \
-  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke"
+  "" \
+  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-dense-jepa-objective" \
-  "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,ar-plus-semantic-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,semantic-hash-alignment-loss-items-smoke"
+  "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,ar-plus-semantic-plus-jepa-loss-composition" \
+  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,semantic-hash-alignment-loss-items-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_route_selection_loss_partials_float32,nfn_native_tile_softmax_distillation_partials_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-semantic-moe-router-jepa-objective" \
-  "semantic-target-shard-resolver,semantic-router-forward-backward,semantic-expert-dispatch-combine,route-evo-device-controller,ar-plus-semantic-plus-jepa-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,semantic-hash-alignment-loss-items-smoke,route-selection-distillation-balance-losses-smoke"
+  "semantic-target-shard-resolver,semantic-router-forward-backward,semantic-expert-dispatch-combine,route-evo-device-controller,ar-plus-semantic-plus-jepa-loss-composition" \
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,semantic-hash-alignment-loss-items-smoke,route-selection-distillation-balance-losses-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "deepseek-v4" "nfn_deepseek_v4_native_train" \
   "DeepSeek sparse attention, MoE routing, and native optimizer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-standard-moe-transformer-lm" \
-  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop,family-parameter-layout-checkpoint-inference" \
-  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke"
+  "standard-moe-transformer-block-integration,standard-moe-full-forward-backward-loop" \
+  "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "jamba" "nfn_jamba_native_train" \
   "Jamba hybrid Mamba plus transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_causal_chunk_state_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-jamba-hybrid-mamba-transformer-lm" \
-  "mamba-state-space-forward-backward,jamba-layer-schedule-native-loop,family-parameter-layout-checkpoint-inference" \
-  "jamba-causal-chunk-state-head-adamw-smoke"
+  "mamba-state-space-forward-backward,jamba-layer-schedule-native-loop" \
+  "jamba-causal-chunk-state-head-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "seq2seq" "nfn_seq2seq_native_train" \
   "encoder-decoder cross-attention and seq2seq loss CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_scaled_dot_product_attention_float32,nfn_native_tile_scaled_dot_product_attention_backward_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-seq2seq-objective" \
-  "encoder-decoder-native-loop,full-seq2seq-loss-composition,family-parameter-layout-checkpoint-inference" \
-  "seq2seq-cross-attention-ce-adamw-smoke"
+  "encoder-decoder-native-loop,full-seq2seq-loss-composition" \
+  "seq2seq-cross-attention-ce-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
   "nfn_native_tile_random_timesteps_float32,nfn_native_tile_mask_scheduler_int64,nfn_native_tile_token_embedding_float32,nfn_native_tile_token_embedding_backward_weight_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-diffusion-objective" \
-  "family-parameter-layout-checkpoint-inference" \
-  "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke"
+  "" \
+  "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_tanh_float32,nfn_native_tile_add_float32,nfn_native_tile_tanh_backward_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-ttt-transformer-lm" \
-  "family-parameter-layout-checkpoint-inference" \
-  "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke"
+  "" \
+  "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "hnet-lm" "nfn_hnet_lm_native_train" \
   "HNet byte-token patch and merge CUDA Tile trainer" \
   "nfn_native_tile_byte_patch_embed_float32,nfn_native_tile_byte_patch_merge_float32,nfn_native_tile_byte_patch_merge_backward_float32,nfn_native_tile_byte_patch_embed_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-hnet-byte-lm" \
-  "family-parameter-layout-checkpoint-inference" \
-  "hnet-byte-patch-embed-merge-head-adamw-smoke,hnet-byte-patch-backward-adamw-smoke,byte-token-shard-resolver-smoke"
+  "" \
+  "hnet-byte-patch-embed-merge-head-adamw-smoke,hnet-byte-patch-backward-adamw-smoke,byte-token-shard-resolver-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "universal-llama" "nfn_universal_llama_native_train" \
   "universal transformer recurrent layer and halting CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_act_halting_bce_grad_float32,nfn_native_tile_act_weighted_sum_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-universal-transformer-lm" \
-  "family-parameter-layout-checkpoint-inference" \
-  "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke"
+  "" \
+  "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke,family-parameter-layout-checkpoint-inference-smoke"
