@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a semantic target shard resolver native smoke. `nfn_semantic_dense_jepa_native_train
+  --smoke-semantic-target-shard-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model semantic-dense-jepa-evo
+  --native-cuda-smoke-semantic-target-shard-step` alias now derive semantic
+  target IDs from native uint16 token batches at the compiled C++ boundary and
+  validate those targets through the semantic hash/alignment CUDA Tile path.
+  Semantic-family `--sample-token-batch` preflight JSON now includes
+  `semantic_target_batch`, and families with no remaining native coverage
+  checklist items report `native-trainer-covered` / `native-loop-covered`.
+  Semantic-router MoE now keeps only `route-evo-device-controller` as its
+  remaining native coverage blocker.
+
 - Added a semantic JEPA AR+semantic+JEPA objective native smoke.
   `nfn_semantic_dense_jepa_native_train
   --smoke-semantic-jepa-loss-composition-step --tile-ops-lib PATH` and the
@@ -13,7 +25,8 @@
   JEPA preflight JSON now reports semantic planner forward/backward,
   semantic-alignment device reduction, and
   `ar-plus-semantic-plus-jepa-loss-composition-smoke` in completed requirements,
-  leaving only semantic target shard resolution as missing. Verification:
+  leaving only semantic target shard resolution as missing at the time of that
+  change. Verification:
   rebuilt missing-family native trainers and unified/native catalog frontends;
   live CUDA direct and unified semantic JEPA objective smokes passed; semantic
   dense JEPA preflight reports only semantic target shard resolution missing;

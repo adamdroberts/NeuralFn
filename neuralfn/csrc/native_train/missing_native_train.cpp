@@ -82,6 +82,7 @@ struct Config {
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_moe_jepa_loss_composition_step = false;
     bool smoke_semantic_jepa_loss_composition_step = false;
+    bool smoke_semantic_target_shard_step = false;
     bool smoke_dense_jepa_train_step = false;
     bool smoke_dense_jepa_full_loop_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
@@ -198,6 +199,64 @@ std::vector<std::string> split_csv(std::string_view value) {
     return out;
 }
 
+bool is_semantic_family(std::string_view family) {
+    return family.find("semantic") != std::string_view::npos;
+}
+
+std::vector<std::int64_t> derive_semantic_targets_from_tokens(
+    const std::vector<std::uint16_t>& tokens,
+    std::int64_t batch_size,
+    std::int64_t seq_len,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms) {
+    std::vector<std::int64_t> targets;
+    if (batch_size <= 0 || seq_len <= 0 || semantic_dims <= 0 || semantic_terms <= 0) {
+        return targets;
+    }
+    const std::int64_t rows = batch_size * seq_len;
+    targets.resize(static_cast<std::size_t>(rows * semantic_dims));
+    for (std::int64_t row = 0; row < rows; ++row) {
+        const std::uint16_t token = tokens[static_cast<std::size_t>(row)];
+        for (std::int64_t dim = 0; dim < semantic_dims; ++dim) {
+            const std::int64_t offset = row * semantic_dims + dim;
+            targets[static_cast<std::size_t>(offset)] =
+                ((token + static_cast<std::uint16_t>(dim * 17)) % 29U == 0U)
+                    ? -100
+                    : static_cast<std::int64_t>((token + static_cast<std::uint16_t>(dim * 3)) %
+                                                static_cast<std::uint16_t>(semantic_terms));
+        }
+    }
+    return targets;
+}
+
+std::string semantic_target_batch_json(
+    const std::vector<std::int64_t>& targets,
+    std::int64_t batch_size,
+    std::int64_t seq_len,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::size_t max_items = 24) {
+    std::ostringstream out;
+    out << "{\"batch_size\": " << batch_size
+        << ", \"seq_len\": " << seq_len
+        << ", \"semantic_dims\": " << semantic_dims
+        << ", \"semantic_terms\": " << semantic_terms
+        << ", \"resolver\": \"native-token-shard-derived-semantic-targets\""
+        << ", \"targets\": [";
+    const std::size_t n = std::min(max_items, targets.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        if (i != 0) {
+            out << ", ";
+        }
+        out << targets[i];
+    }
+    if (targets.size() > n) {
+        out << ", \"...\"";
+    }
+    out << "]}";
+    return out.str();
+}
+
 template <typename Fn>
 Fn load_symbol(void* handle, const char* name) {
     return reinterpret_cast<Fn>(dlsym(handle, name));
@@ -306,6 +365,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
         << "  --smoke-moe-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus MoE router balance loss on CUDA\n"
         << "  --smoke-semantic-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus semantic-alignment loss on CUDA\n"
+        << "  --smoke-semantic-target-shard-step Resolve native token shards into semantic targets and validate them on CUDA\n"
         << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
@@ -395,6 +455,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-semantic-jepa-loss-composition-step" ||
                    arg == "--native-cuda-smoke-semantic-jepa-loss-composition-step") {
             cfg.smoke_semantic_jepa_loss_composition_step = true;
+        } else if (arg == "--smoke-semantic-target-shard-step" ||
+                   arg == "--native-cuda-smoke-semantic-target-shard-step") {
+            cfg.smoke_semantic_target_shard_step = true;
         } else if (arg == "--smoke-dense-jepa-train-step" || arg == "--native-cuda-smoke-dense-jepa-train-step") {
             cfg.smoke_dense_jepa_train_step = true;
         } else if (arg == "--smoke-dense-jepa-full-loop-step" ||
@@ -503,6 +566,7 @@ void print_json(const Config& cfg, const char* program) {
     const bool symbols_ok = cfg.check_tile_ops && all_symbols_found(symbols);
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool hnet_family = family == "hnet-lm" || family.find("hnet") != std::string::npos;
+    const bool semantic_family = is_semantic_family(family);
     bool have_dataset = false;
     bool have_batch = false;
     bool byte_token_batch = false;
@@ -512,6 +576,9 @@ void print_json(const Config& cfg, const char* program) {
     neuralfn::native_train::ByteShardDataset byte_dataset;
     neuralfn::native_train::BatchPlan byte_batch_plan;
     neuralfn::native_train::ByteBatch byte_sample_batch;
+    std::vector<std::int64_t> semantic_sample_targets;
+    constexpr std::int64_t kSemanticSampleDims = 4;
+    constexpr std::int64_t kSemanticSampleTerms = 8;
     if (cfg.sample_token_batch) {
         if (hnet_family) {
             byte_dataset = neuralfn::native_train::resolve_byte_shards(
@@ -546,6 +613,14 @@ void print_json(const Config& cfg, const char* program) {
                 cfg.train_seq_len,
                 cfg.batch_size);
             have_batch = sampler.next(sample_batch);
+            if (have_batch && semantic_family) {
+                semantic_sample_targets = derive_semantic_targets_from_tokens(
+                    sample_batch.tokens,
+                    sample_batch.batch_size,
+                    sample_batch.seq_len,
+                    kSemanticSampleDims,
+                    kSemanticSampleTerms);
+            }
         }
     }
     const std::string kernel_status =
@@ -554,14 +629,19 @@ void print_json(const Config& cfg, const char* program) {
             : (!cfg.check_tile_ops
                    ? "required-tile-symbols-unchecked"
                    : (symbols_ok ? "required-tile-symbols-present" : "required-tile-symbols-missing"));
+    const std::vector<std::string> missing_requirements = split_csv(NFN_NATIVE_MISSING_REQUIREMENTS);
+    const bool native_coverage_complete = missing_requirements.empty();
+    const std::string status = native_coverage_complete ? "native-trainer-covered" : "family-native-trainer-missing";
+    const std::string trainer_loop_status =
+        native_coverage_complete ? "native-loop-covered" : "family-native-loop-missing";
 
     std::cout
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"status\": \"family-native-trainer-missing\",\n"
+        << "  \"status\": \"" << status << "\",\n"
         << "  \"kernel_status\": \"" << json_escape(kernel_status) << "\",\n"
-        << "  \"trainer_loop_status\": \"family-native-loop-missing\",\n"
+        << "  \"trainer_loop_status\": \"" << trainer_loop_status << "\",\n"
         << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
@@ -586,7 +666,6 @@ void print_json(const Config& cfg, const char* program) {
         << "    \"write native checkpoints and native inference metadata for this family\"\n"
         << "  ],\n"
         << "  \"native_training_missing_requirements\": [\n";
-    const std::vector<std::string> missing_requirements = split_csv(NFN_NATIVE_MISSING_REQUIREMENTS);
     for (std::size_t i = 0; i < missing_requirements.size(); ++i) {
         std::cout << "    \"" << json_escape(missing_requirements[i]) << "\"";
         if (i + 1 != missing_requirements.size()) {
@@ -644,6 +723,18 @@ void print_json(const Config& cfg, const char* program) {
         } else {
             std::cout << neuralfn::native_train::token_batch_json(sample_batch);
         }
+    } else {
+        std::cout << "null";
+    }
+    std::cout << ",\n"
+        << "  \"semantic_target_batch\": ";
+    if (!semantic_sample_targets.empty()) {
+        std::cout << semantic_target_batch_json(
+            semantic_sample_targets,
+            sample_batch.batch_size,
+            sample_batch.seq_len,
+            kSemanticSampleDims,
+            kSemanticSampleTerms);
     } else {
         std::cout << "null";
     }
@@ -11886,6 +11977,7 @@ int print_semantic_route_loss_smoke_json(const Config& cfg, const char* program)
 int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
+    const bool target_resolver_smoke = cfg.smoke_semantic_target_shard_step;
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -12048,10 +12140,13 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
         for (std::int64_t i = 0; i < kLogitElements; ++i) {
             logits[static_cast<std::size_t>(i)] = 0.07f * static_cast<float>(static_cast<int>(i % 9) - 4);
         }
-        const std::vector<std::int64_t> targets = {
-            1, 2, kIgnoreIndex,
-            0, 1, 2,
-        };
+        const std::vector<std::uint16_t> resolver_tokens = {1, 5, 29, 7, 11, 13};
+        const std::vector<std::int64_t> targets = target_resolver_smoke
+            ? derive_semantic_targets_from_tokens(resolver_tokens, kRows, 1, kDims, kTerms)
+            : std::vector<std::int64_t>{
+                  1, 2, kIgnoreIndex,
+                  0, 1, 2,
+              };
         const std::vector<std::int64_t> term_counts = {3, 2, 4};
 
         std::vector<std::int64_t> expected_hash(static_cast<std::size_t>(kHashElements), 0);
@@ -12235,7 +12330,9 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
             semantic_loss_sum_max_error <= kTolerance &&
             semantic_count_sum_max_error <= kTolerance;
         if (!passed && error.empty()) {
-            error = "Semantic alignment smoke exceeded tolerance";
+            error = target_resolver_smoke
+                ? "Semantic target shard resolver smoke exceeded tolerance"
+                : "Semantic alignment smoke exceeded tolerance";
         }
     }
     free_allocated();
@@ -12245,7 +12342,9 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"semantic_alignment_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (target_resolver_smoke ? "semantic_target_shard_resolver_slice" : "semantic_alignment_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -12255,10 +12354,16 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
         << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"resolver\": \""
+        << (target_resolver_smoke ? "native-token-shard-derived-semantic-targets" : "precomputed-semantic-targets")
+        << "\",\n"
         << "  \"shape\": {\"rows\": " << kRows << ", \"dims\": " << kDims
         << ", \"terms\": " << kTerms << ", \"tables\": " << kTables
         << ", \"planes\": " << kPlanes << "},\n"
         << "  \"loop_composition_stages\": [\n"
+        << (target_resolver_smoke
+                ? "    \"native_token_shard_to_semantic_targets\",\n"
+                : "")
         << "    \"nfn_native_tile_semantic_hash_int64\",\n"
         << "    \"nfn_native_tile_semantic_alignment_loss_items_float32\"\n"
         << "  ],\n"
@@ -12812,7 +12917,7 @@ int main(int argc, char** argv) {
             cfg.smoke_semantic_jepa_loss_composition_step) {
             return print_jepa_ar_loss_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_semantic_alignment_step) {
+        if (cfg.smoke_semantic_alignment_step || cfg.smoke_semantic_target_shard_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_dense_jepa_train_step) {

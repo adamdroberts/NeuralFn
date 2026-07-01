@@ -10948,11 +10948,11 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert kernel_statuses["gpt"] == "required-tile-symbols-present"
     assert loop_statuses["gpt"] == "implemented"
     assert kernel_statuses["llama"] == "required-tile-symbols-present"
-    assert loop_statuses["llama"] == "family-native-loop-missing"
+    assert loop_statuses["llama"] == "native-loop-covered"
     assert native_targets["semantic-dense-jepa"] == "nfn_semantic_dense_jepa_native_train"
     assert geometry_statuses["semantic-dense-jepa"] == "requires-semantic-dense-jepa-native-loop"
     assert kernel_statuses["semantic-dense-jepa"] == "required-tile-symbols-present"
-    assert loop_statuses["semantic-dense-jepa"] == "family-native-loop-missing"
+    assert loop_statuses["semantic-dense-jepa"] == "native-loop-covered"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
@@ -10971,9 +10971,9 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["status"] == "native-trainer-covered"
     assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
-    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert llama_payload["trainer_loop_status"] == "native-loop-covered"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11066,9 +11066,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_plan.returncode == 0, llama_plan.stderr
     llama_payload = json.loads(llama_plan.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["status"] == "native-trainer-covered"
     assert llama_payload["kernel_status"] == "required-tile-symbols-missing"
-    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert llama_payload["trainer_loop_status"] == "native-loop-covered"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11331,8 +11331,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_sample.returncode == 0, llama_sample.stderr
     sample_payload = json.loads(llama_sample.stdout)
     assert sample_payload["model_family"] == "llama"
-    assert sample_payload["status"] == "family-native-trainer-missing"
-    assert sample_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert sample_payload["status"] == "native-trainer-covered"
+    assert sample_payload["trainer_loop_status"] == "native-loop-covered"
     assert sample_payload["compiled_native_boundary"] is True
     assert sample_payload["torch_required"] is False
     assert sample_payload["graph_editor_tensor_flow"] is False
@@ -11409,7 +11409,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_plan.returncode == 0, mixllama_plan.stderr
     mixllama_payload = json.loads(mixllama_plan.stdout)
     assert mixllama_payload["model_family"] == "mixllama"
-    assert mixllama_payload["status"] == "family-native-trainer-missing"
+    assert mixllama_payload["status"] == "native-trainer-covered"
     assert mixllama_payload["native_training_coverage_class"] == "missing-standard-moe-transformer-lm"
     assert mixllama_payload["native_training_missing_requirements"] == []
     assert mixllama_payload["native_training_completed_requirements"] == [
@@ -11527,7 +11527,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_plan.returncode == 0, moe_jepa_plan.stderr
     moe_jepa_payload = json.loads(moe_jepa_plan.stdout)
     assert moe_jepa_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_payload["status"] == "family-native-trainer-missing"
+    assert moe_jepa_payload["status"] == "native-trainer-covered"
     assert moe_jepa_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_payload["native_training_missing_requirements"] == []
     assert moe_jepa_payload["native_training_completed_requirements"] == [
@@ -11745,16 +11745,15 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_plan.returncode == 0, semantic_dense_plan.stderr
     semantic_dense_payload = json.loads(semantic_dense_plan.stdout)
     assert semantic_dense_payload["model_family"] == "semantic-dense-jepa"
-    assert semantic_dense_payload["status"] == "family-native-trainer-missing"
+    assert semantic_dense_payload["status"] == "native-trainer-covered"
     assert semantic_dense_payload["native_training_coverage_class"] == "missing-semantic-dense-jepa-objective"
-    assert semantic_dense_payload["native_training_missing_requirements"] == [
-        "semantic-target-shard-resolver",
-    ]
+    assert semantic_dense_payload["native_training_missing_requirements"] == []
     assert semantic_dense_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
         "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
+        "semantic-target-shard-resolver-smoke",
         "semantic-hash-alignment-loss-items-smoke",
         "semantic-dense-planner-alignment-adamw-smoke",
         "semantic-planner-forward-backward-smoke",
@@ -11805,6 +11804,31 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_semantic_alignment_loss_items_float32" in semantic_jepa_loss_smoke_payload["loop_composition_stages"]
     assert "nfn_native_tile_sum_accumulate_float32" in semantic_jepa_loss_smoke_payload["loop_composition_stages"]
 
+    semantic_target_smoke_missing_lib = subprocess.run(
+        [
+            str(semantic_dense_jepa),
+            "--smoke-semantic-target-shard-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_target_smoke_missing_lib.returncode == 2
+    semantic_target_smoke_payload = json.loads(semantic_target_smoke_missing_lib.stdout)
+    assert semantic_target_smoke_payload["smoke"] == "semantic_target_shard_resolver_slice"
+    assert semantic_target_smoke_payload["passed"] is False
+    assert semantic_target_smoke_payload["compiled_native_boundary"] is True
+    assert semantic_target_smoke_payload["torch_required"] is False
+    assert semantic_target_smoke_payload["graph_editor_tensor_flow"] is False
+    assert semantic_target_smoke_payload["resolver"] == "native-token-shard-derived-semantic-targets"
+    assert "native_token_shard_to_semantic_targets" in semantic_target_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_semantic_alignment_loss_items_float32" in semantic_target_smoke_payload[
+        "loop_composition_stages"
+    ]
+
     semantic_router_plan = subprocess.run(
         [
             str(semantic_router_moe),
@@ -11835,9 +11859,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
         "load-balance-loss-adamw-smoke",
+        "semantic-target-shard-resolver-smoke",
         "semantic-hash-alignment-loss-items-smoke",
         "route-selection-distillation-balance-losses-smoke",
+        "semantic-router-forward-backward-smoke",
+        "semantic-expert-dispatch-combine-smoke",
         "semantic-router-moe-route-expert-adamw-smoke",
+        "ar-plus-semantic-plus-jepa-loss-composition-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
@@ -11876,7 +11904,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_plan.returncode == 0, diffusion_plan.stderr
     diffusion_payload = json.loads(diffusion_plan.stdout)
     assert diffusion_payload["model_family"] == "diffusion"
-    assert diffusion_payload["status"] == "family-native-trainer-missing"
+    assert diffusion_payload["status"] == "native-trainer-covered"
     assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
     assert diffusion_payload["native_training_missing_requirements"] == []
     assert diffusion_payload["native_training_completed_requirements"] == [
@@ -11919,7 +11947,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_plan.returncode == 0, seq2seq_plan.stderr
     seq2seq_payload = json.loads(seq2seq_plan.stdout)
     assert seq2seq_payload["model_family"] == "seq2seq"
-    assert seq2seq_payload["status"] == "family-native-trainer-missing"
+    assert seq2seq_payload["status"] == "native-trainer-covered"
     assert seq2seq_payload["native_training_coverage_class"] == "missing-seq2seq-objective"
     assert seq2seq_payload["native_training_missing_requirements"] == []
     assert seq2seq_payload["native_training_completed_requirements"] == [
@@ -11956,7 +11984,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_plan.returncode == 0, ttt_plan.stderr
     ttt_payload = json.loads(ttt_plan.stdout)
     assert ttt_payload["model_family"] == "ttt-llama"
-    assert ttt_payload["status"] == "family-native-trainer-missing"
+    assert ttt_payload["status"] == "native-trainer-covered"
     assert ttt_payload["native_training_coverage_class"] == "missing-ttt-transformer-lm"
     assert ttt_payload["native_training_missing_requirements"] == []
     assert ttt_payload["native_training_completed_requirements"] == [
@@ -11995,7 +12023,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_plan.returncode == 0, universal_plan.stderr
     universal_payload = json.loads(universal_plan.stdout)
     assert universal_payload["model_family"] == "universal-llama"
-    assert universal_payload["status"] == "family-native-trainer-missing"
+    assert universal_payload["status"] == "native-trainer-covered"
     assert universal_payload["native_training_coverage_class"] == "missing-universal-transformer-lm"
     assert universal_payload["native_training_missing_requirements"] == []
     assert universal_payload["native_training_completed_requirements"] == [
@@ -12033,7 +12061,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_plan.returncode == 0, hnet_plan.stderr
     hnet_payload = json.loads(hnet_plan.stdout)
     assert hnet_payload["model_family"] == "hnet-lm"
-    assert hnet_payload["status"] == "family-native-trainer-missing"
+    assert hnet_payload["status"] == "native-trainer-covered"
     assert hnet_payload["native_training_coverage_class"] == "missing-hnet-byte-lm"
     assert hnet_payload["native_training_missing_requirements"] == []
     assert hnet_payload["native_training_completed_requirements"] == [
@@ -12072,7 +12100,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_plan.returncode == 0, jamba_plan.stderr
     jamba_payload = json.loads(jamba_plan.stdout)
     assert jamba_payload["model_family"] == "jamba"
-    assert jamba_payload["status"] == "family-native-trainer-missing"
+    assert jamba_payload["status"] == "native-trainer-covered"
     assert jamba_payload["native_training_coverage_class"] == "missing-jamba-hybrid-mamba-transformer-lm"
     assert jamba_payload["native_training_missing_requirements"] == []
     assert jamba_payload["native_training_completed_requirements"] == [
@@ -12184,7 +12212,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert unified_moe_jepa.returncode == 0, unified_moe_jepa.stderr
     moe_jepa_unified_payload = json.loads(unified_moe_jepa.stdout)
     assert moe_jepa_unified_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_unified_payload["status"] == "family-native-trainer-missing"
+    assert moe_jepa_unified_payload["status"] == "native-trainer-covered"
     assert moe_jepa_unified_payload["native_training_coverage_class"] == "missing-moe-jepa-objective"
     assert moe_jepa_unified_payload["native_training_missing_requirements"] == []
     assert moe_jepa_unified_payload["native_training_completed_requirements"] == [
@@ -12549,6 +12577,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-jepa-loss-composition-step" in unified_semantic_jepa_loss_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_jepa_loss_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_jepa_loss_smoke_command.stdout
+
+    unified_semantic_target_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-dense-jepa-evo",
+            "--native-cuda-smoke-semantic-target-shard-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_target_smoke_command.returncode == 0
+    ), unified_semantic_target_smoke_command.stderr
+    assert str(semantic_dense_jepa) in unified_semantic_target_smoke_command.stdout
+    assert "--smoke-semantic-target-shard-step" in unified_semantic_target_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_target_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_target_smoke_command.stdout
 
     unified_semantic_route_loss_smoke_command = subprocess.run(
         [

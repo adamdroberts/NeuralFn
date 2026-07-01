@@ -894,17 +894,11 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "missing-semantic-dense-jepa-objective") {
-        return {
-            "semantic-target-shard-resolver",
-        };
+        return {};
     }
     if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
         return {
-            "semantic-target-shard-resolver",
-            "semantic-router-forward-backward",
-            "semantic-expert-dispatch-combine",
             "route-evo-device-controller",
-            "ar-plus-semantic-plus-jepa-loss-composition",
         };
     }
     if (coverage_class == "missing-seq2seq-objective") {
@@ -976,9 +970,13 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             }
         }
         if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
+            completed.push_back("semantic-target-shard-resolver-smoke");
             completed.push_back("semantic-hash-alignment-loss-items-smoke");
             completed.push_back("route-selection-distillation-balance-losses-smoke");
+            completed.push_back("semantic-router-forward-backward-smoke");
+            completed.push_back("semantic-expert-dispatch-combine-smoke");
             completed.push_back("semantic-router-moe-route-expert-adamw-smoke");
+            completed.push_back("ar-plus-semantic-plus-jepa-loss-composition-smoke");
         }
         completed.push_back("family-parameter-layout-checkpoint-inference-smoke");
         return completed;
@@ -999,6 +997,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "jepa-projector-predictor-latent-loss-smoke",
             "ar-plus-jepa-loss-composition-smoke",
             "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
+            "semantic-target-shard-resolver-smoke",
             "semantic-hash-alignment-loss-items-smoke",
             "semantic-dense-planner-alignment-adamw-smoke",
             "semantic-planner-forward-backward-smoke",
