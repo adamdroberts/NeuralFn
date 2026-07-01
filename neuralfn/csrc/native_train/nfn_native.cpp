@@ -257,6 +257,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-semantic-dense-jepa-train-step",
         "--smoke-semantic-router-moe-train-step",
         "--smoke-seq2seq-cross-attention-step",
+        "--smoke-seq2seq-full-encoder-decoder-loop-step",
         "--smoke-seq2seq-loss-composition-step",
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
@@ -545,6 +546,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-semantic-router-moe-train-step" ||
                                arg == "--native-cuda-smoke-semantic-route-loss-step" ||
                                arg == "--native-cuda-smoke-seq2seq-cross-attention-step" ||
+                               arg == "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step" ||
                                arg == "--native-cuda-smoke-seq2seq-loss-composition-step" ||
                                arg == "--native-cuda-smoke-ttt-composite-inner-step" ||
                                arg == "--native-cuda-smoke-ttt-full-transformer-loop-step" ||
@@ -644,6 +646,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-semantic-route-loss-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
                 forwarded.push_back("--smoke-seq2seq-cross-attention-step");
+            } else if (arg == "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step") {
+                forwarded.push_back("--smoke-seq2seq-full-encoder-decoder-loop-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-loss-composition-step") {
                 forwarded.push_back("--smoke-seq2seq-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-ttt-composite-inner-step") {

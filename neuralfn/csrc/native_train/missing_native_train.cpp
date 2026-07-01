@@ -88,6 +88,7 @@ struct Config {
     bool smoke_diffusion_full_loop_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_seq2seq_loss_composition_step = false;
+    bool smoke_seq2seq_full_encoder_decoder_loop_step = false;
     bool smoke_ttt_linear_inner_step = false;
     bool smoke_ttt_composite_inner_step = false;
     bool smoke_ttt_full_transformer_loop_step = false;
@@ -304,6 +305,7 @@ void print_usage(const char* program) {
         << "  --smoke-diffusion-full-loop-step Launch diffusion timestep/mask/objective native loop smoke on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-loss-composition-step Launch seq2seq decoder-to-encoder attention, CE loss/backward, and LM-head AdamW kernels on CUDA\n"
+        << "  --smoke-seq2seq-full-encoder-decoder-loop-step Launch seq2seq encoder-decoder native-loop smoke on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-composite-inner-step Launch TTT base/down/tanh/up residual, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-ttt-full-transformer-loop-step Launch TTT composed transformer-loop smoke on CUDA\n"
@@ -397,6 +399,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-seq2seq-loss-composition-step" ||
                    arg == "--native-cuda-smoke-seq2seq-loss-composition-step") {
             cfg.smoke_seq2seq_loss_composition_step = true;
+        } else if (arg == "--smoke-seq2seq-full-encoder-decoder-loop-step" ||
+                   arg == "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step") {
+            cfg.smoke_seq2seq_full_encoder_decoder_loop_step = true;
         } else if (arg == "--smoke-ttt-linear-inner-step" || arg == "--native-cuda-smoke-ttt-linear-inner-step") {
             cfg.smoke_ttt_linear_inner_step = true;
         } else if (arg == "--smoke-ttt-composite-inner-step" || arg == "--native-cuda-smoke-ttt-composite-inner-step") {
@@ -11148,9 +11153,11 @@ int print_seq2seq_cross_attention_smoke_json(const Config& cfg, const char* prog
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (cfg.smoke_seq2seq_loss_composition_step
-                ? "seq2seq_loss_composition_train_step_slice"
-                : "seq2seq_cross_attention_train_step_slice")
+        << (cfg.smoke_seq2seq_full_encoder_decoder_loop_step
+                ? "seq2seq_full_encoder_decoder_loop_train_step_slice"
+                : (cfg.smoke_seq2seq_loss_composition_step
+                       ? "seq2seq_loss_composition_train_step_slice"
+                       : "seq2seq_cross_attention_train_step_slice"))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -11164,6 +11171,13 @@ int print_seq2seq_cross_attention_smoke_json(const Config& cfg, const char* prog
         << "  \"shape\": {\"batch\": " << kBatch << ", \"heads\": " << kHeads
         << ", \"decoder_seq\": " << kSeqQ << ", \"encoder_seq\": " << kSeqK
         << ", \"dim\": " << kDim << ", \"vocab\": " << kVocab << "},\n"
+        << "  \"seq2seq_loop\": [\n"
+        << "    \"decoder_to_encoder_attention\",\n"
+        << "    \"lm_head\",\n"
+        << "    \"token_ce_backward\",\n"
+        << "    \"cross_attention_backward\",\n"
+        << "    \"adamw\"\n"
+        << "  ],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_scaled_dot_product_attention_float32\",\n"
         << "    \"nfn_native_tile_linear_float32\",\n"
@@ -12528,7 +12542,8 @@ int main(int argc, char** argv) {
         if (cfg.smoke_diffusion_objective_step || cfg.smoke_diffusion_full_loop_step) {
             return print_diffusion_objective_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_seq2seq_cross_attention_step || cfg.smoke_seq2seq_loss_composition_step) {
+        if (cfg.smoke_seq2seq_cross_attention_step || cfg.smoke_seq2seq_loss_composition_step ||
+            cfg.smoke_seq2seq_full_encoder_decoder_loop_step) {
             return print_seq2seq_cross_attention_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_ttt_linear_inner_step) {

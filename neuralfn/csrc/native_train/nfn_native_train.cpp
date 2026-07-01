@@ -546,6 +546,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
         "--smoke-seq2seq-cross-attention-step",
+        "--smoke-seq2seq-full-encoder-decoder-loop-step",
         "--smoke-seq2seq-loss-composition-step",
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
@@ -610,6 +611,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
         "--smoke-seq2seq-cross-attention-step",
+        "--smoke-seq2seq-full-encoder-decoder-loop-step",
         "--smoke-seq2seq-loss-composition-step",
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
@@ -1099,6 +1101,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-semantic-router-moe-train-step",
                 "--native-cuda-smoke-semantic-route-loss-step",
                 "--native-cuda-smoke-seq2seq-cross-attention-step",
+                "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step",
                 "--native-cuda-smoke-seq2seq-loss-composition-step",
                 "--native-cuda-smoke-ttt-composite-inner-step",
                 "--native-cuda-smoke-ttt-full-transformer-loop-step",
@@ -1195,6 +1198,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-semantic-route-loss-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
                 forwarded.push_back("--smoke-seq2seq-cross-attention-step");
+            } else if (arg == "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step") {
+                forwarded.push_back("--smoke-seq2seq-full-encoder-decoder-loop-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-loss-composition-step") {
                 forwarded.push_back("--smoke-seq2seq-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-ttt-composite-inner-step") {

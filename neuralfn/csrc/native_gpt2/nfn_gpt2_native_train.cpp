@@ -920,9 +920,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-seq2seq-objective") {
-        return {
-            "encoder-decoder-native-loop",
-        };
+        return {};
     }
     if (coverage_class == "missing-diffusion-objective") {
         return {};
@@ -1024,6 +1022,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "seq2seq-cross-attention-ce-adamw-smoke",
             "seq2seq-loss-composition-adamw-smoke",
+            "seq2seq-full-encoder-decoder-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }

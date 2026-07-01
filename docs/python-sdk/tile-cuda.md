@@ -678,6 +678,13 @@ PATH` or the unified `--native-cuda-smoke-seq2seq-loss-composition-step` alias
 on seq2seq families to run the same decoder-to-encoder attention plus CE
 loss/backward and LM-head AdamW path as the explicit no-Torch
 loss-composition coverage smoke. Use
+`nfn_seq2seq_native_train --smoke-seq2seq-full-encoder-decoder-loop-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step` alias on seq2seq
+families to run the decoder-to-encoder attention, LM-head, CE backward,
+cross-attention backward, and AdamW loop slice and report
+`seq2seq-full-encoder-decoder-loop-smoke` in native preflight completed
+requirements. Use
 `nfn_ttt_llama_native_train --smoke-ttt-linear-inner-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-ttt-linear-inner-step` alias on TTT
 families to run inner linear forward, latent MSE, linear input/weight backward,
