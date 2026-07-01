@@ -156,6 +156,7 @@ NATIVE_TRAIN_FAMILY_TARGETS = {
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
     "jepa": "nfn_jepa_native_train",
+    "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
     "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
     "auxfree-moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
     "moe-jepa-evo-modern": "nfn_moe_jepa_evo_native_train",
@@ -274,6 +275,21 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
         "kernel_status": "required-tile-symbols-present",
         "trainer_loop_status": "family-native-loop-missing",
         "notes": "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
+    },
+    {
+        "name": "semantic-dense-jepa",
+        "status": "missing-native-trainer",
+        "native_target": "nfn_semantic_dense_jepa_native_train",
+        "transformer_lm_status": "missing-native-trainer",
+        "token_lm_status": "not-applicable",
+        "geometry_status": "requires-semantic-dense-jepa-native-loop",
+        "kernel_status": "required-tile-symbols-present",
+        "trainer_loop_status": "family-native-loop-missing",
+        "notes": (
+            "Semantic dense JEPA Evo training needs semantic target resolution, "
+            "planner/projector/predictor wiring, semantic-alignment loss, latent "
+            "MSE, and AR loss composition."
+        ),
     },
     {
         "name": "moe-jepa-evo",

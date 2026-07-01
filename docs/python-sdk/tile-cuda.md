@@ -66,6 +66,11 @@ latent MSE, and AdamW. `nfn_semantic_router_moe_native_train --print-plan
 --check-tile-ops --tile-ops-lib PATH` verifies those symbols without importing
 Torch or sending real tensors through graph-editor nodes; a passing symbol check
 does not yet mean the full semantic trainer loop is implemented.
+`nfn_semantic_dense_jepa_native_train --print-plan --check-tile-ops
+--tile-ops-lib PATH` is the matching semantic dense JEPA Evo preflight. It
+requires the linear/projector ABI, semantic-alignment item loss, latent MSE, and
+AdamW symbols for the dense semantic planner coverage class while still
+reporting `family-native-loop-missing` until the real trainer loop is wired.
 
 Direct compiled native GPT binaries resolve symbolic CUDA device selectors
 before they load CUDA. Set `CUDA_VISIBLE_DEVICES=dedicated`, `auto`, or

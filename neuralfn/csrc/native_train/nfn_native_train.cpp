@@ -134,6 +134,17 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
     },
     {
+        "semantic-dense-jepa",
+        "missing-native-trainer",
+        "nfn_semantic_dense_jepa_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-semantic-dense-jepa-native-loop",
+        "required-tile-symbols-present",
+        "family-native-loop-missing",
+        "Semantic dense JEPA Evo training needs semantic target resolution, planner/projector/predictor wiring, semantic-alignment loss, latent MSE, and AR loss composition.",
+    },
+    {
         "moe-jepa-evo",
         "missing-native-trainer",
         "nfn_moe_jepa_evo_native_train",

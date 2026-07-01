@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a dedicated semantic dense JEPA native preflight family. The compiled
+  native registry and SDK registry now expose `semantic-dense-jepa` with target
+  `nfn_semantic_dense_jepa_native_train`, and
+  `tools/build_native_missing_trainers.sh` builds that target with required
+  symbols for linear/projector kernels, semantic-alignment item loss, latent
+  MSE, and AdamW. This separates the
+  `missing-semantic-dense-jepa-objective` templates from the generic dense JEPA
+  placeholder while keeping the real trainer loop marked
+  `family-native-loop-missing`. Verification: rebuilt `nfn_native_train` and
+  all missing-family binaries; direct and unified semantic-dense JEPA preflights
+  reported `required-tile-symbols-present` against
+  `build/libnfn_native_train_tile_ops.so`; focused native registry/dispatch
+  pytest passed; the no-Torch verifier passed 30 artifact scans, 69 Python
+  entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added trainer-facing raw CUDA Tile ABI exports for semantic routing and
   semantic-alignment coverage. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_broadcast_chunk_routes_float32`,

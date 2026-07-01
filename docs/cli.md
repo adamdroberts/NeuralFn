@@ -861,13 +861,18 @@ and can run the selected dense GPT native trainer; arbitrary or incompatible cus
 graph JSON reports `custom-graph-native-trainer-missing`, and missing custom
 graph paths report `custom-graph-file-missing`. Unknown template names return
 `unknown-template`, which keeps typos separate from known migration work.
-The compiled per-family LLaMA, MixLLaMA, JEPA, semantic-router MoE, and
-DeepSeek-V4 binaries also accept `--print-plan`, `--dry-run`, and
+The compiled per-family LLaMA, MixLLaMA, JEPA, semantic-dense JEPA,
+semantic-router MoE, and DeepSeek-V4 binaries also accept `--print-plan`,
+`--dry-run`, and
 `--check-tile-ops --tile-ops-lib PATH`. Those preflight actions emit JSON with
 `compiled_native_boundary: true`, `torch_required: false`, and
 `graph_editor_tensor_flow: false`, plus the parsed schedule, required raw Tile
 symbols, and remaining family-native work; no-action training still exits
 nonzero until the real family loop lands.
+Use `--base-model semantic-dense-jepa` to inspect the semantic dense JEPA Evo
+coverage class directly; it requires linear/projector ABI, semantic-alignment
+loss items, latent MSE, and AdamW while still reporting
+`family-native-loop-missing`.
 For semantic-router MoE, that required-symbol list now includes semantic hash
 routing, chunk-route broadcast, semantic-alignment item losses, attentionless
 decoder projection, expert bias add, standard top-k/expert-route broadcast,

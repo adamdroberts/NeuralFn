@@ -61,9 +61,14 @@ build_one "moe-jepa-evo" "nfn_moe_jepa_evo_native_train" \
   "standard-moe-transformer-loop,jepa-target-encoder-forward,jepa-projector-predictor-forward-backward,latent-mse-loss-device-reduction,ar-plus-jepa-plus-router-loss-composition"
 build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
-  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-dense-jepa-objective" \
   "jepa-target-encoder-forward,jepa-projector-predictor-forward-backward,latent-mse-loss-device-reduction,ar-plus-jepa-loss-composition"
+build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
+  "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
+  "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
+  "missing-semantic-dense-jepa-objective" \
+  "semantic-target-shard-resolver,semantic-planner-forward-backward,semantic-alignment-loss-device-reduction,jepa-target-encoder-forward,ar-plus-semantic-plus-jepa-loss-composition"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

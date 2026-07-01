@@ -7549,6 +7549,10 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
     assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
     assert registry["moe-jepa-evo"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["semantic-dense-jepa"]["native_target"] == "nfn_semantic_dense_jepa_native_train"
+    assert registry["semantic-dense-jepa"]["geometry_status"] == "requires-semantic-dense-jepa-native-loop"
+    assert registry["semantic-dense-jepa"]["kernel_status"] == "required-tile-symbols-present"
+    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "family-native-loop-missing"
     assert registry["jamba"]["native_target"] == "nfn_jamba_native_train"
     assert registry["seq2seq"]["native_target"] == "nfn_seq2seq_native_train"
     assert registry["diffusion"]["native_target"] == "nfn_diffusion_native_train"
@@ -10834,6 +10838,10 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert loop_statuses["gpt"] == "implemented"
     assert kernel_statuses["llama"] == "required-tile-symbols-present"
     assert loop_statuses["llama"] == "family-native-loop-missing"
+    assert native_targets["semantic-dense-jepa"] == "nfn_semantic_dense_jepa_native_train"
+    assert geometry_statuses["semantic-dense-jepa"] == "requires-semantic-dense-jepa-native-loop"
+    assert kernel_statuses["semantic-dense-jepa"] == "required-tile-symbols-present"
+    assert loop_statuses["semantic-dense-jepa"] == "family-native-loop-missing"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
@@ -10903,6 +10911,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama.exists()
     moe_jepa = tmp_path / "nfn_moe_jepa_evo_native_train"
     assert moe_jepa.exists()
+    semantic_dense_jepa = tmp_path / "nfn_semantic_dense_jepa_native_train"
+    assert semantic_dense_jepa.exists()
     semantic_router_moe = tmp_path / "nfn_semantic_router_moe_native_train"
     assert semantic_router_moe.exists()
     jamba = tmp_path / "nfn_jamba_native_train"
@@ -11054,6 +11064,42 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_density_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_loss_float32" in moe_jepa_payload["required_tile_symbols"]
+
+    semantic_dense_plan = subprocess.run(
+        [
+            str(semantic_dense_jepa),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_dense_plan.returncode == 0, semantic_dense_plan.stderr
+    semantic_dense_payload = json.loads(semantic_dense_plan.stdout)
+    assert semantic_dense_payload["model_family"] == "semantic-dense-jepa"
+    assert semantic_dense_payload["status"] == "family-native-trainer-missing"
+    assert semantic_dense_payload["native_training_coverage_class"] == "missing-semantic-dense-jepa-objective"
+    assert semantic_dense_payload["compiled_native_boundary"] is True
+    assert semantic_dense_payload["torch_required"] is False
+    assert semantic_dense_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_linear_float32",
+        "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_semantic_alignment_loss_items_float32",
+        "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
+    ):
+        assert symbol in semantic_dense_payload["required_tile_symbols"]
 
     semantic_router_plan = subprocess.run(
         [
