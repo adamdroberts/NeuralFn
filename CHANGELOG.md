@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a LLaMA-family token-LM train-step native smoke.
+  `nfn_llama_native_train --smoke-llama-token-lm-train-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-token-lm-train-step` alias now run token
+  embedding, LM logits, token CE forward/backward, LM-head backward, token
+  embedding weight backward, and AdamW through raw CUDA Tile ABI calls without
+  Torch or graph-editor tensor flow. LLaMA-family catalog/preflight JSON now
+  reports `token-lm-embedding-ce-backward-adamw-smoke` as completed and keeps
+  the remaining blocker as `llama-full-forward-backward-loop`. Verification:
+  rebuilt the missing-family native trainers, unified native frontends, dense
+  GPT catalog binaries, and the linked dense GPT binary; live CUDA direct and
+  unified LLaMA token-LM train-step smokes passed with
+  `token_lm_hidden_grad_max_abs=0.00850828`,
+  `token_lm_embedding_grad_max_abs=0.00850828`, and
+  `token_lm_embedding_weight_delta_max_abs=0.104`.
+
 - Added a LLaMA-family RoPE/SwiGLU block train-step native smoke.
   `nfn_llama_native_train --smoke-llama-rope-block-train-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama

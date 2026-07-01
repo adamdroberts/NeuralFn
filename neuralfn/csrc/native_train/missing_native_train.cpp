@@ -65,6 +65,7 @@ struct Config {
     bool smoke_llama_loop = false;
     bool smoke_llama_train_step = false;
     bool smoke_llama_lm_head_step = false;
+    bool smoke_llama_token_lm_train_step = false;
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
     bool smoke_llama_rope_attention_block_step = false;
@@ -270,6 +271,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
+        << "  --smoke-llama-token-lm-train-step Launch token embedding, LM-head CE/backward, embedding backward, and AdamW on CUDA\n"
         << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-llama-attention-block-step Launch RMSNorm, QKV projection, packed attention, and residual kernels on CUDA\n"
         << "  --smoke-llama-rope-attention-block-step Launch RMSNorm, QKV split, RoPE, attention, and residual kernels on CUDA\n"
@@ -323,6 +325,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_train_step = true;
         } else if (arg == "--smoke-llama-lm-head-step" || arg == "--native-cuda-smoke-llama-lm-head-step") {
             cfg.smoke_llama_lm_head_step = true;
+        } else if (arg == "--smoke-llama-token-lm-train-step" || arg == "--native-cuda-smoke-llama-token-lm-train-step") {
+            cfg.smoke_llama_token_lm_train_step = true;
         } else if (arg == "--smoke-llama-packed-attention-step" || arg == "--native-cuda-smoke-llama-packed-attention-step") {
             cfg.smoke_llama_packed_attention_step = true;
         } else if (arg == "--smoke-llama-attention-block-step" || arg == "--native-cuda-smoke-llama-attention-block-step") {
@@ -762,6 +766,8 @@ int print_family_layout_checkpoint_smoke_json(const Config& cfg, const char*) {
 }
 
 int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
+    const bool token_lm_train_step = cfg.smoke_llama_token_lm_train_step;
+    const bool run_lm_head = cfg.smoke_llama_lm_head_step || token_lm_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool llama_family =
         family.find("llama") != std::string::npos ||
@@ -792,6 +798,10 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingBackwardWeightFn = int (*)(
+        const std::int64_t*, const float*, float*, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsFn = int (*)(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyBackwardFn = int (*)(
@@ -826,6 +836,8 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     LinearFn linear = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardWeightFn linear_backward_weight = nullptr;
+    TokenEmbeddingFn token_embedding = nullptr;
+    TokenEmbeddingBackwardWeightFn token_embedding_backward_weight = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
     TokenCrossEntropyBackwardFn ce_backward = nullptr;
     AdamWFn adamw = nullptr;
@@ -875,6 +887,13 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         }
         return max_err;
     };
+    auto max_abs = [](const std::vector<float>& values) {
+        float out = 0.0f;
+        for (float value : values) {
+            out = std::max(out, std::fabs(value));
+        }
+        return out;
+    };
     bool passed = false;
     float rms_max_error = 0.0f;
     float rms_backward_max_error = 0.0f;
@@ -888,6 +907,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
     float lm_head_loss_max_error = 0.0f;
     float lm_head_grad_weight_max_error = 0.0f;
     float lm_head_weight_max_error = 0.0f;
+    float token_lm_embedding_grad_max_abs = 0.0f;
+    float token_lm_embedding_weight_delta_max_abs = 0.0f;
+    float token_lm_hidden_grad_max_abs = 0.0f;
 
     std::vector<void*> allocated;
     auto free_allocated = [&]() {
@@ -926,6 +948,12 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 tile_handle, "nfn_native_tile_linear_backward_input_float32");
             linear_backward_weight = load_symbol<LinearBackwardWeightFn>(
                 tile_handle, "nfn_native_tile_linear_backward_weight_float32");
+            if (token_lm_train_step) {
+                token_embedding = load_symbol<TokenEmbeddingFn>(
+                    tile_handle, "nfn_native_tile_token_embedding_float32");
+                token_embedding_backward_weight = load_symbol<TokenEmbeddingBackwardWeightFn>(
+                    tile_handle, "nfn_native_tile_token_embedding_backward_weight_float32");
+            }
             ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
                 tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
             ce_backward = load_symbol<TokenCrossEntropyBackwardFn>(
@@ -933,11 +961,13 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
             adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
             if (rms_norm == nullptr || rms_norm_backward == nullptr || rotary == nullptr ||
                 rotary_backward == nullptr || swiglu == nullptr || swiglu_backward == nullptr ||
-                ((cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) &&
+                ((cfg.smoke_llama_train_step || run_lm_head) &&
                  (fill == nullptr || adamw == nullptr)) ||
-                (cfg.smoke_llama_lm_head_step &&
+                (run_lm_head &&
                  (linear == nullptr || linear_backward_input == nullptr || linear_backward_weight == nullptr ||
-                  ce_partials == nullptr || ce_backward == nullptr))) {
+                  ce_partials == nullptr || ce_backward == nullptr)) ||
+                (token_lm_train_step &&
+                 (token_embedding == nullptr || token_embedding_backward_weight == nullptr))) {
                 error = "Tile ops library is missing one or more LLaMA loop-composition symbols";
             }
         }
@@ -971,12 +1001,27 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         std::vector<float> x(static_cast<std::size_t>(kElements));
         std::vector<float> grad(static_cast<std::size_t>(kElements));
         std::vector<float> inv_freq(static_cast<std::size_t>(kHeadDim / 2));
+        std::vector<float> embedding_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+        std::vector<float> lm_weight_pattern(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+        const std::int64_t token_lm_ids[2] = {0, 1};
         for (std::int64_t i = 0; i < kElements; ++i) {
             x[static_cast<std::size_t>(i)] = 0.05f * static_cast<float>(i + 1);
             grad[static_cast<std::size_t>(i)] = 0.02f * static_cast<float>((i % 7) + 1);
         }
         for (std::int64_t i = 0; i < kHeadDim / 2; ++i) {
             inv_freq[static_cast<std::size_t>(i)] = 1.0f / std::pow(10000.0f, (2.0f * static_cast<float>(i)) / static_cast<float>(kHeadDim));
+        }
+        for (std::int64_t token = 0; token < kLmVocab; ++token) {
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                const std::size_t idx = static_cast<std::size_t>(token * kDim + dim);
+                embedding_weight[idx] =
+                    token < kRows
+                        ? x[static_cast<std::size_t>(token * kDim + dim)]
+                        : 0.01f * static_cast<float>((token + 1) * (dim + 1));
+                lm_weight_pattern[idx] =
+                    0.03f * static_cast<float>(token + 1) +
+                    0.002f * static_cast<float>((dim % 5) + 1);
+            }
         }
 
         float* d_x = nullptr;
@@ -998,6 +1043,11 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         float* d_lm_loss = nullptr;
         float* d_lm_grad_logits = nullptr;
         float* d_lm_grad_hidden = nullptr;
+        float* d_embedding_weight = nullptr;
+        float* d_embedding_grad_weight = nullptr;
+        float* d_embedding_exp_avg = nullptr;
+        float* d_embedding_exp_avg_sq = nullptr;
+        std::int64_t* d_token_lm_ids = nullptr;
         std::int64_t* d_lm_targets = nullptr;
         auto alloc = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
@@ -1029,7 +1079,13 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
               alloc(&d_param_grad, 4, "adamw_grad") &&
               alloc(&d_exp_avg, 4, "adamw_exp_avg") &&
               alloc(&d_exp_avg_sq, 4, "adamw_exp_avg_sq"))) &&
-            (!cfg.smoke_llama_lm_head_step ||
+            (!token_lm_train_step ||
+             (alloc(&d_embedding_weight, kLmWeightElements, "embedding_weight") &&
+              alloc(&d_embedding_grad_weight, kLmWeightElements, "embedding_grad_weight") &&
+              alloc(&d_embedding_exp_avg, kLmWeightElements, "embedding_exp_avg") &&
+              alloc(&d_embedding_exp_avg_sq, kLmWeightElements, "embedding_exp_avg_sq") &&
+              alloc_i64(&d_token_lm_ids, kRows, "token_lm_ids"))) &&
+            (!run_lm_head ||
              (alloc(&d_lm_weight, kLmWeightElements, "lm_weight") &&
               alloc(&d_lm_grad_weight, kLmWeightElements, "lm_grad_weight") &&
               alloc(&d_lm_exp_avg, kLmWeightElements, "lm_exp_avg") &&
@@ -1053,6 +1109,22 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 status = cuda_memcpy(d_inv, inv_freq.data(), inv_freq.size() * sizeof(float), kCudaMemcpyHostToDevice);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy inv_freq H2D");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = cuda_memcpy(
+                    d_embedding_weight,
+                    embedding_weight.data(),
+                    embedding_weight.size() * sizeof(float),
+                    kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy embedding_weight H2D");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = cuda_memcpy(d_token_lm_ids, token_lm_ids, sizeof(token_lm_ids), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy token_lm_ids H2D");
                 }
             }
             if (error.empty()) {
@@ -1134,50 +1206,85 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_adamw_step_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
-                status = fill(d_lm_weight, kLmWeightElements, 0.1f, nullptr);
-                if (status != 0) {
-                    error = cuda_error(status, "fill lm_weight");
+            if (error.empty() && run_lm_head) {
+                if (token_lm_train_step) {
+                    status = cuda_memcpy(
+                        d_lm_weight,
+                        lm_weight_pattern.data(),
+                        lm_weight_pattern.size() * sizeof(float),
+                        kCudaMemcpyHostToDevice);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaMemcpy lm_weight_pattern H2D");
+                    }
+                } else {
+                    status = fill(d_lm_weight, kLmWeightElements, 0.1f, nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "fill lm_weight");
+                    }
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = fill(d_lm_grad_weight, kLmWeightElements, 0.0f, nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "fill lm_grad_weight");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = fill(d_lm_exp_avg, kLmWeightElements, 0.0f, nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "fill lm_exp_avg");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = fill(d_lm_exp_avg_sq, kLmWeightElements, 0.0f, nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "fill lm_exp_avg_sq");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && token_lm_train_step) {
+                status = fill(d_embedding_grad_weight, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill embedding_grad_weight");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = fill(d_embedding_exp_avg, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill embedding_exp_avg");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = fill(d_embedding_exp_avg_sq, kLmWeightElements, 0.0f, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "fill embedding_exp_avg_sq");
+                }
+            }
+            if (error.empty() && run_lm_head) {
                 const std::int64_t lm_targets[2] = {1, 2};
                 status = cuda_memcpy(d_lm_targets, lm_targets, sizeof(lm_targets), kCudaMemcpyHostToDevice);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy lm_targets H2D");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && token_lm_train_step) {
+                status = token_embedding(d_embedding_weight, d_token_lm_ids, d_x, kRows, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_embedding_float32");
+                }
+            }
+            if (error.empty() && run_lm_head) {
                 status = linear(d_x, d_lm_weight, nullptr, d_lm_logits, kRows, kDim, kLmVocab, false, nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "nfn_native_tile_linear_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = ce_partials(d_lm_logits, d_lm_targets, d_lm_loss, kRows, kLmVocab, nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = ce_backward(
                     d_lm_logits,
                     d_lm_targets,
@@ -1190,7 +1297,7 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_token_cross_entropy_backward_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = linear_backward_input(
                     d_lm_grad_logits,
                     d_lm_weight,
@@ -1203,7 +1310,7 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = linear_backward_weight(
                     d_x,
                     d_lm_grad_logits,
@@ -1216,7 +1323,19 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_linear_backward_weight_float32");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && token_lm_train_step) {
+                status = token_embedding_backward_weight(
+                    d_token_lm_ids,
+                    d_lm_grad_hidden,
+                    d_embedding_grad_weight,
+                    kRows,
+                    kDim,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_embedding_backward_weight_float32");
+                }
+            }
+            if (error.empty() && run_lm_head) {
                 status = adamw(
                     d_lm_weight,
                     d_lm_grad_weight,
@@ -1235,6 +1354,25 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "nfn_native_tile_adamw_step_float32 lm_head");
                 }
             }
+            if (error.empty() && token_lm_train_step) {
+                status = adamw(
+                    d_embedding_weight,
+                    d_embedding_grad_weight,
+                    d_embedding_exp_avg,
+                    d_embedding_exp_avg_sq,
+                    kLmWeightElements,
+                    0.1f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.1f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 embedding");
+                }
+            }
             if (error.empty()) {
                 status = cuda_device_synchronize();
                 if (status != 0) {
@@ -1251,6 +1389,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
             std::vector<float> actual_lm_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
             std::vector<float> actual_lm_grad_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
             std::vector<float> actual_lm_loss(1, 0.0f);
+            std::vector<float> actual_lm_grad_hidden(static_cast<std::size_t>(kElements), 0.0f);
+            std::vector<float> actual_embedding_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+            std::vector<float> actual_embedding_grad_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
             if (error.empty()) {
                 status = cuda_memcpy(actual_out.data(), d_out, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
@@ -1293,22 +1434,52 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     error = cuda_error(status, "cudaMemcpy adamw_exp_avg_sq D2H");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = cuda_memcpy(actual_lm_weight.data(), d_lm_weight, actual_lm_weight.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy lm_weight D2H");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = cuda_memcpy(actual_lm_grad_weight.data(), d_lm_grad_weight, actual_lm_grad_weight.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy lm_grad_weight D2H");
                 }
             }
-            if (error.empty() && cfg.smoke_llama_lm_head_step) {
+            if (error.empty() && run_lm_head) {
                 status = cuda_memcpy(actual_lm_loss.data(), d_lm_loss, actual_lm_loss.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy lm_loss D2H");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = cuda_memcpy(
+                    actual_lm_grad_hidden.data(),
+                    d_lm_grad_hidden,
+                    actual_lm_grad_hidden.size() * sizeof(float),
+                    kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lm_grad_hidden D2H");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = cuda_memcpy(
+                    actual_embedding_grad_weight.data(),
+                    d_embedding_grad_weight,
+                    actual_embedding_grad_weight.size() * sizeof(float),
+                    kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy embedding_grad_weight D2H");
+                }
+            }
+            if (error.empty() && token_lm_train_step) {
+                status = cuda_memcpy(
+                    actual_embedding_weight.data(),
+                    d_embedding_weight,
+                    actual_embedding_weight.size() * sizeof(float),
+                    kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy embedding_weight D2H");
                 }
             }
 
@@ -1471,6 +1642,16 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                     }
                 }
             }
+            if (error.empty() && token_lm_train_step) {
+                token_lm_hidden_grad_max_abs = max_abs(actual_lm_grad_hidden);
+                token_lm_embedding_grad_max_abs = max_abs(actual_embedding_grad_weight);
+                for (std::size_t i = 0; i < embedding_weight.size(); ++i) {
+                    token_lm_embedding_weight_delta_max_abs = std::max(
+                        token_lm_embedding_weight_delta_max_abs,
+                        std::fabs(actual_embedding_weight[i] - embedding_weight[i]));
+                }
+                lm_head_loss_max_error = actual_lm_loss[0] > 0.0f ? 0.0f : 1.0f;
+            }
             passed = error.empty() &&
                 rms_max_error <= tolerance &&
                 rms_backward_max_error <= tolerance &&
@@ -1484,7 +1665,12 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
                 (!cfg.smoke_llama_lm_head_step ||
                  (lm_head_loss_max_error <= lm_head_tolerance &&
                   lm_head_grad_weight_max_error <= lm_head_tolerance &&
-                  lm_head_weight_max_error <= lm_head_tolerance));
+                  lm_head_weight_max_error <= lm_head_tolerance)) &&
+                (!token_lm_train_step ||
+                 (lm_head_loss_max_error <= lm_head_tolerance &&
+                  token_lm_hidden_grad_max_abs > 0.0f &&
+                  token_lm_embedding_grad_max_abs > 0.0f &&
+                  token_lm_embedding_weight_delta_max_abs > 0.0f));
             if (!passed && error.empty()) {
                 error = "LLaMA loop-composition smoke exceeded tolerance";
             }
@@ -1498,9 +1684,11 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
         << "  \"smoke\": \""
-        << (cfg.smoke_llama_lm_head_step
+        << (token_lm_train_step
+                ? "llama_token_lm_train_step_slice"
+                : (cfg.smoke_llama_lm_head_step
                 ? "llama_lm_head_train_step_slice"
-                : (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition"))
+                : (cfg.smoke_llama_train_step ? "llama_train_step_slice" : "llama_loop_composition")))
         << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -1521,16 +1709,18 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << "    \"nfn_native_tile_rotary_embedding_backward_float32\",\n"
         << "    \"nfn_native_tile_swiglu_float32\",\n"
         << "    \"nfn_native_tile_swiglu_backward_float32\"";
-    if (cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
+    if (cfg.smoke_llama_train_step || run_lm_head) {
         std::cout << ",\n"
                   << "    \"nfn_native_tile_fill_float32\"";
-        if (cfg.smoke_llama_lm_head_step) {
+        if (run_lm_head) {
             std::cout << ",\n"
+                      << (token_lm_train_step ? "    \"nfn_native_tile_token_embedding_float32\",\n" : "")
                       << "    \"nfn_native_tile_linear_float32\",\n"
                       << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
                       << "    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n"
                       << "    \"nfn_native_tile_linear_backward_input_float32\",\n"
                       << "    \"nfn_native_tile_linear_backward_weight_float32\",\n"
+                      << (token_lm_train_step ? "    \"nfn_native_tile_token_embedding_backward_weight_float32\",\n" : "")
                       << "    \"nfn_native_tile_adamw_step_float32\"\n";
         } else {
             std::cout << ",\n"
@@ -1554,6 +1744,9 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << ", \"lm_head_loss\":" << lm_head_loss_max_error
         << ", \"lm_head_grad_weight\":" << lm_head_grad_weight_max_error
         << ", \"lm_head_weight\":" << lm_head_weight_max_error
+        << ", \"token_lm_hidden_grad_max_abs\":" << token_lm_hidden_grad_max_abs
+        << ", \"token_lm_embedding_grad_max_abs\":" << token_lm_embedding_grad_max_abs
+        << ", \"token_lm_embedding_weight_delta_max_abs\":" << token_lm_embedding_weight_delta_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -10870,7 +11063,8 @@ int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) 
 int main(int argc, char** argv) {
     const Config cfg = parse_args(argc, argv);
     try {
-        if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
+        if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step ||
+            cfg.smoke_llama_token_lm_train_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_llama_packed_attention_step) {

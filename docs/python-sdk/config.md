@@ -99,7 +99,7 @@ including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal
 transformer families. LLaMA-family entries now list completed smoke-backed
 slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
-packed-QKV attention forward/backward,
+token-LM embedding/CE/backward/AdamW, packed-QKV attention forward/backward,
 RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
 RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
 and family checkpoint/inference metadata, while their missing list keeps the

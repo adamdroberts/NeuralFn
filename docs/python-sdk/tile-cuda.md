@@ -516,10 +516,11 @@ missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
 wired. LLaMA-family entries now separate completed smoke-backed slices from the
 remaining blockers: `native_training_completed_requirements` names RMSNorm,
-RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, packed-QKV attention
-forward/backward, RMSNorm/QKV-projection/packed-attention/residual forward
-block, packed-QKV RoPE attention-block integration, RoPE/SwiGLU block
-forward/backward/AdamW, and family
+RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
+token-LM embedding/CE/backward/AdamW, packed-QKV attention forward/backward,
+RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
+RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
+and family
 parameter-layout/checkpoint/inference metadata CUDA smokes, while
 `native_training_missing_requirements` keeps the full LLaMA-family
 forward/backward/optimizer loop. MoE-family
@@ -549,7 +550,13 @@ through device-side fill plus one AdamW update and moment verification. Use
 `nfn_llama_native_train --smoke-llama-lm-head-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-llama-lm-head-step` alias to cover the LM-head
 linear logits, token CE forward/backward, linear input/weight backward, and
-AdamW slice. Use `nfn_llama_native_train --smoke-llama-packed-attention-step
+AdamW slice. Use
+`nfn_llama_native_train --smoke-llama-token-lm-train-step --tile-ops-lib PATH`
+or the unified `--native-cuda-smoke-llama-token-lm-train-step` alias to cover
+the token-ID to loss path: token embedding, LM logits, token CE
+forward/backward, LM-head backward, token embedding weight backward, and AdamW
+without Torch or graph-editor tensor flow. Use `nfn_llama_native_train
+--smoke-llama-packed-attention-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-llama-packed-attention-step` alias to cover packed-QKV
 BF16 causal attention with saved LSE and backward-to-QKV. Use

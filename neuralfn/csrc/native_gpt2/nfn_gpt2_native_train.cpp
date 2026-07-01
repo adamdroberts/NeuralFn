@@ -965,6 +965,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "rope-loop-composition-smoke",
             "swiglu-geglu-mlp-loop-composition-smoke",
             "lm-head-linear-ce-backward-adamw-smoke",
+            "token-lm-embedding-ce-backward-adamw-smoke",
             "packed-qkv-attention-forward-backward-smoke",
             "packed-qkv-attention-block-forward-smoke",
             "packed-qkv-rope-attention-block-integration-smoke",
