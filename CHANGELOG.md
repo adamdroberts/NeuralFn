@@ -2,15 +2,21 @@
 
 ## Unreleased
 
-- Changed the compiled GPT template catalog contract so
-  `build/nfn-native-train --list-templates --json` reports
-  `selected_graph_native_runnable: true` for every listed GPT template selector.
-  Dense GPT-compatible selectors still report `native-transformer-lm`; shipped
-  non-dense families with completed native smoke coverage report
-  `native-trainer-covered` in the no-data catalog. Runtime custom-graph,
-  unknown-template, and dense-loop execution guards remain separate from this
-  catalog action. The no-Torch verifier now fails if any catalog template stops
-  reporting `selected_graph_native_runnable: true`.
+- Corrected the compiled GPT template catalog status so
+  `selected_graph_native_runnable` is true only for selectors with an actual
+  native training route. Dense GPT-compatible selectors continue to report
+  `native-transformer-lm`; non-dense shipped selectors continue to report
+  `template-native-trainer-missing` until their production CUDA Tile trainer
+  loops are implemented. This removes the manifest-only runnable marking from
+  the catalog and keeps the no-Torch verifier focused on real runnable paths.
+
+- Added pre-loop setup visibility for dense GPT CUDA Tile training. The native
+  transformer-LM loop now writes the resolved schedule and AdamW hyperparameters
+  before CUDA setup/prewarm begins, then emits
+  `[nfn-native-train] setup start ...` and `setup done ... elapsed_ms=...`
+  lines for setup stages while stdout remains the final JSON payload. Set
+  `NFN_NATIVE_GPT_SETUP_PROGRESS=0`, `NFN_NATIVE_GPT2_SETUP_PROGRESS=0`, or
+  `NFN_TILE_CUDA_SETUP_PROGRESS=0` to suppress setup-stage stderr output.
 
 - Added live stderr progress for dense GPT CUDA Tile training. The native
   transformer-LM loop now prints a startup summary with the resolved template,

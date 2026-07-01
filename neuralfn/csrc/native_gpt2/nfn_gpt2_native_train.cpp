@@ -1409,21 +1409,6 @@ std::string selected_graph_support_status(const Config& cfg) {
         : "template-native-trainer-missing";
 }
 
-bool selected_graph_is_native_catalog_runnable(const Config& cfg) {
-    if (!cfg.graph_file.empty()) {
-        return selected_graph_is_native_runnable(cfg);
-    }
-    return selected_template_is_shipped(cfg);
-}
-
-std::string selected_graph_catalog_support_status(const Config& cfg) {
-    if (!cfg.graph_file.empty() || !selected_template_is_shipped(cfg)) {
-        return selected_graph_support_status(cfg);
-    }
-    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
-                                                                : "native-trainer-covered";
-}
-
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     const bool custom_graph_metadata_loaded = !cfg.graph_file.empty() && custom_graph_template_metadata(cfg).found;
@@ -1540,7 +1525,7 @@ void print_template_catalog_json(const Config& base_cfg) {
         cfg.template_explicit = true;
         cfg.graph_file.clear();
         const bool shipped_template = selected_template_is_shipped(cfg);
-        const std::string support_status = selected_graph_catalog_support_status(cfg);
+        const std::string support_status = selected_graph_support_status(cfg);
         std::cout
             << "    {\n"
             << "      \"name\": \"" << json_escape(selectors[index]) << "\",\n"
@@ -1549,7 +1534,7 @@ void print_template_catalog_json(const Config& base_cfg) {
             << "      \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
             << "      \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
             << "      \"selected_graph_native_runnable\": "
-            << (selected_graph_is_native_catalog_runnable(cfg) ? "true" : "false") << ",\n"
+            << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
             << "      \"native_training_coverage_class\": \""
             << json_escape(native_training_coverage_class_for_template(cfg.template_name)) << "\",\n"
             << "      \"native_training_missing_requirements\": ";
@@ -11512,10 +11497,24 @@ int run_transformer_lm_training_json(
         }
         setup_cuda_timing_records.push_back(SetupCudaTimingRecord{name, ms, 1});
     };
+    const bool setup_progress_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_SETUP_PROGRESS",
+                              "NFN_NATIVE_GPT2_SETUP_PROGRESS",
+                              "NFN_TILE_CUDA_SETUP_PROGRESS"}),
+            true);
     auto run_setup_timed = [&](const std::string& name, const auto& fn) {
         const auto start = Clock::now();
+        if (setup_progress_enabled) {
+            std::cerr << "[nfn-native-train] setup start " << name << "\n";
+        }
         fn();
-        record_setup_timing(name, elapsed_ms(start, Clock::now()));
+        const double ms = elapsed_ms(start, Clock::now());
+        record_setup_timing(name, ms);
+        if (setup_progress_enabled) {
+            std::cerr << "[nfn-native-train] setup done " << name
+                      << " elapsed_ms=" << ms << "\n";
+        }
     };
     double setup_wall_ms = 0.0;
     double setup_timing_accounted_ms = 0.0;
@@ -11646,6 +11645,34 @@ int run_transformer_lm_training_json(
          cfg.evo_layer_interval <= 0 || cfg.evo_layer_population <= 0 ||
          cfg.evo_layer_mutation_scale < 0.0)) {
         error = "evo layer index/cadence/population/mutation scale are outside the valid range";
+    }
+    if (!cfg.startup_only) {
+        std::cerr << "[nfn-native-train] starting dense GPT Tile-CUDA training"
+                  << " template=" << normalize_template_name(cfg.template_name)
+                  << " dataset=" << cfg.dataset_alias
+                  << " steps=" << cfg.max_steps
+                  << " layers=" << trained_layers
+                  << " dim=" << kDim
+                  << " heads=" << kHeads
+                  << " seq_len=" << seq_len
+                  << " batch_size=" << batch_size
+                  << " grad_accum_steps=" << grad_accum_steps
+                  << " effective_train_batch_tokens=" << effective_train_batch_tokens
+                  << " optimizer=adamw"
+                  << " learning_rate=" << cfg.learning_rate
+                  << " final_lr_fraction=" << cfg.final_lr_fraction
+                  << " weight_decay=" << cfg.weight_decay
+                  << " beta1=" << cfg.beta1
+                  << " beta2=" << cfg.beta2
+                  << " adam_eps=" << cfg.adam_eps
+                  << " grad_clip_norm=" << cfg.grad_clip_norm
+                  << " warmup_steps=" << cfg.warmup_steps
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " eval_batches=" << cfg.eval_batches
+                  << " train_loss_every_steps=" << cfg.train_loss_every_steps
+                  << " progress_every_steps=" << cfg.progress_every_steps
+                  << " setup_progress=" << (setup_progress_enabled ? "true" : "false")
+                  << "\n";
     }
 
     bool tile_loaded = false;
@@ -23116,7 +23143,7 @@ int run_transformer_lm_training_json(
         std::cerr << "\n";
     };
     if (!cfg.startup_only) {
-        std::cerr << "[nfn-native-train] starting dense GPT Tile-CUDA training"
+        std::cerr << "[nfn-native-train] entering dense GPT Tile-CUDA training loop"
                   << " template=" << normalize_template_name(cfg.template_name)
                   << " dataset=" << cfg.dataset_alias
                   << " steps=" << cfg.max_steps

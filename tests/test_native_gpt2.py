@@ -670,11 +670,11 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     missing_sentinels = linked_catalog["covered_native_sentinels"]
     assert missing_sentinels["llama"]["passed"] is True
-    assert missing_sentinels["llama"]["status"] == "native-trainer-covered"
-    assert missing_sentinels["llama"]["native_runnable"] is True
+    assert missing_sentinels["llama"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["llama"]["native_runnable"] is False
     assert missing_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "native-trainer-covered"
-    assert missing_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
+    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["semantic_router_moe_modern"]["native_runnable"] is False
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -1567,6 +1567,11 @@ def test_native_gpt_transformer_loop_streams_runtime_progress_to_stderr() -> Non
     assert "--progress-every-steps" in source
     assert "native progress prints to stderr every 10 optimizer steps by default" in source
     assert "[nfn-native-train] starting dense GPT Tile-CUDA training" in source
+    assert "NFN_NATIVE_GPT_SETUP_PROGRESS" in source
+    assert "[nfn-native-train] setup start " in source
+    assert "[nfn-native-train] setup done " in source
+    assert "setup_progress=" in source
+    assert "final_lr_fraction=" in source
     assert "[nfn-native-train] step " in source
     assert "[nfn-native-train] validation step " in source
     assert '\\"progress_every_steps\\"' in source
@@ -5237,8 +5242,13 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["semantic_router_moe"] == "native-trainer-covered"
-    assert all(item["selected_graph_native_runnable"] is True for item in payload["templates"])
+    assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
+    runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
+    assert runnable["gpt"] is True
+    assert runnable["gpt2"] is True
+    assert runnable["gpt3"] is True
+    assert runnable["nanogpt"] is True
+    assert runnable["semantic_router_moe"] is False
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
