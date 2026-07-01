@@ -516,6 +516,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-fused-qkv-attention-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
+        "--smoke-hnet-byte-lm-loop-step",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
@@ -582,6 +583,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-jepa-projector-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
+        "--smoke-hnet-byte-lm-loop-step",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
@@ -1076,6 +1078,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-diffusion-objective-step",
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
+                "--native-cuda-smoke-hnet-byte-lm-loop-step",
                 "--native-cuda-smoke-jamba-chunk-state-step",
                 "--native-cuda-smoke-jamba-mamba-state-step",
                 "--native-cuda-smoke-jamba-layer-schedule-step",
@@ -1153,6 +1156,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-hnet-byte-patch-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-backward-step");
+            } else if (arg == "--native-cuda-smoke-hnet-byte-lm-loop-step") {
+                forwarded.push_back("--smoke-hnet-byte-lm-loop-step");
             } else if (arg == "--native-cuda-smoke-jamba-chunk-state-step") {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
             } else if (arg == "--native-cuda-smoke-jamba-mamba-state-step") {

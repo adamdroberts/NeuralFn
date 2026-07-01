@@ -78,6 +78,9 @@ nfn-native-train --base-model jamba \
 nfn-native-train --base-model jamba \
   --native-cuda-smoke-jamba-layer-schedule-step \
   --native-cuda-tile-ops-lib PATH
+nfn-native-train --base-model hnet-lm \
+  --native-cuda-smoke-hnet-byte-lm-loop-step \
+  --native-cuda-tile-ops-lib PATH
 ```
 
 Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
@@ -592,6 +595,10 @@ forward/backward/head AdamW plus layer-schedule native-loop CUDA smokes as
 completed. The family still reports `family-native-loop-missing` until the
 production train loop, checkpoint writer, and inference artifact path are
 implemented.
+HNet entries now list byte-patch embed/merge/head AdamW, byte-patch backward
+AdamW, byte-LM loop, byte-token shard resolver, and family metadata smokes as
+completed while keeping the production train loop and artifact writer separate
+from preflight coverage.
 `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` and the unified
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` alias
 launch those RMSNorm, RoPE, and SwiGLU forward/backward kernels together on

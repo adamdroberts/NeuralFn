@@ -34,6 +34,11 @@ It stays on raw C++/CUDA Tile kernels, reports `torch_required: false` and
 Mamba-state/head/loss/backward/AdamW preflight. The full Jamba production
 trainer still reports `family-native-loop-missing` until the train loop and
 native artifacts are implemented.
+HNet byte-LM preflight has the same native-only shape:
+`nfn-native-train --base-model hnet-lm
+--native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib PATH`
+verifies the scheduled byte-patch/head/backward/AdamW loop slice while keeping
+real tensors out of graph-editor nodes.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
 shim: `from nfn import main; main()` can serve root help, direct dense GPT

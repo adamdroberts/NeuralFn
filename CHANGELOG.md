@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added an HNet byte-LM loop native smoke. `nfn_hnet_lm_native_train
+  --smoke-hnet-byte-lm-loop-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model hnet-lm
+  --native-cuda-smoke-hnet-byte-lm-loop-step` alias now report the scheduled
+  byte-patch embed/merge, head loss/backward, byte-patch backward smoke, and
+  AdamW loop slice without Torch or graph-editor tensor flow. HNet preflight
+  JSON now reports `hnet-byte-lm-loop-smoke` in completed requirements; the
+  family remains `family-native-loop-missing` until the production trainer loop
+  and artifacts are implemented. Verification: rebuilt missing-family native
+  trainers and unified/native catalog frontends; live CUDA direct and unified
+  HNet byte-LM loop smokes passed; focused native pytest passed; no-Torch
+  verifier passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added a Jamba native layer-schedule smoke. `nfn_jamba_native_train
   --smoke-jamba-layer-schedule-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model jamba

@@ -93,6 +93,7 @@ struct Config {
     bool smoke_universal_act_halt_step = false;
     bool smoke_hnet_byte_patch_step = false;
     bool smoke_hnet_byte_patch_backward_step = false;
+    bool smoke_hnet_byte_lm_loop_step = false;
     bool smoke_jamba_chunk_state_step = false;
     bool smoke_jamba_mamba_state_step = false;
     bool smoke_jamba_layer_schedule_step = false;
@@ -305,6 +306,7 @@ void print_usage(const char* program) {
         << "  --smoke-universal-act-halt-step Launch universal ACT halt gate, weighted sum, BCE-gradient, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-step Launch HNet byte patch embed/merge, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-hnet-byte-patch-backward-step Launch HNet byte patch merge/embed backward and AdamW kernels on CUDA\n"
+        << "  --smoke-hnet-byte-lm-loop-step Launch HNet byte-LM native loop smoke over byte patch/head kernels\n"
         << "  --smoke-jamba-chunk-state-step Launch Jamba chunk state, head loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-mamba-state-step Launch Jamba chunk-state forward/backward, head loss, and AdamW kernels on CUDA\n"
         << "  --smoke-jamba-layer-schedule-step Launch Jamba native layer-schedule smoke over Mamba state kernels\n"
@@ -398,6 +400,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_hnet_byte_patch_step = true;
         } else if (arg == "--smoke-hnet-byte-patch-backward-step" || arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
             cfg.smoke_hnet_byte_patch_backward_step = true;
+        } else if (arg == "--smoke-hnet-byte-lm-loop-step" ||
+                   arg == "--native-cuda-smoke-hnet-byte-lm-loop-step") {
+            cfg.smoke_hnet_byte_lm_loop_step = true;
         } else if (arg == "--smoke-jamba-chunk-state-step" || arg == "--native-cuda-smoke-jamba-chunk-state-step") {
             cfg.smoke_jamba_chunk_state_step = true;
         } else if (arg == "--smoke-jamba-mamba-state-step" ||
@@ -9643,7 +9648,11 @@ int print_hnet_byte_patch_smoke_json(const Config& cfg, const char* program) {
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"hnet_byte_patch_train_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (cfg.smoke_hnet_byte_lm_loop_step
+                ? "hnet_byte_lm_loop_train_step_slice"
+                : "hnet_byte_patch_train_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -9656,6 +9665,7 @@ int print_hnet_byte_patch_smoke_json(const Config& cfg, const char* program) {
         << "  \"shape\": {\"batch\": " << kBatch << ", \"seq_len\": " << kSeqLen
         << ", \"patch_len\": " << kOutLen << ", \"dim\": " << kDim
         << ", \"patch_size\": " << kPatchSize << ", \"stride\": " << kStride << "},\n"
+        << "  \"byte_lm_loop\": [\"byte_patch_embed\", \"byte_patch_merge\", \"head_loss_backward\", \"byte_patch_backward_smoke\", \"adamw\"],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_byte_patch_embed_float32\",\n"
         << "    \"nfn_native_tile_byte_patch_merge_float32\",\n"
@@ -12494,7 +12504,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_universal_act_halt_step) {
             return print_universal_act_halt_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_hnet_byte_patch_step) {
+        if (cfg.smoke_hnet_byte_patch_step || cfg.smoke_hnet_byte_lm_loop_step) {
             return print_hnet_byte_patch_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_hnet_byte_patch_backward_step) {

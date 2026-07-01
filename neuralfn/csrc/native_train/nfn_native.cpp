@@ -229,6 +229,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-dense-jepa-train-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
+        "--smoke-hnet-byte-lm-loop-step",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
@@ -511,6 +512,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-tile-ops" ||
                                arg == "--native-cuda-smoke-hnet-byte-patch-step" ||
                                arg == "--native-cuda-smoke-hnet-byte-patch-backward-step" ||
+                               arg == "--native-cuda-smoke-hnet-byte-lm-loop-step" ||
                                arg == "--native-cuda-smoke-jamba-chunk-state-step" ||
                                arg == "--native-cuda-smoke-jamba-mamba-state-step" ||
                                arg == "--native-cuda-smoke-jamba-layer-schedule-step" ||
@@ -576,6 +578,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-hnet-byte-patch-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-backward-step");
+            } else if (arg == "--native-cuda-smoke-hnet-byte-lm-loop-step") {
+                forwarded.push_back("--smoke-hnet-byte-lm-loop-step");
             } else if (arg == "--native-cuda-smoke-jamba-chunk-state-step") {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
             } else if (arg == "--native-cuda-smoke-jamba-mamba-state-step") {
