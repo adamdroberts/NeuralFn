@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Added a trainer-facing raw CUDA Tile ABI for routed MoE expert forward:
+  `nfn_native_tile_moe_swiglu_forward_float32`. The kernel computes the packed
+  expert SwiGLU MLP forward path from hidden states, top-k route
+  weights/indices, and per-expert `w1/w2/w3` weights, matching the
+  `ExpertDispatchStage` forward layout. Standard MoE, MoE+JEPA,
+  semantic-router MoE, and DeepSeek-V4 missing-family preflights now require
+  this symbol alongside routing, route-balance, latent/semantic losses, and
+  AdamW as applicable. The full MoE trainer loop still reports
+  `family-native-loop-missing` until backward, expert weight-gradient
+  accumulation, checkpoint, and inference wiring land. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so`, `libnfn_native_train_tile_ops_tk.so`,
+  dense GPT native binaries, benchmark helpers, and missing-family native
+  binaries; confirmed the export with `nm -D`; live CUDA ctypes smoke matched a
+  CPU reference with max error `1.2155424056192743e-08`; MixLLaMA, MoE+JEPA,
+  semantic-router MoE, and DeepSeek-V4 preflights reported
+  `required-tile-symbols-present`; focused native pytest passed (`1 passed, 1
+  skipped`); the no-Torch verifier passed 30 artifact scans, 69 Python
+  entrypoints, 24 shell entrypoints, and 4 native template catalogs.
+
 - Added a dedicated semantic dense JEPA native preflight family. The compiled
   native registry and SDK registry now expose `semantic-dense-jepa` with target
   `nfn_semantic_dense_jepa_native_train`, and

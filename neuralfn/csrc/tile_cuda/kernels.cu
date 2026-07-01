@@ -8539,6 +8539,70 @@ __tile_global__ void broadcast_chunk_routes_float32_kernel(
   ct::store_masked(out_indices + idx, index, mask);
 }
 
+__tile_global__ void moe_swiglu_forward_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ route_weights,
+    const std::int64_t* __restrict__ route_indices,
+    const float* __restrict__ w1,
+    const float* __restrict__ w2,
+    const float* __restrict__ w3,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  route_weights = ct::assume_aligned(route_weights, 16_ic);
+  route_indices = ct::assume_aligned(route_indices, 16_ic);
+  w1 = ct::assume_aligned(w1, 16_ic);
+  w2 = ct::assume_aligned(w2, 16_ic);
+  w3 = ct::assume_aligned(w3, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto hidden_tile = ct::full<IndexTile>(hidden_dim);
+  auto top_k_tile = ct::full<IndexTile>(top_k);
+  auto experts_tile = ct::full<IndexTile>(experts);
+  auto token = idx / dim_tile;
+  auto out_d = idx % dim_tile;
+  auto acc = ct::full<decltype(ct::load_masked(out + idx, mask))>(0.0f);
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    auto route_offset = token * top_k_tile + ct::full<IndexTile>(k);
+    auto expert = ct::load_masked(route_indices + route_offset, mask);
+    auto valid = mask && expert >= ct::full<IndexTile>(0) && expert < experts_tile;
+    auto route_weight = ct::load_masked(route_weights + route_offset, valid);
+    auto expert_acc = ct::full<decltype(route_weight)>(0.0f);
+    for (std::int64_t h = 0; h < hidden_dim; ++h) {
+      auto h_tile = ct::full<IndexTile>(h);
+      auto gate = ct::full<decltype(route_weight)>(0.0f);
+      auto up = ct::full<decltype(route_weight)>(0.0f);
+      for (std::int64_t d = 0; d < dim; ++d) {
+        auto d_tile = ct::full<IndexTile>(d);
+        auto xv = ct::load_masked(x + token * dim_tile + d_tile, valid);
+        auto w13_offset = (expert * dim_tile + d_tile) * hidden_tile + h_tile;
+        gate = gate + xv * ct::load_masked(w1 + w13_offset, valid);
+        up = up + xv * ct::load_masked(w3 + w13_offset, valid);
+      }
+      auto one = ct::full<decltype(gate)>(1.0f);
+      auto sigmoid = one / (one + ct::exp(-gate));
+      auto hidden = (gate * sigmoid) * up;
+      auto w2_offset = (expert * hidden_tile + h_tile) * dim_tile + out_d;
+      expert_acc = expert_acc + hidden * ct::load_masked(w2 + w2_offset, valid);
+    }
+    acc = acc + ct::select(valid, route_weight * expert_acc, ct::full<decltype(acc)>(0.0f));
+  }
+  ct::store_masked(out + idx, acc, mask);
+}
+
 __tile_global__ void byte_patch_merge_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -17383,6 +17447,26 @@ void launch_broadcast_chunk_routes_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   broadcast_chunk_routes_float32_kernel<<<blocks, 1, 0, stream>>>(
       weights, indices, out_weights, out_indices, n, chunks, seq_len, route_width, chunk_size);
+}
+
+void launch_moe_swiglu_forward_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream) {
+  const std::int64_t n = tokens * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moe_swiglu_forward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x, route_weights, route_indices, w1, w2, w3, out, n, tokens, dim, hidden_dim, experts, top_k);
 }
 
 void launch_byte_patch_merge_float32(

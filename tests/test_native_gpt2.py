@@ -10909,6 +10909,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert nanogpt.exists()
     llama = tmp_path / "nfn_llama_native_train"
     assert llama.exists()
+    mixllama = tmp_path / "nfn_mixllama_native_train"
+    assert mixllama.exists()
     moe_jepa = tmp_path / "nfn_moe_jepa_evo_native_train"
     assert moe_jepa.exists()
     semantic_dense_jepa = tmp_path / "nfn_semantic_dense_jepa_native_train"
@@ -11026,6 +11028,38 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert sample_payload["sample_batch"]["tokens"] == list(range(16))
     assert sample_payload["sample_batch"]["targets"] == list(range(1, 17))
 
+    mixllama_plan = subprocess.run(
+        [
+            str(mixllama),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert mixllama_plan.returncode == 0, mixllama_plan.stderr
+    mixllama_payload = json.loads(mixllama_plan.stdout)
+    assert mixllama_payload["model_family"] == "mixllama"
+    assert mixllama_payload["status"] == "family-native-trainer-missing"
+    assert mixllama_payload["native_training_coverage_class"] == "missing-standard-moe-transformer-lm"
+    assert mixllama_payload["compiled_native_boundary"] is True
+    assert mixllama_payload["torch_required"] is False
+    assert mixllama_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_topk_route_float32" in mixllama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_broadcast_expert_routes_float32" in mixllama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_moe_swiglu_forward_float32" in mixllama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_route_balance_density_float32" in mixllama_payload["required_tile_symbols"]
+    assert "nfn_native_tile_route_balance_loss_float32" in mixllama_payload["required_tile_symbols"]
+
     moe_jepa_plan = subprocess.run(
         [
             str(moe_jepa),
@@ -11062,6 +11096,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_topk_route_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_mse_loss_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_moe_swiglu_forward_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_density_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_loss_float32" in moe_jepa_payload["required_tile_symbols"]
 
@@ -11131,6 +11166,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_topk_route_float32",
         "nfn_native_tile_broadcast_expert_routes_float32",
         "nfn_native_tile_broadcast_chunk_routes_float32",
+        "nfn_native_tile_moe_swiglu_forward_float32",
         "nfn_native_tile_semantic_hash_int64",
         "nfn_native_tile_semantic_alignment_loss_items_float32",
         "nfn_native_tile_attentionless_decoder_float32",
@@ -13347,6 +13383,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "rotary_embedding_backward_float32_kernel" in kernels_text
     assert "nfn_native_tile_swiglu_float32" in header_text
     assert "nfn_native_tile_swiglu_backward_float32" in header_text
+    assert "nfn_native_tile_moe_swiglu_forward_float32" in header_text
     assert "nfn_native_tile_topk_route_float32" in header_text
     assert "nfn_native_tile_broadcast_expert_routes_float32" in header_text
     assert "nfn_native_tile_broadcast_chunk_routes_float32" in header_text
@@ -13369,6 +13406,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_route_balance_loss_float32" in source_text
     assert "launch_swiglu_float32" in source_text
     assert "launch_swiglu_backward_float32" in source_text
+    assert "launch_moe_swiglu_forward_float32" in source_text
+    assert "moe_swiglu_forward_float32_kernel" in kernels_text
     assert "swiglu_float32_kernel" in kernels_text
     assert "swiglu_backward_float32_kernel" in kernels_text
     assert "nfn_native_tile_softmax_lastdim_float32" in header_text
@@ -14906,6 +14945,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_rotary_embedding_backward_float32" in exported
         assert "nfn_native_tile_swiglu_float32" in exported
         assert "nfn_native_tile_swiglu_backward_float32" in exported
+        assert "nfn_native_tile_moe_swiglu_forward_float32" in exported
         assert "nfn_native_tile_topk_route_float32" in exported
         assert "nfn_native_tile_broadcast_expert_routes_float32" in exported
         assert "nfn_native_tile_broadcast_chunk_routes_float32" in exported
