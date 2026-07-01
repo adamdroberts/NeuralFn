@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Added live stderr progress for dense GPT CUDA Tile training. The native
+  transformer-LM loop now prints a startup summary with the resolved template,
+  dataset, shape, AdamW hyperparameters, evaluation cadence, train-loss cadence,
+  and progress cadence, then emits `[nfn-native-train] step ...` heartbeat lines
+  every `--progress-every-steps` optimizer steps without requiring train-loss
+  host copies. Validation completions also print `[nfn-native-train] validation
+  step ... loss=...` to stderr, while stdout remains the final JSON payload.
+  `--progress-every-steps` defaults to `10`, accepts `0` to silence heartbeat
+  output, and is forwarded by `nfn train` and `train_gpt.py`.
+  Verification: rebuilt `build/nfn_gpt_native_train`,
+  `build/nfn_gpt_native_train_linked`, and `build/nfn_gpt2_native_train`; ran
+  the focused native GPT pytest slice for progress/pass-through coverage; ran
+  `build/nfn_gpt_native_train --tinystories --print-plan
+  --progress-every-steps 1 --eval-every-steps 1000`; ran a real-shape
+  one-step CUDA probe with `--progress-every-steps 1 --no-checkpoint
+  --fast-startup --json-out /tmp/nfn-progress-smoke-default.json`; and ran the
+  no-Torch native dependency verifier.
+
 - Breaking changes: non-dense GPT template and family-native status now
   distinguishes CUDA smoke coverage from production pretraining. Non-dense
   template selectors such as `semantic_moe_jepa_evo` again report

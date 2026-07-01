@@ -5171,6 +5171,13 @@ wrappers, with `NFN_SM120_*` fallbacks, before it execs the native GPT trainer;
 the optimizer controls include `NFN_NATIVE_GPT_BETA1`, `NFN_NATIVE_GPT_BETA2`,
 `NFN_NATIVE_GPT_ADAM_EPS`, and `NFN_NATIVE_GPT_GRAD_CLIP_NORM` plus their
 `NFN_SM120_NATIVE_*` and `NFN_SM120_*` aliases.
+Native dense GPT training prints a startup summary and periodic progress lines
+to stderr while leaving stdout as the final JSON payload. The default heartbeat
+is every 10 optimizer steps; pass `--progress-every-steps 1` for per-step
+visibility during a smoke run, or `--progress-every-steps 0` to silence the
+heartbeat. Validation loss still follows `--eval-every-steps`, and sampled
+training loss still requires `--train-loss-every-steps` so ordinary progress
+does not add extra loss-copy overhead.
 The generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
 configs; alias-only GPT configs prefer `compiled_cli_argv` so dataset aliases
 stay on the compiled C++ resolver instead of raw external trainer paths. The

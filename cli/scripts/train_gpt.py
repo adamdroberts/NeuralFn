@@ -615,6 +615,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--train-loss-every-steps",
         "--train-log-every",
         "--train-log-every-steps",
+        "--progress-every-steps",
         "--lm-head-row-chunk-size",
         "--batch-size",
         "--train-seq-len",
@@ -730,6 +731,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
             "--train-loss-every-steps",
             "--train-log-every",
             "--train-log-every-steps",
+            "--progress-every-steps",
         )
     if (
         model_selector == "gpt3"

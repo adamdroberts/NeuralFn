@@ -1552,6 +1552,24 @@ def test_sm120_cuda13_validator_covers_native_cuda_smokes() -> None:
     assert "CUDA 13.3 SM120 validation passed." in source
 
 
+def test_native_gpt_transformer_loop_streams_runtime_progress_to_stderr() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "int progress_every_steps = 10;" in source
+    assert "--progress-every-steps" in source
+    assert "native progress prints to stderr every 10 optimizer steps by default" in source
+    assert "[nfn-native-train] starting dense GPT Tile-CUDA training" in source
+    assert "[nfn-native-train] step " in source
+    assert "[nfn-native-train] validation step " in source
+    assert '\\"progress_every_steps\\"' in source
+
+
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -6979,6 +6997,25 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert generic_args[generic_args.index("--train-seq-len") + 1] == "2048"
     assert generic_args[generic_args.index("--eval-every-steps") + 1] == "1000"
     assert generic_args[generic_args.index("--train-batch-tokens") + 1] == "524288"
+
+    progress_proc = subprocess.run(
+        [
+            str(generic_launcher),
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--progress-every-steps",
+            "1",
+        ],
+        cwd=root,
+        env=generic_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert progress_proc.returncode == 0, progress_proc.stderr
+    progress_args = generic_observed.read_text(encoding="utf-8").splitlines()
+    assert progress_args[progress_args.index("--progress-every-steps") + 1] == "1"
 
     preset_proc = subprocess.run(
         [

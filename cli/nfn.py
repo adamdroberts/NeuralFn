@@ -1041,6 +1041,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--train-loss-every-steps",
         "--train-log-every",
         "--train-log-every-steps",
+        "--progress-every-steps",
         "--lm-head-row-chunk-size",
         "--batch-size",
         "--train-seq-len",

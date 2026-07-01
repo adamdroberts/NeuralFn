@@ -190,6 +190,7 @@ struct Config {
     int seq_len = 1024;
     int train_batch_tokens = 524288;
     int train_loss_every_steps = 0;
+    int progress_every_steps = 10;
     int warmup_steps = 60;
     int max_steps = 20000;
     int num_layers = 12;
@@ -638,7 +639,7 @@ void print_usage(const char* program) {
         << "  --allow-basic-kernel-fallback     Diagnostic only: permit scalar/basic fallback routes in native GPT training\n"
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
-        << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --batch-size, --train-seq-len,\n"
+        << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --progress-every-steps, --batch-size, --train-seq-len,\n"
         << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --beta1, --beta2, --adam-eps,\n"
         << "  --grad-clip-norm, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
@@ -654,7 +655,7 @@ void print_usage(const char* program) {
         << "  --require-native-nvfp4-activation-packing\n"
         << "                                     Fail before dataset/GPU work if nvfp4 is requested but native dense GPT cannot pack activations\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
-        << "SM120 defaults follow train-sm120.sh with 60 warmup steps: -v 250 -s 20000 -g 144 -n 200 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n"
+        << "SM120 defaults follow train-sm120.sh with 60 warmup steps: -v 250 -s 20000 -g 144 -n 200 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000; native progress prints to stderr every 10 optimizer steps by default.\n"
         << "The paired llm.kittens benchmark wrappers keep the external reference at train-sm120.sh -u 60 for comparable timing evidence.\n";
 }
 
@@ -5083,6 +5084,7 @@ bool print_tile_plan(
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
+        << ", \"progress_every_steps\": " << cfg.progress_every_steps
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
         << ", \"eval_batches\": " << cfg.eval_batches
         << ", \"eval_batch_size\": " << cfg.eval_batch_size
@@ -8293,6 +8295,7 @@ int run_embedding_lm_training_json(
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "  \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
         << "  \"epochs_completed\": " << epochs_completed << ",\n"
@@ -23082,7 +23085,46 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaEventCreateWithFlags train_loop_cuda_event_timing");
         }
     }
+    auto write_progress_line = [&](std::int64_t step, bool has_loss, double loss_mean) {
+        const double elapsed_seconds = elapsed_ms(train_loop_start_time, Clock::now()) / 1000.0;
+        const double tokens_per_second =
+            elapsed_seconds > 0.0
+                ? static_cast<double>(tokens_processed) / elapsed_seconds
+                : 0.0;
+        std::cerr << "[nfn-native-train] step " << step << "/" << cfg.max_steps
+                  << " tokens=" << tokens_processed
+                  << " elapsed_s=" << elapsed_seconds
+                  << " tokens_per_s=" << tokens_per_second;
+        if (has_loss) {
+            std::cerr << " train_loss=" << loss_mean;
+        }
+        std::cerr << "\n";
+    };
     if (!cfg.startup_only) {
+        std::cerr << "[nfn-native-train] starting dense GPT Tile-CUDA training"
+                  << " template=" << normalize_template_name(cfg.template_name)
+                  << " dataset=" << cfg.dataset_alias
+                  << " steps=" << cfg.max_steps
+                  << " layers=" << trained_layers
+                  << " dim=" << kDim
+                  << " heads=" << kHeads
+                  << " seq_len=" << seq_len
+                  << " batch_size=" << batch_size
+                  << " grad_accum_steps=" << grad_accum_steps
+                  << " effective_train_batch_tokens=" << effective_train_batch_tokens
+                  << " optimizer=adamw"
+                  << " learning_rate=" << cfg.learning_rate
+                  << " weight_decay=" << cfg.weight_decay
+                  << " beta1=" << cfg.beta1
+                  << " beta2=" << cfg.beta2
+                  << " adam_eps=" << cfg.adam_eps
+                  << " grad_clip_norm=" << cfg.grad_clip_norm
+                  << " warmup_steps=" << cfg.warmup_steps
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " eval_batches=" << cfg.eval_batches
+                  << " train_loss_every_steps=" << cfg.train_loss_every_steps
+                  << " progress_every_steps=" << cfg.progress_every_steps
+                  << "\n";
         if (train_loop_cuda_event_timing_enabled && error.empty()) {
             run(cuda_event_record(train_loop_cuda_event_start, nullptr), "train_loop.cuda_event.start");
         }
@@ -23091,6 +23133,8 @@ int run_transformer_lm_training_json(
                 cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
             const bool should_record_train_loss =
                 cfg.train_loss_every_steps > 0 && (step % cfg.train_loss_every_steps) == 0;
+            const bool should_write_progress =
+                cfg.progress_every_steps > 0 && (step % cfg.progress_every_steps) == 0;
             stage_timing_current_step = step;
             const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
             stage_timing_current_step = 0;
@@ -23113,8 +23157,22 @@ int run_transformer_lm_training_json(
                     train_loss_eval_count += 1;
                     train_loss_last_step = step;
                 }
+                if (should_write_progress || should_record_train_loss) {
+                    write_progress_line(step, should_record_train_loss, final_loss_mean);
+                }
                 if (should_run_validation) {
                     run_validation(step);
+                    if (error.empty() && !validation_losses.empty()) {
+                        const ValidationLossRecord& validation_record = validation_losses.back();
+                        if (validation_record.step == step) {
+                            std::cerr << "[nfn-native-train] validation step " << step
+                                      << "/" << cfg.max_steps
+                                      << " loss=" << validation_record.loss_mean
+                                      << " batches=" << validation_record.batches
+                                      << " tokens=" << validation_record.tokens
+                                      << "\n";
+                        }
+                    }
                 }
             }
         }
@@ -24766,6 +24824,7 @@ int run_transformer_lm_training_json(
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
         << "  \"train_loss_every_steps\": " << cfg.train_loss_every_steps << ",\n"
+        << "  \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
         << "  \"eval_batch_size\": " << eval_batch_size << ",\n"
@@ -24790,6 +24849,7 @@ int run_transformer_lm_training_json(
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
+        << ", \"progress_every_steps\": " << cfg.progress_every_steps
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
         << ", \"eval_batches\": " << cfg.eval_batches
         << ", \"eval_batch_size\": " << eval_batch_size
@@ -27861,6 +27921,15 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--train-log-every-steps=", 0) == 0) {
             cfg.train_loss_every_steps =
                 parse_int(value_after_equals("--train-log-every-steps="), "--train-log-every-steps");
+        } else if (arg == "--progress-every-steps" ||
+                   arg == "--native-progress-every-steps") {
+            cfg.progress_every_steps = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--progress-every-steps=", 0) == 0) {
+            cfg.progress_every_steps =
+                parse_int(value_after_equals("--progress-every-steps="), "--progress-every-steps");
+        } else if (arg.rfind("--native-progress-every-steps=", 0) == 0) {
+            cfg.progress_every_steps =
+                parse_int(value_after_equals("--native-progress-every-steps="), "--native-progress-every-steps");
         } else if (arg == "--lm-head-row-chunk-size" || arg == "--native-cuda-lm-head-row-chunk-size") {
             cfg.lm_head_row_chunk_size = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--lm-head-row-chunk-size=", 0) == 0) {
@@ -28054,6 +28123,10 @@ int main(int argc, char** argv) {
     cfg.backend = normalize_backend(cfg.backend);
     if (!valid_backend(cfg.backend)) {
         std::cerr << "Invalid backend: " << cfg.backend << "\n";
+        return 2;
+    }
+    if (cfg.progress_every_steps < 0) {
+        std::cerr << "--progress-every-steps must be non-negative\n";
         return 2;
     }
     if (cfg.list_templates) {
