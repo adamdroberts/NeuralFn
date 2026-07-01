@@ -74,6 +74,7 @@ struct Config {
     bool smoke_moe_route_expert_step = false;
     bool smoke_moe_transformer_block_step = false;
     bool smoke_moe_transformer_block_train_step = false;
+    bool smoke_moe_transformer_lm_train_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -281,6 +282,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-step Launch attention, routing, MoE expert, and residual kernels on CUDA\n"
         << "  --smoke-moe-transformer-block-train-step Launch MoE transformer block forward plus expert backward/AdamW kernels on CUDA\n"
+        << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -345,6 +347,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_transformer_block_step = true;
         } else if (arg == "--smoke-moe-transformer-block-train-step" || arg == "--native-cuda-smoke-moe-transformer-block-train-step") {
             cfg.smoke_moe_transformer_block_train_step = true;
+        } else if (arg == "--smoke-moe-transformer-lm-train-step" || arg == "--native-cuda-smoke-moe-transformer-lm-train-step") {
+            cfg.smoke_moe_transformer_lm_train_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -3284,7 +3288,8 @@ int print_llama_rope_attention_block_smoke_json(const Config& cfg, const char* p
 }
 
 int print_moe_transformer_block_smoke_json(const Config& cfg, const char* program) {
-    const bool train_step = cfg.smoke_moe_transformer_block_train_step;
+    const bool lm_train_step = cfg.smoke_moe_transformer_lm_train_step;
+    const bool train_step = cfg.smoke_moe_transformer_block_train_step || lm_train_step;
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_family =
         family.find("moe") != std::string::npos ||
@@ -3324,6 +3329,16 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         const float*, const float*, const std::int64_t*, const float*, const float*, const float*, const float*,
         float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyBackwardFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, float, void*);
     using AdamWFn = int (*)(
         float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
 
@@ -3341,6 +3356,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     MoeSwiGluForwardFn moe_forward = nullptr;
     MoeSwiGluBackwardFn moe_backward = nullptr;
     FillFn fill = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightFn linear_backward_weight = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    TokenCrossEntropyBackwardFn ce_backward = nullptr;
     AdamWFn adamw = nullptr;
 
     constexpr int kCudaMemcpyHostToDevice = 1;
@@ -3360,6 +3380,9 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     constexpr std::int64_t kRouteElements = kRows * kTopK;
     constexpr std::int64_t kW13Elements = kExperts * kDim * kMoeHidden;
     constexpr std::int64_t kW2Elements = kExperts * kMoeHidden * kDim;
+    constexpr std::int64_t kLmVocab = 16;
+    constexpr std::int64_t kLmWeightElements = kLmVocab * kDim;
+    constexpr std::int64_t kLmLogitElements = kRows * kLmVocab;
     constexpr float kEps = 1e-6f;
     constexpr float kScale = 1.0f / 8.0f;
 
@@ -3406,6 +3429,10 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
     float moe_grad_w2_max_abs = 0.0f;
     float moe_grad_w3_max_abs = 0.0f;
     float adamw_w1_delta_max_abs = 0.0f;
+    float lm_head_loss_max_abs = 0.0f;
+    float lm_head_grad_hidden_max_abs = 0.0f;
+    float lm_head_grad_weight_max_abs = 0.0f;
+    float adamw_lm_weight_delta_max_abs = 0.0f;
     std::int64_t route_index_max = -1;
     const float residual_scale_value = 1.0f;
 
@@ -3447,9 +3474,23 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
                 adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
             }
+            if (lm_train_step) {
+                linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+                linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                    tile_handle, "nfn_native_tile_linear_backward_input_float32");
+                linear_backward_weight = load_symbol<LinearBackwardWeightFn>(
+                    tile_handle, "nfn_native_tile_linear_backward_weight_float32");
+                ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+                ce_backward = load_symbol<TokenCrossEntropyBackwardFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_backward_float32");
+            }
             if (rms_norm == nullptr || linear_bf16_output == nullptr || packed_attention == nullptr ||
                 bf16_to_float32 == nullptr || residual_add == nullptr || topk_route == nullptr ||
-                moe_forward == nullptr || (train_step && (moe_backward == nullptr || fill == nullptr || adamw == nullptr))) {
+                moe_forward == nullptr || (train_step && (moe_backward == nullptr || fill == nullptr || adamw == nullptr)) ||
+                (lm_train_step &&
+                 (linear == nullptr || linear_backward_input == nullptr || linear_backward_weight == nullptr ||
+                  ce_partials == nullptr || ce_backward == nullptr))) {
                 error = "Tile ops library is missing one or more MoE transformer-block symbols";
             }
         }
@@ -3486,6 +3527,8 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         std::vector<float> w1(static_cast<std::size_t>(kW13Elements), 0.0f);
         std::vector<float> w2(static_cast<std::size_t>(kW2Elements), 0.0f);
         std::vector<float> w3(static_cast<std::size_t>(kW13Elements), 0.0f);
+        std::vector<float> lm_weight(static_cast<std::size_t>(kLmWeightElements), 0.0f);
+        std::vector<std::int64_t> lm_targets(static_cast<std::size_t>(kRows), 0);
         std::vector<float> residual_scale = {residual_scale_value};
         std::vector<float> grad_block(static_cast<std::size_t>(kElements), 0.0f);
         for (std::int64_t row = 0; row < kRows; ++row) {
@@ -3502,6 +3545,7 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                     0.02f * static_cast<float>((row + expert * 3) % 11) -
                     0.01f * static_cast<float>(expert);
             }
+            lm_targets[static_cast<std::size_t>(row)] = (row * 3 + 1) % kLmVocab;
         }
         for (std::int64_t out_dim = 0; out_dim < kQkvDim; ++out_dim) {
             const std::int64_t in_dim = out_dim % kDim;
@@ -3521,6 +3565,13 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                     const std::size_t idx = static_cast<std::size_t>((expert * kMoeHidden + hidden_dim) * kDim + dim);
                     w2[idx] = 0.0006f * static_cast<float>((dim + hidden_dim * 3 + expert) % 7 + 1);
                 }
+            }
+        }
+        for (std::int64_t token = 0; token < kLmVocab; ++token) {
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                lm_weight[static_cast<std::size_t>(token * kDim + dim)] =
+                    0.0007f * static_cast<float>((token + dim) % 17 + 1) -
+                    0.0001f * static_cast<float>(token % 3);
             }
         }
 
@@ -3544,9 +3595,17 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         float* d_grad_w3 = nullptr;
         float* d_w1_exp_avg = nullptr;
         float* d_w1_exp_avg_sq = nullptr;
+        float* d_lm_weight = nullptr;
+        float* d_lm_grad_weight = nullptr;
+        float* d_lm_exp_avg = nullptr;
+        float* d_lm_exp_avg_sq = nullptr;
+        float* d_lm_logits = nullptr;
+        float* d_lm_loss = nullptr;
+        float* d_lm_grad_logits = nullptr;
         std::uint16_t* d_qkv_bf16 = nullptr;
         std::uint16_t* d_attention_bf16 = nullptr;
         std::int64_t* d_route_indices = nullptr;
+        std::int64_t* d_lm_targets = nullptr;
         auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
             int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
             if (status != 0) {
@@ -3594,6 +3653,15 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
             (!train_step || alloc_float(&d_grad_w3, w3.size(), "grad_w3")) &&
             (!train_step || alloc_float(&d_w1_exp_avg, w1.size(), "w1_exp_avg")) &&
             (!train_step || alloc_float(&d_w1_exp_avg_sq, w1.size(), "w1_exp_avg_sq")) &&
+            (!lm_train_step ||
+             (alloc_float(&d_lm_weight, lm_weight.size(), "lm_weight") &&
+              alloc_float(&d_lm_grad_weight, lm_weight.size(), "lm_grad_weight") &&
+              alloc_float(&d_lm_exp_avg, lm_weight.size(), "lm_exp_avg") &&
+              alloc_float(&d_lm_exp_avg_sq, lm_weight.size(), "lm_exp_avg_sq") &&
+              alloc_float(&d_lm_logits, static_cast<std::size_t>(kLmLogitElements), "lm_logits") &&
+              alloc_float(&d_lm_loss, 1, "lm_loss") &&
+              alloc_float(&d_lm_grad_logits, static_cast<std::size_t>(kLmLogitElements), "lm_grad_logits") &&
+              alloc_i64(&d_lm_targets, lm_targets.size(), "lm_targets"))) &&
             alloc_bf16(&d_qkv_bf16, static_cast<std::size_t>(kQkvElements), "qkv_bf16") &&
             alloc_bf16(&d_attention_bf16, hidden.size(), "attention_bf16") &&
             alloc_i64(&d_route_indices, static_cast<std::size_t>(kRouteElements), "route_indices")) {
@@ -3619,6 +3687,12 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
             if (status == 0 && train_step) {
                 status = cuda_memcpy(d_grad_block, grad_block.data(), grad_block.size() * sizeof(float), kCudaMemcpyHostToDevice);
             }
+            if (status == 0 && lm_train_step) {
+                status = cuda_memcpy(d_lm_weight, lm_weight.data(), lm_weight.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            }
+            if (status == 0 && lm_train_step) {
+                status = cuda_memcpy(d_lm_targets, lm_targets.data(), lm_targets.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+            }
             if (status != 0) {
                 error = cuda_error(status, "cudaMemcpy MoE transformer block H2D");
             }
@@ -3638,6 +3712,15 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 }
                 if (status == 0) {
                     status = fill(d_w1_exp_avg_sq, kW13Elements, 0.0f, nullptr);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = fill(d_lm_grad_weight, kLmWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = fill(d_lm_exp_avg, kLmWeightElements, 0.0f, nullptr);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = fill(d_lm_exp_avg_sq, kLmWeightElements, 0.0f, nullptr);
                 }
                 if (status != 0) {
                     error = cuda_error(status, "zero MoE transformer block train-step buffers");
@@ -3695,6 +3778,37 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                     error = cuda_error(status, "nfn_native_tile_scaled_residual_add_float32 moe");
                 }
             }
+            if (error.empty() && lm_train_step) {
+                status = linear(d_block_out, d_lm_weight, nullptr, d_lm_logits, kRows, kDim, kLmVocab, false, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_float32 lm_head");
+                }
+            }
+            if (error.empty() && lm_train_step) {
+                status = ce_partials(d_lm_logits, d_lm_targets, d_lm_loss, kRows, kLmVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32");
+                }
+            }
+            if (error.empty() && lm_train_step) {
+                status = ce_backward(
+                    d_lm_logits, d_lm_targets, d_lm_grad_logits, kRows, kLmVocab, 1.0f / static_cast<float>(kRows), nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_backward_float32");
+                }
+            }
+            if (error.empty() && lm_train_step) {
+                status = linear_backward_input(d_lm_grad_logits, d_lm_weight, d_grad_block, kRows, kDim, kLmVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 lm_head");
+                }
+            }
+            if (error.empty() && lm_train_step) {
+                status = linear_backward_weight(d_block_out, d_lm_grad_logits, d_lm_grad_weight, kRows, kDim, kLmVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_float32 lm_head");
+                }
+            }
             if (error.empty() && train_step) {
                 status = moe_backward(
                     d_attn_residual,
@@ -3716,6 +3830,25 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                     nullptr);
                 if (status != 0) {
                     error = cuda_error(status, "nfn_native_tile_moe_swiglu_backward_float32");
+                }
+            }
+            if (error.empty() && lm_train_step) {
+                status = adamw(
+                    d_lm_weight,
+                    d_lm_grad_weight,
+                    d_lm_exp_avg,
+                    d_lm_exp_avg_sq,
+                    kLmWeightElements,
+                    0.001f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.01f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_adamw_step_float32 lm_head");
                 }
             }
             if (error.empty() && train_step) {
@@ -3755,6 +3888,10 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 std::vector<float> grad_w2_actual(w2.size(), 0.0f);
                 std::vector<float> grad_w3_actual(w3.size(), 0.0f);
                 std::vector<float> w1_updated_actual(w1.size(), 0.0f);
+                std::vector<float> lm_loss_actual(1, 0.0f);
+                std::vector<float> lm_grad_hidden_actual(hidden.size(), 0.0f);
+                std::vector<float> lm_grad_weight_actual(lm_weight.size(), 0.0f);
+                std::vector<float> lm_weight_updated_actual(lm_weight.size(), 0.0f);
                 status = cuda_memcpy(attention_actual.data(), d_attention_float, attention_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 if (status == 0) {
                     status = cuda_memcpy(attn_residual_actual.data(), d_attn_residual, attn_residual_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
@@ -3786,6 +3923,18 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 if (status == 0 && train_step) {
                     status = cuda_memcpy(w1_updated_actual.data(), d_w1, w1_updated_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
                 }
+                if (status == 0 && lm_train_step) {
+                    status = cuda_memcpy(lm_loss_actual.data(), d_lm_loss, lm_loss_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = cuda_memcpy(lm_grad_hidden_actual.data(), d_grad_block, lm_grad_hidden_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = cuda_memcpy(lm_grad_weight_actual.data(), d_lm_grad_weight, lm_grad_weight_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0 && lm_train_step) {
+                    status = cuda_memcpy(lm_weight_updated_actual.data(), d_lm_weight, lm_weight_updated_actual.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                }
                 if (status != 0) {
                     error = cuda_error(status, "cudaMemcpy MoE transformer block D2H");
                 } else {
@@ -3814,6 +3963,16 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                                 std::fabs(w1_updated_actual[i] - w1[i]));
                         }
                     }
+                    if (lm_train_step) {
+                        lm_head_loss_max_abs = lm_loss_actual[0] > 0.0f ? lm_loss_actual[0] : 0.0f;
+                        lm_head_grad_hidden_max_abs = max_abs(lm_grad_hidden_actual);
+                        lm_head_grad_weight_max_abs = max_abs(lm_grad_weight_actual);
+                        for (std::size_t i = 0; i < lm_weight.size(); ++i) {
+                            adamw_lm_weight_delta_max_abs = std::max(
+                                adamw_lm_weight_delta_max_abs,
+                                std::fabs(lm_weight_updated_actual[i] - lm_weight[i]));
+                        }
+                    }
                 }
             }
             passed = error.empty() &&
@@ -3823,6 +3982,10 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
                 route_index_max >= 0 &&
                 moe_max_abs > 0.0f &&
                 block_residual_delta_max_abs > 0.0f &&
+                (!lm_train_step || (lm_head_loss_max_abs > 0.0f &&
+                                    lm_head_grad_hidden_max_abs > 0.0f &&
+                                    lm_head_grad_weight_max_abs > 0.0f &&
+                                    adamw_lm_weight_delta_max_abs > 0.0f)) &&
                 (!train_step || (moe_grad_x_max_abs > 0.0f &&
                                  moe_grad_w1_max_abs > 0.0f &&
                                  moe_grad_w2_max_abs > 0.0f &&
@@ -3840,7 +4003,11 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"" << (train_step ? "moe_transformer_block_train_step_slice" : "moe_transformer_block_forward_slice") << "\",\n"
+        << "  \"smoke\": \""
+        << (lm_train_step
+                ? "moe_transformer_lm_train_step_slice"
+                : (train_step ? "moe_transformer_block_train_step_slice" : "moe_transformer_block_forward_slice"))
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -3862,7 +4029,9 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << "    \"nfn_native_tile_scaled_residual_add_float32\",\n"
         << "    \"nfn_native_tile_topk_route_float32\",\n"
         << "    \"nfn_native_tile_moe_swiglu_forward_float32\""
-        << (train_step ? ",\n    \"nfn_native_tile_moe_swiglu_backward_float32\",\n    \"nfn_native_tile_adamw_step_float32\"\n" : "\n")
+        << (lm_train_step
+                ? ",\n    \"nfn_native_tile_linear_float32\",\n    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n    \"nfn_native_tile_linear_backward_input_float32\",\n    \"nfn_native_tile_linear_backward_weight_float32\",\n    \"nfn_native_tile_moe_swiglu_backward_float32\",\n    \"nfn_native_tile_adamw_step_float32\"\n"
+                : (train_step ? ",\n    \"nfn_native_tile_moe_swiglu_backward_float32\",\n    \"nfn_native_tile_adamw_step_float32\"\n" : "\n"))
         << "  ],\n"
         << "  \"max_errors\": {"
         << "\"attention_max_abs\":" << attention_max_abs
@@ -3876,6 +4045,10 @@ int print_moe_transformer_block_smoke_json(const Config& cfg, const char* progra
         << ", \"moe_grad_w2_max_abs\":" << moe_grad_w2_max_abs
         << ", \"moe_grad_w3_max_abs\":" << moe_grad_w3_max_abs
         << ", \"adamw_w1_delta_max_abs\":" << adamw_w1_delta_max_abs
+        << ", \"lm_head_loss_max_abs\":" << lm_head_loss_max_abs
+        << ", \"lm_head_grad_hidden_max_abs\":" << lm_head_grad_hidden_max_abs
+        << ", \"lm_head_grad_weight_max_abs\":" << lm_head_grad_weight_max_abs
+        << ", \"adamw_lm_weight_delta_max_abs\":" << adamw_lm_weight_delta_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -11086,7 +11259,8 @@ int main(int argc, char** argv) {
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_moe_transformer_block_step || cfg.smoke_moe_transformer_block_train_step) {
+        if (cfg.smoke_moe_transformer_block_step || cfg.smoke_moe_transformer_block_train_step ||
+            cfg.smoke_moe_transformer_lm_train_step) {
             return print_moe_transformer_block_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_jepa_projector_step) {

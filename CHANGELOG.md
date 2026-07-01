@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a shared standard-MoE transformer-LM train-step native smoke.
+  `nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model
+  moe-jepa-evo --native-cuda-smoke-moe-transformer-lm-train-step` alias now
+  run the MoE block forward path into LM-head logits, token CE
+  forward/backward, LM-head backward, routed expert backward, and AdamW through
+  raw CUDA Tile ABI calls without Torch or graph-editor tensor flow. Standard
+  MoE, MoE+JEPA, and DeepSeek catalog/preflight JSON now report
+  `standard-moe-transformer-lm-forward-backward-adamw-smoke` in completed
+  requirements while keeping the full native MoE loop and composite objectives
+  visible in missing requirements. Verification: rebuilt missing-family native
+  trainers, unified native frontends, dense GPT catalog binaries, and the
+  linked dense GPT binary; live CUDA direct and unified MoE transformer-LM
+  smokes passed.
+
 - Added an explicit LLaMA-family composed token/block/LM train-step native
   smoke. `nfn_llama_native_train --smoke-llama-composed-train-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model llama

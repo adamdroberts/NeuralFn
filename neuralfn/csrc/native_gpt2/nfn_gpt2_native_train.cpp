@@ -986,6 +986,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             coverage_class == "missing-moe-jepa-objective") {
             completed.push_back("standard-moe-transformer-block-forward-smoke");
             completed.push_back("standard-moe-transformer-block-forward-backward-adamw-smoke");
+            completed.push_back("standard-moe-transformer-lm-forward-backward-adamw-smoke");
         }
         if (coverage_class == "missing-moe-jepa-objective" ||
             (coverage_class == "missing-semantic-moe-router-jepa-objective" &&

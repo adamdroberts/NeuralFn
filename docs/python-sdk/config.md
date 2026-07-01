@@ -108,7 +108,7 @@ full LLaMA-family forward/backward/optimizer loop.
 Standard MoE-family entries list completed top-k route/broadcast, routed
 SwiGLU expert forward/backward, load-balance/AdamW, and
 RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
-smokes while keeping the full family loop, JEPA or semantic objective,
+smokes plus the block-to-LM CE/backward/AdamW smoke while keeping the full family loop, JEPA or semantic objective,
 and remaining objective blockers in the missing list. JEPA-family entries
 list completed target-encoder forward, projector/predictor linear, latent-loss,
 backward, AdamW, and base AR+JEPA loss-composition smokes. Dense JEPA keeps

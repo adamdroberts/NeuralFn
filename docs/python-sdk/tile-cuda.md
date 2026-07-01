@@ -528,7 +528,8 @@ forward/backward/optimizer loop. MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
 routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
-transformer-block forward CUDA smokes, while
+transformer-block forward CUDA smokes plus the standard MoE transformer-LM
+CE/backward/AdamW smoke, while
 missing requirements keep the full family loop, JEPA or semantic objectives,
 visible. JEPA-family entries now list the
 completed projector/predictor/latent-loss, target-encoder, and base AR+JEPA
@@ -593,6 +594,12 @@ and the second residual add in one native forward block slice. Use
 `--native-cuda-smoke-moe-transformer-block-train-step` alias on standard MoE
 families to extend the integrated block path through routed SwiGLU expert
 backward and an AdamW update without Torch or graph-editor tensor flow. Use
+`nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-moe-transformer-lm-train-step` alias on standard MoE
+families to run the block forward path into LM-head logits, token CE
+forward/backward, LM-head backward, routed expert backward, and AdamW without
+Torch or graph-editor tensor flow. Use
 `nfn_jepa_native_train --smoke-jepa-projector-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-jepa-projector-step` alias on JEPA families to run
 projector/predictor linear stages, latent MSE partials, linear backward, and

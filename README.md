@@ -4189,7 +4189,7 @@ the full LLaMA-family forward/backward/optimizer loop.
 Standard MoE-family entries now report completed smoke-backed slices for
 top-k/broadcast routing, routed SwiGLU forward/backward, load-balance/AdamW,
 and the RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual
-forward block slice, while their missing list keeps the full MoE
+forward block slice plus the block-to-LM CE/backward/AdamW slice, while their missing list keeps the full MoE
 forward/backward loop. Diffusion
 entries now report denoise-head linear/MSE/backward/AdamW plus
 timestep/mask/token-CE/backward/AdamW and family metadata smokes as completed. Seq2seq entries now
