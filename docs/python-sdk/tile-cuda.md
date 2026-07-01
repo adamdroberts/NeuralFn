@@ -595,6 +595,10 @@ ACT weighted-sum, linear backward, and AdamW as a native train-step slice. Use
 the unified `--native-cuda-smoke-hnet-byte-patch-step` alias on HNet families
 to run byte patch embed/merge, reconstruction head, latent MSE, linear head
 backward, and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_hnet_lm_native_train --smoke-hnet-byte-patch-backward-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-hnet-byte-patch-backward-step` alias
+on HNet families to run byte patch merge backward, embed/projection backward,
+and AdamW as a raw CUDA Tile train-step slice. Use
 `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH` or
 the unified `--native-cuda-smoke-jamba-chunk-state-step` alias on Jamba
 families to run causal chunk-state, reconstruction head, latent MSE, linear

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added HNet byte-patch backward CUDA Tile kernels and raw native-train ABI
+  wrappers. `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-backward-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model hnet-lm
+  --native-cuda-smoke-hnet-byte-patch-backward-step` alias now run byte-patch
+  merge backward, byte-patch embedding/projection backward, and AdamW updates
+  for embedding and projection weights without Torch or graph-editor tensor
+  flow. HNet catalog/preflight JSON now reports
+  `hnet-byte-patch-backward-adamw-smoke` in
+  `native_training_completed_requirements`; byte-token shard resolution and
+  checkpoint/inference wiring remain visible as outstanding HNet requirements.
+  Verification so far: rebuilt the Tile ops library and missing-family native
+  trainers; live CUDA HNet backward smoke passed with merge-backward,
+  embedding-gradient, and projection-gradient max errors `0`, embedding update
+  max error `1.86265e-09`, and projection update max error `9.31323e-10`.
+
 - Added a diffusion objective native train-step CUDA smoke and exposed raw
   CUDA Tile ABI wrappers for random timestep generation and mask scheduling.
   `nfn_diffusion_native_train --smoke-diffusion-objective-step
@@ -198,9 +213,10 @@
   through raw CUDA Tile ABI calls with CPU-reference checks. HNet
   catalog/preflight JSON now reports
   `hnet-byte-patch-embed-merge-head-adamw-smoke` in
-  `native_training_completed_requirements`, while byte-token shard resolution,
-  byte-patch backward, checkpointing, and inference wiring remain visible in the
-  missing list. Real HNet-family training remains `family-native-loop-missing`
+  `native_training_completed_requirements`; the later HNet backward smoke in
+  this Unreleased section covers byte-patch backward, leaving byte-token shard
+  resolution, checkpointing, and inference wiring visible in the missing list.
+  Real HNet-family training remains `family-native-loop-missing`
   until the full byte-LM loop is implemented. Verification: rebuilt the native
   Tile ops library, missing-family native trainers, and unified native CLIs;
   live CUDA HNet smoke passed with max errors at or below `5.79283e-07`;

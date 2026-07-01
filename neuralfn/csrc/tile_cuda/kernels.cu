@@ -8806,6 +8806,154 @@ __tile_global__ void byte_patch_embed_float32_kernel(
   ct::store_masked(out + idx, acc, mask);
 }
 
+__tile_global__ void byte_patch_merge_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto source_tile = ct::full<IndexTile>(source_len);
+  auto target_tile = ct::full<IndexTile>(target_len);
+  auto d = idx % dim_tile;
+  auto src_t = (idx / dim_tile) % source_tile;
+  auto b = idx / (dim_tile * source_tile);
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t t = 0; t < target_len; ++t) {
+    auto target_t = ct::full<IndexTile>(t);
+    auto mapped_src = (target_t * source_tile) / target_tile;
+    auto contributes = mask & (mapped_src == src_t);
+    auto grad = ct::load_masked(grad_out + (b * target_tile + target_t) * dim_tile + d, contributes);
+    acc = acc + ct::select(contributes, grad, ct::full<decltype(grad)>(0.0f));
+  }
+  ct::store_masked(grad_x + idx, acc, mask);
+}
+
+__tile_global__ void byte_patch_embed_backward_embedding_float32_kernel(
+    const std::int64_t* __restrict__ tokens,
+    const float* __restrict__ proj,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_embedding,
+    std::int64_t n,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  tokens = ct::assume_aligned(tokens, 16_ic);
+  proj = ct::assume_aligned(proj, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_embedding = ct::assume_aligned(grad_embedding, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto model_dim_tile = ct::full<IndexTile>(model_dim);
+  auto vocab_tile = ct::full<IndexTile>(vocab_size);
+  auto in_c = idx % model_dim_tile;
+  auto wanted_token = idx / model_dim_tile;
+  auto seq_len_tile = ct::full<IndexTile>(seq_len);
+  auto out_len_tile = ct::full<IndexTile>(out_len);
+  auto zero_i = ct::full<IndexTile>(0);
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t b = 0; b < batch; ++b) {
+    auto batch_tile = ct::full<IndexTile>(b);
+    for (std::int64_t patch_idx = 0; patch_idx < out_len; ++patch_idx) {
+      auto patch_tile = ct::full<IndexTile>(patch_idx);
+      for (std::int64_t k = 0; k < patch_size; ++k) {
+        auto token_pos = patch_tile * ct::full<IndexTile>(stride) + ct::full<IndexTile>(k);
+        auto valid_pos = token_pos < seq_len_tile;
+        auto raw_token = ct::load_masked(tokens + batch_tile * seq_len_tile + token_pos, mask & valid_pos);
+        auto token_hi = ct::select(raw_token >= vocab_tile, vocab_tile - ct::full<IndexTile>(1), raw_token);
+        auto token_id = ct::select(token_hi < zero_i, zero_i, token_hi);
+        auto token_match = mask & valid_pos & (token_id == wanted_token);
+        for (std::int64_t out_c = 0; out_c < model_dim; ++out_c) {
+          auto out_c_tile = ct::full<IndexTile>(out_c);
+          auto grad = ct::load_masked(
+              grad_out + (batch_tile * out_len_tile + patch_tile) * model_dim_tile + out_c_tile,
+              token_match);
+          auto weight = ct::load_masked(
+              proj + (out_c_tile * model_dim_tile + in_c) * ct::full<IndexTile>(patch_size) + ct::full<IndexTile>(k),
+              token_match);
+          acc = acc + ct::select(token_match, grad * weight, ct::full<decltype(grad)>(0.0f));
+        }
+      }
+    }
+  }
+  ct::store_masked(grad_embedding + idx, acc, mask);
+}
+
+__tile_global__ void byte_patch_embed_backward_projection_float32_kernel(
+    const std::int64_t* __restrict__ tokens,
+    const float* __restrict__ embedding,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_proj,
+    std::int64_t n,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  tokens = ct::assume_aligned(tokens, 16_ic);
+  embedding = ct::assume_aligned(embedding, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_proj = ct::assume_aligned(grad_proj, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto patch_tile_size = ct::full<IndexTile>(patch_size);
+  auto model_dim_tile = ct::full<IndexTile>(model_dim);
+  auto k = idx % patch_tile_size;
+  auto in_c = (idx / patch_tile_size) % model_dim_tile;
+  auto out_c = idx / (patch_tile_size * model_dim_tile);
+  auto seq_len_tile = ct::full<IndexTile>(seq_len);
+  auto out_len_tile = ct::full<IndexTile>(out_len);
+  auto vocab_tile = ct::full<IndexTile>(vocab_size);
+  auto zero_i = ct::full<IndexTile>(0);
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t b = 0; b < batch; ++b) {
+    auto batch_tile = ct::full<IndexTile>(b);
+    for (std::int64_t patch_idx = 0; patch_idx < out_len; ++patch_idx) {
+      auto patch_idx_tile = ct::full<IndexTile>(patch_idx);
+      auto token_pos = patch_idx_tile * ct::full<IndexTile>(stride) + k;
+      auto valid_pos = mask & (token_pos < seq_len_tile);
+      auto raw_token = ct::load_masked(tokens + batch_tile * seq_len_tile + token_pos, valid_pos);
+      auto token_hi = ct::select(raw_token >= vocab_tile, vocab_tile - ct::full<IndexTile>(1), raw_token);
+      auto token_id = ct::select(token_hi < zero_i, zero_i, token_hi);
+      auto embed = ct::load_masked(embedding + token_id * model_dim_tile + in_c, valid_pos);
+      auto grad = ct::load_masked(
+          grad_out + (batch_tile * out_len_tile + patch_idx_tile) * model_dim_tile + out_c,
+          valid_pos);
+      acc = acc + ct::select(valid_pos, embed * grad, ct::full<decltype(embed)>(0.0f));
+    }
+  }
+  ct::store_masked(grad_proj + idx, acc, mask);
+}
+
 __tile_global__ void causal_chunk_state_float32_kernel(
     const float* __restrict__ hidden,
     float* __restrict__ out,
@@ -17708,6 +17856,67 @@ void launch_byte_patch_embed_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   byte_patch_embed_float32_kernel<<<blocks, 1, 0, stream>>>(
       tokens, embedding, proj, out, n, seq_len, model_dim, patch_size, stride, out_len, vocab_size);
+}
+
+void launch_byte_patch_merge_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * source_len * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  byte_patch_merge_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_x, n, source_len, target_len, dim);
+}
+
+void launch_byte_patch_embed_backward_float32(
+    const std::int64_t* tokens,
+    const float* embedding,
+    const float* proj,
+    const float* grad_out,
+    float* grad_embedding,
+    float* grad_proj,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size,
+    cudaStream_t stream) {
+  const std::int64_t embedding_n = vocab_size * model_dim;
+  const int embedding_blocks = static_cast<int>((embedding_n + kTileSize - 1) / kTileSize);
+  byte_patch_embed_backward_embedding_float32_kernel<<<embedding_blocks, 1, 0, stream>>>(
+      tokens,
+      proj,
+      grad_out,
+      grad_embedding,
+      embedding_n,
+      batch,
+      seq_len,
+      model_dim,
+      patch_size,
+      stride,
+      out_len,
+      vocab_size);
+  const std::int64_t projection_n = model_dim * model_dim * patch_size;
+  const int projection_blocks = static_cast<int>((projection_n + kTileSize - 1) / kTileSize);
+  byte_patch_embed_backward_projection_float32_kernel<<<projection_blocks, 1, 0, stream>>>(
+      tokens,
+      embedding,
+      grad_out,
+      grad_proj,
+      projection_n,
+      batch,
+      seq_len,
+      model_dim,
+      patch_size,
+      stride,
+      out_len,
+      vocab_size);
 }
 
 void launch_causal_chunk_state_float32(

@@ -953,7 +953,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     if (coverage_class == "missing-hnet-byte-lm") {
         return {
             "byte-token-shard-resolver",
-            "byte-patch-backward-native-loop",
             "family-parameter-layout-checkpoint-inference",
         };
     }
@@ -1033,7 +1032,10 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {"universal-recurrent-linear-mse-adamw-smoke", "universal-act-halt-loss-gradient-smoke"};
     }
     if (coverage_class == "missing-hnet-byte-lm") {
-        return {"hnet-byte-patch-embed-merge-head-adamw-smoke"};
+        return {
+            "hnet-byte-patch-embed-merge-head-adamw-smoke",
+            "hnet-byte-patch-backward-adamw-smoke",
+        };
     }
     return {};
 }

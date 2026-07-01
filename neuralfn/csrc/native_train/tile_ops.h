@@ -787,6 +787,31 @@ int nfn_native_tile_byte_patch_merge_float32(
     std::int64_t dim,
     void* cuda_stream);
 
+int nfn_native_tile_byte_patch_merge_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t source_len,
+    std::int64_t target_len,
+    std::int64_t dim,
+    void* cuda_stream);
+
+int nfn_native_tile_byte_patch_embed_backward_float32(
+    const std::int64_t* tokens,
+    const float* embedding,
+    const float* proj,
+    const float* grad_out,
+    float* grad_embedding,
+    float* grad_proj,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t patch_size,
+    std::int64_t stride,
+    std::int64_t out_len,
+    std::int64_t vocab_size,
+    void* cuda_stream);
+
 int nfn_native_tile_causal_chunk_state_float32(
     const float* hidden,
     float* out,

@@ -5296,11 +5296,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["hnet_lm"] == "missing-hnet-byte-lm"
     assert missing_requirements["hnet_lm"] == [
         "byte-token-shard-resolver",
-        "byte-patch-backward-native-loop",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
+        "hnet-byte-patch-backward-adamw-smoke",
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
@@ -11702,11 +11702,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_payload["native_training_coverage_class"] == "missing-hnet-byte-lm"
     assert hnet_payload["native_training_missing_requirements"] == [
         "byte-token-shard-resolver",
-        "byte-patch-backward-native-loop",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
+        "hnet-byte-patch-backward-adamw-smoke",
     ]
     assert hnet_payload["compiled_native_boundary"] is True
     assert hnet_payload["torch_required"] is False
@@ -11714,6 +11714,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     for symbol in (
         "nfn_native_tile_byte_patch_embed_float32",
         "nfn_native_tile_byte_patch_merge_float32",
+        "nfn_native_tile_byte_patch_merge_backward_float32",
+        "nfn_native_tile_byte_patch_embed_backward_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_adamw_step_float32",
@@ -12039,6 +12041,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-hnet-byte-patch-step" in unified_hnet_smoke_command.stdout
     assert "--tile-ops-lib" in unified_hnet_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_hnet_smoke_command.stdout
+
+    unified_hnet_backward_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "hnet-lm",
+            "--native-cuda-smoke-hnet-byte-patch-backward-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_hnet_backward_smoke_command.returncode == 0, (
+        unified_hnet_backward_smoke_command.stderr
+    )
+    assert str(hnet_lm) in unified_hnet_backward_smoke_command.stdout
+    assert "--smoke-hnet-byte-patch-backward-step" in unified_hnet_backward_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_hnet_backward_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_hnet_backward_smoke_command.stdout
 
     unified_jamba_smoke_command = subprocess.run(
         [
