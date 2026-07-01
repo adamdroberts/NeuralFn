@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Breaking changes: non-dense GPT template and family-native status now
+  distinguishes CUDA smoke coverage from production pretraining. Non-dense
+  template selectors such as `semantic_moe_jepa_evo` again report
+  `template-native-trainer-missing`, direct family binaries report
+  `family-native-trainer-missing` / `family-native-loop-missing`, and
+  `native_training_missing_requirements` includes
+  `production-family-forward-backward-optimizer-loop`. The previous
+  `native-trainer-covered` / empty-missing-requirements output was too broad:
+  it meant the smoke-backed native kernel coverage checklist was complete, not
+  that full TinyStories pretraining was implemented. Use the dense GPT native
+  trainer for real pretraining today; use semantic/MoE/JEPA family binaries for
+  native preflight, smoke, token-shard, and checkpoint-layout checks until their
+  production loop lands.
+
 - Breaking changes: native GPT template coverage JSON now reports completed
   non-dense coverage classes with `covered-*` names instead of the older
   `missing-*` class labels once their native coverage checklist is empty. The
@@ -18,9 +32,9 @@
   --native-cuda-smoke-route-evo-device-controller-step` alias now launch route
   controller candidate mutation, best-loss selection, and best-candidate
   adoption through the raw CUDA Tile evo ABI without Torch or graph-editor
-  tensor flow. Semantic-router MoE now reports no remaining native coverage
-  checklist items, and the Python SDK fallback registry mirrors the compiled
-  `native-trainer-covered` / `native-loop-covered` statuses.
+  tensor flow. Semantic-router MoE now lists this smoke in completed native
+  requirements while still reporting the production family train loop as
+  missing until the full forward/backward/optimizer loop lands.
 
 - Added a semantic target shard resolver native smoke. `nfn_semantic_dense_jepa_native_train
   --smoke-semantic-target-shard-step --tile-ops-lib PATH` and the unified
@@ -29,8 +43,8 @@
   target IDs from native uint16 token batches at the compiled C++ boundary and
   validate those targets through the semantic hash/alignment CUDA Tile path.
   Semantic-family `--sample-token-batch` preflight JSON now includes
-  `semantic_target_batch`, and families with no remaining native coverage
-  checklist items report `native-trainer-covered` / `native-loop-covered`.
+  `semantic_target_batch`, and completed smoke coverage is reported separately
+  from the still-missing production family train loop.
   Semantic-router MoE kept only `route-evo-device-controller` as its remaining
   native coverage blocker at the time of that change.
 

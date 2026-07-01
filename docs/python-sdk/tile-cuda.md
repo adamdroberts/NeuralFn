@@ -609,20 +609,16 @@ RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
 RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
 the LLaMA full forward/backward loop smoke, and family
 parameter-layout/checkpoint/inference metadata CUDA smokes, while
-`native_training_missing_requirements` is empty for the LLaMA family.
+`native_training_missing_requirements` still includes `production-family-forward-backward-optimizer-loop` for the LLaMA family until the full train loop lands.
 MoE-family
 entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
 routed SwiGLU forward/backward, load-balance/AdamW, and standard MoE
 transformer-block forward CUDA smokes plus the standard MoE transformer-LM
 CE/backward/AdamW smoke and the standard MoE full forward/backward loop smoke.
-Standard MoE-only families now have an empty missing list, while MoE+JEPA and
-semantic MoE families keep their JEPA or semantic objectives visible as
-missing requirements. JEPA-family entries now list the
+Standard MoE, MoE+JEPA, and semantic MoE families keep `production-family-forward-backward-optimizer-loop` visible in missing requirements until the full production loop lands, while completed smokes are listed separately. JEPA-family entries now list the
 completed projector/predictor/latent-loss, target-encoder, and base AR+JEPA
-objective CUDA smokes plus family metadata; dense JEPA has no shared metadata
-item left in the missing list, while router/semantic objective composition
-remains visible for those families. Semantic-family entries now list completed
+objective CUDA smokes plus family metadata; dense JEPA keeps `production-family-forward-backward-optimizer-loop` in the missing list until the full production loop lands, while router/semantic objective composition smokes are listed as completed where available. Semantic-family entries now list completed
 semantic hash/alignment-loss-items CUDA smoke, and semantic-router MoE entries
 also list the completed route-selection/distillation/balance-loss and
 route/expert/AdamW CUDA smokes while keeping full semantic planner/router,

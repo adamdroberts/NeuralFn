@@ -4192,8 +4192,8 @@ include `native_training_coverage_class`,
 `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with an empty missing requirement list.
-Covered non-dense templates are classified by their completed native loop or
-objective family. The compiled covered family binaries emit covered coverage
+Non-dense templates are classified by their smoke-covered native loop or
+objective family while still listing the production trainer loop as missing. The compiled covered family binaries emit covered coverage
 classes for LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal
 transformer families. This manifest is the coverage gate for native-template

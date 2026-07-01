@@ -882,40 +882,40 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "covered-llama-rope-swiglu-transformer-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-standard-moe-transformer-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-dense-jepa-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-moe-jepa-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-semantic-dense-jepa-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-semantic-moe-router-jepa-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-seq2seq-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-diffusion-objective") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-ttt-transformer-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-jamba-hybrid-mamba-transformer-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-hnet-byte-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-universal-transformer-lm") {
-        return {};
+        return {"production-family-forward-backward-optimizer-loop"};
     }
     return {"classify-template-native-requirements"};
 }

@@ -50,77 +50,77 @@ build_one "llama" "nfn_llama_native_train" \
   "LLaMA RoPE/RMSNorm/SwiGLU attention and MLP CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_float32,nfn_native_tile_token_embedding_backward_weight_float32,nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_rms_norm_backward_input_float32,nfn_native_tile_rotary_embedding_float32,nfn_native_tile_rotary_embedding_backward_float32,nfn_native_tile_swiglu_float32,nfn_native_tile_swiglu_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_float32,nfn_native_tile_split_qkv_to_heads_float32,nfn_native_tile_merge_heads_to_qkv_float32,nfn_native_tile_scaled_dot_product_attention_float32,nfn_native_tile_scaled_dot_product_attention_backward_float32,nfn_native_tile_scaled_residual_add_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32,nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-llama-rope-swiglu-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "rmsnorm-loop-composition-smoke,rope-loop-composition-smoke,swiglu-geglu-mlp-loop-composition-smoke,lm-head-linear-ce-backward-adamw-smoke,token-lm-embedding-ce-backward-adamw-smoke,composed-token-block-lm-adamw-smoke,packed-qkv-attention-forward-backward-smoke,packed-qkv-attention-block-forward-smoke,packed-qkv-rope-attention-block-integration-smoke,rope-swiglu-block-forward-backward-adamw-smoke,llama-full-forward-backward-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "mixllama" "nfn_mixllama_native_train" \
   "LLaMA MoE routing, expert dispatch/combine, and grouped expert CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-standard-moe-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,standard-moe-transformer-block-forward-backward-adamw-smoke,standard-moe-transformer-lm-forward-backward-adamw-smoke,standard-moe-full-forward-backward-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "moe-jepa-evo" "nfn_moe_jepa_evo_native_train" \
   "standard MoE transformer loop plus JEPA target encoder/projector/predictor and AR+JEPA+router loss CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-moe-jepa-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,standard-moe-transformer-block-forward-backward-adamw-smoke,standard-moe-transformer-lm-forward-backward-adamw-smoke,standard-moe-full-forward-backward-loop-smoke,jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,dense-jepa-ar-target-projector-forward-backward-adamw-smoke,ar-plus-jepa-plus-router-loss-composition-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-dense-jepa-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,dense-jepa-ar-target-projector-forward-backward-adamw-smoke,dense-jepa-full-forward-backward-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_sum_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-semantic-dense-jepa-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,dense-jepa-ar-target-projector-forward-backward-adamw-smoke,semantic-target-shard-resolver-smoke,semantic-hash-alignment-loss-items-smoke,semantic-dense-planner-alignment-adamw-smoke,semantic-planner-forward-backward-smoke,semantic-alignment-loss-device-reduction-smoke,ar-plus-semantic-plus-jepa-loss-composition-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-router-moe" "nfn_semantic_router_moe_native_train" \
   "semantic router, hash/topic routing, MoE expert, load-balance, and route-loss CUDA Tile trainer" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_broadcast_chunk_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_route_selection_loss_partials_float32,nfn_native_tile_softmax_distillation_partials_float32,nfn_native_tile_attentionless_decoder_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_evo_mutate_candidates_float32,nfn_native_tile_evo_select_best_loss_float32,nfn_native_tile_evo_adopt_candidate_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-semantic-moe-router-jepa-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,semantic-target-shard-resolver-smoke,semantic-hash-alignment-loss-items-smoke,route-selection-distillation-balance-losses-smoke,semantic-router-forward-backward-smoke,semantic-expert-dispatch-combine-smoke,semantic-router-moe-route-expert-adamw-smoke,ar-plus-semantic-plus-jepa-loss-composition-smoke,route-evo-device-controller-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "deepseek-v4" "nfn_deepseek_v4_native_train" \
   "DeepSeek sparse attention, MoE routing, and native optimizer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_topk_route_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_route_balance_density_float32,nfn_native_tile_route_balance_loss_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-standard-moe-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "router-topk-broadcast-smoke,routed-swiglu-expert-forward-backward-smoke,load-balance-loss-adamw-smoke,standard-moe-transformer-block-forward-smoke,standard-moe-transformer-block-forward-backward-adamw-smoke,standard-moe-transformer-lm-forward-backward-adamw-smoke,standard-moe-full-forward-backward-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "jamba" "nfn_jamba_native_train" \
   "Jamba hybrid Mamba plus transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_causal_chunk_state_float32,nfn_native_tile_causal_chunk_state_backward_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-jamba-hybrid-mamba-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "jamba-causal-chunk-state-head-adamw-smoke,jamba-mamba-state-forward-backward-adamw-smoke,jamba-layer-schedule-native-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "seq2seq" "nfn_seq2seq_native_train" \
   "encoder-decoder cross-attention and seq2seq loss CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_scaled_dot_product_attention_float32,nfn_native_tile_scaled_dot_product_attention_backward_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-seq2seq-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "seq2seq-cross-attention-ce-adamw-smoke,seq2seq-loss-composition-adamw-smoke,seq2seq-full-encoder-decoder-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
   "nfn_native_tile_random_timesteps_float32,nfn_native_tile_mask_scheduler_int64,nfn_native_tile_token_embedding_float32,nfn_native_tile_token_embedding_backward_weight_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-diffusion-objective" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke,diffusion-full-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_tanh_float32,nfn_native_tile_add_float32,nfn_native_tile_tanh_backward_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-ttt-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke,ttt-full-transformer-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "hnet-lm" "nfn_hnet_lm_native_train" \
   "HNet byte-token patch and merge CUDA Tile trainer" \
   "nfn_native_tile_byte_patch_embed_float32,nfn_native_tile_byte_patch_merge_float32,nfn_native_tile_byte_patch_merge_backward_float32,nfn_native_tile_byte_patch_embed_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-hnet-byte-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "hnet-byte-patch-embed-merge-head-adamw-smoke,hnet-byte-patch-backward-adamw-smoke,hnet-byte-lm-loop-smoke,byte-token-shard-resolver-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "universal-llama" "nfn_universal_llama_native_train" \
   "universal transformer recurrent layer and halting CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_act_halting_bce_grad_float32,nfn_native_tile_act_weighted_sum_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-universal-transformer-lm" \
-  "" \
+  "production-family-forward-backward-optimizer-loop" \
   "universal-recurrent-linear-mse-adamw-smoke,universal-act-halt-loss-gradient-smoke,universal-transformer-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"

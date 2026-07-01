@@ -670,9 +670,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     missing_sentinels = linked_catalog["covered_native_sentinels"]
     assert missing_sentinels["llama"]["passed"] is True
-    assert missing_sentinels["llama"]["status"] == "native-trainer-covered"
+    assert missing_sentinels["llama"]["status"] == "template-native-trainer-missing"
     assert missing_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "native-trainer-covered"
+    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "template-native-trainer-missing"
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5217,12 +5217,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["semantic_router_moe"] == "native-trainer-covered"
+    assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "covered-llama-rope-swiglu-transformer-lm"
-    assert missing_requirements["llama"] == []
+    assert missing_requirements["llama"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["llama"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -5238,7 +5238,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "covered-standard-moe-transformer-lm"
-    assert missing_requirements["mixllama"] == []
+    assert missing_requirements["mixllama"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["mixllama"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -5275,7 +5275,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-router-moe-route-expert-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "covered-seq2seq-objective"
-    assert missing_requirements["seq2seq"] == []
+    assert missing_requirements["seq2seq"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
@@ -5283,7 +5283,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "covered-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == []
+    assert missing_requirements["ttt_llama"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
@@ -5291,7 +5291,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["universal_llama"] == "covered-universal-transformer-lm"
-    assert missing_requirements["universal_llama"] == []
+    assert missing_requirements["universal_llama"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["universal_llama"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
@@ -5299,7 +5299,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["jamba"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert missing_requirements["jamba"] == []
+    assert missing_requirements["jamba"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["jamba"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
@@ -5307,7 +5307,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "covered-hnet-byte-lm"
-    assert missing_requirements["hnet_lm"] == []
+    assert missing_requirements["hnet_lm"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
@@ -5316,7 +5316,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["diffusion"] == "covered-diffusion-objective"
-    assert missing_requirements["diffusion"] == []
+    assert missing_requirements["diffusion"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
@@ -7625,9 +7625,9 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["gpt2-evo"]["status"] == "implemented"
     assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
-    assert models["llama"]["status"] == "native-trainer-covered"
+    assert models["llama"]["status"] == "family-native-trainer-missing"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert models["llama"]["trainer_loop_status"] == "native-loop-covered"
+    assert models["llama"]["trainer_loop_status"] == "family-native-loop-missing"
 
 
 def test_native_train_model_registry_static_names_match_cpp_registry(
@@ -7656,15 +7656,15 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["kernel_status"] == "required-tile-symbols-present"
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["llama"]["trainer_loop_status"] == "native-loop-covered"
+    assert registry["llama"]["trainer_loop_status"] == "family-native-loop-missing"
     assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
     assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "native-loop-covered"
+    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "family-native-loop-missing"
     assert registry["semantic-dense-jepa"]["native_target"] == "nfn_semantic_dense_jepa_native_train"
     assert registry["semantic-dense-jepa"]["geometry_status"] == "requires-semantic-dense-jepa-native-loop"
     assert registry["semantic-dense-jepa"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "native-loop-covered"
+    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "family-native-loop-missing"
     assert registry["jamba"]["native_target"] == "nfn_jamba_native_train"
     assert registry["seq2seq"]["native_target"] == "nfn_seq2seq_native_train"
     assert registry["diffusion"]["native_target"] == "nfn_diffusion_native_train"
@@ -10949,11 +10949,11 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert kernel_statuses["gpt"] == "required-tile-symbols-present"
     assert loop_statuses["gpt"] == "implemented"
     assert kernel_statuses["llama"] == "required-tile-symbols-present"
-    assert loop_statuses["llama"] == "native-loop-covered"
+    assert loop_statuses["llama"] == "family-native-loop-missing"
     assert native_targets["semantic-dense-jepa"] == "nfn_semantic_dense_jepa_native_train"
     assert geometry_statuses["semantic-dense-jepa"] == "requires-semantic-dense-jepa-native-loop"
     assert kernel_statuses["semantic-dense-jepa"] == "required-tile-symbols-present"
-    assert loop_statuses["semantic-dense-jepa"] == "native-loop-covered"
+    assert loop_statuses["semantic-dense-jepa"] == "family-native-loop-missing"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
@@ -10972,9 +10972,9 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "native-trainer-covered"
+    assert llama_payload["status"] == "family-native-trainer-missing"
     assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
-    assert llama_payload["trainer_loop_status"] == "native-loop-covered"
+    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11067,9 +11067,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_plan.returncode == 0, llama_plan.stderr
     llama_payload = json.loads(llama_plan.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "native-trainer-covered"
+    assert llama_payload["status"] == "family-native-trainer-missing"
     assert llama_payload["kernel_status"] == "required-tile-symbols-missing"
-    assert llama_payload["trainer_loop_status"] == "native-loop-covered"
+    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11077,7 +11077,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["batch_size"] == 8
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
-    assert llama_payload["native_training_missing_requirements"] == []
+    assert llama_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert llama_payload["native_training_completed_requirements"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -11332,8 +11332,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_sample.returncode == 0, llama_sample.stderr
     sample_payload = json.loads(llama_sample.stdout)
     assert sample_payload["model_family"] == "llama"
-    assert sample_payload["status"] == "native-trainer-covered"
-    assert sample_payload["trainer_loop_status"] == "native-loop-covered"
+    assert sample_payload["status"] == "family-native-trainer-missing"
+    assert sample_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert sample_payload["compiled_native_boundary"] is True
     assert sample_payload["torch_required"] is False
     assert sample_payload["graph_editor_tensor_flow"] is False
@@ -11410,9 +11410,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_plan.returncode == 0, mixllama_plan.stderr
     mixllama_payload = json.loads(mixllama_plan.stdout)
     assert mixllama_payload["model_family"] == "mixllama"
-    assert mixllama_payload["status"] == "native-trainer-covered"
+    assert mixllama_payload["status"] == "family-native-trainer-missing"
     assert mixllama_payload["native_training_coverage_class"] == "covered-standard-moe-transformer-lm"
-    assert mixllama_payload["native_training_missing_requirements"] == []
+    assert mixllama_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert mixllama_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11528,9 +11528,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_plan.returncode == 0, moe_jepa_plan.stderr
     moe_jepa_payload = json.loads(moe_jepa_plan.stdout)
     assert moe_jepa_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_payload["status"] == "native-trainer-covered"
+    assert moe_jepa_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_payload["native_training_coverage_class"] == "covered-moe-jepa-objective"
-    assert moe_jepa_payload["native_training_missing_requirements"] == []
+    assert moe_jepa_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert moe_jepa_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11581,7 +11581,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == []
+    assert jepa_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
@@ -11746,9 +11746,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_plan.returncode == 0, semantic_dense_plan.stderr
     semantic_dense_payload = json.loads(semantic_dense_plan.stdout)
     assert semantic_dense_payload["model_family"] == "semantic-dense-jepa"
-    assert semantic_dense_payload["status"] == "native-trainer-covered"
+    assert semantic_dense_payload["status"] == "family-native-trainer-missing"
     assert semantic_dense_payload["native_training_coverage_class"] == "covered-semantic-dense-jepa-objective"
-    assert semantic_dense_payload["native_training_missing_requirements"] == []
+    assert semantic_dense_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert semantic_dense_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
@@ -11851,9 +11851,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_plan.returncode == 0, semantic_router_plan.stderr
     semantic_router_payload = json.loads(semantic_router_plan.stdout)
     assert semantic_router_payload["model_family"] == "semantic-router-moe"
-    assert semantic_router_payload["status"] == "native-trainer-covered"
+    assert semantic_router_payload["status"] == "family-native-trainer-missing"
     assert semantic_router_payload["native_training_coverage_class"] == "covered-semantic-moe-router-jepa-objective"
-    assert semantic_router_payload["native_training_missing_requirements"] == []
+    assert semantic_router_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert "route-selection-distillation-balance-losses" not in semantic_router_payload[
         "native_training_missing_requirements"
     ]
@@ -11933,9 +11933,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_plan.returncode == 0, diffusion_plan.stderr
     diffusion_payload = json.loads(diffusion_plan.stdout)
     assert diffusion_payload["model_family"] == "diffusion"
-    assert diffusion_payload["status"] == "native-trainer-covered"
+    assert diffusion_payload["status"] == "family-native-trainer-missing"
     assert diffusion_payload["native_training_coverage_class"] == "covered-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == []
+    assert diffusion_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
@@ -11976,9 +11976,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_plan.returncode == 0, seq2seq_plan.stderr
     seq2seq_payload = json.loads(seq2seq_plan.stdout)
     assert seq2seq_payload["model_family"] == "seq2seq"
-    assert seq2seq_payload["status"] == "native-trainer-covered"
+    assert seq2seq_payload["status"] == "family-native-trainer-missing"
     assert seq2seq_payload["native_training_coverage_class"] == "covered-seq2seq-objective"
-    assert seq2seq_payload["native_training_missing_requirements"] == []
+    assert seq2seq_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert seq2seq_payload["native_training_completed_requirements"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
@@ -12013,9 +12013,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_plan.returncode == 0, ttt_plan.stderr
     ttt_payload = json.loads(ttt_plan.stdout)
     assert ttt_payload["model_family"] == "ttt-llama"
-    assert ttt_payload["status"] == "native-trainer-covered"
+    assert ttt_payload["status"] == "family-native-trainer-missing"
     assert ttt_payload["native_training_coverage_class"] == "covered-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == []
+    assert ttt_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
@@ -12052,9 +12052,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_plan.returncode == 0, universal_plan.stderr
     universal_payload = json.loads(universal_plan.stdout)
     assert universal_payload["model_family"] == "universal-llama"
-    assert universal_payload["status"] == "native-trainer-covered"
+    assert universal_payload["status"] == "family-native-trainer-missing"
     assert universal_payload["native_training_coverage_class"] == "covered-universal-transformer-lm"
-    assert universal_payload["native_training_missing_requirements"] == []
+    assert universal_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert universal_payload["native_training_completed_requirements"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
@@ -12090,9 +12090,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_plan.returncode == 0, hnet_plan.stderr
     hnet_payload = json.loads(hnet_plan.stdout)
     assert hnet_payload["model_family"] == "hnet-lm"
-    assert hnet_payload["status"] == "native-trainer-covered"
+    assert hnet_payload["status"] == "family-native-trainer-missing"
     assert hnet_payload["native_training_coverage_class"] == "covered-hnet-byte-lm"
-    assert hnet_payload["native_training_missing_requirements"] == []
+    assert hnet_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
@@ -12129,9 +12129,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_plan.returncode == 0, jamba_plan.stderr
     jamba_payload = json.loads(jamba_plan.stdout)
     assert jamba_payload["model_family"] == "jamba"
-    assert jamba_payload["status"] == "native-trainer-covered"
+    assert jamba_payload["status"] == "family-native-trainer-missing"
     assert jamba_payload["native_training_coverage_class"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert jamba_payload["native_training_missing_requirements"] == []
+    assert jamba_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert jamba_payload["native_training_completed_requirements"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
@@ -12241,9 +12241,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert unified_moe_jepa.returncode == 0, unified_moe_jepa.stderr
     moe_jepa_unified_payload = json.loads(unified_moe_jepa.stdout)
     assert moe_jepa_unified_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_unified_payload["status"] == "native-trainer-covered"
+    assert moe_jepa_unified_payload["status"] == "family-native-trainer-missing"
     assert moe_jepa_unified_payload["native_training_coverage_class"] == "covered-moe-jepa-objective"
-    assert moe_jepa_unified_payload["native_training_missing_requirements"] == []
+    assert moe_jepa_unified_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
     assert moe_jepa_unified_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",

@@ -2207,11 +2207,11 @@ def _validate_native_template_catalog(
         else:
             template_report["status"] = template.get("selected_graph_support_status")
             template_report["native_runnable"] = template.get("selected_graph_native_runnable")
-            if template.get("selected_graph_support_status") != "native-trainer-covered":
+            if template.get("selected_graph_support_status") != "template-native-trainer-missing":
                 template_errors.append(
                     "status="
                     f"{template.get('selected_graph_support_status')!r}, "
-                    "expected 'native-trainer-covered'"
+                    "expected 'template-native-trainer-missing'"
                 )
             if template.get("selected_graph_native_runnable") is not False:
                 template_errors.append("selected_graph_native_runnable was not false")
