@@ -64,6 +64,7 @@ struct Config {
     bool smoke_llama_loop = false;
     bool smoke_llama_train_step = false;
     bool smoke_llama_lm_head_step = false;
+    bool smoke_llama_packed_attention_step = false;
     bool smoke_moe_route_expert_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_semantic_alignment_step = false;
@@ -255,6 +256,7 @@ void print_usage(const char* program) {
         << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
+        << "  --smoke-llama-packed-attention-step Launch packed-QKV BF16 attention forward/backward kernels on CUDA\n"
         << "  --smoke-moe-route-expert-step Launch MoE routing, expert, balance-loss, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
@@ -294,6 +296,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_train_step = true;
         } else if (arg == "--smoke-llama-lm-head-step" || arg == "--native-cuda-smoke-llama-lm-head-step") {
             cfg.smoke_llama_lm_head_step = true;
+        } else if (arg == "--smoke-llama-packed-attention-step" || arg == "--native-cuda-smoke-llama-packed-attention-step") {
+            cfg.smoke_llama_packed_attention_step = true;
         } else if (arg == "--smoke-moe-route-expert-step" || arg == "--native-cuda-smoke-moe-route-expert-step") {
             cfg.smoke_moe_route_expert_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
@@ -1286,6 +1290,429 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << ", \"lm_head_loss\":" << lm_head_loss_max_error
         << ", \"lm_head_grad_weight\":" << lm_head_grad_weight_max_error
         << ", \"lm_head_weight\":" << lm_head_weight_max_error
+        << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_llama_packed_attention_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool llama_family =
+        family.find("llama") != std::string::npos ||
+        family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using Float32ToBf16Fn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
+    using Bf16ToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
+    using PackedAttentionStoreLseFn = int (*)(
+        const std::uint16_t*,
+        std::uint16_t*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        float,
+        bool,
+        bool,
+        bool,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
+    using PackedAttentionBackwardFn = int (*)(
+        const std::uint16_t*,
+        const std::uint16_t*,
+        const float*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        float,
+        bool,
+        bool,
+        bool,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    Float32ToBf16Fn float32_to_bf16 = nullptr;
+    Bf16ToFloat32Fn bf16_to_float32 = nullptr;
+    PackedAttentionStoreLseFn packed_attention = nullptr;
+    PackedAttentionBackwardFn packed_attention_backward = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kBatch = 1;
+    constexpr std::int64_t kHeads = 12;
+    constexpr std::int64_t kSeqLen = 32;
+    constexpr std::int64_t kHeadDim = 64;
+    constexpr std::int64_t kElements = kBatch * kSeqLen * kHeads * kHeadDim;
+    constexpr std::int64_t kPackedElements = kElements * 3;
+    constexpr float kScale = 1.0f / 8.0f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+    auto max_abs_error = [](const std::vector<float>& actual, const std::vector<float>& expected) {
+        float max_err = 0.0f;
+        const std::size_t n = std::min(actual.size(), expected.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            max_err = std::max(max_err, std::fabs(actual[i] - expected[i]));
+        }
+        return max_err;
+    };
+    auto packed_index = [](std::int64_t b, std::int64_t t, std::int64_t part, std::int64_t h, std::int64_t d) {
+        return (((b * kSeqLen + t) * 3 + part) * kHeads + h) * kHeadDim + d;
+    };
+    auto merged_index = [](std::int64_t b, std::int64_t t, std::int64_t h, std::int64_t d) {
+        return ((b * kSeqLen + t) * kHeads + h) * kHeadDim + d;
+    };
+
+    bool passed = false;
+    float forward_max_error = 0.0f;
+    float lse_finite_error = 0.0f;
+    float grad_qkv_nonzero_sum = 0.0f;
+    float grad_qkv_max_abs = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!llama_family) {
+        error = "LLaMA packed-attention smoke commands are only valid for LLaMA-family native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            float32_to_bf16 = load_symbol<Float32ToBf16Fn>(tile_handle, "nfn_native_tile_float32_to_bf16_bits");
+            bf16_to_float32 = load_symbol<Bf16ToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
+            packed_attention = load_symbol<PackedAttentionStoreLseFn>(
+                tile_handle, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32");
+            packed_attention_backward = load_symbol<PackedAttentionBackwardFn>(
+                tile_handle, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32");
+            if (float32_to_bf16 == nullptr || bf16_to_float32 == nullptr ||
+                packed_attention == nullptr || packed_attention_backward == nullptr) {
+                error = "Tile ops library is missing one or more LLaMA packed-attention symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> qkv(static_cast<std::size_t>(kPackedElements), 0.0f);
+        std::vector<float> grad_out(static_cast<std::size_t>(kElements), 0.0f);
+        for (std::int64_t t = 0; t < kSeqLen; ++t) {
+            for (std::int64_t d = 0; d < kHeadDim; ++d) {
+                qkv[static_cast<std::size_t>(packed_index(0, t, 0, 0, d))] =
+                    0.01f * static_cast<float>((d % 11) + 1) + 0.02f * static_cast<float>(t);
+                qkv[static_cast<std::size_t>(packed_index(0, t, 1, 0, d))] =
+                    0.015f * static_cast<float>((d % 7) + 1) - 0.01f * static_cast<float>(t);
+                qkv[static_cast<std::size_t>(packed_index(0, t, 2, 0, d))] =
+                    0.02f * static_cast<float>((d % 5) + 1) + 0.03f * static_cast<float>(t);
+                grad_out[static_cast<std::size_t>(merged_index(0, t, 0, d))] =
+                    0.004f * static_cast<float>((d % 13) + 1) + 0.01f * static_cast<float>(t + 1);
+            }
+        }
+
+        float* d_qkv_float = nullptr;
+        std::uint16_t* d_qkv_bf16 = nullptr;
+        std::uint16_t* d_out_bf16 = nullptr;
+        float* d_out_float = nullptr;
+        float* d_saved_lse = nullptr;
+        float* d_grad_out = nullptr;
+        float* d_grad_qkv = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_u16 = [&](std::uint16_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::uint16_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_float(&d_qkv_float, qkv.size(), "qkv_float") &&
+            alloc_u16(&d_qkv_bf16, qkv.size(), "qkv_bf16") &&
+            alloc_u16(&d_out_bf16, grad_out.size(), "out_bf16") &&
+            alloc_float(&d_out_float, grad_out.size(), "out_float") &&
+            alloc_float(&d_saved_lse, static_cast<std::size_t>(kBatch * kHeads * kSeqLen), "saved_lse") &&
+            alloc_float(&d_grad_out, grad_out.size(), "grad_out") &&
+            alloc_float(&d_grad_qkv, qkv.size(), "grad_qkv")) {
+            int status = cuda_memcpy(d_qkv_float, qkv.data(), qkv.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy qkv H2D");
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(d_grad_out, grad_out.data(), grad_out.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad_out H2D");
+                }
+            }
+            if (error.empty()) {
+                status = float32_to_bf16(d_qkv_float, d_qkv_bf16, kPackedElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_float32_to_bf16_bits qkv");
+                }
+            }
+            if (error.empty()) {
+                status = packed_attention(
+                    d_qkv_bf16,
+                    d_out_bf16,
+                    d_saved_lse,
+                    kBatch,
+                    kHeads,
+                    kHeads,
+                    kSeqLen,
+                    kSeqLen,
+                    kHeadDim,
+                    kHeadDim,
+                    kScale,
+                    true,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32");
+                }
+            }
+            if (error.empty()) {
+                status = bf16_to_float32(d_out_bf16, d_out_float, kElements, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_bf16_bits_to_float32 out");
+                }
+            }
+            if (error.empty()) {
+                status = packed_attention_backward(
+                    d_qkv_bf16,
+                    d_out_bf16,
+                    d_saved_lse,
+                    d_grad_out,
+                    d_grad_qkv,
+                    kBatch,
+                    kHeads,
+                    kHeads,
+                    kSeqLen,
+                    kSeqLen,
+                    kHeadDim,
+                    kHeadDim,
+                    kScale,
+                    true,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) {
+                    error = cuda_error(status, "cudaDeviceSynchronize");
+                }
+            }
+            std::vector<float> actual_out(grad_out.size(), 0.0f);
+            std::vector<float> actual_lse(static_cast<std::size_t>(kBatch * kHeads * kSeqLen), 0.0f);
+            std::vector<float> actual_grad_qkv(qkv.size(), 0.0f);
+            if (error.empty()) {
+                status = cuda_memcpy(actual_out.data(), d_out_float, actual_out.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy out D2H");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(actual_lse.data(), d_saved_lse, actual_lse.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy lse D2H");
+                }
+            }
+            if (error.empty()) {
+                status = cuda_memcpy(actual_grad_qkv.data(), d_grad_qkv, actual_grad_qkv.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy grad_qkv D2H");
+                }
+            }
+            if (error.empty()) {
+                std::vector<float> expected_out(grad_out.size(), 0.0f);
+                for (std::int64_t t = 0; t < kSeqLen; ++t) {
+                    std::vector<float> scores(static_cast<std::size_t>(t + 1), 0.0f);
+                    float max_score = -std::numeric_limits<float>::infinity();
+                    for (std::int64_t s = 0; s <= t; ++s) {
+                        float dot = 0.0f;
+                        for (std::int64_t d = 0; d < kHeadDim; ++d) {
+                            dot += qkv[static_cast<std::size_t>(packed_index(0, t, 0, 0, d))] *
+                                   qkv[static_cast<std::size_t>(packed_index(0, s, 1, 0, d))];
+                        }
+                        scores[static_cast<std::size_t>(s)] = dot * kScale;
+                        max_score = std::max(max_score, scores[static_cast<std::size_t>(s)]);
+                    }
+                    float denom = 0.0f;
+                    for (float score : scores) {
+                        denom += std::exp(score - max_score);
+                    }
+                    for (std::int64_t s = 0; s <= t; ++s) {
+                        const float prob = std::exp(scores[static_cast<std::size_t>(s)] - max_score) / denom;
+                        for (std::int64_t d = 0; d < kHeadDim; ++d) {
+                            expected_out[static_cast<std::size_t>(merged_index(0, t, 0, d))] +=
+                                prob * qkv[static_cast<std::size_t>(packed_index(0, s, 2, 0, d))];
+                        }
+                    }
+                }
+                forward_max_error = max_abs_error(actual_out, expected_out);
+                for (float value : actual_lse) {
+                    if (!std::isfinite(value)) {
+                        lse_finite_error = 1.0f;
+                    }
+                }
+                for (float value : actual_grad_qkv) {
+                    if (!std::isfinite(value)) {
+                        grad_qkv_max_abs = std::numeric_limits<float>::infinity();
+                        break;
+                    }
+                    grad_qkv_nonzero_sum += std::fabs(value);
+                    grad_qkv_max_abs = std::max(grad_qkv_max_abs, std::fabs(value));
+                }
+                passed =
+                    forward_max_error <= 6e-3f &&
+                    lse_finite_error == 0.0f &&
+                    grad_qkv_nonzero_sum > 1e-5f &&
+                    std::isfinite(grad_qkv_max_abs);
+                if (!passed) {
+                    error = "LLaMA packed-attention smoke exceeded tolerance";
+                }
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"llama_packed_qkv_attention_step_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"batch\": " << kBatch << ", \"heads\": " << kHeads
+        << ", \"seq_len\": " << kSeqLen << ", \"head_dim\": " << kHeadDim << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_float32_to_bf16_bits\",\n"
+        << "    \"nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32\",\n"
+        << "    \"nfn_native_tile_bf16_bits_to_float32\",\n"
+        << "    \"nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {"
+        << "\"packed_attention_forward\":" << forward_max_error
+        << ", \"saved_lse_finite\":" << lse_finite_error
+        << ", \"grad_qkv_nonzero_sum\":" << grad_qkv_nonzero_sum
+        << ", \"grad_qkv_max_abs\":" << grad_qkv_max_abs
         << "}\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -5435,6 +5862,9 @@ int main(int argc, char** argv) {
     try {
         if (cfg.smoke_llama_loop || cfg.smoke_llama_train_step || cfg.smoke_llama_lm_head_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_llama_packed_attention_step) {
+            return print_llama_packed_attention_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_moe_route_expert_step) {
             return print_moe_route_expert_smoke_json(cfg, argv[0]);

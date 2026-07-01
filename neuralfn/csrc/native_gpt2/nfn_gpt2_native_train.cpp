@@ -980,6 +980,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "rope-loop-composition-smoke",
             "swiglu-geglu-mlp-loop-composition-smoke",
             "lm-head-linear-ce-backward-adamw-smoke",
+            "packed-qkv-attention-forward-backward-smoke",
         };
     }
     if (coverage_class == "missing-standard-moe-transformer-lm" ||

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Added a LLaMA-family packed-QKV BF16 attention native smoke.
+  `nfn_llama_native_train --smoke-llama-packed-attention-step --tile-ops-lib
+  PATH` and the unified `nfn-native-train --base-model llama
+  --native-cuda-smoke-llama-packed-attention-step` alias now execute packed-QKV
+  BF16 causal attention with saved LSE plus backward-to-QKV through raw CUDA
+  Tile ABI calls. LLaMA-family catalog/preflight JSON now reports
+  `packed-qkv-attention-forward-backward-smoke` in
+  `native_training_completed_requirements`, while full packed-QKV/RoPE block
+  integration, the LLaMA block forward/backward loop, checkpointing, and
+  inference wiring remain visible in the missing list. Verification: rebuilt
+  missing-family native trainers, unified native CLIs, and dense GPT catalog
+  binaries; live CUDA LLaMA packed-attention smoke passed with forward max
+  error `0.00126648`, finite saved LSE, and nonzero QKV gradients; unified
+  command forwarding emitted
+  `nfn_llama_native_train --smoke-llama-packed-attention-step`; focused native
+  GPT tests passed; the no-Torch dependency verifier passed all 30 native
+  artifacts with no stale outputs, 69 Python entrypoints, 24 shell entrypoints,
+  and four native template catalogs.
+
 - Added a raw CUDA Tile native-train ABI wrapper for causal chunk-state and a
   Jamba native train-step smoke for Jamba-family compiled preflights.
   `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH`

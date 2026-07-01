@@ -515,10 +515,11 @@ missing, and present Tile ABI symbols, while `trainer_loop_status` remains
 `family-native-loop-missing` until the family forward/backward/optimizer loop is
 wired. LLaMA-family entries now separate completed smoke-backed slices from the
 remaining blockers: `native_training_completed_requirements` names RMSNorm,
-RoPE, SwiGLU/GEGLU, and LM-head CE/backward/AdamW CUDA smokes, while
-`native_training_missing_requirements` names packed-QKV RoPE attention block
-integration, the full LLaMA block forward/backward loop, and family
-checkpoint/inference wiring. MoE-family entries now separate the shared route
+RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW, and packed-QKV attention
+forward/backward CUDA smokes, while `native_training_missing_requirements`
+keeps packed-QKV RoPE attention block integration, the full LLaMA block
+forward/backward loop, and family checkpoint/inference wiring. MoE-family
+entries now separate the shared route
 and expert slices the same way: completed requirements name the top-k/broadcast,
 routed SwiGLU forward/backward, and load-balance/AdamW CUDA smokes, while
 missing requirements keep the full family loop, JEPA or semantic objectives,
@@ -539,7 +540,11 @@ through device-side fill plus one AdamW update and moment verification. Use
 `nfn_llama_native_train --smoke-llama-lm-head-step --tile-ops-lib PATH` or the
 unified `--native-cuda-smoke-llama-lm-head-step` alias to cover the LM-head
 linear logits, token CE forward/backward, linear input/weight backward, and
-AdamW slice. Use `nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step
+AdamW slice. Use `nfn_llama_native_train --smoke-llama-packed-attention-step
+--tile-ops-lib PATH` or the unified
+`--native-cuda-smoke-llama-packed-attention-step` alias to cover packed-QKV
+BF16 causal attention with saved LSE and backward-to-QKV. Use
+`nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-moe-route-expert-step` alias on MoE families to run top-k
 routing, route broadcast, routed SwiGLU expert forward/backward,
