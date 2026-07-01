@@ -1233,7 +1233,7 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
     "nanogpt_modern": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
     "nanogpt_megakernel": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
 }
-REQUIRED_NATIVE_MISSING_TEMPLATE_SENTINELS = (
+REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = (
     "llama",
     "semantic_router_moe_modern",
 )
@@ -2191,7 +2191,7 @@ def _validate_native_template_catalog(
             errors.append(f"{template_name}: {'; '.join(template_errors)}")
         dense_reports[template_name] = template_report
     sentinel_reports: dict[str, object] = {}
-    for template_name in REQUIRED_NATIVE_MISSING_TEMPLATE_SENTINELS:
+    for template_name in REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS:
         template = by_name.get(template_name)
         template_report = {
             "passed": False,
@@ -2207,11 +2207,11 @@ def _validate_native_template_catalog(
         else:
             template_report["status"] = template.get("selected_graph_support_status")
             template_report["native_runnable"] = template.get("selected_graph_native_runnable")
-            if template.get("selected_graph_support_status") != "template-native-trainer-missing":
+            if template.get("selected_graph_support_status") != "native-trainer-covered":
                 template_errors.append(
                     "status="
                     f"{template.get('selected_graph_support_status')!r}, "
-                    "expected 'template-native-trainer-missing'"
+                    "expected 'native-trainer-covered'"
                 )
             if template.get("selected_graph_native_runnable") is not False:
                 template_errors.append("selected_graph_native_runnable was not false")

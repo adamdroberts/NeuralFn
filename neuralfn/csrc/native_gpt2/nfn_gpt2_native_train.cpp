@@ -897,9 +897,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
-        return {
-            "route-evo-device-controller",
-        };
+        return {};
     }
     if (coverage_class == "missing-seq2seq-objective") {
         return {};
@@ -977,6 +975,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             completed.push_back("semantic-expert-dispatch-combine-smoke");
             completed.push_back("semantic-router-moe-route-expert-adamw-smoke");
             completed.push_back("ar-plus-semantic-plus-jepa-loss-composition-smoke");
+            completed.push_back("route-evo-device-controller-smoke");
         }
         completed.push_back("family-parameter-layout-checkpoint-inference-smoke");
         return completed;
@@ -1401,8 +1400,12 @@ std::string selected_graph_support_status(const Config& cfg) {
         !selected_template_geometry_matches_compiled_loop(cfg)) {
         return "template-geometry-native-trainer-missing";
     }
-    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
-                                                                : "template-native-trainer-missing";
+    if (selected_template_is_native_dense_gpt_compatible(cfg)) {
+        return "native-transformer-lm";
+    }
+    return native_training_missing_requirements_for_template(cfg.template_name).empty()
+        ? "native-trainer-covered"
+        : "template-native-trainer-missing";
 }
 
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {

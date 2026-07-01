@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a semantic-router route-evo device-controller native smoke.
+  `nfn_semantic_router_moe_native_train
+  --smoke-route-evo-device-controller-step --tile-ops-lib PATH` and the
+  unified `nfn-native-train --base-model semantic-router-moe
+  --native-cuda-smoke-route-evo-device-controller-step` alias now launch route
+  controller candidate mutation, best-loss selection, and best-candidate
+  adoption through the raw CUDA Tile evo ABI without Torch or graph-editor
+  tensor flow. Semantic-router MoE now reports no remaining native coverage
+  checklist items, and the Python SDK fallback registry mirrors the compiled
+  `native-trainer-covered` / `native-loop-covered` statuses.
+
 - Added a semantic target shard resolver native smoke. `nfn_semantic_dense_jepa_native_train
   --smoke-semantic-target-shard-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model semantic-dense-jepa-evo
@@ -11,8 +22,8 @@
   Semantic-family `--sample-token-batch` preflight JSON now includes
   `semantic_target_batch`, and families with no remaining native coverage
   checklist items report `native-trainer-covered` / `native-loop-covered`.
-  Semantic-router MoE now keeps only `route-evo-device-controller` as its
-  remaining native coverage blocker.
+  Semantic-router MoE kept only `route-evo-device-controller` as its remaining
+  native coverage blocker at the time of that change.
 
 - Added a semantic JEPA AR+semantic+JEPA objective native smoke.
   `nfn_semantic_dense_jepa_native_train

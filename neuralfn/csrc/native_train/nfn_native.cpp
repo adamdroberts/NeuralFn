@@ -258,6 +258,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
         "--smoke-qkv-layout-step",
+        "--smoke-route-evo-device-controller-step",
         "--smoke-semantic-dense-jepa-train-step",
         "--smoke-semantic-jepa-loss-composition-step",
         "--smoke-semantic-router-moe-train-step",
@@ -571,6 +572,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-attention-step" ||
                                arg == "--native-cuda-smoke-mlp-step" ||
                                arg == "--native-cuda-smoke-norm-residual-step" ||
+                               arg == "--native-cuda-smoke-route-evo-device-controller-step" ||
                                arg == "--native-cuda-smoke-nvfp4-pack" ||
                                arg == "--native-cuda-smoke-transformer-block-step" ||
                                arg == "--native-cuda-smoke-transformer-lm-step" ||
@@ -696,6 +698,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-mlp-step");
             } else if (arg == "--native-cuda-smoke-norm-residual-step") {
                 forwarded.push_back("--smoke-norm-residual-step");
+            } else if (arg == "--native-cuda-smoke-route-evo-device-controller-step") {
+                forwarded.push_back("--smoke-route-evo-device-controller-step");
             } else if (arg == "--native-cuda-smoke-nvfp4-pack") {
                 forwarded.push_back("--smoke-nvfp4-pack");
             } else if (arg == "--native-cuda-smoke-transformer-block-step") {

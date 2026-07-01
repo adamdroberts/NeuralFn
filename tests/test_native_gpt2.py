@@ -670,8 +670,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     missing_sentinels = linked_catalog["missing_native_sentinels"]
     assert missing_sentinels["llama"]["passed"] is True
-    assert missing_sentinels["llama"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["llama"]["status"] == "native-trainer-covered"
     assert missing_sentinels["semantic_router_moe_modern"]["passed"] is True
+    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "native-trainer-covered"
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5216,7 +5217,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
+    assert statuses["semantic_router_moe"] == "native-trainer-covered"
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
@@ -7624,9 +7625,9 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["gpt2-evo"]["status"] == "implemented"
     assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
-    assert models["llama"]["status"] == "missing-native-trainer"
+    assert models["llama"]["status"] == "native-trainer-covered"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert models["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert models["llama"]["trainer_loop_status"] == "native-loop-covered"
 
 
 def test_native_train_model_registry_static_names_match_cpp_registry(
@@ -7655,15 +7656,15 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["kernel_status"] == "required-tile-symbols-present"
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["llama"]["trainer_loop_status"] == "native-loop-covered"
     assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
     assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "native-loop-covered"
     assert registry["semantic-dense-jepa"]["native_target"] == "nfn_semantic_dense_jepa_native_train"
     assert registry["semantic-dense-jepa"]["geometry_status"] == "requires-semantic-dense-jepa-native-loop"
     assert registry["semantic-dense-jepa"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "native-loop-covered"
     assert registry["jamba"]["native_target"] == "nfn_jamba_native_train"
     assert registry["seq2seq"]["native_target"] == "nfn_seq2seq_native_train"
     assert registry["diffusion"]["native_target"] == "nfn_diffusion_native_train"
@@ -11850,8 +11851,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_plan.returncode == 0, semantic_router_plan.stderr
     semantic_router_payload = json.loads(semantic_router_plan.stdout)
     assert semantic_router_payload["model_family"] == "semantic-router-moe"
-    assert semantic_router_payload["status"] == "family-native-trainer-missing"
+    assert semantic_router_payload["status"] == "native-trainer-covered"
     assert semantic_router_payload["native_training_coverage_class"] == "missing-semantic-moe-router-jepa-objective"
+    assert semantic_router_payload["native_training_missing_requirements"] == []
     assert "route-selection-distillation-balance-losses" not in semantic_router_payload[
         "native_training_missing_requirements"
     ]
@@ -11866,6 +11868,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "semantic-expert-dispatch-combine-smoke",
         "semantic-router-moe-route-expert-adamw-smoke",
         "ar-plus-semantic-plus-jepa-loss-composition-smoke",
+        "route-evo-device-controller-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
@@ -11886,8 +11889,34 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_route_balance_density_float32",
         "nfn_native_tile_route_balance_loss_float32",
         "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_evo_mutate_candidates_float32",
+        "nfn_native_tile_evo_select_best_loss_float32",
+        "nfn_native_tile_evo_adopt_candidate_float32",
     ):
         assert symbol in semantic_router_payload["required_tile_symbols"]
+
+    route_evo_smoke_missing_lib = subprocess.run(
+        [
+            str(semantic_router_moe),
+            "--smoke-route-evo-device-controller-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert route_evo_smoke_missing_lib.returncode == 2
+    route_evo_smoke_payload = json.loads(route_evo_smoke_missing_lib.stdout)
+    assert route_evo_smoke_payload["smoke"] == "route_evo_device_controller_slice"
+    assert route_evo_smoke_payload["passed"] is False
+    assert route_evo_smoke_payload["compiled_native_boundary"] is True
+    assert route_evo_smoke_payload["torch_required"] is False
+    assert route_evo_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_evo_mutate_candidates_float32" in route_evo_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_evo_select_best_loss_float32" in route_evo_smoke_payload["loop_composition_stages"]
+    assert "nfn_native_tile_evo_adopt_candidate_float32" in route_evo_smoke_payload["loop_composition_stages"]
 
     diffusion_plan = subprocess.run(
         [
@@ -12623,6 +12652,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-route-loss-step" in unified_semantic_route_loss_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_route_loss_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_route_loss_smoke_command.stdout
+
+    unified_route_evo_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-smoke-route-evo-device-controller-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_route_evo_smoke_command.returncode == 0
+    ), unified_route_evo_smoke_command.stderr
+    assert str(semantic_router_moe) in unified_route_evo_smoke_command.stdout
+    assert "--smoke-route-evo-device-controller-step" in unified_route_evo_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_route_evo_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_route_evo_smoke_command.stdout
 
     unified_semantic_router_moe_smoke_command = subprocess.run(
         [

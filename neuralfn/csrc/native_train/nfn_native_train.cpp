@@ -180,13 +180,13 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "semantic-router-moe",
-        "missing-native-trainer",
+        "native-trainer-covered",
         "nfn_semantic_router_moe_native_train",
-        "missing-native-trainer",
+        "native-trainer-covered",
         "not-applicable",
         "requires-semantic-router-moe-native-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
+        "native-loop-covered",
         "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
@@ -545,6 +545,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-moe-jepa-loss-composition-step",
         "--smoke-norm-residual-step",
         "--smoke-optimizer-step",
+        "--smoke-route-evo-device-controller-step",
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
         "--smoke-semantic-jepa-loss-composition-step",
@@ -1110,6 +1111,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-moe-transformer-lm-train-step",
                 "--native-cuda-smoke-moe-full-loop-step",
                 "--native-cuda-smoke-moe-jepa-loss-composition-step",
+                "--native-cuda-smoke-route-evo-device-controller-step",
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-semantic-dense-jepa-train-step",
                 "--native-cuda-smoke-semantic-jepa-loss-composition-step",
@@ -1212,6 +1214,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-moe-full-loop-step");
             } else if (arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
                 forwarded.push_back("--smoke-moe-jepa-loss-composition-step");
+            } else if (arg == "--native-cuda-smoke-route-evo-device-controller-step") {
+                forwarded.push_back("--smoke-route-evo-device-controller-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {
                 forwarded.push_back("--smoke-semantic-alignment-step");
             } else if (arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {

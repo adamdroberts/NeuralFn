@@ -89,6 +89,7 @@ struct Config {
     bool smoke_semantic_router_moe_train_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_semantic_route_loss_step = false;
+    bool smoke_route_evo_device_controller_step = false;
     bool smoke_diffusion_denoise_step = false;
     bool smoke_diffusion_objective_step = false;
     bool smoke_diffusion_full_loop_step = false;
@@ -370,6 +371,7 @@ void print_usage(const char* program) {
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
         << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
+        << "  --smoke-route-evo-device-controller-step Launch route-evo mutate/select/adopt kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-diffusion-objective-step Launch diffusion timestep, mask scheduler, CE objective, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-diffusion-full-loop-step Launch diffusion timestep/mask/objective native loop smoke on CUDA\n"
@@ -473,6 +475,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_semantic_alignment_step = true;
         } else if (arg == "--smoke-semantic-route-loss-step" || arg == "--native-cuda-smoke-semantic-route-loss-step") {
             cfg.smoke_semantic_route_loss_step = true;
+        } else if (arg == "--smoke-route-evo-device-controller-step" ||
+                   arg == "--native-cuda-smoke-route-evo-device-controller-step") {
+            cfg.smoke_route_evo_device_controller_step = true;
         } else if (arg == "--smoke-diffusion-denoise-step" || arg == "--native-cuda-smoke-diffusion-denoise-step") {
             cfg.smoke_diffusion_denoise_step = true;
         } else if (arg == "--smoke-diffusion-objective-step" || arg == "--native-cuda-smoke-diffusion-objective-step") {
@@ -11974,6 +11979,301 @@ int print_semantic_route_loss_smoke_json(const Config& cfg, const char* program)
     return passed ? 0 : 2;
 }
 
+int print_route_evo_device_controller_smoke_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool route_family =
+        family.find("semantic") != std::string::npos || family.find("moe") != std::string::npos || family == "unknown";
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool mutate_loaded = false;
+    bool select_loaded = false;
+    bool adopt_loaded = false;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using EvoMutateFn = int (*)(
+        const float*, float*, std::int64_t, std::int64_t, float, std::int64_t, void*);
+    using EvoSelectFn = int (*)(const float*, std::int64_t, std::int64_t*, float*, void*);
+    using EvoAdoptFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    EvoMutateFn evo_mutate = nullptr;
+    EvoSelectFn evo_select = nullptr;
+    EvoAdoptFn evo_adopt = nullptr;
+
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr std::int64_t kElements = 8;
+    constexpr std::int64_t kCandidateCount = 4;
+    constexpr std::int64_t kSeed = 1337;
+    constexpr float kMutationScale = 0.05f;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+            tile_handle = nullptr;
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+            cuda_handle = nullptr;
+        }
+    };
+
+    bool passed = false;
+    std::int64_t best_index = -1;
+    float best_loss = 0.0f;
+    float max_adopt_abs_error = 0.0f;
+
+    std::vector<void*> allocated;
+    auto free_allocated = [&]() {
+        if (cuda_free == nullptr) {
+            return;
+        }
+        for (void* ptr : allocated) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+        allocated.clear();
+    };
+
+    if (!route_family) {
+        error = "Route-evo smoke commands are only valid for route-capable native preflights";
+    } else {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            evo_mutate = load_symbol<EvoMutateFn>(tile_handle, "nfn_native_tile_evo_mutate_candidates_float32");
+            evo_select = load_symbol<EvoSelectFn>(tile_handle, "nfn_native_tile_evo_select_best_loss_float32");
+            evo_adopt = load_symbol<EvoAdoptFn>(tile_handle, "nfn_native_tile_evo_adopt_candidate_float32");
+            mutate_loaded = evo_mutate != nullptr;
+            select_loaded = evo_select != nullptr;
+            adopt_loaded = evo_adopt != nullptr;
+            if (evo_mutate == nullptr || evo_select == nullptr || evo_adopt == nullptr) {
+                error = "Tile ops library is missing one or more route-evo symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+            }
+        }
+    }
+
+    if (error.empty()) {
+        const std::vector<float> route_controller = {0.10f, -0.20f, 0.30f, -0.40f, 0.50f, -0.60f, 0.70f, -0.80f};
+        const std::vector<float> candidate_losses = {2.75f, 1.50f, 0.625f, 1.25f};
+
+        float* d_base = nullptr;
+        float* d_candidates = nullptr;
+        float* d_losses = nullptr;
+        float* d_adopted = nullptr;
+        std::int64_t* d_best_index = nullptr;
+        float* d_best_loss = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+            int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                return false;
+            }
+            return true;
+        };
+        if (alloc_float(&d_base, route_controller.size(), "route_controller") &&
+            alloc_float(&d_candidates, route_controller.size() * static_cast<std::size_t>(kCandidateCount), "candidates") &&
+            alloc_float(&d_losses, candidate_losses.size(), "candidate_losses") &&
+            alloc_float(&d_adopted, route_controller.size(), "adopted") &&
+            alloc_i64(&d_best_index, 1, "best_index") &&
+            alloc_float(&d_best_loss, 1, "best_loss")) {
+            copy_float(d_base, route_controller, "route_controller") &&
+                copy_float(d_losses, candidate_losses, "candidate_losses");
+        }
+
+        int status = 0;
+        if (error.empty()) {
+            status = evo_mutate(
+                d_base,
+                d_candidates,
+                kElements,
+                kCandidateCount,
+                kMutationScale,
+                kSeed,
+                nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_evo_mutate_candidates_float32");
+            }
+        }
+        if (error.empty()) {
+            status = evo_select(d_losses, kCandidateCount, d_best_index, d_best_loss, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_evo_select_best_loss_float32");
+            }
+        }
+        if (error.empty()) {
+            status = evo_adopt(d_candidates, d_best_index, d_adopted, kElements, kCandidateCount, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "nfn_native_tile_evo_adopt_candidate_float32");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_device_synchronize();
+            if (status != 0) {
+                error = cuda_error(status, "cudaDeviceSynchronize");
+            }
+        }
+
+        std::vector<float> candidates(static_cast<std::size_t>(kElements * kCandidateCount), 0.0f);
+        std::vector<float> adopted(static_cast<std::size_t>(kElements), 0.0f);
+        auto copy_back_float = [&](std::vector<float>& dst, const float* src, const std::string& name) {
+            int copy_status = cuda_memcpy(dst.data(), src, dst.size() * sizeof(float), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy " + name + " D2H");
+                return false;
+            }
+            return true;
+        };
+        if (error.empty()) {
+            int copy_status = cuda_memcpy(&best_index, d_best_index, sizeof(std::int64_t), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy best_index D2H");
+            }
+        }
+        if (error.empty()) {
+            int copy_status = cuda_memcpy(&best_loss, d_best_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+            if (copy_status != 0) {
+                error = cuda_error(copy_status, "cudaMemcpy best_loss D2H");
+            }
+        }
+        if (error.empty()) {
+            copy_back_float(candidates, d_candidates, "candidates") &&
+                copy_back_float(adopted, d_adopted, "adopted");
+        }
+        if (error.empty() && (best_index < 0 || best_index >= kCandidateCount)) {
+            error = "Route-evo device-controller smoke produced an out-of-range best index";
+        }
+        if (error.empty()) {
+            for (std::int64_t i = 0; i < kElements; ++i) {
+                const std::size_t selected_offset =
+                    static_cast<std::size_t>(best_index * kElements + i);
+                max_adopt_abs_error = std::max(
+                    max_adopt_abs_error,
+                    std::fabs(adopted[static_cast<std::size_t>(i)] -
+                              candidates[selected_offset]));
+            }
+            passed = best_index == 2 && std::fabs(best_loss - 0.625f) <= 1e-6f &&
+                max_adopt_abs_error <= 1e-6f;
+            if (!passed) {
+                std::ostringstream out;
+                out << "Route-evo device-controller smoke exceeded tolerance: best_index=" << best_index
+                    << " best_loss=" << best_loss
+                    << " max_adopt_abs_error=" << max_adopt_abs_error;
+                error = out.str();
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"route_evo_device_controller_slice\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"mutate_kernel_loaded\": " << (mutate_loaded ? "true" : "false") << ",\n"
+        << "  \"select_kernel_loaded\": " << (select_loaded ? "true" : "false") << ",\n"
+        << "  \"adopt_kernel_loaded\": " << (adopt_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"route_controller_elements\": " << kElements
+        << ", \"candidate_count\": " << kCandidateCount
+        << ", \"mutation_scale\": " << kMutationScale << "},\n"
+        << "  \"best_index\": " << best_index << ",\n"
+        << "  \"best_loss\": " << best_loss << ",\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_evo_mutate_candidates_float32\",\n"
+        << "    \"nfn_native_tile_evo_select_best_loss_float32\",\n"
+        << "    \"nfn_native_tile_evo_adopt_candidate_float32\"\n"
+        << "  ],\n"
+        << "  \"max_errors\": {\"adopted_route_controller\":" << max_adopt_abs_error << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
@@ -12925,6 +13225,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_semantic_route_loss_step) {
             return print_semantic_route_loss_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.smoke_route_evo_device_controller_step) {
+            return print_route_evo_device_controller_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_diffusion_denoise_step) {
             return print_diffusion_denoise_smoke_json(cfg, argv[0]);

@@ -123,6 +123,12 @@ nfn_semantic_dense_jepa_native_train \
 nfn-native-train --base-model semantic-dense-jepa-evo \
   --native-cuda-smoke-semantic-target-shard-step \
   --native-cuda-tile-ops-lib PATH
+nfn_semantic_router_moe_native_train \
+  --smoke-route-evo-device-controller-step \
+  --tile-ops-lib PATH
+nfn-native-train --base-model semantic-router-moe \
+  --native-cuda-smoke-route-evo-device-controller-step \
+  --native-cuda-tile-ops-lib PATH
 ```
 
 Semantic dense JEPA coverage also includes a planner/alignment train-step smoke
