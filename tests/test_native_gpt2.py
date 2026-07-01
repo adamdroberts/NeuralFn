@@ -5259,6 +5259,14 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
     ]
+    assert coverage["ttt_llama"] == "missing-ttt-transformer-lm"
+    assert missing_requirements["ttt_llama"] == [
+        "ttt-inner-update-native-loop",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert completed_requirements["ttt_llama"] == [
+        "ttt-linear-mse-adamw-smoke",
+    ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
         "timestep-scheduler-native-loop",
@@ -10982,7 +10990,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion.exists()
     jamba = tmp_path / "nfn_jamba_native_train"
     assert jamba.exists()
-    assert (tmp_path / "nfn_ttt_llama_native_train").exists()
+    ttt_llama = tmp_path / "nfn_ttt_llama_native_train"
+    assert ttt_llama.exists()
     assert (tmp_path / "nfn_hnet_lm_native_train").exists()
     assert (tmp_path / "nfn_universal_llama_native_train").exists()
     llama_plan = subprocess.run(
@@ -11431,6 +11440,42 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ):
         assert symbol in seq2seq_payload["required_tile_symbols"]
 
+    ttt_plan = subprocess.run(
+        [
+            str(ttt_llama),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert ttt_plan.returncode == 0, ttt_plan.stderr
+    ttt_payload = json.loads(ttt_plan.stdout)
+    assert ttt_payload["model_family"] == "ttt-llama"
+    assert ttt_payload["status"] == "family-native-trainer-missing"
+    assert ttt_payload["native_training_coverage_class"] == "missing-ttt-transformer-lm"
+    assert ttt_payload["native_training_missing_requirements"] == [
+        "ttt-inner-update-native-loop",
+        "family-parameter-layout-checkpoint-inference",
+    ]
+    assert ttt_payload["native_training_completed_requirements"] == [
+        "ttt-linear-mse-adamw-smoke",
+    ]
+    assert ttt_payload["compiled_native_boundary"] is True
+    assert ttt_payload["torch_required"] is False
+    assert ttt_payload["graph_editor_tensor_flow"] is False
+    for symbol in (
+        "nfn_native_tile_linear_float32",
+        "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_float32",
+        "nfn_native_tile_latent_mse_loss_float32",
+        "nfn_native_tile_adamw_step_float32",
+    ):
+        assert symbol in ttt_payload["required_tile_symbols"]
+
     jamba_plan = subprocess.run(
         [
             str(jamba),
@@ -11694,6 +11739,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-seq2seq-cross-attention-step" in unified_seq2seq_smoke_command.stdout
     assert "--tile-ops-lib" in unified_seq2seq_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_seq2seq_smoke_command.stdout
+
+    unified_ttt_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "ttt-llama",
+            "--native-cuda-smoke-ttt-linear-inner-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_ttt_smoke_command.returncode == 0, unified_ttt_smoke_command.stderr
+    assert str(ttt_llama) in unified_ttt_smoke_command.stdout
+    assert "--smoke-ttt-linear-inner-step" in unified_ttt_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_ttt_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_ttt_smoke_command.stdout
 
     unified_llama_smoke_command = subprocess.run(
         [

@@ -553,6 +553,10 @@ PATH` or the unified `--native-cuda-smoke-seq2seq-cross-attention-step` alias
 on seq2seq families to run decoder-to-encoder SDPA, LM logits, CE
 forward/backward, linear backward, cross-attention backward, and AdamW as a raw
 CUDA Tile train-step slice. Use
+`nfn_ttt_llama_native_train --smoke-ttt-linear-inner-step --tile-ops-lib PATH`
+or the unified `--native-cuda-smoke-ttt-linear-inner-step` alias on TTT
+families to run inner linear forward, latent MSE, linear input/weight backward,
+and AdamW as a raw CUDA Tile train-step slice. Use
 `nfn_diffusion_native_train --smoke-diffusion-denoise-step --tile-ops-lib PATH`
 or the unified `--native-cuda-smoke-diffusion-denoise-step` alias on diffusion
 families to run denoise linear forward, latent MSE, linear input/weight

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added a TTT inner-linear native train-step CUDA smoke for TTT-family compiled
+  preflights. `nfn_ttt_llama_native_train --smoke-ttt-linear-inner-step
+  --tile-ops-lib PATH` and the unified `nfn-native-train --base-model ttt-llama
+  --native-cuda-smoke-ttt-linear-inner-step` alias now execute inner linear
+  forward, latent MSE, linear input/weight backward, and AdamW through raw CUDA
+  Tile ABI calls with CPU-reference checks. TTT catalog/preflight JSON now
+  reports `ttt-linear-mse-adamw-smoke` in
+  `native_training_completed_requirements`, while the full TTT inner-update
+  loop, checkpointing, and inference wiring remain visible in the missing list.
+  Real TTT-family training remains `family-native-loop-missing` until the full
+  loop is implemented. Verification: rebuilt missing-family native trainers and
+  unified native CLIs; live CUDA TTT smoke passed with max errors at or below
+  `8.14348e-06`; unified command forwarding emitted
+  `nfn_ttt_llama_native_train --smoke-ttt-linear-inner-step`; focused native GPT
+  tests passed; the no-Torch dependency verifier passed all 30 native artifacts,
+  69 Python entrypoints, 24 shell entrypoints, and four native template catalogs.
+
 - Added a seq2seq cross-attention native train-step CUDA smoke for seq2seq
   compiled preflights. `nfn_seq2seq_native_train
   --smoke-seq2seq-cross-attention-step --tile-ops-lib PATH` and the unified
