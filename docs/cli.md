@@ -894,9 +894,12 @@ Use `--base-model universal-llama` to inspect the universal transformer coverage
 class directly; it now reports the recurrent linear/MSE/backward/AdamW smoke as
 completed while ACT halting, checkpointing, and inference remain missing.
 Use `--base-model hnet-lm` to inspect the HNet byte-LM coverage class directly;
-it now reports the byte patch embed/merge plus head-loss/backward/AdamW smoke as
-completed, plus the byte patch merge/embed-backward/AdamW smoke, while
-byte-token shard resolution, checkpointing, and inference remain missing.
+it now reports byte-token shard resolution, the byte patch embed/merge plus
+head-loss/backward/AdamW smoke, and the byte patch merge/embed-backward/AdamW
+smoke as completed, while checkpointing and inference remain missing. Use
+`nfn_hnet_lm_native_train --sample-token-batch --dataset-alias PATH` with raw
+uint8 `byte_train_*.bin` / `hnet_train_*.bin` shards to verify byte batch
+sampling without Torch or graph-editor tensor flow.
 Standard MoE-family preflights now require
 `nfn_native_tile_moe_swiglu_forward_float32`/`nfn_native_tile_moe_swiglu_backward_float32`,
 which compute the routed expert SwiGLU forward path plus input and packed
@@ -3290,10 +3293,10 @@ inference wiring as missing.
 TTT entries now list the completed inner linear/MSE/backward/AdamW smoke plus
 the composite base/down/tanh/up residual forward/backward/AdamW smoke while
 keeping checkpointing and inference wiring as missing.
-HNet entries now list completed byte patch embed/merge plus
-head-loss/backward/AdamW and byte patch merge/embed-backward/AdamW smokes while
-still reporting byte-token shard resolution, checkpointing, and inference
-wiring as missing.
+HNet entries now list completed byte-token shard resolution, byte patch
+embed/merge plus head-loss/backward/AdamW, and byte patch
+merge/embed-backward/AdamW smokes while still reporting checkpointing and
+inference wiring as missing.
 Jamba entries now list the completed causal chunk-state plus head-loss/backward
 and AdamW smoke while still reporting full Mamba state-space forward/backward,
 the Jamba layer schedule loop, checkpointing, and inference wiring as missing.

@@ -951,7 +951,6 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
     }
     if (coverage_class == "missing-hnet-byte-lm") {
         return {
-            "byte-token-shard-resolver",
             "family-parameter-layout-checkpoint-inference",
         };
     }
@@ -1035,6 +1034,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "hnet-byte-patch-embed-merge-head-adamw-smoke",
             "hnet-byte-patch-backward-adamw-smoke",
+            "byte-token-shard-resolver-smoke",
         };
     }
     return {};

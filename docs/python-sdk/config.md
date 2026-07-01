@@ -124,10 +124,10 @@ TTT entries list the completed inner linear/MSE/backward/AdamW smoke plus the
 composite base/down/tanh/up residual forward/backward/AdamW smoke while keeping
 checkpointing and inference in the missing list. Universal transformer entries list recurrent linear/MSE/backward/AdamW
 and ACT halt loss/gradient smokes as completed while keeping checkpointing and
-inference in the missing list. HNet entries list completed byte patch
-embed/merge plus head-loss/backward/AdamW and byte patch
-merge/embed-backward/AdamW smokes while keeping byte-token shard resolution,
-checkpointing, and inference in the missing list. Jamba entries list the
+inference in the missing list. HNet entries list completed byte-token shard
+resolution, byte patch embed/merge plus head-loss/backward/AdamW, and byte
+patch merge/embed-backward/AdamW smokes while keeping checkpointing and
+inference in the missing list. Jamba entries list the
 completed causal chunk-state plus
 head-loss/backward/AdamW smoke while keeping full Mamba state-space
 forward/backward, the Jamba layer schedule loop, checkpointing, and inference

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added native HNet byte-token shard resolution for compiled missing-family
+  preflights. `nfn_hnet_lm_native_train --sample-token-batch --dataset-alias
+  PATH --train-seq-len N --batch-size B` now reads `byte_train_*.bin`,
+  `hnet_train_*.bin`, `bytes_train.bin`, or `hnet_train.bin` as raw uint8 byte
+  streams, emits `native_token_batch_format: "uint8_byte_shards"`, and samples
+  byte token/target batches entirely in C++ without Torch, tokenizer imports, or
+  graph-editor tensor flow. HNet catalog/preflight JSON now reports
+  `byte-token-shard-resolver-smoke` in
+  `native_training_completed_requirements`; family parameter layout,
+  checkpointing, and inference wiring remain visible as outstanding HNet
+  requirements. Verification: rebuilt missing-family native trainers and dense
+  GPT catalog binaries; direct HNet byte-shard sample preflight returned tokens
+  `[0..15]` and targets `[1..16]` from a 17-byte shard; focused native GPT
+  catalog/dispatch pytest passed (`2 passed`); the no-Torch verifier passed 30
+  native artifacts with 0 stale artifacts, 69 Python entrypoints, 24 shell
+  entrypoints, and 4 native template catalogs.
+
 - Added semantic-router route-loss CUDA Tile smoke coverage and raw native-train
   ABI wrappers for route-selection and softmax-distillation partials.
   `nfn_semantic_router_moe_native_train --smoke-semantic-route-loss-step

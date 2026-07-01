@@ -5297,12 +5297,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     ]
     assert coverage["hnet_lm"] == "missing-hnet-byte-lm"
     assert missing_requirements["hnet_lm"] == [
-        "byte-token-shard-resolver",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
+        "byte-token-shard-resolver-smoke",
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
     assert missing_requirements["diffusion"] == [
@@ -11240,6 +11240,47 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert sample_payload["sample_batch"]["tokens"] == list(range(16))
     assert sample_payload["sample_batch"]["targets"] == list(range(1, 17))
 
+    byte_dataset_path = tmp_path / "byte_shards"
+    byte_dataset_path.mkdir()
+    (byte_dataset_path / "byte_train_000000.bin").write_bytes(bytes(range(17)))
+    hnet_sample = subprocess.run(
+        [
+            str(hnet_lm),
+            "--sample-token-batch",
+            "--dataset-alias",
+            str(byte_dataset_path),
+            "--batch-size",
+            "2",
+            "--train-seq-len",
+            "8",
+            "--train-batch-tokens",
+            "32",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert hnet_sample.returncode == 0, hnet_sample.stderr
+    hnet_sample_payload = json.loads(hnet_sample.stdout)
+    assert hnet_sample_payload["model_family"] == "hnet-lm"
+    assert hnet_sample_payload["compiled_native_boundary"] is True
+    assert hnet_sample_payload["torch_required"] is False
+    assert hnet_sample_payload["graph_editor_tensor_flow"] is False
+    assert hnet_sample_payload["native_token_batch_preflight"] is True
+    assert hnet_sample_payload["native_token_batch_format"] == "uint8_byte_shards"
+    assert hnet_sample_payload["token_shards"]["dataset_path"] == str(byte_dataset_path)
+    assert hnet_sample_payload["token_shards"]["format"] == "uint8_byte_shards"
+    assert hnet_sample_payload["token_shards"]["batch_read_strategy"] == "contiguous_byte_shard_segments"
+    assert hnet_sample_payload["token_shards"]["train_tokens"] == 17
+    assert hnet_sample_payload["token_shards"]["batch_plan"]["microbatch_tokens"] == 16
+    assert hnet_sample_payload["token_shards"]["batch_plan"]["grad_accum_steps"] == 2
+    assert hnet_sample_payload["sample_batch"]["batch_size"] == 2
+    assert hnet_sample_payload["sample_batch"]["seq_len"] == 8
+    assert hnet_sample_payload["sample_batch"]["items"] == 16
+    assert hnet_sample_payload["sample_batch"]["tokens"] == list(range(16))
+    assert hnet_sample_payload["sample_batch"]["targets"] == list(range(1, 17))
+
     mixllama_plan = subprocess.run(
         [
             str(mixllama),
@@ -11709,12 +11750,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_payload["status"] == "family-native-trainer-missing"
     assert hnet_payload["native_training_coverage_class"] == "missing-hnet-byte-lm"
     assert hnet_payload["native_training_missing_requirements"] == [
-        "byte-token-shard-resolver",
         "family-parameter-layout-checkpoint-inference",
     ]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
+        "byte-token-shard-resolver-smoke",
     ]
     assert hnet_payload["compiled_native_boundary"] is True
     assert hnet_payload["torch_required"] is False

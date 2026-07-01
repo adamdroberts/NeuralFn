@@ -602,6 +602,10 @@ backward, and AdamW as a raw CUDA Tile train-step slice. Use
 PATH` or the unified `--native-cuda-smoke-hnet-byte-patch-backward-step` alias
 on HNet families to run byte patch merge backward, embed/projection backward,
 and AdamW as a raw CUDA Tile train-step slice. Use
+`nfn_hnet_lm_native_train --sample-token-batch --dataset-alias PATH` with raw
+uint8 `byte_train_*.bin`, `hnet_train_*.bin`, `bytes_train.bin`, or
+`hnet_train.bin` shards to resolve and sample HNet byte token/target batches in
+compiled C++ without Torch, tokenizer imports, or graph-editor tensor flow. Use
 `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH` or
 the unified `--native-cuda-smoke-jamba-chunk-state-step` alias on Jamba
 families to run causal chunk-state, reconstruction head, latent MSE, linear

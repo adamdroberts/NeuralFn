@@ -396,27 +396,52 @@ void print_json(const Config& cfg, const char* program) {
         ? check_symbols(tile_ops_lib, &tile_ops_error)
         : std::vector<SymbolResult>{};
     const bool symbols_ok = cfg.check_tile_ops && all_symbols_found(symbols);
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool hnet_family = family == "hnet-lm" || family.find("hnet") != std::string::npos;
     bool have_dataset = false;
     bool have_batch = false;
+    bool byte_token_batch = false;
     neuralfn::native_train::TokenShardDataset dataset;
     neuralfn::native_train::BatchPlan batch_plan;
     neuralfn::native_train::TokenBatch sample_batch;
+    neuralfn::native_train::ByteShardDataset byte_dataset;
+    neuralfn::native_train::BatchPlan byte_batch_plan;
+    neuralfn::native_train::ByteBatch byte_sample_batch;
     if (cfg.sample_token_batch) {
-        dataset = neuralfn::native_train::resolve_token_shards(
-            cfg.dataset_alias,
-            cfg.allow_train_as_val,
-            false);
-        batch_plan = neuralfn::native_train::build_batch_plan(
-            dataset,
-            cfg.train_seq_len,
-            cfg.batch_size,
-            cfg.train_batch_tokens);
-        have_dataset = true;
-        neuralfn::native_train::SequentialTokenBatchSampler sampler(
-            dataset.train_shards,
-            cfg.train_seq_len,
-            cfg.batch_size);
-        have_batch = sampler.next(sample_batch);
+        if (hnet_family) {
+            byte_dataset = neuralfn::native_train::resolve_byte_shards(
+                cfg.dataset_alias,
+                cfg.allow_train_as_val,
+                false);
+            byte_batch_plan = neuralfn::native_train::build_batch_plan(
+                byte_dataset,
+                cfg.train_seq_len,
+                cfg.batch_size,
+                cfg.train_batch_tokens);
+            have_dataset = true;
+            byte_token_batch = true;
+            neuralfn::native_train::SequentialByteBatchSampler sampler(
+                byte_dataset.train_shards,
+                cfg.train_seq_len,
+                cfg.batch_size);
+            have_batch = sampler.next(byte_sample_batch);
+        } else {
+            dataset = neuralfn::native_train::resolve_token_shards(
+                cfg.dataset_alias,
+                cfg.allow_train_as_val,
+                false);
+            batch_plan = neuralfn::native_train::build_batch_plan(
+                dataset,
+                cfg.train_seq_len,
+                cfg.batch_size,
+                cfg.train_batch_tokens);
+            have_dataset = true;
+            neuralfn::native_train::SequentialTokenBatchSampler sampler(
+                dataset.train_shards,
+                cfg.train_seq_len,
+                cfg.batch_size);
+            have_batch = sampler.next(sample_batch);
+        }
     }
     const std::string kernel_status =
         required_symbols.empty()
@@ -437,6 +462,7 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"native_token_batch_preflight\": " << (cfg.sample_token_batch ? "true" : "false") << ",\n"
+        << "  \"native_token_batch_format\": \"" << (byte_token_batch ? "uint8_byte_shards" : "uint16_token_shards") << "\",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
@@ -497,14 +523,22 @@ void print_json(const Config& cfg, const char* program) {
     std::cout << "  ],\n"
         << "  \"token_shards\": ";
     if (have_dataset) {
-        std::cout << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan);
+        if (byte_token_batch) {
+            std::cout << neuralfn::native_train::byte_shard_dataset_json(byte_dataset, &byte_batch_plan);
+        } else {
+            std::cout << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan);
+        }
     } else {
         std::cout << "null";
     }
     std::cout << ",\n"
         << "  \"sample_batch\": ";
     if (have_batch) {
-        std::cout << neuralfn::native_train::token_batch_json(sample_batch);
+        if (byte_token_batch) {
+            std::cout << neuralfn::native_train::byte_batch_json(byte_sample_batch);
+        } else {
+            std::cout << neuralfn::native_train::token_batch_json(sample_batch);
+        }
     } else {
         std::cout << "null";
     }
