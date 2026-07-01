@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added a diffusion full-loop native smoke. `nfn_diffusion_native_train
+  --smoke-diffusion-full-loop-step --tile-ops-lib PATH` and the unified
+  `nfn-native-train --base-model diffusion
+  --native-cuda-smoke-diffusion-full-loop-step` alias now run the diffusion
+  timestep/mask/token-embedding/CE-backward/AdamW loop slice without Torch or
+  graph-editor tensor flow. Diffusion preflight JSON now reports
+  `diffusion-full-loop-smoke` in completed requirements and no longer lists
+  `diffusion-full-forward-backward-loop` as a missing native-training
+  requirement; the family remains `family-native-loop-missing` until the
+  production trainer loop and artifacts are implemented. Verification: rebuilt
+  missing-family native trainers and unified/native catalog frontends; live
+  CUDA direct and unified diffusion full-loop smokes passed; diffusion
+  preflight reports no missing native-training requirements; focused native
+  pytest passed; no-Torch verifier passed with 30/30 artifacts and 0 stale
+  artifacts.
+
 - Added a universal-transformer loop native smoke. `nfn_universal_llama_native_train
   --smoke-universal-transformer-loop-step --tile-ops-lib PATH` and the unified
   `nfn-native-train --base-model universal-llama

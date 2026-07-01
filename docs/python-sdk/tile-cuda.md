@@ -722,6 +722,11 @@ PATH` or the unified `--native-cuda-smoke-diffusion-objective-step` alias on
 diffusion families to run timestep sampling, mask scheduling, masked token
 embedding, token CE forward/backward, linear/embedding backward, and AdamW as a
 raw CUDA Tile train-step slice. Use
+`nfn_diffusion_native_train --smoke-diffusion-full-loop-step --tile-ops-lib
+PATH` or the unified `--native-cuda-smoke-diffusion-full-loop-step` alias on
+diffusion families to run the timestep/mask/token-embedding/CE-backward/AdamW
+loop slice and report `diffusion-full-loop-smoke` in native preflight
+completed requirements. Use
 `nfn_semantic_router_moe_native_train --smoke-semantic-alignment-step
 --tile-ops-lib PATH` or the unified
 `--native-cuda-smoke-semantic-alignment-step` alias on semantic families to run

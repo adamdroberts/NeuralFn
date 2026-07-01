@@ -5314,10 +5314,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["diffusion"] == "missing-diffusion-objective"
-    assert missing_requirements["diffusion"] == ["diffusion-full-forward-backward-loop"]
+    assert missing_requirements["diffusion"] == []
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
+        "diffusion-full-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert missing_requirements["gpt2"] == []
@@ -11770,12 +11771,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_payload["model_family"] == "diffusion"
     assert diffusion_payload["status"] == "family-native-trainer-missing"
     assert diffusion_payload["native_training_coverage_class"] == "missing-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == [
-        "diffusion-full-forward-backward-loop",
-    ]
+    assert diffusion_payload["native_training_missing_requirements"] == []
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
+        "diffusion-full-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert diffusion_payload["compiled_native_boundary"] is True
@@ -12573,6 +12573,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-diffusion-objective-step" in unified_diffusion_objective_smoke_command.stdout
     assert "--tile-ops-lib" in unified_diffusion_objective_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_diffusion_objective_smoke_command.stdout
+
+    unified_diffusion_full_loop_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "diffusion",
+            "--native-cuda-smoke-diffusion-full-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_diffusion_full_loop_smoke_command.returncode == 0, unified_diffusion_full_loop_smoke_command.stderr
+    assert str(diffusion) in unified_diffusion_full_loop_smoke_command.stdout
+    assert "--smoke-diffusion-full-loop-step" in unified_diffusion_full_loop_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_diffusion_full_loop_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_diffusion_full_loop_smoke_command.stdout
 
     unified_seq2seq_smoke_command = subprocess.run(
         [

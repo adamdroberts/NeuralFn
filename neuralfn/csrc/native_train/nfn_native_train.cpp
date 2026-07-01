@@ -510,6 +510,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-dense-jepa-train-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
+        "--smoke-diffusion-full-loop-step",
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-family-layout-checkpoint-step",
@@ -579,6 +580,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-dense-jepa-train-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
+        "--smoke-diffusion-full-loop-step",
         "--smoke-family-layout-checkpoint-step",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
@@ -1078,6 +1080,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-jepa-target-encoder-step",
                 "--native-cuda-smoke-diffusion-denoise-step",
                 "--native-cuda-smoke-diffusion-objective-step",
+                "--native-cuda-smoke-diffusion-full-loop-step",
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
                 "--native-cuda-smoke-hnet-byte-lm-loop-step",
@@ -1155,6 +1158,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-diffusion-denoise-step");
             } else if (arg == "--native-cuda-smoke-diffusion-objective-step") {
                 forwarded.push_back("--smoke-diffusion-objective-step");
+            } else if (arg == "--native-cuda-smoke-diffusion-full-loop-step") {
+                forwarded.push_back("--smoke-diffusion-full-loop-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {

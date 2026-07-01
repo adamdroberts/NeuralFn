@@ -925,9 +925,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         };
     }
     if (coverage_class == "missing-diffusion-objective") {
-        return {
-            "diffusion-full-forward-backward-loop",
-        };
+        return {};
     }
     if (coverage_class == "missing-ttt-transformer-lm") {
         return {
@@ -1020,6 +1018,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
         return {
             "diffusion-denoise-linear-mse-adamw-smoke",
             "diffusion-timestep-mask-ce-adamw-smoke",
+            "diffusion-full-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }

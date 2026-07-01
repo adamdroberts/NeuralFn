@@ -85,6 +85,7 @@ struct Config {
     bool smoke_semantic_route_loss_step = false;
     bool smoke_diffusion_denoise_step = false;
     bool smoke_diffusion_objective_step = false;
+    bool smoke_diffusion_full_loop_step = false;
     bool smoke_seq2seq_cross_attention_step = false;
     bool smoke_seq2seq_loss_composition_step = false;
     bool smoke_ttt_linear_inner_step = false;
@@ -299,6 +300,7 @@ void print_usage(const char* program) {
         << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
         << "  --smoke-diffusion-denoise-step Launch diffusion denoise head, loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-diffusion-objective-step Launch diffusion timestep, mask scheduler, CE objective, backward, and AdamW kernels on CUDA\n"
+        << "  --smoke-diffusion-full-loop-step Launch diffusion timestep/mask/objective native loop smoke on CUDA\n"
         << "  --smoke-seq2seq-cross-attention-step Launch seq2seq cross-attention, CE, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-seq2seq-loss-composition-step Launch seq2seq decoder-to-encoder attention, CE loss/backward, and LM-head AdamW kernels on CUDA\n"
         << "  --smoke-ttt-linear-inner-step Launch TTT inner linear loss, backward, and AdamW kernels on CUDA\n"
@@ -385,6 +387,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_diffusion_denoise_step = true;
         } else if (arg == "--smoke-diffusion-objective-step" || arg == "--native-cuda-smoke-diffusion-objective-step") {
             cfg.smoke_diffusion_objective_step = true;
+        } else if (arg == "--smoke-diffusion-full-loop-step" ||
+                   arg == "--native-cuda-smoke-diffusion-full-loop-step") {
+            cfg.smoke_diffusion_full_loop_step = true;
         } else if (arg == "--smoke-seq2seq-cross-attention-step" || arg == "--native-cuda-smoke-seq2seq-cross-attention-step") {
             cfg.smoke_seq2seq_cross_attention_step = true;
         } else if (arg == "--smoke-seq2seq-loss-composition-step" ||
@@ -7320,7 +7325,9 @@ int print_diffusion_objective_smoke_json(const Config& cfg, const char* program)
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"diffusion_timestep_mask_ce_train_step_slice\",\n"
+        << "  \"smoke\": \"" << (cfg.smoke_diffusion_full_loop_step
+                                  ? "diffusion_full_loop_train_step_slice"
+                                  : "diffusion_timestep_mask_ce_train_step_slice") << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -7335,6 +7342,13 @@ int print_diffusion_objective_smoke_json(const Config& cfg, const char* program)
         << ", \"rows\": " << kRows
         << ", \"model_dim\": " << kDim
         << ", \"vocab\": " << kVocab << "},\n"
+        << "  \"diffusion_loop\": [\n"
+        << "    \"random_timesteps\",\n"
+        << "    \"mask_scheduler\",\n"
+        << "    \"token_embedding\",\n"
+        << "    \"ce_objective_backward\",\n"
+        << "    \"adamw\"\n"
+        << "  ],\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_random_timesteps_float32\",\n"
         << "    \"nfn_native_tile_mask_scheduler_int64\",\n"
@@ -12496,7 +12510,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_diffusion_denoise_step) {
             return print_diffusion_denoise_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_diffusion_objective_step) {
+        if (cfg.smoke_diffusion_objective_step || cfg.smoke_diffusion_full_loop_step) {
             return print_diffusion_objective_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_seq2seq_cross_attention_step || cfg.smoke_seq2seq_loss_composition_step) {

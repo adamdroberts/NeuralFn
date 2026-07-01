@@ -104,8 +104,8 @@ build_one "diffusion" "nfn_diffusion_native_train" \
   "diffusion timestep scheduler, denoise head, and loss CUDA Tile trainer" \
   "nfn_native_tile_random_timesteps_float32,nfn_native_tile_mask_scheduler_int64,nfn_native_tile_token_embedding_float32,nfn_native_tile_token_embedding_backward_weight_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "missing-diffusion-objective" \
-  "diffusion-full-forward-backward-loop" \
-  "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke,family-parameter-layout-checkpoint-inference-smoke"
+  "" \
+  "diffusion-denoise-linear-mse-adamw-smoke,diffusion-timestep-mask-ce-adamw-smoke,diffusion-full-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
 build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_tanh_float32,nfn_native_tile_add_float32,nfn_native_tile_tanh_backward_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
