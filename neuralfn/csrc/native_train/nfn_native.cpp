@@ -226,6 +226,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-family-layout-checkpoint-step",
+        "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
@@ -523,6 +524,7 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                                arg == "--native-cuda-smoke-jamba-mamba-state-step" ||
                                arg == "--native-cuda-smoke-jamba-layer-schedule-step" ||
                                arg == "--native-cuda-smoke-family-layout-checkpoint-step" ||
+                               arg == "--native-cuda-smoke-dense-jepa-full-loop-step" ||
                                arg == "--native-cuda-smoke-dense-jepa-train-step" ||
                                arg == "--native-cuda-smoke-llama-loop" ||
                                arg == "--native-cuda-smoke-llama-lm-head-step" ||
@@ -600,6 +602,8 @@ DenseTrainCommand build_dense_gpt_train_command(int argc, char** argv) {
                 forwarded.push_back("--smoke-jamba-layer-schedule-step");
             } else if (arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
                 forwarded.push_back("--smoke-family-layout-checkpoint-step");
+            } else if (arg == "--native-cuda-smoke-dense-jepa-full-loop-step") {
+                forwarded.push_back("--smoke-dense-jepa-full-loop-step");
             } else if (arg == "--native-cuda-smoke-dense-jepa-train-step") {
                 forwarded.push_back("--smoke-dense-jepa-train-step");
             } else if (arg == "--native-cuda-smoke-llama-loop") {

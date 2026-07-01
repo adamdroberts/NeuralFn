@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Added a dense JEPA full forward/backward-loop native smoke.
+  `nfn_jepa_native_train --smoke-dense-jepa-full-loop-step --tile-ops-lib
+  PATH` and the unified `nfn-native-train --base-model dense-jepa-evo
+  --native-cuda-smoke-dense-jepa-full-loop-step` alias now run the dense JEPA
+  AR+target/projector loop through latent pooling/projection,
+  projector/predictor, token CE backward, JEPA/LM gradient accumulation, and
+  AdamW without Torch or graph-editor tensor flow. Dense JEPA preflight JSON now
+  reports `dense-jepa-full-forward-backward-loop-smoke` in completed
+  requirements and no longer lists `dense-jepa-full-forward-backward-loop` as a
+  missing native-training requirement. Verification: rebuilt missing-family
+  native trainers and unified/native catalog frontends; live CUDA direct and
+  unified dense JEPA full-loop smokes passed; dense JEPA preflight reports no
+  missing native-training requirements; focused native pytest passed; no-Torch
+  verifier passed with 30/30 artifacts and 0 stale artifacts.
+
 - Added a shared standard-MoE full forward/backward-loop native smoke.
   `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH`
   and the unified `nfn-native-train --base-model moe-jepa-evo

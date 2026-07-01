@@ -11579,14 +11579,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "missing-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == [
-        "dense-jepa-full-forward-backward-loop",
-    ]
+    assert jepa_payload["native_training_missing_requirements"] == []
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
         "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
+        "dense-jepa-full-forward-backward-loop-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
@@ -11670,6 +11669,35 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jepa_ar_loss_smoke_payload["graph_editor_tensor_flow"] is False
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in jepa_ar_loss_smoke_payload["loop_composition_stages"]
     assert "nfn_native_tile_latent_mse_loss_float32" in jepa_ar_loss_smoke_payload["loop_composition_stages"]
+
+    dense_jepa_full_loop_smoke_missing_lib = subprocess.run(
+        [
+            str(jepa),
+            "--smoke-dense-jepa-full-loop-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert dense_jepa_full_loop_smoke_missing_lib.returncode == 2
+    dense_jepa_full_loop_smoke_payload = json.loads(dense_jepa_full_loop_smoke_missing_lib.stdout)
+    assert (
+        dense_jepa_full_loop_smoke_payload["smoke"]
+        == "dense_jepa_full_forward_backward_loop_train_step_slice"
+    )
+    assert dense_jepa_full_loop_smoke_payload["passed"] is False
+    assert dense_jepa_full_loop_smoke_payload["compiled_native_boundary"] is True
+    assert dense_jepa_full_loop_smoke_payload["torch_required"] is False
+    assert dense_jepa_full_loop_smoke_payload["graph_editor_tensor_flow"] is False
+    assert "nfn_native_tile_latent_pool_float32" in dense_jepa_full_loop_smoke_payload["loop_composition_stages"]
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_float32"
+        in dense_jepa_full_loop_smoke_payload["loop_composition_stages"]
+    )
+    assert "nfn_native_tile_adamw_step_float32" in dense_jepa_full_loop_smoke_payload["loop_composition_stages"]
 
     semantic_dense_plan = subprocess.run(
         [
@@ -12355,6 +12383,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-dense-jepa-train-step" in unified_dense_jepa_train_smoke_command.stdout
     assert "--tile-ops-lib" in unified_dense_jepa_train_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_dense_jepa_train_smoke_command.stdout
+
+    unified_dense_jepa_full_loop_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "dense-jepa-evo",
+            "--native-cuda-smoke-dense-jepa-full-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_dense_jepa_full_loop_smoke_command.returncode == 0
+    ), unified_dense_jepa_full_loop_smoke_command.stderr
+    assert str(jepa) in unified_dense_jepa_full_loop_smoke_command.stdout
+    assert "--smoke-dense-jepa-full-loop-step" in unified_dense_jepa_full_loop_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_dense_jepa_full_loop_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_dense_jepa_full_loop_smoke_command.stdout
 
     unified_semantic_smoke_command = subprocess.run(
         [

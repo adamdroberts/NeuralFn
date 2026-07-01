@@ -81,6 +81,7 @@ struct Config {
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
     bool smoke_dense_jepa_train_step = false;
+    bool smoke_dense_jepa_full_loop_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
     bool smoke_semantic_router_moe_train_step = false;
     bool smoke_semantic_alignment_step = false;
@@ -301,6 +302,7 @@ void print_usage(const char* program) {
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
+        << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
         << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
@@ -385,6 +387,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_jepa_ar_loss_step = true;
         } else if (arg == "--smoke-dense-jepa-train-step" || arg == "--native-cuda-smoke-dense-jepa-train-step") {
             cfg.smoke_dense_jepa_train_step = true;
+        } else if (arg == "--smoke-dense-jepa-full-loop-step" ||
+                   arg == "--native-cuda-smoke-dense-jepa-full-loop-step") {
+            cfg.smoke_dense_jepa_full_loop_step = true;
         } else if (arg == "--smoke-semantic-dense-jepa-train-step" ||
                    arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
             cfg.smoke_semantic_dense_jepa_train_step = true;
@@ -5322,6 +5327,7 @@ int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
 int print_dense_jepa_train_step_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
+    const bool full_loop_step = cfg.smoke_dense_jepa_full_loop_step;
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -5893,7 +5899,10 @@ int print_dense_jepa_train_step_smoke_json(const Config& cfg, const char* progra
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"dense_jepa_train_step_slice\",\n"
+        << "  \"smoke\": \""
+        << (full_loop_step ? "dense_jepa_full_forward_backward_loop_train_step_slice"
+                           : "dense_jepa_train_step_slice")
+        << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
         << "  \"compiled_native_boundary\": true,\n"
@@ -12533,7 +12542,7 @@ int main(int argc, char** argv) {
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);
         }
-        if (cfg.smoke_dense_jepa_train_step) {
+        if (cfg.smoke_dense_jepa_train_step || cfg.smoke_dense_jepa_full_loop_step) {
             return print_dense_jepa_train_step_smoke_json(cfg, argv[0]);
         }
         if (cfg.smoke_jepa_target_encoder_step) {

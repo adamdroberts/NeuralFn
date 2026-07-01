@@ -888,9 +888,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "missing-dense-jepa-objective") {
-        return {
-            "dense-jepa-full-forward-backward-loop",
-        };
+        return {};
     }
     if (coverage_class == "missing-moe-jepa-objective") {
         return {
@@ -993,6 +991,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "jepa-projector-predictor-latent-loss-smoke",
             "ar-plus-jepa-loss-composition-smoke",
             "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
+            "dense-jepa-full-forward-backward-loop-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
