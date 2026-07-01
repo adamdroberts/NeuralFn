@@ -58,6 +58,16 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+Dense JEPA coverage includes a composed native smoke that stays on raw CUDA Tile
+ABI calls from target latent pooling through AR+JEPA loss/backward and AdamW:
+
+```bash
+nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH
+nfn-native-train --base-model dense-jepa-evo \
+  --native-cuda-smoke-dense-jepa-train-step \
+  --native-cuda-tile-ops-lib PATH
+```
+
 The same trainer-facing library exports the semantic/MoE/JEPA route surface
 used by semantic-router native preflight: top-k routing, expert-route broadcast,
 chunk-route broadcast, routed expert SwiGLU forward/backward, semantic hash,

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Added a dense JEPA composed AR+target/projector train-step native smoke.
+  `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH`
+  and the unified `nfn-native-train --base-model dense-jepa-evo
+  --native-cuda-smoke-dense-jepa-train-step` alias now run target latent
+  pooling/projection, projector/predictor forward, latent MSE, AR LM logits,
+  token CE forward/backward, JEPA and LM weight-gradient accumulation, and
+  AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor
+  flow. The compiled unified frontend now resolves template-style model names
+  such as `dense-jepa-evo` before failing registry lookup, so dense JEPA
+  template selectors dispatch to `nfn_jepa_native_train`. Dense JEPA,
+  semantic-dense JEPA, MoE+JEPA, and semantic MoE+JEPA catalog/preflight JSON
+  now report `dense-jepa-ar-target-projector-forward-backward-adamw-smoke` in
+  completed requirements while keeping the full family trainer loops and final
+  composite objectives visible in missing requirements. Verification: rebuilt
+  missing-family native trainers and unified native frontends; live CUDA direct
+  and unified dense JEPA smokes passed.
+
 - Added a shared standard-MoE transformer-LM train-step native smoke.
   `nfn_mixllama_native_train --smoke-moe-transformer-lm-train-step
   --tile-ops-lib PATH` and the unified `nfn-native-train --base-model

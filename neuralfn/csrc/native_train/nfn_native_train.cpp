@@ -507,6 +507,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--print-plan",
         "--sample-token-batch",
         "--smoke-attention-step",
+        "--smoke-dense-jepa-train-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-embedding-lm-step",
@@ -568,6 +569,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--check-tile-ops",
         "--startup-only",
         "--smoke-tile-ops",
+        "--smoke-dense-jepa-train-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-family-layout-checkpoint-step",
@@ -1056,6 +1058,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-llama-composed-train-step",
                 "--native-cuda-smoke-llama-packed-attention-step",
                 "--native-cuda-smoke-llama-train-step",
+                "--native-cuda-smoke-dense-jepa-train-step",
                 "--native-cuda-smoke-jepa-ar-loss-step",
                 "--native-cuda-smoke-jepa-projector-step",
                 "--native-cuda-smoke-jepa-target-encoder-step",
@@ -1119,6 +1122,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-llama-packed-attention-step");
             } else if (arg == "--native-cuda-smoke-llama-train-step") {
                 forwarded.push_back("--smoke-llama-train-step");
+            } else if (arg == "--native-cuda-smoke-dense-jepa-train-step") {
+                forwarded.push_back("--smoke-dense-jepa-train-step");
             } else if (arg == "--native-cuda-smoke-jepa-ar-loss-step") {
                 forwarded.push_back("--smoke-jepa-ar-loss-step");
             } else if (arg == "--native-cuda-smoke-jepa-projector-step") {
@@ -1212,6 +1217,13 @@ int main(int argc, char** argv) {
     }
 
     const ModelEntry* model_entry = find_model(model);
+    bool template_routed_family = false;
+    if (model_entry == nullptr) {
+        std::vector<std::string> model_selector_args;
+        append_value_arg(model_selector_args, "--template-name", model);
+        model_entry = template_family_model(model_selector_args);
+        template_routed_family = model_entry != nullptr;
+    }
     if (model_entry == nullptr) {
         std::cerr
             << "No native C++ trainer is registered for model family '" << model << "'.\n"
@@ -1223,7 +1235,6 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    bool template_routed_family = false;
     if (
         (model_entry->name == std::string_view("gpt") ||
          model_entry->name == std::string_view("gpt2") ||

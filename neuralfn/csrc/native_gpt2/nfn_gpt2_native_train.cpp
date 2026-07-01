@@ -994,6 +994,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             completed.push_back("jepa-target-encoder-forward-smoke");
             completed.push_back("jepa-projector-predictor-latent-loss-smoke");
             completed.push_back("ar-plus-jepa-loss-composition-smoke");
+            completed.push_back("dense-jepa-ar-target-projector-forward-backward-adamw-smoke");
         }
         if (coverage_class == "missing-semantic-moe-router-jepa-objective") {
             completed.push_back("semantic-hash-alignment-loss-items-smoke");
@@ -1007,6 +1008,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "jepa-target-encoder-forward-smoke",
             "jepa-projector-predictor-latent-loss-smoke",
             "ar-plus-jepa-loss-composition-smoke",
+            "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
@@ -1015,6 +1017,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "jepa-target-encoder-forward-smoke",
             "jepa-projector-predictor-latent-loss-smoke",
             "ar-plus-jepa-loss-composition-smoke",
+            "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
             "semantic-hash-alignment-loss-items-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };

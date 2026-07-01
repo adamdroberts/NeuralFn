@@ -5261,11 +5261,13 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
+    assert "dense-jepa-ar-target-projector-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
     assert "family-parameter-layout-checkpoint-inference-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["semantic_moe_jepa_evo"] == "missing-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "ar-plus-jepa-loss-composition-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "dense-jepa-ar-target-projector-forward-backward-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses" not in missing_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
@@ -11515,6 +11517,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert moe_jepa_payload["compiled_native_boundary"] is True
@@ -11559,6 +11562,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
@@ -11670,6 +11674,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "semantic-hash-alignment-loss-items-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
@@ -12086,6 +12091,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
+        "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
@@ -12284,6 +12290,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-jepa-ar-loss-step" in unified_jepa_ar_loss_smoke_command.stdout
     assert "--tile-ops-lib" in unified_jepa_ar_loss_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_jepa_ar_loss_smoke_command.stdout
+
+    unified_dense_jepa_train_smoke_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "dense-jepa-evo",
+            "--native-cuda-smoke-dense-jepa-train-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_dense_jepa_train_smoke_command.returncode == 0, unified_dense_jepa_train_smoke_command.stderr
+    assert str(jepa) in unified_dense_jepa_train_smoke_command.stdout
+    assert "--smoke-dense-jepa-train-step" in unified_dense_jepa_train_smoke_command.stdout
+    assert "--tile-ops-lib" in unified_dense_jepa_train_smoke_command.stdout
+    assert "--train-transformer-lm" not in unified_dense_jepa_train_smoke_command.stdout
 
     unified_semantic_smoke_command = subprocess.run(
         [

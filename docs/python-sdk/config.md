@@ -476,7 +476,10 @@ Native CUDA Tile preflight JSON for `dense_jepa_evo`, `moe_jepa_evo`, and the
 semantic JEPA families now reports the target-encoder forward smoke
 (`jepa-target-encoder-forward-smoke`) and projector/predictor latent-loss smoke
 (`jepa-projector-predictor-latent-loss-smoke`) plus base AR+JEPA loss
-composition (`ar-plus-jepa-loss-composition-smoke`) as completed requirements.
+composition (`ar-plus-jepa-loss-composition-smoke`) and the composed
+AR+target/projector train-step smoke
+(`dense-jepa-ar-target-projector-forward-backward-adamw-smoke`) as completed
+requirements.
 Semantic MoE JEPA entries also report
 `route-selection-distillation-balance-losses-smoke` as completed. The remaining
 missing requirements are family loop/checkpoint/inference wiring for dense JEPA
