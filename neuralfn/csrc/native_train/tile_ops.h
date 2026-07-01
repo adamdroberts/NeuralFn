@@ -791,6 +791,25 @@ int nfn_native_tile_moe_swiglu_forward_float32(
     std::int64_t top_k,
     void* cuda_stream);
 
+int nfn_native_tile_moe_swiglu_backward_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream);
+
 int nfn_native_tile_semantic_hash_int64(
     const float* sem_vec,
     const float* proj,

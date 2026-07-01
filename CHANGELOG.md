@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Added trainer-facing raw CUDA Tile ABI support for routed MoE expert backward:
+  `nfn_native_tile_moe_swiglu_backward_float32`. The Tile kernel computes
+  `grad_x` plus accumulated packed expert gradients for `w1`, `w2`, and `w3`
+  from hidden states, top-k route weights/indices, packed per-expert weights,
+  and `grad_out`; callers zero gradient buffers before invoking it. Standard
+  MoE, MoE+JEPA, semantic-router MoE, and DeepSeek-V4 missing-family preflights
+  now require the backward symbol alongside the routed MoE forward ABI. The full
+  MoE trainer loop still reports `family-native-loop-missing` until optimizer
+  loop, checkpoint, and inference wiring land. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so`, `libnfn_native_train_tile_ops_tk.so`,
+  dense GPT native binaries, benchmark helpers, and missing-family native
+  binaries; confirmed forward/backward exports with `nm -D`; live CUDA ctypes
+  backward smoke matched CPU references for `grad_x`, `grad_w1`, `grad_w2`, and
+  `grad_w3` with max error `8.863711398188201e-08`; focused native pytest
+  passed (`1 passed, 1 skipped`); the no-Torch verifier passed 30 artifact
+  scans, 69 Python entrypoints, 24 shell entrypoints, and 4 native template
+  catalogs.
+
 - Added a trainer-facing raw CUDA Tile ABI for routed MoE expert forward:
   `nfn_native_tile_moe_swiglu_forward_float32`. The kernel computes the packed
   expert SwiGLU MLP forward path from hidden states, top-k route

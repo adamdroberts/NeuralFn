@@ -874,10 +874,11 @@ coverage class directly; it requires linear/projector ABI, semantic-alignment
 loss items, latent MSE, and AdamW while still reporting
 `family-native-loop-missing`.
 Standard MoE-family preflights now require
-`nfn_native_tile_moe_swiglu_forward_float32`, which computes the routed expert
-SwiGLU forward path from hidden states, top-k route weights/indices, and packed
-per-expert weights. Backward, expert weight-gradient accumulation, checkpoint,
-and inference wiring remain part of `family-native-loop-missing`.
+`nfn_native_tile_moe_swiglu_forward_float32`/`nfn_native_tile_moe_swiglu_backward_float32`,
+which compute the routed expert SwiGLU forward path plus input and packed
+expert-weight gradients from hidden states, top-k route weights/indices, packed
+per-expert weights, and output gradients. Optimizer-loop, checkpoint, and
+inference wiring remain part of `family-native-loop-missing`.
 For semantic-router MoE, that required-symbol list now includes semantic hash
 routing, chunk-route broadcast, semantic-alignment item losses, attentionless
 decoder projection, expert bias add, standard top-k/expert-route broadcast,

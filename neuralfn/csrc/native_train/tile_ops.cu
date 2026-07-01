@@ -503,6 +503,24 @@ void launch_moe_swiglu_forward_float32(
     std::int64_t experts,
     std::int64_t top_k,
     cudaStream_t stream);
+void launch_moe_swiglu_backward_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream);
 void launch_latent_mse_partials_float32(
     const float* pred,
     const float* target,
@@ -4040,6 +4058,48 @@ int nfn_native_tile_moe_swiglu_forward_float32(
     }
     neuralfn::tile_cuda::launch_moe_swiglu_forward_float32(
         x, route_weights, route_indices, w1, w2, w3, out, tokens, dim, hidden_dim, experts, top_k, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_swiglu_backward_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream) {
+    if (tokens <= 0 || dim <= 0 || hidden_dim <= 0 || experts <= 0 || top_k <= 0 || top_k > experts) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_swiglu_backward_float32(
+        x,
+        route_weights,
+        route_indices,
+        w1,
+        w2,
+        w3,
+        grad_out,
+        grad_x,
+        grad_w1,
+        grad_w2,
+        grad_w3,
+        tokens,
+        dim,
+        hidden_dim,
+        experts,
+        top_k,
+        as_stream(cuda_stream));
     return launch_status();
 }
 

@@ -8603,6 +8603,109 @@ __tile_global__ void moe_swiglu_forward_float32_kernel(
   ct::store_masked(out + idx, acc, mask);
 }
 
+__tile_global__ void moe_swiglu_backward_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ route_weights,
+    const std::int64_t* __restrict__ route_indices,
+    const float* __restrict__ w1,
+    const float* __restrict__ w2,
+    const float* __restrict__ w3,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    float* __restrict__ grad_w1,
+    float* __restrict__ grad_w2,
+    float* __restrict__ grad_w3,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  route_weights = ct::assume_aligned(route_weights, 16_ic);
+  route_indices = ct::assume_aligned(route_indices, 16_ic);
+  w1 = ct::assume_aligned(w1, 16_ic);
+  w2 = ct::assume_aligned(w2, 16_ic);
+  w3 = ct::assume_aligned(w3, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+  grad_w1 = ct::assume_aligned(grad_w1, 16_ic);
+  grad_w2 = ct::assume_aligned(grad_w2, 16_ic);
+  grad_w3 = ct::assume_aligned(grad_w3, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto token = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto valid_token = token < ct::full<IndexTile>(tokens);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto hidden_tile = ct::full<IndexTile>(hidden_dim);
+  auto top_k_tile = ct::full<IndexTile>(top_k);
+  auto experts_tile = ct::full<IndexTile>(experts);
+
+  for (std::int64_t d_in = 0; d_in < dim; ++d_in) {
+    auto grad_x_acc = ct::full<decltype(ct::load_masked(x + token * dim_tile, valid_token))>(0.0f);
+    for (std::int64_t k = 0; k < top_k; ++k) {
+      auto route_offset = token * top_k_tile + ct::full<IndexTile>(k);
+      auto expert = ct::load_masked(route_indices + route_offset, valid_token);
+      auto valid = valid_token && expert >= ct::full<IndexTile>(0) && expert < experts_tile;
+      auto route_weight = ct::load_masked(route_weights + route_offset, valid);
+      for (std::int64_t h = 0; h < hidden_dim; ++h) {
+        auto h_tile = ct::full<IndexTile>(h);
+        auto gate = ct::full<decltype(route_weight)>(0.0f);
+        auto up = ct::full<decltype(route_weight)>(0.0f);
+        for (std::int64_t d = 0; d < dim; ++d) {
+          auto d_tile = ct::full<IndexTile>(d);
+          auto xv = ct::load_masked(x + token * dim_tile + d_tile, valid);
+          auto w13_offset = (expert * dim_tile + d_tile) * hidden_tile + h_tile;
+          gate = gate + xv * ct::load_masked(w1 + w13_offset, valid);
+          up = up + xv * ct::load_masked(w3 + w13_offset, valid);
+        }
+        auto one = ct::full<decltype(gate)>(1.0f);
+        auto sigmoid = one / (one + ct::exp(-gate));
+        auto silu = gate * sigmoid;
+        auto dsilu = sigmoid * (one + gate * (one - sigmoid));
+        auto hidden = silu * up;
+        auto grad_hidden = ct::full<decltype(route_weight)>(0.0f);
+        for (std::int64_t d_out = 0; d_out < dim; ++d_out) {
+          auto d_out_tile = ct::full<IndexTile>(d_out);
+          auto grad_expert_out = route_weight * ct::load_masked(grad_out + token * dim_tile + d_out_tile, valid);
+          auto w2_offset = (expert * hidden_tile + h_tile) * dim_tile + d_out_tile;
+          if (d_in == 0) {
+            ct::atomic_add_masked<ct::memory_order::relaxed>(
+                grad_w2 + w2_offset,
+                hidden * grad_expert_out,
+                valid);
+          }
+          grad_hidden = grad_hidden + grad_expert_out * ct::load_masked(w2 + w2_offset, valid);
+        }
+        auto grad_up = grad_hidden * silu;
+        auto grad_gate = grad_hidden * up * dsilu;
+        auto d_in_tile = ct::full<IndexTile>(d_in);
+        auto x_in = ct::load_masked(x + token * dim_tile + d_in_tile, valid);
+        auto w13_offset = (expert * dim_tile + d_in_tile) * hidden_tile + h_tile;
+        ct::atomic_add_masked<ct::memory_order::relaxed>(
+            grad_w1 + w13_offset,
+            x_in * grad_gate,
+            valid);
+        ct::atomic_add_masked<ct::memory_order::relaxed>(
+            grad_w3 + w13_offset,
+            x_in * grad_up,
+            valid);
+        grad_x_acc =
+            grad_x_acc +
+            ct::select(
+                valid,
+                grad_gate * ct::load_masked(w1 + w13_offset, valid) +
+                    grad_up * ct::load_masked(w3 + w13_offset, valid),
+                ct::full<decltype(grad_x_acc)>(0.0f));
+      }
+    }
+    ct::store_masked(grad_x + token * dim_tile + ct::full<IndexTile>(d_in), grad_x_acc, valid_token);
+  }
+}
+
 __tile_global__ void byte_patch_merge_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -17467,6 +17570,44 @@ void launch_moe_swiglu_forward_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   moe_swiglu_forward_float32_kernel<<<blocks, 1, 0, stream>>>(
       x, route_weights, route_indices, w1, w2, w3, out, n, tokens, dim, hidden_dim, experts, top_k);
+}
+
+void launch_moe_swiglu_backward_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((tokens + kTileSize - 1) / kTileSize);
+  moe_swiglu_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x,
+      route_weights,
+      route_indices,
+      w1,
+      w2,
+      w3,
+      grad_out,
+      grad_x,
+      grad_w1,
+      grad_w2,
+      grad_w3,
+      tokens,
+      dim,
+      hidden_dim,
+      experts,
+      top_k);
 }
 
 void launch_byte_patch_merge_float32(
