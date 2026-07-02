@@ -669,7 +669,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
-    for template_name in ("jamba", "hnet_lm"):
+    for template_name in ("hnet_lm",):
         assert train_step_sentinels[template_name]["passed"] is True
         assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
         assert train_step_sentinels[template_name]["native_runnable"] is True
@@ -708,6 +708,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["universal_llama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["universal_llama"]["native_runnable"] is True
     assert dataset_loop_sentinels["universal_llama"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
+    assert dataset_loop_sentinels["jamba"]["passed"] is True
+    assert dataset_loop_sentinels["jamba"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["jamba"]["native_runnable"] is True
+    assert dataset_loop_sentinels["jamba"]["missing_requirements"] == [
         "persistent-full-size-family-parameter-state"
     ]
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
@@ -5326,10 +5332,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["ttt_llama_modern"] == "native-family-dataset-loop"
     assert statuses["universal_llama"] == "native-family-dataset-loop"
     assert statuses["universal_llama_modern"] == "native-family-dataset-loop"
+    assert statuses["jamba"] == "native-family-dataset-loop"
+    assert statuses["jamba_modern"] == "native-family-dataset-loop"
     for template_name in (
-        "jamba",
         "hnet_lm",
-        "jamba_modern",
         "hnet_lm_modern",
     ):
         assert statuses[template_name] == "native-train-step-slice"
@@ -5444,11 +5450,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["jamba"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert missing_requirements["jamba"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["jamba"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["jamba"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
         "jamba-layer-schedule-native-loop-smoke",
+        "jamba-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "covered-hnet-byte-lm"
@@ -8868,7 +8875,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-jamba-hybrid-mamba-transformer-lm",
             "covered-hnet-byte-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
@@ -8883,6 +8889,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-diffusion-objective",
             "covered-ttt-transformer-lm",
             "covered-universal-transformer-lm",
+            "covered-jamba-hybrid-mamba-transformer-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
@@ -12686,13 +12693,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_plan.returncode == 0, jamba_plan.stderr
     jamba_payload = json.loads(jamba_plan.stdout)
     assert jamba_payload["model_family"] == "jamba"
-    assert jamba_payload["status"] == "family-native-trainer-missing"
+    assert jamba_payload["status"] == "native-family-dataset-loop-covered"
+    assert jamba_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert jamba_payload["kernel_step_source"] == "sampled_ar_ce_plus_jamba_layer_schedule_step"
     assert jamba_payload["native_training_coverage_class"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert jamba_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert jamba_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert jamba_payload["native_training_completed_requirements"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
         "jamba-layer-schedule-native-loop-smoke",
+        "jamba-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jamba_payload["compiled_native_boundary"] is True
@@ -13565,6 +13575,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-jamba-layer-schedule-step" in unified_jamba_schedule_smoke_command.stdout
     assert "--tile-ops-lib" in unified_jamba_schedule_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_jamba_schedule_smoke_command.stdout
+
+    unified_jamba_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "jamba",
+            "--native-cuda-train-jamba-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_jamba_dataset_loop_command.returncode == 0, unified_jamba_dataset_loop_command.stderr
+    assert str(jamba) in unified_jamba_dataset_loop_command.stdout
+    assert "--train-jamba-dataset-loop" in unified_jamba_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_jamba_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_jamba_dataset_loop_command.stdout
 
     unified_diffusion_smoke_command = subprocess.run(
         [

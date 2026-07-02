@@ -87,7 +87,7 @@ SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
 
 `SHIPPED_GPT_TEMPLATE_BASE_PRESETS` is the canonical SDK catalog for exact names accepted by `build_model_spec_from_config(config={"preset": ...})`, including aliases and megakernel variants such as `mixllama`, `nanogpt_megakernel`, and `gpt2_megakernel`.
 
-`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
+`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense shipped selections dispatch to their strongest compiled native family loop or train-step slice, and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
 
 Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
@@ -97,7 +97,7 @@ shipped presets are classified by the strongest native trainer loop currently
 available plus any remaining production-state gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet byte-LM
-families. LLaMA-family, seq2seq, diffusion, TTT, and universal-transformer entries now report native
+families. LLaMA-family, Jamba, seq2seq, diffusion, TTT, and universal-transformer entries now report native
 family dataset-loop coverage while retaining
 `persistent-full-size-family-parameter-state` until full-size checkpoint and
 inference metadata land. LLaMA-family entries now list completed smoke-backed
@@ -141,10 +141,10 @@ inference in the missing list. HNet entries list completed byte-token shard
 resolution, byte patch embed/merge plus head-loss/backward/AdamW, and byte
 patch merge/embed-backward/AdamW smokes while keeping checkpointing and
 inference in the missing list. Jamba entries list the
-completed causal chunk-state plus
-head-loss/backward/AdamW smoke while keeping full Mamba state-space
-forward/backward, the Jamba layer schedule loop, checkpointing, and inference
-in the missing list.
+completed causal chunk-state plus head-loss/backward/AdamW smoke,
+Mamba state-space forward/backward smoke, Jamba layer-schedule loop smoke, and
+sampled family dataset loop while keeping checkpointing and inference in the
+missing list.
 Treat this manifest as the
 SDK-visible coverage checklist until every shipped GPT template reports a
 native trainable class.

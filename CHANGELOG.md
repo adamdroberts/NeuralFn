@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a Jamba native dataset-loop default. Bare `nfn_jamba_native_train ...`
+  and `nfn-native-train --base-model jamba ...` now resolve native uint16 token
+  shards, sample train and validation batches, run sampled AR CE, then run the
+  composed Jamba layer-schedule CUDA Tile train-step slice without Torch or
+  graph-editor tensor flow. Runtime and plan JSON report
+  `kernel_step_source: "sampled_ar_ce_plus_jamba_layer_schedule_step"`,
+  `native-family-dataset-loop`, and
+  `persistent-full-size-family-parameter-state` as the remaining
+  production-state gap; the older `--train-jamba-loop-step` one-shot slice
+  remains available explicitly.
+
 - Added a universal-transformer native dataset-loop default. Bare
   `nfn_universal_llama_native_train ...` and
   `nfn-native-train --base-model universal-llama ...` now resolve native uint16

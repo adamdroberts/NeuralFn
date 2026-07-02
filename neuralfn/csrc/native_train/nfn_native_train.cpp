@@ -202,14 +202,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "jamba",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_jamba_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-jamba-hybrid-mamba-native-loop",
+        "sampled-jamba-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Jamba hybrid Mamba/transformer training needs a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "Jamba variants run the native token-shard dataset loop with sampled AR CE plus the composed Jamba layer-schedule CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "seq2seq",
@@ -575,6 +575,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
         "--train-jamba-loop-step",
+        "--train-jamba-dataset-loop",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
         "--smoke-jepa-target-encoder-step",
@@ -673,6 +674,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
         "--train-jamba-loop-step",
+        "--train-jamba-dataset-loop",
         "--smoke-jepa-target-encoder-step",
         "--smoke-llama-attention-block-step",
         "--smoke-llama-lm-head-step",
@@ -1197,6 +1199,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-jamba-mamba-state-step",
                 "--native-cuda-smoke-jamba-layer-schedule-step",
                 "--native-cuda-train-jamba-loop-step",
+                "--native-cuda-train-jamba-dataset-loop",
                 "--native-cuda-smoke-family-layout-checkpoint-step",
                 "--native-cuda-smoke-moe-route-expert-step",
                 "--native-cuda-smoke-moe-transformer-block-step",
@@ -1320,6 +1323,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-jamba-layer-schedule-step");
             } else if (arg == "--native-cuda-train-jamba-loop-step") {
                 forwarded.push_back("--train-jamba-loop-step");
+            } else if (arg == "--native-cuda-train-jamba-dataset-loop") {
+                forwarded.push_back("--train-jamba-dataset-loop");
             } else if (arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
                 forwarded.push_back("--smoke-family-layout-checkpoint-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {

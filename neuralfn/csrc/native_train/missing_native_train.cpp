@@ -87,6 +87,7 @@ struct Config {
     bool train_moe_jepa_dataset_loop = false;
     bool train_semantic_router_moe_loop_step = false;
     bool train_jamba_loop_step = false;
+    bool train_jamba_dataset_loop = false;
     bool train_seq2seq_loop_step = false;
     bool train_seq2seq_dataset_loop = false;
     bool train_diffusion_loop_step = false;
@@ -391,6 +392,7 @@ void print_usage(const char* program) {
         << "  --train-moe-dataset-loop Run the standard MoE native dataset loop over token shards\n"
         << "  --train-moe-jepa-dataset-loop Run the MoE-JEPA native dataset loop over token shards\n"
         << "  --train-jamba-loop-step Run the Jamba composed native train-step slice\n"
+        << "  --train-jamba-dataset-loop Run the Jamba native dataset loop over token shards\n"
         << "  --train-seq2seq-loop-step Run the seq2seq composed native train-step slice\n"
         << "  --train-seq2seq-dataset-loop Run the seq2seq native dataset loop over token shards\n"
         << "  --train-diffusion-loop-step Run the diffusion composed native train-step slice\n"
@@ -511,6 +513,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-jamba-loop-step" ||
                    arg == "--native-cuda-train-jamba-loop-step") {
             cfg.train_jamba_loop_step = true;
+        } else if (arg == "--train-jamba-dataset-loop" ||
+                   arg == "--native-cuda-train-jamba-dataset-loop") {
+            cfg.train_jamba_dataset_loop = true;
         } else if (arg == "--train-seq2seq-loop-step" ||
                    arg == "--native-cuda-train-seq2seq-loop-step") {
             cfg.train_seq2seq_loop_step = true;
@@ -759,6 +764,8 @@ void print_json(const Config& cfg, const char* program) {
         std::string(NFN_NATIVE_MODEL_FAMILY) == "deepseek-v4";
     const bool semantic_router_moe_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe";
+    const bool jamba_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "jamba";
     const bool seq2seq_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "seq2seq";
     const bool diffusion_dataset_loop_available =
@@ -774,6 +781,7 @@ void print_json(const Config& cfg, const char* program) {
         moe_jepa_dataset_loop_available ||
         standard_moe_dataset_loop_available ||
         semantic_router_moe_dataset_loop_available ||
+        jamba_dataset_loop_available ||
         seq2seq_dataset_loop_available ||
         diffusion_dataset_loop_available ||
         ttt_dataset_loop_available ||
@@ -792,6 +800,7 @@ void print_json(const Config& cfg, const char* program) {
         : semantic_dense_jepa_dataset_loop_available ? "sampled_ar_ce_plus_semantic_targets_plus_semantic_dense_jepa_composed_train_step"
         : moe_jepa_dataset_loop_available ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
         : semantic_router_moe_dataset_loop_available ? "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
+        : jamba_dataset_loop_available ? "sampled_ar_ce_plus_jamba_layer_schedule_step"
         : seq2seq_dataset_loop_available ? "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
         : diffusion_dataset_loop_available ? "sampled_ar_ce_plus_diffusion_full_loop_step"
         : ttt_dataset_loop_available ? "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
@@ -17426,6 +17435,22 @@ int main(int argc, char** argv) {
                 "Jamba layer schedule native loop",
                 "jamba_layer_schedule_train_step_slice");
         }
+        if (cfg.train_jamba_dataset_loop) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_jamba_layer_schedule_step = true;
+            substep_cfg.train_jamba_loop_step = false;
+            substep_cfg.train_jamba_dataset_loop = false;
+            return print_single_substep_dataset_loop_json(
+                cfg, argv[0], "Jamba",
+                "Jamba dataset loop is only valid for the jamba native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "jamba" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_jamba_chunk_state_smoke_json,
+                "jamba_layer_schedule_step",
+                "jamba_layer_schedule_train_step_slice",
+                "sampled_ar_ce_plus_jamba_layer_schedule_step",
+                "jamba");
+        }
         if (cfg.train_seq2seq_loop_step) {
             Config substep_cfg = cfg;
             substep_cfg.smoke_seq2seq_full_encoder_decoder_loop_step = true;
@@ -17635,11 +17660,13 @@ int main(int argc, char** argv) {
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "jamba") {
             Config substep_cfg = cfg;
             substep_cfg.smoke_jamba_layer_schedule_step = true;
-            return print_single_substep_composed_train_step_json(
+            return print_single_substep_dataset_loop_json(
                 cfg, argv[0], "Jamba", "", true, substep_cfg,
                 print_jamba_chunk_state_smoke_json,
-                "Jamba layer schedule native loop",
-                "jamba_layer_schedule_train_step_slice");
+                "jamba_layer_schedule_step",
+                "jamba_layer_schedule_train_step_slice",
+                "sampled_ar_ce_plus_jamba_layer_schedule_step",
+                "jamba");
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "seq2seq") {
             Config substep_cfg = cfg;
