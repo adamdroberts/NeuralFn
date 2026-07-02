@@ -1073,10 +1073,20 @@ void write_native_training_completed_requirements_json(
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
 bool custom_graph_template_metadata_found(const Config& cfg);
 
+bool selected_template_has_native_train_step_slice(const Config& cfg) {
+    const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
+    return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
+        coverage_class == "covered-moe-jepa-objective" ||
+        coverage_class == "covered-semantic-moe-router-jepa-objective";
+}
+
 bool selected_graph_is_native_runnable(const Config& cfg) {
     if (!cfg.graph_file.empty()) {
         return custom_graph_template_metadata_found(cfg) &&
             selected_template_geometry_matches_compiled_loop(cfg);
+    }
+    if (selected_template_has_native_train_step_slice(cfg)) {
+        return true;
     }
     return selected_template_is_native_dense_gpt_compatible(cfg) &&
         selected_template_geometry_matches_compiled_loop(cfg);
@@ -1403,6 +1413,9 @@ std::string selected_graph_support_status(const Config& cfg) {
     }
     if (selected_template_is_native_dense_gpt_compatible(cfg)) {
         return "native-transformer-lm";
+    }
+    if (selected_template_has_native_train_step_slice(cfg)) {
+        return "native-train-step-slice";
     }
     return native_training_missing_requirements_for_template(cfg.template_name).empty()
         ? "native-trainer-covered"

@@ -668,13 +668,20 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["gpt3"]["geometry"]["seq_len"] == 2048
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
+    train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
+    assert train_step_sentinels["llama"]["passed"] is True
+    assert train_step_sentinels["llama"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["llama"]["native_runnable"] is True
+    assert train_step_sentinels["moe_jepa_evo"]["passed"] is True
+    assert train_step_sentinels["moe_jepa_evo"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["moe_jepa_evo"]["native_runnable"] is True
+    assert train_step_sentinels["semantic_router_moe_modern"]["passed"] is True
+    assert train_step_sentinels["semantic_router_moe_modern"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
     missing_sentinels = linked_catalog["covered_native_sentinels"]
-    assert missing_sentinels["llama"]["passed"] is True
-    assert missing_sentinels["llama"]["status"] == "template-native-trainer-missing"
-    assert missing_sentinels["llama"]["native_runnable"] is False
-    assert missing_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert missing_sentinels["semantic_router_moe_modern"]["status"] == "template-native-trainer-missing"
-    assert missing_sentinels["semantic_router_moe_modern"]["native_runnable"] is False
+    assert missing_sentinels["mixllama"]["passed"] is True
+    assert missing_sentinels["mixllama"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["mixllama"]["native_runnable"] is False
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5260,13 +5267,18 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["semantic_router_moe"] == "template-native-trainer-missing"
+    assert statuses["llama"] == "native-train-step-slice"
+    assert statuses["moe_jepa_evo"] == "native-train-step-slice"
+    assert statuses["semantic_router_moe"] == "native-train-step-slice"
     runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
     assert runnable["gpt"] is True
     assert runnable["gpt2"] is True
     assert runnable["gpt3"] is True
     assert runnable["nanogpt"] is True
-    assert runnable["semantic_router_moe"] is False
+    assert runnable["llama"] is True
+    assert runnable["moe_jepa_evo"] is True
+    assert runnable["semantic_router_moe"] is True
+    assert runnable["mixllama"] is False
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
@@ -8768,6 +8780,16 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             }
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
+        elif preset_payload["native_training_coverage_class"] in {
+            "covered-llama-rope-swiglu-transformer-lm",
+            "covered-moe-jepa-objective",
+            "covered-semantic-moe-router-jepa-objective",
+        }:
+            assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
+            assert preset_payload["selected_graph_native_runnable"] is True
+            assert preset_payload["native_training_missing_requirements"] == [
+                "production-family-forward-backward-optimizer-loop"
+            ]
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False

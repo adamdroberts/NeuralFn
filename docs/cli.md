@@ -874,9 +874,10 @@ loop runs `gpt`, `gpt2`, `gpt3`, `nanogpt`, dense modern/megakernel aliases, and
 `gpt2_moa` through the transformer-LM trainer; `gpt` reports
 `resolved_native_template_name: "gpt2"`, and `gpt2_moa` resolves to the native
 MoA activation mode automatically. Structurally different shipped GPT template
-names are selected and reported in JSON, but return
-`template-native-trainer-missing` for real training until their native C++ Tile
-trainer plans are implemented. Existing custom graph files that carry
+names are selected and reported in JSON. Templates with a default compiled
+family train-step slice report `native-train-step-slice`; templates still
+waiting for that action report `template-native-trainer-missing`. Existing
+custom graph files that carry
 native-compatible GPT `template_spec` metadata report `native-transformer-lm`
 and can run the selected dense GPT native trainer; arbitrary or incompatible custom
 graph JSON reports `custom-graph-native-trainer-missing`, and missing custom
@@ -943,11 +944,15 @@ resolution, reports `token_shards_resolved: false`, and exposes
 `selected_graph_support_status` plus `selected_graph_native_runnable` for each
 selector so native coverage can be checked without sending real batches through
 graph-editor nodes. Dense GPT-compatible selectors report
-`selected_graph_native_runnable: true` and `native-transformer-lm`; non-dense
-selectors report `selected_graph_native_runnable: false` and
-`template-native-trainer-missing` until their production CUDA Tile loops are
-implemented. Custom graph and unknown-template runtime guards remain separate
-from the catalog action.
+`selected_graph_native_runnable: true` and `native-transformer-lm`. Non-dense
+selectors with a default compiled CUDA Tile train-step action report
+`selected_graph_native_runnable: true` and `native-train-step-slice`, while
+retaining `production-family-forward-backward-optimizer-loop` in
+`native_training_missing_requirements` until their production loops are
+implemented. Non-dense selectors without that default action still report
+`selected_graph_native_runnable: false` and `template-native-trainer-missing`.
+Custom graph and unknown-template runtime guards remain separate from the
+catalog action.
 The `train_gpt.py` wrapper also strips its default dataset alias and eval
 cadence arguments for this catalog action before launching the compiled
 command.

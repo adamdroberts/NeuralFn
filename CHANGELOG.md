@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Changed the compiled template catalog to report non-dense templates with a
+  default compiled native train-step action as `native-train-step-slice` and
+  `selected_graph_native_runnable: true`. This currently covers the LLaMA,
+  MoE-JEPA, and semantic-router-MoE coverage classes; the catalog still keeps
+  `production-family-forward-backward-optimizer-loop` in
+  `native_training_missing_requirements`, so the status does not overclaim that
+  the final multi-step production trainer loop is complete. Families without a
+  default train-step slice continue to report `template-native-trainer-missing`.
+
 - Added a pre-step progress line for dense GPT CUDA Tile training. Before the
   first heavy optimizer step, and again on the configured progress cadence, the
   native loop now writes `[nfn-native-train] step begin ...` to stderr with

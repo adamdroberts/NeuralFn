@@ -1233,9 +1233,14 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
     "nanogpt_modern": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
     "nanogpt_megakernel": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
 }
-REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = (
+REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "llama",
+    "moe_jepa_evo",
     "semantic_router_moe_modern",
+)
+REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = (
+    "mixllama",
+    "semantic_dense_jepa_evo",
 )
 NATIVE_TEMPLATE_CATALOG_ENTRYPOINTS = (
     "native_gpt_linked_list_templates",
@@ -2199,6 +2204,41 @@ def _validate_native_template_catalog(
         if template_errors:
             errors.append(f"{template_name}: {'; '.join(template_errors)}")
         dense_reports[template_name] = template_report
+    train_step_reports: dict[str, object] = {}
+    for template_name in REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS:
+        template = by_name.get(template_name)
+        template_report = {
+            "passed": False,
+            "status": None,
+            "native_runnable": None,
+            "missing_requirements": None,
+            "errors": [],
+        }
+        template_errors = template_report["errors"]
+        if not isinstance(template_errors, list):
+            raise AssertionError("internal train-step sentinel error storage mismatch")
+        if template is None:
+            template_errors.append("template missing from catalog")
+        else:
+            template_report["status"] = template.get("selected_graph_support_status")
+            template_report["native_runnable"] = template.get("selected_graph_native_runnable")
+            template_report["missing_requirements"] = template.get("native_training_missing_requirements")
+            if template.get("selected_graph_support_status") != "native-train-step-slice":
+                template_errors.append(
+                    "status="
+                    f"{template.get('selected_graph_support_status')!r}, "
+                    "expected 'native-train-step-slice'"
+                )
+            if template.get("selected_graph_native_runnable") is not True:
+                template_errors.append("selected_graph_native_runnable was not true")
+            if "production-family-forward-backward-optimizer-loop" not in (
+                template.get("native_training_missing_requirements") or []
+            ):
+                template_errors.append("production-loop missing requirement was not retained")
+        template_report["passed"] = not template_errors
+        if template_errors:
+            errors.append(f"{template_name}: {'; '.join(template_errors)}")
+        train_step_reports[template_name] = template_report
     sentinel_reports: dict[str, object] = {}
     for template_name in REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS:
         template = by_name.get(template_name)
@@ -2229,6 +2269,7 @@ def _validate_native_template_catalog(
             errors.append(f"{template_name}: {'; '.join(template_errors)}")
         sentinel_reports[template_name] = template_report
     report["required_dense_templates"] = dense_reports
+    report["train_step_slice_sentinels"] = train_step_reports
     report["covered_native_sentinels"] = sentinel_reports
     report["passed"] = not errors
     return report
