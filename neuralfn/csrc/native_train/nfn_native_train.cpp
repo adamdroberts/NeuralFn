@@ -180,14 +180,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "semantic-router-moe",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_semantic_router_moe_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-semantic-router-moe-native-loop",
+        "sampled-semantic-router-moe-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "Semantic router MoE variants run the native token-shard dataset loop with derived semantic targets plus the composed semantic-router CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "deepseek-v4",
@@ -552,6 +552,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--train-moe-jepa-loop-step",
         "--train-moe-jepa-dataset-loop",
         "--train-semantic-router-moe-loop-step",
+        "--train-semantic-router-moe-dataset-loop",
         "--smoke-norm-residual-step",
         "--smoke-optimizer-step",
         "--smoke-route-evo-device-controller-step",
@@ -1146,6 +1147,7 @@ int main(int argc, char** argv) {
         "--native-cuda-train-moe-jepa-loop-step",
         "--native-cuda-train-moe-jepa-dataset-loop",
         "--native-cuda-train-semantic-router-moe-loop-step",
+        "--native-cuda-train-semantic-router-moe-dataset-loop",
                 "--native-cuda-smoke-route-evo-device-controller-step",
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-semantic-dense-jepa-train-step",
@@ -1271,6 +1273,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--train-moe-jepa-dataset-loop");
             } else if (arg == "--native-cuda-train-semantic-router-moe-loop-step") {
                 forwarded.push_back("--train-semantic-router-moe-loop-step");
+            } else if (arg == "--native-cuda-train-semantic-router-moe-dataset-loop") {
+                forwarded.push_back("--train-semantic-router-moe-dataset-loop");
             } else if (arg == "--native-cuda-smoke-route-evo-device-controller-step") {
                 forwarded.push_back("--smoke-route-evo-device-controller-step");
             } else if (arg == "--native-cuda-smoke-semantic-alignment-step") {

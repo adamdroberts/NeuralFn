@@ -675,9 +675,6 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["semantic_dense_jepa_evo"]["passed"] is True
     assert train_step_sentinels["semantic_dense_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is True
-    assert train_step_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert train_step_sentinels["semantic_router_moe_modern"]["status"] == "native-train-step-slice"
-    assert train_step_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
     for template_name in ("jamba", "seq2seq", "diffusion", "ttt_llama", "hnet_lm", "universal_llama"):
         assert train_step_sentinels[template_name]["passed"] is True
         assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
@@ -704,6 +701,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["passed"] is True
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["native_runnable"] is True
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["passed"] is True
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
     assert linked_catalog["covered_native_sentinels"] == {}
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
@@ -5296,7 +5299,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["moe_jepa_evo"] == "native-family-dataset-loop"
     assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop"
     assert statuses["semantic_dense_jepa_evo"] == "native-train-step-slice"
-    assert statuses["semantic_router_moe"] == "native-train-step-slice"
+    assert statuses["semantic_router_moe"] == "native-family-dataset-loop"
     for template_name in (
         "jamba",
         "seq2seq",
@@ -5389,8 +5392,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "dense-jepa-ar-target-projector-forward-backward-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses" not in missing_requirements["semantic_moe_jepa_evo"]
+    assert missing_requirements["semantic_moe_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
     assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-router-moe-route-expert-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
+    assert "semantic-router-moe-sampled-family-dataset-loop" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "covered-seq2seq-objective"
     assert missing_requirements["seq2seq"] == ["production-family-forward-backward-optimizer-loop"]
     assert completed_requirements["seq2seq"] == [
@@ -12292,9 +12297,15 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_plan.returncode == 0, semantic_router_plan.stderr
     semantic_router_payload = json.loads(semantic_router_plan.stdout)
     assert semantic_router_payload["model_family"] == "semantic-router-moe"
-    assert semantic_router_payload["status"] == "family-native-trainer-missing"
+    assert semantic_router_payload["status"] == "native-family-dataset-loop-covered"
+    assert semantic_router_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert semantic_router_payload["kernel_step_source"] == (
+        "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
+    )
     assert semantic_router_payload["native_training_coverage_class"] == "covered-semantic-moe-router-jepa-objective"
-    assert semantic_router_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert semantic_router_payload["native_training_missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
     assert "route-selection-distillation-balance-losses" not in semantic_router_payload[
         "native_training_missing_requirements"
     ]
@@ -12310,6 +12321,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "semantic-router-moe-route-expert-adamw-smoke",
         "ar-plus-semantic-plus-jepa-loss-composition-smoke",
         "route-evo-device-controller-smoke",
+        "semantic-router-moe-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
@@ -12361,26 +12373,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "native CUDA Tile trainer for semantic-router-moe is not implemented yet" not in (
         semantic_router_default_train_step.stderr
     )
-    assert "starting native semantic-router MoE composed train-step slice" in semantic_router_default_train_step.stderr
+    assert "starting native semantic-router MoE dataset loop" in semantic_router_default_train_step.stderr
+    assert "resolving native token shards" in semantic_router_default_train_step.stderr
+    assert "dataset directory not found" in semantic_router_default_train_step.stderr
     semantic_router_default_payload = json.loads(semantic_router_default_train_step.stdout)
     assert semantic_router_default_payload["model_family"] == "semantic-router-moe"
-    assert semantic_router_default_payload["status"] == "native-train-step-slice-failed"
-    assert semantic_router_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert semantic_router_default_payload["status"] == "native-family-dataset-loop-failed"
+    assert semantic_router_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
     assert semantic_router_default_payload["production_training_loop"] is False
     assert semantic_router_default_payload["compiled_native_boundary"] is True
     assert semantic_router_default_payload["torch_required"] is False
     assert semantic_router_default_payload["graph_editor_tensor_flow"] is False
+    assert semantic_router_default_payload["dataset_loaded"] is False
+    assert semantic_router_default_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert semantic_router_default_payload["semantic_target_source"] == "native-token-shard-derived-semantic-targets"
+    assert semantic_router_default_payload["kernel_step_source"] == (
+        "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
+    )
     assert semantic_router_default_payload["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
+        "persistent-full-size-family-parameter-state"
     ]
-    assert [
-        substep["name"] for substep in semantic_router_default_payload["substeps"]
-    ] == [
-        "semantic_router_moe_route_expert_adamw_slice",
-        "ar_plus_semantic_plus_jepa_loss_composition_slice",
-        "route_evo_device_controller_slice",
-    ]
-    assert all(substep["returncode"] == 2 for substep in semantic_router_default_payload["substeps"])
+    assert semantic_router_default_payload["train_batches_sampled"] == 0
+    assert semantic_router_default_payload["last_sampled_ar_returncode"] == 2
+    assert semantic_router_default_payload["last_semantic_router_step_returncode"] == 2
 
     route_evo_smoke_missing_lib = subprocess.run(
         [
@@ -13277,6 +13292,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--train-semantic-router-moe-loop-step" in unified_semantic_router_moe_train_step_command.stdout
     assert "--tile-ops-lib" in unified_semantic_router_moe_train_step_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_router_moe_train_step_command.stdout
+
+    unified_semantic_router_moe_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-train-semantic-router-moe-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_router_moe_dataset_loop_command.returncode == 0
+    ), unified_semantic_router_moe_dataset_loop_command.stderr
+    assert str(semantic_router_moe) in unified_semantic_router_moe_dataset_loop_command.stdout
+    assert "--train-semantic-router-moe-dataset-loop" in unified_semantic_router_moe_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_router_moe_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_router_moe_dataset_loop_command.stdout
 
     unified_semantic_router_moe_smoke_command = subprocess.run(
         [

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a semantic-router MoE native dataset-loop default for semantic-router
+  MoE and semantic MoE JEPA selectors. The loop resolves native uint16 token
+  shards, derives semantic target IDs in compiled C++, samples train and
+  validation batches, runs sampled AR CE, then runs the composed
+  semantic-router/expert, AR+semantic+JEPA objective, and route-evo CUDA Tile
+  substeps without Torch or graph-editor tensor flow. Runtime stderr now prints
+  immediate resolved hyperparameters, shard resolution, per-phase progress,
+  validation phases, metadata writes, elapsed seconds, and steps/sec; stdout
+  remains the final JSON payload. The family still reports
+  `persistent-full-size-family-parameter-state` as the remaining production
+  state gap.
+
 - Added LLaMA-family dataset-loop progress and hyperparameter reporting. Bare
   `nfn_llama_native_train ...` and `nfn-native-train --base-model llama ...`
   runs now enter the native token-shard dataset loop, print shard resolution,
