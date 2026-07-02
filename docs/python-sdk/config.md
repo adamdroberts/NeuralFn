@@ -93,18 +93,21 @@ Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with no missing requirements. Other
-shipped presets are classified by the native trainer loop still required, and
-non-runnable presets always name at least one remaining loop or objective gap,
+shipped presets are classified by the strongest native trainer loop currently
+available plus any remaining production-state gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
-MoE/JEPA, Jamba, seq2seq, diffusion, TTT, HNet byte-LM, and universal
-transformer families. LLaMA-family entries now list completed smoke-backed
+MoE/JEPA, seq2seq, Jamba, diffusion, TTT, HNet byte-LM, and universal
+transformer families. LLaMA-family and seq2seq entries now report native
+family dataset-loop coverage while retaining
+`persistent-full-size-family-parameter-state` until full-size checkpoint and
+inference metadata land. LLaMA-family entries now list completed smoke-backed
 slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
 token-LM embedding/CE/backward/AdamW, composed token/block/LM AdamW,
 packed-QKV attention forward/backward,
 RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
 RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
-and family checkpoint/inference metadata, while their missing list keeps the
-full LLaMA-family forward/backward/optimizer loop.
+and family checkpoint/inference metadata, while their missing list keeps
+`persistent-full-size-family-parameter-state`.
 Standard MoE-family entries list completed top-k route/broadcast, routed
 SwiGLU expert forward/backward, load-balance/AdamW, and
 RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block

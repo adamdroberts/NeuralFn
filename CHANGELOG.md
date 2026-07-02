@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a seq2seq native dataset-loop default. Bare `nfn_seq2seq_native_train
+  ...` and `nfn-native-train --base-model seq2seq ...` now resolve native
+  uint16 token shards, sample train and validation batches, run sampled AR CE,
+  then run the composed full encoder-decoder CUDA Tile train-step slice without
+  Torch or graph-editor tensor flow. Runtime stderr prints immediate
+  hyperparameters, shard resolution, sample checksums, phase begin/end lines,
+  validation phases, metadata writes, elapsed seconds, and steps/sec while
+  stdout remains the final JSON payload. Seq2seq catalog entries now report
+  `native-family-dataset-loop` with `persistent-full-size-family-parameter-state`
+  as the remaining production-state gap; the older
+  `--train-seq2seq-loop-step` one-shot slice remains available explicitly.
+
 - Added a semantic-dense-JEPA native dataset-loop default for semantic dense
   JEPA selectors. The loop resolves native uint16 token shards, derives
   semantic target IDs in compiled C++, samples train and validation batches,

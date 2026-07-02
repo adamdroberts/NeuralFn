@@ -5306,15 +5306,15 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop"
     assert statuses["semantic_dense_jepa_evo"] == "native-family-dataset-loop"
     assert statuses["semantic_router_moe"] == "native-family-dataset-loop"
+    assert statuses["seq2seq"] == "native-family-dataset-loop"
+    assert statuses["seq2seq_modern"] == "native-family-dataset-loop"
     for template_name in (
         "jamba",
-        "seq2seq",
         "diffusion",
         "ttt_llama",
         "hnet_lm",
         "universal_llama",
         "jamba_modern",
-        "seq2seq_modern",
         "diffusion_modern",
         "ttt_llama_modern",
         "hnet_lm_modern",
@@ -5405,11 +5405,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "semantic-router-moe-route-expert-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-router-moe-sampled-family-dataset-loop" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "covered-seq2seq-objective"
-    assert missing_requirements["seq2seq"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["seq2seq"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
         "seq2seq-full-encoder-decoder-loop-smoke",
+        "seq2seq-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "covered-ttt-transformer-lm"
@@ -8852,7 +8853,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-seq2seq-objective",
             "covered-diffusion-objective",
             "covered-ttt-transformer-lm",
             "covered-jamba-hybrid-mamba-transformer-lm",
@@ -8860,6 +8860,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-universal-transformer-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
+        elif preset_payload["native_training_coverage_class"] == "covered-seq2seq-objective":
+            assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_training_missing_requirements"] == [
                 "production-family-forward-backward-optimizer-loop"
@@ -12509,13 +12511,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_plan.returncode == 0, seq2seq_plan.stderr
     seq2seq_payload = json.loads(seq2seq_plan.stdout)
     assert seq2seq_payload["model_family"] == "seq2seq"
-    assert seq2seq_payload["status"] == "family-native-trainer-missing"
+    assert seq2seq_payload["status"] == "native-family-dataset-loop-covered"
+    assert seq2seq_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert seq2seq_payload["kernel_step_source"] == "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
     assert seq2seq_payload["native_training_coverage_class"] == "covered-seq2seq-objective"
-    assert seq2seq_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert seq2seq_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert seq2seq_payload["native_training_completed_requirements"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
         "seq2seq-full-encoder-decoder-loop-smoke",
+        "seq2seq-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert seq2seq_payload["compiled_native_boundary"] is True

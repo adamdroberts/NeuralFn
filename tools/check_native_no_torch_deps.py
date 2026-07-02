@@ -1235,7 +1235,6 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
 }
 REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "jamba",
-    "seq2seq",
     "diffusion",
     "ttt_llama",
     "hnet_lm",
@@ -1246,6 +1245,7 @@ REQUIRED_NATIVE_DATASET_LOOP_TEMPLATE_SENTINELS = (
     "dense_jepa_evo",
     "semantic_dense_jepa_evo",
     "mixllama",
+    "seq2seq",
     "moe_jepa_evo",
     "moe_jepa_evo_modern",
     "semantic_router_moe_modern",
