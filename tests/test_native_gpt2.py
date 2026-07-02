@@ -1575,6 +1575,20 @@ def test_native_gpt_transformer_loop_streams_runtime_progress_to_stderr() -> Non
     assert "[nfn-native-train] step " in source
     assert "[nfn-native-train] validation step " in source
     assert '\\"progress_every_steps\\"' in source
+    wrapper_source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_train"
+        / "train_gpt_sm120.cpp"
+    ).read_text(encoding="utf-8")
+    assert "[nfn-native-train] launching dense GPT native trainer" in wrapper_source
+    assert "NFN_NATIVE_GPT_LAUNCH_PROGRESS" in wrapper_source
+    assert "join_command_for_display(out)" in wrapper_source
+    assert "learning_rate=" in wrapper_source
+    assert "train_batch_tokens=" in wrapper_source
+    assert "checkpoint_every_steps=" in wrapper_source
+    assert "command_only_mode" in wrapper_source
 
 
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:

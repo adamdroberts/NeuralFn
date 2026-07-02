@@ -1242,6 +1242,12 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 
 Dense GPT native AdamW defaults are `beta1=0.9`, `beta2=0.95`,
 `adam_eps=1e-8`, and `grad_clip_norm=1.0`, matching the SM120 quality profile.
+The compiled no-Bash dense GPT launcher prints a pre-`execvp` launch line with
+the resolved native target, CUDA device selector, dataset/template, schedule,
+and AdamW hyperparameters, then prints the exact child command before handing
+off to `nfn_gpt_native_train`; set `NFN_NATIVE_GPT_LAUNCH_PROGRESS=0`,
+`NFN_NATIVE_GPT2_LAUNCH_PROGRESS=0`, or `NFN_TILE_CUDA_LAUNCH_PROGRESS=0` only
+when that wrapper-side launch echo should be suppressed.
 Pass `--beta1`, `--beta2`, `--adam-eps`, or `--grad-clip-norm` to override
 them on the compiled CUDA Tile trainer. `train_gpt.py`, `train_gpt2.py`,
 `train_gpt_native.py`, `nfn train`, and the `tools/train_gpt_sm120.sh` /

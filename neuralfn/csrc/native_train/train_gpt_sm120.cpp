@@ -67,6 +67,17 @@ bool env_flag_enabled(const char* name, bool fallback = false) {
     return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
 }
 
+bool env_flag_enabled_any(std::initializer_list<const char*> names, bool fallback = false) {
+    for (const char* name : names) {
+        const char* value = std::getenv(name);
+        if (value != nullptr && value[0] != '\0') {
+            const std::string normalized = lower(value);
+            return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on";
+        }
+    }
+    return fallback;
+}
+
 bool executable(const fs::path& path) {
     std::error_code ec;
     if (!fs::exists(path, ec) || fs::is_directory(path, ec)) {
@@ -127,6 +138,39 @@ std::string trim(std::string value) {
         return {};
     }
     return std::string(begin, end);
+}
+
+std::string shell_quote(const std::string& value) {
+    if (value.empty()) {
+        return "''";
+    }
+    const bool plain = std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '_' || c == '-' || c == '.' || c == '/' || c == ':' || c == '=';
+    });
+    if (plain) {
+        return value;
+    }
+    std::string quoted = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted.push_back(c);
+        }
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
+std::string join_command_for_display(const std::vector<std::string>& argv) {
+    std::string out;
+    for (std::size_t i = 0; i < argv.size(); ++i) {
+        if (i > 0) {
+            out.push_back(' ');
+        }
+        out += shell_quote(argv[i]);
+    }
+    return out;
 }
 
 std::string select_display_disabled_cuda_device() {
@@ -540,6 +584,50 @@ int main(int argc, char** argv) {
     }
     append(out, "--train-transformer-lm");
     out.insert(out.end(), extra_args.begin(), extra_args.end());
+
+    const bool launch_progress_enabled = env_flag_enabled_any(
+        {"NFN_NATIVE_GPT_LAUNCH_PROGRESS",
+         "NFN_NATIVE_GPT2_LAUNCH_PROGRESS",
+         "NFN_TILE_CUDA_LAUNCH_PROGRESS"},
+        true);
+    const bool command_only_mode =
+        std::find(out.begin(), out.end(), "--dry-run") != out.end() ||
+        std::find(out.begin(), out.end(), "--native-cuda-dry-run") != out.end() ||
+        std::find(out.begin(), out.end(), "--print-command") != out.end() ||
+        std::find(out.begin(), out.end(), "--native-cuda-print-command") != out.end();
+    if (launch_progress_enabled && !command_only_mode) {
+        const char* cuda_visible_devices_env = std::getenv("CUDA_VISIBLE_DEVICES");
+        std::cerr << "[nfn-native-train] launching dense GPT native trainer"
+                  << " target=" << native_bin
+                  << " cuda_visible_devices="
+                  << (cuda_visible_devices_env == nullptr ? "" : cuda_visible_devices_env)
+                  << " template=" << template_name
+                  << " model_family=" << model_family
+                  << " dataset=" << (dataset_alias.empty() ? "tinystories" : dataset_alias)
+                  << " max_steps=" << max_steps
+                  << " batch_size=" << batch_size
+                  << " train_seq_len=" << train_seq_len
+                  << " train_batch_tokens=" << train_batch_tokens
+                  << " optimizer=adamw"
+                  << " learning_rate=" << learning_rate
+                  << " final_lr_fraction=" << final_lr_fraction
+                  << " weight_decay=" << weight_decay
+                  << " beta1=" << beta1
+                  << " beta2=" << beta2
+                  << " adam_eps=" << adam_eps
+                  << " grad_clip_norm=" << grad_clip_norm
+                  << " warmup_steps=" << warmup_steps
+                  << " eval_every_steps=" << eval_every_steps
+                  << " eval_batches=" << eval_batches
+                  << " train_loss_every_steps="
+                  << (train_loss_every_steps.empty() ? "child-default" : train_loss_every_steps)
+                  << " checkpoint_every_steps=" << checkpoint_every
+                  << " sample_every_steps=" << sample_every
+                  << " generate_tokens=" << generate_tokens
+                  << " activation=" << activation
+                  << "\n";
+        std::cerr << "[nfn-native-train] exec " << join_command_for_display(out) << "\n";
+    }
 
     std::vector<char*> exec_args;
     exec_args.reserve(out.size() + 1);

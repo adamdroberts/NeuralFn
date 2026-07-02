@@ -5183,6 +5183,12 @@ optimizer settings before CUDA setup/prewarm starts, then emits
 while cuBLAS/cuBLASLt/Tile work is warming up. Set
 `NFN_NATIVE_GPT_SETUP_PROGRESS=0`, `NFN_NATIVE_GPT2_SETUP_PROGRESS=0`, or
 `NFN_TILE_CUDA_SETUP_PROGRESS=0` only when you want to suppress setup chatter.
+The compiled no-Bash dense GPT launcher also prints a pre-`execvp` launch line
+with the resolved target, CUDA device selector, dataset/template, schedule, and
+AdamW hyperparameters, plus the exact child command, before handing off to
+`nfn_gpt_native_train`; set `NFN_NATIVE_GPT_LAUNCH_PROGRESS=0`,
+`NFN_NATIVE_GPT2_LAUNCH_PROGRESS=0`, or `NFN_TILE_CUDA_LAUNCH_PROGRESS=0` only
+when that wrapper-side launch echo should be suppressed.
 Validation loss still follows `--eval-every-steps`, and sampled training loss
 still requires `--train-loss-every-steps` so ordinary progress does not add
 extra loss-copy overhead.

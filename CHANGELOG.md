@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added immediate launch visibility for the compiled dense GPT no-Bash
+  launcher. Before `execvp`, `nfn_train_gpt_sm120` / `build/nfn_train_gpt`
+  now writes a stderr line with the resolved target, CUDA device selector,
+  dataset/template, schedule, AdamW hyperparameters, validation/sample/checkpoint
+  cadences, and activation, followed by the exact child command. This makes
+  native runs show useful output before CUDA setup/prewarm can saturate the GPU.
+  Set `NFN_NATIVE_GPT_LAUNCH_PROGRESS=0`, `NFN_NATIVE_GPT2_LAUNCH_PROGRESS=0`,
+  or `NFN_TILE_CUDA_LAUNCH_PROGRESS=0` to suppress only the wrapper-side launch
+  echo. Verification: rebuilt the compiled GPT launcher and ran the focused
+  native progress pytest.
+
 - Added a real compiled default action for `nfn_moe_jepa_evo_native_train`.
   The bare `moe-jepa-evo` family command and the explicit
   `--train-moe-jepa-loop-step` / `--native-cuda-train-moe-jepa-loop-step`
