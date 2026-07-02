@@ -97,7 +97,7 @@ shipped presets are classified by the strongest native trainer loop currently
 available plus any remaining production-state gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
 MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet byte-LM
-families. LLaMA-family, Jamba, seq2seq, diffusion, TTT, and universal-transformer entries now report native
+families. LLaMA-family, Jamba, HNet, seq2seq, diffusion, TTT, and universal-transformer entries now report native
 family dataset-loop coverage while retaining
 `persistent-full-size-family-parameter-state` until full-size checkpoint and
 inference metadata land. LLaMA-family entries now list completed smoke-backed
@@ -138,9 +138,9 @@ sampled family dataset loop while keeping
 checkpointing and inference in the missing list. Universal transformer entries list recurrent linear/MSE/backward/AdamW
 and ACT halt loss/gradient smokes as completed while keeping checkpointing and
 inference in the missing list. HNet entries list completed byte-token shard
-resolution, byte patch embed/merge plus head-loss/backward/AdamW, and byte
-patch merge/embed-backward/AdamW smokes while keeping checkpointing and
-inference in the missing list. Jamba entries list the
+resolution, byte patch embed/merge plus head-loss/backward/AdamW, byte
+patch merge/embed-backward/AdamW smokes, and the sampled byte family dataset
+loop while keeping checkpointing and inference in the missing list. Jamba entries list the
 completed causal chunk-state plus head-loss/backward/AdamW smoke,
 Mamba state-space forward/backward smoke, Jamba layer-schedule loop smoke, and
 sampled family dataset loop while keeping checkpointing and inference in the

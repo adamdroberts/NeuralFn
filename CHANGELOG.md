@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added an HNet native byte dataset-loop default. Bare
+  `nfn_hnet_lm_native_train ...` and
+  `nfn-native-train --base-model hnet-lm ...` now resolve native raw byte
+  shards, sample train and validation byte batches, then run the composed HNet
+  byte-LM CUDA Tile train-step slice without Torch or graph-editor tensor flow.
+  Runtime and plan JSON report `token_batch_source: "native_uint8_byte_shards"`,
+  `kernel_step_source: "sampled_byte_lm_plus_hnet_byte_lm_loop_step"`,
+  `native-family-dataset-loop`, and
+  `persistent-full-size-family-parameter-state` as the remaining
+  production-state gap; the older `--train-hnet-loop-step` one-shot slice
+  remains available explicitly.
+
 - Added a Jamba native dataset-loop default. Bare `nfn_jamba_native_train ...`
   and `nfn-native-train --base-model jamba ...` now resolve native uint16 token
   shards, sample train and validation batches, run sampled AR CE, then run the
@@ -175,31 +187,32 @@
   validation, finite AR/JEPA/router losses, `graph_editor_tensor_flow: false`,
   and written metadata.
 
-- Added compiled default train-step actions for the remaining non-dense GPT
+- Added compiled native dataset-loop defaults for the remaining non-dense GPT
   template families: Jamba, seq2seq, diffusion, TTT, HNet, and
-  universal-transformer. Their direct binaries now accept
+  universal-transformer. Their direct binaries now accept explicit legacy
   `--train-jamba-loop-step`, `--train-seq2seq-loop-step`,
   `--train-diffusion-loop-step`, `--train-ttt-loop-step`,
-  `--train-hnet-loop-step`, and `--train-universal-loop-step`, with matching
-  `--native-cuda-train-*` aliases through the unified frontend. Bare family
-  commands now enter those composed native train-step slices by default instead
-  of reporting a generic missing trainer. `build/nfn-native-train
+  `--train-hnet-loop-step`, and `--train-universal-loop-step` one-shot slice
+  flags, with matching `--native-cuda-train-*` aliases through the unified
+  frontend. Bare family commands now enter native sampled dataset loops by
+  default instead of reporting a generic missing trainer. `build/nfn-native-train
   --list-templates --json` now reports zero non-runnable shipped templates:
   dense GPT-compatible templates report `native-transformer-lm`, and the
-  remaining families report `native-train-step-slice`.
+  remaining families report `native-family-dataset-loop`.
 
-- The new train-step slices still keep `production_training_loop: false` and
-  `production-family-forward-backward-optimizer-loop` in
-  `native_training_missing_requirements` until the full multi-step dataset
-  loops, checkpoint cadence, and inference metadata path are implemented for
-  each family. Verification: rebuilt all missing-family trainer binaries, the
+- The native family dataset loops still keep `production_training_loop: false`
+  and `persistent-full-size-family-parameter-state` in
+  `native_training_missing_requirements` until full-size persistent model state,
+  checkpoint cadence, and inference metadata are implemented for each family.
+  Verification: rebuilt all missing-family trainer binaries, the
   unified native frontend, and both GPT catalog binaries; verified
   `build/nfn-native-train --list-templates --json` reports counts
-  `native-transformer-lm: 9`, `native-train-step-slice: 54`, and
-  `non_runnable_count: 0`; ran direct MoE-JEPA, semantic-router MoE, Jamba,
-  seq2seq, diffusion, TTT, HNet, and universal-transformer default commands
-  against `build/libnfn_native_train_tile_ops.so` on the visible RTX 5090 and
-  confirmed each returned `native-train-step-slice-ran`.
+  `native-transformer-lm: 9`, `native-family-dataset-loop: 54`, and no
+  non-runnable shipped selectors; ran direct MoE-JEPA, semantic-router MoE,
+  Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer default
+  commands against `build/libnfn_native_train_tile_ops.so` on the visible RTX
+  5090 and confirmed each stayed on the native C++/CUDA Tile path without Torch
+  or graph-editor tensor flow.
 
 - Added compiled default train-step actions for dense JEPA and semantic dense
   JEPA native targets. `nfn_jepa_native_train`,

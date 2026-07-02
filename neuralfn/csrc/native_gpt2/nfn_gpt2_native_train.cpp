@@ -913,7 +913,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"persistent-full-size-family-parameter-state"};
     }
     if (coverage_class == "covered-hnet-byte-lm") {
-        return {"production-family-forward-backward-optimizer-loop"};
+        return {"persistent-full-size-family-parameter-state"};
     }
     if (coverage_class == "covered-universal-transformer-lm") {
         return {"persistent-full-size-family-parameter-state"};
@@ -1064,6 +1064,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "hnet-byte-patch-embed-merge-head-adamw-smoke",
             "hnet-byte-patch-backward-adamw-smoke",
             "hnet-byte-lm-loop-smoke",
+            "hnet-sampled-byte-family-dataset-loop",
             "byte-token-shard-resolver-smoke",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
@@ -1088,7 +1089,7 @@ bool custom_graph_template_metadata_found(const Config& cfg);
 
 bool selected_template_has_native_train_step_slice(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
-    return coverage_class == "covered-hnet-byte-lm";
+    return false;
 }
 
 bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
@@ -1103,6 +1104,7 @@ bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
         coverage_class == "covered-seq2seq-objective" ||
         coverage_class == "covered-diffusion-objective" ||
         coverage_class == "covered-ttt-transformer-lm" ||
+        coverage_class == "covered-hnet-byte-lm" ||
         coverage_class == "covered-universal-transformer-lm";
 }
 

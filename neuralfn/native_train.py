@@ -316,14 +316,18 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "mixllama",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_mixllama_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-moe-routing-native-loop",
+        "geometry_status": "sampled-standard-moe-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "MoE routing and expert kernels need a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": (
+            "Standard MoE variants run the native token-shard dataset loop with "
+            "sampled AR CE plus sampled route/expert CUDA Tile step; persistent "
+            "full-size family parameter state remains required for production training."
+        ),
     },
     {
         "name": "jepa",
@@ -359,44 +363,45 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "moe-jepa-evo",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-moe-jepa-native-loop",
+        "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
+        "trainer_loop_status": "native-family-dataset-loop",
         "notes": (
-            "MoE JEPA Evo training needs the standard MoE transformer loop plus "
-            "JEPA target/projector/predictor and composite AR+JEPA+router loss wiring."
+            "MoE JEPA Evo runs the native token-shard dataset loop with sampled "
+            "AR CE plus sampled MoE-JEPA family CUDA Tile step; persistent "
+            "full-size family parameter state remains required for production training."
         ),
     },
     {
         "name": "auxfree-moe-jepa-evo",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-moe-jepa-native-loop",
+        "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
+        "trainer_loop_status": "native-family-dataset-loop",
         "notes": (
-            "Aux-free MoE JEPA Evo shares the MoE+JEPA native target and still "
-            "needs aux-free load balancing integration."
+            "Aux-free MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; "
+            "persistent full-size aux-free family state remains required for production training."
         ),
     },
     {
         "name": "moe-jepa-evo-modern",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-moe-jepa-native-loop",
+        "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
+        "trainer_loop_status": "native-family-dataset-loop",
         "notes": (
-            "Modern MoE JEPA Evo shares the MoE+JEPA native target with "
-            "modern-profile norm/position/MLP overlays."
+            "Modern MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; "
+            "persistent full-size modern-profile family state remains required for production training."
         ),
     },
     {
@@ -417,14 +422,18 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "deepseek-v4",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_deepseek_v4_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-deepseek-sparse-moe-native-loop",
+        "geometry_status": "sampled-standard-moe-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "DeepSeek-style sparse/MoE variants need a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": (
+            "DeepSeek-style sparse/MoE variants share the standard-MoE native "
+            "token-shard dataset loop; persistent full-size family parameter "
+            "state remains required for production training."
+        ),
     },
     {
         "name": "jamba",
@@ -472,14 +481,14 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "hnet-lm",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_hnet_lm_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-hnet-byte-lm-native-loop",
+        "geometry_status": "sampled-hnet-byte-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "HNet byte-LM patching and merge training needs a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": "HNet byte-LM variants run the native byte-shard dataset loop with sampled byte batches plus the composed HNet byte-LM CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "name": "universal-llama",

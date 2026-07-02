@@ -246,14 +246,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "hnet-lm",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_hnet_lm_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-hnet-byte-lm-native-loop",
+        "sampled-hnet-byte-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "HNet byte-LM patching and merge training needs a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "HNet byte-LM variants run the native byte-shard dataset loop with sampled byte batches plus the composed HNet byte-LM CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "universal-llama",
@@ -571,6 +571,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-hnet-byte-lm-loop-step",
         "--train-hnet-loop-step",
+        "--train-hnet-dataset-loop",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
@@ -670,6 +671,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-hnet-byte-lm-loop-step",
         "--train-hnet-loop-step",
+        "--train-hnet-dataset-loop",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
@@ -1195,6 +1197,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
                 "--native-cuda-smoke-hnet-byte-lm-loop-step",
                 "--native-cuda-train-hnet-loop-step",
+                "--native-cuda-train-hnet-dataset-loop",
                 "--native-cuda-smoke-jamba-chunk-state-step",
                 "--native-cuda-smoke-jamba-mamba-state-step",
                 "--native-cuda-smoke-jamba-layer-schedule-step",
@@ -1315,6 +1318,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-hnet-byte-lm-loop-step");
             } else if (arg == "--native-cuda-train-hnet-loop-step") {
                 forwarded.push_back("--train-hnet-loop-step");
+            } else if (arg == "--native-cuda-train-hnet-dataset-loop") {
+                forwarded.push_back("--train-hnet-dataset-loop");
             } else if (arg == "--native-cuda-smoke-jamba-chunk-state-step") {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
             } else if (arg == "--native-cuda-smoke-jamba-mamba-state-step") {

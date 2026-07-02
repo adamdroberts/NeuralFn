@@ -95,6 +95,7 @@ struct Config {
     bool train_ttt_loop_step = false;
     bool train_ttt_dataset_loop = false;
     bool train_hnet_loop_step = false;
+    bool train_hnet_dataset_loop = false;
     bool train_universal_loop_step = false;
     bool train_universal_dataset_loop = false;
     bool smoke_jepa_projector_step = false;
@@ -400,6 +401,7 @@ void print_usage(const char* program) {
         << "  --train-ttt-loop-step Run the TTT composed native train-step slice\n"
         << "  --train-ttt-dataset-loop Run the TTT native dataset loop over token shards\n"
         << "  --train-hnet-loop-step Run the HNet composed native train-step slice\n"
+        << "  --train-hnet-dataset-loop Run the HNet native dataset loop over byte shards\n"
         << "  --train-universal-loop-step Run the universal-transformer composed native train-step slice\n"
         << "  --train-universal-dataset-loop Run the universal-transformer native dataset loop over token shards\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
@@ -537,6 +539,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-hnet-loop-step" ||
                    arg == "--native-cuda-train-hnet-loop-step") {
             cfg.train_hnet_loop_step = true;
+        } else if (arg == "--train-hnet-dataset-loop" ||
+                   arg == "--native-cuda-train-hnet-dataset-loop") {
+            cfg.train_hnet_dataset_loop = true;
         } else if (arg == "--train-universal-loop-step" ||
                    arg == "--native-cuda-train-universal-loop-step") {
             cfg.train_universal_loop_step = true;
@@ -772,6 +777,8 @@ void print_json(const Config& cfg, const char* program) {
         std::string(NFN_NATIVE_MODEL_FAMILY) == "diffusion";
     const bool ttt_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama";
+    const bool hnet_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "hnet-lm";
     const bool universal_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama";
     const bool family_dataset_loop_available =
@@ -785,6 +792,7 @@ void print_json(const Config& cfg, const char* program) {
         seq2seq_dataset_loop_available ||
         diffusion_dataset_loop_available ||
         ttt_dataset_loop_available ||
+        hnet_dataset_loop_available ||
         universal_dataset_loop_available;
     const std::string status =
         native_coverage_complete ? "native-trainer-covered"
@@ -804,6 +812,7 @@ void print_json(const Config& cfg, const char* program) {
         : seq2seq_dataset_loop_available ? "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
         : diffusion_dataset_loop_available ? "sampled_ar_ce_plus_diffusion_full_loop_step"
         : ttt_dataset_loop_available ? "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
+        : hnet_dataset_loop_available ? "sampled_byte_lm_plus_hnet_byte_lm_loop_step"
         : universal_dataset_loop_available ? "sampled_ar_ce_plus_universal_transformer_loop_step"
         : (standard_moe_dataset_loop_available ? "sampled_ar_ce_plus_sampled_standard_moe_family_step"
                                                : "none");
@@ -12740,6 +12749,15 @@ std::uint64_t checksum_u16(const std::vector<std::uint16_t>& values) {
     return hash;
 }
 
+std::uint64_t checksum_u8(const std::vector<std::uint8_t>& values) {
+    std::uint64_t hash = 1469598103934665603ull;
+    for (std::uint8_t value : values) {
+        hash ^= static_cast<std::uint64_t>(value);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
 int print_sampled_ar_ce_objective_json(
     const Config& cfg,
     const char* program,
@@ -17352,6 +17370,329 @@ int print_single_substep_dataset_loop_json(
     return passed ? 0 : 2;
 }
 
+int print_hnet_byte_dataset_loop_json(const Config& cfg, const char* program) {
+    std::string error;
+    bool dataset_loaded = false;
+    bool checkpoint_written = false;
+    std::int64_t steps_completed = 0;
+    std::int64_t train_batches_sampled = 0;
+    std::int64_t validation_batches_sampled = 0;
+    std::uint64_t last_train_token_checksum = 0;
+    std::uint64_t last_train_target_checksum = 0;
+    std::uint64_t last_val_token_checksum = 0;
+    std::uint64_t last_val_target_checksum = 0;
+    std::string last_substep_stdout;
+    std::string last_validation_substep_stdout;
+    int last_substep_rc = 2;
+    int last_validation_substep_rc = 2;
+    neuralfn::native_train::ByteShardDataset dataset;
+    neuralfn::native_train::BatchPlan batch_plan;
+    std::vector<std::int64_t> validation_steps;
+    Config substep_cfg = cfg;
+    substep_cfg.smoke_hnet_byte_lm_loop_step = true;
+    substep_cfg.train_hnet_loop_step = false;
+    substep_cfg.train_hnet_dataset_loop = false;
+    constexpr std::string_view kKernelStepSource = "sampled_byte_lm_plus_hnet_byte_lm_loop_step";
+    constexpr std::string_view kSubstepLog = "hnet_byte_lm_loop_step";
+    constexpr std::string_view kSubstepName = "hnet_byte_lm_loop_train_step_slice";
+
+    if (std::string(NFN_NATIVE_MODEL_FAMILY) != "hnet-lm" &&
+        std::string(NFN_NATIVE_MODEL_FAMILY) != "unknown") {
+        error = "HNet dataset loop is only valid for the hnet-lm native target";
+    }
+    if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native HNet byte dataset loop"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " progress_every_steps=" << cfg.progress_every_steps
+                  << " learning_rate=" << cfg.learning_rate
+                  << " optimizer=adamw beta1=0.9 beta2=0.95 adam_eps=1e-08 weight_decay=0.02"
+                  << " torch_required=false graph_editor_tensor_flow=false\n";
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] resolving native byte shards"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " output_dir=" << cfg.output_dir
+                  << "\n";
+        try {
+            dataset = neuralfn::native_train::resolve_byte_shards(
+                cfg.dataset_alias,
+                cfg.allow_train_as_val,
+                true);
+            batch_plan = neuralfn::native_train::build_batch_plan(
+                dataset,
+                cfg.train_seq_len,
+                cfg.batch_size,
+                cfg.train_batch_tokens);
+            dataset_loaded = true;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] byte shards ready"
+                      << " train_shards=" << dataset.train_shards.size()
+                      << " validation_shards=" << dataset.val_shards.size()
+                      << " train_bytes=" << dataset.train_tokens
+                      << " validation_bytes=" << dataset.val_tokens
+                      << " microbatch_tokens=" << batch_plan.microbatch_tokens
+                      << " grad_accum_steps=" << batch_plan.grad_accum_steps
+                      << " effective_train_batch_tokens=" << batch_plan.effective_train_batch_tokens
+                      << " train_optimizer_steps_per_epoch=" << batch_plan.train_optimizer_steps_per_epoch
+                      << "\n";
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+
+    neuralfn::native_train::SequentialByteBatchSampler train_sampler(
+        dataset.train_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::SequentialByteBatchSampler val_sampler(
+        dataset.val_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::ByteBatch train_batch;
+    neuralfn::native_train::ByteBatch val_batch;
+    using Clock = std::chrono::steady_clock;
+    const auto loop_start = Clock::now();
+    auto elapsed_seconds = [&]() {
+        return std::chrono::duration<double>(Clock::now() - loop_start).count();
+    };
+    auto progress_due = [&](std::int64_t step) {
+        return cfg.progress_every_steps > 0 &&
+               (step == 1 || step == cfg.max_steps || (step % cfg.progress_every_steps) == 0);
+    };
+
+    for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
+        const bool eval_due = cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps << " begin phase=sample_train_byte_batch"
+                  << " eval_due=" << (eval_due ? "true" : "false") << "\n";
+        if (!train_sampler.next(train_batch)) {
+            train_sampler.reset();
+            if (!train_sampler.next(train_batch)) {
+                error = "not enough train bytes to build one native HNet byte batch";
+                break;
+            }
+        }
+        train_batches_sampled += 1;
+        last_train_token_checksum = checksum_u8(train_batch.tokens);
+        last_train_target_checksum = checksum_u8(train_batch.targets);
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " train byte batch sampled"
+                  << " sampled_bytes=" << train_batch.tokens.size()
+                  << " token_checksum=" << last_train_token_checksum
+                  << " target_checksum=" << last_train_target_checksum
+                  << "\n";
+
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=" << kSubstepLog << "\n";
+            last_substep_rc = print_hnet_byte_patch_smoke_json(substep_cfg, program);
+            std::cout.rdbuf(old);
+            last_substep_stdout = capture.str();
+        }
+        if (last_substep_rc != 0) {
+            error = "native HNet byte dataset loop composed train-step substep failed";
+            break;
+        }
+        steps_completed = step;
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps << " end phase=" << kSubstepLog
+                  << " rc=" << last_substep_rc << "\n";
+
+        if (eval_due) {
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=sample_validation_byte_batch\n";
+            if (!val_sampler.next(val_batch)) {
+                val_sampler.reset();
+                if (!val_sampler.next(val_batch)) {
+                    error = "not enough validation bytes to build one native HNet byte batch";
+                    break;
+                }
+            }
+            validation_batches_sampled += 1;
+            validation_steps.push_back(step);
+            last_val_token_checksum = checksum_u8(val_batch.tokens);
+            last_val_target_checksum = checksum_u8(val_batch.targets);
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " validation byte batch sampled"
+                      << " sampled_bytes=" << val_batch.tokens.size()
+                      << " token_checksum=" << last_val_token_checksum
+                      << " target_checksum=" << last_val_target_checksum
+                      << "\n";
+            {
+                std::ostringstream capture;
+                std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                          << cfg.max_steps << " begin phase=validation_" << kSubstepLog << "\n";
+                last_validation_substep_rc = print_hnet_byte_patch_smoke_json(substep_cfg, program);
+                std::cout.rdbuf(old);
+                last_validation_substep_stdout = capture.str();
+            }
+            if (last_validation_substep_rc != 0) {
+                error = "native HNet byte dataset loop validation composed train-step substep failed";
+                break;
+            }
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " end phase=validation_" << kSubstepLog
+                      << " rc=" << last_validation_substep_rc << "\n";
+        }
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " complete steps_completed=" << steps_completed
+                  << " train_batches_sampled=" << train_batches_sampled
+                  << " validation_batches_sampled=" << validation_batches_sampled
+                  << "\n";
+        if (progress_due(step)) {
+            const double elapsed = elapsed_seconds();
+            const double steps_per_second =
+                elapsed > 0.0 ? static_cast<double>(steps_completed) / elapsed : 0.0;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] progress"
+                      << " step=" << steps_completed << "/" << cfg.max_steps
+                      << " elapsed_seconds=" << elapsed
+                      << " steps_per_second=" << steps_per_second
+                      << " train_batches_sampled=" << train_batches_sampled
+                      << " validation_batches_sampled=" << validation_batches_sampled
+                      << " last_train_token_checksum=" << last_train_token_checksum
+                      << " last_train_target_checksum=" << last_train_target_checksum
+                      << " last_substep_rc=" << last_substep_rc
+                      << "\n";
+        }
+    }
+
+    std::filesystem::path checkpoint_path;
+    std::filesystem::path done_path;
+    if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] writing native HNet byte metadata"
+                  << " output_dir=" << cfg.output_dir << "\n";
+        try {
+            std::filesystem::create_directories(cfg.output_dir);
+            checkpoint_path =
+                std::filesystem::path(cfg.output_dir) / "hnet_native_loop_metadata_00000000.json";
+            done_path =
+                std::filesystem::path(cfg.output_dir) / "hnet_native_loop_metadata_DONE";
+            {
+                std::ofstream out(checkpoint_path);
+                if (!out) {
+                    error = "failed to open native HNet loop metadata for writing";
+                } else {
+                    out << "{\n"
+                        << "  \"format\": \"nfn-native-hnet-byte-dataset-loop-v1\",\n"
+                        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+                        << "  \"steps_completed\": " << steps_completed << ",\n"
+                        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+                        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+                        << "  \"token_batch_source\": \"native_uint8_byte_shards\",\n"
+                        << "  \"kernel_step_source\": \"" << json_escape(std::string(kKernelStepSource)) << "\"\n"
+                        << "}\n";
+                }
+            }
+            if (error.empty()) {
+                std::ofstream done(done_path);
+                if (!done) {
+                    error = "failed to write native HNet loop metadata DONE marker";
+                } else {
+                    done << "done\n";
+                    checkpoint_written = true;
+                }
+            }
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+
+    const bool passed = error.empty() && steps_completed == cfg.max_steps;
+    std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+              << "] native HNet byte dataset loop finished"
+              << " passed=" << (passed ? "true" : "false")
+              << " steps_completed=" << steps_completed
+              << " elapsed_seconds=" << elapsed_seconds()
+              << " error=\"" << error << "\"\n";
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-family-dataset-loop-ran" : "native-family-dataset-loop-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-family-dataset-loop\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"production_loop_gap\": \"sampled byte batches now drive the composed CUDA Tile HNet byte-LM substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state\",\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"persistent-full-size-family-parameter-state\"\n"
+        << "  ],\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
+        << "  \"token_batch_source\": \"native_uint8_byte_shards\",\n"
+        << "  \"kernel_step_source\": \"" << json_escape(std::string(kKernelStepSource)) << "\",\n"
+        << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
+        << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"byte_shards\": ";
+    if (dataset_loaded) {
+        std::cout << neuralfn::native_train::byte_shard_dataset_json(dataset, &batch_plan);
+    } else {
+        std::cout << "null";
+    }
+    std::cout
+        << ",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
+        << cfg.learning_rate
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << "  \"steps_completed\": " << steps_completed << ",\n"
+        << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
+        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+        << "  \"last_train_token_checksum\": " << last_train_token_checksum << ",\n"
+        << "  \"last_train_target_checksum\": " << last_train_target_checksum << ",\n"
+        << "  \"last_validation_token_checksum\": " << last_val_token_checksum << ",\n"
+        << "  \"last_validation_target_checksum\": " << last_val_target_checksum << ",\n"
+        << "  \"last_substep_returncode\": " << last_substep_rc << ",\n"
+        << "  \"last_validation_substep_returncode\": " << last_validation_substep_rc << ",\n"
+        << "  \"sampled_family_step_phase\": \"" << json_escape(std::string(kSubstepLog)) << "\",\n"
+        << "  \"validation_steps\": [";
+    for (std::size_t i = 0; i < validation_steps.size(); ++i) {
+        if (i != 0) {
+            std::cout << ", ";
+        }
+        std::cout << validation_steps[i];
+    }
+    std::cout
+        << "],\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"" << json_escape(std::string(kSubstepName)) << "\", \"returncode\": "
+        << last_substep_rc << ", \"stdout_json\": \"" << json_escape(last_substep_stdout) << "\"}\n"
+        << "  ],\n"
+        << "  \"last_validation_substep_stdout_json\": \"" << json_escape(last_validation_substep_stdout) << "\"\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -17551,6 +17892,9 @@ int main(int argc, char** argv) {
                 "HNet byte-LM loop",
                 "hnet_byte_lm_loop_train_step_slice");
         }
+        if (cfg.train_hnet_dataset_loop) {
+            return print_hnet_byte_dataset_loop_json(cfg, argv[0]);
+        }
         if (cfg.train_universal_loop_step) {
             Config substep_cfg = cfg;
             substep_cfg.smoke_universal_transformer_loop_step = true;
@@ -17702,13 +18046,7 @@ int main(int argc, char** argv) {
                 "ttt");
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "hnet-lm") {
-            Config substep_cfg = cfg;
-            substep_cfg.smoke_hnet_byte_lm_loop_step = true;
-            return print_single_substep_composed_train_step_json(
-                cfg, argv[0], "HNet", "", true, substep_cfg,
-                print_hnet_byte_patch_smoke_json,
-                "HNet byte-LM loop",
-                "hnet_byte_lm_loop_train_step_slice");
+            return print_hnet_byte_dataset_loop_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama") {
             Config substep_cfg = cfg;

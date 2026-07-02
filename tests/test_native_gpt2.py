@@ -669,10 +669,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
-    for template_name in ("hnet_lm",):
-        assert train_step_sentinels[template_name]["passed"] is True
-        assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
-        assert train_step_sentinels[template_name]["native_runnable"] is True
+    assert train_step_sentinels == {}
     dataset_loop_sentinels = linked_catalog["dataset_loop_sentinels"]
     assert dataset_loop_sentinels["llama"]["passed"] is True
     assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop"
@@ -714,6 +711,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["jamba"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["jamba"]["native_runnable"] is True
     assert dataset_loop_sentinels["jamba"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
+    assert dataset_loop_sentinels["hnet_lm"]["passed"] is True
+    assert dataset_loop_sentinels["hnet_lm"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["hnet_lm"]["native_runnable"] is True
+    assert dataset_loop_sentinels["hnet_lm"]["missing_requirements"] == [
         "persistent-full-size-family-parameter-state"
     ]
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
@@ -5334,11 +5337,8 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["universal_llama_modern"] == "native-family-dataset-loop"
     assert statuses["jamba"] == "native-family-dataset-loop"
     assert statuses["jamba_modern"] == "native-family-dataset-loop"
-    for template_name in (
-        "hnet_lm",
-        "hnet_lm_modern",
-    ):
-        assert statuses[template_name] == "native-train-step-slice"
+    assert statuses["hnet_lm"] == "native-family-dataset-loop"
+    assert statuses["hnet_lm_modern"] == "native-family-dataset-loop"
     runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
     assert runnable["gpt"] is True
     assert runnable["gpt2"] is True
@@ -5459,11 +5459,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["hnet_lm"] == "covered-hnet-byte-lm"
-    assert missing_requirements["hnet_lm"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["hnet_lm"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
         "hnet-byte-lm-loop-smoke",
+        "hnet-sampled-byte-family-dataset-loop",
         "byte-token-shard-resolver-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
@@ -7831,14 +7832,23 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
     assert registry["llama"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert registry["mixllama"]["status"] == "native-family-dataset-loop-covered"
+    assert registry["mixllama"]["geometry_status"] == "sampled-standard-moe-dataset-loop"
+    assert registry["mixllama"]["kernel_status"] == "required-tile-symbols-present"
+    assert registry["mixllama"]["trainer_loop_status"] == "native-family-dataset-loop"
     assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
-    assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
+    assert registry["moe-jepa-evo"]["status"] == "native-family-dataset-loop-covered"
+    assert registry["moe-jepa-evo"]["geometry_status"] == "sampled-moe-jepa-dataset-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "native-family-dataset-loop"
     assert registry["semantic-dense-jepa"]["native_target"] == "nfn_semantic_dense_jepa_native_train"
     assert registry["semantic-dense-jepa"]["geometry_status"] == "sampled-semantic-dense-jepa-dataset-loop"
     assert registry["semantic-dense-jepa"]["kernel_status"] == "required-tile-symbols-present"
     assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert registry["deepseek-v4"]["status"] == "native-family-dataset-loop-covered"
+    assert registry["deepseek-v4"]["geometry_status"] == "sampled-standard-moe-dataset-loop"
+    assert registry["deepseek-v4"]["kernel_status"] == "required-tile-symbols-present"
+    assert registry["deepseek-v4"]["trainer_loop_status"] == "native-family-dataset-loop"
     assert registry["jamba"]["native_target"] == "nfn_jamba_native_train"
     assert registry["seq2seq"]["native_target"] == "nfn_seq2seq_native_train"
     assert registry["diffusion"]["native_target"] == "nfn_diffusion_native_train"
@@ -8875,10 +8885,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-hnet-byte-lm",
-        }:
-            assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
-        elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
             "covered-dense-jepa-objective",
             "covered-semantic-dense-jepa-objective",
@@ -8890,6 +8896,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-ttt-transformer-lm",
             "covered-universal-transformer-lm",
             "covered-jamba-hybrid-mamba-transformer-lm",
+            "covered-hnet-byte-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
@@ -12654,13 +12661,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_plan.returncode == 0, hnet_plan.stderr
     hnet_payload = json.loads(hnet_plan.stdout)
     assert hnet_payload["model_family"] == "hnet-lm"
-    assert hnet_payload["status"] == "family-native-trainer-missing"
+    assert hnet_payload["status"] == "native-family-dataset-loop-covered"
+    assert hnet_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert hnet_payload["kernel_step_source"] == "sampled_byte_lm_plus_hnet_byte_lm_loop_step"
     assert hnet_payload["native_training_coverage_class"] == "covered-hnet-byte-lm"
-    assert hnet_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert hnet_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
         "hnet-byte-lm-loop-smoke",
+        "hnet-sampled-byte-family-dataset-loop",
         "byte-token-shard-resolver-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
@@ -13512,6 +13522,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-hnet-byte-lm-loop-step" in unified_hnet_loop_smoke_command.stdout
     assert "--tile-ops-lib" in unified_hnet_loop_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_hnet_loop_smoke_command.stdout
+
+    unified_hnet_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "hnet-lm",
+            "--native-cuda-train-hnet-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_hnet_dataset_loop_command.returncode == 0, unified_hnet_dataset_loop_command.stderr
+    assert str(hnet_lm) in unified_hnet_dataset_loop_command.stdout
+    assert "--train-hnet-dataset-loop" in unified_hnet_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_hnet_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_hnet_dataset_loop_command.stdout
 
     unified_jamba_smoke_command = subprocess.run(
         [
