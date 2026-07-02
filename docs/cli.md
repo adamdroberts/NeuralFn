@@ -3311,7 +3311,15 @@ For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_tr
 
 For the composed MoE-JEPA native train-step slice, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-loop-step`. It runs the standard MoE full forward/backward-loop train-step and the AR+JEPA+router objective substep through compiled native C++ and returns one JSON payload with substep JSON, `torch_required: false`, `graph_editor_tensor_flow: false`, and `production_training_loop: false`.
 
-For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs the compiled CUDA Tile MoE+JEPA/router substeps, writes native loop metadata under `--output-dir`, and reports `production_loop_gap: "family kernels run as fixed-shape CUDA Tile substeps while token batches drive native loop cadence"` until the full sample-backed family parameter state is wired.
+For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs a sampled-token AR CE CUDA Tile objective slice before the compiled MoE+JEPA/router substeps, writes native loop metadata under `--output-dir`, and keeps `sample-backed-full-family-parameter-state` in the missing requirements until the remaining MoE, JEPA target/projector, and router state are driven by the same sampled batch.
+This family loop now mirrors dense GPT operator visibility: stderr prints the
+resolved hyperparameters before shard resolution, shard/batch-plan counts after
+resolution, and begin/end lines for sampled AR CE, MoE-JEPA train substep,
+validation sampled AR CE, validation loss substep, and metadata writing. Stdout
+stays reserved for the final JSON payload. The default settings are
+`max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
+`train_batch_tokens=524288`, `eval_every_steps=250`, and
+`learning_rate=0.0006`.
 
 For the dense JEPA composed train-step slice, use `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-train-step`; it launches target latent pooling/projection, projector/predictor forward, latent MSE, AR logits, token CE forward/backward, JEPA and LM weight-gradient accumulation, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 

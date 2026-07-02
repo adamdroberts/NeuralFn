@@ -11805,7 +11805,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert moe_jepa_default_train_step.returncode == 2
     assert "native CUDA Tile trainer for moe-jepa-evo is not implemented yet" not in moe_jepa_default_train_step.stderr
+    assert "resolving native token shards" in moe_jepa_default_train_step.stderr
+    assert "max_steps=2" in moe_jepa_default_train_step.stderr
+    assert "batch_size=4" in moe_jepa_default_train_step.stderr
+    assert "train_seq_len=64" in moe_jepa_default_train_step.stderr
     assert "starting native MoE-JEPA dataset loop" in moe_jepa_default_train_step.stderr
+    assert "step 1/2 begin phase=sample_train_batch" in moe_jepa_default_train_step.stderr
+    assert "step 1/2 begin phase=sampled_ar_ce" in moe_jepa_default_train_step.stderr
     moe_jepa_dataset_loop_payload = json.loads(moe_jepa_default_train_step.stdout)
     assert moe_jepa_dataset_loop_payload["status"] == "native-family-dataset-loop-failed"
     assert moe_jepa_dataset_loop_payload["trainer_loop_status"] == "native-family-dataset-loop"
@@ -11814,13 +11820,21 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_dataset_loop_payload["graph_editor_tensor_flow"] is False
     assert moe_jepa_dataset_loop_payload["dataset_loaded"] is True
     assert moe_jepa_dataset_loop_payload["token_batch_source"] == "native_uint16_token_shards"
-    assert moe_jepa_dataset_loop_payload["kernel_step_source"] == "compiled_cuda_tile_moe_jepa_substeps"
+    assert (
+        moe_jepa_dataset_loop_payload["kernel_step_source"] ==
+        "sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps"
+    )
     assert moe_jepa_dataset_loop_payload["native_training_missing_requirements"] == [
         "sample-backed-full-family-parameter-state"
     ]
     assert moe_jepa_dataset_loop_payload["train_batches_sampled"] == 1
     assert moe_jepa_dataset_loop_payload["last_train_token_checksum"] > 0
-    assert "last_train_step_stdout_json" in moe_jepa_dataset_loop_payload
+    assert moe_jepa_dataset_loop_payload["last_sampled_ar_returncode"] == 2
+    sampled_ar_payload = json.loads(moe_jepa_dataset_loop_payload["last_sampled_ar_stdout_json"])
+    assert sampled_ar_payload["smoke"] == "moe_jepa_sampled_ar_ce_objective_slice"
+    assert sampled_ar_payload["phase"] == "train"
+    assert sampled_ar_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert "nfn_native_tile_token_cross_entropy_partials_float32" in sampled_ar_payload["loop_composition_stages"]
 
     moe_jepa_explicit_slice = subprocess.run(
         [
@@ -11843,7 +11857,6 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert moe_jepa_explicit_slice.returncode == 2
-    assert "starting native MoE-JEPA composed train-step slice" in moe_jepa_default_train_step.stderr
     assert "starting native MoE-JEPA composed train-step slice" in moe_jepa_explicit_slice.stderr
     moe_jepa_train_step_payload = json.loads(moe_jepa_explicit_slice.stdout)
     assert moe_jepa_train_step_payload["status"] == "native-train-step-slice-failed"

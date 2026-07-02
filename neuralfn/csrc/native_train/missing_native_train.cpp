@@ -12625,6 +12625,204 @@ std::uint64_t checksum_u16(const std::vector<std::uint16_t>& values) {
     return hash;
 }
 
+int print_sampled_ar_ce_objective_json(
+    const Config& cfg,
+    const char* program,
+    const neuralfn::native_train::TokenBatch& batch,
+    std::string_view phase) {
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool passed = false;
+    double loss_sum = 0.0;
+    double loss_mean = 0.0;
+    constexpr std::int64_t kRows = 3;
+    constexpr std::int64_t kVocab = 50257;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using TokenCrossEntropyPartialsFn =
+        int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    std::vector<void*> allocated;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto free_allocated = [&]() {
+        if (cuda_free != nullptr) {
+            for (void* ptr : allocated) {
+                if (ptr != nullptr) {
+                    cuda_free(ptr);
+                }
+            }
+        }
+        allocated.clear();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+        }
+    };
+
+    const std::int64_t rows =
+        std::min<std::int64_t>(kRows, static_cast<std::int64_t>(batch.targets.size()));
+    if (rows <= 0) {
+        error = "sampled token batch is empty";
+    }
+    if (error.empty()) {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                tile_handle,
+                "nfn_native_tile_token_cross_entropy_partials_float32");
+            if (ce_partials == nullptr) {
+                error = "Tile ops library is missing sampled AR CE symbol";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing sampled AR CE allocation/copy symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        std::vector<float> logits(static_cast<std::size_t>(rows * kVocab), -0.25f);
+        std::vector<std::int64_t> targets(static_cast<std::size_t>(rows), 0);
+        for (std::int64_t row = 0; row < rows; ++row) {
+            const std::int64_t target =
+                static_cast<std::int64_t>(batch.targets[static_cast<std::size_t>(row)] % kVocab);
+            targets[static_cast<std::size_t>(row)] = target;
+            logits[static_cast<std::size_t>(row * kVocab + target)] = 0.75f;
+        }
+        float* d_logits = nullptr;
+        float* d_loss = nullptr;
+        std::int64_t* d_targets = nullptr;
+        auto alloc = [&](void** ptr, std::size_t bytes, const std::string& name) {
+            int status = cuda_malloc(ptr, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc(reinterpret_cast<void**>(&d_logits), logits.size() * sizeof(float), "sampled_ar_logits") &&
+            alloc(reinterpret_cast<void**>(&d_targets), targets.size() * sizeof(std::int64_t), "sampled_ar_targets") &&
+            alloc(reinterpret_cast<void**>(&d_loss), sizeof(float), "sampled_ar_loss")) {
+            int status = cuda_memcpy(d_logits, logits.data(), logits.size() * sizeof(float), kCudaMemcpyHostToDevice);
+            if (status == 0) {
+                status = cuda_memcpy(
+                    d_targets,
+                    targets.data(),
+                    targets.size() * sizeof(std::int64_t),
+                    kCudaMemcpyHostToDevice);
+            }
+            if (status == 0) {
+                status = ce_partials(d_logits, d_targets, d_loss, rows, kVocab, nullptr);
+            }
+            if (status == 0) {
+                status = cuda_device_synchronize();
+            }
+            std::vector<float> host_loss(1, 0.0f);
+            if (status == 0) {
+                status = cuda_memcpy(host_loss.data(), d_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+            }
+            if (status != 0) {
+                error = cuda_error(status, "sampled AR CE objective");
+            } else {
+                loss_sum = static_cast<double>(host_loss[0]);
+                loss_mean = loss_sum / static_cast<double>(rows);
+                passed = std::isfinite(loss_mean);
+                if (!passed) {
+                    error = "sampled AR CE loss is not finite";
+                }
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"moe_jepa_sampled_ar_ce_objective_slice\",\n"
+        << "  \"phase\": \"" << json_escape(phase) << "\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << rows << ", \"vocab\": " << kVocab << "},\n"
+        << "  \"loss_sum\": " << loss_sum << ",\n"
+        << "  \"loss_mean\": " << loss_mean << ",\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_token_cross_entropy_partials_float32\"\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_jepa_family = family == "moe-jepa-evo" || family == "unknown";
@@ -12640,6 +12838,10 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     std::uint64_t last_val_target_checksum = 0;
     std::string last_step_stdout;
     std::string last_validation_stdout;
+    std::string last_sampled_ar_stdout;
+    std::string last_validation_sampled_ar_stdout;
+    int last_sampled_ar_rc = 2;
+    int last_validation_sampled_ar_rc = 2;
     int last_step_rc = 2;
     int last_validation_rc = 2;
     neuralfn::native_train::TokenShardDataset dataset;
@@ -12650,6 +12852,18 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         error = "MoE-JEPA dataset loop is only valid for the moe-jepa-evo native target";
     }
     if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] resolving native token shards"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " output_dir=" << cfg.output_dir
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
         try {
             dataset = neuralfn::native_train::resolve_token_shards(
                 cfg.dataset_alias,
@@ -12661,6 +12875,17 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                 cfg.batch_size,
                 cfg.train_batch_tokens);
             dataset_loaded = true;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] token shards ready"
+                      << " train_shards=" << dataset.train_shards.size()
+                      << " validation_shards=" << dataset.val_shards.size()
+                      << " train_tokens=" << dataset.train_tokens
+                      << " validation_tokens=" << dataset.val_tokens
+                      << " microbatch_tokens=" << batch_plan.microbatch_tokens
+                      << " grad_accum_steps=" << batch_plan.grad_accum_steps
+                      << " effective_train_batch_tokens=" << batch_plan.effective_train_batch_tokens
+                      << " train_optimizer_steps_per_epoch=" << batch_plan.train_optimizer_steps_per_epoch
+                      << "\n";
         } catch (const std::exception& exc) {
             error = exc.what();
         }
@@ -12692,6 +12917,11 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     }
 
     for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps << " begin"
+                  << " phase=sample_train_batch"
+                  << " eval_due=" << ((cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) ? "true" : "false")
+                  << "\n";
         if (!train_sampler.next(train_batch)) {
             train_sampler.reset();
             if (!train_sampler.next(train_batch)) {
@@ -12702,6 +12932,32 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         train_batches_sampled += 1;
         last_train_token_checksum = checksum_u16(train_batch.tokens);
         last_train_target_checksum = checksum_u16(train_batch.targets);
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " train batch sampled"
+                  << " sampled_tokens=" << train_batch.tokens.size()
+                  << " token_checksum=" << last_train_token_checksum
+                  << " target_checksum=" << last_train_target_checksum
+                  << "\n";
+
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=sampled_ar_ce\n";
+            last_sampled_ar_rc = print_sampled_ar_ce_objective_json(cfg, program, train_batch, "train");
+            std::cout.rdbuf(old);
+            last_sampled_ar_stdout = capture.str();
+        }
+        if (last_sampled_ar_rc != 0) {
+            error = "native MoE-JEPA dataset loop sampled AR CE substep failed";
+            break;
+        }
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " end phase=sampled_ar_ce"
+                  << " rc=" << last_sampled_ar_rc
+                  << "\n";
 
         Config step_cfg = cfg;
         step_cfg.train_moe_jepa_dataset_loop = false;
@@ -12709,11 +12965,9 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         {
             std::ostringstream capture;
             std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
-            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] train step "
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                       << step << "/" << cfg.max_steps
-                      << " sampled_tokens=" << train_batch.tokens.size()
-                      << " token_checksum=" << last_train_token_checksum
-                      << " target_checksum=" << last_train_target_checksum
+                      << " begin phase=moe_jepa_train_substep"
                       << "\n";
             last_step_rc = print_moe_jepa_composed_train_step_json(step_cfg, program);
             std::cout.rdbuf(old);
@@ -12724,8 +12978,15 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             break;
         }
         steps_completed = step;
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " end phase=moe_jepa_train_substep"
+                  << " rc=" << last_step_rc
+                  << "\n";
 
         if (cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) {
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=sample_validation_batch\n";
             if (!val_sampler.next(val_batch)) {
                 val_sampler.reset();
                 if (!val_sampler.next(val_batch)) {
@@ -12737,17 +12998,41 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             validation_steps.push_back(step);
             last_val_token_checksum = checksum_u16(val_batch.tokens);
             last_val_target_checksum = checksum_u16(val_batch.targets);
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " validation batch sampled"
+                      << " sampled_tokens=" << val_batch.tokens.size()
+                      << " token_checksum=" << last_val_token_checksum
+                      << " target_checksum=" << last_val_target_checksum
+                      << "\n";
+            {
+                std::ostringstream capture;
+                std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                          << cfg.max_steps << " begin phase=validation_sampled_ar_ce\n";
+                last_validation_sampled_ar_rc =
+                    print_sampled_ar_ce_objective_json(cfg, program, val_batch, "validation");
+                std::cout.rdbuf(old);
+                last_validation_sampled_ar_stdout = capture.str();
+            }
+            if (last_validation_sampled_ar_rc != 0) {
+                error = "native MoE-JEPA dataset loop validation sampled AR CE substep failed";
+                break;
+            }
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " end phase=validation_sampled_ar_ce"
+                      << " rc=" << last_validation_sampled_ar_rc
+                      << "\n";
             Config val_cfg = cfg;
             val_cfg.train_moe_jepa_dataset_loop = false;
             val_cfg.smoke_moe_jepa_loss_composition_step = true;
             {
                 std::ostringstream capture;
                 std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
-                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] validation step "
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                           << step << "/" << cfg.max_steps
-                          << " sampled_tokens=" << val_batch.tokens.size()
-                          << " token_checksum=" << last_val_token_checksum
-                          << " target_checksum=" << last_val_target_checksum
+                          << " begin phase=validation_moe_jepa_loss_substep"
                           << "\n";
                 last_validation_rc = print_jepa_ar_loss_smoke_json(val_cfg, program);
                 std::cout.rdbuf(old);
@@ -12757,12 +13042,28 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                 error = "native MoE-JEPA dataset loop validation substep failed";
                 break;
             }
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " end phase=validation_moe_jepa_loss_substep"
+                      << " rc=" << last_validation_rc
+                      << "\n";
         }
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " complete"
+                  << " steps_completed=" << steps_completed
+                  << " train_batches_sampled=" << train_batches_sampled
+                  << " validation_batches_sampled=" << validation_batches_sampled
+                  << "\n";
     }
 
     std::filesystem::path checkpoint_path;
     std::filesystem::path done_path;
     if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] writing native MoE-JEPA metadata"
+                  << " output_dir=" << cfg.output_dir
+                  << "\n";
         try {
             std::filesystem::create_directories(cfg.output_dir);
             checkpoint_path = std::filesystem::path(cfg.output_dir) / "moe_jepa_evo_native_loop_metadata_00000000.json";
@@ -12779,7 +13080,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
                         << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
                         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-                        << "  \"kernel_step_source\": \"compiled_cuda_tile_moe_jepa_substeps\"\n"
+                        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps\"\n"
                         << "}\n";
                 }
             }
@@ -12796,8 +13097,13 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             error = exc.what();
         }
     }
-
     const bool passed = error.empty() && steps_completed == cfg.max_steps;
+    std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+              << "] native MoE-JEPA dataset loop finished"
+              << " passed=" << (passed ? "true" : "false")
+              << " steps_completed=" << steps_completed
+              << " error=\"" << error << "\""
+              << "\n";
     std::cout
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
@@ -12815,7 +13121,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-        << "  \"kernel_step_source\": \"compiled_cuda_tile_moe_jepa_substeps\",\n"
+        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps\",\n"
         << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
         << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
@@ -12846,6 +13152,8 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"last_train_target_checksum\": " << last_train_target_checksum << ",\n"
         << "  \"last_validation_token_checksum\": " << last_val_token_checksum << ",\n"
         << "  \"last_validation_target_checksum\": " << last_val_target_checksum << ",\n"
+        << "  \"last_sampled_ar_returncode\": " << last_sampled_ar_rc << ",\n"
+        << "  \"last_validation_sampled_ar_returncode\": " << last_validation_sampled_ar_rc << ",\n"
         << "  \"validation_steps\": [";
     for (std::size_t i = 0; i < validation_steps.size(); ++i) {
         if (i != 0) {
@@ -12855,6 +13163,8 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     }
     std::cout
         << "],\n"
+        << "  \"last_sampled_ar_stdout_json\": \"" << json_escape(last_sampled_ar_stdout) << "\",\n"
+        << "  \"last_validation_sampled_ar_stdout_json\": \"" << json_escape(last_validation_sampled_ar_stdout) << "\",\n"
         << "  \"last_train_step_stdout_json\": \"" << json_escape(last_step_stdout) << "\",\n"
         << "  \"last_validation_stdout_json\": \"" << json_escape(last_validation_stdout) << "\"\n"
         << "}\n";
