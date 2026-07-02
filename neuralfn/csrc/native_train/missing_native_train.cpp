@@ -101,6 +101,7 @@ struct Config {
     bool smoke_dense_jepa_train_step = false;
     bool smoke_dense_jepa_full_loop_step = false;
     bool train_dense_jepa_loop_step = false;
+    bool train_dense_jepa_dataset_loop = false;
     bool smoke_semantic_dense_jepa_train_step = false;
     bool train_semantic_dense_jepa_loop_step = false;
     bool smoke_semantic_router_moe_train_step = false;
@@ -398,6 +399,7 @@ void print_usage(const char* program) {
         << "  --smoke-semantic-target-shard-step Resolve native token shards into semantic targets and validate them on CUDA\n"
         << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
         << "  --train-dense-jepa-loop-step Run the dense JEPA composed native train-step slice\n"
+        << "  --train-dense-jepa-dataset-loop Run the dense JEPA native dataset loop over token shards\n"
         << "  --train-semantic-dense-jepa-loop-step Run the semantic dense JEPA composed native train-step slice\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
@@ -537,6 +539,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-dense-jepa-loop-step" ||
                    arg == "--native-cuda-train-dense-jepa-loop-step") {
             cfg.train_dense_jepa_loop_step = true;
+        } else if (arg == "--train-dense-jepa-dataset-loop" ||
+                   arg == "--native-cuda-train-dense-jepa-dataset-loop") {
+            cfg.train_dense_jepa_dataset_loop = true;
         } else if (arg == "--smoke-semantic-dense-jepa-train-step" ||
                    arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
             cfg.smoke_semantic_dense_jepa_train_step = true;
@@ -718,6 +723,8 @@ void print_json(const Config& cfg, const char* program) {
     const bool native_coverage_complete = missing_requirements.empty();
     const bool llama_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "llama";
+    const bool dense_jepa_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "jepa";
     const bool moe_jepa_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo";
     const bool standard_moe_dataset_loop_available =
@@ -727,6 +734,7 @@ void print_json(const Config& cfg, const char* program) {
         std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe";
     const bool family_dataset_loop_available =
         llama_dataset_loop_available ||
+        dense_jepa_dataset_loop_available ||
         moe_jepa_dataset_loop_available ||
         standard_moe_dataset_loop_available ||
         semantic_router_moe_dataset_loop_available;
@@ -740,6 +748,7 @@ void print_json(const Config& cfg, const char* program) {
                                          : "family-native-loop-missing");
     const std::string kernel_step_source =
         llama_dataset_loop_available ? "sampled_ar_ce_plus_llama_composed_train_step"
+        : dense_jepa_dataset_loop_available ? "sampled_ar_ce_plus_dense_jepa_composed_train_step"
         : moe_jepa_dataset_loop_available ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
         : semantic_router_moe_dataset_loop_available ? "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
         : (standard_moe_dataset_loop_available ? "sampled_ar_ce_plus_sampled_standard_moe_family_step"
@@ -15006,6 +15015,393 @@ int print_dense_jepa_composed_train_step_json(const Config& cfg, const char* pro
     return passed ? 0 : 2;
 }
 
+int print_dense_jepa_dataset_loop_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    std::string error;
+    bool dataset_loaded = false;
+    bool checkpoint_written = false;
+    std::int64_t steps_completed = 0;
+    std::int64_t train_batches_sampled = 0;
+    std::int64_t validation_batches_sampled = 0;
+    std::uint64_t last_train_token_checksum = 0;
+    std::uint64_t last_train_target_checksum = 0;
+    std::uint64_t last_val_token_checksum = 0;
+    std::uint64_t last_val_target_checksum = 0;
+    std::string last_sampled_ar_stdout;
+    std::string last_validation_sampled_ar_stdout;
+    std::string last_dense_jepa_step_stdout;
+    std::string last_validation_dense_jepa_step_stdout;
+    int last_sampled_ar_rc = 2;
+    int last_validation_sampled_ar_rc = 2;
+    int last_dense_jepa_step_rc = 2;
+    int last_validation_dense_jepa_step_rc = 2;
+    neuralfn::native_train::TokenShardDataset dataset;
+    neuralfn::native_train::BatchPlan batch_plan;
+    std::vector<std::int64_t> validation_steps;
+
+    if (family != "jepa" && family != "unknown") {
+        error = "dense JEPA dataset loop is only valid for the jepa native target";
+    }
+    if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native dense-JEPA dataset loop"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " progress_every_steps=" << cfg.progress_every_steps
+                  << " learning_rate=" << cfg.learning_rate
+                  << " optimizer=adamw"
+                  << " beta1=0.9"
+                  << " beta2=0.95"
+                  << " adam_eps=1e-08"
+                  << " weight_decay=0.02"
+                  << " torch_required=false"
+                  << " graph_editor_tensor_flow=false"
+                  << "\n";
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] resolving native token shards"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " output_dir=" << cfg.output_dir
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+        try {
+            dataset = neuralfn::native_train::resolve_token_shards(
+                cfg.dataset_alias,
+                cfg.allow_train_as_val,
+                true);
+            batch_plan = neuralfn::native_train::build_batch_plan(
+                dataset,
+                cfg.train_seq_len,
+                cfg.batch_size,
+                cfg.train_batch_tokens);
+            dataset_loaded = true;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] token shards ready"
+                      << " train_shards=" << dataset.train_shards.size()
+                      << " validation_shards=" << dataset.val_shards.size()
+                      << " train_tokens=" << dataset.train_tokens
+                      << " validation_tokens=" << dataset.val_tokens
+                      << " microbatch_tokens=" << batch_plan.microbatch_tokens
+                      << " grad_accum_steps=" << batch_plan.grad_accum_steps
+                      << " effective_train_batch_tokens=" << batch_plan.effective_train_batch_tokens
+                      << " train_optimizer_steps_per_epoch=" << batch_plan.train_optimizer_steps_per_epoch
+                      << "\n";
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+
+    neuralfn::native_train::SequentialTokenBatchSampler train_sampler(
+        dataset.train_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::SequentialTokenBatchSampler val_sampler(
+        dataset.val_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::TokenBatch train_batch;
+    neuralfn::native_train::TokenBatch val_batch;
+    using Clock = std::chrono::steady_clock;
+    const auto loop_start = Clock::now();
+    auto elapsed_seconds = [&]() {
+        const auto elapsed = std::chrono::duration<double>(Clock::now() - loop_start);
+        return elapsed.count();
+    };
+    auto progress_due = [&](std::int64_t step) {
+        return cfg.progress_every_steps > 0 &&
+               (step == 1 || step == cfg.max_steps || (step % cfg.progress_every_steps) == 0);
+    };
+
+    for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps << " begin"
+                  << " phase=sample_train_batch"
+                  << " eval_due=" << ((cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) ? "true" : "false")
+                  << "\n";
+        if (!train_sampler.next(train_batch)) {
+            train_sampler.reset();
+            if (!train_sampler.next(train_batch)) {
+                error = "not enough train tokens to build one native dense-JEPA token batch";
+                break;
+            }
+        }
+        train_batches_sampled += 1;
+        last_train_token_checksum = checksum_u16(train_batch.tokens);
+        last_train_target_checksum = checksum_u16(train_batch.targets);
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " train batch sampled"
+                  << " sampled_tokens=" << train_batch.tokens.size()
+                  << " token_checksum=" << last_train_token_checksum
+                  << " target_checksum=" << last_train_target_checksum
+                  << "\n";
+
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=sampled_ar_ce\n";
+            last_sampled_ar_rc = print_sampled_ar_ce_objective_json(cfg, program, train_batch, "train");
+            std::cout.rdbuf(old);
+            last_sampled_ar_stdout = capture.str();
+        }
+        if (last_sampled_ar_rc != 0) {
+            error = "native dense-JEPA dataset loop sampled AR CE substep failed";
+            break;
+        }
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps << " end phase=sampled_ar_ce"
+                  << " rc=" << last_sampled_ar_rc << "\n";
+
+        {
+            Config step_cfg = cfg;
+            step_cfg.train_dense_jepa_loop_step = false;
+            step_cfg.train_dense_jepa_dataset_loop = false;
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " begin phase=dense_jepa_composed_train_step\n";
+            last_dense_jepa_step_rc = print_dense_jepa_composed_train_step_json(step_cfg, program);
+            std::cout.rdbuf(old);
+            last_dense_jepa_step_stdout = capture.str();
+        }
+        if (last_dense_jepa_step_rc != 0) {
+            error = "native dense-JEPA dataset loop composed train-step substep failed";
+            break;
+        }
+        steps_completed = step;
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " end phase=dense_jepa_composed_train_step"
+                  << " rc=" << last_dense_jepa_step_rc << "\n";
+
+        if (cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) {
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps << " begin phase=sample_validation_batch\n";
+            if (!val_sampler.next(val_batch)) {
+                val_sampler.reset();
+                if (!val_sampler.next(val_batch)) {
+                    error = "not enough validation tokens to build one native dense-JEPA token batch";
+                    break;
+                }
+            }
+            validation_batches_sampled += 1;
+            validation_steps.push_back(step);
+            last_val_token_checksum = checksum_u16(val_batch.tokens);
+            last_val_target_checksum = checksum_u16(val_batch.targets);
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " validation batch sampled"
+                      << " sampled_tokens=" << val_batch.tokens.size()
+                      << " token_checksum=" << last_val_token_checksum
+                      << " target_checksum=" << last_val_target_checksum
+                      << "\n";
+            {
+                std::ostringstream capture;
+                std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                          << cfg.max_steps << " begin phase=validation_sampled_ar_ce\n";
+                last_validation_sampled_ar_rc =
+                    print_sampled_ar_ce_objective_json(cfg, program, val_batch, "validation");
+                std::cout.rdbuf(old);
+                last_validation_sampled_ar_stdout = capture.str();
+            }
+            if (last_validation_sampled_ar_rc != 0) {
+                error = "native dense-JEPA dataset loop validation sampled AR CE substep failed";
+                break;
+            }
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " end phase=validation_sampled_ar_ce"
+                      << " rc=" << last_validation_sampled_ar_rc
+                      << "\n";
+            {
+                Config step_cfg = cfg;
+                step_cfg.train_dense_jepa_loop_step = false;
+                step_cfg.train_dense_jepa_dataset_loop = false;
+                std::ostringstream capture;
+                std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                          << cfg.max_steps
+                          << " begin phase=validation_dense_jepa_composed_train_step\n";
+                last_validation_dense_jepa_step_rc =
+                    print_dense_jepa_composed_train_step_json(step_cfg, program);
+                std::cout.rdbuf(old);
+                last_validation_dense_jepa_step_stdout = capture.str();
+            }
+            if (last_validation_dense_jepa_step_rc != 0) {
+                error = "native dense-JEPA dataset loop validation composed train-step substep failed";
+                break;
+            }
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                      << cfg.max_steps
+                      << " end phase=validation_dense_jepa_composed_train_step"
+                      << " rc=" << last_validation_dense_jepa_step_rc
+                      << "\n";
+        }
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
+                  << cfg.max_steps
+                  << " complete"
+                  << " steps_completed=" << steps_completed
+                  << " train_batches_sampled=" << train_batches_sampled
+                  << " validation_batches_sampled=" << validation_batches_sampled
+                  << "\n";
+        if (progress_due(step)) {
+            const double elapsed = elapsed_seconds();
+            const double steps_per_second = elapsed > 0.0 ? static_cast<double>(steps_completed) / elapsed : 0.0;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] progress"
+                      << " step=" << steps_completed << "/" << cfg.max_steps
+                      << " elapsed_seconds=" << elapsed
+                      << " steps_per_second=" << steps_per_second
+                      << " train_batches_sampled=" << train_batches_sampled
+                      << " validation_batches_sampled=" << validation_batches_sampled
+                      << " last_train_token_checksum=" << last_train_token_checksum
+                      << " last_train_target_checksum=" << last_train_target_checksum
+                      << " last_sampled_ar_rc=" << last_sampled_ar_rc
+                      << " last_dense_jepa_step_rc=" << last_dense_jepa_step_rc
+                      << "\n";
+        }
+    }
+
+    std::filesystem::path checkpoint_path;
+    std::filesystem::path done_path;
+    if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] writing native dense-JEPA metadata"
+                  << " output_dir=" << cfg.output_dir
+                  << "\n";
+        try {
+            std::filesystem::create_directories(cfg.output_dir);
+            checkpoint_path =
+                std::filesystem::path(cfg.output_dir) /
+                "dense_jepa_native_loop_metadata_00000000.json";
+            done_path =
+                std::filesystem::path(cfg.output_dir) /
+                "dense_jepa_native_loop_metadata_DONE";
+            {
+                std::ofstream out(checkpoint_path);
+                if (!out) {
+                    error = "failed to open dense-JEPA native loop metadata for writing";
+                } else {
+                    out << "{\n"
+                        << "  \"format\": \"nfn-native-family-dataset-loop-v1\",\n"
+                        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+                        << "  \"steps_completed\": " << steps_completed << ",\n"
+                        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+                        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+                        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+                        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_dense_jepa_composed_train_step\"\n"
+                        << "}\n";
+                }
+            }
+            if (error.empty()) {
+                std::ofstream done(done_path);
+                if (!done) {
+                    error = "failed to write dense-JEPA native loop metadata DONE marker";
+                } else {
+                    done << "done\n";
+                    checkpoint_written = true;
+                }
+            }
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+    const bool passed = error.empty() && steps_completed == cfg.max_steps;
+    std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+              << "] native dense-JEPA dataset loop finished"
+              << " passed=" << (passed ? "true" : "false")
+              << " steps_completed=" << steps_completed
+              << " elapsed_seconds=" << elapsed_seconds()
+              << " error=\"" << error << "\""
+              << "\n";
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-family-dataset-loop-ran" : "native-family-dataset-loop-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-family-dataset-loop\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"production_loop_gap\": \"sampled token batches now drive sampled AR CE plus the dense-JEPA CUDA Tile substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state\",\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"persistent-full-size-family-parameter-state\"\n"
+        << "  ],\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
+        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_dense_jepa_composed_train_step\",\n"
+        << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
+        << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"token_shards\": ";
+    if (dataset_loaded) {
+        std::cout << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan);
+    } else {
+        std::cout << "null";
+    }
+    std::cout
+        << ",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
+        << cfg.learning_rate
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
+        << "  \"steps_completed\": " << steps_completed << ",\n"
+        << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
+        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+        << "  \"last_train_token_checksum\": " << last_train_token_checksum << ",\n"
+        << "  \"last_train_target_checksum\": " << last_train_target_checksum << ",\n"
+        << "  \"last_validation_token_checksum\": " << last_val_token_checksum << ",\n"
+        << "  \"last_validation_target_checksum\": " << last_val_target_checksum << ",\n"
+        << "  \"last_sampled_ar_returncode\": " << last_sampled_ar_rc << ",\n"
+        << "  \"last_validation_sampled_ar_returncode\": " << last_validation_sampled_ar_rc << ",\n"
+        << "  \"last_dense_jepa_step_returncode\": " << last_dense_jepa_step_rc << ",\n"
+        << "  \"last_validation_dense_jepa_step_returncode\": " << last_validation_dense_jepa_step_rc << ",\n"
+        << "  \"sampled_family_step_phase\": \"dense_jepa_composed_train_step\",\n"
+        << "  \"validation_steps\": [";
+    for (std::size_t i = 0; i < validation_steps.size(); ++i) {
+        if (i != 0) {
+            std::cout << ", ";
+        }
+        std::cout << validation_steps[i];
+    }
+    std::cout
+        << "],\n"
+        << "  \"last_sampled_ar_stdout_json\": \"" << json_escape(last_sampled_ar_stdout) << "\",\n"
+        << "  \"last_validation_sampled_ar_stdout_json\": \"" << json_escape(last_validation_sampled_ar_stdout) << "\",\n"
+        << "  \"last_dense_jepa_step_stdout_json\": \"" << json_escape(last_dense_jepa_step_stdout) << "\",\n"
+        << "  \"last_validation_dense_jepa_step_stdout_json\": \"" << json_escape(last_validation_dense_jepa_step_stdout) << "\"\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_dense_jepa_composed_train_step_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_dense_family = family == "semantic-dense-jepa" || family == "unknown";
@@ -16129,6 +16525,9 @@ int main(int argc, char** argv) {
         if (cfg.train_dense_jepa_loop_step) {
             return print_dense_jepa_composed_train_step_json(cfg, argv[0]);
         }
+        if (cfg.train_dense_jepa_dataset_loop) {
+            return print_dense_jepa_dataset_loop_json(cfg, argv[0]);
+        }
         if (cfg.smoke_jepa_target_encoder_step) {
             return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
         }
@@ -16286,7 +16685,7 @@ int main(int argc, char** argv) {
             return print_moe_jepa_dataset_loop_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "jepa") {
-            return print_dense_jepa_composed_train_step_json(cfg, argv[0]);
+            return print_dense_jepa_dataset_loop_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-dense-jepa") {
             return print_semantic_dense_jepa_composed_train_step_json(cfg, argv[0]);

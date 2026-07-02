@@ -125,14 +125,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "jepa",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_jepa_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-jepa-objective-native-loop",
+        "sampled-dense-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "Dense JEPA variants run the native token-shard dataset loop with sampled AR CE plus the composed dense-JEPA CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "semantic-dense-jepa",
@@ -510,6 +510,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
         "--train-dense-jepa-loop-step",
+        "--train-dense-jepa-dataset-loop",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
@@ -603,6 +604,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
         "--train-dense-jepa-loop-step",
+        "--train-dense-jepa-dataset-loop",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
@@ -1121,6 +1123,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-dense-jepa-full-loop-step",
                 "--native-cuda-smoke-dense-jepa-train-step",
                 "--native-cuda-train-dense-jepa-loop-step",
+                "--native-cuda-train-dense-jepa-dataset-loop",
                 "--native-cuda-smoke-jepa-ar-loss-step",
                 "--native-cuda-smoke-jepa-projector-step",
                 "--native-cuda-smoke-jepa-target-encoder-step",
@@ -1221,6 +1224,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-dense-jepa-train-step");
             } else if (arg == "--native-cuda-train-dense-jepa-loop-step") {
                 forwarded.push_back("--train-dense-jepa-loop-step");
+            } else if (arg == "--native-cuda-train-dense-jepa-dataset-loop") {
+                forwarded.push_back("--train-dense-jepa-dataset-loop");
             } else if (arg == "--native-cuda-smoke-jepa-ar-loss-step") {
                 forwarded.push_back("--smoke-jepa-ar-loss-step");
             } else if (arg == "--native-cuda-smoke-jepa-projector-step") {

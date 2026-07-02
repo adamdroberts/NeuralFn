@@ -669,9 +669,6 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
-    assert train_step_sentinels["dense_jepa_evo"]["passed"] is True
-    assert train_step_sentinels["dense_jepa_evo"]["status"] == "native-train-step-slice"
-    assert train_step_sentinels["dense_jepa_evo"]["native_runnable"] is True
     assert train_step_sentinels["semantic_dense_jepa_evo"]["passed"] is True
     assert train_step_sentinels["semantic_dense_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is True
@@ -684,6 +681,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["llama"]["native_runnable"] is True
     assert dataset_loop_sentinels["llama"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
+    assert dataset_loop_sentinels["dense_jepa_evo"]["passed"] is True
+    assert dataset_loop_sentinels["dense_jepa_evo"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["dense_jepa_evo"]["native_runnable"] is True
+    assert dataset_loop_sentinels["dense_jepa_evo"]["missing_requirements"] == [
         "persistent-full-size-family-parameter-state"
     ]
     assert dataset_loop_sentinels["mixllama"]["passed"] is True
@@ -5295,7 +5298,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["nanogpt"] == "native-transformer-lm"
     assert statuses["llama"] == "native-family-dataset-loop"
     assert statuses["mixllama"] == "native-family-dataset-loop"
-    assert statuses["dense_jepa_evo"] == "native-train-step-slice"
+    assert statuses["dense_jepa_evo"] == "native-family-dataset-loop"
     assert statuses["moe_jepa_evo"] == "native-family-dataset-loop"
     assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop"
     assert statuses["semantic_dense_jepa_evo"] == "native-train-step-slice"
@@ -5379,8 +5382,9 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "moe-jepa-sampled-family-forward-backward-optimizer-step" in completed_requirements["moe_jepa_evo"]
     assert "family-parameter-layout-checkpoint-inference-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["dense_jepa_evo"] == "covered-dense-jepa-objective"
-    assert missing_requirements["dense_jepa_evo"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["dense_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
     assert "dense-jepa-full-forward-backward-loop-smoke" in completed_requirements["dense_jepa_evo"]
+    assert "dense-jepa-sampled-family-dataset-loop" in completed_requirements["dense_jepa_evo"]
     assert coverage["semantic_dense_jepa_evo"] == "covered-semantic-dense-jepa-objective"
     assert missing_requirements["semantic_dense_jepa_evo"] == ["production-family-forward-backward-optimizer-loop"]
     assert "semantic-dense-planner-alignment-adamw-smoke" in completed_requirements["semantic_dense_jepa_evo"]
@@ -8844,9 +8848,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-dense-jepa-objective",
             "covered-semantic-dense-jepa-objective",
-            "covered-semantic-moe-router-jepa-objective",
             "covered-seq2seq-objective",
             "covered-diffusion-objective",
             "covered-ttt-transformer-lm",
@@ -8861,8 +8863,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             ]
         elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
+            "covered-dense-jepa-objective",
             "covered-standard-moe-transformer-lm",
             "covered-moe-jepa-objective",
+            "covered-semantic-moe-router-jepa-objective",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
@@ -11947,13 +11951,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
     assert jepa_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert jepa_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
         "ar-plus-jepa-loss-composition-smoke",
         "dense-jepa-ar-target-projector-forward-backward-adamw-smoke",
         "dense-jepa-full-forward-backward-loop-smoke",
+        "dense-jepa-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
@@ -12111,21 +12116,28 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert dense_jepa_default_missing_lib.returncode == 2
-    assert "starting native dense-JEPA composed train-step slice" in dense_jepa_default_missing_lib.stderr
+    assert "starting native dense-JEPA dataset loop" in dense_jepa_default_missing_lib.stderr
+    assert "resolving native token shards" in dense_jepa_default_missing_lib.stderr
+    assert "train batch sampled" in dense_jepa_default_missing_lib.stderr
     dense_jepa_default_payload = json.loads(dense_jepa_default_missing_lib.stdout)
-    assert dense_jepa_default_payload["status"] == "native-train-step-slice-failed"
-    assert dense_jepa_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert dense_jepa_default_payload["status"] == "native-family-dataset-loop-failed"
+    assert dense_jepa_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
     assert dense_jepa_default_payload["production_training_loop"] is False
     assert dense_jepa_default_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
     assert dense_jepa_default_payload["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
+        "persistent-full-size-family-parameter-state"
     ]
-    assert [step["name"] for step in dense_jepa_default_payload["substeps"]] == [
-        "dense_jepa_full_forward_backward_loop_train_step_slice"
-    ]
-    assert dense_jepa_default_payload["substeps"][0]["returncode"] == 2
-    dense_jepa_default_substep = json.loads(dense_jepa_default_payload["substeps"][0]["stdout_json"])
-    assert dense_jepa_default_substep["smoke"] == "dense_jepa_full_forward_backward_loop_train_step_slice"
+    assert dense_jepa_default_payload["dataset_loaded"] is True
+    assert dense_jepa_default_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert (
+        dense_jepa_default_payload["kernel_step_source"]
+        == "sampled_ar_ce_plus_dense_jepa_composed_train_step"
+    )
+    assert dense_jepa_default_payload["train_batches_sampled"] == 1
+    assert dense_jepa_default_payload["last_train_token_checksum"] > 0
+    assert dense_jepa_default_payload["last_sampled_ar_returncode"] == 2
+    assert dense_jepa_default_payload["last_dense_jepa_step_returncode"] == 2
+    assert dense_jepa_default_payload["last_dense_jepa_step_stdout_json"] == ""
 
     semantic_dense_plan = subprocess.run(
         [
@@ -13112,6 +13124,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--train-dense-jepa-loop-step" in unified_dense_jepa_train_step_command.stdout
     assert "--tile-ops-lib" in unified_dense_jepa_train_step_command.stdout
     assert "--train-transformer-lm" not in unified_dense_jepa_train_step_command.stdout
+
+    unified_dense_jepa_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "dense-jepa-evo",
+            "--native-cuda-train-dense-jepa-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_dense_jepa_dataset_loop_command.returncode == 0, unified_dense_jepa_dataset_loop_command.stderr
+    assert str(jepa) in unified_dense_jepa_dataset_loop_command.stdout
+    assert "--train-dense-jepa-dataset-loop" in unified_dense_jepa_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_dense_jepa_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_dense_jepa_dataset_loop_command.stdout
 
     unified_semantic_smoke_command = subprocess.run(
         [

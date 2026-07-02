@@ -68,8 +68,8 @@ build_one "jepa" "nfn_jepa_native_train" \
   "semantic JEPA masking, projector/predictor, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-dense-jepa-objective" \
-  "production-family-forward-backward-optimizer-loop" \
-  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,dense-jepa-ar-target-projector-forward-backward-adamw-smoke,dense-jepa-full-forward-backward-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
+  "persistent-full-size-family-parameter-state" \
+  "jepa-target-encoder-forward-smoke,jepa-projector-predictor-latent-loss-smoke,ar-plus-jepa-loss-composition-smoke,dense-jepa-ar-target-projector-forward-backward-adamw-smoke,dense-jepa-full-forward-backward-loop-smoke,dense-jepa-sampled-family-dataset-loop,family-parameter-layout-checkpoint-inference-smoke"
 build_one "semantic-dense-jepa" "nfn_semantic_dense_jepa_native_train" \
   "semantic dense JEPA planner, semantic-alignment, latent loss, and native dataset loop kernels" \
   "nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_semantic_hash_int64,nfn_native_tile_semantic_alignment_loss_items_float32,nfn_native_tile_sum_accumulate_float32,nfn_native_tile_latent_pool_float32,nfn_native_tile_token_cross_entropy_partials_float32,nfn_native_tile_token_cross_entropy_backward_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

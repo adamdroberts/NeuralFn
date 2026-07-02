@@ -327,14 +327,19 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "jepa",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_jepa_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-jepa-objective-native-loop",
+        "geometry_status": "sampled-dense-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": (
+            "Dense JEPA variants run the native token-shard dataset loop with "
+            "sampled AR CE plus the composed dense-JEPA CUDA Tile train-step "
+            "slice; persistent full-size family parameter state remains before "
+            "production training."
+        ),
     },
     {
         "name": "semantic-dense-jepa",
