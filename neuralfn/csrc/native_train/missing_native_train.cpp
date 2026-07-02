@@ -78,6 +78,7 @@ struct Config {
     bool smoke_moe_transformer_block_train_step = false;
     bool smoke_moe_transformer_lm_train_step = false;
     bool smoke_moe_full_loop_step = false;
+    bool train_moe_loop_step = false;
     bool train_moe_jepa_loop_step = false;
     bool train_semantic_router_moe_loop_step = false;
     bool smoke_jepa_projector_step = false;
@@ -364,6 +365,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-block-train-step Launch MoE transformer block forward plus expert backward/AdamW kernels on CUDA\n"
         << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
         << "  --smoke-moe-full-loop-step Launch the standard MoE transformer-LM native loop smoke on CUDA\n"
+        << "  --train-moe-loop-step Run the standard MoE composed native train-step slice\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -450,6 +452,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_transformer_lm_train_step = true;
         } else if (arg == "--smoke-moe-full-loop-step" || arg == "--native-cuda-smoke-moe-full-loop-step") {
             cfg.smoke_moe_full_loop_step = true;
+        } else if (arg == "--train-moe-loop-step" || arg == "--native-cuda-train-moe-loop-step") {
+            cfg.train_moe_loop_step = true;
         } else if (arg == "--train-moe-jepa-loop-step" ||
                    arg == "--native-cuda-train-moe-jepa-loop-step") {
             cfg.train_moe_jepa_loop_step = true;
@@ -12372,6 +12376,96 @@ int print_route_evo_device_controller_smoke_json(const Config& cfg, const char* 
     return passed ? 0 : 2;
 }
 
+int print_standard_moe_composed_train_step_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool moe_family =
+        family.find("moe") != std::string::npos ||
+        family.find("mixllama") != std::string::npos ||
+        family.find("deepseek") != std::string::npos ||
+        family == "unknown";
+    std::string error;
+    std::string moe_stdout;
+    int moe_rc = 2;
+
+    if (!moe_family) {
+        error = "standard MoE composed train-step is only valid for MoE-family native targets";
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native standard-MoE composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        Config moe_cfg = cfg;
+        moe_cfg.smoke_moe_full_loop_step = true;
+        moe_cfg.smoke_moe_transformer_lm_train_step = false;
+        moe_cfg.smoke_moe_transformer_block_train_step = false;
+        moe_cfg.train_moe_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 1/1 standard MoE full forward/backward loop\n";
+            moe_rc = print_moe_transformer_block_smoke_json(moe_cfg, program);
+            std::cout.rdbuf(old);
+            moe_stdout = capture.str();
+        }
+        if (moe_rc != 0) {
+            error = "native standard-MoE composed train-step substep failed";
+        }
+    }
+
+    const bool passed = error.empty() && moe_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"standard_moe_full_forward_backward_loop_train_step_slice\", "
+        << "\"returncode\": " << moe_rc << ", \"stdout_json\": \"" << json_escape(moe_stdout) << "\"}\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_moe_jepa_composed_train_step_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_jepa_family = family == "moe-jepa-evo" || family == "unknown";
@@ -13525,6 +13619,9 @@ int main(int argc, char** argv) {
             cfg.smoke_moe_transformer_lm_train_step || cfg.smoke_moe_full_loop_step) {
             return print_moe_transformer_block_smoke_json(cfg, argv[0]);
         }
+        if (cfg.train_moe_loop_step) {
+            return print_standard_moe_composed_train_step_json(cfg, argv[0]);
+        }
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);
         }
@@ -13599,6 +13696,10 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo") {
             return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "mixllama" ||
+            std::string(NFN_NATIVE_MODEL_FAMILY) == "deepseek-v4") {
+            return print_standard_moe_composed_train_step_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe") {
             return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);

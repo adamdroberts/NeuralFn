@@ -5,11 +5,31 @@
 - Changed the compiled template catalog to report non-dense templates with a
   default compiled native train-step action as `native-train-step-slice` and
   `selected_graph_native_runnable: true`. This currently covers the LLaMA,
-  MoE-JEPA, and semantic-router-MoE coverage classes; the catalog still keeps
-  `production-family-forward-backward-optimizer-loop` in
+  standard-MoE, MoE-JEPA, and semantic-router-MoE coverage classes; the catalog
+  still keeps `production-family-forward-backward-optimizer-loop` in
   `native_training_missing_requirements`, so the status does not overclaim that
   the final multi-step production trainer loop is complete. Families without a
   default train-step slice continue to report `template-native-trainer-missing`.
+
+- Added a real compiled default action for standard MoE native targets.
+  `nfn_mixllama_native_train`, `nfn_deepseek_v4_native_train`, and the explicit
+  `--train-moe-loop-step` / `--native-cuda-train-moe-loop-step` paths now run a
+  composed native train-step slice instead of falling through to the generic
+  missing-trainer message. The slice executes the standard MoE full
+  forward/backward-loop substep through the compiled C++ boundary, returns one
+  JSON payload with substep JSON, and keeps `production_training_loop: false`
+  plus `production-family-forward-backward-optimizer-loop` in the missing
+  requirements until the full dataset trainer is implemented. Verification:
+  rebuilt missing-family native targets, rebuilt the unified native frontend
+  and GPT catalog binaries, ran the direct `nfn_mixllama_native_train` default
+  path with a missing Tile library to verify structured substep failure instead
+  of the generic missing-trainer path, verified the unified
+  `--native-cuda-train-moe-loop-step` command, audited
+  `build/nfn-native-train --list-templates --json` moving the remaining
+  non-runnable count from 29 to 22, ran the no-Torch verifier, focused catalog
+  pytest coverage, source marker checks, and `git diff --check`. The broad
+  missing-family pytest was interrupted after producing no output for about two
+  minutes.
 
 - Added a pre-step progress line for dense GPT CUDA Tile training. Before the
   first heavy optimizer step, and again on the configured progress cadence, the

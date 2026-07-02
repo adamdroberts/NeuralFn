@@ -672,6 +672,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["llama"]["passed"] is True
     assert train_step_sentinels["llama"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["llama"]["native_runnable"] is True
+    assert train_step_sentinels["mixllama"]["passed"] is True
+    assert train_step_sentinels["mixllama"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["mixllama"]["native_runnable"] is True
     assert train_step_sentinels["moe_jepa_evo"]["passed"] is True
     assert train_step_sentinels["moe_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["moe_jepa_evo"]["native_runnable"] is True
@@ -679,9 +682,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["semantic_router_moe_modern"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
     missing_sentinels = linked_catalog["covered_native_sentinels"]
-    assert missing_sentinels["mixllama"]["passed"] is True
-    assert missing_sentinels["mixllama"]["status"] == "template-native-trainer-missing"
-    assert missing_sentinels["mixllama"]["native_runnable"] is False
+    assert missing_sentinels["semantic_dense_jepa_evo"]["passed"] is True
+    assert missing_sentinels["semantic_dense_jepa_evo"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is False
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5268,6 +5271,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
     assert statuses["llama"] == "native-train-step-slice"
+    assert statuses["mixllama"] == "native-train-step-slice"
     assert statuses["moe_jepa_evo"] == "native-train-step-slice"
     assert statuses["semantic_router_moe"] == "native-train-step-slice"
     runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
@@ -5276,9 +5280,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert runnable["gpt3"] is True
     assert runnable["nanogpt"] is True
     assert runnable["llama"] is True
+    assert runnable["mixllama"] is True
     assert runnable["moe_jepa_evo"] is True
     assert runnable["semantic_router_moe"] is True
-    assert runnable["mixllama"] is False
+    assert runnable["semantic_dense_jepa_evo"] is False
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
@@ -8782,6 +8787,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
+            "covered-standard-moe-transformer-lm",
             "covered-moe-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
         }:
@@ -11646,6 +11652,45 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_moe_swiglu_backward_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
     assert "nfn_native_tile_adamw_step_float32" in moe_full_loop_smoke_payload["loop_composition_stages"]
 
+    mixllama_default_train_step = subprocess.run(
+        [
+            str(mixllama),
+            "--template-name",
+            "mixllama",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--max-steps",
+            "2",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert mixllama_default_train_step.returncode == 2
+    assert "native CUDA Tile trainer for mixllama is not implemented yet" not in mixllama_default_train_step.stderr
+    assert "starting native standard-MoE composed train-step slice" in mixllama_default_train_step.stderr
+    mixllama_train_step_payload = json.loads(mixllama_default_train_step.stdout)
+    assert mixllama_train_step_payload["status"] == "native-train-step-slice-failed"
+    assert mixllama_train_step_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert mixllama_train_step_payload["production_training_loop"] is False
+    assert mixllama_train_step_payload["compiled_native_boundary"] is True
+    assert mixllama_train_step_payload["torch_required"] is False
+    assert mixllama_train_step_payload["graph_editor_tensor_flow"] is False
+    assert mixllama_train_step_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [step["name"] for step in mixllama_train_step_payload["substeps"]] == [
+        "standard_moe_full_forward_backward_loop_train_step_slice"
+    ]
+    assert mixllama_train_step_payload["substeps"][0]["returncode"] == 2
+    mixllama_substep_payload = json.loads(mixllama_train_step_payload["substeps"][0]["stdout_json"])
+    assert mixllama_substep_payload["smoke"] == "standard_moe_full_forward_backward_loop_train_step_slice"
+
     moe_jepa_plan = subprocess.run(
         [
             str(moe_jepa),
@@ -12663,6 +12708,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-moe-full-loop-step" in unified_moe_full_loop_smoke_command.stdout
     assert "--tile-ops-lib" in unified_moe_full_loop_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_moe_full_loop_smoke_command.stdout
+
+    unified_standard_moe_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "mixllama",
+            "--native-cuda-train-moe-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_standard_moe_train_step_command.returncode == 0, unified_standard_moe_train_step_command.stderr
+    assert str(mixllama) in unified_standard_moe_train_step_command.stdout
+    assert "--train-moe-loop-step" in unified_standard_moe_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_standard_moe_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_standard_moe_train_step_command.stdout
 
     unified_jepa_smoke_command = subprocess.run(
         [

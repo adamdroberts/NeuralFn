@@ -1235,12 +1235,13 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
 }
 REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "llama",
+    "mixllama",
     "moe_jepa_evo",
     "semantic_router_moe_modern",
 )
 REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = (
-    "mixllama",
     "semantic_dense_jepa_evo",
+    "seq2seq",
 )
 NATIVE_TEMPLATE_CATALOG_ENTRYPOINTS = (
     "native_gpt_linked_list_templates",

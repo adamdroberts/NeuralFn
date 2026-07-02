@@ -544,6 +544,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-moe-transformer-lm-train-step",
         "--smoke-moe-full-loop-step",
         "--smoke-moe-jepa-loss-composition-step",
+        "--train-moe-loop-step",
         "--train-moe-jepa-loop-step",
         "--train-semantic-router-moe-loop-step",
         "--smoke-norm-residual-step",
@@ -621,6 +622,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-moe-transformer-lm-train-step",
         "--smoke-moe-full-loop-step",
         "--smoke-moe-jepa-loss-composition-step",
+        "--train-moe-loop-step",
         "--train-moe-jepa-loop-step",
         "--train-semantic-router-moe-loop-step",
         "--smoke-semantic-alignment-step",
@@ -1223,6 +1225,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-moe-full-loop-step");
             } else if (arg == "--native-cuda-smoke-moe-jepa-loss-composition-step") {
                 forwarded.push_back("--smoke-moe-jepa-loss-composition-step");
+            } else if (arg == "--native-cuda-train-moe-loop-step") {
+                forwarded.push_back("--train-moe-loop-step");
             } else if (arg == "--native-cuda-train-moe-jepa-loop-step") {
                 forwarded.push_back("--train-moe-jepa-loop-step");
             } else if (arg == "--native-cuda-train-semantic-router-moe-loop-step") {
