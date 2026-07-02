@@ -483,14 +483,14 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "universal-llama",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_universal_llama_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-universal-transformer-native-loop",
+        "geometry_status": "sampled-universal-transformer-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "Universal transformer recurrent/halting training needs a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": "Universal transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed recurrent/ACT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
 )
 

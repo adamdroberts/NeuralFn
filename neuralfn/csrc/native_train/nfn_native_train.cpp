@@ -257,14 +257,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "universal-llama",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_universal_llama_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-universal-transformer-native-loop",
+        "sampled-universal-transformer-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Universal transformer recurrent/halting training needs a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "Universal transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed recurrent/ACT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
 };
 
@@ -626,6 +626,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
         "--smoke-universal-transformer-loop-step",
+        "--train-universal-dataset-loop",
         "--train-universal-loop-step",
         "--smoke-qkv-layout-step",
         "--smoke-tile-ops",
@@ -713,6 +714,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
         "--smoke-universal-transformer-loop-step",
+        "--train-universal-dataset-loop",
         "--train-universal-loop-step",
         "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
@@ -1229,6 +1231,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-universal-act-halt-step",
                 "--native-cuda-smoke-universal-recurrent-step",
                 "--native-cuda-smoke-universal-transformer-loop-step",
+                "--native-cuda-train-universal-dataset-loop",
                 "--native-cuda-train-universal-loop-step",
                 "--native-cuda-smoke-optimizer-step",
                 "--native-cuda-smoke-lm-step",
@@ -1387,6 +1390,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-universal-transformer-loop-step");
             } else if (arg == "--native-cuda-train-universal-loop-step") {
                 forwarded.push_back("--train-universal-loop-step");
+            } else if (arg == "--native-cuda-train-universal-dataset-loop") {
+                forwarded.push_back("--train-universal-dataset-loop");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {

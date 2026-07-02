@@ -1236,7 +1236,6 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
 REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "jamba",
     "hnet_lm",
-    "universal_llama",
 )
 REQUIRED_NATIVE_DATASET_LOOP_TEMPLATE_SENTINELS = (
     "llama",
@@ -1246,6 +1245,7 @@ REQUIRED_NATIVE_DATASET_LOOP_TEMPLATE_SENTINELS = (
     "seq2seq",
     "diffusion",
     "ttt_llama",
+    "universal_llama",
     "moe_jepa_evo",
     "moe_jepa_evo_modern",
     "semantic_router_moe_modern",

@@ -96,8 +96,8 @@ Compiled native template catalogs and per-template plan JSON include
 shipped presets are classified by the strongest native trainer loop currently
 available plus any remaining production-state gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
-MoE/JEPA, seq2seq, diffusion, TTT, Jamba, HNet byte-LM, and universal
-transformer families. LLaMA-family, seq2seq, diffusion, and TTT entries now report native
+MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet byte-LM
+families. LLaMA-family, seq2seq, diffusion, TTT, and universal-transformer entries now report native
 family dataset-loop coverage while retaining
 `persistent-full-size-family-parameter-state` until full-size checkpoint and
 inference metadata land. LLaMA-family entries now list completed smoke-backed

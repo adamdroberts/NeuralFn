@@ -916,7 +916,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-universal-transformer-lm") {
-        return {"production-family-forward-backward-optimizer-loop"};
+        return {"persistent-full-size-family-parameter-state"};
     }
     return {"classify-template-native-requirements"};
 }
@@ -1054,6 +1054,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "universal-recurrent-linear-mse-adamw-smoke",
             "universal-act-halt-loss-gradient-smoke",
             "universal-transformer-loop-smoke",
+            "universal-sampled-family-dataset-loop",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
@@ -1087,8 +1088,7 @@ bool custom_graph_template_metadata_found(const Config& cfg);
 bool selected_template_has_native_train_step_slice(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
     return coverage_class == "covered-jamba-hybrid-mamba-transformer-lm" ||
-        coverage_class == "covered-hnet-byte-lm" ||
-        coverage_class == "covered-universal-transformer-lm";
+        coverage_class == "covered-hnet-byte-lm";
 }
 
 bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
@@ -1101,7 +1101,8 @@ bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
         coverage_class == "covered-semantic-moe-router-jepa-objective" ||
         coverage_class == "covered-seq2seq-objective" ||
         coverage_class == "covered-diffusion-objective" ||
-        coverage_class == "covered-ttt-transformer-lm";
+        coverage_class == "covered-ttt-transformer-lm" ||
+        coverage_class == "covered-universal-transformer-lm";
 }
 
 bool selected_graph_is_native_runnable(const Config& cfg) {

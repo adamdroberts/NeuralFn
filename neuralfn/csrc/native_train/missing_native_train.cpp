@@ -95,6 +95,7 @@ struct Config {
     bool train_ttt_dataset_loop = false;
     bool train_hnet_loop_step = false;
     bool train_universal_loop_step = false;
+    bool train_universal_dataset_loop = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -398,6 +399,7 @@ void print_usage(const char* program) {
         << "  --train-ttt-dataset-loop Run the TTT native dataset loop over token shards\n"
         << "  --train-hnet-loop-step Run the HNet composed native train-step slice\n"
         << "  --train-universal-loop-step Run the universal-transformer composed native train-step slice\n"
+        << "  --train-universal-dataset-loop Run the universal-transformer native dataset loop over token shards\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -533,6 +535,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-universal-loop-step" ||
                    arg == "--native-cuda-train-universal-loop-step") {
             cfg.train_universal_loop_step = true;
+        } else if (arg == "--train-universal-dataset-loop" ||
+                   arg == "--native-cuda-train-universal-dataset-loop") {
+            cfg.train_universal_dataset_loop = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -760,6 +765,8 @@ void print_json(const Config& cfg, const char* program) {
         std::string(NFN_NATIVE_MODEL_FAMILY) == "diffusion";
     const bool ttt_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama";
+    const bool universal_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama";
     const bool family_dataset_loop_available =
         llama_dataset_loop_available ||
         dense_jepa_dataset_loop_available ||
@@ -769,7 +776,8 @@ void print_json(const Config& cfg, const char* program) {
         semantic_router_moe_dataset_loop_available ||
         seq2seq_dataset_loop_available ||
         diffusion_dataset_loop_available ||
-        ttt_dataset_loop_available;
+        ttt_dataset_loop_available ||
+        universal_dataset_loop_available;
     const std::string status =
         native_coverage_complete ? "native-trainer-covered"
         : (family_dataset_loop_available ? "native-family-dataset-loop-covered"
@@ -787,6 +795,7 @@ void print_json(const Config& cfg, const char* program) {
         : seq2seq_dataset_loop_available ? "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
         : diffusion_dataset_loop_available ? "sampled_ar_ce_plus_diffusion_full_loop_step"
         : ttt_dataset_loop_available ? "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
+        : universal_dataset_loop_available ? "sampled_ar_ce_plus_universal_transformer_loop_step"
         : (standard_moe_dataset_loop_available ? "sampled_ar_ce_plus_sampled_standard_moe_family_step"
                                                : "none");
 
@@ -17530,6 +17539,22 @@ int main(int argc, char** argv) {
                 "universal transformer loop",
                 "universal_transformer_loop_train_step_slice");
         }
+        if (cfg.train_universal_dataset_loop) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_universal_transformer_loop_step = true;
+            substep_cfg.train_universal_loop_step = false;
+            substep_cfg.train_universal_dataset_loop = false;
+            return print_single_substep_dataset_loop_json(
+                cfg, argv[0], "universal transformer",
+                "universal dataset loop is only valid for the universal-llama native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_universal_act_halt_smoke_json,
+                "universal_transformer_loop_step",
+                "universal_transformer_loop_train_step_slice",
+                "sampled_ar_ce_plus_universal_transformer_loop_step",
+                "universal_transformer");
+        }
         if (cfg.smoke_semantic_alignment_step || cfg.smoke_semantic_target_shard_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
         }
@@ -17661,11 +17686,13 @@ int main(int argc, char** argv) {
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama") {
             Config substep_cfg = cfg;
             substep_cfg.smoke_universal_transformer_loop_step = true;
-            return print_single_substep_composed_train_step_json(
+            return print_single_substep_dataset_loop_json(
                 cfg, argv[0], "universal transformer", "", true, substep_cfg,
                 print_universal_act_halt_smoke_json,
-                "universal transformer loop",
-                "universal_transformer_loop_train_step_slice");
+                "universal_transformer_loop_step",
+                "universal_transformer_loop_train_step_slice",
+                "sampled_ar_ce_plus_universal_transformer_loop_step",
+                "universal_transformer");
         }
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a universal-transformer native dataset-loop default. Bare
+  `nfn_universal_llama_native_train ...` and
+  `nfn-native-train --base-model universal-llama ...` now resolve native uint16
+  token shards, sample train and validation batches, run sampled AR CE, then
+  run the composed recurrent/ACT CUDA Tile train-step slice without Torch or
+  graph-editor tensor flow. Runtime and plan JSON report
+  `kernel_step_source: "sampled_ar_ce_plus_universal_transformer_loop_step"`,
+  `native-family-dataset-loop`, and
+  `persistent-full-size-family-parameter-state` as the remaining
+  production-state gap; the older `--train-universal-loop-step` one-shot slice
+  remains available explicitly.
+
 - Added a TTT native dataset-loop default. Bare `nfn_ttt_llama_native_train
   ...` and `nfn-native-train --base-model ttt-llama ...` now resolve native
   uint16 token shards, sample train and validation batches, run sampled AR CE,
