@@ -224,14 +224,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "diffusion",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_diffusion_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-diffusion-native-loop",
+        "sampled-diffusion-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Diffusion objective training needs a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "Diffusion variants run the native token-shard dataset loop with sampled AR CE plus the composed timestep/mask/objective CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "ttt-llama",
@@ -482,6 +482,53 @@ std::string forwarded_value_or_empty(const std::vector<std::string>& args, const
     return {};
 }
 
+std::string forwarded_value_or_default(
+    const std::vector<std::string>& args,
+    const std::string_view flag,
+    const std::string_view fallback) {
+    std::string value = forwarded_value_or_empty(args, flag);
+    return value.empty() ? std::string(fallback) : value;
+}
+
+bool launch_progress_enabled() {
+    const char* value = std::getenv("NFN_NATIVE_TRAIN_LAUNCH_PROGRESS");
+    return value == nullptr || std::string_view(value) != "0";
+}
+
+void print_launch_progress(
+    const ModelEntry& entry,
+    const std::vector<std::string>& forwarded,
+    const std::vector<std::string>& command) {
+    if (!launch_progress_enabled() || command.empty()) {
+        return;
+    }
+    const std::string dataset = forwarded_value_or_empty(forwarded, "--dataset-alias").empty()
+        ? forwarded_value_or_default(forwarded, "--dataset-path", DEFAULT_TINYSTORIES_ALIAS)
+        : forwarded_value_or_empty(forwarded, "--dataset-alias");
+    std::cerr << "[nfn-native-train] launching native target"
+              << " model=" << entry.name
+              << " target=" << entry.native_target
+              << " executable=" << command.front()
+              << " template=" << forwarded_value_or_default(forwarded, "--template-name", "default")
+              << " graph_file=" << forwarded_value_or_default(forwarded, "--graph-file", "")
+              << " dataset=" << dataset
+              << " max_steps=" << forwarded_value_or_default(forwarded, "--max-steps", "20000")
+              << " batch_size=" << forwarded_value_or_default(forwarded, "--batch-size", "64")
+              << " train_seq_len=" << forwarded_value_or_default(forwarded, "--train-seq-len", "1024")
+              << " train_batch_tokens="
+              << forwarded_value_or_default(forwarded, "--train-batch-tokens", "524288")
+              << " eval_every_steps="
+              << forwarded_value_or_default(forwarded, "--eval-every-steps", "250")
+              << " progress_every_steps="
+              << forwarded_value_or_default(forwarded, "--progress-every-steps", "child-default")
+              << " learning_rate="
+              << forwarded_value_or_default(forwarded, "--learning-rate", "0.0006")
+              << " optimizer=adamw"
+              << " torch_required=false"
+              << " graph_editor_tensor_flow=false"
+              << '\n';
+}
+
 bool has_template_or_graph_selector(const std::vector<std::string>& args) {
     return has_forwarded_value_flag(args, "--template-name") ||
            has_forwarded_value_flag(args, "--template") ||
@@ -515,6 +562,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
         "--train-diffusion-loop-step",
+        "--train-diffusion-dataset-loop",
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-family-layout-checkpoint-step",
@@ -611,6 +659,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
         "--train-diffusion-loop-step",
+        "--train-diffusion-dataset-loop",
         "--smoke-family-layout-checkpoint-step",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
@@ -1135,6 +1184,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-diffusion-objective-step",
                 "--native-cuda-smoke-diffusion-full-loop-step",
                 "--native-cuda-train-diffusion-loop-step",
+                "--native-cuda-train-diffusion-dataset-loop",
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
                 "--native-cuda-smoke-hnet-byte-lm-loop-step",
@@ -1246,6 +1296,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-diffusion-full-loop-step");
             } else if (arg == "--native-cuda-train-diffusion-loop-step") {
                 forwarded.push_back("--train-diffusion-loop-step");
+            } else if (arg == "--native-cuda-train-diffusion-dataset-loop") {
+                forwarded.push_back("--train-diffusion-dataset-loop");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
@@ -1506,6 +1558,7 @@ int main(int argc, char** argv) {
                 print_command(command);
                 return 0;
             }
+            print_launch_progress(*model_entry, forwarded, command);
             return exec_command(command);
         }
         std::cerr
@@ -1544,6 +1597,7 @@ int main(int argc, char** argv) {
             print_command(command);
             return 0;
         }
+        print_launch_progress(*model_entry, forwarded, command);
         return exec_command(command);
     }
 
@@ -1566,6 +1620,7 @@ int main(int argc, char** argv) {
             print_command(command);
             return 0;
         }
+        print_launch_progress(*model_entry, forwarded, command);
         return exec_command(command);
     }
 
@@ -1598,5 +1653,6 @@ int main(int argc, char** argv) {
         print_command(command);
         return 0;
     }
+    print_launch_progress(*model_entry, forwarded, command);
     return exec_command(command);
 }

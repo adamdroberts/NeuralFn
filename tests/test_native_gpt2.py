@@ -5308,14 +5308,14 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["semantic_router_moe"] == "native-family-dataset-loop"
     assert statuses["seq2seq"] == "native-family-dataset-loop"
     assert statuses["seq2seq_modern"] == "native-family-dataset-loop"
+    assert statuses["diffusion"] == "native-family-dataset-loop"
+    assert statuses["diffusion_modern"] == "native-family-dataset-loop"
     for template_name in (
         "jamba",
-        "diffusion",
         "ttt_llama",
         "hnet_lm",
         "universal_llama",
         "jamba_modern",
-        "diffusion_modern",
         "ttt_llama_modern",
         "hnet_lm_modern",
         "universal_llama_modern",
@@ -5447,11 +5447,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["diffusion"] == "covered-diffusion-objective"
-    assert missing_requirements["diffusion"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["diffusion"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
         "diffusion-full-loop-smoke",
+        "diffusion-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert missing_requirements["gpt2"] == []
@@ -8853,19 +8854,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-diffusion-objective",
             "covered-ttt-transformer-lm",
             "covered-jamba-hybrid-mamba-transformer-lm",
             "covered-hnet-byte-lm",
             "covered-universal-transformer-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
-        elif preset_payload["native_training_coverage_class"] == "covered-seq2seq-objective":
-            assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
-            assert preset_payload["selected_graph_native_runnable"] is True
-            assert preset_payload["native_training_missing_requirements"] == [
-                "production-family-forward-backward-optimizer-loop"
-            ]
         elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
             "covered-dense-jepa-objective",
@@ -8873,6 +8867,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-standard-moe-transformer-lm",
             "covered-moe-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
+            "covered-seq2seq-objective",
+            "covered-diffusion-objective",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
@@ -12468,13 +12464,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_plan.returncode == 0, diffusion_plan.stderr
     diffusion_payload = json.loads(diffusion_plan.stdout)
     assert diffusion_payload["model_family"] == "diffusion"
-    assert diffusion_payload["status"] == "family-native-trainer-missing"
+    assert diffusion_payload["status"] == "native-family-dataset-loop-covered"
+    assert diffusion_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert diffusion_payload["kernel_step_source"] == "sampled_ar_ce_plus_diffusion_full_loop_step"
     assert diffusion_payload["native_training_coverage_class"] == "covered-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert diffusion_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
         "diffusion-full-loop-smoke",
+        "diffusion-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert diffusion_payload["compiled_native_boundary"] is True
@@ -13609,6 +13608,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-diffusion-full-loop-step" in unified_diffusion_full_loop_smoke_command.stdout
     assert "--tile-ops-lib" in unified_diffusion_full_loop_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_diffusion_full_loop_smoke_command.stdout
+
+    unified_diffusion_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "diffusion",
+            "--native-cuda-train-diffusion-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_diffusion_dataset_loop_command.returncode == 0, unified_diffusion_dataset_loop_command.stderr
+    assert str(diffusion) in unified_diffusion_dataset_loop_command.stdout
+    assert "--train-diffusion-dataset-loop" in unified_diffusion_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_diffusion_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_diffusion_dataset_loop_command.stdout
 
     unified_seq2seq_smoke_command = subprocess.run(
         [

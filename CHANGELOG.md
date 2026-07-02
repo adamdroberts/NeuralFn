@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added immediate launch visibility to the unified native training frontend.
+  `nfn-native-train` now prints a pre-`execvp` stderr banner with the resolved
+  native target, executable, template or graph selector, dataset, core schedule
+  fields, AdamW optimizer name, and the no-Torch/no-graph-editor training
+  contract before handing off to the selected CUDA Tile C++ trainer. Set
+  `NFN_NATIVE_TRAIN_LAUNCH_PROGRESS=0` to suppress this wrapper-side banner;
+  stdout remains reserved for `--print-command` or the child trainer's final
+  JSON payload.
+
 - Added a seq2seq native dataset-loop default. Bare `nfn_seq2seq_native_train
   ...` and `nfn-native-train --base-model seq2seq ...` now resolve native
   uint16 token shards, sample train and validation batches, run sampled AR CE,
