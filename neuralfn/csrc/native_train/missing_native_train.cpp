@@ -80,6 +80,7 @@ struct Config {
     bool smoke_moe_full_loop_step = false;
     bool train_moe_loop_step = false;
     bool train_moe_jepa_loop_step = false;
+    bool train_moe_jepa_dataset_loop = false;
     bool train_semantic_router_moe_loop_step = false;
     bool train_jamba_loop_step = false;
     bool train_seq2seq_loop_step = false;
@@ -374,6 +375,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
         << "  --smoke-moe-full-loop-step Launch the standard MoE transformer-LM native loop smoke on CUDA\n"
         << "  --train-moe-loop-step Run the standard MoE composed native train-step slice\n"
+        << "  --train-moe-jepa-dataset-loop Run the MoE-JEPA native dataset loop over token shards\n"
         << "  --train-jamba-loop-step Run the Jamba composed native train-step slice\n"
         << "  --train-seq2seq-loop-step Run the seq2seq composed native train-step slice\n"
         << "  --train-diffusion-loop-step Run the diffusion composed native train-step slice\n"
@@ -473,6 +475,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-moe-jepa-loop-step" ||
                    arg == "--native-cuda-train-moe-jepa-loop-step") {
             cfg.train_moe_jepa_loop_step = true;
+        } else if (arg == "--train-moe-jepa-dataset-loop" ||
+                   arg == "--native-cuda-train-moe-jepa-dataset-loop") {
+            cfg.train_moe_jepa_dataset_loop = true;
         } else if (arg == "--train-semantic-router-moe-loop-step" ||
                    arg == "--native-cuda-train-semantic-router-moe-loop-step") {
             cfg.train_semantic_router_moe_loop_step = true;
@@ -12611,6 +12616,251 @@ int print_moe_jepa_composed_train_step_json(const Config& cfg, const char* progr
     return passed ? 0 : 2;
 }
 
+std::uint64_t checksum_u16(const std::vector<std::uint16_t>& values) {
+    std::uint64_t hash = 1469598103934665603ull;
+    for (std::uint16_t value : values) {
+        hash ^= static_cast<std::uint64_t>(value);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool moe_jepa_family = family == "moe-jepa-evo" || family == "unknown";
+    std::string error;
+    bool dataset_loaded = false;
+    bool checkpoint_written = false;
+    std::int64_t steps_completed = 0;
+    std::int64_t train_batches_sampled = 0;
+    std::int64_t validation_batches_sampled = 0;
+    std::uint64_t last_train_token_checksum = 0;
+    std::uint64_t last_train_target_checksum = 0;
+    std::uint64_t last_val_token_checksum = 0;
+    std::uint64_t last_val_target_checksum = 0;
+    std::string last_step_stdout;
+    std::string last_validation_stdout;
+    int last_step_rc = 2;
+    int last_validation_rc = 2;
+    neuralfn::native_train::TokenShardDataset dataset;
+    neuralfn::native_train::BatchPlan batch_plan;
+    std::vector<std::int64_t> validation_steps;
+
+    if (!moe_jepa_family) {
+        error = "MoE-JEPA dataset loop is only valid for the moe-jepa-evo native target";
+    }
+    if (error.empty()) {
+        try {
+            dataset = neuralfn::native_train::resolve_token_shards(
+                cfg.dataset_alias,
+                cfg.allow_train_as_val,
+                true);
+            batch_plan = neuralfn::native_train::build_batch_plan(
+                dataset,
+                cfg.train_seq_len,
+                cfg.batch_size,
+                cfg.train_batch_tokens);
+            dataset_loaded = true;
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+
+    neuralfn::native_train::SequentialTokenBatchSampler train_sampler(
+        dataset.train_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::SequentialTokenBatchSampler val_sampler(
+        dataset.val_shards,
+        cfg.train_seq_len,
+        cfg.batch_size);
+    neuralfn::native_train::TokenBatch train_batch;
+    neuralfn::native_train::TokenBatch val_batch;
+
+    if (error.empty()) {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native MoE-JEPA dataset loop"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " eval_every_steps=" << cfg.eval_every_steps
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+    }
+
+    for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
+        if (!train_sampler.next(train_batch)) {
+            train_sampler.reset();
+            if (!train_sampler.next(train_batch)) {
+                error = "not enough train tokens to build one native MoE-JEPA token batch";
+                break;
+            }
+        }
+        train_batches_sampled += 1;
+        last_train_token_checksum = checksum_u16(train_batch.tokens);
+        last_train_target_checksum = checksum_u16(train_batch.targets);
+
+        Config step_cfg = cfg;
+        step_cfg.train_moe_jepa_dataset_loop = false;
+        step_cfg.train_moe_jepa_loop_step = true;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] train step "
+                      << step << "/" << cfg.max_steps
+                      << " sampled_tokens=" << train_batch.tokens.size()
+                      << " token_checksum=" << last_train_token_checksum
+                      << " target_checksum=" << last_train_target_checksum
+                      << "\n";
+            last_step_rc = print_moe_jepa_composed_train_step_json(step_cfg, program);
+            std::cout.rdbuf(old);
+            last_step_stdout = capture.str();
+        }
+        if (last_step_rc != 0) {
+            error = "native MoE-JEPA dataset loop train-step substep failed";
+            break;
+        }
+        steps_completed = step;
+
+        if (cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) {
+            if (!val_sampler.next(val_batch)) {
+                val_sampler.reset();
+                if (!val_sampler.next(val_batch)) {
+                    error = "not enough validation tokens to build one native MoE-JEPA token batch";
+                    break;
+                }
+            }
+            validation_batches_sampled += 1;
+            validation_steps.push_back(step);
+            last_val_token_checksum = checksum_u16(val_batch.tokens);
+            last_val_target_checksum = checksum_u16(val_batch.targets);
+            Config val_cfg = cfg;
+            val_cfg.train_moe_jepa_dataset_loop = false;
+            val_cfg.smoke_moe_jepa_loss_composition_step = true;
+            {
+                std::ostringstream capture;
+                std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+                std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] validation step "
+                          << step << "/" << cfg.max_steps
+                          << " sampled_tokens=" << val_batch.tokens.size()
+                          << " token_checksum=" << last_val_token_checksum
+                          << " target_checksum=" << last_val_target_checksum
+                          << "\n";
+                last_validation_rc = print_jepa_ar_loss_smoke_json(val_cfg, program);
+                std::cout.rdbuf(old);
+                last_validation_stdout = capture.str();
+            }
+            if (last_validation_rc != 0) {
+                error = "native MoE-JEPA dataset loop validation substep failed";
+                break;
+            }
+        }
+    }
+
+    std::filesystem::path checkpoint_path;
+    std::filesystem::path done_path;
+    if (error.empty()) {
+        try {
+            std::filesystem::create_directories(cfg.output_dir);
+            checkpoint_path = std::filesystem::path(cfg.output_dir) / "moe_jepa_evo_native_loop_metadata_00000000.json";
+            done_path = std::filesystem::path(cfg.output_dir) / "moe_jepa_evo_native_loop_metadata_DONE";
+            {
+                std::ofstream out(checkpoint_path);
+                if (!out) {
+                    error = "failed to open MoE-JEPA native loop metadata for writing";
+                } else {
+                    out << "{\n"
+                        << "  \"format\": \"nfn-native-family-dataset-loop-v1\",\n"
+                        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+                        << "  \"steps_completed\": " << steps_completed << ",\n"
+                        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+                        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+                        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+                        << "  \"kernel_step_source\": \"compiled_cuda_tile_moe_jepa_substeps\"\n"
+                        << "}\n";
+                }
+            }
+            if (error.empty()) {
+                std::ofstream done(done_path);
+                if (!done) {
+                    error = "failed to write MoE-JEPA native loop metadata DONE marker";
+                } else {
+                    done << "done\n";
+                    checkpoint_written = true;
+                }
+            }
+        } catch (const std::exception& exc) {
+            error = exc.what();
+        }
+    }
+
+    const bool passed = error.empty() && steps_completed == cfg.max_steps;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-family-dataset-loop-ran" : "native-family-dataset-loop-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-family-dataset-loop\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"production_loop_gap\": \"family kernels run as fixed-shape CUDA Tile substeps while token batches drive native loop cadence\",\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"sample-backed-full-family-parameter-state\"\n"
+        << "  ],\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
+        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+        << "  \"kernel_step_source\": \"compiled_cuda_tile_moe_jepa_substeps\",\n"
+        << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
+        << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"token_shards\": ";
+    if (dataset_loaded) {
+        std::cout << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan);
+    } else {
+        std::cout << "null";
+    }
+    std::cout
+        << ",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"steps_completed\": " << steps_completed << ",\n"
+        << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
+        << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
+        << "  \"last_train_token_checksum\": " << last_train_token_checksum << ",\n"
+        << "  \"last_train_target_checksum\": " << last_train_target_checksum << ",\n"
+        << "  \"last_validation_token_checksum\": " << last_val_token_checksum << ",\n"
+        << "  \"last_validation_target_checksum\": " << last_val_target_checksum << ",\n"
+        << "  \"validation_steps\": [";
+    for (std::size_t i = 0; i < validation_steps.size(); ++i) {
+        if (i != 0) {
+            std::cout << ", ";
+        }
+        std::cout << validation_steps[i];
+    }
+    std::cout
+        << "],\n"
+        << "  \"last_train_step_stdout_json\": \"" << json_escape(last_step_stdout) << "\",\n"
+        << "  \"last_validation_stdout_json\": \"" << json_escape(last_validation_stdout) << "\"\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_router_moe_composed_train_step_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_router_family = family == "semantic-router-moe" || family == "unknown";
@@ -13942,6 +14192,9 @@ int main(int argc, char** argv) {
         if (cfg.train_moe_jepa_loop_step) {
             return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
         }
+        if (cfg.train_moe_jepa_dataset_loop) {
+            return print_moe_jepa_dataset_loop_json(cfg, argv[0]);
+        }
         if (cfg.train_semantic_router_moe_loop_step) {
             return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);
         }
@@ -14079,7 +14332,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo") {
-            return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
+            return print_moe_jepa_dataset_loop_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "jepa") {
             return print_dense_jepa_composed_train_step_json(cfg, argv[0]);

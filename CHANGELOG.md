@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a MoE-JEPA native dataset-loop default. The bare
+  `nfn_moe_jepa_evo_native_train ...` path and `nfn-native-train --base-model
+  moe-jepa-evo ...` now resolve native uint16 TinyStories/token shards, sample
+  train batches per step, sample validation batches on `--eval-every-steps`,
+  run the compiled CUDA Tile standard-MoE plus AR+JEPA+router substeps, and
+  write native loop metadata under `--output-dir`. The explicit
+  `--train-moe-jepa-loop-step` / `--native-cuda-train-moe-jepa-loop-step`
+  flags remain the one-shot composed train-step slice, while the new
+  `--train-moe-jepa-dataset-loop` /
+  `--native-cuda-train-moe-jepa-dataset-loop` flags select the dataset loop
+  explicitly. The loop still reports `production_training_loop: false` with
+  `sample-backed-full-family-parameter-state` in
+  `native_training_missing_requirements` because the current CUDA kernels run
+  fixed-shape family substeps while token batches drive native cadence.
+  Verification: rebuilt missing-family native targets and the unified frontend;
+  ran a two-step MoE-JEPA dataset loop on the visible RTX 5090 with
+  `--eval-every-steps 1`, confirmed two train batches, two validation batches,
+  native token-shard checksums, `graph_editor_tensor_flow: false`, and written
+  metadata.
+
 - Added compiled default train-step actions for the remaining non-dense GPT
   template families: Jamba, seq2seq, diffusion, TTT, HNet, and
   universal-transformer. Their direct binaries now accept

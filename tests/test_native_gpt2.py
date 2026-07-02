@@ -11805,8 +11805,47 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert moe_jepa_default_train_step.returncode == 2
     assert "native CUDA Tile trainer for moe-jepa-evo is not implemented yet" not in moe_jepa_default_train_step.stderr
+    assert "starting native MoE-JEPA dataset loop" in moe_jepa_default_train_step.stderr
+    moe_jepa_dataset_loop_payload = json.loads(moe_jepa_default_train_step.stdout)
+    assert moe_jepa_dataset_loop_payload["status"] == "native-family-dataset-loop-failed"
+    assert moe_jepa_dataset_loop_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert moe_jepa_dataset_loop_payload["compiled_native_boundary"] is True
+    assert moe_jepa_dataset_loop_payload["torch_required"] is False
+    assert moe_jepa_dataset_loop_payload["graph_editor_tensor_flow"] is False
+    assert moe_jepa_dataset_loop_payload["dataset_loaded"] is True
+    assert moe_jepa_dataset_loop_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert moe_jepa_dataset_loop_payload["kernel_step_source"] == "compiled_cuda_tile_moe_jepa_substeps"
+    assert moe_jepa_dataset_loop_payload["native_training_missing_requirements"] == [
+        "sample-backed-full-family-parameter-state"
+    ]
+    assert moe_jepa_dataset_loop_payload["train_batches_sampled"] == 1
+    assert moe_jepa_dataset_loop_payload["last_train_token_checksum"] > 0
+    assert "last_train_step_stdout_json" in moe_jepa_dataset_loop_payload
+
+    moe_jepa_explicit_slice = subprocess.run(
+        [
+            str(moe_jepa),
+            "--template-name",
+            "moe_jepa_evo",
+            "--train-moe-jepa-loop-step",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--max-steps",
+            "2",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert moe_jepa_explicit_slice.returncode == 2
     assert "starting native MoE-JEPA composed train-step slice" in moe_jepa_default_train_step.stderr
-    moe_jepa_train_step_payload = json.loads(moe_jepa_default_train_step.stdout)
+    assert "starting native MoE-JEPA composed train-step slice" in moe_jepa_explicit_slice.stderr
+    moe_jepa_train_step_payload = json.loads(moe_jepa_explicit_slice.stdout)
     assert moe_jepa_train_step_payload["status"] == "native-train-step-slice-failed"
     assert moe_jepa_train_step_payload["trainer_loop_status"] == "native-composed-train-step-slice"
     assert moe_jepa_train_step_payload["production_training_loop"] is False
