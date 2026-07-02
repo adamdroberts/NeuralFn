@@ -669,9 +669,6 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
-    assert train_step_sentinels["llama"]["passed"] is True
-    assert train_step_sentinels["llama"]["status"] == "native-train-step-slice"
-    assert train_step_sentinels["llama"]["native_runnable"] is True
     assert train_step_sentinels["dense_jepa_evo"]["passed"] is True
     assert train_step_sentinels["dense_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["dense_jepa_evo"]["native_runnable"] is True
@@ -686,6 +683,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
         assert train_step_sentinels[template_name]["native_runnable"] is True
     dataset_loop_sentinels = linked_catalog["dataset_loop_sentinels"]
+    assert dataset_loop_sentinels["llama"]["passed"] is True
+    assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["llama"]["native_runnable"] is True
+    assert dataset_loop_sentinels["llama"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
     assert dataset_loop_sentinels["mixllama"]["passed"] is True
     assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["mixllama"]["native_runnable"] is True
@@ -5287,7 +5290,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["llama"] == "native-train-step-slice"
+    assert statuses["llama"] == "native-family-dataset-loop"
     assert statuses["mixllama"] == "native-family-dataset-loop"
     assert statuses["dense_jepa_evo"] == "native-train-step-slice"
     assert statuses["moe_jepa_evo"] == "native-family-dataset-loop"
@@ -5325,7 +5328,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "covered-llama-rope-swiglu-transformer-lm"
-    assert missing_requirements["llama"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["llama"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["llama"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -5338,6 +5341,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "packed-qkv-rope-attention-block-integration-smoke",
         "rope-swiglu-block-forward-backward-adamw-smoke",
         "llama-full-forward-backward-loop-smoke",
+        "llama-sampled-ar-plus-composed-step-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "covered-standard-moe-transformer-lm"
@@ -7757,9 +7761,9 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["gpt2-evo"]["status"] == "implemented"
     assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
-    assert models["llama"]["status"] == "family-native-trainer-missing"
+    assert models["llama"]["status"] == "native-family-dataset-loop-covered"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert models["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert models["llama"]["trainer_loop_status"] == "native-family-dataset-loop"
     assert models["mixllama"]["status"] == "native-family-dataset-loop-covered"
     assert models["mixllama"]["trainer_loop_status"] == "native-family-dataset-loop"
 
@@ -7790,7 +7794,7 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["kernel_status"] == "required-tile-symbols-present"
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert registry["llama"]["trainer_loop_status"] == "native-family-dataset-loop"
     assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
     assert registry["moe-jepa-evo"]["geometry_status"] == "requires-moe-jepa-native-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
@@ -8835,7 +8839,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-llama-rope-swiglu-transformer-lm",
             "covered-dense-jepa-objective",
             "covered-semantic-dense-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
@@ -8852,6 +8855,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
                 "production-family-forward-backward-optimizer-loop"
             ]
         elif preset_payload["native_training_coverage_class"] in {
+            "covered-llama-rope-swiglu-transformer-lm",
             "covered-standard-moe-transformer-lm",
             "covered-moe-jepa-objective",
         }:
@@ -8914,11 +8918,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unsupported_template.returncode == 2
     unsupported_payload = json.loads(unsupported_template.stdout)
     assert unsupported_payload["template_name"] == "llama"
-    assert unsupported_payload["selected_graph_support_status"] == "native-train-step-slice"
+    assert unsupported_payload["selected_graph_support_status"] == "native-family-dataset-loop"
     assert unsupported_payload["selected_graph_native_runnable"] is True
     assert unsupported_payload["status"] == "native-transformer-lm-failed"
     assert unsupported_payload["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
+        "persistent-full-size-family-parameter-state"
     ]
 
     unknown_template = subprocess.run(
@@ -11107,7 +11111,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert kernel_statuses["gpt"] == "required-tile-symbols-present"
     assert loop_statuses["gpt"] == "implemented"
     assert kernel_statuses["llama"] == "required-tile-symbols-present"
-    assert loop_statuses["llama"] == "family-native-loop-missing"
+    assert loop_statuses["llama"] == "native-family-dataset-loop"
     assert native_targets["semantic-dense-jepa"] == "nfn_semantic_dense_jepa_native_train"
     assert geometry_statuses["semantic-dense-jepa"] == "requires-semantic-dense-jepa-native-loop"
     assert kernel_statuses["semantic-dense-jepa"] == "required-tile-symbols-present"
@@ -11128,19 +11132,14 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert llama.returncode == 2
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] in {"family-native-trainer-missing", "native-train-step-slice-failed"}
-    if llama_payload["status"] == "native-train-step-slice-failed":
-        assert "native CUDA Tile trainer for llama is not implemented yet" not in llama.stderr
-        assert llama_payload["trainer_loop_status"] == "native-composed-train-step-slice"
-        assert llama_payload["production_training_loop"] is False
-        assert [substep["name"] for substep in llama_payload["substeps"]] == [
-            "llama_full_forward_backward_loop_train_step_slice"
-        ]
-    else:
-        assert "native CUDA Tile trainer for llama is not implemented yet" in llama.stderr
-        assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
-        assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
-        assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert llama_payload["status"] == "native-family-dataset-loop-failed"
+    assert "native CUDA Tile trainer for llama is not implemented yet" not in llama.stderr
+    assert "starting native LLaMA dataset loop" in llama.stderr
+    assert llama_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert llama_payload["production_training_loop"] is False
+    assert llama_payload["native_training_missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11233,9 +11232,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_plan.returncode == 0, llama_plan.stderr
     llama_payload = json.loads(llama_plan.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "family-native-trainer-missing"
+    assert llama_payload["status"] == "native-family-dataset-loop-covered"
     assert llama_payload["kernel_status"] == "required-tile-symbols-missing"
-    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert llama_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert llama_payload["kernel_step_source"] == "sampled_ar_ce_plus_llama_composed_train_step"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11243,7 +11243,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["batch_size"] == 8
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
-    assert llama_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert llama_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert llama_payload["native_training_completed_requirements"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -11256,6 +11256,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "packed-qkv-rope-attention-block-integration-smoke",
         "rope-swiglu-block-forward-backward-adamw-smoke",
         "llama-full-forward-backward-loop-smoke",
+        "llama-sampled-ar-plus-composed-step-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
@@ -11295,22 +11296,26 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert llama_default_train_step.returncode == 2
     assert "native CUDA Tile trainer for llama is not implemented yet" not in llama_default_train_step.stderr
-    assert "starting native LLaMA composed train-step slice" in llama_default_train_step.stderr
+    assert "starting native LLaMA dataset loop" in llama_default_train_step.stderr
+    assert "resolving native token shards" in llama_default_train_step.stderr
+    assert "dataset directory not found" in llama_default_train_step.stderr
     llama_default_payload = json.loads(llama_default_train_step.stdout)
     assert llama_default_payload["model_family"] == "llama"
-    assert llama_default_payload["status"] == "native-train-step-slice-failed"
-    assert llama_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert llama_default_payload["status"] == "native-family-dataset-loop-failed"
+    assert llama_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
     assert llama_default_payload["production_training_loop"] is False
     assert llama_default_payload["compiled_native_boundary"] is True
     assert llama_default_payload["torch_required"] is False
     assert llama_default_payload["graph_editor_tensor_flow"] is False
+    assert llama_default_payload["dataset_loaded"] is False
+    assert llama_default_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert llama_default_payload["kernel_step_source"] == "sampled_ar_ce_plus_llama_composed_train_step"
     assert llama_default_payload["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
+        "persistent-full-size-family-parameter-state"
     ]
-    assert [substep["name"] for substep in llama_default_payload["substeps"]] == [
-        "llama_full_forward_backward_loop_train_step_slice"
-    ]
-    assert llama_default_payload["substeps"][0]["returncode"] == 2
+    assert llama_default_payload["train_batches_sampled"] == 0
+    assert llama_default_payload["last_sampled_ar_returncode"] == 2
+    assert llama_default_payload["last_llama_step_returncode"] == 2
 
     llama_smoke_missing_lib = subprocess.run(
         [
@@ -11539,8 +11544,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_sample.returncode == 0, llama_sample.stderr
     sample_payload = json.loads(llama_sample.stdout)
     assert sample_payload["model_family"] == "llama"
-    assert sample_payload["status"] == "family-native-trainer-missing"
-    assert sample_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert sample_payload["status"] == "native-family-dataset-loop-covered"
+    assert sample_payload["trainer_loop_status"] == "native-family-dataset-loop"
     assert sample_payload["compiled_native_boundary"] is True
     assert sample_payload["torch_required"] is False
     assert sample_payload["graph_editor_tensor_flow"] is False

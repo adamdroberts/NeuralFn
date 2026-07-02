@@ -883,7 +883,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {};
     }
     if (coverage_class == "covered-llama-rope-swiglu-transformer-lm") {
-        return {"production-family-forward-backward-optimizer-loop"};
+        return {"persistent-full-size-family-parameter-state"};
     }
     if (coverage_class == "covered-standard-moe-transformer-lm") {
         return {"persistent-full-size-family-parameter-state"};
@@ -939,6 +939,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             "packed-qkv-rope-attention-block-integration-smoke",
             "rope-swiglu-block-forward-backward-adamw-smoke",
             "llama-full-forward-backward-loop-smoke",
+            "llama-sampled-ar-plus-composed-step-dataset-loop",
             "family-parameter-layout-checkpoint-inference-smoke",
         };
     }
@@ -1079,8 +1080,7 @@ bool custom_graph_template_metadata_found(const Config& cfg);
 
 bool selected_template_has_native_train_step_slice(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
-    return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
-        coverage_class == "covered-dense-jepa-objective" ||
+    return coverage_class == "covered-dense-jepa-objective" ||
         coverage_class == "covered-semantic-dense-jepa-objective" ||
         coverage_class == "covered-semantic-moe-router-jepa-objective" ||
         coverage_class == "covered-seq2seq-objective" ||
@@ -1093,7 +1093,8 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
 
 bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
-    return coverage_class == "covered-moe-jepa-objective" ||
+    return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
+        coverage_class == "covered-moe-jepa-objective" ||
         coverage_class == "covered-standard-moe-transformer-lm";
 }
 

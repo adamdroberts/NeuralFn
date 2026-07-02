@@ -301,14 +301,18 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "llama",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_llama_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-rope-swiglu-native-loop",
+        "geometry_status": "sampled-llama-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
-        "notes": "LLaMA/RoPE/SwiGLU training needs a dedicated native CUDA Tile C++ trainer.",
+        "trainer_loop_status": "native-family-dataset-loop",
+        "notes": (
+            "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop "
+            "with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; "
+            "persistent full-size family parameter state remains before production training."
+        ),
     },
     {
         "name": "mixllama",

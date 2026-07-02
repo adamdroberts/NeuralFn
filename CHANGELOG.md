@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added LLaMA-family dataset-loop progress and hyperparameter reporting. Bare
+  `nfn_llama_native_train ...` and `nfn-native-train --base-model llama ...`
+  runs now enter the native token-shard dataset loop, print shard resolution,
+  resolved schedule, AdamW settings, per-step phases, validation phases,
+  metadata writes, elapsed seconds, and steps/sec to stderr, and keep stdout as
+  the final JSON payload. Runtime and plan JSON report LLaMA selectors as
+  `native-family-dataset-loop` with `persistent-full-size-family-parameter-state`
+  retained as the remaining production-training gap.
+
 - Added explicit progress and optimizer hyperparameter reporting for the
   standard-MoE and MoE-JEPA native dataset loops. `--print-plan` and runtime
   JSON now include `progress_every_steps` plus the sampled-family AdamW settings

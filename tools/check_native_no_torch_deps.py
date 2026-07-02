@@ -1234,7 +1234,6 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
     "nanogpt_megakernel": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
 }
 REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
-    "llama",
     "dense_jepa_evo",
     "semantic_dense_jepa_evo",
     "semantic_router_moe_modern",
@@ -1246,6 +1245,7 @@ REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "universal_llama",
 )
 REQUIRED_NATIVE_DATASET_LOOP_TEMPLATE_SENTINELS = (
+    "llama",
     "mixllama",
     "moe_jepa_evo",
     "moe_jepa_evo_modern",

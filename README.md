@@ -23,6 +23,18 @@ frontend. For direct family binaries, `nfn train --base-model ... --dry-run
 --print-command` runs the family frontend so GPT-2-evo and similar targets can
 print their final compiled delegate command instead of the Python wrapper's
 intermediate argv.
+Native family dataset loops write live progress to stderr and reserve stdout
+for the final JSON payload. Use `--print-plan` to inspect the resolved schedule
+without training, `--progress-every-steps 1` for per-step begin/end markers, or
+`--progress-every-steps 0` only for quiet automation. The current family-loop
+defaults are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
+`train_batch_tokens=524288`, `eval_every_steps=250`,
+`learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`,
+`eps=1e-08`, and `weight_decay=0.02`. LLaMA-family runs now default to the
+native token-shard dataset loop with sampled AR CE plus the composed LLaMA CUDA
+Tile train-step slice; the loop still reports
+`persistent-full-size-family-parameter-state` until full-size persistent model
+state, checkpoint cadence, and inference metadata are wired.
 Jamba native preflight includes a CUDA Tile Mamba chunk-state
 forward/backward smoke:
 `nfn_jamba_native_train --smoke-jamba-mamba-state-step --tile-ops-lib PATH` or
