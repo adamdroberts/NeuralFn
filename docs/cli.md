@@ -1242,6 +1242,11 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 
 Dense GPT native AdamW defaults are `beta1=0.9`, `beta2=0.95`,
 `adam_eps=1e-8`, and `grad_clip_norm=1.0`, matching the SM120 quality profile.
+For live visibility during CUDA work, native GPT writes progress to stderr and
+keeps stdout as the final JSON payload. Use `--progress-every-steps 1` for
+per-step status; the compiled loop always prints `step begin` for step 1 with
+`microbatch_tokens`, `grad_accum_steps`, and `effective_train_batch_tokens`
+before entering the first heavy CUDA optimizer step.
 The compiled no-Bash dense GPT launcher prints a pre-`execvp` launch line with
 the resolved native target, CUDA device selector, dataset/template, schedule,
 and AdamW hyperparameters, then prints the exact child command before handing

@@ -23177,6 +23177,17 @@ int run_transformer_lm_training_json(
                 cfg.train_loss_every_steps > 0 && (step % cfg.train_loss_every_steps) == 0;
             const bool should_write_progress =
                 cfg.progress_every_steps > 0 && (step % cfg.progress_every_steps) == 0;
+            if (step == 1 || should_write_progress || should_record_train_loss || should_run_validation) {
+                const double elapsed_seconds = elapsed_ms(train_loop_start_time, Clock::now()) / 1000.0;
+                std::cerr << "[nfn-native-train] step begin " << step << "/" << cfg.max_steps
+                          << " microbatch_tokens=" << microbatch_tokens
+                          << " grad_accum_steps=" << grad_accum_steps
+                          << " effective_train_batch_tokens=" << effective_train_batch_tokens
+                          << " eval_due=" << (should_run_validation ? "true" : "false")
+                          << " train_loss_due=" << (should_record_train_loss ? "true" : "false")
+                          << " elapsed_s=" << elapsed_seconds
+                          << "\n";
+            }
             stage_timing_current_step = step;
             const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
             stage_timing_current_step = 0;

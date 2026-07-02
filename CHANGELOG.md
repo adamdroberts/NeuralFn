@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added a pre-step progress line for dense GPT CUDA Tile training. Before the
+  first heavy optimizer step, and again on the configured progress cadence, the
+  native loop now writes `[nfn-native-train] step begin ...` to stderr with
+  `microbatch_tokens`, `grad_accum_steps`, `effective_train_batch_tokens`,
+  validation/train-loss due flags, and elapsed time. This gives immediate
+  terminal feedback when the GPU saturates during a long first step while
+  keeping stdout reserved for the final JSON payload. Use
+  `--progress-every-steps 1` for per-step begin/complete visibility.
+  Verification: rebuilt `build/nfn_gpt_native_train`, ran the focused native
+  GPT progress pytest, confirmed `--print-plan` reports the resolved schedule
+  and optimizer settings, and ran a tiny CUDA probe far enough to print setup
+  and training-loop entry before this environment's CUDA runtime/driver
+  mismatch stopped allocation before step 1.
+
 - Added a real compiled default action for
   `nfn_semantic_router_moe_native_train`. The bare `semantic-router-moe`
   family command and the explicit `--train-semantic-router-moe-loop-step` /

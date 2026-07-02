@@ -1572,6 +1572,10 @@ def test_native_gpt_transformer_loop_streams_runtime_progress_to_stderr() -> Non
     assert "[nfn-native-train] setup done " in source
     assert "setup_progress=" in source
     assert "final_lr_fraction=" in source
+    assert "[nfn-native-train] step begin " in source
+    assert "microbatch_tokens=" in source
+    assert "grad_accum_steps=" in source
+    assert "effective_train_batch_tokens=" in source
     assert "[nfn-native-train] step " in source
     assert "[nfn-native-train] validation step " in source
     assert '\\"progress_every_steps\\"' in source
@@ -11032,13 +11036,21 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
         check=False,
     )
     assert llama.returncode == 2
-    assert "native CUDA Tile trainer for llama is not implemented yet" in llama.stderr
-    assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
     llama_payload = json.loads(llama.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "family-native-trainer-missing"
-    assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
-    assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
+    assert llama_payload["status"] in {"family-native-trainer-missing", "native-train-step-slice-failed"}
+    if llama_payload["status"] == "native-train-step-slice-failed":
+        assert "native CUDA Tile trainer for llama is not implemented yet" not in llama.stderr
+        assert llama_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+        assert llama_payload["production_training_loop"] is False
+        assert [substep["name"] for substep in llama_payload["substeps"]] == [
+            "llama_full_forward_backward_loop_train_step_slice"
+        ]
+    else:
+        assert "native CUDA Tile trainer for llama is not implemented yet" in llama.stderr
+        assert "implement this family's CUDA Tile C++ trainer loop first" in llama.stderr
+        assert llama_payload["kernel_status"] == "required-tile-symbols-unchecked"
+        assert llama_payload["trainer_loop_status"] == "family-native-loop-missing"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11169,6 +11181,47 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["tile_ops_check"]["all_required_symbols_found"] is False
     assert llama_payload["tile_ops_check"]["checked"] is True
     assert llama_payload["tile_ops_check"]["error"]
+
+    llama_default_train_step = subprocess.run(
+        [
+            str(llama),
+            "--template-name",
+            "llama",
+            "--dataset-alias",
+            "cached-shards",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert llama_default_train_step.returncode == 2
+    assert "native CUDA Tile trainer for llama is not implemented yet" not in llama_default_train_step.stderr
+    assert "starting native LLaMA composed train-step slice" in llama_default_train_step.stderr
+    llama_default_payload = json.loads(llama_default_train_step.stdout)
+    assert llama_default_payload["model_family"] == "llama"
+    assert llama_default_payload["status"] == "native-train-step-slice-failed"
+    assert llama_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert llama_default_payload["production_training_loop"] is False
+    assert llama_default_payload["compiled_native_boundary"] is True
+    assert llama_default_payload["torch_required"] is False
+    assert llama_default_payload["graph_editor_tensor_flow"] is False
+    assert llama_default_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [substep["name"] for substep in llama_default_payload["substeps"]] == [
+        "llama_full_forward_backward_loop_train_step_slice"
+    ]
+    assert llama_default_payload["substeps"][0]["returncode"] == 2
+
     llama_smoke_missing_lib = subprocess.run(
         [
             str(llama),
@@ -13456,6 +13509,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(llama) in unified_llama_composed_smoke_command.stdout
     assert "--smoke-llama-composed-train-step" in unified_llama_composed_smoke_command.stdout
     assert "--tile-ops-lib" in unified_llama_composed_smoke_command.stdout
+
+    unified_llama_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "llama",
+            "--native-cuda-train-llama-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_llama_train_step_command.returncode == 0, unified_llama_train_step_command.stderr
+    assert str(llama) in unified_llama_train_step_command.stdout
+    assert "--train-llama-loop-step" in unified_llama_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_llama_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_llama_train_step_command.stdout
 
     unified_llama_full_loop_smoke_command = subprocess.run(
         [

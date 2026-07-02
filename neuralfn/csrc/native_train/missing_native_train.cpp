@@ -68,6 +68,7 @@ struct Config {
     bool smoke_llama_token_lm_train_step = false;
     bool smoke_llama_composed_train_step = false;
     bool smoke_llama_full_loop_step = false;
+    bool train_llama_loop_step = false;
     bool smoke_llama_packed_attention_step = false;
     bool smoke_llama_attention_block_step = false;
     bool smoke_llama_rope_attention_block_step = false;
@@ -429,6 +430,8 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_llama_composed_train_step = true;
         } else if (arg == "--smoke-llama-full-loop-step" || arg == "--native-cuda-smoke-llama-full-loop-step") {
             cfg.smoke_llama_full_loop_step = true;
+        } else if (arg == "--train-llama-loop-step" || arg == "--native-cuda-train-llama-loop-step") {
+            cfg.train_llama_loop_step = true;
         } else if (arg == "--smoke-llama-packed-attention-step" || arg == "--native-cuda-smoke-llama-packed-attention-step") {
             cfg.smoke_llama_packed_attention_step = true;
         } else if (arg == "--smoke-llama-attention-block-step" || arg == "--native-cuda-smoke-llama-attention-block-step") {
@@ -1941,6 +1944,90 @@ int print_llama_loop_smoke_json(const Config& cfg, const char* program) {
         << ", \"token_lm_embedding_grad_max_abs\":" << token_lm_embedding_grad_max_abs
         << ", \"token_lm_embedding_weight_delta_max_abs\":" << token_lm_embedding_weight_delta_max_abs
         << "}\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_llama_composed_train_step_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool llama_family = family.find("llama") != std::string::npos || family == "unknown";
+    std::string error;
+    std::string full_loop_stdout;
+    int full_loop_rc = 2;
+
+    if (!llama_family) {
+        error = "LLaMA composed train-step is only valid for LLaMA-family native targets";
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native LLaMA composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        Config full_loop_cfg = cfg;
+        full_loop_cfg.smoke_llama_full_loop_step = true;
+        full_loop_cfg.train_llama_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 1/1 LLaMA full forward/backward loop\n";
+            full_loop_rc = print_llama_loop_smoke_json(full_loop_cfg, program);
+            std::cout.rdbuf(old);
+            full_loop_stdout = capture.str();
+        }
+        if (full_loop_rc != 0) {
+            error = "native LLaMA composed train-step substep failed";
+        }
+    }
+
+    const bool passed = error.empty() && full_loop_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"llama_full_forward_backward_loop_train_step_slice\", "
+        << "\"returncode\": " << full_loop_rc << ", \"stdout_json\": \"" << json_escape(full_loop_stdout) << "\"}\n"
+        << "  ]\n"
         << "}\n";
     return passed ? 0 : 2;
 }
@@ -13419,6 +13506,9 @@ int main(int argc, char** argv) {
             cfg.smoke_llama_full_loop_step) {
             return print_llama_loop_smoke_json(cfg, argv[0]);
         }
+        if (cfg.train_llama_loop_step) {
+            return print_llama_composed_train_step_json(cfg, argv[0]);
+        }
         if (cfg.smoke_llama_packed_attention_step) {
             return print_llama_packed_attention_smoke_json(cfg, argv[0]);
         }
@@ -13512,6 +13602,9 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe") {
             return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "llama") {
+            return print_llama_composed_train_step_json(cfg, argv[0]);
         }
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";
