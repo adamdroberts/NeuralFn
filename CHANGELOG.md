@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Added a real compiled default action for `nfn_moe_jepa_evo_native_train`.
+  The bare `moe-jepa-evo` family command and the explicit
+  `--train-moe-jepa-loop-step` / `--native-cuda-train-moe-jepa-loop-step`
+  paths now run a composed native train-step slice instead of immediately
+  falling through to the generic "not implemented" message. The slice executes
+  the existing standard MoE full forward/backward-loop substep and the
+  AR+JEPA+router objective substep through the compiled C++ boundary, returns
+  one JSON payload with substep JSON, and keeps
+  `production_training_loop: false` plus
+  `production-family-forward-backward-optimizer-loop` in the missing
+  requirements until the full multi-step dataset trainer is implemented.
+  Verification: rebuilt `build/nfn_moe_jepa_evo_native_train` through
+  `tools/build_native_missing_trainers.sh`, rebuilt `build/nfn-native-train`,
+  ran the direct and unified `moe-jepa-evo` commands with a missing Tile
+  library to verify structured substep failure instead of the generic missing
+  trainer path, and ran the direct command with the built Tile ops library far
+  enough to load Tile/CUDA and fail at CUDA allocation in this sandboxed
+  process.
+
 - Corrected the compiled GPT template catalog status so
   `selected_graph_native_runnable` is true only for selectors with an actual
   native training route. Dense GPT-compatible selectors continue to report

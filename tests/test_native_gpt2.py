@@ -11609,6 +11609,50 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "nfn_native_tile_route_balance_density_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_route_balance_loss_float32" in moe_jepa_payload["required_tile_symbols"]
 
+    moe_jepa_default_train_step = subprocess.run(
+        [
+            str(moe_jepa),
+            "--template-name",
+            "moe_jepa_evo",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--max-steps",
+            "2",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert moe_jepa_default_train_step.returncode == 2
+    assert "native CUDA Tile trainer for moe-jepa-evo is not implemented yet" not in moe_jepa_default_train_step.stderr
+    assert "starting native MoE-JEPA composed train-step slice" in moe_jepa_default_train_step.stderr
+    moe_jepa_train_step_payload = json.loads(moe_jepa_default_train_step.stdout)
+    assert moe_jepa_train_step_payload["status"] == "native-train-step-slice-failed"
+    assert moe_jepa_train_step_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert moe_jepa_train_step_payload["production_training_loop"] is False
+    assert moe_jepa_train_step_payload["compiled_native_boundary"] is True
+    assert moe_jepa_train_step_payload["torch_required"] is False
+    assert moe_jepa_train_step_payload["graph_editor_tensor_flow"] is False
+    assert moe_jepa_train_step_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [step["name"] for step in moe_jepa_train_step_payload["substeps"]] == [
+        "standard_moe_full_forward_backward_loop_train_step_slice",
+        "ar_plus_jepa_plus_router_loss_composition_slice",
+    ]
+    assert [step["returncode"] for step in moe_jepa_train_step_payload["substeps"]] == [2, 2]
+    moe_substep_payload = json.loads(moe_jepa_train_step_payload["substeps"][0]["stdout_json"])
+    objective_substep_payload = json.loads(moe_jepa_train_step_payload["substeps"][1]["stdout_json"])
+    assert moe_substep_payload["smoke"] == "standard_moe_full_forward_backward_loop_train_step_slice"
+    assert objective_substep_payload["smoke"] == "moe_jepa_ar_jepa_router_loss_composition_slice"
+    assert "nfn_native_tile_moe_swiglu_backward_float32" in moe_substep_payload["loop_composition_stages"]
+    assert "nfn_native_tile_route_balance_loss_float32" in objective_substep_payload["loop_composition_stages"]
+
     jepa_plan = subprocess.run(
         [
             str(jepa),
@@ -12312,6 +12356,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
     assert moe_jepa_unified_payload["torch_required"] is False
     assert moe_jepa_unified_payload["graph_editor_tensor_flow"] is False
+
+    unified_moe_jepa_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "moe-jepa-evo",
+            "--native-cuda-train-moe-jepa-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_moe_jepa_train_step_command.returncode == 0, unified_moe_jepa_train_step_command.stderr
+    assert str(moe_jepa) in unified_moe_jepa_train_step_command.stdout
+    assert "--train-moe-jepa-loop-step" in unified_moe_jepa_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_moe_jepa_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_moe_jepa_train_step_command.stdout
 
     routed_template_env = os.environ.copy()
     routed_template_env["NFN_NATIVE_MOE_JEPA_EVO_CLI"] = str(moe_jepa)
