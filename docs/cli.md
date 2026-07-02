@@ -3311,12 +3311,12 @@ For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_tr
 
 For the composed MoE-JEPA native train-step slice, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-loop-step`. It runs the standard MoE full forward/backward-loop train-step and the AR+JEPA+router objective substep through compiled native C++ and returns one JSON payload with substep JSON, `torch_required: false`, `graph_editor_tensor_flow: false`, and `production_training_loop: false`.
 
-For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs a sampled-token AR CE CUDA Tile objective slice before the compiled MoE+JEPA/router substeps, writes native loop metadata under `--output-dir`, and keeps `sample-backed-full-family-parameter-state` in the missing requirements until the remaining MoE, JEPA target/projector, and router state are driven by the same sampled batch.
+For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir` and keeps `persistent-full-size-family-parameter-state` in the missing requirements until the sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
 This family loop now mirrors dense GPT operator visibility: stderr prints the
 resolved hyperparameters before shard resolution, shard/batch-plan counts after
-resolution, and begin/end lines for sampled AR CE, MoE-JEPA train substep,
-validation sampled AR CE, validation loss substep, and metadata writing. Stdout
-stays reserved for the final JSON payload. The default settings are
+resolution, and begin/end lines for sampled AR CE, sampled MoE-JEPA family
+step, validation sampled AR CE, validation sampled MoE-JEPA family step, and
+metadata writing. Stdout stays reserved for the final JSON payload. The default settings are
 `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
 `train_batch_tokens=524288`, `eval_every_steps=250`, and
 `learning_rate=0.0006`.

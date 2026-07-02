@@ -12823,6 +12823,625 @@ int print_sampled_ar_ce_objective_json(
     return passed ? 0 : 2;
 }
 
+int print_sampled_moe_jepa_family_step_json(
+    const Config& cfg,
+    const char* program,
+    const neuralfn::native_train::TokenBatch& batch,
+    std::string_view phase) {
+    const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
+    const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path;
+    std::string error;
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    bool tile_ops_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool passed = false;
+    double ar_loss = 0.0;
+    double jepa_loss = 0.0;
+    double router_loss = 0.0;
+    double sampled_total_loss = 0.0;
+    constexpr std::int64_t kDim = 4;
+    constexpr std::int64_t kHidden = 3;
+    constexpr std::int64_t kExperts = 3;
+    constexpr std::int64_t kTopK = 2;
+    constexpr std::int64_t kVocab = 8;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+    using TopKRouteFn = int (*)(
+        const float*, float*, std::int64_t*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using BroadcastExpertRoutesFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t*, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, void*);
+    using MoeSwiGluForwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*,
+        float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using MoeSwiGluBackwardFn = int (*)(
+        const float*, const float*, const std::int64_t*, const float*, const float*, const float*,
+        const float*, float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBackwardInputFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateFn = int (*)(
+        const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsFn =
+        int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyBackwardFn =
+        int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, float, void*);
+    using LatentMseLossFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using RouteBalanceDensityFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
+    using RouteBalanceLossFn = int (*)(const float*, float*, std::int64_t, void*);
+    using FillFn = int (*)(float*, std::int64_t, float, void*);
+    using AdamWFn = int (*)(
+        float*, const float*, float*, float*, std::int64_t, float, float, float, float, float, float, float, void*);
+
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    TopKRouteFn topk_route = nullptr;
+    BroadcastExpertRoutesFn broadcast_routes = nullptr;
+    MoeSwiGluForwardFn moe_forward = nullptr;
+    MoeSwiGluBackwardFn moe_backward = nullptr;
+    LinearFn linear = nullptr;
+    LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
+    TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    TokenCrossEntropyBackwardFn ce_backward = nullptr;
+    LatentMseLossFn latent_mse_loss = nullptr;
+    RouteBalanceDensityFn route_density = nullptr;
+    RouteBalanceLossFn route_loss = nullptr;
+    FillFn fill = nullptr;
+    AdamWFn adamw = nullptr;
+    std::vector<void*> allocated;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed";
+        if (code != 0) {
+            out << " with code " << code;
+            if (cuda_get_error_string != nullptr) {
+                const char* text = cuda_get_error_string(code);
+                if (text != nullptr) {
+                    out << " (" << text << ")";
+                }
+            }
+        }
+        return out.str();
+    };
+    auto free_allocated = [&]() {
+        if (cuda_free != nullptr) {
+            for (void* ptr : allocated) {
+                if (ptr != nullptr) {
+                    cuda_free(ptr);
+                }
+            }
+        }
+        allocated.clear();
+    };
+    auto close_handles = [&]() {
+        if (tile_handle != nullptr) {
+            dlclose(tile_handle);
+        }
+        if (cuda_handle != nullptr) {
+            dlclose(cuda_handle);
+        }
+    };
+
+    const std::int64_t rows =
+        std::min<std::int64_t>(4, static_cast<std::int64_t>(batch.tokens.size()));
+    if (rows <= 0 || static_cast<std::int64_t>(batch.targets.size()) < rows) {
+        error = "sampled token batch is too small for MoE-JEPA family step";
+    }
+    if (error.empty()) {
+        tile_handle = dlopen(tile_ops_lib.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (tile_handle == nullptr) {
+            const char* raw = dlerror();
+            error = raw == nullptr ? "failed to load Tile ops library" : raw;
+        } else {
+            tile_ops_loaded = true;
+            topk_route = load_symbol<TopKRouteFn>(tile_handle, "nfn_native_tile_topk_route_float32");
+            broadcast_routes = load_symbol<BroadcastExpertRoutesFn>(
+                tile_handle, "nfn_native_tile_broadcast_expert_routes_float32");
+            moe_forward = load_symbol<MoeSwiGluForwardFn>(
+                tile_handle, "nfn_native_tile_moe_swiglu_forward_float32");
+            moe_backward = load_symbol<MoeSwiGluBackwardFn>(
+                tile_handle, "nfn_native_tile_moe_swiglu_backward_float32");
+            linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+            linear_backward_input = load_symbol<LinearBackwardInputFn>(
+                tile_handle, "nfn_native_tile_linear_backward_input_float32");
+            linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
+                tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
+            ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+            ce_backward = load_symbol<TokenCrossEntropyBackwardFn>(
+                tile_handle, "nfn_native_tile_token_cross_entropy_backward_float32");
+            latent_mse_loss = load_symbol<LatentMseLossFn>(
+                tile_handle, "nfn_native_tile_latent_mse_loss_float32");
+            route_density = load_symbol<RouteBalanceDensityFn>(
+                tile_handle, "nfn_native_tile_route_balance_density_float32");
+            route_loss = load_symbol<RouteBalanceLossFn>(
+                tile_handle, "nfn_native_tile_route_balance_loss_float32");
+            fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+            adamw = load_symbol<AdamWFn>(tile_handle, "nfn_native_tile_adamw_step_float32");
+            if (topk_route == nullptr || broadcast_routes == nullptr || moe_forward == nullptr ||
+                moe_backward == nullptr || linear == nullptr || linear_backward_input == nullptr ||
+                linear_backward_weight_accumulate == nullptr || ce_partials == nullptr ||
+                ce_backward == nullptr || latent_mse_loss == nullptr || route_density == nullptr ||
+                route_loss == nullptr || fill == nullptr || adamw == nullptr) {
+                error = "Tile ops library is missing one or more sampled MoE-JEPA family-step symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_lib_path = candidate;
+                cuda_runtime_loaded = true;
+                break;
+            }
+        }
+        if (!cuda_runtime_loaded) {
+            error = "failed to load CUDA runtime";
+        } else {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+            cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+            cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+            cuda_device_synchronize =
+                load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+            cuda_get_error_string =
+                load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+            if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+                cuda_device_synchronize == nullptr) {
+                error = "CUDA runtime is missing sampled MoE-JEPA allocation/copy symbols";
+            }
+        }
+    }
+    if (error.empty()) {
+        const std::int64_t token_elements = rows * kDim;
+        const std::int64_t route_elements = rows * kTopK;
+        const std::int64_t w13_elements = kExperts * kDim * kHidden;
+        const std::int64_t w2_elements = kExperts * kHidden * kDim;
+        const std::int64_t lm_weight_elements = kVocab * kDim;
+        const std::int64_t projector_elements = kDim * kDim;
+        std::vector<float> x(static_cast<std::size_t>(token_elements), 0.0f);
+        std::vector<float> route_logits(static_cast<std::size_t>(rows * kExperts), 0.0f);
+        std::vector<float> target_latent(static_cast<std::size_t>(token_elements), 0.0f);
+        std::vector<float> latent_grad(static_cast<std::size_t>(token_elements), 0.0f);
+        std::vector<std::int64_t> targets(static_cast<std::size_t>(rows), 0);
+        for (std::int64_t row = 0; row < rows; ++row) {
+            const std::uint16_t token = batch.tokens[static_cast<std::size_t>(row)];
+            const std::uint16_t target = batch.targets[static_cast<std::size_t>(row)];
+            targets[static_cast<std::size_t>(row)] = static_cast<std::int64_t>(target % kVocab);
+            for (std::int64_t dim = 0; dim < kDim; ++dim) {
+                const float token_value =
+                    static_cast<float>(((token + dim * 13U) % 257U)) / 128.0f - 1.0f;
+                const float target_value =
+                    static_cast<float>(((target + dim * 17U) % 257U)) / 128.0f - 1.0f;
+                x[static_cast<std::size_t>(row * kDim + dim)] = token_value;
+                target_latent[static_cast<std::size_t>(row * kDim + dim)] = target_value;
+                latent_grad[static_cast<std::size_t>(row * kDim + dim)] =
+                    2.0f * (token_value - target_value);
+            }
+            for (std::int64_t expert = 0; expert < kExperts; ++expert) {
+                route_logits[static_cast<std::size_t>(row * kExperts + expert)] =
+                    0.01f * static_cast<float>(((token + target + expert * 31U) % 101U)) -
+                    0.35f;
+            }
+        }
+        std::vector<float> w1(static_cast<std::size_t>(w13_elements));
+        std::vector<float> w2(static_cast<std::size_t>(w2_elements));
+        std::vector<float> w3(static_cast<std::size_t>(w13_elements));
+        std::vector<float> lm_weight(static_cast<std::size_t>(lm_weight_elements));
+        std::vector<float> projector(static_cast<std::size_t>(projector_elements));
+        for (std::size_t i = 0; i < w1.size(); ++i) {
+            w1[i] = 0.015f * static_cast<float>(static_cast<int>(i % 9) - 4);
+            w3[i] = -0.012f * static_cast<float>(static_cast<int>(i % 7) - 3);
+        }
+        for (std::size_t i = 0; i < w2.size(); ++i) {
+            w2[i] = 0.010f * static_cast<float>(static_cast<int>(i % 11) - 5);
+        }
+        for (std::size_t i = 0; i < lm_weight.size(); ++i) {
+            lm_weight[i] = 0.020f * static_cast<float>(static_cast<int>(i % 13) - 6);
+        }
+        for (std::size_t i = 0; i < projector.size(); ++i) {
+            projector[i] = 0.025f * static_cast<float>(static_cast<int>(i % 5) - 2);
+        }
+
+        float* d_x = nullptr;
+        float* d_route_logits = nullptr;
+        float* d_route_weights = nullptr;
+        float* d_broadcast_weights = nullptr;
+        float* d_w1 = nullptr;
+        float* d_w2 = nullptr;
+        float* d_w3 = nullptr;
+        float* d_moe_out = nullptr;
+        float* d_lm_weight = nullptr;
+        float* d_logits = nullptr;
+        float* d_ar_loss = nullptr;
+        float* d_grad_logits = nullptr;
+        float* d_grad_moe = nullptr;
+        float* d_grad_lm_weight = nullptr;
+        float* d_projector = nullptr;
+        float* d_pred = nullptr;
+        float* d_target_latent = nullptr;
+        float* d_jepa_loss = nullptr;
+        float* d_latent_grad = nullptr;
+        float* d_grad_projector = nullptr;
+        float* d_grad_x = nullptr;
+        float* d_grad_w1 = nullptr;
+        float* d_grad_w2 = nullptr;
+        float* d_grad_w3 = nullptr;
+        float* d_density = nullptr;
+        float* d_router_loss = nullptr;
+        float* d_moment_a = nullptr;
+        float* d_moment_b = nullptr;
+        std::int64_t* d_route_indices = nullptr;
+        std::int64_t* d_broadcast_indices = nullptr;
+        std::int64_t* d_targets = nullptr;
+        auto alloc_float = [&](float** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(float));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        auto alloc_i64 = [&](std::int64_t** ptr, std::size_t count, const std::string& name) {
+            int status = cuda_malloc(reinterpret_cast<void**>(ptr), count * sizeof(std::int64_t));
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc " + name);
+                return false;
+            }
+            allocated.push_back(*ptr);
+            return true;
+        };
+        if (alloc_float(&d_x, x.size(), "sampled_x") &&
+            alloc_float(&d_route_logits, route_logits.size(), "sampled_route_logits") &&
+            alloc_float(&d_route_weights, route_elements, "sampled_route_weights") &&
+            alloc_i64(&d_route_indices, route_elements, "sampled_route_indices") &&
+            alloc_float(&d_broadcast_weights, route_elements, "sampled_broadcast_weights") &&
+            alloc_i64(&d_broadcast_indices, route_elements, "sampled_broadcast_indices") &&
+            alloc_float(&d_w1, w1.size(), "sampled_w1") &&
+            alloc_float(&d_w2, w2.size(), "sampled_w2") &&
+            alloc_float(&d_w3, w3.size(), "sampled_w3") &&
+            alloc_float(&d_moe_out, x.size(), "sampled_moe_out") &&
+            alloc_float(&d_lm_weight, lm_weight.size(), "sampled_lm_weight") &&
+            alloc_float(&d_logits, static_cast<std::size_t>(rows * kVocab), "sampled_logits") &&
+            alloc_float(&d_ar_loss, 1, "sampled_ar_loss") &&
+            alloc_i64(&d_targets, targets.size(), "sampled_targets") &&
+            alloc_float(&d_grad_logits, static_cast<std::size_t>(rows * kVocab), "sampled_grad_logits") &&
+            alloc_float(&d_grad_moe, x.size(), "sampled_grad_moe") &&
+            alloc_float(&d_grad_lm_weight, lm_weight.size(), "sampled_grad_lm_weight") &&
+            alloc_float(&d_projector, projector.size(), "sampled_projector") &&
+            alloc_float(&d_pred, x.size(), "sampled_pred") &&
+            alloc_float(&d_target_latent, target_latent.size(), "sampled_target_latent") &&
+            alloc_float(&d_jepa_loss, 1, "sampled_jepa_loss") &&
+            alloc_float(&d_latent_grad, latent_grad.size(), "sampled_latent_grad") &&
+            alloc_float(&d_grad_projector, projector.size(), "sampled_grad_projector") &&
+            alloc_float(&d_grad_x, x.size(), "sampled_grad_x") &&
+            alloc_float(&d_grad_w1, w1.size(), "sampled_grad_w1") &&
+            alloc_float(&d_grad_w2, w2.size(), "sampled_grad_w2") &&
+            alloc_float(&d_grad_w3, w3.size(), "sampled_grad_w3") &&
+            alloc_float(&d_density, kExperts, "sampled_density") &&
+            alloc_float(&d_router_loss, 1, "sampled_router_loss") &&
+            alloc_float(&d_moment_a, std::max<std::size_t>(w1.size(), lm_weight.size()), "sampled_moment_a") &&
+            alloc_float(&d_moment_b, std::max<std::size_t>(w1.size(), lm_weight.size()), "sampled_moment_b")) {
+            auto copy_float = [&](float* dst, const std::vector<float>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(float), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            auto copy_i64 = [&](std::int64_t* dst, const std::vector<std::int64_t>& src, const std::string& name) {
+                int status = cuda_memcpy(dst, src.data(), src.size() * sizeof(std::int64_t), kCudaMemcpyHostToDevice);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMemcpy " + name + " H2D");
+                    return false;
+                }
+                return true;
+            };
+            copy_float(d_x, x, "sampled_x") &&
+                copy_float(d_route_logits, route_logits, "sampled_route_logits") &&
+                copy_float(d_w1, w1, "sampled_w1") &&
+                copy_float(d_w2, w2, "sampled_w2") &&
+                copy_float(d_w3, w3, "sampled_w3") &&
+                copy_float(d_lm_weight, lm_weight, "sampled_lm_weight") &&
+                copy_float(d_projector, projector, "sampled_projector") &&
+                copy_float(d_target_latent, target_latent, "sampled_target_latent") &&
+                copy_float(d_latent_grad, latent_grad, "sampled_latent_grad") &&
+                copy_i64(d_targets, targets, "sampled_targets");
+            int status = 0;
+            if (error.empty()) {
+                status = fill(d_grad_lm_weight, lm_weight_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_grad_projector, projector_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_grad_x, token_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_grad_w1, w13_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_grad_w2, w2_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_grad_w3, w13_elements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = fill(
+                        d_moment_a,
+                        static_cast<std::int64_t>(std::max<std::size_t>(w1.size(), lm_weight.size())),
+                        0.0f,
+                        nullptr);
+                }
+                if (status == 0) {
+                    status = fill(
+                        d_moment_b,
+                        static_cast<std::int64_t>(std::max<std::size_t>(w1.size(), lm_weight.size())),
+                        0.0f,
+                        nullptr);
+                }
+                if (status != 0) error = cuda_error(status, "zero sampled MoE-JEPA gradients/moments");
+            }
+            if (error.empty()) {
+                status = topk_route(d_route_logits, d_route_weights, d_route_indices, rows, kExperts, kTopK, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_topk_route_float32 sampled");
+            }
+            if (error.empty()) {
+                status = broadcast_routes(
+                    d_route_weights,
+                    d_route_indices,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    1,
+                    rows,
+                    rows,
+                    kTopK,
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_broadcast_expert_routes_float32 sampled");
+                }
+            }
+            if (error.empty()) {
+                status = moe_forward(
+                    d_x,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    d_w1,
+                    d_w2,
+                    d_w3,
+                    d_moe_out,
+                    rows,
+                    kDim,
+                    kHidden,
+                    kExperts,
+                    kTopK,
+                    nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_moe_swiglu_forward_float32 sampled");
+            }
+            if (error.empty()) {
+                status = linear(d_moe_out, d_lm_weight, nullptr, d_logits, rows, kDim, kVocab, false, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_float32 sampled LM");
+            }
+            if (error.empty()) {
+                status = ce_partials(d_logits, d_targets, d_ar_loss, rows, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_partials_float32 sampled");
+                }
+            }
+            if (error.empty()) {
+                status = ce_backward(
+                    d_logits,
+                    d_targets,
+                    d_grad_logits,
+                    rows,
+                    kVocab,
+                    1.0f / static_cast<float>(rows),
+                    nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_token_cross_entropy_backward_float32 sampled");
+                }
+            }
+            if (error.empty()) {
+                status = linear_backward_input(d_grad_logits, d_lm_weight, d_grad_moe, rows, kDim, kVocab, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_backward_input_float32 sampled LM");
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_moe_out, d_grad_logits, d_grad_lm_weight, rows, kDim, kVocab, nullptr);
+                if (status != 0) {
+                    error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 sampled LM");
+                }
+            }
+            if (error.empty()) {
+                status = linear(d_moe_out, d_projector, nullptr, d_pred, rows, kDim, kDim, false, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_float32 sampled projector");
+            }
+            if (error.empty()) {
+                status = latent_mse_loss(d_pred, d_target_latent, d_jepa_loss, token_elements, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32 sampled");
+            }
+            if (error.empty()) {
+                status = linear_backward_weight_accumulate(
+                    d_moe_out, d_latent_grad, d_grad_projector, rows, kDim, kDim, nullptr);
+                if (status != 0) {
+                    error = cuda_error(
+                        status,
+                        "nfn_native_tile_linear_backward_weight_accumulate_float32 sampled projector");
+                }
+            }
+            if (error.empty()) {
+                status = moe_backward(
+                    d_x,
+                    d_broadcast_weights,
+                    d_broadcast_indices,
+                    d_w1,
+                    d_w2,
+                    d_w3,
+                    d_grad_moe,
+                    d_grad_x,
+                    d_grad_w1,
+                    d_grad_w2,
+                    d_grad_w3,
+                    rows,
+                    kDim,
+                    kHidden,
+                    kExperts,
+                    kTopK,
+                    nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_moe_swiglu_backward_float32 sampled");
+            }
+            if (error.empty()) {
+                status = route_density(d_route_logits, d_density, rows, kExperts, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_route_balance_density_float32 sampled");
+            }
+            if (error.empty()) {
+                status = route_loss(d_density, d_router_loss, kExperts, nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_route_balance_loss_float32 sampled");
+            }
+            if (error.empty()) {
+                status = adamw(
+                    d_w1,
+                    d_grad_w1,
+                    d_moment_a,
+                    d_moment_b,
+                    w13_elements,
+                    0.01f,
+                    0.9f,
+                    0.95f,
+                    1e-8f,
+                    0.02f,
+                    0.1f,
+                    std::sqrt(0.05f),
+                    nullptr);
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled w1");
+            }
+            if (error.empty()) {
+                status = fill(d_moment_a, lm_weight_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_moment_b, lm_weight_elements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = adamw(
+                        d_lm_weight,
+                        d_grad_lm_weight,
+                        d_moment_a,
+                        d_moment_b,
+                        lm_weight_elements,
+                        0.01f,
+                        0.9f,
+                        0.95f,
+                        1e-8f,
+                        0.02f,
+                        0.1f,
+                        std::sqrt(0.05f),
+                        nullptr);
+                }
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled LM");
+            }
+            if (error.empty()) {
+                status = fill(d_moment_a, projector_elements, 0.0f, nullptr);
+                if (status == 0) status = fill(d_moment_b, projector_elements, 0.0f, nullptr);
+                if (status == 0) {
+                    status = adamw(
+                        d_projector,
+                        d_grad_projector,
+                        d_moment_a,
+                        d_moment_b,
+                        projector_elements,
+                        0.01f,
+                        0.9f,
+                        0.95f,
+                        1e-8f,
+                        0.02f,
+                        0.1f,
+                        std::sqrt(0.05f),
+                        nullptr);
+                }
+                if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled projector");
+            }
+            if (error.empty()) {
+                status = cuda_device_synchronize();
+                if (status != 0) error = cuda_error(status, "cudaDeviceSynchronize sampled MoE-JEPA");
+            }
+            std::vector<float> host_ar_loss(1, 0.0f);
+            std::vector<float> host_jepa_loss(1, 0.0f);
+            std::vector<float> host_router_loss(1, 0.0f);
+            if (error.empty()) {
+                status = cuda_memcpy(host_ar_loss.data(), d_ar_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                if (status == 0) {
+                    status = cuda_memcpy(host_jepa_loss.data(), d_jepa_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status == 0) {
+                    status = cuda_memcpy(host_router_loss.data(), d_router_loss, sizeof(float), kCudaMemcpyDeviceToHost);
+                }
+                if (status != 0) error = cuda_error(status, "cudaMemcpy sampled MoE-JEPA losses D2H");
+            }
+            if (error.empty()) {
+                ar_loss = static_cast<double>(host_ar_loss[0]);
+                jepa_loss = static_cast<double>(host_jepa_loss[0]);
+                router_loss = static_cast<double>(host_router_loss[0]);
+                sampled_total_loss = ar_loss + 0.1 * jepa_loss + 0.01 * router_loss;
+                passed =
+                    std::isfinite(ar_loss) &&
+                    std::isfinite(jepa_loss) &&
+                    std::isfinite(router_loss) &&
+                    std::isfinite(sampled_total_loss);
+                if (!passed) {
+                    error = "sampled MoE-JEPA family step produced a non-finite loss";
+                }
+            }
+        }
+    }
+    free_allocated();
+    close_handles();
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"smoke\": \"moe_jepa_sampled_family_forward_backward_optimizer_step\",\n"
+        << "  \"phase\": \"" << json_escape(phase) << "\",\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_ops_lib) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_ops_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"shape\": {\"rows\": " << rows
+        << ", \"dim\": " << kDim
+        << ", \"hidden_dim\": " << kHidden
+        << ", \"experts\": " << kExperts
+        << ", \"top_k\": " << kTopK
+        << ", \"vocab\": " << kVocab << "},\n"
+        << "  \"losses\": {\"ar\": " << ar_loss
+        << ", \"jepa\": " << jepa_loss
+        << ", \"router\": " << router_loss
+        << ", \"sampled_total\": " << sampled_total_loss << "},\n"
+        << "  \"loop_composition_stages\": [\n"
+        << "    \"nfn_native_tile_topk_route_float32\",\n"
+        << "    \"nfn_native_tile_broadcast_expert_routes_float32\",\n"
+        << "    \"nfn_native_tile_moe_swiglu_forward_float32\",\n"
+        << "    \"nfn_native_tile_linear_float32\",\n"
+        << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
+        << "    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n"
+        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << "    \"nfn_native_tile_moe_swiglu_backward_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_density_float32\",\n"
+        << "    \"nfn_native_tile_route_balance_loss_float32\",\n"
+        << "    \"nfn_native_tile_adamw_step_float32\"\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_jepa_family = family == "moe-jepa-evo" || family == "unknown";
@@ -12840,10 +13459,12 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     std::string last_validation_stdout;
     std::string last_sampled_ar_stdout;
     std::string last_validation_sampled_ar_stdout;
+    std::string last_sampled_family_step_stdout;
+    std::string last_validation_sampled_family_step_stdout;
     int last_sampled_ar_rc = 2;
     int last_validation_sampled_ar_rc = 2;
-    int last_step_rc = 2;
-    int last_validation_rc = 2;
+    int last_sampled_family_step_rc = 2;
+    int last_validation_sampled_family_step_rc = 2;
     neuralfn::native_train::TokenShardDataset dataset;
     neuralfn::native_train::BatchPlan batch_plan;
     std::vector<std::int64_t> validation_steps;
@@ -12959,29 +13580,28 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                   << " rc=" << last_sampled_ar_rc
                   << "\n";
 
-        Config step_cfg = cfg;
-        step_cfg.train_moe_jepa_dataset_loop = false;
-        step_cfg.train_moe_jepa_loop_step = true;
         {
             std::ostringstream capture;
             std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
             std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                       << step << "/" << cfg.max_steps
-                      << " begin phase=moe_jepa_train_substep"
+                      << " begin phase=sampled_moe_jepa_family_step"
                       << "\n";
-            last_step_rc = print_moe_jepa_composed_train_step_json(step_cfg, program);
+            last_sampled_family_step_rc =
+                print_sampled_moe_jepa_family_step_json(cfg, program, train_batch, "train");
             std::cout.rdbuf(old);
-            last_step_stdout = capture.str();
+            last_sampled_family_step_stdout = capture.str();
         }
-        if (last_step_rc != 0) {
-            error = "native MoE-JEPA dataset loop train-step substep failed";
+        if (last_sampled_family_step_rc != 0) {
+            error = "native MoE-JEPA dataset loop sampled family-step substep failed";
             break;
         }
+        last_step_stdout = last_sampled_family_step_stdout;
         steps_completed = step;
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
                   << cfg.max_steps
-                  << " end phase=moe_jepa_train_substep"
-                  << " rc=" << last_step_rc
+                  << " end phase=sampled_moe_jepa_family_step"
+                  << " rc=" << last_sampled_family_step_rc
                   << "\n";
 
         if (cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0) {
@@ -13024,28 +13644,27 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                       << " end phase=validation_sampled_ar_ce"
                       << " rc=" << last_validation_sampled_ar_rc
                       << "\n";
-            Config val_cfg = cfg;
-            val_cfg.train_moe_jepa_dataset_loop = false;
-            val_cfg.smoke_moe_jepa_loss_composition_step = true;
             {
                 std::ostringstream capture;
                 std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
                 std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                           << step << "/" << cfg.max_steps
-                          << " begin phase=validation_moe_jepa_loss_substep"
+                          << " begin phase=validation_sampled_moe_jepa_family_step"
                           << "\n";
-                last_validation_rc = print_jepa_ar_loss_smoke_json(val_cfg, program);
+                last_validation_sampled_family_step_rc =
+                    print_sampled_moe_jepa_family_step_json(cfg, program, val_batch, "validation");
                 std::cout.rdbuf(old);
-                last_validation_stdout = capture.str();
+                last_validation_sampled_family_step_stdout = capture.str();
             }
-            if (last_validation_rc != 0) {
-                error = "native MoE-JEPA dataset loop validation substep failed";
+            if (last_validation_sampled_family_step_rc != 0) {
+                error = "native MoE-JEPA dataset loop validation sampled family-step substep failed";
                 break;
             }
+            last_validation_stdout = last_validation_sampled_family_step_stdout;
             std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
                       << cfg.max_steps
-                      << " end phase=validation_moe_jepa_loss_substep"
-                      << " rc=" << last_validation_rc
+                      << " end phase=validation_sampled_moe_jepa_family_step"
+                      << " rc=" << last_validation_sampled_family_step_rc
                       << "\n";
         }
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
@@ -13080,7 +13699,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
                         << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
                         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-                        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps\"\n"
+                        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_sampled_moe_jepa_family_step\"\n"
                         << "}\n";
                 }
             }
@@ -13111,17 +13730,17 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"status\": \"" << (passed ? "native-family-dataset-loop-ran" : "native-family-dataset-loop-failed") << "\",\n"
         << "  \"trainer_loop_status\": \"native-family-dataset-loop\",\n"
         << "  \"production_training_loop\": false,\n"
-        << "  \"production_loop_gap\": \"family kernels run as fixed-shape CUDA Tile substeps while token batches drive native loop cadence\",\n"
+        << "  \"production_loop_gap\": \"sampled token batches now drive the MoE-JEPA family CUDA Tile substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state\",\n"
         << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
         << "  \"native_training_missing_requirements\": [\n"
-        << "    \"sample-backed-full-family-parameter-state\"\n"
+        << "    \"persistent-full-size-family-parameter-state\"\n"
         << "  ],\n"
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps\",\n"
+        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_sampled_moe_jepa_family_step\",\n"
         << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
         << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
@@ -13154,6 +13773,8 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"last_validation_target_checksum\": " << last_val_target_checksum << ",\n"
         << "  \"last_sampled_ar_returncode\": " << last_sampled_ar_rc << ",\n"
         << "  \"last_validation_sampled_ar_returncode\": " << last_validation_sampled_ar_rc << ",\n"
+        << "  \"last_sampled_family_step_returncode\": " << last_sampled_family_step_rc << ",\n"
+        << "  \"last_validation_sampled_family_step_returncode\": " << last_validation_sampled_family_step_rc << ",\n"
         << "  \"validation_steps\": [";
     for (std::size_t i = 0; i < validation_steps.size(); ++i) {
         if (i != 0) {
@@ -13165,6 +13786,8 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "],\n"
         << "  \"last_sampled_ar_stdout_json\": \"" << json_escape(last_sampled_ar_stdout) << "\",\n"
         << "  \"last_validation_sampled_ar_stdout_json\": \"" << json_escape(last_validation_sampled_ar_stdout) << "\",\n"
+        << "  \"last_sampled_family_step_stdout_json\": \"" << json_escape(last_sampled_family_step_stdout) << "\",\n"
+        << "  \"last_validation_sampled_family_step_stdout_json\": \"" << json_escape(last_validation_sampled_family_step_stdout) << "\",\n"
         << "  \"last_train_step_stdout_json\": \"" << json_escape(last_step_stdout) << "\",\n"
         << "  \"last_validation_stdout_json\": \"" << json_escape(last_validation_stdout) << "\"\n"
         << "}\n";

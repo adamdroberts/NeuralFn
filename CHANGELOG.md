@@ -5,33 +5,37 @@
 - Added live stderr progress for the MoE-JEPA native dataset loop. The family
   trainer now prints the resolved hyperparameters before token-shard resolution,
   shard and batch-plan counts after resolution, begin/end lines for sampled AR
-  CE, the MoE-JEPA train substep, validation sampled AR CE, validation loss
-  substep, and metadata writing. Stdout remains the final JSON payload for
-  automation. The visible defaults are `max_steps=20000`, `batch_size=64`,
-  `train_seq_len=1024`, `train_batch_tokens=524288`,
-  `eval_every_steps=250`, and `learning_rate=0.0006`.
+  CE, the sampled MoE-JEPA family step, validation sampled AR CE, the
+  validation sampled MoE-JEPA family step, and metadata writing. Stdout remains
+  the final JSON payload for automation. The visible defaults are
+  `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
+  `train_batch_tokens=524288`, `eval_every_steps=250`, and
+  `learning_rate=0.0006`.
 
 - Added a MoE-JEPA native dataset-loop default. The bare
   `nfn_moe_jepa_evo_native_train ...` path and `nfn-native-train --base-model
   moe-jepa-evo ...` now resolve native uint16 TinyStories/token shards, sample
   train batches per step, sample validation batches on `--eval-every-steps`,
-  run a sampled-token AR CE CUDA Tile objective slice before the compiled
-  standard-MoE plus JEPA/router substeps, and write native loop metadata under
-  `--output-dir`. The explicit
+  run sampled-token AR CE, then run a sampled MoE-JEPA family CUDA Tile step
+  with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA
+  projector/predictor latent loss, route-balance loss, and AdamW. It writes
+  native loop metadata under `--output-dir`. The explicit
   `--train-moe-jepa-loop-step` / `--native-cuda-train-moe-jepa-loop-step`
   flags remain the one-shot composed train-step slice, while the new
   `--train-moe-jepa-dataset-loop` /
   `--native-cuda-train-moe-jepa-dataset-loop` flags select the dataset loop
   explicitly. The loop still reports `production_training_loop: false` with
-  `sample-backed-full-family-parameter-state` in
-  `native_training_missing_requirements` until the remaining MoE, JEPA
-  target/projector, and router state are driven by the same sampled batch.
+  `persistent-full-size-family-parameter-state` in
+  `native_training_missing_requirements` until the sampled diagnostic parameter
+  buffers are replaced by persistent full-size model state, checkpoint cadence,
+  and inference metadata.
   Verification: rebuilt missing-family native targets and the unified frontend;
   ran a two-step MoE-JEPA dataset loop on the visible RTX 5090 with
   `--eval-every-steps 1`, confirmed two train batches, two validation batches,
-  native token-shard checksums, `moe_jepa_sampled_ar_ce_objective_slice` for
-  train and validation, `graph_editor_tensor_flow: false`, and written
-  metadata.
+  native token-shard checksums, `moe_jepa_sampled_ar_ce_objective_slice` and
+  `moe_jepa_sampled_family_forward_backward_optimizer_step` for train and
+  validation, finite AR/JEPA/router losses, `graph_editor_tensor_flow: false`,
+  and written metadata.
 
 - Added compiled default train-step actions for the remaining non-dense GPT
   template families: Jamba, seq2seq, diffusion, TTT, HNet, and

@@ -11822,19 +11822,21 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_dataset_loop_payload["token_batch_source"] == "native_uint16_token_shards"
     assert (
         moe_jepa_dataset_loop_payload["kernel_step_source"] ==
-        "sampled_ar_ce_plus_compiled_cuda_tile_moe_jepa_substeps"
+        "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
     )
     assert moe_jepa_dataset_loop_payload["native_training_missing_requirements"] == [
-        "sample-backed-full-family-parameter-state"
+        "persistent-full-size-family-parameter-state"
     ]
     assert moe_jepa_dataset_loop_payload["train_batches_sampled"] == 1
     assert moe_jepa_dataset_loop_payload["last_train_token_checksum"] > 0
     assert moe_jepa_dataset_loop_payload["last_sampled_ar_returncode"] == 2
+    assert moe_jepa_dataset_loop_payload["last_sampled_family_step_returncode"] == 2
     sampled_ar_payload = json.loads(moe_jepa_dataset_loop_payload["last_sampled_ar_stdout_json"])
     assert sampled_ar_payload["smoke"] == "moe_jepa_sampled_ar_ce_objective_slice"
     assert sampled_ar_payload["phase"] == "train"
     assert sampled_ar_payload["token_batch_source"] == "native_uint16_token_shards"
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in sampled_ar_payload["loop_composition_stages"]
+    assert moe_jepa_dataset_loop_payload["last_sampled_family_step_stdout_json"] == ""
 
     moe_jepa_explicit_slice = subprocess.run(
         [
