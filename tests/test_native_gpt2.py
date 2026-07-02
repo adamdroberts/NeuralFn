@@ -12003,6 +12003,52 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     ):
         assert symbol in semantic_router_payload["required_tile_symbols"]
 
+    semantic_router_default_train_step = subprocess.run(
+        [
+            str(semantic_router_moe),
+            "--template-name",
+            "semantic_moe_jepa_evo",
+            "--dataset-alias",
+            "cached-shards",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_router_default_train_step.returncode == 2
+    assert "native CUDA Tile trainer for semantic-router-moe is not implemented yet" not in (
+        semantic_router_default_train_step.stderr
+    )
+    assert "starting native semantic-router MoE composed train-step slice" in semantic_router_default_train_step.stderr
+    semantic_router_default_payload = json.loads(semantic_router_default_train_step.stdout)
+    assert semantic_router_default_payload["model_family"] == "semantic-router-moe"
+    assert semantic_router_default_payload["status"] == "native-train-step-slice-failed"
+    assert semantic_router_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert semantic_router_default_payload["production_training_loop"] is False
+    assert semantic_router_default_payload["compiled_native_boundary"] is True
+    assert semantic_router_default_payload["torch_required"] is False
+    assert semantic_router_default_payload["graph_editor_tensor_flow"] is False
+    assert semantic_router_default_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [
+        substep["name"] for substep in semantic_router_default_payload["substeps"]
+    ] == [
+        "semantic_router_moe_route_expert_adamw_slice",
+        "ar_plus_semantic_plus_jepa_loss_composition_slice",
+        "route_evo_device_controller_slice",
+    ]
+    assert all(substep["returncode"] == 2 for substep in semantic_router_default_payload["substeps"])
+
     route_evo_smoke_missing_lib = subprocess.run(
         [
             str(semantic_router_moe),
@@ -12804,6 +12850,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-route-evo-device-controller-step" in unified_route_evo_smoke_command.stdout
     assert "--tile-ops-lib" in unified_route_evo_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_route_evo_smoke_command.stdout
+
+    unified_semantic_router_moe_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-router-moe",
+            "--native-cuda-train-semantic-router-moe-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_router_moe_train_step_command.returncode == 0
+    ), unified_semantic_router_moe_train_step_command.stderr
+    assert str(semantic_router_moe) in unified_semantic_router_moe_train_step_command.stdout
+    assert "--train-semantic-router-moe-loop-step" in unified_semantic_router_moe_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_router_moe_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_router_moe_train_step_command.stdout
 
     unified_semantic_router_moe_smoke_command = subprocess.run(
         [

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added a real compiled default action for
+  `nfn_semantic_router_moe_native_train`. The bare `semantic-router-moe`
+  family command and the explicit `--train-semantic-router-moe-loop-step` /
+  `--native-cuda-train-semantic-router-moe-loop-step` paths now run a composed
+  native train-step slice instead of falling through to the generic "not
+  implemented" message. The slice executes the semantic router/expert AdamW
+  substep, AR+semantic+JEPA objective substep, and route-evo device-controller
+  substep through the compiled C++ boundary, returns one JSON payload with
+  substep JSON, and keeps `production_training_loop: false` plus
+  `production-family-forward-backward-optimizer-loop` in the missing
+  requirements until the full multi-step dataset trainer is implemented.
+  Verification: rebuilt the missing-family trainer binaries and unified native
+  frontend; ran direct and unified `semantic-router-moe` commands with a
+  missing Tile library to verify structured substep failure instead of the
+  generic missing-trainer path; ran the direct command with the built Tile ops
+  library far enough to load Tile/CUDA in all substeps before this environment's
+  CUDA driver/runtime mismatch failed `cudaMalloc`; ran the no-Torch native
+  verifier, source marker checks, `git diff --check`, and a template catalog
+  audit confirming the broader all-template-runnable goal remains incomplete.
+
 - Added immediate launch visibility for the compiled dense GPT no-Bash
   launcher. Before `execvp`, `nfn_train_gpt_sm120` / `build/nfn_train_gpt`
   now writes a stderr line with the resolved target, CUDA device selector,

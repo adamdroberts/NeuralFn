@@ -78,6 +78,7 @@ struct Config {
     bool smoke_moe_transformer_lm_train_step = false;
     bool smoke_moe_full_loop_step = false;
     bool train_moe_jepa_loop_step = false;
+    bool train_semantic_router_moe_loop_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -449,6 +450,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-moe-jepa-loop-step" ||
                    arg == "--native-cuda-train-moe-jepa-loop-step") {
             cfg.train_moe_jepa_loop_step = true;
+        } else if (arg == "--train-semantic-router-moe-loop-step" ||
+                   arg == "--native-cuda-train-semantic-router-moe-loop-step") {
+            cfg.train_semantic_router_moe_loop_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -5155,9 +5159,12 @@ int print_jepa_target_encoder_smoke_json(const Config& cfg, const char* program)
 
 int print_jepa_ar_loss_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
-    const bool jepa_family = family.find("jepa") != std::string::npos || family == "unknown";
     const bool moe_jepa_objective = cfg.smoke_moe_jepa_loss_composition_step;
     const bool semantic_jepa_objective = cfg.smoke_semantic_jepa_loss_composition_step;
+    const bool jepa_family =
+        family.find("jepa") != std::string::npos ||
+        family == "unknown" ||
+        (semantic_jepa_objective && family == "semantic-router-moe");
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -12381,6 +12388,124 @@ int print_moe_jepa_composed_train_step_json(const Config& cfg, const char* progr
     return passed ? 0 : 2;
 }
 
+int print_semantic_router_moe_composed_train_step_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool semantic_router_family = family == "semantic-router-moe" || family == "unknown";
+    std::string error;
+    std::string route_expert_stdout;
+    std::string objective_stdout;
+    std::string route_evo_stdout;
+    int route_expert_rc = 2;
+    int objective_rc = 2;
+    int route_evo_rc = 2;
+
+    if (!semantic_router_family) {
+        error = "Semantic-router MoE composed train-step is only valid for the semantic-router-moe native target";
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native semantic-router MoE composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        Config route_expert_cfg = cfg;
+        route_expert_cfg.smoke_semantic_router_moe_train_step = true;
+        route_expert_cfg.train_semantic_router_moe_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 1/3 semantic router/expert AdamW\n";
+            route_expert_rc = print_moe_route_expert_smoke_json(route_expert_cfg, program);
+            std::cout.rdbuf(old);
+            route_expert_stdout = capture.str();
+        }
+
+        Config objective_cfg = cfg;
+        objective_cfg.smoke_semantic_jepa_loss_composition_step = true;
+        objective_cfg.train_semantic_router_moe_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 2/3 AR+semantic+JEPA objective composition\n";
+            objective_rc = print_jepa_ar_loss_smoke_json(objective_cfg, program);
+            std::cout.rdbuf(old);
+            objective_stdout = capture.str();
+        }
+
+        Config route_evo_cfg = cfg;
+        route_evo_cfg.smoke_route_evo_device_controller_step = true;
+        route_evo_cfg.train_semantic_router_moe_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 3/3 route-evo device controller\n";
+            route_evo_rc = print_route_evo_device_controller_smoke_json(route_evo_cfg, program);
+            std::cout.rdbuf(old);
+            route_evo_stdout = capture.str();
+        }
+        if (route_expert_rc != 0 || objective_rc != 0 || route_evo_rc != 0) {
+            error = "one or more native semantic-router MoE composed train-step substeps failed";
+        }
+    }
+
+    const bool passed = error.empty() && route_expert_rc == 0 && objective_rc == 0 && route_evo_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"semantic_router_moe_route_expert_adamw_slice\", "
+        << "\"returncode\": " << route_expert_rc << ", \"stdout_json\": \"" << json_escape(route_expert_stdout) << "\"},\n"
+        << "    {\"name\": \"ar_plus_semantic_plus_jepa_loss_composition_slice\", "
+        << "\"returncode\": " << objective_rc << ", \"stdout_json\": \"" << json_escape(objective_stdout) << "\"},\n"
+        << "    {\"name\": \"route_evo_device_controller_slice\", "
+        << "\"returncode\": " << route_evo_rc << ", \"stdout_json\": \"" << json_escape(route_evo_stdout) << "\"}\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 int print_semantic_alignment_smoke_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool semantic_family = family.find("semantic") != std::string::npos || family == "unknown";
@@ -13327,6 +13452,9 @@ int main(int argc, char** argv) {
         if (cfg.train_moe_jepa_loop_step) {
             return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
         }
+        if (cfg.train_semantic_router_moe_loop_step) {
+            return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);
+        }
         if (cfg.smoke_semantic_alignment_step || cfg.smoke_semantic_target_shard_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
         }
@@ -13381,6 +13509,9 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo") {
             return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe") {
+            return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);
         }
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";
