@@ -886,7 +886,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-standard-moe-transformer-lm") {
-        return {"production-family-forward-backward-optimizer-loop"};
+        return {"persistent-full-size-family-parameter-state"};
     }
     if (coverage_class == "covered-dense-jepa-objective") {
         return {"production-family-forward-backward-optimizer-loop"};
@@ -956,6 +956,9 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             completed.push_back("standard-moe-transformer-block-forward-backward-adamw-smoke");
             completed.push_back("standard-moe-transformer-lm-forward-backward-adamw-smoke");
             completed.push_back("standard-moe-full-forward-backward-loop-smoke");
+            if (coverage_class == "covered-standard-moe-transformer-lm") {
+                completed.push_back("standard-moe-sampled-family-forward-backward-optimizer-step");
+            }
         }
         if (coverage_class == "covered-moe-jepa-objective" ||
             (coverage_class == "covered-semantic-moe-router-jepa-objective" &&
@@ -1077,7 +1080,6 @@ bool custom_graph_template_metadata_found(const Config& cfg);
 bool selected_template_has_native_train_step_slice(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
     return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
-        coverage_class == "covered-standard-moe-transformer-lm" ||
         coverage_class == "covered-dense-jepa-objective" ||
         coverage_class == "covered-semantic-dense-jepa-objective" ||
         coverage_class == "covered-semantic-moe-router-jepa-objective" ||
@@ -1090,7 +1092,9 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
 }
 
 bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
-    return native_training_coverage_class_for_template(cfg.template_name) == "covered-moe-jepa-objective";
+    const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
+    return coverage_class == "covered-moe-jepa-objective" ||
+        coverage_class == "covered-standard-moe-transformer-lm";
 }
 
 bool selected_graph_is_native_runnable(const Config& cfg) {

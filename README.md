@@ -4846,20 +4846,26 @@ For the semantic-router MoE route/expert train-step slice, use `nfn_semantic_rou
 
 For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-full-loop-step`; it reports the RMSNorm/packed-attention/top-k-route/routed-SwiGLU/LM-head CE/backward/AdamW loop smoke without Torch or graph-editor tensor flow.
 
-For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`; the bare `nfn_mixllama_native_train ...`, `nfn_deepseek_v4_native_train ...`, and matching `nfn-native-train --base-model mixllama|deepseek-v4 ...` paths also enter this slice by default. It wraps the standard MoE full forward/backward-loop smoke in the production-missing JSON payload without Torch or graph-editor tensor flow.
+For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`. It wraps the standard MoE full forward/backward-loop smoke in JSON without Torch or graph-editor tensor flow.
+
+For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`; the bare `nfn_mixllama_native_train ...`, `nfn_deepseek_v4_native_train ...`, and matching `nfn-native-train --base-model mixllama|deepseek-v4 ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled standard-MoE CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report standard-MoE selectors as `native-family-dataset-loop`, with `persistent-full-size-family-parameter-state` retained until sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
 
 For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, route-balance density/loss, and the combined objective check without Torch or graph-editor tensor flow.
 
 For the composed MoE-JEPA native train-step slice, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-loop-step`. It runs the standard MoE full-loop train-step and AR+JEPA+router objective substeps through compiled native C++ and reports substep JSON without Torch or graph-editor tensor flow.
 
 For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `nfn_moe_jepa_evo_native_train ...` and `nfn-native-train --base-model moe-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report MoE-JEPA selectors as `native-family-dataset-loop`, not as missing native trainers. They still keep `persistent-full-size-family-parameter-state` in the missing requirements until the sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
-The loop writes live progress to stderr before token-shard resolution, before
+The standard-MoE and MoE-JEPA dataset loops write live progress to stderr before token-shard resolution, before
 and after each GPU phase, and when metadata is written, while stdout remains the
 final JSON payload. The run banner prints the effective defaults:
 `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
 `train_batch_tokens=524288`, `eval_every_steps=250`, and
-`learning_rate=0.0006`; override them with the matching CLI flags for short
-smoke runs or different validation cadence.
+`learning_rate=0.0006`; `--print-plan` also reports
+`progress_every_steps=1` and the native sampled-family AdamW settings
+(`beta1=0.9`, `beta2=0.95`, `eps=1e-08`, `weight_decay=0.02`). Override them
+with the matching CLI flags for short smoke runs or different validation and
+progress cadence; use `--progress-every-steps 0` only when a wrapper needs quiet
+stderr.
 
 For the dense JEPA full forward/backward-loop slice, use `nfn_jepa_native_train --smoke-dense-jepa-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-full-loop-step`; it reports the target latent pooling/projection, projector/predictor, AR logits, token CE backward, JEPA/LM gradient accumulation, and AdamW loop smoke without Torch or graph-editor tensor flow.
 

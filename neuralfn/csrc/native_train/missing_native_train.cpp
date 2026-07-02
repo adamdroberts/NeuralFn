@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <cstdint>
@@ -56,6 +57,7 @@ struct Config {
     std::int64_t train_seq_len = 1024;
     std::int64_t train_batch_tokens = 524288;
     std::int64_t eval_every_steps = 250;
+    std::int64_t progress_every_steps = 1;
     double learning_rate = 0.0006;
     bool print_plan = false;
     bool check_tile_ops = false;
@@ -79,6 +81,7 @@ struct Config {
     bool smoke_moe_transformer_lm_train_step = false;
     bool smoke_moe_full_loop_step = false;
     bool train_moe_loop_step = false;
+    bool train_moe_dataset_loop = false;
     bool train_moe_jepa_loop_step = false;
     bool train_moe_jepa_dataset_loop = false;
     bool train_semantic_router_moe_loop_step = false;
@@ -359,6 +362,7 @@ void print_usage(const char* program) {
         << "  --print-plan              Emit JSON with native work and schedule metadata\n"
         << "  --check-tile-ops          Check required raw Tile symbols from the trainer ABI\n"
         << "  --sample-token-batch      Resolve native token shards and emit the first token/target batch\n"
+        << "  --progress-every-steps N  Emit native dataset-loop progress every N optimizer steps (default: 1)\n"
         << "  --smoke-llama-loop        Launch RMSNorm, RoPE, and SwiGLU loop-composition kernels on CUDA\n"
         << "  --smoke-llama-train-step  Launch the LLaMA loop-composition kernels plus one AdamW update on CUDA\n"
         << "  --smoke-llama-lm-head-step Launch LLaMA loop plus LM-head CE/backward/AdamW kernels on CUDA\n"
@@ -375,6 +379,7 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
         << "  --smoke-moe-full-loop-step Launch the standard MoE transformer-LM native loop smoke on CUDA\n"
         << "  --train-moe-loop-step Run the standard MoE composed native train-step slice\n"
+        << "  --train-moe-dataset-loop Run the standard MoE native dataset loop over token shards\n"
         << "  --train-moe-jepa-dataset-loop Run the MoE-JEPA native dataset loop over token shards\n"
         << "  --train-jamba-loop-step Run the Jamba composed native train-step slice\n"
         << "  --train-seq2seq-loop-step Run the seq2seq composed native train-step slice\n"
@@ -472,6 +477,9 @@ Config parse_args(int argc, char** argv) {
             cfg.smoke_moe_full_loop_step = true;
         } else if (arg == "--train-moe-loop-step" || arg == "--native-cuda-train-moe-loop-step") {
             cfg.train_moe_loop_step = true;
+        } else if (arg == "--train-moe-dataset-loop" ||
+                   arg == "--native-cuda-train-moe-dataset-loop") {
+            cfg.train_moe_dataset_loop = true;
         } else if (arg == "--train-moe-jepa-loop-step" ||
                    arg == "--native-cuda-train-moe-jepa-loop-step") {
             cfg.train_moe_jepa_loop_step = true;
@@ -611,6 +619,8 @@ Config parse_args(int argc, char** argv) {
             cfg.train_batch_tokens = parse_i64(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--eval-every-steps") {
             cfg.eval_every_steps = parse_i64(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--progress-every-steps") {
+            cfg.progress_every_steps = parse_i64(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--learning-rate" || arg == "--lr") {
             cfg.learning_rate = parse_f64(require_value(argc, argv, &i, arg), arg);
         } else {
@@ -698,14 +708,23 @@ void print_json(const Config& cfg, const char* program) {
     const bool native_coverage_complete = missing_requirements.empty();
     const bool moe_jepa_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo";
+    const bool standard_moe_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "mixllama" ||
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "deepseek-v4";
+    const bool family_dataset_loop_available =
+        moe_jepa_dataset_loop_available || standard_moe_dataset_loop_available;
     const std::string status =
         native_coverage_complete ? "native-trainer-covered"
-        : (moe_jepa_dataset_loop_available ? "native-family-dataset-loop-covered"
-                                           : "family-native-trainer-missing");
+        : (family_dataset_loop_available ? "native-family-dataset-loop-covered"
+                                         : "family-native-trainer-missing");
     const std::string trainer_loop_status =
         native_coverage_complete ? "native-loop-covered"
-        : (moe_jepa_dataset_loop_available ? "native-family-dataset-loop"
-                                           : "family-native-loop-missing");
+        : (family_dataset_loop_available ? "native-family-dataset-loop"
+                                         : "family-native-loop-missing");
+    const std::string kernel_step_source =
+        moe_jepa_dataset_loop_available ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
+        : (standard_moe_dataset_loop_available ? "sampled_ar_ce_plus_sampled_standard_moe_family_step"
+                                               : "none");
 
     std::cout
         << "{\n"
@@ -719,10 +738,7 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"production_training_loop\": " << (native_coverage_complete ? "true" : "false") << ",\n"
-        << "  \"kernel_step_source\": \""
-        << (moe_jepa_dataset_loop_available ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
-                                            : "none")
-        << "\",\n"
+        << "  \"kernel_step_source\": \"" << kernel_step_source << "\",\n"
         << "  \"native_token_batch_preflight\": " << (cfg.sample_token_batch ? "true" : "false") << ",\n"
         << "  \"native_token_batch_format\": \"" << (byte_token_batch ? "uint8_byte_shards" : "uint16_token_shards") << "\",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
@@ -735,8 +751,12 @@ void print_json(const Config& cfg, const char* program) {
         << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
         << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
         << "    \"learning_rate\": " << cfg.learning_rate << "\n"
         << "  },\n"
+        << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
+        << cfg.learning_rate
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
         << "  \"required_native_work\": [\n"
         << "    \"" << json_escape(NFN_NATIVE_REQUIRED_KERNELS) << "\",\n"
         << "    \"wire the family forward/backward/optimizer loop to raw Tile ABI calls\",\n"
@@ -12813,7 +12833,7 @@ int print_sampled_ar_ce_objective_json(
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"moe_jepa_sampled_ar_ce_objective_slice\",\n"
+        << "  \"smoke\": \"sampled_ar_ce_objective_slice\",\n"
         << "  \"phase\": \"" << json_escape(phase) << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -12839,7 +12859,8 @@ int print_sampled_moe_jepa_family_step_json(
     const Config& cfg,
     const char* program,
     const neuralfn::native_train::TokenBatch& batch,
-    std::string_view phase) {
+    std::string_view phase,
+    bool include_jepa = true) {
     const std::string tile_ops_lib = resolve_tile_ops_lib(cfg, program);
     const std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path;
@@ -12858,8 +12879,15 @@ int print_sampled_moe_jepa_family_step_json(
     constexpr std::int64_t kExperts = 3;
     constexpr std::int64_t kTopK = 2;
     constexpr std::int64_t kVocab = 8;
+    constexpr float kAdamBeta1 = 0.9f;
+    constexpr float kAdamBeta2 = 0.95f;
+    constexpr float kAdamEps = 1e-8f;
+    constexpr float kAdamWeightDecay = 0.02f;
+    constexpr float kAdamBeta1Correction = 0.1f;
+    constexpr float kAdamBeta2CorrectionSqrt = 0.22360679775f;
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
+    const float optimizer_learning_rate = static_cast<float>(cfg.learning_rate);
 
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
@@ -12988,9 +13016,11 @@ int print_sampled_moe_jepa_family_step_json(
             if (topk_route == nullptr || broadcast_routes == nullptr || moe_forward == nullptr ||
                 moe_backward == nullptr || linear == nullptr || linear_backward_input == nullptr ||
                 linear_backward_weight_accumulate == nullptr || ce_partials == nullptr ||
-                ce_backward == nullptr || latent_mse_loss == nullptr || route_density == nullptr ||
+                ce_backward == nullptr || (include_jepa && latent_mse_loss == nullptr) || route_density == nullptr ||
                 route_loss == nullptr || fill == nullptr || adamw == nullptr) {
-                error = "Tile ops library is missing one or more sampled MoE-JEPA family-step symbols";
+                error = include_jepa
+                    ? "Tile ops library is missing one or more sampled MoE-JEPA family-step symbols"
+                    : "Tile ops library is missing one or more sampled standard-MoE family-step symbols";
             }
         }
     }
@@ -13179,7 +13209,7 @@ int print_sampled_moe_jepa_family_step_json(
             int status = 0;
             if (error.empty()) {
                 status = fill(d_grad_lm_weight, lm_weight_elements, 0.0f, nullptr);
-                if (status == 0) status = fill(d_grad_projector, projector_elements, 0.0f, nullptr);
+                if (include_jepa && status == 0) status = fill(d_grad_projector, projector_elements, 0.0f, nullptr);
                 if (status == 0) status = fill(d_grad_x, token_elements, 0.0f, nullptr);
                 if (status == 0) status = fill(d_grad_w1, w13_elements, 0.0f, nullptr);
                 if (status == 0) status = fill(d_grad_w2, w2_elements, 0.0f, nullptr);
@@ -13198,7 +13228,12 @@ int print_sampled_moe_jepa_family_step_json(
                         0.0f,
                         nullptr);
                 }
-                if (status != 0) error = cuda_error(status, "zero sampled MoE-JEPA gradients/moments");
+                if (status != 0) {
+                    error = cuda_error(
+                        status,
+                        include_jepa ? "zero sampled MoE-JEPA gradients/moments"
+                                     : "zero sampled standard-MoE gradients/moments");
+                }
             }
             if (error.empty()) {
                 status = topk_route(d_route_logits, d_route_weights, d_route_indices, rows, kExperts, kTopK, nullptr);
@@ -13270,15 +13305,15 @@ int print_sampled_moe_jepa_family_step_json(
                     error = cuda_error(status, "nfn_native_tile_linear_backward_weight_accumulate_float32 sampled LM");
                 }
             }
-            if (error.empty()) {
+            if (include_jepa && error.empty()) {
                 status = linear(d_moe_out, d_projector, nullptr, d_pred, rows, kDim, kDim, false, nullptr);
                 if (status != 0) error = cuda_error(status, "nfn_native_tile_linear_float32 sampled projector");
             }
-            if (error.empty()) {
+            if (include_jepa && error.empty()) {
                 status = latent_mse_loss(d_pred, d_target_latent, d_jepa_loss, token_elements, nullptr);
                 if (status != 0) error = cuda_error(status, "nfn_native_tile_latent_mse_loss_float32 sampled");
             }
-            if (error.empty()) {
+            if (include_jepa && error.empty()) {
                 status = linear_backward_weight_accumulate(
                     d_moe_out, d_latent_grad, d_grad_projector, rows, kDim, kDim, nullptr);
                 if (status != 0) {
@@ -13323,13 +13358,13 @@ int print_sampled_moe_jepa_family_step_json(
                     d_moment_a,
                     d_moment_b,
                     w13_elements,
-                    0.01f,
-                    0.9f,
-                    0.95f,
-                    1e-8f,
-                    0.02f,
-                    0.1f,
-                    std::sqrt(0.05f),
+                    optimizer_learning_rate,
+                    kAdamBeta1,
+                    kAdamBeta2,
+                    kAdamEps,
+                    kAdamWeightDecay,
+                    kAdamBeta1Correction,
+                    kAdamBeta2CorrectionSqrt,
                     nullptr);
                 if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled w1");
             }
@@ -13343,18 +13378,18 @@ int print_sampled_moe_jepa_family_step_json(
                         d_moment_a,
                         d_moment_b,
                         lm_weight_elements,
-                        0.01f,
-                        0.9f,
-                        0.95f,
-                        1e-8f,
-                        0.02f,
-                        0.1f,
-                        std::sqrt(0.05f),
+                        optimizer_learning_rate,
+                        kAdamBeta1,
+                        kAdamBeta2,
+                        kAdamEps,
+                        kAdamWeightDecay,
+                        kAdamBeta1Correction,
+                        kAdamBeta2CorrectionSqrt,
                         nullptr);
                 }
                 if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled LM");
             }
-            if (error.empty()) {
+            if (include_jepa && error.empty()) {
                 status = fill(d_moment_a, projector_elements, 0.0f, nullptr);
                 if (status == 0) status = fill(d_moment_b, projector_elements, 0.0f, nullptr);
                 if (status == 0) {
@@ -13364,46 +13399,58 @@ int print_sampled_moe_jepa_family_step_json(
                         d_moment_a,
                         d_moment_b,
                         projector_elements,
-                        0.01f,
-                        0.9f,
-                        0.95f,
-                        1e-8f,
-                        0.02f,
-                        0.1f,
-                        std::sqrt(0.05f),
+                        optimizer_learning_rate,
+                        kAdamBeta1,
+                        kAdamBeta2,
+                        kAdamEps,
+                        kAdamWeightDecay,
+                        kAdamBeta1Correction,
+                        kAdamBeta2CorrectionSqrt,
                         nullptr);
                 }
                 if (status != 0) error = cuda_error(status, "nfn_native_tile_adamw_step_float32 sampled projector");
             }
             if (error.empty()) {
                 status = cuda_device_synchronize();
-                if (status != 0) error = cuda_error(status, "cudaDeviceSynchronize sampled MoE-JEPA");
+                if (status != 0) {
+                    error = cuda_error(
+                        status,
+                        include_jepa ? "cudaDeviceSynchronize sampled MoE-JEPA"
+                                     : "cudaDeviceSynchronize sampled standard-MoE");
+                }
             }
             std::vector<float> host_ar_loss(1, 0.0f);
             std::vector<float> host_jepa_loss(1, 0.0f);
             std::vector<float> host_router_loss(1, 0.0f);
             if (error.empty()) {
                 status = cuda_memcpy(host_ar_loss.data(), d_ar_loss, sizeof(float), kCudaMemcpyDeviceToHost);
-                if (status == 0) {
+                if (include_jepa && status == 0) {
                     status = cuda_memcpy(host_jepa_loss.data(), d_jepa_loss, sizeof(float), kCudaMemcpyDeviceToHost);
                 }
                 if (status == 0) {
                     status = cuda_memcpy(host_router_loss.data(), d_router_loss, sizeof(float), kCudaMemcpyDeviceToHost);
                 }
-                if (status != 0) error = cuda_error(status, "cudaMemcpy sampled MoE-JEPA losses D2H");
+                if (status != 0) {
+                    error = cuda_error(
+                        status,
+                        include_jepa ? "cudaMemcpy sampled MoE-JEPA losses D2H"
+                                     : "cudaMemcpy sampled standard-MoE losses D2H");
+                }
             }
             if (error.empty()) {
                 ar_loss = static_cast<double>(host_ar_loss[0]);
-                jepa_loss = static_cast<double>(host_jepa_loss[0]);
+                jepa_loss = include_jepa ? static_cast<double>(host_jepa_loss[0]) : 0.0;
                 router_loss = static_cast<double>(host_router_loss[0]);
-                sampled_total_loss = ar_loss + 0.1 * jepa_loss + 0.01 * router_loss;
+                sampled_total_loss = ar_loss + (include_jepa ? 0.1 * jepa_loss : 0.0) + 0.01 * router_loss;
                 passed =
                     std::isfinite(ar_loss) &&
-                    std::isfinite(jepa_loss) &&
+                    (!include_jepa || std::isfinite(jepa_loss)) &&
                     std::isfinite(router_loss) &&
                     std::isfinite(sampled_total_loss);
                 if (!passed) {
-                    error = "sampled MoE-JEPA family step produced a non-finite loss";
+                    error = include_jepa
+                        ? "sampled MoE-JEPA family step produced a non-finite loss"
+                        : "sampled standard-MoE family step produced a non-finite loss";
                 }
             }
         }
@@ -13415,7 +13462,10 @@ int print_sampled_moe_jepa_family_step_json(
         << "{\n"
         << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
         << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
-        << "  \"smoke\": \"moe_jepa_sampled_family_forward_backward_optimizer_step\",\n"
+        << "  \"smoke\": \""
+        << (include_jepa ? "moe_jepa_sampled_family_forward_backward_optimizer_step"
+                         : "standard_moe_sampled_family_forward_backward_optimizer_step")
+        << "\",\n"
         << "  \"phase\": \"" << json_escape(phase) << "\",\n"
         << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
         << "  \"error\": \"" << json_escape(error) << "\",\n"
@@ -13435,8 +13485,16 @@ int print_sampled_moe_jepa_family_step_json(
         << ", \"vocab\": " << kVocab << "},\n"
         << "  \"losses\": {\"ar\": " << ar_loss
         << ", \"jepa\": " << jepa_loss
+        << ", \"jepa_enabled\": " << (include_jepa ? "true" : "false")
         << ", \"router\": " << router_loss
         << ", \"sampled_total\": " << sampled_total_loss << "},\n"
+        << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\""
+        << ", \"learning_rate\": " << cfg.learning_rate
+        << ", \"beta1\": " << kAdamBeta1
+        << ", \"beta2\": " << kAdamBeta2
+        << ", \"eps\": " << kAdamEps
+        << ", \"weight_decay\": " << kAdamWeightDecay
+        << "},\n"
         << "  \"loop_composition_stages\": [\n"
         << "    \"nfn_native_tile_topk_route_float32\",\n"
         << "    \"nfn_native_tile_broadcast_expert_routes_float32\",\n"
@@ -13444,7 +13502,7 @@ int print_sampled_moe_jepa_family_step_json(
         << "    \"nfn_native_tile_linear_float32\",\n"
         << "    \"nfn_native_tile_token_cross_entropy_partials_float32\",\n"
         << "    \"nfn_native_tile_token_cross_entropy_backward_float32\",\n"
-        << "    \"nfn_native_tile_latent_mse_loss_float32\",\n"
+        << (include_jepa ? "    \"nfn_native_tile_latent_mse_loss_float32\",\n" : "")
         << "    \"nfn_native_tile_moe_swiglu_backward_float32\",\n"
         << "    \"nfn_native_tile_route_balance_density_float32\",\n"
         << "    \"nfn_native_tile_route_balance_loss_float32\",\n"
@@ -13454,9 +13512,22 @@ int print_sampled_moe_jepa_family_step_json(
     return passed ? 0 : 2;
 }
 
-int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
+int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program, bool include_jepa = true) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_jepa_family = family == "moe-jepa-evo" || family == "unknown";
+    const bool standard_moe_family = family == "mixllama" || family == "deepseek-v4" || family == "unknown";
+    const bool valid_family = include_jepa ? moe_jepa_family : standard_moe_family;
+    const std::string loop_label = include_jepa ? "MoE-JEPA" : "standard-MoE";
+    const std::string metadata_prefix = include_jepa ? "moe_jepa_evo" : "standard_moe";
+    const std::string sampled_family_step_phase =
+        include_jepa ? "sampled_moe_jepa_family_step" : "sampled_standard_moe_family_step";
+    const std::string kernel_step_source =
+        include_jepa ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
+                     : "sampled_ar_ce_plus_sampled_standard_moe_family_step";
+    const std::string persistent_gap =
+        include_jepa
+            ? "sampled token batches now drive the MoE-JEPA family CUDA Tile substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state"
+            : "sampled token batches now drive the standard-MoE family CUDA Tile substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state";
     std::string error;
     bool dataset_loaded = false;
     bool checkpoint_written = false;
@@ -13481,8 +13552,10 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     neuralfn::native_train::BatchPlan batch_plan;
     std::vector<std::int64_t> validation_steps;
 
-    if (!moe_jepa_family) {
-        error = "MoE-JEPA dataset loop is only valid for the moe-jepa-evo native target";
+    if (!valid_family) {
+        error = include_jepa
+            ? "MoE-JEPA dataset loop is only valid for the moe-jepa-evo native target"
+            : "standard-MoE dataset loop is only valid for standard MoE native targets";
     }
     if (error.empty()) {
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME
@@ -13534,10 +13607,20 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         cfg.batch_size);
     neuralfn::native_train::TokenBatch train_batch;
     neuralfn::native_train::TokenBatch val_batch;
+    using Clock = std::chrono::steady_clock;
+    const auto loop_start = Clock::now();
+    auto elapsed_seconds = [&]() {
+        const auto elapsed = std::chrono::duration<double>(Clock::now() - loop_start);
+        return elapsed.count();
+    };
+    auto progress_due = [&](std::int64_t step) {
+        return cfg.progress_every_steps > 0 &&
+               (step == 1 || step == cfg.max_steps || (step % cfg.progress_every_steps) == 0);
+    };
 
     if (error.empty()) {
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME
-                  << "] starting native MoE-JEPA dataset loop"
+                  << "] starting native " << loop_label << " dataset loop"
                   << " template=" << cfg.template_name
                   << " dataset=" << cfg.dataset_alias
                   << " max_steps=" << cfg.max_steps
@@ -13545,7 +13628,15 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                   << " train_seq_len=" << cfg.train_seq_len
                   << " train_batch_tokens=" << cfg.train_batch_tokens
                   << " eval_every_steps=" << cfg.eval_every_steps
+                  << " progress_every_steps=" << cfg.progress_every_steps
                   << " learning_rate=" << cfg.learning_rate
+                  << " optimizer=adamw"
+                  << " beta1=0.9"
+                  << " beta2=0.95"
+                  << " adam_eps=1e-08"
+                  << " weight_decay=0.02"
+                  << " torch_required=false"
+                  << " graph_editor_tensor_flow=false"
                   << "\n";
     }
 
@@ -13558,7 +13649,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         if (!train_sampler.next(train_batch)) {
             train_sampler.reset();
             if (!train_sampler.next(train_batch)) {
-                error = "not enough train tokens to build one native MoE-JEPA token batch";
+                error = "not enough train tokens to build one native " + loop_label + " token batch";
                 break;
             }
         }
@@ -13583,7 +13674,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             last_sampled_ar_stdout = capture.str();
         }
         if (last_sampled_ar_rc != 0) {
-            error = "native MoE-JEPA dataset loop sampled AR CE substep failed";
+            error = "native " + loop_label + " dataset loop sampled AR CE substep failed";
             break;
         }
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
@@ -13597,22 +13688,22 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
             std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                       << step << "/" << cfg.max_steps
-                      << " begin phase=sampled_moe_jepa_family_step"
+                      << " begin phase=" << sampled_family_step_phase
                       << "\n";
             last_sampled_family_step_rc =
-                print_sampled_moe_jepa_family_step_json(cfg, program, train_batch, "train");
+                print_sampled_moe_jepa_family_step_json(cfg, program, train_batch, "train", include_jepa);
             std::cout.rdbuf(old);
             last_sampled_family_step_stdout = capture.str();
         }
         if (last_sampled_family_step_rc != 0) {
-            error = "native MoE-JEPA dataset loop sampled family-step substep failed";
+            error = "native " + loop_label + " dataset loop sampled family-step substep failed";
             break;
         }
         last_step_stdout = last_sampled_family_step_stdout;
         steps_completed = step;
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
                   << cfg.max_steps
-                  << " end phase=sampled_moe_jepa_family_step"
+                  << " end phase=" << sampled_family_step_phase
                   << " rc=" << last_sampled_family_step_rc
                   << "\n";
 
@@ -13622,7 +13713,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
             if (!val_sampler.next(val_batch)) {
                 val_sampler.reset();
                 if (!val_sampler.next(val_batch)) {
-                    error = "not enough validation tokens to build one native MoE-JEPA token batch";
+                    error = "not enough validation tokens to build one native " + loop_label + " token batch";
                     break;
                 }
             }
@@ -13648,7 +13739,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                 last_validation_sampled_ar_stdout = capture.str();
             }
             if (last_validation_sampled_ar_rc != 0) {
-                error = "native MoE-JEPA dataset loop validation sampled AR CE substep failed";
+                error = "native " + loop_label + " dataset loop validation sampled AR CE substep failed";
                 break;
             }
             std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
@@ -13661,21 +13752,21 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                 std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
                 std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step "
                           << step << "/" << cfg.max_steps
-                          << " begin phase=validation_sampled_moe_jepa_family_step"
+                          << " begin phase=validation_" << sampled_family_step_phase
                           << "\n";
                 last_validation_sampled_family_step_rc =
-                    print_sampled_moe_jepa_family_step_json(cfg, program, val_batch, "validation");
+                    print_sampled_moe_jepa_family_step_json(cfg, program, val_batch, "validation", include_jepa);
                 std::cout.rdbuf(old);
                 last_validation_sampled_family_step_stdout = capture.str();
             }
             if (last_validation_sampled_family_step_rc != 0) {
-                error = "native MoE-JEPA dataset loop validation sampled family-step substep failed";
+                error = "native " + loop_label + " dataset loop validation sampled family-step substep failed";
                 break;
             }
             last_validation_stdout = last_validation_sampled_family_step_stdout;
             std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] step " << step << "/"
                       << cfg.max_steps
-                      << " end phase=validation_sampled_moe_jepa_family_step"
+                      << " end phase=validation_" << sampled_family_step_phase
                       << " rc=" << last_validation_sampled_family_step_rc
                       << "\n";
         }
@@ -13686,23 +13777,43 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                   << " train_batches_sampled=" << train_batches_sampled
                   << " validation_batches_sampled=" << validation_batches_sampled
                   << "\n";
+        if (progress_due(step)) {
+            const double elapsed = elapsed_seconds();
+            const double steps_per_second = elapsed > 0.0 ? static_cast<double>(steps_completed) / elapsed : 0.0;
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] progress"
+                      << " step=" << steps_completed << "/" << cfg.max_steps
+                      << " elapsed_seconds=" << elapsed
+                      << " steps_per_second=" << steps_per_second
+                      << " train_batches_sampled=" << train_batches_sampled
+                      << " validation_batches_sampled=" << validation_batches_sampled
+                      << " last_train_token_checksum=" << last_train_token_checksum
+                      << " last_train_target_checksum=" << last_train_target_checksum
+                      << " last_sampled_ar_rc=" << last_sampled_ar_rc
+                      << " last_sampled_family_step_rc=" << last_sampled_family_step_rc
+                      << "\n";
+        }
     }
 
     std::filesystem::path checkpoint_path;
     std::filesystem::path done_path;
     if (error.empty()) {
         std::cerr << "[" << NFN_NATIVE_TARGET_NAME
-                  << "] writing native MoE-JEPA metadata"
+                  << "] writing native " << loop_label << " metadata"
                   << " output_dir=" << cfg.output_dir
                   << "\n";
         try {
             std::filesystem::create_directories(cfg.output_dir);
-            checkpoint_path = std::filesystem::path(cfg.output_dir) / "moe_jepa_evo_native_loop_metadata_00000000.json";
-            done_path = std::filesystem::path(cfg.output_dir) / "moe_jepa_evo_native_loop_metadata_DONE";
+            checkpoint_path =
+                std::filesystem::path(cfg.output_dir) /
+                (metadata_prefix + "_native_loop_metadata_00000000.json");
+            done_path =
+                std::filesystem::path(cfg.output_dir) /
+                (metadata_prefix + "_native_loop_metadata_DONE");
             {
                 std::ofstream out(checkpoint_path);
                 if (!out) {
-                    error = "failed to open MoE-JEPA native loop metadata for writing";
+                    error = "failed to open " + loop_label + " native loop metadata for writing";
                 } else {
                     out << "{\n"
                         << "  \"format\": \"nfn-native-family-dataset-loop-v1\",\n"
@@ -13711,14 +13822,14 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
                         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
                         << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
                         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-                        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_sampled_moe_jepa_family_step\"\n"
+                        << "  \"kernel_step_source\": \"" << kernel_step_source << "\"\n"
                         << "}\n";
                 }
             }
             if (error.empty()) {
                 std::ofstream done(done_path);
                 if (!done) {
-                    error = "failed to write MoE-JEPA native loop metadata DONE marker";
+                    error = "failed to write " + loop_label + " native loop metadata DONE marker";
                 } else {
                     done << "done\n";
                     checkpoint_written = true;
@@ -13730,9 +13841,10 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
     }
     const bool passed = error.empty() && steps_completed == cfg.max_steps;
     std::cerr << "[" << NFN_NATIVE_TARGET_NAME
-              << "] native MoE-JEPA dataset loop finished"
+              << "] native " << loop_label << " dataset loop finished"
               << " passed=" << (passed ? "true" : "false")
               << " steps_completed=" << steps_completed
+              << " elapsed_seconds=" << elapsed_seconds()
               << " error=\"" << error << "\""
               << "\n";
     std::cout
@@ -13742,7 +13854,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"status\": \"" << (passed ? "native-family-dataset-loop-ran" : "native-family-dataset-loop-failed") << "\",\n"
         << "  \"trainer_loop_status\": \"native-family-dataset-loop\",\n"
         << "  \"production_training_loop\": false,\n"
-        << "  \"production_loop_gap\": \"sampled token batches now drive the MoE-JEPA family CUDA Tile substep; persistent full-size family parameter state remains to replace per-step sampled diagnostic state\",\n"
+        << "  \"production_loop_gap\": \"" << json_escape(persistent_gap) << "\",\n"
         << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
         << "  \"native_training_missing_requirements\": [\n"
         << "    \"persistent-full-size-family-parameter-state\"\n"
@@ -13752,7 +13864,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"graph_editor_tensor_flow\": false,\n"
         << "  \"dataset_loaded\": " << (dataset_loaded ? "true" : "false") << ",\n"
         << "  \"token_batch_source\": \"native_uint16_token_shards\",\n"
-        << "  \"kernel_step_source\": \"sampled_ar_ce_plus_sampled_moe_jepa_family_step\",\n"
+        << "  \"kernel_step_source\": \"" << kernel_step_source << "\",\n"
         << "  \"checkpoint_metadata_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "  \"checkpoint_metadata_path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
         << "  \"checkpoint_done_path\": \"" << json_escape(done_path.string()) << "\",\n"
@@ -13774,9 +13886,14 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
         << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"progress_every_steps\": " << cfg.progress_every_steps << ",\n"
         << "    \"learning_rate\": " << cfg.learning_rate << "\n"
         << "  },\n"
+        << "  \"optimizer_hyperparameters\": {\"optimizer\": \"adamw\", \"learning_rate\": "
+        << cfg.learning_rate
+        << ", \"beta1\": 0.9, \"beta2\": 0.95, \"eps\": 1e-08, \"weight_decay\": 0.02},\n"
         << "  \"steps_completed\": " << steps_completed << ",\n"
+        << "  \"elapsed_seconds\": " << elapsed_seconds() << ",\n"
         << "  \"train_batches_sampled\": " << train_batches_sampled << ",\n"
         << "  \"validation_batches_sampled\": " << validation_batches_sampled << ",\n"
         << "  \"last_train_token_checksum\": " << last_train_token_checksum << ",\n"
@@ -13787,6 +13904,7 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"last_validation_sampled_ar_returncode\": " << last_validation_sampled_ar_rc << ",\n"
         << "  \"last_sampled_family_step_returncode\": " << last_sampled_family_step_rc << ",\n"
         << "  \"last_validation_sampled_family_step_returncode\": " << last_validation_sampled_family_step_rc << ",\n"
+        << "  \"sampled_family_step_phase\": \"" << sampled_family_step_phase << "\",\n"
         << "  \"validation_steps\": [";
     for (std::size_t i = 0; i < validation_steps.size(); ++i) {
         if (i != 0) {
@@ -13804,6 +13922,10 @@ int print_moe_jepa_dataset_loop_json(const Config& cfg, const char* program) {
         << "  \"last_validation_stdout_json\": \"" << json_escape(last_validation_stdout) << "\"\n"
         << "}\n";
     return passed ? 0 : 2;
+}
+
+int print_standard_moe_dataset_loop_json(const Config& cfg, const char* program) {
+    return print_moe_jepa_dataset_loop_json(cfg, program, false);
 }
 
 int print_semantic_router_moe_composed_train_step_json(const Config& cfg, const char* program) {
@@ -15117,6 +15239,9 @@ int main(int argc, char** argv) {
         if (cfg.train_moe_loop_step) {
             return print_standard_moe_composed_train_step_json(cfg, argv[0]);
         }
+        if (cfg.train_moe_dataset_loop) {
+            return print_standard_moe_dataset_loop_json(cfg, argv[0]);
+        }
         if (cfg.smoke_jepa_projector_step) {
             return print_jepa_projector_smoke_json(cfg, argv[0]);
         }
@@ -15287,7 +15412,7 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "mixllama" ||
             std::string(NFN_NATIVE_MODEL_FAMILY) == "deepseek-v4") {
-            return print_standard_moe_composed_train_step_json(cfg, argv[0]);
+            return print_standard_moe_dataset_loop_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-router-moe") {
             return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);

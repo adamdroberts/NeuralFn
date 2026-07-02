@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- Added explicit progress and optimizer hyperparameter reporting for the
+  standard-MoE and MoE-JEPA native dataset loops. `--print-plan` and runtime
+  JSON now include `progress_every_steps` plus the sampled-family AdamW settings
+  (`learning_rate`, `beta1=0.9`, `beta2=0.95`, `eps=1e-08`,
+  `weight_decay=0.02`), and the native sampled family step now uses the
+  configured `--learning-rate` instead of a local diagnostic constant. Runtime
+  stderr progress includes elapsed seconds and steps/sec at the configured
+  `--progress-every-steps` cadence while stdout remains the final JSON payload.
+
+- Added a standard-MoE native dataset-loop default for `mixllama`,
+  `mixllama_fast`, `moe`, `deepseek_v3`, `deepseek_v4`, and their modern
+  aliases. Bare `nfn_mixllama_native_train ...`, `nfn_deepseek_v4_native_train
+  ...`, and matching `nfn-native-train --base-model mixllama|deepseek-v4 ...`
+  runs now resolve native uint16 token shards, sample train/validation batches,
+  run sampled-token AR CE, and run a sampled standard-MoE CUDA Tile step with
+  top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance
+  loss, and AdamW. The one-shot `--train-moe-loop-step` slice remains available
+  explicitly. `--print-plan`, `--list-models`, and `--list-templates` now report
+  standard-MoE selectors as `native-family-dataset-loop` with
+  `persistent-full-size-family-parameter-state` retained as the remaining gap.
+  Verification: rebuilt generated native family trainers plus unified/GPT
+  catalog frontends; ran direct and unified one-step TinyStories standard-MoE
+  dataset loops with validation, confirming real token-shard sampling,
+  `sampled_ar_ce_objective_slice`, and
+  `standard_moe_sampled_family_forward_backward_optimizer_step` without Torch or
+  graph-editor tensor flow.
+
 - Added dense GPT microbatch heartbeat progress. The native CUDA Tile trainer
   already printed startup hyperparameters and optimizer-step progress to
   stderr; logged steps now also print microbatch begin/complete lines, including

@@ -3308,7 +3308,9 @@ For the standard MoE transformer-LM train-step slice, use `nfn_mixllama_native_t
 
 For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-full-loop-step`; it reports the RMSNorm/packed-attention/top-k-route/routed-SwiGLU/LM-head CE/backward/AdamW loop smoke without Torch or graph-editor tensor flow.
 
-For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`; bare standard-MoE family commands such as `nfn_mixllama_native_train ...` and `nfn_deepseek_v4_native_train ...` also default to this slice. It wraps the standard MoE full forward/backward-loop smoke in production-missing JSON without Torch or graph-editor tensor flow.
+For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`. It wraps the standard MoE full forward/backward-loop smoke in JSON without Torch or graph-editor tensor flow.
+
+For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`; bare standard-MoE family commands such as `nfn_mixllama_native_train ...` and `nfn_deepseek_v4_native_train ...` also default to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled standard-MoE CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report standard-MoE selectors as `native-family-dataset-loop`, with `persistent-full-size-family-parameter-state` retained until sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
 
 For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, route-balance density/loss, and the combined weighted objective check through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 
@@ -3318,11 +3320,15 @@ For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train
 This family loop now mirrors dense GPT operator visibility: stderr prints the
 resolved hyperparameters before shard resolution, shard/batch-plan counts after
 resolution, and begin/end lines for sampled AR CE, sampled MoE-JEPA family
-step, validation sampled AR CE, validation sampled MoE-JEPA family step, and
+step, validation sampled AR CE, validation sampled family step, and
 metadata writing. Stdout stays reserved for the final JSON payload. The default settings are
 `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
 `train_batch_tokens=524288`, `eval_every_steps=250`, and
-`learning_rate=0.0006`.
+`learning_rate=0.0006`; `--print-plan` also reports
+`progress_every_steps=1` and the sampled-family AdamW settings
+(`beta1=0.9`, `beta2=0.95`, `eps=1e-08`, `weight_decay=0.02`). Pass
+`--progress-every-steps N` to control the stderr heartbeat, or
+`--progress-every-steps 0` for quiet automation.
 
 For the dense JEPA composed train-step slice, use `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-train-step`; it launches target latent pooling/projection, projector/predictor forward, latent MSE, AR logits, token CE forward/backward, JEPA and LM weight-gradient accumulation, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow.
 

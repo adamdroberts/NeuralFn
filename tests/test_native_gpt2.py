@@ -672,9 +672,6 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["llama"]["passed"] is True
     assert train_step_sentinels["llama"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["llama"]["native_runnable"] is True
-    assert train_step_sentinels["mixllama"]["passed"] is True
-    assert train_step_sentinels["mixllama"]["status"] == "native-train-step-slice"
-    assert train_step_sentinels["mixllama"]["native_runnable"] is True
     assert train_step_sentinels["dense_jepa_evo"]["passed"] is True
     assert train_step_sentinels["dense_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["dense_jepa_evo"]["native_runnable"] is True
@@ -689,6 +686,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
         assert train_step_sentinels[template_name]["native_runnable"] is True
     dataset_loop_sentinels = linked_catalog["dataset_loop_sentinels"]
+    assert dataset_loop_sentinels["mixllama"]["passed"] is True
+    assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["mixllama"]["native_runnable"] is True
+    assert dataset_loop_sentinels["mixllama"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
     assert dataset_loop_sentinels["moe_jepa_evo"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["moe_jepa_evo"]["native_runnable"] is True
@@ -5285,7 +5288,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
     assert statuses["llama"] == "native-train-step-slice"
-    assert statuses["mixllama"] == "native-train-step-slice"
+    assert statuses["mixllama"] == "native-family-dataset-loop"
     assert statuses["dense_jepa_evo"] == "native-train-step-slice"
     assert statuses["moe_jepa_evo"] == "native-family-dataset-loop"
     assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop"
@@ -5338,7 +5341,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["mixllama"] == "covered-standard-moe-transformer-lm"
-    assert missing_requirements["mixllama"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["mixllama"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["mixllama"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -5347,6 +5350,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
         "standard-moe-full-forward-backward-loop-smoke",
+        "standard-moe-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["moe_jepa_evo"] == "covered-moe-jepa-objective"
@@ -7756,6 +7760,8 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["llama"]["status"] == "family-native-trainer-missing"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
     assert models["llama"]["trainer_loop_status"] == "family-native-loop-missing"
+    assert models["mixllama"]["status"] == "native-family-dataset-loop-covered"
+    assert models["mixllama"]["trainer_loop_status"] == "native-family-dataset-loop"
 
 
 def test_native_train_model_registry_static_names_match_cpp_registry(
@@ -8830,7 +8836,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
-            "covered-standard-moe-transformer-lm",
             "covered-dense-jepa-objective",
             "covered-semantic-dense-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
@@ -8846,7 +8851,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_training_missing_requirements"] == [
                 "production-family-forward-backward-optimizer-loop"
             ]
-        elif preset_payload["native_training_coverage_class"] == "covered-moe-jepa-objective":
+        elif preset_payload["native_training_coverage_class"] in {
+            "covered-standard-moe-transformer-lm",
+            "covered-moe-jepa-objective",
+        }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_training_missing_requirements"] == [
@@ -11609,9 +11617,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_plan.returncode == 0, mixllama_plan.stderr
     mixllama_payload = json.loads(mixllama_plan.stdout)
     assert mixllama_payload["model_family"] == "mixllama"
-    assert mixllama_payload["status"] == "family-native-trainer-missing"
+    assert mixllama_payload["status"] == "native-family-dataset-loop-covered"
+    assert mixllama_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert mixllama_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_standard_moe_family_step"
     assert mixllama_payload["native_training_coverage_class"] == "covered-standard-moe-transformer-lm"
-    assert mixllama_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert mixllama_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert mixllama_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11620,6 +11630,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-transformer-block-forward-backward-adamw-smoke",
         "standard-moe-transformer-lm-forward-backward-adamw-smoke",
         "standard-moe-full-forward-backward-loop-smoke",
+        "standard-moe-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert mixllama_payload["compiled_native_boundary"] is True
@@ -11727,23 +11738,26 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert mixllama_default_train_step.returncode == 2
     assert "native CUDA Tile trainer for mixllama is not implemented yet" not in mixllama_default_train_step.stderr
-    assert "starting native standard-MoE composed train-step slice" in mixllama_default_train_step.stderr
+    assert "starting native standard-MoE dataset loop" in mixllama_default_train_step.stderr
+    assert "step 1/2 begin phase=sample_train_batch" in mixllama_default_train_step.stderr
     mixllama_train_step_payload = json.loads(mixllama_default_train_step.stdout)
-    assert mixllama_train_step_payload["status"] == "native-train-step-slice-failed"
-    assert mixllama_train_step_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert mixllama_train_step_payload["status"] == "native-family-dataset-loop-failed"
+    assert mixllama_train_step_payload["trainer_loop_status"] == "native-family-dataset-loop"
     assert mixllama_train_step_payload["production_training_loop"] is False
     assert mixllama_train_step_payload["compiled_native_boundary"] is True
     assert mixllama_train_step_payload["torch_required"] is False
     assert mixllama_train_step_payload["graph_editor_tensor_flow"] is False
+    assert mixllama_train_step_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert mixllama_train_step_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_standard_moe_family_step"
     assert mixllama_train_step_payload["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
+        "persistent-full-size-family-parameter-state"
     ]
-    assert [step["name"] for step in mixllama_train_step_payload["substeps"]] == [
-        "standard_moe_full_forward_backward_loop_train_step_slice"
-    ]
-    assert mixllama_train_step_payload["substeps"][0]["returncode"] == 2
-    mixllama_substep_payload = json.loads(mixllama_train_step_payload["substeps"][0]["stdout_json"])
-    assert mixllama_substep_payload["smoke"] == "standard_moe_full_forward_backward_loop_train_step_slice"
+    assert mixllama_train_step_payload["train_batches_sampled"] == 1
+    assert mixllama_train_step_payload["last_sampled_ar_returncode"] == 2
+    assert mixllama_train_step_payload["last_sampled_family_step_returncode"] == 2
+    sampled_moe_ar_payload = json.loads(mixllama_train_step_payload["last_sampled_ar_stdout_json"])
+    assert sampled_moe_ar_payload["smoke"] == "sampled_ar_ce_objective_slice"
+    assert sampled_moe_ar_payload["token_batch_source"] == "native_uint16_token_shards"
 
     moe_jepa_plan = subprocess.run(
         [
@@ -11851,7 +11865,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_dataset_loop_payload["last_sampled_ar_returncode"] == 2
     assert moe_jepa_dataset_loop_payload["last_sampled_family_step_returncode"] == 2
     sampled_ar_payload = json.loads(moe_jepa_dataset_loop_payload["last_sampled_ar_stdout_json"])
-    assert sampled_ar_payload["smoke"] == "moe_jepa_sampled_ar_ce_objective_slice"
+    assert sampled_ar_payload["smoke"] == "sampled_ar_ce_objective_slice"
     assert sampled_ar_payload["phase"] == "train"
     assert sampled_ar_payload["token_batch_source"] == "native_uint16_token_shards"
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in sampled_ar_payload["loop_composition_stages"]
