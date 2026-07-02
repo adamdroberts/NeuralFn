@@ -136,14 +136,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "semantic-dense-jepa",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_semantic_dense_jepa_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-semantic-dense-jepa-native-loop",
+        "sampled-semantic-dense-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Semantic dense JEPA Evo training needs semantic target resolution, planner/projector/predictor wiring, semantic-alignment loss, latent MSE, and AR loss composition.",
+        "native-family-dataset-loop",
+        "Semantic dense JEPA variants run the native token-shard dataset loop with sampled AR CE, native semantic target derivation, and the semantic planner/alignment CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "moe-jepa-evo",
@@ -560,6 +560,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
         "--train-semantic-dense-jepa-loop-step",
+        "--train-semantic-dense-jepa-dataset-loop",
         "--smoke-semantic-jepa-loss-composition-step",
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
@@ -645,6 +646,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
         "--train-semantic-dense-jepa-loop-step",
+        "--train-semantic-dense-jepa-dataset-loop",
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
         "--smoke-seq2seq-cross-attention-step",
@@ -1155,6 +1157,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-semantic-dense-jepa-train-step",
                 "--native-cuda-train-semantic-dense-jepa-loop-step",
+                "--native-cuda-train-semantic-dense-jepa-dataset-loop",
                 "--native-cuda-smoke-semantic-jepa-loss-composition-step",
                 "--native-cuda-smoke-semantic-router-moe-train-step",
                 "--native-cuda-smoke-semantic-route-loss-step",
@@ -1288,6 +1291,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-semantic-dense-jepa-train-step");
             } else if (arg == "--native-cuda-train-semantic-dense-jepa-loop-step") {
                 forwarded.push_back("--train-semantic-dense-jepa-loop-step");
+            } else if (arg == "--native-cuda-train-semantic-dense-jepa-dataset-loop") {
+                forwarded.push_back("--train-semantic-dense-jepa-dataset-loop");
             } else if (arg == "--native-cuda-smoke-semantic-jepa-loss-composition-step") {
                 forwarded.push_back("--smoke-semantic-jepa-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-semantic-router-moe-train-step") {

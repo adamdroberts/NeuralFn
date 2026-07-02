@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a semantic-dense-JEPA native dataset-loop default for semantic dense
+  JEPA selectors. The loop resolves native uint16 token shards, derives
+  semantic target IDs in compiled C++, samples train and validation batches,
+  runs sampled AR CE, then runs the composed semantic planner/alignment CUDA
+  Tile train-step slice without Torch or graph-editor tensor flow. Runtime
+  stderr prints immediate hyperparameters, shard resolution, semantic target
+  checksums, per-phase progress, validation phases, metadata writes, elapsed
+  seconds, and steps/sec while stdout remains the final JSON payload. Catalog
+  entries now report `native-family-dataset-loop` with
+  `persistent-full-size-family-parameter-state` as the remaining production
+  state gap.
+
 - Added a dense-JEPA native dataset-loop default for dense JEPA selectors. The
   loop resolves native uint16 token shards, samples train and validation
   batches, runs sampled AR CE, then runs the composed dense-JEPA CUDA Tile

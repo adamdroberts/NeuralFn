@@ -343,17 +343,18 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "semantic-dense-jepa",
-        "status": "family-native-trainer-missing",
+        "status": "native-family-dataset-loop-covered",
         "native_target": "nfn_semantic_dense_jepa_native_train",
-        "transformer_lm_status": "family-native-trainer-missing",
+        "transformer_lm_status": "native-family-dataset-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "requires-semantic-dense-jepa-native-loop",
+        "geometry_status": "sampled-semantic-dense-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "family-native-loop-missing",
+        "trainer_loop_status": "native-family-dataset-loop",
         "notes": (
-            "Semantic dense JEPA Evo training needs semantic target resolution, "
-            "planner/projector/predictor wiring, semantic-alignment loss, latent "
-            "MSE, and AR loss composition."
+            "Semantic dense JEPA variants run the native token-shard dataset loop "
+            "with sampled AR CE, native semantic target derivation, and the "
+            "semantic planner/alignment CUDA Tile train-step slice; persistent "
+            "full-size family parameter state remains before production training."
         ),
     },
     {
