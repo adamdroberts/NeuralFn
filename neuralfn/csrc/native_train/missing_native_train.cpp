@@ -92,6 +92,7 @@ struct Config {
     bool train_diffusion_loop_step = false;
     bool train_diffusion_dataset_loop = false;
     bool train_ttt_loop_step = false;
+    bool train_ttt_dataset_loop = false;
     bool train_hnet_loop_step = false;
     bool train_universal_loop_step = false;
     bool smoke_jepa_projector_step = false;
@@ -394,6 +395,7 @@ void print_usage(const char* program) {
         << "  --train-diffusion-loop-step Run the diffusion composed native train-step slice\n"
         << "  --train-diffusion-dataset-loop Run the diffusion native dataset loop over token shards\n"
         << "  --train-ttt-loop-step Run the TTT composed native train-step slice\n"
+        << "  --train-ttt-dataset-loop Run the TTT native dataset loop over token shards\n"
         << "  --train-hnet-loop-step Run the HNet composed native train-step slice\n"
         << "  --train-universal-loop-step Run the universal-transformer composed native train-step slice\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
@@ -522,6 +524,9 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-ttt-loop-step" ||
                    arg == "--native-cuda-train-ttt-loop-step") {
             cfg.train_ttt_loop_step = true;
+        } else if (arg == "--train-ttt-dataset-loop" ||
+                   arg == "--native-cuda-train-ttt-dataset-loop") {
+            cfg.train_ttt_dataset_loop = true;
         } else if (arg == "--train-hnet-loop-step" ||
                    arg == "--native-cuda-train-hnet-loop-step") {
             cfg.train_hnet_loop_step = true;
@@ -753,6 +758,8 @@ void print_json(const Config& cfg, const char* program) {
         std::string(NFN_NATIVE_MODEL_FAMILY) == "seq2seq";
     const bool diffusion_dataset_loop_available =
         std::string(NFN_NATIVE_MODEL_FAMILY) == "diffusion";
+    const bool ttt_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama";
     const bool family_dataset_loop_available =
         llama_dataset_loop_available ||
         dense_jepa_dataset_loop_available ||
@@ -761,7 +768,8 @@ void print_json(const Config& cfg, const char* program) {
         standard_moe_dataset_loop_available ||
         semantic_router_moe_dataset_loop_available ||
         seq2seq_dataset_loop_available ||
-        diffusion_dataset_loop_available;
+        diffusion_dataset_loop_available ||
+        ttt_dataset_loop_available;
     const std::string status =
         native_coverage_complete ? "native-trainer-covered"
         : (family_dataset_loop_available ? "native-family-dataset-loop-covered"
@@ -778,6 +786,7 @@ void print_json(const Config& cfg, const char* program) {
         : semantic_router_moe_dataset_loop_available ? "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
         : seq2seq_dataset_loop_available ? "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
         : diffusion_dataset_loop_available ? "sampled_ar_ce_plus_diffusion_full_loop_step"
+        : ttt_dataset_loop_available ? "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
         : (standard_moe_dataset_loop_available ? "sampled_ar_ce_plus_sampled_standard_moe_family_step"
                                                : "none");
 
@@ -17479,6 +17488,22 @@ int main(int argc, char** argv) {
                 "TTT full transformer loop",
                 "ttt_full_transformer_loop_train_step_slice");
         }
+        if (cfg.train_ttt_dataset_loop) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_ttt_full_transformer_loop_step = true;
+            substep_cfg.train_ttt_loop_step = false;
+            substep_cfg.train_ttt_dataset_loop = false;
+            return print_single_substep_dataset_loop_json(
+                cfg, argv[0], "TTT",
+                "TTT dataset loop is only valid for the ttt-llama native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_ttt_composite_inner_smoke_json,
+                "ttt_full_transformer_loop_step",
+                "ttt_full_transformer_loop_train_step_slice",
+                "sampled_ar_ce_plus_ttt_full_transformer_loop_step",
+                "ttt");
+        }
         if (cfg.train_hnet_loop_step) {
             Config substep_cfg = cfg;
             substep_cfg.smoke_hnet_byte_lm_loop_step = true;
@@ -17616,11 +17641,13 @@ int main(int argc, char** argv) {
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama") {
             Config substep_cfg = cfg;
             substep_cfg.smoke_ttt_full_transformer_loop_step = true;
-            return print_single_substep_composed_train_step_json(
+            return print_single_substep_dataset_loop_json(
                 cfg, argv[0], "TTT", "", true, substep_cfg,
                 print_ttt_composite_inner_smoke_json,
-                "TTT full transformer loop",
-                "ttt_full_transformer_loop_train_step_slice");
+                "ttt_full_transformer_loop_step",
+                "ttt_full_transformer_loop_train_step_slice",
+                "sampled_ar_ce_plus_ttt_full_transformer_loop_step",
+                "ttt");
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "hnet-lm") {
             Config substep_cfg = cfg;

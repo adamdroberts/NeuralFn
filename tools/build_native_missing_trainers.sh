@@ -110,8 +110,8 @@ build_one "ttt-llama" "nfn_ttt_llama_native_train" \
   "test-time-training inner update and transformer CUDA Tile trainer" \
   "nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_rms_norm_float32,nfn_native_tile_linear_float32,nfn_native_tile_tanh_float32,nfn_native_tile_add_float32,nfn_native_tile_tanh_backward_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \
   "covered-ttt-transformer-lm" \
-  "production-family-forward-backward-optimizer-loop" \
-  "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke,ttt-full-transformer-loop-smoke,family-parameter-layout-checkpoint-inference-smoke"
+  "persistent-full-size-family-parameter-state" \
+  "ttt-linear-mse-adamw-smoke,ttt-composite-inner-forward-backward-adamw-smoke,ttt-full-transformer-loop-smoke,ttt-sampled-family-dataset-loop,family-parameter-layout-checkpoint-inference-smoke"
 build_one "hnet-lm" "nfn_hnet_lm_native_train" \
   "HNet byte-token patch and merge CUDA Tile trainer" \
   "nfn_native_tile_byte_patch_embed_float32,nfn_native_tile_byte_patch_merge_float32,nfn_native_tile_byte_patch_merge_backward_float32,nfn_native_tile_byte_patch_embed_backward_float32,nfn_native_tile_linear_float32,nfn_native_tile_linear_backward_input_float32,nfn_native_tile_linear_backward_weight_accumulate_float32,nfn_native_tile_latent_mse_loss_float32,nfn_native_tile_fill_float32,nfn_native_tile_adamw_step_float32,nfn_native_tile_token_embedding_u16_float32,nfn_native_tile_linear_bf16_input_weight_bf16_output_float32,nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" \

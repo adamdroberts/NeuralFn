@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a TTT native dataset-loop default. Bare `nfn_ttt_llama_native_train
+  ...` and `nfn-native-train --base-model ttt-llama ...` now resolve native
+  uint16 token shards, sample train and validation batches, run sampled AR CE,
+  then run the composed base/down/tanh/up residual CUDA Tile train-step slice
+  without Torch or graph-editor tensor flow. Runtime and plan JSON report
+  `kernel_step_source: "sampled_ar_ce_plus_ttt_full_transformer_loop_step"`,
+  `native-family-dataset-loop`, and
+  `persistent-full-size-family-parameter-state` as the remaining
+  production-state gap; the older `--train-ttt-loop-step` one-shot slice
+  remains available explicitly.
+
 - Added immediate launch visibility to the unified native training frontend.
   `nfn-native-train` now prints a pre-`execvp` stderr banner with the resolved
   native target, executable, template or graph selector, dataset, core schedule

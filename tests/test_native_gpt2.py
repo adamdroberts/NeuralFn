@@ -669,7 +669,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert required_dense["nanogpt"]["geometry"]["model_dim"] == 320
     assert required_dense["nanogpt"]["geometry"]["num_layers"] == 5
     train_step_sentinels = linked_catalog["train_step_slice_sentinels"]
-    for template_name in ("jamba", "seq2seq", "diffusion", "ttt_llama", "hnet_lm", "universal_llama"):
+    for template_name in ("jamba", "hnet_lm", "universal_llama"):
         assert train_step_sentinels[template_name]["passed"] is True
         assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
         assert train_step_sentinels[template_name]["native_runnable"] is True
@@ -696,6 +696,12 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["mixllama"]["native_runnable"] is True
     assert dataset_loop_sentinels["mixllama"]["missing_requirements"] == [
+        "persistent-full-size-family-parameter-state"
+    ]
+    assert dataset_loop_sentinels["ttt_llama"]["passed"] is True
+    assert dataset_loop_sentinels["ttt_llama"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["ttt_llama"]["native_runnable"] is True
+    assert dataset_loop_sentinels["ttt_llama"]["missing_requirements"] == [
         "persistent-full-size-family-parameter-state"
     ]
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
@@ -5310,13 +5316,13 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["seq2seq_modern"] == "native-family-dataset-loop"
     assert statuses["diffusion"] == "native-family-dataset-loop"
     assert statuses["diffusion_modern"] == "native-family-dataset-loop"
+    assert statuses["ttt_llama"] == "native-family-dataset-loop"
+    assert statuses["ttt_llama_modern"] == "native-family-dataset-loop"
     for template_name in (
         "jamba",
-        "ttt_llama",
         "hnet_lm",
         "universal_llama",
         "jamba_modern",
-        "ttt_llama_modern",
         "hnet_lm_modern",
         "universal_llama_modern",
     ):
@@ -5414,11 +5420,12 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["ttt_llama"] == "covered-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == ["production-family-forward-backward-optimizer-loop"]
+    assert missing_requirements["ttt_llama"] == ["persistent-full-size-family-parameter-state"]
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
         "ttt-full-transformer-loop-smoke",
+        "ttt-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert coverage["universal_llama"] == "covered-universal-transformer-lm"
@@ -8854,7 +8861,6 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset_payload["native_training_coverage_class"] in {
-            "covered-ttt-transformer-lm",
             "covered-jamba-hybrid-mamba-transformer-lm",
             "covered-hnet-byte-lm",
             "covered-universal-transformer-lm",
@@ -8869,6 +8875,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-semantic-moe-router-jepa-objective",
             "covered-seq2seq-objective",
             "covered-diffusion-objective",
+            "covered-ttt-transformer-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
@@ -12550,13 +12557,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_plan.returncode == 0, ttt_plan.stderr
     ttt_payload = json.loads(ttt_plan.stdout)
     assert ttt_payload["model_family"] == "ttt-llama"
-    assert ttt_payload["status"] == "family-native-trainer-missing"
+    assert ttt_payload["status"] == "native-family-dataset-loop-covered"
+    assert ttt_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert ttt_payload["kernel_step_source"] == "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
     assert ttt_payload["native_training_coverage_class"] == "covered-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == ["production-family-forward-backward-optimizer-loop"]
+    assert ttt_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
         "ttt-full-transformer-loop-smoke",
+        "ttt-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
     ]
     assert ttt_payload["compiled_native_boundary"] is True
@@ -13755,6 +13765,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-ttt-full-transformer-loop-step" in unified_ttt_full_loop_smoke_command.stdout
     assert "--tile-ops-lib" in unified_ttt_full_loop_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_ttt_full_loop_smoke_command.stdout
+
+    unified_ttt_dataset_loop_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "ttt-llama",
+            "--native-cuda-train-ttt-dataset-loop",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_ttt_dataset_loop_command.returncode == 0, unified_ttt_dataset_loop_command.stderr
+    assert str(ttt_llama) in unified_ttt_dataset_loop_command.stdout
+    assert "--train-ttt-dataset-loop" in unified_ttt_dataset_loop_command.stdout
+    assert "--tile-ops-lib" in unified_ttt_dataset_loop_command.stdout
+    assert "--train-transformer-lm" not in unified_ttt_dataset_loop_command.stdout
 
     unified_universal_smoke_command = subprocess.run(
         [

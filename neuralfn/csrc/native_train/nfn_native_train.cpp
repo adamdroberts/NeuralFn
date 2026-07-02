@@ -235,14 +235,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "ttt-llama",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "nfn_ttt_llama_native_train",
-        "family-native-trainer-missing",
+        "native-family-dataset-loop-covered",
         "not-applicable",
-        "requires-ttt-native-loop",
+        "sampled-ttt-dataset-loop",
         "required-tile-symbols-present",
-        "family-native-loop-missing",
-        "Test-time-training transformer variants need a dedicated native CUDA Tile C++ trainer.",
+        "native-family-dataset-loop",
+        "TTT transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed TTT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "hnet-lm",
@@ -621,6 +621,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
         "--smoke-ttt-linear-inner-step",
+        "--train-ttt-dataset-loop",
         "--train-ttt-loop-step",
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
@@ -707,6 +708,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
         "--smoke-ttt-linear-inner-step",
+        "--train-ttt-dataset-loop",
         "--train-ttt-loop-step",
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
@@ -1222,6 +1224,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-ttt-composite-inner-step",
                 "--native-cuda-smoke-ttt-full-transformer-loop-step",
                 "--native-cuda-smoke-ttt-linear-inner-step",
+                "--native-cuda-train-ttt-dataset-loop",
                 "--native-cuda-train-ttt-loop-step",
                 "--native-cuda-smoke-universal-act-halt-step",
                 "--native-cuda-smoke-universal-recurrent-step",
@@ -1374,6 +1377,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-ttt-linear-inner-step");
             } else if (arg == "--native-cuda-train-ttt-loop-step") {
                 forwarded.push_back("--train-ttt-loop-step");
+            } else if (arg == "--native-cuda-train-ttt-dataset-loop") {
+                forwarded.push_back("--train-ttt-dataset-loop");
             } else if (arg == "--native-cuda-smoke-universal-act-halt-step") {
                 forwarded.push_back("--smoke-universal-act-halt-step");
             } else if (arg == "--native-cuda-smoke-universal-recurrent-step") {

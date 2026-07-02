@@ -96,8 +96,8 @@ Compiled native template catalogs and per-template plan JSON include
 shipped presets are classified by the strongest native trainer loop currently
 available plus any remaining production-state gap,
 including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
-MoE/JEPA, seq2seq, diffusion, Jamba, TTT, HNet byte-LM, and universal
-transformer families. LLaMA-family, seq2seq, and diffusion entries now report native
+MoE/JEPA, seq2seq, diffusion, TTT, Jamba, HNet byte-LM, and universal
+transformer families. LLaMA-family, seq2seq, diffusion, and TTT entries now report native
 family dataset-loop coverage while retaining
 `persistent-full-size-family-parameter-state` until full-size checkpoint and
 inference metadata land. LLaMA-family entries now list completed smoke-backed
@@ -132,8 +132,9 @@ inference in the missing list. Seq2seq entries list the completed
 cross-attention/CE/backward/AdamW and loss-composition/AdamW smokes while
 keeping the full encoder-decoder loop, checkpointing, and inference in the
 missing list.
-TTT entries list the completed inner linear/MSE/backward/AdamW smoke plus the
-composite base/down/tanh/up residual forward/backward/AdamW smoke while keeping
+TTT entries list the completed inner linear/MSE/backward/AdamW smoke, the
+composite base/down/tanh/up residual forward/backward/AdamW smoke, and the
+sampled family dataset loop while keeping
 checkpointing and inference in the missing list. Universal transformer entries list recurrent linear/MSE/backward/AdamW
 and ACT halt loss/gradient smokes as completed while keeping checkpointing and
 inference in the missing list. HNet entries list completed byte-token shard
