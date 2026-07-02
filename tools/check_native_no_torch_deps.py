@@ -1240,11 +1240,14 @@ REQUIRED_NATIVE_TRAIN_STEP_TEMPLATE_SENTINELS = (
     "moe_jepa_evo",
     "semantic_dense_jepa_evo",
     "semantic_router_moe_modern",
-)
-REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = (
-    "diffusion",
+    "jamba",
     "seq2seq",
+    "diffusion",
+    "ttt_llama",
+    "hnet_lm",
+    "universal_llama",
 )
+REQUIRED_NATIVE_COVERED_TEMPLATE_SENTINELS = ()
 NATIVE_TEMPLATE_CATALOG_ENTRYPOINTS = (
     "native_gpt_linked_list_templates",
     "native_gpt2_compat_list_templates",

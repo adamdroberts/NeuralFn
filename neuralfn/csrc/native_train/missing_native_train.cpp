@@ -81,6 +81,12 @@ struct Config {
     bool train_moe_loop_step = false;
     bool train_moe_jepa_loop_step = false;
     bool train_semantic_router_moe_loop_step = false;
+    bool train_jamba_loop_step = false;
+    bool train_seq2seq_loop_step = false;
+    bool train_diffusion_loop_step = false;
+    bool train_ttt_loop_step = false;
+    bool train_hnet_loop_step = false;
+    bool train_universal_loop_step = false;
     bool smoke_jepa_projector_step = false;
     bool smoke_jepa_target_encoder_step = false;
     bool smoke_jepa_ar_loss_step = false;
@@ -368,6 +374,12 @@ void print_usage(const char* program) {
         << "  --smoke-moe-transformer-lm-train-step Launch MoE block, LM-head CE/backward, expert backward, and AdamW on CUDA\n"
         << "  --smoke-moe-full-loop-step Launch the standard MoE transformer-LM native loop smoke on CUDA\n"
         << "  --train-moe-loop-step Run the standard MoE composed native train-step slice\n"
+        << "  --train-jamba-loop-step Run the Jamba composed native train-step slice\n"
+        << "  --train-seq2seq-loop-step Run the seq2seq composed native train-step slice\n"
+        << "  --train-diffusion-loop-step Run the diffusion composed native train-step slice\n"
+        << "  --train-ttt-loop-step Run the TTT composed native train-step slice\n"
+        << "  --train-hnet-loop-step Run the HNet composed native train-step slice\n"
+        << "  --train-universal-loop-step Run the universal-transformer composed native train-step slice\n"
         << "  --smoke-jepa-projector-step Launch JEPA projector/predictor, latent loss, backward, and AdamW kernels on CUDA\n"
         << "  --smoke-jepa-target-encoder-step Launch JEPA target latent-pool and projection kernels on CUDA\n"
         << "  --smoke-jepa-ar-loss-step Launch AR CE plus JEPA latent-loss composition kernels on CUDA\n"
@@ -464,6 +476,24 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--train-semantic-router-moe-loop-step" ||
                    arg == "--native-cuda-train-semantic-router-moe-loop-step") {
             cfg.train_semantic_router_moe_loop_step = true;
+        } else if (arg == "--train-jamba-loop-step" ||
+                   arg == "--native-cuda-train-jamba-loop-step") {
+            cfg.train_jamba_loop_step = true;
+        } else if (arg == "--train-seq2seq-loop-step" ||
+                   arg == "--native-cuda-train-seq2seq-loop-step") {
+            cfg.train_seq2seq_loop_step = true;
+        } else if (arg == "--train-diffusion-loop-step" ||
+                   arg == "--native-cuda-train-diffusion-loop-step") {
+            cfg.train_diffusion_loop_step = true;
+        } else if (arg == "--train-ttt-loop-step" ||
+                   arg == "--native-cuda-train-ttt-loop-step") {
+            cfg.train_ttt_loop_step = true;
+        } else if (arg == "--train-hnet-loop-step" ||
+                   arg == "--native-cuda-train-hnet-loop-step") {
+            cfg.train_hnet_loop_step = true;
+        } else if (arg == "--train-universal-loop-step" ||
+                   arg == "--native-cuda-train-universal-loop-step") {
+            cfg.train_universal_loop_step = true;
         } else if (arg == "--smoke-jepa-projector-step" || arg == "--native-cuda-smoke-jepa-projector-step") {
             cfg.smoke_jepa_projector_step = true;
         } else if (arg == "--smoke-jepa-target-encoder-step" || arg == "--native-cuda-smoke-jepa-target-encoder-step") {
@@ -13771,6 +13801,95 @@ int print_semantic_dense_jepa_train_step_smoke_json(const Config& cfg, const cha
     return passed ? 0 : 2;
 }
 
+using SmokeJsonFn = int (*)(const Config&, const char*);
+
+int print_single_substep_composed_train_step_json(
+    const Config& cfg,
+    const char* program,
+    std::string_view display_name,
+    std::string_view family_error,
+    bool valid_family,
+    Config substep_cfg,
+    SmokeJsonFn substep_fn,
+    std::string_view substep_log,
+    std::string_view substep_name) {
+    std::string error;
+    std::string substep_stdout;
+    int substep_rc = 2;
+
+    if (!valid_family) {
+        error = std::string(family_error);
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native " << display_name << " composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME << "] substep 1/1 " << substep_log << "\n";
+            substep_rc = substep_fn(substep_cfg, program);
+            std::cout.rdbuf(old);
+            substep_stdout = capture.str();
+        }
+        if (substep_rc != 0) {
+            error = "native " + std::string(display_name) + " composed train-step substep failed";
+        }
+    }
+
+    const bool passed = error.empty() && substep_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"" << json_escape(substep_name) << "\", "
+        << "\"returncode\": " << substep_rc << ", \"stdout_json\": \"" << json_escape(substep_stdout) << "\"}\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -13825,6 +13944,84 @@ int main(int argc, char** argv) {
         }
         if (cfg.train_semantic_router_moe_loop_step) {
             return print_semantic_router_moe_composed_train_step_json(cfg, argv[0]);
+        }
+        if (cfg.train_jamba_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_jamba_layer_schedule_step = true;
+            substep_cfg.train_jamba_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "Jamba",
+                "Jamba composed train-step is only valid for the jamba native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "jamba" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_jamba_chunk_state_smoke_json,
+                "Jamba layer schedule native loop",
+                "jamba_layer_schedule_train_step_slice");
+        }
+        if (cfg.train_seq2seq_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_seq2seq_full_encoder_decoder_loop_step = true;
+            substep_cfg.train_seq2seq_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "seq2seq",
+                "seq2seq composed train-step is only valid for the seq2seq native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "seq2seq" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_seq2seq_cross_attention_smoke_json,
+                "seq2seq full encoder-decoder loop",
+                "seq2seq_full_encoder_decoder_loop_train_step_slice");
+        }
+        if (cfg.train_diffusion_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_diffusion_full_loop_step = true;
+            substep_cfg.train_diffusion_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "diffusion",
+                "diffusion composed train-step is only valid for the diffusion native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "diffusion" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_diffusion_objective_smoke_json,
+                "diffusion timestep/mask/objective loop",
+                "diffusion_full_loop_train_step_slice");
+        }
+        if (cfg.train_ttt_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_ttt_full_transformer_loop_step = true;
+            substep_cfg.train_ttt_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "TTT",
+                "TTT composed train-step is only valid for the ttt-llama native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_ttt_composite_inner_smoke_json,
+                "TTT full transformer loop",
+                "ttt_full_transformer_loop_train_step_slice");
+        }
+        if (cfg.train_hnet_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_hnet_byte_lm_loop_step = true;
+            substep_cfg.train_hnet_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "HNet",
+                "HNet composed train-step is only valid for the hnet-lm native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "hnet-lm" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_hnet_byte_patch_smoke_json,
+                "HNet byte-LM loop",
+                "hnet_byte_lm_loop_train_step_slice");
+        }
+        if (cfg.train_universal_loop_step) {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_universal_transformer_loop_step = true;
+            substep_cfg.train_universal_loop_step = false;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "universal transformer",
+                "universal composed train-step is only valid for the universal-llama native target",
+                std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama" ||
+                    std::string(NFN_NATIVE_MODEL_FAMILY) == "unknown",
+                substep_cfg, print_universal_act_halt_smoke_json,
+                "universal transformer loop",
+                "universal_transformer_loop_train_step_slice");
         }
         if (cfg.smoke_semantic_alignment_step || cfg.smoke_semantic_target_shard_step) {
             return print_semantic_alignment_smoke_json(cfg, argv[0]);
@@ -13899,6 +14096,60 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "llama") {
             return print_llama_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "jamba") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_jamba_layer_schedule_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "Jamba", "", true, substep_cfg,
+                print_jamba_chunk_state_smoke_json,
+                "Jamba layer schedule native loop",
+                "jamba_layer_schedule_train_step_slice");
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "seq2seq") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_seq2seq_full_encoder_decoder_loop_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "seq2seq", "", true, substep_cfg,
+                print_seq2seq_cross_attention_smoke_json,
+                "seq2seq full encoder-decoder loop",
+                "seq2seq_full_encoder_decoder_loop_train_step_slice");
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "diffusion") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_diffusion_full_loop_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "diffusion", "", true, substep_cfg,
+                print_diffusion_objective_smoke_json,
+                "diffusion timestep/mask/objective loop",
+                "diffusion_full_loop_train_step_slice");
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "ttt-llama") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_ttt_full_transformer_loop_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "TTT", "", true, substep_cfg,
+                print_ttt_composite_inner_smoke_json,
+                "TTT full transformer loop",
+                "ttt_full_transformer_loop_train_step_slice");
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "hnet-lm") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_hnet_byte_lm_loop_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "HNet", "", true, substep_cfg,
+                print_hnet_byte_patch_smoke_json,
+                "HNet byte-LM loop",
+                "hnet_byte_lm_loop_train_step_slice");
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "universal-llama") {
+            Config substep_cfg = cfg;
+            substep_cfg.smoke_universal_transformer_loop_step = true;
+            return print_single_substep_composed_train_step_json(
+                cfg, argv[0], "universal transformer", "", true, substep_cfg,
+                print_universal_act_halt_smoke_json,
+                "universal transformer loop",
+                "universal_transformer_loop_train_step_slice");
         }
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";

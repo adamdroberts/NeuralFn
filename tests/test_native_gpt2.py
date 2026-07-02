@@ -687,10 +687,11 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["semantic_router_moe_modern"]["passed"] is True
     assert train_step_sentinels["semantic_router_moe_modern"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
-    missing_sentinels = linked_catalog["covered_native_sentinels"]
-    assert missing_sentinels["diffusion"]["passed"] is True
-    assert missing_sentinels["diffusion"]["status"] == "template-native-trainer-missing"
-    assert missing_sentinels["diffusion"]["native_runnable"] is False
+    for template_name in ("jamba", "seq2seq", "diffusion", "ttt_llama", "hnet_lm", "universal_llama"):
+        assert train_step_sentinels[template_name]["passed"] is True
+        assert train_step_sentinels[template_name]["status"] == "native-train-step-slice"
+        assert train_step_sentinels[template_name]["native_runnable"] is True
+    assert linked_catalog["covered_native_sentinels"] == {}
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5282,6 +5283,21 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["moe_jepa_evo"] == "native-train-step-slice"
     assert statuses["semantic_dense_jepa_evo"] == "native-train-step-slice"
     assert statuses["semantic_router_moe"] == "native-train-step-slice"
+    for template_name in (
+        "jamba",
+        "seq2seq",
+        "diffusion",
+        "ttt_llama",
+        "hnet_lm",
+        "universal_llama",
+        "jamba_modern",
+        "seq2seq_modern",
+        "diffusion_modern",
+        "ttt_llama_modern",
+        "hnet_lm_modern",
+        "universal_llama_modern",
+    ):
+        assert statuses[template_name] == "native-train-step-slice"
     runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
     assert runnable["gpt"] is True
     assert runnable["gpt2"] is True
@@ -5293,6 +5309,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert runnable["moe_jepa_evo"] is True
     assert runnable["semantic_dense_jepa_evo"] is True
     assert runnable["semantic_router_moe"] is True
+    assert all(runnable.values())
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
@@ -8808,6 +8825,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "covered-moe-jepa-objective",
             "covered-semantic-dense-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
+            "covered-seq2seq-objective",
+            "covered-diffusion-objective",
+            "covered-ttt-transformer-lm",
+            "covered-jamba-hybrid-mamba-transformer-lm",
+            "covered-hnet-byte-lm",
+            "covered-universal-transformer-lm",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
             assert preset_payload["selected_graph_native_runnable"] is True

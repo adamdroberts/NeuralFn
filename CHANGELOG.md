@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- Added compiled default train-step actions for the remaining non-dense GPT
+  template families: Jamba, seq2seq, diffusion, TTT, HNet, and
+  universal-transformer. Their direct binaries now accept
+  `--train-jamba-loop-step`, `--train-seq2seq-loop-step`,
+  `--train-diffusion-loop-step`, `--train-ttt-loop-step`,
+  `--train-hnet-loop-step`, and `--train-universal-loop-step`, with matching
+  `--native-cuda-train-*` aliases through the unified frontend. Bare family
+  commands now enter those composed native train-step slices by default instead
+  of reporting a generic missing trainer. `build/nfn-native-train
+  --list-templates --json` now reports zero non-runnable shipped templates:
+  dense GPT-compatible templates report `native-transformer-lm`, and the
+  remaining families report `native-train-step-slice`.
+
+- The new train-step slices still keep `production_training_loop: false` and
+  `production-family-forward-backward-optimizer-loop` in
+  `native_training_missing_requirements` until the full multi-step dataset
+  loops, checkpoint cadence, and inference metadata path are implemented for
+  each family. Verification: rebuilt all missing-family trainer binaries, the
+  unified native frontend, and both GPT catalog binaries; verified
+  `build/nfn-native-train --list-templates --json` reports counts
+  `native-transformer-lm: 9`, `native-train-step-slice: 54`, and
+  `non_runnable_count: 0`; ran direct MoE-JEPA, semantic-router MoE, Jamba,
+  seq2seq, diffusion, TTT, HNet, and universal-transformer default commands
+  against `build/libnfn_native_train_tile_ops.so` on the visible RTX 5090 and
+  confirmed each returned `native-train-step-slice-ran`.
+
 - Added compiled default train-step actions for dense JEPA and semantic dense
   JEPA native targets. `nfn_jepa_native_train`,
   `nfn_semantic_dense_jepa_native_train`, and the explicit
@@ -18,13 +44,13 @@
 
 - Changed the compiled template catalog to report non-dense templates with a
   default compiled native train-step action as `native-train-step-slice` and
-  `selected_graph_native_runnable: true`. This currently covers the LLaMA,
+  `selected_graph_native_runnable: true`. This initially covered the LLaMA,
   standard-MoE, dense-JEPA, MoE-JEPA, semantic-dense-JEPA, and
-  semantic-router-MoE coverage classes; the catalog
-  still keeps `production-family-forward-backward-optimizer-loop` in
+  semantic-router-MoE coverage classes; the catalog still keeps
+  `production-family-forward-backward-optimizer-loop` in
   `native_training_missing_requirements`, so the status does not overclaim that
-  the final multi-step production trainer loop is complete. Families without a
-  default train-step slice continue to report `template-native-trainer-missing`.
+  the final multi-step production trainer loop is complete.
+
 
 - Added a real compiled default action for standard MoE native targets.
   `nfn_mixllama_native_train`, `nfn_deepseek_v4_native_train`, and the explicit

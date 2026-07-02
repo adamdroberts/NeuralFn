@@ -1080,7 +1080,13 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
         coverage_class == "covered-dense-jepa-objective" ||
         coverage_class == "covered-moe-jepa-objective" ||
         coverage_class == "covered-semantic-dense-jepa-objective" ||
-        coverage_class == "covered-semantic-moe-router-jepa-objective";
+        coverage_class == "covered-semantic-moe-router-jepa-objective" ||
+        coverage_class == "covered-seq2seq-objective" ||
+        coverage_class == "covered-diffusion-objective" ||
+        coverage_class == "covered-ttt-transformer-lm" ||
+        coverage_class == "covered-jamba-hybrid-mamba-transformer-lm" ||
+        coverage_class == "covered-hnet-byte-lm" ||
+        coverage_class == "covered-universal-transformer-lm";
 }
 
 bool selected_graph_is_native_runnable(const Config& cfg) {

@@ -513,6 +513,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
+        "--train-diffusion-loop-step",
         "--smoke-embedding-lm-step",
         "--smoke-embedding-norm-step",
         "--smoke-family-layout-checkpoint-step",
@@ -520,9 +521,11 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-hnet-byte-lm-loop-step",
+        "--train-hnet-loop-step",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
+        "--train-jamba-loop-step",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
         "--smoke-jepa-target-encoder-step",
@@ -561,12 +564,15 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-seq2seq-cross-attention-step",
         "--smoke-seq2seq-full-encoder-decoder-loop-step",
         "--smoke-seq2seq-loss-composition-step",
+        "--train-seq2seq-loop-step",
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
         "--smoke-ttt-linear-inner-step",
+        "--train-ttt-loop-step",
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
         "--smoke-universal-transformer-loop-step",
+        "--train-universal-loop-step",
         "--smoke-qkv-layout-step",
         "--smoke-tile-ops",
         "--smoke-token-train-step",
@@ -598,15 +604,18 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
+        "--train-diffusion-loop-step",
         "--smoke-family-layout-checkpoint-step",
         "--smoke-jepa-ar-loss-step",
         "--smoke-jepa-projector-step",
         "--smoke-hnet-byte-patch-step",
         "--smoke-hnet-byte-patch-backward-step",
         "--smoke-hnet-byte-lm-loop-step",
+        "--train-hnet-loop-step",
         "--smoke-jamba-chunk-state-step",
         "--smoke-jamba-mamba-state-step",
         "--smoke-jamba-layer-schedule-step",
+        "--train-jamba-loop-step",
         "--smoke-jepa-target-encoder-step",
         "--smoke-llama-attention-block-step",
         "--smoke-llama-lm-head-step",
@@ -636,12 +645,15 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-seq2seq-cross-attention-step",
         "--smoke-seq2seq-full-encoder-decoder-loop-step",
         "--smoke-seq2seq-loss-composition-step",
+        "--train-seq2seq-loop-step",
         "--smoke-ttt-composite-inner-step",
         "--smoke-ttt-full-transformer-loop-step",
         "--smoke-ttt-linear-inner-step",
+        "--train-ttt-loop-step",
         "--smoke-universal-act-halt-step",
         "--smoke-universal-recurrent-step",
         "--smoke-universal-transformer-loop-step",
+        "--train-universal-loop-step",
         "--smoke-nvfp4-pack",
         "--smoke-optimizer-step",
         "--smoke-lm-step",
@@ -1111,12 +1123,15 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-diffusion-denoise-step",
                 "--native-cuda-smoke-diffusion-objective-step",
                 "--native-cuda-smoke-diffusion-full-loop-step",
+                "--native-cuda-train-diffusion-loop-step",
                 "--native-cuda-smoke-hnet-byte-patch-step",
                 "--native-cuda-smoke-hnet-byte-patch-backward-step",
                 "--native-cuda-smoke-hnet-byte-lm-loop-step",
+                "--native-cuda-train-hnet-loop-step",
                 "--native-cuda-smoke-jamba-chunk-state-step",
                 "--native-cuda-smoke-jamba-mamba-state-step",
                 "--native-cuda-smoke-jamba-layer-schedule-step",
+                "--native-cuda-train-jamba-loop-step",
                 "--native-cuda-smoke-family-layout-checkpoint-step",
                 "--native-cuda-smoke-moe-route-expert-step",
                 "--native-cuda-smoke-moe-transformer-block-step",
@@ -1138,12 +1153,15 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-seq2seq-cross-attention-step",
                 "--native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step",
                 "--native-cuda-smoke-seq2seq-loss-composition-step",
+                "--native-cuda-train-seq2seq-loop-step",
                 "--native-cuda-smoke-ttt-composite-inner-step",
                 "--native-cuda-smoke-ttt-full-transformer-loop-step",
                 "--native-cuda-smoke-ttt-linear-inner-step",
+                "--native-cuda-train-ttt-loop-step",
                 "--native-cuda-smoke-universal-act-halt-step",
                 "--native-cuda-smoke-universal-recurrent-step",
                 "--native-cuda-smoke-universal-transformer-loop-step",
+                "--native-cuda-train-universal-loop-step",
                 "--native-cuda-smoke-optimizer-step",
                 "--native-cuda-smoke-lm-step",
                 "--native-cuda-smoke-attention-step",
@@ -1209,18 +1227,24 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-diffusion-objective-step");
             } else if (arg == "--native-cuda-smoke-diffusion-full-loop-step") {
                 forwarded.push_back("--smoke-diffusion-full-loop-step");
+            } else if (arg == "--native-cuda-train-diffusion-loop-step") {
+                forwarded.push_back("--train-diffusion-loop-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-patch-backward-step") {
                 forwarded.push_back("--smoke-hnet-byte-patch-backward-step");
             } else if (arg == "--native-cuda-smoke-hnet-byte-lm-loop-step") {
                 forwarded.push_back("--smoke-hnet-byte-lm-loop-step");
+            } else if (arg == "--native-cuda-train-hnet-loop-step") {
+                forwarded.push_back("--train-hnet-loop-step");
             } else if (arg == "--native-cuda-smoke-jamba-chunk-state-step") {
                 forwarded.push_back("--smoke-jamba-chunk-state-step");
             } else if (arg == "--native-cuda-smoke-jamba-mamba-state-step") {
                 forwarded.push_back("--smoke-jamba-mamba-state-step");
             } else if (arg == "--native-cuda-smoke-jamba-layer-schedule-step") {
                 forwarded.push_back("--smoke-jamba-layer-schedule-step");
+            } else if (arg == "--native-cuda-train-jamba-loop-step") {
+                forwarded.push_back("--train-jamba-loop-step");
             } else if (arg == "--native-cuda-smoke-family-layout-checkpoint-step") {
                 forwarded.push_back("--smoke-family-layout-checkpoint-step");
             } else if (arg == "--native-cuda-smoke-moe-route-expert-step") {
@@ -1263,18 +1287,24 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-seq2seq-full-encoder-decoder-loop-step");
             } else if (arg == "--native-cuda-smoke-seq2seq-loss-composition-step") {
                 forwarded.push_back("--smoke-seq2seq-loss-composition-step");
+            } else if (arg == "--native-cuda-train-seq2seq-loop-step") {
+                forwarded.push_back("--train-seq2seq-loop-step");
             } else if (arg == "--native-cuda-smoke-ttt-composite-inner-step") {
                 forwarded.push_back("--smoke-ttt-composite-inner-step");
             } else if (arg == "--native-cuda-smoke-ttt-full-transformer-loop-step") {
                 forwarded.push_back("--smoke-ttt-full-transformer-loop-step");
             } else if (arg == "--native-cuda-smoke-ttt-linear-inner-step") {
                 forwarded.push_back("--smoke-ttt-linear-inner-step");
+            } else if (arg == "--native-cuda-train-ttt-loop-step") {
+                forwarded.push_back("--train-ttt-loop-step");
             } else if (arg == "--native-cuda-smoke-universal-act-halt-step") {
                 forwarded.push_back("--smoke-universal-act-halt-step");
             } else if (arg == "--native-cuda-smoke-universal-recurrent-step") {
                 forwarded.push_back("--smoke-universal-recurrent-step");
             } else if (arg == "--native-cuda-smoke-universal-transformer-loop-step") {
                 forwarded.push_back("--smoke-universal-transformer-loop-step");
+            } else if (arg == "--native-cuda-train-universal-loop-step") {
+                forwarded.push_back("--train-universal-loop-step");
             } else if (arg == "--native-cuda-smoke-optimizer-step") {
                 forwarded.push_back("--smoke-optimizer-step");
             } else if (arg == "--native-cuda-smoke-lm-step") {
