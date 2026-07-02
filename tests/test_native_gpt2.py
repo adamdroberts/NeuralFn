@@ -675,16 +675,22 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels["mixllama"]["passed"] is True
     assert train_step_sentinels["mixllama"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["mixllama"]["native_runnable"] is True
+    assert train_step_sentinels["dense_jepa_evo"]["passed"] is True
+    assert train_step_sentinels["dense_jepa_evo"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["dense_jepa_evo"]["native_runnable"] is True
     assert train_step_sentinels["moe_jepa_evo"]["passed"] is True
     assert train_step_sentinels["moe_jepa_evo"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["moe_jepa_evo"]["native_runnable"] is True
+    assert train_step_sentinels["semantic_dense_jepa_evo"]["passed"] is True
+    assert train_step_sentinels["semantic_dense_jepa_evo"]["status"] == "native-train-step-slice"
+    assert train_step_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is True
     assert train_step_sentinels["semantic_router_moe_modern"]["passed"] is True
     assert train_step_sentinels["semantic_router_moe_modern"]["status"] == "native-train-step-slice"
     assert train_step_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
     missing_sentinels = linked_catalog["covered_native_sentinels"]
-    assert missing_sentinels["semantic_dense_jepa_evo"]["passed"] is True
-    assert missing_sentinels["semantic_dense_jepa_evo"]["status"] == "template-native-trainer-missing"
-    assert missing_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is False
+    assert missing_sentinels["diffusion"]["passed"] is True
+    assert missing_sentinels["diffusion"]["status"] == "template-native-trainer-missing"
+    assert missing_sentinels["diffusion"]["native_runnable"] is False
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
     assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
@@ -5272,7 +5278,9 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["nanogpt"] == "native-transformer-lm"
     assert statuses["llama"] == "native-train-step-slice"
     assert statuses["mixllama"] == "native-train-step-slice"
+    assert statuses["dense_jepa_evo"] == "native-train-step-slice"
     assert statuses["moe_jepa_evo"] == "native-train-step-slice"
+    assert statuses["semantic_dense_jepa_evo"] == "native-train-step-slice"
     assert statuses["semantic_router_moe"] == "native-train-step-slice"
     runnable = {item["name"]: item["selected_graph_native_runnable"] for item in payload["templates"]}
     assert runnable["gpt"] is True
@@ -5281,9 +5289,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert runnable["nanogpt"] is True
     assert runnable["llama"] is True
     assert runnable["mixllama"] is True
+    assert runnable["dense_jepa_evo"] is True
     assert runnable["moe_jepa_evo"] is True
+    assert runnable["semantic_dense_jepa_evo"] is True
     assert runnable["semantic_router_moe"] is True
-    assert runnable["semantic_dense_jepa_evo"] is False
     assert set(coverage) == {"gpt", "gpt3", *SHIPPED_GPT_TEMPLATE_PRESETS}
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
@@ -5331,6 +5340,13 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "dense-jepa-ar-target-projector-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-plus-router-loss-composition-smoke" in completed_requirements["moe_jepa_evo"]
     assert "family-parameter-layout-checkpoint-inference-smoke" in completed_requirements["moe_jepa_evo"]
+    assert coverage["dense_jepa_evo"] == "covered-dense-jepa-objective"
+    assert missing_requirements["dense_jepa_evo"] == ["production-family-forward-backward-optimizer-loop"]
+    assert "dense-jepa-full-forward-backward-loop-smoke" in completed_requirements["dense_jepa_evo"]
+    assert coverage["semantic_dense_jepa_evo"] == "covered-semantic-dense-jepa-objective"
+    assert missing_requirements["semantic_dense_jepa_evo"] == ["production-family-forward-backward-optimizer-loop"]
+    assert "semantic-dense-planner-alignment-adamw-smoke" in completed_requirements["semantic_dense_jepa_evo"]
+    assert "ar-plus-semantic-plus-jepa-loss-composition-smoke" in completed_requirements["semantic_dense_jepa_evo"]
     assert coverage["semantic_moe_jepa_evo"] == "covered-semantic-moe-router-jepa-objective"
     assert "jepa-projector-predictor-latent-loss-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "jepa-target-encoder-forward-smoke" in completed_requirements["semantic_moe_jepa_evo"]
@@ -8788,7 +8804,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         elif preset_payload["native_training_coverage_class"] in {
             "covered-llama-rope-swiglu-transformer-lm",
             "covered-standard-moe-transformer-lm",
+            "covered-dense-jepa-objective",
             "covered-moe-jepa-objective",
+            "covered-semantic-dense-jepa-objective",
             "covered-semantic-moe-router-jepa-objective",
         }:
             assert preset_payload["selected_graph_support_status"] == "native-train-step-slice"
@@ -11953,6 +11971,42 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert "nfn_native_tile_adamw_step_float32" in dense_jepa_full_loop_smoke_payload["loop_composition_stages"]
 
+    dense_jepa_default_missing_lib = subprocess.run(
+        [
+            str(jepa),
+            "--template-name",
+            "dense_jepa_evo",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert dense_jepa_default_missing_lib.returncode == 2
+    assert "starting native dense-JEPA composed train-step slice" in dense_jepa_default_missing_lib.stderr
+    dense_jepa_default_payload = json.loads(dense_jepa_default_missing_lib.stdout)
+    assert dense_jepa_default_payload["status"] == "native-train-step-slice-failed"
+    assert dense_jepa_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert dense_jepa_default_payload["production_training_loop"] is False
+    assert dense_jepa_default_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
+    assert dense_jepa_default_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [step["name"] for step in dense_jepa_default_payload["substeps"]] == [
+        "dense_jepa_full_forward_backward_loop_train_step_slice"
+    ]
+    assert dense_jepa_default_payload["substeps"][0]["returncode"] == 2
+    dense_jepa_default_substep = json.loads(dense_jepa_default_payload["substeps"][0]["stdout_json"])
+    assert dense_jepa_default_substep["smoke"] == "dense_jepa_full_forward_backward_loop_train_step_slice"
+
     semantic_dense_plan = subprocess.run(
         [
             str(semantic_dense_jepa),
@@ -12005,6 +12059,50 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
     ):
         assert symbol in semantic_dense_payload["required_tile_symbols"]
+
+    semantic_dense_default_missing_lib = subprocess.run(
+        [
+            str(semantic_dense_jepa),
+            "--template-name",
+            "semantic_dense_jepa_evo",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-libnfn_native_train_tile_ops.so"),
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_dense_default_missing_lib.returncode == 2
+    assert (
+        "starting native semantic-dense-JEPA composed train-step slice"
+        in semantic_dense_default_missing_lib.stderr
+    )
+    semantic_dense_default_payload = json.loads(semantic_dense_default_missing_lib.stdout)
+    assert semantic_dense_default_payload["status"] == "native-train-step-slice-failed"
+    assert semantic_dense_default_payload["trainer_loop_status"] == "native-composed-train-step-slice"
+    assert semantic_dense_default_payload["production_training_loop"] is False
+    assert (
+        semantic_dense_default_payload["native_training_coverage_class"]
+        == "covered-semantic-dense-jepa-objective"
+    )
+    assert semantic_dense_default_payload["native_training_missing_requirements"] == [
+        "production-family-forward-backward-optimizer-loop"
+    ]
+    assert [step["name"] for step in semantic_dense_default_payload["substeps"]] == [
+        "semantic_dense_jepa_train_step_slice"
+    ]
+    assert semantic_dense_default_payload["substeps"][0]["returncode"] == 2
+    semantic_dense_default_substep = json.loads(
+        semantic_dense_default_payload["substeps"][0]["stdout_json"]
+    )
+    assert semantic_dense_default_substep["smoke"] == "semantic_dense_jepa_train_step_slice"
 
     semantic_jepa_loss_smoke_missing_lib = subprocess.run(
         [
@@ -12858,6 +12956,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--tile-ops-lib" in unified_dense_jepa_full_loop_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_dense_jepa_full_loop_smoke_command.stdout
 
+    unified_dense_jepa_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "dense-jepa-evo",
+            "--native-cuda-train-dense-jepa-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unified_dense_jepa_train_step_command.returncode == 0, unified_dense_jepa_train_step_command.stderr
+    assert str(jepa) in unified_dense_jepa_train_step_command.stdout
+    assert "--train-dense-jepa-loop-step" in unified_dense_jepa_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_dense_jepa_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_dense_jepa_train_step_command.stdout
+
     unified_semantic_smoke_command = subprocess.run(
         [
             str(unified),
@@ -12899,6 +13018,29 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--smoke-semantic-dense-jepa-train-step" in unified_semantic_dense_smoke_command.stdout
     assert "--tile-ops-lib" in unified_semantic_dense_smoke_command.stdout
     assert "--train-transformer-lm" not in unified_semantic_dense_smoke_command.stdout
+
+    unified_semantic_dense_train_step_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "semantic-dense-jepa-evo",
+            "--native-cuda-train-semantic-dense-jepa-loop-step",
+            "--native-cuda-print-command",
+            "--native-cuda-tile-ops-lib",
+            str(tmp_path / "libnfn_native_train_tile_ops.so"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (
+        unified_semantic_dense_train_step_command.returncode == 0
+    ), unified_semantic_dense_train_step_command.stderr
+    assert str(semantic_dense_jepa) in unified_semantic_dense_train_step_command.stdout
+    assert "--train-semantic-dense-jepa-loop-step" in unified_semantic_dense_train_step_command.stdout
+    assert "--tile-ops-lib" in unified_semantic_dense_train_step_command.stdout
+    assert "--train-transformer-lm" not in unified_semantic_dense_train_step_command.stdout
 
     unified_semantic_jepa_loss_smoke_command = subprocess.run(
         [

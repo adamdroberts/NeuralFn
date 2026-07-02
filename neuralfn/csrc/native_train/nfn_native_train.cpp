@@ -509,6 +509,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-attention-step",
         "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
+        "--train-dense-jepa-loop-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
@@ -552,6 +553,7 @@ bool has_native_train_action(const std::vector<std::string>& args) {
         "--smoke-route-evo-device-controller-step",
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
+        "--train-semantic-dense-jepa-loop-step",
         "--smoke-semantic-jepa-loss-composition-step",
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
@@ -592,6 +594,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--smoke-tile-ops",
         "--smoke-dense-jepa-full-loop-step",
         "--smoke-dense-jepa-train-step",
+        "--train-dense-jepa-loop-step",
         "--smoke-diffusion-denoise-step",
         "--smoke-diffusion-objective-step",
         "--smoke-diffusion-full-loop-step",
@@ -627,6 +630,7 @@ bool has_native_gpt_metadata_action(const std::vector<std::string>& args) {
         "--train-semantic-router-moe-loop-step",
         "--smoke-semantic-alignment-step",
         "--smoke-semantic-dense-jepa-train-step",
+        "--train-semantic-dense-jepa-loop-step",
         "--smoke-semantic-router-moe-train-step",
         "--smoke-semantic-route-loss-step",
         "--smoke-seq2seq-cross-attention-step",
@@ -1100,6 +1104,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-llama-train-step",
                 "--native-cuda-smoke-dense-jepa-full-loop-step",
                 "--native-cuda-smoke-dense-jepa-train-step",
+                "--native-cuda-train-dense-jepa-loop-step",
                 "--native-cuda-smoke-jepa-ar-loss-step",
                 "--native-cuda-smoke-jepa-projector-step",
                 "--native-cuda-smoke-jepa-target-encoder-step",
@@ -1119,10 +1124,13 @@ int main(int argc, char** argv) {
                 "--native-cuda-smoke-moe-transformer-lm-train-step",
                 "--native-cuda-smoke-moe-full-loop-step",
                 "--native-cuda-smoke-moe-jepa-loss-composition-step",
+                "--native-cuda-train-moe-loop-step",
                 "--native-cuda-train-moe-jepa-loop-step",
+                "--native-cuda-train-semantic-router-moe-loop-step",
                 "--native-cuda-smoke-route-evo-device-controller-step",
                 "--native-cuda-smoke-semantic-alignment-step",
                 "--native-cuda-smoke-semantic-dense-jepa-train-step",
+                "--native-cuda-train-semantic-dense-jepa-loop-step",
                 "--native-cuda-smoke-semantic-jepa-loss-composition-step",
                 "--native-cuda-smoke-semantic-router-moe-train-step",
                 "--native-cuda-smoke-semantic-route-loss-step",
@@ -1187,6 +1195,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-dense-jepa-full-loop-step");
             } else if (arg == "--native-cuda-smoke-dense-jepa-train-step") {
                 forwarded.push_back("--smoke-dense-jepa-train-step");
+            } else if (arg == "--native-cuda-train-dense-jepa-loop-step") {
+                forwarded.push_back("--train-dense-jepa-loop-step");
             } else if (arg == "--native-cuda-smoke-jepa-ar-loss-step") {
                 forwarded.push_back("--smoke-jepa-ar-loss-step");
             } else if (arg == "--native-cuda-smoke-jepa-projector-step") {
@@ -1237,6 +1247,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--smoke-semantic-alignment-step");
             } else if (arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
                 forwarded.push_back("--smoke-semantic-dense-jepa-train-step");
+            } else if (arg == "--native-cuda-train-semantic-dense-jepa-loop-step") {
+                forwarded.push_back("--train-semantic-dense-jepa-loop-step");
             } else if (arg == "--native-cuda-smoke-semantic-jepa-loss-composition-step") {
                 forwarded.push_back("--smoke-semantic-jepa-loss-composition-step");
             } else if (arg == "--native-cuda-smoke-semantic-router-moe-train-step") {

@@ -1077,7 +1077,9 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
     const std::string coverage_class = native_training_coverage_class_for_template(cfg.template_name);
     return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
         coverage_class == "covered-standard-moe-transformer-lm" ||
+        coverage_class == "covered-dense-jepa-objective" ||
         coverage_class == "covered-moe-jepa-objective" ||
+        coverage_class == "covered-semantic-dense-jepa-objective" ||
         coverage_class == "covered-semantic-moe-router-jepa-objective";
 }
 

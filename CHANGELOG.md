@@ -2,10 +2,25 @@
 
 ## Unreleased
 
+- Added compiled default train-step actions for dense JEPA and semantic dense
+  JEPA native targets. `nfn_jepa_native_train`,
+  `nfn_semantic_dense_jepa_native_train`, and the explicit
+  `--train-dense-jepa-loop-step` /
+  `--train-semantic-dense-jepa-loop-step` plus matching
+  `--native-cuda-train-*` unified frontend aliases now run composed native
+  train-step slices instead of falling through to the generic missing-trainer
+  message. The dense JEPA slice wraps the full dense JEPA forward/backward-loop
+  smoke; the semantic dense JEPA slice wraps the semantic planner/alignment
+  AdamW smoke. Both stay on compiled C++/CUDA Tile boundaries, return substep
+  JSON, and keep `production_training_loop: false` plus
+  `production-family-forward-backward-optimizer-loop` in the missing
+  requirements until the full multi-step production trainers land.
+
 - Changed the compiled template catalog to report non-dense templates with a
   default compiled native train-step action as `native-train-step-slice` and
   `selected_graph_native_runnable: true`. This currently covers the LLaMA,
-  standard-MoE, MoE-JEPA, and semantic-router-MoE coverage classes; the catalog
+  standard-MoE, dense-JEPA, MoE-JEPA, semantic-dense-JEPA, and
+  semantic-router-MoE coverage classes; the catalog
   still keeps `production-family-forward-backward-optimizer-loop` in
   `native_training_missing_requirements`, so the status does not overclaim that
   the final multi-step production trainer loop is complete. Families without a

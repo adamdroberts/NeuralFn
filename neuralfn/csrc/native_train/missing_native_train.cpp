@@ -89,7 +89,9 @@ struct Config {
     bool smoke_semantic_target_shard_step = false;
     bool smoke_dense_jepa_train_step = false;
     bool smoke_dense_jepa_full_loop_step = false;
+    bool train_dense_jepa_loop_step = false;
     bool smoke_semantic_dense_jepa_train_step = false;
+    bool train_semantic_dense_jepa_loop_step = false;
     bool smoke_semantic_router_moe_train_step = false;
     bool smoke_semantic_alignment_step = false;
     bool smoke_semantic_route_loss_step = false;
@@ -373,6 +375,8 @@ void print_usage(const char* program) {
         << "  --smoke-semantic-jepa-loss-composition-step Launch AR CE plus JEPA latent loss plus semantic-alignment loss on CUDA\n"
         << "  --smoke-semantic-target-shard-step Resolve native token shards into semantic targets and validate them on CUDA\n"
         << "  --smoke-dense-jepa-full-loop-step Launch the dense JEPA AR+target/projector native loop smoke on CUDA\n"
+        << "  --train-dense-jepa-loop-step Run the dense JEPA composed native train-step slice\n"
+        << "  --train-semantic-dense-jepa-loop-step Run the semantic dense JEPA composed native train-step slice\n"
         << "  --smoke-semantic-alignment-step Launch semantic hash and alignment-loss kernels on CUDA\n"
         << "  --smoke-semantic-router-moe-train-step Launch semantic-router MoE route/expert/backward/balance/AdamW kernels on CUDA\n"
         << "  --smoke-semantic-route-loss-step Launch semantic route-selection, distillation, and balance-loss kernels on CUDA\n"
@@ -480,9 +484,15 @@ Config parse_args(int argc, char** argv) {
         } else if (arg == "--smoke-dense-jepa-full-loop-step" ||
                    arg == "--native-cuda-smoke-dense-jepa-full-loop-step") {
             cfg.smoke_dense_jepa_full_loop_step = true;
+        } else if (arg == "--train-dense-jepa-loop-step" ||
+                   arg == "--native-cuda-train-dense-jepa-loop-step") {
+            cfg.train_dense_jepa_loop_step = true;
         } else if (arg == "--smoke-semantic-dense-jepa-train-step" ||
                    arg == "--native-cuda-smoke-semantic-dense-jepa-train-step") {
             cfg.smoke_semantic_dense_jepa_train_step = true;
+        } else if (arg == "--train-semantic-dense-jepa-loop-step" ||
+                   arg == "--native-cuda-train-semantic-dense-jepa-loop-step") {
+            cfg.train_semantic_dense_jepa_loop_step = true;
         } else if (arg == "--smoke-semantic-router-moe-train-step" ||
                    arg == "--native-cuda-smoke-semantic-router-moe-train-step") {
             cfg.smoke_semantic_router_moe_train_step = true;
@@ -12376,6 +12386,8 @@ int print_route_evo_device_controller_smoke_json(const Config& cfg, const char* 
     return passed ? 0 : 2;
 }
 
+int print_semantic_dense_jepa_train_step_smoke_json(const Config& cfg, const char* program);
+
 int print_standard_moe_composed_train_step_json(const Config& cfg, const char* program) {
     const std::string family = NFN_NATIVE_MODEL_FAMILY;
     const bool moe_family =
@@ -12682,6 +12694,175 @@ int print_semantic_router_moe_composed_train_step_json(const Config& cfg, const 
         << "\"returncode\": " << objective_rc << ", \"stdout_json\": \"" << json_escape(objective_stdout) << "\"},\n"
         << "    {\"name\": \"route_evo_device_controller_slice\", "
         << "\"returncode\": " << route_evo_rc << ", \"stdout_json\": \"" << json_escape(route_evo_stdout) << "\"}\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_dense_jepa_composed_train_step_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool dense_jepa_family = family == "jepa" || family == "unknown";
+    std::string error;
+    std::string dense_jepa_stdout;
+    int dense_jepa_rc = 2;
+
+    if (!dense_jepa_family) {
+        error = "dense JEPA composed train-step is only valid for the jepa native target";
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native dense-JEPA composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        Config dense_jepa_cfg = cfg;
+        dense_jepa_cfg.smoke_dense_jepa_full_loop_step = true;
+        dense_jepa_cfg.smoke_dense_jepa_train_step = false;
+        dense_jepa_cfg.train_dense_jepa_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 1/1 dense JEPA full forward/backward loop\n";
+            dense_jepa_rc = print_dense_jepa_train_step_smoke_json(dense_jepa_cfg, program);
+            std::cout.rdbuf(old);
+            dense_jepa_stdout = capture.str();
+        }
+        if (dense_jepa_rc != 0) {
+            error = "native dense-JEPA composed train-step substep failed";
+        }
+    }
+
+    const bool passed = error.empty() && dense_jepa_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"dense_jepa_full_forward_backward_loop_train_step_slice\", "
+        << "\"returncode\": " << dense_jepa_rc << ", \"stdout_json\": \"" << json_escape(dense_jepa_stdout) << "\"}\n"
+        << "  ]\n"
+        << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_semantic_dense_jepa_composed_train_step_json(const Config& cfg, const char* program) {
+    const std::string family = NFN_NATIVE_MODEL_FAMILY;
+    const bool semantic_dense_family = family == "semantic-dense-jepa" || family == "unknown";
+    std::string error;
+    std::string semantic_dense_stdout;
+    int semantic_dense_rc = 2;
+
+    if (!semantic_dense_family) {
+        error = "semantic dense JEPA composed train-step is only valid for the semantic-dense-jepa native target";
+    } else {
+        std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                  << "] starting native semantic-dense-JEPA composed train-step slice"
+                  << " template=" << cfg.template_name
+                  << " dataset=" << cfg.dataset_alias
+                  << " max_steps=" << cfg.max_steps
+                  << " batch_size=" << cfg.batch_size
+                  << " train_seq_len=" << cfg.train_seq_len
+                  << " train_batch_tokens=" << cfg.train_batch_tokens
+                  << " learning_rate=" << cfg.learning_rate
+                  << "\n";
+
+        Config semantic_dense_cfg = cfg;
+        semantic_dense_cfg.smoke_semantic_dense_jepa_train_step = true;
+        semantic_dense_cfg.train_semantic_dense_jepa_loop_step = false;
+        {
+            std::ostringstream capture;
+            std::streambuf* old = std::cout.rdbuf(capture.rdbuf());
+            std::cerr << "[" << NFN_NATIVE_TARGET_NAME
+                      << "] substep 1/1 semantic dense JEPA planner/alignment AdamW\n";
+            semantic_dense_rc = print_semantic_dense_jepa_train_step_smoke_json(semantic_dense_cfg, program);
+            std::cout.rdbuf(old);
+            semantic_dense_stdout = capture.str();
+        }
+        if (semantic_dense_rc != 0) {
+            error = "native semantic-dense-JEPA composed train-step substep failed";
+        }
+    }
+
+    const bool passed = error.empty() && semantic_dense_rc == 0;
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"" << json_escape(NFN_NATIVE_MODEL_FAMILY) << "\",\n"
+        << "  \"native_target\": \"" << json_escape(NFN_NATIVE_TARGET_NAME) << "\",\n"
+        << "  \"status\": \"" << (passed ? "native-train-step-slice-ran" : "native-train-step-slice-failed") << "\",\n"
+        << "  \"trainer_loop_status\": \"native-composed-train-step-slice\",\n"
+        << "  \"production_training_loop\": false,\n"
+        << "  \"native_training_coverage_class\": \"" << json_escape(NFN_NATIVE_COVERAGE_CLASS) << "\",\n"
+        << "  \"native_training_missing_requirements\": [\n"
+        << "    \"production-family-forward-backward-optimizer-loop\"\n"
+        << "  ],\n"
+        << "  \"native_training_completed_requirements\": [\n";
+    const std::vector<std::string> completed_requirements = split_csv(NFN_NATIVE_COMPLETED_REQUIREMENTS);
+    for (std::size_t i = 0; i < completed_requirements.size(); ++i) {
+        std::cout << "    \"" << json_escape(completed_requirements[i]) << "\"";
+        if (i + 1 != completed_requirements.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(error) << "\",\n"
+        << "  \"compiled_native_boundary\": true,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"
+        << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
+        << "  \"schedule\": {\n"
+        << "    \"max_steps\": " << cfg.max_steps << ",\n"
+        << "    \"batch_size\": " << cfg.batch_size << ",\n"
+        << "    \"train_seq_len\": " << cfg.train_seq_len << ",\n"
+        << "    \"train_batch_tokens\": " << cfg.train_batch_tokens << ",\n"
+        << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
+        << "    \"learning_rate\": " << cfg.learning_rate << "\n"
+        << "  },\n"
+        << "  \"substeps\": [\n"
+        << "    {\"name\": \"semantic_dense_jepa_train_step_slice\", "
+        << "\"returncode\": " << semantic_dense_rc << ", \"stdout_json\": \"" << json_escape(semantic_dense_stdout) << "\"}\n"
         << "  ]\n"
         << "}\n";
     return passed ? 0 : 2;
@@ -13628,6 +13809,9 @@ int main(int argc, char** argv) {
         if (cfg.smoke_dense_jepa_train_step || cfg.smoke_dense_jepa_full_loop_step) {
             return print_dense_jepa_train_step_smoke_json(cfg, argv[0]);
         }
+        if (cfg.train_dense_jepa_loop_step) {
+            return print_dense_jepa_composed_train_step_json(cfg, argv[0]);
+        }
         if (cfg.smoke_jepa_target_encoder_step) {
             return print_jepa_target_encoder_smoke_json(cfg, argv[0]);
         }
@@ -13647,6 +13831,9 @@ int main(int argc, char** argv) {
         }
         if (cfg.smoke_semantic_dense_jepa_train_step) {
             return print_semantic_dense_jepa_train_step_smoke_json(cfg, argv[0]);
+        }
+        if (cfg.train_semantic_dense_jepa_loop_step) {
+            return print_semantic_dense_jepa_composed_train_step_json(cfg, argv[0]);
         }
         if (cfg.smoke_semantic_route_loss_step) {
             return print_semantic_route_loss_smoke_json(cfg, argv[0]);
@@ -13696,6 +13883,12 @@ int main(int argc, char** argv) {
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo") {
             return print_moe_jepa_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "jepa") {
+            return print_dense_jepa_composed_train_step_json(cfg, argv[0]);
+        }
+        if (std::string(NFN_NATIVE_MODEL_FAMILY) == "semantic-dense-jepa") {
+            return print_semantic_dense_jepa_composed_train_step_json(cfg, argv[0]);
         }
         if (std::string(NFN_NATIVE_MODEL_FAMILY) == "mixllama" ||
             std::string(NFN_NATIVE_MODEL_FAMILY) == "deepseek-v4") {
