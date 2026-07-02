@@ -892,7 +892,7 @@ std::vector<std::string> native_training_missing_requirements_for_template(const
         return {"production-family-forward-backward-optimizer-loop"};
     }
     if (coverage_class == "covered-moe-jepa-objective") {
-        return {"production-family-forward-backward-optimizer-loop"};
+        return {"persistent-full-size-family-parameter-state"};
     }
     if (coverage_class == "covered-semantic-dense-jepa-objective") {
         return {"production-family-forward-backward-optimizer-loop"};
@@ -966,6 +966,7 @@ std::vector<std::string> native_training_completed_requirements_for_template(con
             completed.push_back("dense-jepa-ar-target-projector-forward-backward-adamw-smoke");
             if (coverage_class == "covered-moe-jepa-objective") {
                 completed.push_back("ar-plus-jepa-plus-router-loss-composition-smoke");
+                completed.push_back("moe-jepa-sampled-family-forward-backward-optimizer-step");
             }
         }
         if (coverage_class == "covered-semantic-moe-router-jepa-objective") {
@@ -1078,7 +1079,6 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
     return coverage_class == "covered-llama-rope-swiglu-transformer-lm" ||
         coverage_class == "covered-standard-moe-transformer-lm" ||
         coverage_class == "covered-dense-jepa-objective" ||
-        coverage_class == "covered-moe-jepa-objective" ||
         coverage_class == "covered-semantic-dense-jepa-objective" ||
         coverage_class == "covered-semantic-moe-router-jepa-objective" ||
         coverage_class == "covered-seq2seq-objective" ||
@@ -1089,10 +1089,17 @@ bool selected_template_has_native_train_step_slice(const Config& cfg) {
         coverage_class == "covered-universal-transformer-lm";
 }
 
+bool selected_template_has_native_family_dataset_loop(const Config& cfg) {
+    return native_training_coverage_class_for_template(cfg.template_name) == "covered-moe-jepa-objective";
+}
+
 bool selected_graph_is_native_runnable(const Config& cfg) {
     if (!cfg.graph_file.empty()) {
         return custom_graph_template_metadata_found(cfg) &&
             selected_template_geometry_matches_compiled_loop(cfg);
+    }
+    if (selected_template_has_native_family_dataset_loop(cfg)) {
+        return true;
     }
     if (selected_template_has_native_train_step_slice(cfg)) {
         return true;
@@ -1422,6 +1429,9 @@ std::string selected_graph_support_status(const Config& cfg) {
     }
     if (selected_template_is_native_dense_gpt_compatible(cfg)) {
         return "native-transformer-lm";
+    }
+    if (selected_template_has_native_family_dataset_loop(cfg)) {
+        return "native-family-dataset-loop";
     }
     if (selected_template_has_native_train_step_slice(cfg)) {
         return "native-train-step-slice";
@@ -22675,7 +22685,17 @@ int run_transformer_lm_training_json(
             fill_buffer(loss_total, 1, 0.0f, "train_loss.loss_total.zero");
         }
         const float accumulation_scale = 1.0f / static_cast<float>(grad_accum_steps);
+        const bool should_write_microbatch_progress =
+            step == 1 || (cfg.progress_every_steps > 0 && (step % cfg.progress_every_steps) == 0);
         for (std::int64_t accum_index = 0; accum_index < grad_accum_steps && error.empty(); ++accum_index) {
+            if (should_write_microbatch_progress) {
+                std::cerr << "[nfn-native-train] step " << step << "/" << cfg.max_steps
+                          << " microbatch " << (accum_index + 1) << "/" << grad_accum_steps
+                          << " begin"
+                          << " rows=" << active_rows
+                          << " tokens_per_microbatch=" << microbatch_tokens
+                          << "\n";
+            }
             if (!next_train_batch()) {
                 break;
             }
@@ -22684,6 +22704,13 @@ int run_transformer_lm_training_json(
             if (error.empty()) {
                 accumulate_gradients(accumulation_scale);
                 train_microbatches_completed += 1;
+                if (should_write_microbatch_progress) {
+                    std::cerr << "[nfn-native-train] step " << step << "/" << cfg.max_steps
+                              << " microbatch " << (accum_index + 1) << "/" << grad_accum_steps
+                              << " complete"
+                              << " train_microbatches_completed=" << train_microbatches_completed
+                              << "\n";
+                }
             }
         }
         sync_lm_head_last_dweight_overlap("lm_head_backward.last_dweight_overlap_optimizer_wait");

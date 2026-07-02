@@ -696,9 +696,16 @@ void print_json(const Config& cfg, const char* program) {
                    : (symbols_ok ? "required-tile-symbols-present" : "required-tile-symbols-missing"));
     const std::vector<std::string> missing_requirements = split_csv(NFN_NATIVE_MISSING_REQUIREMENTS);
     const bool native_coverage_complete = missing_requirements.empty();
-    const std::string status = native_coverage_complete ? "native-trainer-covered" : "family-native-trainer-missing";
+    const bool moe_jepa_dataset_loop_available =
+        std::string(NFN_NATIVE_MODEL_FAMILY) == "moe-jepa-evo";
+    const std::string status =
+        native_coverage_complete ? "native-trainer-covered"
+        : (moe_jepa_dataset_loop_available ? "native-family-dataset-loop-covered"
+                                           : "family-native-trainer-missing");
     const std::string trainer_loop_status =
-        native_coverage_complete ? "native-loop-covered" : "family-native-loop-missing";
+        native_coverage_complete ? "native-loop-covered"
+        : (moe_jepa_dataset_loop_available ? "native-family-dataset-loop"
+                                           : "family-native-loop-missing");
 
     std::cout
         << "{\n"
@@ -711,6 +718,11 @@ void print_json(const Config& cfg, const char* program) {
         << "  \"compiled_native_boundary\": true,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_tensor_flow\": false,\n"
+        << "  \"production_training_loop\": " << (native_coverage_complete ? "true" : "false") << ",\n"
+        << "  \"kernel_step_source\": \""
+        << (moe_jepa_dataset_loop_available ? "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
+                                            : "none")
+        << "\",\n"
         << "  \"native_token_batch_preflight\": " << (cfg.sample_token_batch ? "true" : "false") << ",\n"
         << "  \"native_token_batch_format\": \"" << (byte_token_batch ? "uint8_byte_shards" : "uint16_token_shards") << "\",\n"
         << "  \"template_name\": \"" << json_escape(cfg.template_name) << "\",\n"

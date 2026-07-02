@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added dense GPT microbatch heartbeat progress. The native CUDA Tile trainer
+  already printed startup hyperparameters and optimizer-step progress to
+  stderr; logged steps now also print microbatch begin/complete lines, including
+  step 1, so the default `64 x 1024 -> 524288` schedule visibly reports all
+  eight gradient-accumulation microbatches before the first optimizer step
+  completes. Use `--print-plan` for resolved hyperparameters,
+  `--progress-every-steps N` for progress cadence, and
+  `--train-loss-every-steps N` when progress should include sampled train loss.
+
 - Added live stderr progress for the MoE-JEPA native dataset loop. The family
   trainer now prints the resolved hyperparameters before token-shard resolution,
   shard and batch-plan counts after resolution, begin/end lines for sampled AR
@@ -28,7 +37,11 @@
   `persistent-full-size-family-parameter-state` in
   `native_training_missing_requirements` until the sampled diagnostic parameter
   buffers are replaced by persistent full-size model state, checkpoint cadence,
-  and inference metadata.
+  and inference metadata. `--print-plan`, `--list-models`, and
+  `--list-templates` now report MoE-JEPA selectors as
+  `native-family-dataset-loop` with the same persistent-state missing
+  requirement instead of the stale missing-native-trainer or train-step-slice
+  status.
   Verification: rebuilt missing-family native targets and the unified frontend;
   ran a two-step MoE-JEPA dataset loop on the visible RTX 5090 with
   `--eval-every-steps 1`, confirmed two train batches, two validation batches,

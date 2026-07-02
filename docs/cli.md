@@ -1251,7 +1251,10 @@ For live visibility during CUDA work, native GPT writes progress to stderr and
 keeps stdout as the final JSON payload. Use `--progress-every-steps 1` for
 per-step status; the compiled loop always prints `step begin` for step 1 with
 `microbatch_tokens`, `grad_accum_steps`, and `effective_train_batch_tokens`
-before entering the first heavy CUDA optimizer step.
+before entering the first heavy CUDA optimizer step. It also prints microbatch
+begin/complete lines on step 1 and on each logged progress step, so the default
+`64 x 1024 -> 524288` schedule shows all eight gradient-accumulation
+microbatches before the first optimizer step completes.
 The compiled no-Bash dense GPT launcher prints a pre-`execvp` launch line with
 the resolved native target, CUDA device selector, dataset/template, schedule,
 and AdamW hyperparameters, then prints the exact child command before handing
@@ -3311,7 +3314,7 @@ For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_tr
 
 For the composed MoE-JEPA native train-step slice, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-loop-step`. It runs the standard MoE full forward/backward-loop train-step and the AR+JEPA+router objective substep through compiled native C++ and returns one JSON payload with substep JSON, `torch_required: false`, `graph_editor_tensor_flow: false`, and `production_training_loop: false`.
 
-For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir` and keeps `persistent-full-size-family-parameter-state` in the missing requirements until the sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
+For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `moe-jepa-evo` family command also defaults to this loop. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report MoE-JEPA selectors as `native-family-dataset-loop`, not as missing native trainers. They still keep `persistent-full-size-family-parameter-state` in the missing requirements until the sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
 This family loop now mirrors dense GPT operator visibility: stderr prints the
 resolved hyperparameters before shard resolution, shard/batch-plan counts after
 resolution, and begin/end lines for sampled AR CE, sampled MoE-JEPA family
