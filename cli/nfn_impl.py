@@ -1250,21 +1250,43 @@ def run_curses_questionnaire(title: str, questions: list[Question], state: dict[
         stdscr.addnstr(2, 0, question.prompt, max_x - 1)
         stdscr.addnstr(3, 0, "Up/Down: choice  Left/Right: questions  Enter: select  q: abort", max_x - 1)
         row = 5
-        for idx, choice in enumerate(question.options_factory(state)):
+        options = question.options_factory(state)
+        choices_footer_rows = min(6, max(3, max_y // 4))
+        option_row_limit = max(1, max_y - choices_footer_rows - row - 1)
+        visible_option_count = max(1, option_row_limit // 3)
+        if len(options) > visible_option_count:
+            scroll_start = min(
+                max(0, selected - visible_option_count // 2),
+                max(0, len(options) - visible_option_count),
+            )
+            visible_options = list(enumerate(options))[scroll_start: scroll_start + visible_option_count]
+            if scroll_start > 0:
+                stdscr.addnstr(row, 0, f"  ... {scroll_start} earlier choices", max_x - 1, curses.A_DIM)
+                row += 1
+            footer = f"choice {selected + 1}/{len(options)}"
+        else:
+            visible_options = list(enumerate(options))
+            footer = ""
+        for idx, choice in visible_options:
             attrs = curses.A_REVERSE if idx == selected else curses.A_NORMAL
             prefix = ">" if idx == selected else " "
             stdscr.addnstr(row, 0, f"{prefix} {choice.label}", max_x - 1, attrs)
             row += 1
             stdscr.addnstr(row, 2, choice.description, max_x - 3, attrs)
             row += 2
-        row = max(row, max_y - 6)
+        if len(options) > visible_option_count and visible_options and visible_options[-1][0] + 1 < len(options):
+            stdscr.addnstr(row, 0, f"  ... {len(options) - visible_options[-1][0] - 1} more choices", max_x - 1, curses.A_DIM)
+            row += 1
+        if footer:
+            stdscr.addnstr(4, 0, footer, max_x - 1, curses.A_BOLD)
+        row = min(max(row, max_y - choices_footer_rows), max_y - 1)
         stdscr.addnstr(row, 0, "Current choices:", max_x - 1, curses.A_BOLD)
         row += 1
         for key in sorted(k for k in state if not k.startswith("_")):
-            stdscr.addnstr(row, 2, f"{key}={state[key]}", max_x - 3)
-            row += 1
             if row >= max_y:
                 break
+            stdscr.addnstr(row, 2, f"{key}={state[key]}", max_x - 3)
+            row += 1
         stdscr.refresh()
 
     def prompt_curses_text(stdscr, prompt: str, *, parser: Callable[[str], Any] | None = None) -> Any:

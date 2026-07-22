@@ -26,13 +26,19 @@ _QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
         "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
         "NFN_SM120_EVAL_EVERY_STEPS",
-        "250",
+        "5000",
     ),
     "--eval-batches": (
         "NFN_NATIVE_GPT_EVAL_BATCHES",
         "NFN_SM120_NATIVE_EVAL_BATCHES",
         "NFN_SM120_EVAL_BATCHES",
         _DEFAULT_EVAL_BATCHES,
+    ),
+    "--train-loss-every-steps": (
+        "NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_TRAIN_LOSS_EVERY_STEPS",
+        "250",
     ),
     "--native-cuda-sample-every": (
         "NFN_NATIVE_GPT_SAMPLE_EVERY",
@@ -50,7 +56,7 @@ _QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
         "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
         "NFN_SM120_CHECKPOINT_EVERY",
-        "200",
+        "5000",
     ),
     "--batch-size": (
         "NFN_NATIVE_GPT_BATCH_SIZE",
@@ -75,6 +81,12 @@ _QUALITY_DEFAULTS = {
         "NFN_SM120_NATIVE_LEARNING_RATE",
         "NFN_SM120_LEARNING_RATE",
         "0.0006",
+    ),
+    "--lr-schedule": (
+        "NFN_NATIVE_GPT_LR_SCHEDULE",
+        "NFN_SM120_NATIVE_LR_SCHEDULE",
+        "NFN_SM120_LR_SCHEDULE",
+        "cosine",
     ),
     "--final-lr-fraction": (
         "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
@@ -123,6 +135,9 @@ _NATIVE_TRAIN_FAMILY_TARGETS = {
     "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
     "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
     "semantic-router-moe": "nfn_semantic_router_moe_native_train",
+    "semantic-moe-jepa-evo": "nfn_semantic_router_moe_native_train",
+    "semantic-moe-jepa-evo-modern": "nfn_semantic_router_moe_native_train",
+    "diff-semantic-moe-jepa-evo": "nfn_semantic_router_moe_native_train",
     "deepseek-v4": "nfn_deepseek_v4_native_train",
     "jamba": "nfn_jamba_native_train",
     "seq2seq": "nfn_seq2seq_native_train",
@@ -135,6 +150,7 @@ _NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "llama": "llama",
     "llama-fast": "llama",
     "llama-fast-megakernel": "llama",
+    "llama-megakernel": "llama",
     "llama-modern": "llama",
     "modern-norms-llama": "llama",
     "ternary-b158": "llama",
@@ -383,6 +399,28 @@ def _native_template_family(argv: list[str]) -> str | None:
     return _NATIVE_TEMPLATE_FAMILY_ALIASES.get(template)
 
 
+def _semantic_moe_selection(argv: list[str], model: str | None = None) -> bool:
+    normalized_model = (model or _native_model_family(argv)).strip().lower().replace("_", "-")
+    normalized_template = _native_template_name(argv).replace("_", "-")
+    return any(
+        part in {"semantic-moe-jepa-evo", "semantic-moe-jepa-evo-modern", "diff-semantic-moe-jepa-evo"}
+        for part in (normalized_model, normalized_template)
+    )
+
+
+def _append_semantic_moe_defaults(out: list[str]) -> None:
+    for flag, value in (
+        ("--semantic-vocab-dims", "86"),
+        ("--semantic-shared-experts", "2"),
+        ("--semantic-free-experts", "8"),
+        ("--layers-per-expert", "1"),
+        ("--top-k", "2"),
+        ("--route-chunk-size", "32"),
+    ):
+        if not _explicit_arg(out, flag):
+            _append_value(out, flag, value)
+
+
 def _native_train_family_cli_env(model: str) -> str:
     suffix = "".join(ch if ch.isalnum() else "_" for ch in model.upper()).strip("_")
     return f"NFN_NATIVE_{suffix}_CLI"
@@ -390,6 +428,7 @@ def _native_train_family_cli_env(model: str) -> str:
 
 def _resolve_native_train_family_cli(model: str) -> str | None:
     normalized = model.strip().lower().replace("_", "-")
+    normalized = _NATIVE_TEMPLATE_FAMILY_ALIASES.get(normalized, normalized)
     target = _NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
     if target is None:
         return None
@@ -630,6 +669,15 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--warmup-steps",
         "--max-steps",
         "--num-layers",
+        "--semantic-vocab-dims",
+        "--semantic-shared-experts",
+        "--semantic-free-experts",
+        "--layers-per-expert",
+        "--expert-layers",
+        "--expert-depth",
+        "--experts",
+        "--top-k",
+        "--route-chunk-size",
         "--template-name",
         "--template",
         "--preset",
@@ -749,6 +797,19 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
     ):
         _append_value(out, "--template-name", "nanogpt")
     if (
+        _semantic_moe_selection(out, model_selector)
+        and not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        _append_value(out, "--template-name", model_selector)
+    if (
+        not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        model_template_family = _NATIVE_TEMPLATE_FAMILY_ALIASES.get(model_selector)
+        if model_template_family is not None and model_template_family != model_selector:
+            _append_value(out, "--template-name", model_selector)
+    if (
         not list_templates_only
         and "--dataset-alias" not in out
         and "--dataset-path" not in out
@@ -764,6 +825,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         _append_value(out, "--final-lr-fraction", final_lr)
     if not list_templates_only and not any(flag in out for flag in _NATIVE_METADATA_ACTION_FLAGS):
         _append_quality_defaults(out)
+    if _semantic_moe_selection(out, model_selector):
+        _append_semantic_moe_defaults(out)
     if _native_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
         _append_value(out, "--tile-ops-lib", "linked")
     if (

@@ -1072,6 +1072,7 @@ def build_deepseek_v4_spec(**kwargs: Any) -> ModelSpec:
             moe_balance_mode="auxfree",
             auxfree_bias_lr=float(kwargs.get("auxfree_bias_lr", 0.001)),
             router_aux_loss_coef=0.0,
+            router_score_fn=str(kwargs.get("router_score_fn", "sqrt_softplus")),
             experts=int(kwargs.get("experts", 8)),
             top_k=int(kwargs.get("top_k", 2)),
             shared_experts=int(kwargs.get("shared_experts", 1)),

@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import os
+import re
+import selectors
 import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
+import time
 
 
 ROOT = Path(__file__).resolve().parent
@@ -68,13 +71,19 @@ _NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
         "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
         "NFN_SM120_EVAL_EVERY_STEPS",
-        "250",
+        "5000",
     ),
     "--eval-batches": (
         "NFN_NATIVE_GPT_EVAL_BATCHES",
         "NFN_SM120_NATIVE_EVAL_BATCHES",
         "NFN_SM120_EVAL_BATCHES",
         _DEFAULT_NATIVE_GPT_EVAL_BATCHES,
+    ),
+    "--train-loss-every-steps": (
+        "NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_TRAIN_LOSS_EVERY_STEPS",
+        "250",
     ),
     "--native-cuda-sample-every": (
         "NFN_NATIVE_GPT_SAMPLE_EVERY",
@@ -92,7 +101,7 @@ _NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
         "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
         "NFN_SM120_CHECKPOINT_EVERY",
-        "200",
+        "5000",
     ),
     "--batch-size": (
         "NFN_NATIVE_GPT_BATCH_SIZE",
@@ -117,6 +126,12 @@ _NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_SM120_NATIVE_LEARNING_RATE",
         "NFN_SM120_LEARNING_RATE",
         "0.0006",
+    ),
+    "--lr-schedule": (
+        "NFN_NATIVE_GPT_LR_SCHEDULE",
+        "NFN_SM120_NATIVE_LR_SCHEDULE",
+        "NFN_SM120_LR_SCHEDULE",
+        "cosine",
     ),
     "--final-lr-fraction": (
         "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
@@ -181,6 +196,9 @@ _NATIVE_TRAIN_FAMILY_TARGETS = {
     "semantic-dense-jepa": "nfn_semantic_dense_jepa_native_train",
     "moe-jepa-evo": "nfn_moe_jepa_evo_native_train",
     "semantic-router-moe": "nfn_semantic_router_moe_native_train",
+    "semantic-moe-jepa-evo": "nfn_semantic_router_moe_native_train",
+    "semantic-moe-jepa-evo-modern": "nfn_semantic_router_moe_native_train",
+    "diff-semantic-moe-jepa-evo": "nfn_semantic_router_moe_native_train",
     "deepseek-v4": "nfn_deepseek_v4_native_train",
     "jamba": "nfn_jamba_native_train",
     "seq2seq": "nfn_seq2seq_native_train",
@@ -195,6 +213,7 @@ _NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "llama": "llama",
     "llama-fast": "llama",
     "llama-fast-megakernel": "llama",
+    "llama-megakernel": "llama",
     "llama-modern": "llama",
     "modern-norms-llama": "llama",
     "ternary-b158": "llama",
@@ -245,6 +264,11 @@ _NATIVE_TEMPLATE_FAMILY_ALIASES = {
     "hnet-lm-modern": "hnet-lm",
     "universal-llama": "universal-llama",
     "universal-llama-modern": "universal-llama",
+}
+_NATIVE_FAMILY_CHECKPOINT_TEMPLATE_TARGETS = {
+    name: name
+    for name in _NATIVE_TRAIN_FAMILY_TARGETS
+    if name not in {"gpt2-evo", "nanogpt", "nano-gpt"}
 }
 
 
@@ -317,6 +341,8 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
 
         common options:
           -h, --help
+          --tui, --interactive
+          --no-tui
           --help-style {short,long,verbose}
           --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama}
           --topology {dense,moe,semantic_router}
@@ -330,6 +356,8 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --graph-file PATH, --graph PATH
           --tile-cuda-strict, --no-tile-cuda-strict
           --eval-every-steps N
+          --train-log-file PATH
+          --eval-log-file PATH
           --native-cuda-lm-head-row-chunk-size N
           --native-cuda-no-checkpoint, --no-checkpoint
           --native-cuda-fast-startup, --fast-startup
@@ -337,6 +365,8 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --native-cuda-dry-run
 
         examples:
+          nfn train
+          nfn train --tui
           nfn train --base-model gpt --tinystories
           nfn train --base-model gpt --tinystories --template-name gpt2_moa
           nfn train --base-model gpt3 --dataset-alias /data/tokens --graph-file graph.json
@@ -361,6 +391,11 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --native-checkpoint PATH
           --checkpoint-tokenizer PATH
           --native-info
+          --verify
+          --verify-all
+          --required-templates TEMPLATE[,TEMPLATE...]
+          --require-covered-templates
+          --require-architecture-forward
           --native-sampler-script PATH (deprecated for native .bin prompts)
           --runtime {auto,native-cuda,graph}
           --prompt TEXT
@@ -609,6 +644,29 @@ def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
     return _resolve_native_infer_checkpoint(argv) is not None
 
 
+def _resolve_native_family_infer_checkpoint(argv: list[str]) -> Path | None:
+    raw_checkpoint = _native_infer_checkpoint_arg(argv)
+    if not raw_checkpoint:
+        return None
+    checkpoint_path = Path(raw_checkpoint).expanduser()
+    try:
+        from neuralfn.native_family import is_native_family_checkpoint, latest_native_family_checkpoint
+
+        if checkpoint_path.is_dir():
+            return latest_native_family_checkpoint(checkpoint_path)
+        if is_native_family_checkpoint(checkpoint_path):
+            return checkpoint_path
+    except Exception:
+        return None
+    return None
+
+
+def _is_lightweight_native_family_infer(argv: list[str]) -> bool:
+    if argv and argv[0] == "infer" and _has_any(argv, "--verify-all") and _native_infer_checkpoint_arg(argv):
+        return True
+    return _resolve_native_family_infer_checkpoint(argv) is not None
+
+
 def _is_invalid_native_gpt_infer(argv: list[str]) -> bool:
     if not argv or argv[0] != "infer" or _has_any(argv, "-h", "--help", "--plan", "--plan-auto"):
         return False
@@ -653,6 +711,233 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     if _has_any(tokens, "--native-info"):
         return 0
     return _run_lightweight_native_gpt_sampler(tokens, checkpoint)
+
+
+def _lightweight_native_family_infer_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    from neuralfn.native_family import (
+        audit_native_family_checkpoint_template_coverage,
+        is_native_family_checkpoint,
+        list_native_family_checkpoints,
+        parse_native_family_template_list,
+        read_native_family_checkpoint_info,
+        render_native_family_checkpoint_sampler_text,
+        sample_native_family_checkpoint,
+        verify_native_family_checkpoint,
+    )
+
+    prompt_tokens = _arg_value(tokens, "--prompt-tokens") or ""
+    require_architecture_forward = _has_any(tokens, "--require-architecture-forward")
+    if _has_any(tokens, "--verify-all"):
+        raw_checkpoint = _native_infer_checkpoint_arg(tokens)
+        root = Path(raw_checkpoint).expanduser() if raw_checkpoint else checkpoint_path
+        if root.is_dir():
+            checkpoints = list(list_native_family_checkpoints(root))
+        elif is_native_family_checkpoint(root):
+            checkpoints = [root]
+        else:
+            checkpoints = []
+        import json
+
+        results = []
+        for path in checkpoints:
+            verification = verify_native_family_checkpoint(
+                path,
+                prompt_tokens=prompt_tokens if prompt_tokens.strip() else None,
+                max_new_tokens=_arg_int_value(tokens, "--max-new-tokens", 1),
+                require_architecture_forward=require_architecture_forward,
+            )
+            results.append(
+                {
+                    "path": str(verification.path),
+                    "passed": verification.passed,
+                    "errors": list(verification.errors),
+                    "model_family": verification.info.model_family,
+                    "template_name": verification.info.template_name,
+                    "checkpoint_kind": verification.info.checkpoint_kind,
+                    "transition_count": verification.info.transition_count,
+                    "done_marker_exists": verification.info.done_marker_exists,
+                    "full_template_parameter_state": verification.info.full_template_parameter_state,
+                    "parameter_storage": verification.info.parameter_storage,
+                    "parameter_initialization": verification.info.parameter_initialization,
+                    "dense_parameter_state_reconstructable": verification.info.dense_parameter_state_reconstructable,
+                    "base_parameter_initialization": verification.info.base_parameter_initialization,
+                    "base_parameter_seed": verification.info.base_parameter_seed,
+                    "base_parameter_scale": verification.info.base_parameter_scale,
+                    "parameter_data_size_matches": verification.info.parameter_data_size_matches,
+                    "writer_verification_passed": verification.info.writer_verification_passed,
+                    "writer_verification_update_probe_count": verification.info.writer_verification_update_probe_count,
+                    "writer_dense_base_initialization_verified": (
+                        verification.info.writer_dense_base_initialization_verified
+                    ),
+                    "writer_dense_base_probe_count": verification.info.writer_dense_base_probe_count,
+                    "writer_dense_base_probe_checksum": verification.info.writer_dense_base_probe_checksum,
+                    "writer_verification_error": verification.info.writer_verification_error,
+                    "architecture_forward_inference_supported": verification.info.architecture_forward_inference_supported,
+                    "parameter_lm_head_inference_supported": verification.info.parameter_lm_head_inference_supported,
+                    "working_model_inference_path": verification.info.working_model_inference_path,
+                    "architecture_forward_inference_used": bool(
+                        verification.sample.get("architecture_forward_inference_used")
+                    ),
+                    "parameter_lm_head_inference_used": bool(
+                        verification.sample.get("parameter_lm_head_inference_used")
+                    ),
+                }
+            )
+        passed_count = sum(1 for result in results if bool(result["passed"]))
+        coverage_payload = None
+        required_template_raw = _arg_value(tokens, "--required-templates") or ""
+        required_templates = {
+            template: _NATIVE_TEMPLATE_FAMILY_ALIASES.get(
+                template,
+                _NATIVE_FAMILY_CHECKPOINT_TEMPLATE_TARGETS.get(template, template),
+            )
+            for template in parse_native_family_template_list(required_template_raw)
+        }
+        if _has_any(tokens, "--require-covered-templates"):
+            required_templates.update(_NATIVE_FAMILY_CHECKPOINT_TEMPLATE_TARGETS)
+            required_templates.update(_NATIVE_TEMPLATE_FAMILY_ALIASES)
+        if required_templates:
+            coverage_payload = audit_native_family_checkpoint_template_coverage(
+                root,
+                required_templates=required_templates,
+                prompt_tokens=prompt_tokens if prompt_tokens.strip() else None,
+                max_new_tokens=_arg_int_value(tokens, "--max-new-tokens", 1),
+                require_architecture_forward=require_architecture_forward,
+            )
+        payload = {
+            "status": "native-family-checkpoint-verification-set",
+            "path": str(root),
+            "checkpoint_count": len(results),
+            "passed_count": passed_count,
+            "failed_count": len(results) - passed_count,
+            "passed": bool(results)
+            and passed_count == len(results)
+            and (coverage_payload is None or bool(coverage_payload["passed"])),
+            "architecture_forward_required": require_architecture_forward,
+            "results": results,
+        }
+        if coverage_payload is not None:
+            payload["covered_template_verification"] = coverage_payload
+        print(json.dumps(payload, sort_keys=True))
+        return 0 if payload["passed"] else 2
+
+    checkpoint_path = _resolve_native_family_infer_checkpoint(tokens)
+    if checkpoint_path is None:
+        return 2
+
+    info = read_native_family_checkpoint_info(checkpoint_path)
+    print("Native family checkpoint detected")
+    print(f"  path: {info.path}")
+    print(f"  model_family: {info.model_family}")
+    print(f"  template_name: {info.template_name}")
+    print(f"  checkpoint_kind: {info.checkpoint_kind}")
+    print(f"  vocab_size: {info.vocab_size}")
+    print(f"  transition_count: {info.transition_count}")
+    print(f"  steps_completed: {info.steps_completed}")
+    print(f"  parameter_state_type: {info.parameter_state_type}")
+    print(f"  parameter_storage: {info.parameter_storage}")
+    print(f"  parameter_initialization: {info.parameter_initialization}")
+    print(f"  dense_parameter_state_reconstructable: {info.dense_parameter_state_reconstructable}")
+    print(f"  base_parameter_initialization: {info.base_parameter_initialization}")
+    print(f"  base_parameter_seed: {info.base_parameter_seed}")
+    print(f"  base_parameter_scale: {info.base_parameter_scale}")
+    print(f"  full_template_parameter_state: {info.full_template_parameter_state}")
+    print(f"  parameter_buffer_count: {info.parameter_buffer_count}")
+    print(f"  parameter_elements: {info.parameter_elements}")
+    print(f"  persisted_parameter_elements: {info.persisted_parameter_elements}")
+    print(f"  trained_parameter_elements: {info.trained_parameter_elements}")
+    print(f"  parameter_update_checksum: {info.parameter_update_checksum}")
+    print(f"  writer_verification_passed: {info.writer_verification_passed}")
+    print(f"  writer_verification_update_probe_count: {info.writer_verification_update_probe_count}")
+    print(f"  writer_dense_base_initialization_verified: {info.writer_dense_base_initialization_verified}")
+    print(f"  writer_dense_base_probe_count: {info.writer_dense_base_probe_count}")
+    print(f"  writer_dense_base_probe_checksum: {info.writer_dense_base_probe_checksum}")
+    print(f"  writer_verification_error: {info.writer_verification_error}")
+    print(f"  architecture_forward_inference_supported: {info.architecture_forward_inference_supported}")
+    print(f"  parameter_lm_head_inference_supported: {info.parameter_lm_head_inference_supported}")
+    print(f"  working_model_inference_path: {info.working_model_inference_path}")
+    print(f"  transition_sampler_inference_supported: {info.transition_sampler_inference_supported}")
+    print(f"  parameter_data_path: {info.parameter_data_path or ''}")
+    print(f"  parameter_data_exists: {info.parameter_data_exists}")
+    print(f"  parameter_data_bytes: {info.parameter_data_bytes}")
+    print(f"  expected_parameter_data_bytes: {info.expected_parameter_data_bytes}")
+    print(f"  parameter_data_size_matches: {info.parameter_data_size_matches}")
+    print(f"  DONE marker: {'present' if info.done_marker_exists else 'missing'}")
+    if _has_any(tokens, "--verify"):
+        verification = verify_native_family_checkpoint(
+            checkpoint_path,
+            prompt_tokens=prompt_tokens if prompt_tokens.strip() else None,
+            max_new_tokens=_arg_int_value(tokens, "--max-new-tokens", 1),
+            require_architecture_forward=require_architecture_forward,
+        )
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "status": "native-family-checkpoint-verification",
+                    "path": str(verification.path),
+                    "passed": verification.passed,
+                    "errors": list(verification.errors),
+                    "model_family": verification.info.model_family,
+                    "template_name": verification.info.template_name,
+                    "checkpoint_kind": verification.info.checkpoint_kind,
+                    "transition_count": verification.info.transition_count,
+                    "done_marker_exists": verification.info.done_marker_exists,
+                    "full_template_parameter_state": verification.info.full_template_parameter_state,
+                    "parameter_storage": verification.info.parameter_storage,
+                    "parameter_initialization": verification.info.parameter_initialization,
+                    "dense_parameter_state_reconstructable": verification.info.dense_parameter_state_reconstructable,
+                    "base_parameter_initialization": verification.info.base_parameter_initialization,
+                    "base_parameter_seed": verification.info.base_parameter_seed,
+                    "base_parameter_scale": verification.info.base_parameter_scale,
+                    "parameter_data_exists": verification.info.parameter_data_exists,
+                    "parameter_data_bytes": verification.info.parameter_data_bytes,
+                    "expected_parameter_data_bytes": verification.info.expected_parameter_data_bytes,
+                    "parameter_data_size_matches": verification.info.parameter_data_size_matches,
+                    "trained_parameter_elements": verification.info.trained_parameter_elements,
+                    "parameter_update_checksum": verification.info.parameter_update_checksum,
+                    "writer_verification_passed": verification.info.writer_verification_passed,
+                    "writer_verification_update_probe_count": verification.info.writer_verification_update_probe_count,
+                    "writer_dense_base_initialization_verified": (
+                        verification.info.writer_dense_base_initialization_verified
+                    ),
+                    "writer_dense_base_probe_count": verification.info.writer_dense_base_probe_count,
+                    "writer_dense_base_probe_checksum": verification.info.writer_dense_base_probe_checksum,
+                    "writer_verification_error": verification.info.writer_verification_error,
+                    "architecture_forward_inference_supported": verification.info.architecture_forward_inference_supported,
+                    "architecture_forward_required": require_architecture_forward,
+                    "parameter_lm_head_inference_supported": verification.info.parameter_lm_head_inference_supported,
+                    "working_model_inference_path": verification.info.working_model_inference_path,
+                    "transition_sampler_inference_supported": verification.info.transition_sampler_inference_supported,
+                    "sample": verification.sample,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0 if verification.passed else 2
+    if _has_any(tokens, "--native-info"):
+        return 0
+    if not prompt_tokens.strip():
+        print("Native family checkpoint inference requires --prompt-tokens.", file=sys.stderr)
+        return 2
+    try:
+        payload = sample_native_family_checkpoint(
+            checkpoint_path,
+            prompt_tokens=prompt_tokens,
+            max_new_tokens=_arg_int_value(tokens, "--max-new-tokens", 64),
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    import json
+
+    print(json.dumps(payload, sort_keys=True))
+    rendered = render_native_family_checkpoint_sampler_text(payload)
+    if rendered:
+        print(rendered)
+    return 0
 
 
 def _native_prompt_tokens(tokens: list[str]) -> str:
@@ -764,7 +1049,7 @@ def _is_dense_gpt_native_model(model: str) -> bool:
 def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
     if not argv or argv[0] != "train":
         return False
-    if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
+    if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa", "--tui", "--interactive"):
         return False
     if _native_gpt_requested_runtime(argv) != "native-cuda":
         return False
@@ -807,6 +1092,7 @@ def _resolve_direct_native_train_family_cli(model: str) -> str | None:
     if os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip():
         return None
     normalized = model.strip().lower().replace("_", "-")
+    normalized = _NATIVE_TEMPLATE_FAMILY_ALIASES.get(normalized, normalized)
     target = _NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
     if target is None:
         return None
@@ -832,8 +1118,6 @@ def _canonical_dense_gpt_model_family(model: str) -> str:
 
 def _native_gpt_cli_uses_linked_tile_ops(path: str) -> bool:
     return Path(path).name in {
-        "nfn_gpt_native_train",
-        "nfn-gpt-native-train",
         "nfn_gpt_native_train_linked",
         "nfn-gpt-native-train-linked",
     }
@@ -880,9 +1164,783 @@ _NATIVE_TRAIN_ACTION_FLAGS = {
     "--train-token-lm",
 }
 
+_TRAIN_TUI_MODELS = (
+    ("gpt", "Dense GPT native trainer"),
+    ("gpt2", "Dense GPT-2 shape on the GPT trainer"),
+    ("gpt3", "Dense GPT-3-like long-context run"),
+    ("nanogpt", "NanoGPT template on the dense GPT trainer"),
+    ("gpt2-evo", "GPT-2 dense evo layer delegate"),
+    ("llama", "LLaMA family native trainer"),
+    ("mixllama", "MixLLaMA/MoE family native trainer"),
+    ("jepa", "JEPA native family trainer"),
+    ("semantic-router-moe", "Semantic router MoE native family trainer"),
+    ("semantic-moe-jepa-evo", "Semantic MoE JEPA Evo native trainer"),
+)
+
+_TRAIN_TUI_TEMPLATES = {
+    "gpt": ("gpt", "gpt2", "gpt2_moa", "gpt2_modern", "gpt3", "nanogpt"),
+    "gpt2": ("gpt2", "gpt", "gpt2_moa", "gpt2_modern"),
+    "gpt3": ("gpt3", "gpt", "gpt2_moa"),
+    "nanogpt": ("nanogpt", "nanogpt_modern", "nanogpt_megakernel"),
+    "gpt2-evo": ("default",),
+    "llama": ("llama", "llama-modern", "llama-fast", "kv-pca-llama"),
+    "mixllama": ("mixllama", "mixllama-fast", "moe", "deepseek-v3"),
+    "jepa": ("llm-jepa", "dense-jepa-evo", "dense-jepa-evo-modern"),
+    "semantic-router-moe": ("semantic-router-moe", "semantic-moe-jepa-evo"),
+    "semantic-moe-jepa-evo": ("semantic-moe-jepa-evo", "semantic-moe-jepa-evo-modern", "diff-semantic-moe-jepa-evo"),
+}
+
+_TRAIN_TUI_GPT_TEMPLATE_MODELS = {"gpt", "gpt2", "gpt3", "nanogpt"}
+
+_TRAIN_TUI_HYPERPARAMS = (
+    ("--max-steps", "max_steps", "Steps", "20000", "int", "Optimizer steps to run."),
+    ("--train-seq-len", "train_seq_len", "Sequence length", "1024", "int", "Tokens per training sample."),
+    ("--batch-size", "batch_size", "Microbatch rows", "64", "int", "Rows sampled per native microbatch."),
+    ("--train-batch-tokens", "train_batch_tokens", "Batch tokens", "524288", "int", "Effective tokens per optimizer step."),
+    ("--learning-rate", "learning_rate", "Learning rate", "0.0006", "float", "AdamW learning rate."),
+    ("--lr-schedule", "lr_schedule", "LR schedule", "cosine", "choice", "Learning-rate schedule: cosine or constant."),
+    ("--final-lr-fraction", "final_lr_fraction", "Final LR fraction", "0.0", "float", "Final LR as a fraction of the base LR for cosine decay."),
+    ("--weight-decay", "weight_decay", "Weight decay", "0.02", "float", "AdamW weight decay."),
+    ("--warmup-steps", "warmup_steps", "Warmup steps", "60", "int", "Linear warmup steps."),
+    ("--eval-every-steps", "eval_every_steps", "Eval cadence", "5000", "int", "Validation cadence; 0 disables eval."),
+    ("--eval-batches", "eval_batches", "Eval batches", "20", "int", "Validation batches per eval pass."),
+    ("--train-log-every-steps", "train_log_every_steps", "Train loss cadence", "250", "int", "Sampled train-loss cadence; 0 disables."),
+    ("--native-cuda-checkpoint-every", "native_cuda_checkpoint_every", "Checkpoint cadence", "5000", "int", "Native checkpoint cadence; 0 disables periodic checkpoints."),
+    ("--progress-every-steps", "progress_every_steps", "Progress cadence", "1", "int", "Native progress print cadence."),
+)
+
+_TRAIN_TUI_ARCH_HYPERPARAMS = (
+    ("--num-layers", "num_layers", "Layers", "1", "int", "Transformer blocks in the semantic route stack."),
+)
+
+_TRAIN_TUI_SEMANTIC_MOE_HYPERPARAMS = (
+    ("--semantic-vocab-dims", "semantic_vocab_dims", "Semantic dims", "86", "int", "Semantic vocabulary dimensions; one semantic expert is allocated per dimension."),
+    ("--semantic-shared-experts", "semantic_shared_experts", "Shared experts", "2", "int", "Always-on experts prepended to every semantic-MoE route."),
+    ("--semantic-free-experts", "semantic_free_experts", "Free experts", "8", "int", "Learned free experts appended after the semantic expert bank."),
+    ("--layers-per-expert", "layers_per_expert", "Layers / expert", "1", "int", "Depth assigned to each routed expert domain."),
+    ("--top-k", "top_k", "Route top-k", "2", "int", "Non-shared semantic/free experts selected per routed chunk."),
+    ("--route-chunk-size", "route_chunk_size", "Route chunk", "32", "int", "Token interval for updating chunk-level semantic routes."),
+)
+
+_TRAIN_TUI_EVO_HYPERPARAMS = (
+    ("--evo-layer-index", "evo_layer_index", "Evo layer", "6", "int", "Evo-capable template block or layer index to mutate."),
+    ("--evo-layer-interval", "evo_layer_interval", "Evo cadence", "10", "int", "Optimizer-step cadence for candidate search."),
+    ("--evo-layer-population", "evo_layer_population", "Evo population", "8", "int", "Candidate count for native layer-evo search."),
+    ("--evo-layer-mutation-scale", "evo_layer_mutation_scale", "Evo mutation", "0.02", "float", "Gaussian mutation scale for evo candidates."),
+    ("--evo-tournament-size", "evo_tournament_size", "Evo tournament", "3", "int", "Tournament pool size for evo selection metadata and compatible graph-evo paths."),
+    ("--evo-elite-count", "evo_elite_count", "Evo elite", "1", "int", "Elite candidate count; native layer-evo always keeps the current weights as candidate 0."),
+)
+_TRAIN_TUI_GPT2_EVO_HYPERPARAMS = _TRAIN_TUI_EVO_HYPERPARAMS
+
+_TRAIN_TUI_ALL_HYPERPARAMS = (
+    *_TRAIN_TUI_HYPERPARAMS,
+    *_TRAIN_TUI_ARCH_HYPERPARAMS,
+    *_TRAIN_TUI_SEMANTIC_MOE_HYPERPARAMS,
+    *_TRAIN_TUI_EVO_HYPERPARAMS,
+)
+
+
+def _train_tui_is_evo_selection(model: str, template: str = "") -> bool:
+    normalized_model = str(model or "").strip().lower().replace("_", "-")
+    normalized_template = str(template or "").strip().lower().replace("_", "-")
+    if normalized_model == "gpt2-evo" or normalized_template == "gpt2-evo":
+        return True
+    return any(part for part in (normalized_model, normalized_template) if "evo" in part)
+
+
+def _train_tui_is_semantic_moe_selection(model: str, template: str = "") -> bool:
+    normalized_model = str(model or "").strip().lower().replace("_", "-")
+    normalized_template = str(template or "").strip().lower().replace("_", "-")
+    return any(
+        part in {"semantic-moe-jepa-evo", "semantic-moe-jepa-evo-modern", "diff-semantic-moe-jepa-evo"}
+        for part in (normalized_model, normalized_template)
+    )
+
+
+def _train_tui_hyperparams_for_model(model: str, template: str = ""):
+    normalized_model = str(model or "").strip().lower().replace("_", "-")
+    normalized_template = str(template or "").strip().lower().replace("_", "-")
+    params = list(_TRAIN_TUI_HYPERPARAMS)
+    if normalized_model.startswith("semantic") or normalized_template.startswith("semantic"):
+        params.extend(_TRAIN_TUI_ARCH_HYPERPARAMS)
+    if _train_tui_is_semantic_moe_selection(normalized_model, normalized_template):
+        params.extend(_TRAIN_TUI_SEMANTIC_MOE_HYPERPARAMS)
+    if _train_tui_is_evo_selection(normalized_model, normalized_template):
+        params.extend(_TRAIN_TUI_EVO_HYPERPARAMS)
+    return tuple(params)
+
+
+def _train_tui_hyperparams_for_state(state: dict[str, object]):
+    return _train_tui_hyperparams_for_model(
+        str(state.get("model") or "gpt"),
+        str(state.get("template") or ""),
+    )
+
+
+def _ensure_train_tui_hyperparam_defaults(state: dict[str, object]) -> None:
+    for _flag, key, _label, default, _kind, _description in _train_tui_hyperparams_for_state(state):
+        state.setdefault(key, default)
+
 
 def _has_native_train_action(args: list[str]) -> bool:
     return any(arg in _NATIVE_TRAIN_ACTION_FLAGS for arg in args)
+
+
+def _is_native_train_tui_request(
+    argv: list[str],
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> bool:
+    if not argv or argv[0] != "train":
+        return False
+    if _has_any(argv, "-h", "--help", "--no-tui", "--plan", "--plan-auto"):
+        return False
+    if _has_any(argv, "--tui", "--interactive"):
+        return True
+    if len(argv) == 1:
+        input_tty = sys.stdin.isatty() if stdin_isatty is None else stdin_isatty
+        output_tty = sys.stdout.isatty() if stdout_isatty is None else stdout_isatty
+        return bool(input_tty and output_tty)
+    return False
+
+
+def _strip_train_tui_flags(argv: list[str]) -> list[str]:
+    return [arg for arg in argv if arg not in {"--tui", "--interactive", "--no-tui"}]
+
+
+def _discover_train_tui_datasets() -> list[tuple[str, str]]:
+    choices: list[tuple[str, str]] = [
+        ("tinystories", "TinyStoriesV2 GPT-4 alias"),
+        ("roneneldan__TinyStories__TinyStoriesV2-GPT4", "TinyStories HF alias"),
+        ("golf1", "Parameter Golf cached train1"),
+        ("golf10", "Parameter Golf cached train10"),
+    ]
+    seen = {value for value, _ in choices}
+    roots = [
+        os.environ.get("NFN_DATASETS_DIR", ""),
+        str(Path.home() / "NeuralFn" / "datasets"),
+        "/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories",
+    ]
+    for raw_root in roots:
+        if not raw_root:
+            continue
+        root = Path(raw_root).expanduser()
+        if not root.exists():
+            continue
+        candidates = [root]
+        if root.is_dir():
+            try:
+                candidates.extend(sorted(path for path in root.iterdir() if path.is_dir() or path.suffix == ".bin")[:12])
+            except OSError:
+                pass
+        for candidate in candidates:
+            value = str(candidate)
+            if value in seen:
+                continue
+            seen.add(value)
+            choices.append((value, f"installed: {candidate}"))
+    choices.append(("path", "Enter a dataset file or directory path"))
+    return choices
+
+
+def _train_tui_gpt_template_names() -> list[str]:
+    command = _direct_native_train_cli_argv(["train", "--base-model", "gpt", "--list-templates"])
+    env = os.environ.copy()
+    _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))
+    _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    try:
+        proc = subprocess.run(
+            command,
+            env=env,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            payload = {}
+        templates = payload.get("templates")
+        if isinstance(templates, list):
+            names = [str(item.get("name", "")).strip() for item in templates if isinstance(item, dict)]
+            names = [name for name in names if name]
+            if names:
+                return names
+        shipped = payload.get("shipped_template_catalog")
+        if isinstance(shipped, list):
+            names = [str(name).strip() for name in shipped if str(name).strip()]
+            if names:
+                return names
+    try:
+        from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
+
+        return ["gpt", "gpt3", *list(SHIPPED_GPT_TEMPLATE_PRESETS)]
+    except Exception:
+        return list(_TRAIN_TUI_TEMPLATES["gpt"])
+
+
+def _train_tui_template_choices(model: str) -> list[tuple[str, str]]:
+    if model in _TRAIN_TUI_GPT_TEMPLATE_MODELS:
+        preferred = list(_TRAIN_TUI_TEMPLATES.get(model, ()))
+        all_names = _train_tui_gpt_template_names()
+        ordered = [name for name in preferred if name in all_names]
+        ordered.extend(name for name in all_names if name not in ordered)
+        return [(value, "native GPT template catalog") for value in ordered]
+    return [(value, "native template preset") for value in _TRAIN_TUI_TEMPLATES.get(model, ("default",))]
+
+
+def _tui_log_default(output_dir: str, name: str) -> str:
+    base = Path(output_dir).expanduser() if output_dir else Path.home() / "NeuralFn" / "artifacts"
+    return str(base / f"{name}.log")
+
+
+def _train_tui_option(label: str, description: str, value: object, *, recommended: bool = False):
+    from nfn_impl import OptionChoice
+
+    return OptionChoice(label, description, value, recommended=recommended)
+
+
+def _train_tui_custom(label: str, description: str, prompt: str, *, parser=None):
+    from nfn_impl import OptionChoice
+
+    return OptionChoice(label, description, {}, custom_prompt=prompt, parser=parser)
+
+
+def _train_tui_value_choices(default: str, label: str, description: str, prompt: str, *, parser=None):
+    return [
+        _train_tui_option(f"{label} ({default})", description, default, recommended=True),
+        _train_tui_custom("Custom...", f"Enter a custom value for {label.lower()}.", prompt, parser=parser),
+    ]
+
+
+def _native_train_default_state() -> dict[str, object]:
+    model = "gpt"
+    output_dir = str(Path.home() / "NeuralFn" / "artifacts" / f"{model}_tui")
+    state: dict[str, object] = {
+        "model": model,
+        "template": _train_tui_template_choices(model)[0][0],
+        "dataset": "tinystories",
+        "output_dir": output_dir,
+        "train_log_file": _tui_log_default(output_dir, "train"),
+        "eval_log_file": _tui_log_default(output_dir, "eval"),
+        "launch_mode": "start",
+    }
+    for _flag, key, _label, default, _kind, _description in _TRAIN_TUI_HYPERPARAMS:
+        state[key] = default
+    return state
+
+
+def _native_train_command_tokens_from_state(state: dict[str, object]) -> list[str]:
+    model = str(state.get("model") or "gpt")
+    template = str(state.get("template") or "default")
+    dataset = str(state.get("dataset") or "tinystories")
+    output_dir = str(state.get("output_dir") or Path.home() / "NeuralFn" / "artifacts" / f"{model}_tui")
+    command_tokens = ["train", "--base-model", model]
+    if template and template != "default":
+        command_tokens.extend(["--template-name", template])
+    if dataset == "tinystories":
+        command_tokens.append("--tinystories")
+    elif dataset in {"golf1", "golf10"}:
+        command_tokens.extend(["--dataset", dataset])
+    else:
+        command_tokens.extend(["--dataset-alias", dataset])
+    command_tokens.extend(["--output-dir", output_dir])
+    for flag, key, _label, default, _kind, _description in _train_tui_hyperparams_for_state(state):
+        value = str(state.get(key) or default or "")
+        if value:
+            command_tokens.extend([flag, value])
+    train_log_file = str(state.get("train_log_file") or "")
+    eval_log_file = str(state.get("eval_log_file") or "")
+    if train_log_file:
+        command_tokens.extend(["--train-log-file", train_log_file])
+    if eval_log_file:
+        command_tokens.extend(["--eval-log-file", eval_log_file])
+    if str(state.get("launch_mode") or "") == "dry-run":
+        command_tokens.extend(["--native-cuda-dry-run", "--native-cuda-print-command"])
+    return command_tokens
+
+
+def _native_train_tui_fields(state: dict[str, object] | None = None) -> list[tuple[str, str, str]]:
+    fields = [
+        ("model", "Model", "run"),
+        ("template", "Template", "run"),
+        ("dataset", "Dataset", "run"),
+        ("output_dir", "Output", "run"),
+        ("logs", "Logs", "run"),
+    ]
+    hyperparams = _train_tui_hyperparams_for_state(state or {}) if state is not None else _TRAIN_TUI_HYPERPARAMS
+    fields.extend((key, label, "hyper") for _flag, key, label, _default, _kind, _description in hyperparams)
+    return fields
+
+
+def _native_train_validate_tui_value(key: str, value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("value cannot be empty")
+    kind = next((kind for _flag, item_key, _label, _default, kind, _description in _TRAIN_TUI_ALL_HYPERPARAMS if item_key == key), "text")
+    if kind == "int":
+        parsed = int(value)
+        if parsed < 0:
+            raise ValueError("value must be non-negative")
+        if key == "evo_tournament_size" and parsed <= 0:
+            raise ValueError("tournament size must be at least 1")
+        if key == "evo_elite_count" and parsed < 0:
+            raise ValueError("elite count must be non-negative")
+        return str(parsed)
+    if kind == "float":
+        parsed = float(value)
+        if parsed < 0:
+            raise ValueError("value must be non-negative")
+        return f"{parsed:g}"
+    if kind == "choice":
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized in {"fixed", "constant"}:
+            return "constant"
+        if normalized in {"cosine", "cosine-decay"}:
+            return "cosine"
+        raise ValueError("value must be cosine or constant")
+    return value
+
+
+def _native_train_choice_value(
+    *,
+    prompt_fn,
+    title: str,
+    choices: list[tuple[str, str]],
+    current: str,
+) -> str | None:
+    visible = list(choices)
+    while True:
+        print()
+        print(f"\033[1m{title}\033[0m")
+        for idx, (value, description) in enumerate(visible[:24], start=1):
+            marker = "*" if value == current else " "
+            print(f" {marker} {idx:>2}. {value}  \033[2m{description}\033[0m")
+        if len(visible) > 24:
+            print(f"    ... {len(visible) - 24} more; type /text to filter")
+        raw = prompt_fn("index, exact value, /filter, or blank to keep").strip()
+        if not raw:
+            return None
+        if raw.startswith("/"):
+            needle = raw[1:].strip().lower()
+            visible = [choice for choice in choices if needle in choice[0].lower() or needle in choice[1].lower()]
+            if not visible:
+                print("No matches.")
+                visible = list(choices)
+            continue
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(visible):
+                return visible[idx][0]
+            print("Index out of range.")
+            continue
+        for value, _description in choices:
+            if raw == value:
+                return value
+        print("Unknown value.")
+
+
+def _native_train_tui_read_key(fd: int) -> str:
+    import select
+
+    ch = os.read(fd, 1).decode("utf-8", errors="ignore")
+    if ch != "\x1b":
+        return ch
+    seq = ch
+    while True:
+        ready, _w, _x = select.select([fd], [], [], 0.01)
+        if not ready:
+            break
+        seq += os.read(fd, 1).decode("utf-8", errors="ignore")
+        if len(seq) >= 6:
+            break
+    return {
+        "\x1b[A": "up",
+        "\x1b[B": "down",
+        "\x1b[C": "right",
+        "\x1b[D": "left",
+    }.get(seq, "escape")
+
+
+def _render_native_train_dashboard(console, state: dict[str, object], selected: int, status: str) -> None:
+    from rich.box import ROUNDED
+    from rich.markup import escape as rich_escape
+    from rich.table import Table
+
+    console.file.write("\x1b[H")
+    _ensure_train_tui_hyperparam_defaults(state)
+    fields = _native_train_tui_fields(state)
+    selected_key = fields[selected][0]
+    model = rich_escape(str(state.get("model") or "gpt"))
+    template = rich_escape(str(state.get("template") or "default"))
+    dataset = rich_escape(str(state.get("dataset") or "tinystories"))
+    steps = rich_escape(str(state.get("max_steps") or "20000"))
+    console.print(f"[infer.banner] NeuralFn Native Train [/] [infer.accent]{model}[/] template={template} dataset={dataset} steps={steps}")
+    console.print("[infer.status]Up/Down move  Enter edit  r run  p print command  q quit[/]")
+
+    active_hyperparams = _train_tui_hyperparams_for_state(state)
+    defaults = {key: default for _flag, key, _label, default, _kind, _description in active_hyperparams}
+    descriptions = {key: description for _flag, key, _label, _default, _kind, description in active_hyperparams}
+    show_meaning = console.width >= 112
+    setup_table = Table(box=ROUNDED, expand=True, show_lines=False)
+    setup_table.add_column("Setting", style="infer.accent", no_wrap=True, width=18)
+    setup_table.add_column("Value", overflow="ellipsis", no_wrap=True, width=36)
+    setup_table.add_column("Default", overflow="ellipsis", no_wrap=True, width=14)
+    if show_meaning:
+        setup_table.add_column("Meaning", overflow="fold")
+    for key, label, group in fields:
+        current = str(state.get(key) or "off")
+        default = defaults.get(key, "")
+        if group == "run":
+            if key == "model":
+                default = "gpt"
+            elif key == "template":
+                default = _train_tui_template_choices(str(state.get("model") or "gpt"))[0][0]
+            elif key == "dataset":
+                default = "tinystories"
+            elif key == "output_dir":
+                default = str(Path.home() / "NeuralFn" / "artifacts" / f"{state.get('model') or 'gpt'}_tui")
+            elif key == "logs":
+                train_log = str(state.get("train_log_file") or "off")
+                eval_log = str(state.get("eval_log_file") or "off")
+                current = f"train={train_log}  eval={eval_log}"
+                default = "default train/eval logs"
+        changed = bool(default) and current != default
+        style = "reverse bright_yellow" if key == selected_key else ("bright_green" if changed else "")
+        row = [
+            label,
+            rich_escape(current),
+            rich_escape(default),
+        ]
+        if show_meaning:
+            row.append(rich_escape(descriptions.get(key, "Edit the run configuration.")))
+        setup_table.add_row(*row, style=style)
+    console.print(setup_table)
+
+    selected_description = descriptions.get(selected_key, "Edit the run configuration.")
+    console.print(f"[infer.status]{rich_escape(selected_description)}  Press [infer.accent]p[/] for the full command.[/]")
+    if status:
+        console.print(f":sparkles: [infer.preview]{rich_escape(status)}[/]")
+    console.file.write("\x1b[J")
+    console.file.flush()
+
+
+def _edit_native_train_tui_field(console, state: dict[str, object], key: str, old_term_attrs) -> str:
+    import termios
+    import tty as tty_module
+
+    fd = sys.stdin.fileno()
+
+    def prompt(label: str) -> str:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_term_attrs)
+        try:
+            return input(f"{label}: ")
+        finally:
+            tty_module.setcbreak(fd)
+
+    if key == "model":
+        choices = [(value, description) for value, description in _TRAIN_TUI_MODELS]
+        selected = _native_train_choice_value(
+            prompt_fn=prompt,
+            title="Choose model family",
+            choices=choices,
+            current=str(state.get("model") or "gpt"),
+        )
+        if selected is None:
+            return "Model unchanged."
+        state["model"] = selected
+        state["template"] = _train_tui_template_choices(selected)[0][0]
+        output_dir = str(Path.home() / "NeuralFn" / "artifacts" / f"{selected}_tui")
+        state["output_dir"] = output_dir
+        state["train_log_file"] = _tui_log_default(output_dir, "train")
+        state["eval_log_file"] = _tui_log_default(output_dir, "eval")
+        _ensure_train_tui_hyperparam_defaults(state)
+        return f"Model set to {selected}; template and default paths refreshed."
+    if key == "template":
+        model = str(state.get("model") or "gpt")
+        selected = _native_train_choice_value(
+            prompt_fn=prompt,
+            title=f"Choose template for {model}",
+            choices=_train_tui_template_choices(model),
+            current=str(state.get("template") or "default"),
+        )
+        if selected is None:
+            return "Template unchanged."
+        state["template"] = selected
+        _ensure_train_tui_hyperparam_defaults(state)
+        return f"Template set to {selected}."
+    if key == "dataset":
+        selected = _native_train_choice_value(
+            prompt_fn=prompt,
+            title="Choose dataset",
+            choices=_discover_train_tui_datasets(),
+            current=str(state.get("dataset") or "tinystories"),
+        )
+        if selected is None:
+            return "Dataset unchanged."
+        if selected == "path":
+            selected = prompt("Dataset file or directory path").strip()
+            if not selected:
+                return "Dataset unchanged."
+        state["dataset"] = selected
+        return f"Dataset set to {selected}."
+    if key == "output_dir":
+        raw = prompt("Output directory (blank keeps current)").strip()
+        if not raw:
+            return "Output directory unchanged."
+        state["output_dir"] = raw
+        state["train_log_file"] = _tui_log_default(raw, "train")
+        state["eval_log_file"] = _tui_log_default(raw, "eval")
+        return "Output directory updated; default log paths refreshed."
+    if key == "logs":
+        train_raw = prompt("Train log path, 'off', 'default', or blank keeps current").strip()
+        eval_raw = prompt("Eval log path, 'off', 'default', or blank keeps current").strip()
+        updates = 0
+        for item_key, name, raw in (
+            ("train_log_file", "train", train_raw),
+            ("eval_log_file", "eval", eval_raw),
+        ):
+            if not raw:
+                continue
+            if raw.lower() == "off":
+                state[item_key] = ""
+            elif raw.lower() == "default":
+                state[item_key] = _tui_log_default(str(state.get("output_dir") or ""), name)
+            else:
+                state[item_key] = raw
+            updates += 1
+        return "Logs unchanged." if updates == 0 else "Logs updated."
+    current = str(state.get(key) or "")
+    label = next((label for _flag, item_key, label, _default, _kind, _description in _TRAIN_TUI_ALL_HYPERPARAMS if item_key == key), key)
+    while True:
+        raw = prompt(f"{label} (current {current}, blank keeps current)").strip()
+        if not raw:
+            return f"{label} unchanged."
+        try:
+            state[key] = _native_train_validate_tui_value(key, raw)
+        except ValueError as exc:
+            print(f"Invalid value: {exc}")
+            continue
+        return f"{label} set to {state[key]}."
+
+
+def _native_train_dashboard_tui_main(tokens: list[str]) -> int:
+    try:
+        from rich.console import Console
+        from rich.theme import Theme
+    except ImportError:
+        from nfn_impl import run_curses_questionnaire
+
+        state = run_curses_questionnaire("nfn train", _native_train_tui_questions(), {})
+        command_tokens = _native_train_command_tokens_from_state(state)
+        print()
+        print("\033[1mResolved nfn train command\033[0m")
+        print(shlex.join(["nfn", *command_tokens]))
+        return _direct_native_train_cli_main(command_tokens, progress_tui=True)
+
+    import termios
+    import tty as tty_module
+
+    theme = Theme(
+        {
+            "infer.user": "bold bright_cyan",
+            "infer.assistant": "bold bright_magenta",
+            "infer.system": "dim italic",
+            "infer.banner": "bold white on #2a004d",
+            "infer.accent": "bright_yellow",
+            "infer.status": "dim",
+            "infer.preview": "italic bright_green",
+            "infer.ghost": "italic #808080",
+            "infer.error": "bold red",
+        }
+    )
+    console = Console(theme=theme, emoji=True, highlight=False, soft_wrap=False)
+    state = _native_train_default_state()
+    fields = _native_train_tui_fields(state)
+    selected = 0
+    status = "Ready. Move to any row and press Enter to edit; defaults are already applied."
+    fd = sys.stdin.fileno()
+    old_term_attrs = termios.tcgetattr(fd)
+    try:
+        console.clear()
+        tty_module.setcbreak(fd)
+        while True:
+            _render_native_train_dashboard(console, state, selected, status)
+            key = _native_train_tui_read_key(fd)
+            if key in {"up", "k"}:
+                fields = _native_train_tui_fields(state)
+                selected = (selected - 1) % len(fields)
+                status = ""
+            elif key in {"down", "j"}:
+                fields = _native_train_tui_fields(state)
+                selected = (selected + 1) % len(fields)
+                status = ""
+            elif key in {"\r", "\n", "e"}:
+                fields = _native_train_tui_fields(state)
+                selected = min(selected, len(fields) - 1)
+                status = _edit_native_train_tui_field(console, state, fields[selected][0], old_term_attrs)
+                fields = _native_train_tui_fields(state)
+                selected = min(selected, len(fields) - 1)
+            elif key == "m":
+                selected = 0
+                status = _edit_native_train_tui_field(console, state, "model", old_term_attrs)
+                fields = _native_train_tui_fields(state)
+            elif key == "t":
+                selected = 1
+                status = _edit_native_train_tui_field(console, state, "template", old_term_attrs)
+                fields = _native_train_tui_fields(state)
+            elif key == "d":
+                selected = 2
+                status = _edit_native_train_tui_field(console, state, "dataset", old_term_attrs)
+                fields = _native_train_tui_fields(state)
+            elif key == "o":
+                selected = 3
+                status = _edit_native_train_tui_field(console, state, "output_dir", old_term_attrs)
+                fields = _native_train_tui_fields(state)
+            elif key == "r":
+                state["launch_mode"] = "start"
+                break
+            elif key == "p":
+                state["launch_mode"] = "dry-run"
+                break
+            elif key in {"q", "escape", "\x03"}:
+                console.clear()
+                print("Training setup cancelled.")
+                return 0
+            else:
+                status = "Use Up/Down, Enter, r, p, or q. Shortcuts: m model, t template, d dataset, o output."
+    except KeyboardInterrupt:
+        console.clear()
+        print("Training setup cancelled.", file=sys.stderr)
+        return 130
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_term_attrs)
+    console.clear()
+    command_tokens = _native_train_command_tokens_from_state(state)
+    print()
+    print("\033[1mResolved nfn train command\033[0m")
+    print(shlex.join(["nfn", *command_tokens]))
+    return _direct_native_train_cli_main(command_tokens, progress_tui=True)
+
+
+def _native_train_tui_questions():
+    from nfn_impl import Question
+
+    always = lambda _state, _explicit: True
+
+    def model_options(_state):
+        return [
+            _train_tui_option(label, description, value, recommended=value == "gpt")
+            for value, description in _TRAIN_TUI_MODELS
+            for label in [value.upper() if value in {"gpt", "gpt2", "gpt3"} else value]
+        ]
+
+    def template_options(state):
+        model = str(state.get("model") or "gpt")
+        choices = _train_tui_template_choices(model)
+        return [
+            _train_tui_option(value, description, value, recommended=idx == 0)
+            for idx, (value, description) in enumerate(choices)
+        ]
+
+    def dataset_options(_state):
+        options = []
+        for idx, (value, description) in enumerate(_discover_train_tui_datasets()):
+            if value == "path":
+                options.append(
+                    _train_tui_custom(
+                        "Custom path...",
+                        "Enter a dataset file or directory path.",
+                        "Dataset file or directory path",
+                    )
+                )
+            else:
+                options.append(_train_tui_option(value, description, value, recommended=idx == 0))
+        return options
+
+    def output_options(state):
+        model = str(state.get("model") or "gpt")
+        default = str(Path.home() / "NeuralFn" / "artifacts" / f"{model}_tui")
+        return [
+            _train_tui_option(f"Default ({default})", "Use the standard NeuralFn artifact directory.", default, recommended=True),
+            _train_tui_custom("Custom path...", "Enter an output directory.", "Output directory"),
+        ]
+
+    def train_log_options(state):
+        default = _tui_log_default(str(state.get("output_dir") or ""), "train")
+        return [
+            _train_tui_option(f"Default ({default})", "Capture native progress stderr to this file.", default, recommended=True),
+            _train_tui_option("Off", "Do not write a train progress log.", ""),
+            _train_tui_custom("Custom path...", "Enter a train progress log path.", "Train log path"),
+        ]
+
+    def eval_log_options(state):
+        default = _tui_log_default(str(state.get("output_dir") or ""), "eval")
+        return [
+            _train_tui_option(f"Default ({default})", "Capture validation lines and final JSON to this file.", default, recommended=True),
+            _train_tui_option("Off", "Do not write an eval/final JSON log.", ""),
+            _train_tui_custom("Custom path...", "Enter an eval/final JSON log path.", "Eval log path"),
+        ]
+
+    def launch_options(_state):
+        return [
+            _train_tui_option("Start training", "Launch the resolved native trainer.", "start", recommended=True),
+            _train_tui_option("Print command only", "Show the native command without starting training.", "dry-run"),
+            _train_tui_option("Cancel", "Exit without launching a trainer.", "cancel"),
+        ]
+
+    questions = [
+        Question("model", "Choose a model family.", model_options, always),
+        Question("template", "Choose a model template.", template_options, always),
+        Question("dataset", "Choose a dataset alias or path.", dataset_options, always),
+        Question("output_dir", "Choose an output directory.", output_options, always),
+    ]
+    for _flag, key, label, default, _kind, _description in _TRAIN_TUI_HYPERPARAMS:
+        questions.append(
+            Question(
+                key,
+                f"Set {label.lower()}.",
+                lambda _state, d=default, l=label: _train_tui_value_choices(d, l, "Use the recommended native-training value.", l),
+                always,
+            )
+        )
+    questions.extend(
+        [
+            Question("train_log_file", "Choose a train progress log.", train_log_options, always),
+            Question("eval_log_file", "Choose an eval/final JSON log.", eval_log_options, always),
+            Question("launch_mode", "Review and launch.", launch_options, always),
+        ]
+    )
+    return questions
+
+
+def _native_train_tui_main(argv: list[str] | None = None) -> int:
+    tokens = _strip_train_tui_flags(list(sys.argv[1:] if argv is None else argv))
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return _native_train_dashboard_tui_main(tokens)
+    from nfn_impl import run_curses_questionnaire
+
+    try:
+        state = run_curses_questionnaire("nfn train", _native_train_tui_questions(), {})
+    except KeyboardInterrupt:
+        print("Training setup cancelled.", file=sys.stderr)
+        return 130
+    if str(state.get("launch_mode") or "") == "cancel":
+        print("Training setup cancelled.")
+        return 0
+    command_tokens = _native_train_command_tokens_from_state(state)
+
+    print()
+    print("\033[1mResolved nfn train command\033[0m")
+    print(shlex.join(["nfn", *command_tokens]))
+    return _direct_native_train_cli_main(command_tokens, progress_tui=True)
 
 
 def _native_template_name(argv: list[str]) -> str:
@@ -943,6 +2001,29 @@ def _append_native_gpt_quality_defaults(out: list[str]) -> None:
         )
 
 
+def _native_semantic_moe_selection(argv: list[str], model: str | None = None) -> bool:
+    normalized_model = (model or _native_train_model(argv)).strip().lower().replace("_", "-")
+    normalized_template = _native_template_name(argv).replace("_", "-")
+    return any(
+        part in {"semantic-moe-jepa-evo", "semantic-moe-jepa-evo-modern", "diff-semantic-moe-jepa-evo"}
+        for part in (normalized_model, normalized_template)
+    )
+
+
+def _append_native_semantic_moe_defaults(out: list[str]) -> None:
+    defaults = {
+        "--semantic-vocab-dims": "86",
+        "--semantic-shared-experts": "2",
+        "--semantic-free-experts": "8",
+        "--layers-per-expert": "1",
+        "--top-k": "2",
+        "--route-chunk-size": "32",
+    }
+    for flag, value in defaults.items():
+        if not _explicit_arg(out, flag):
+            _append_value_arg(out, flag, value)
+
+
 def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
@@ -960,6 +2041,16 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         out.extend(["--model-family", model_family])
         if model_family == "nanogpt" and not _explicit_arg(argv, "--template-name", "--template", "--preset", "--graph-file", "--graph"):
             out.extend(["--template-name", "nanogpt"])
+    if _native_semantic_moe_selection(argv, model) and not _explicit_arg(argv, "--template-name", "--template", "--preset"):
+        out.extend(["--template-name", model])
+    if (
+        not dense_gpt
+        and not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        model_template_family = _NATIVE_TEMPLATE_FAMILY_ALIASES.get(model)
+        if model_template_family is not None and model_template_family != model:
+            out.extend(["--template-name", model])
     if dense_gpt and not _has_native_train_action(argv):
         out.append("--train-transformer-lm")
     idx = 1
@@ -982,10 +2073,13 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--dataset-val-file",
         "--tokenizer",
         "--native-cuda-runner",
+        "--train-log-file",
+        "--eval-log-file",
     }
     drop_bool_flags = {
         "--no-tile-cuda-strict",
         "--tile-cuda-strict",
+        "--no-tui",
         "--download-if-missing",
         "--no-download-if-missing",
         "--tokgpt2",
@@ -1047,7 +2141,11 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--train-seq-len",
         "--train-batch-tokens",
         "--learning-rate",
+        "--lr-schedule",
+        "--learning-rate-schedule",
         "--final-lr-fraction",
+        "--learning-rate-decay-frac",
+        "--learning-rate-decay-fraction",
         "--weight-decay",
         "--beta1",
         "--beta2",
@@ -1056,6 +2154,15 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--warmup-steps",
         "--max-steps",
         "--num-layers",
+        "--semantic-vocab-dims",
+        "--semantic-shared-experts",
+        "--semantic-free-experts",
+        "--layers-per-expert",
+        "--expert-layers",
+        "--expert-depth",
+        "--experts",
+        "--top-k",
+        "--route-chunk-size",
         "--template-name",
         "--template",
         "--preset",
@@ -1155,6 +2262,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         _append_value_arg(out, "--batch-size", "32")
     if dense_gpt and not any(flag in out for flag in _NATIVE_GPT_METADATA_ACTION_FLAGS):
         _append_native_gpt_quality_defaults(out)
+    if _native_semantic_moe_selection(out, model):
+        _append_native_semantic_moe_defaults(out)
     if dense_gpt and not _explicit_arg(out, "--backend"):
         _append_value_arg(out, "--backend", "tile-cuda")
     if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
@@ -1168,11 +2277,254 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     return out
 
 
-def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
+def _native_train_log_paths(tokens: list[str]) -> tuple[str | None, str | None]:
+    return (
+        _arg_value(tokens, "--train-log-file"),
+        _arg_value(tokens, "--eval-log-file"),
+    )
+
+
+def _open_optional_log(path: str | None):
+    if not path:
+        return None
+    log_path = Path(path).expanduser()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    return log_path.open("a", encoding="utf-8")
+
+
+def _write_log(handle, text: str) -> None:
+    if handle is not None:
+        handle.write(text)
+        handle.flush()
+
+
+_NATIVE_PROGRESS_STEP_RE = re.compile(r"\bstep\s+(\d+)(?:/(\d+))?")
+_NATIVE_VALIDATION_RE = re.compile(r"\bvalidation\b|\beval\b", re.IGNORECASE)
+
+
+def _native_train_parse_stdout_json(stdout_text: str) -> dict[str, object] | None:
+    text = stdout_text.strip()
+    if not text or not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _native_train_last_validation_loss(payload: dict[str, object]) -> str | None:
+    validation = payload.get("validation")
+    if not isinstance(validation, dict):
+        return None
+    losses = validation.get("losses")
+    if not isinstance(losses, list) or not losses:
+        eval_count = validation.get("eval_count")
+        return f"eval_count={eval_count}" if eval_count is not None else None
+    last = losses[-1]
+    if not isinstance(last, dict):
+        return None
+    loss = last.get("loss_mean")
+    step = last.get("step")
+    if loss is None:
+        return None
+    if step is None:
+        return str(loss)
+    return f"{loss} at step {step}"
+
+
+def _native_train_checkpoint_field(payload: dict[str, object], field: str) -> object | None:
+    checkpoint = payload.get("checkpoint")
+    if isinstance(checkpoint, dict) and field in checkpoint:
+        return checkpoint.get(field)
+    return payload.get(field) or payload.get(f"model_{field}")
+
+
+def _format_native_train_int(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        return f"{int(float(value)):,}"
+    except (TypeError, ValueError):
+        text = str(value)
+        return text if text else None
+
+
+def _native_train_summary_rows(
+    payload: dict[str, object],
+    *,
+    return_code: int,
+    elapsed_seconds: float,
+    train_log_file: str | None,
+    eval_log_file: str | None,
+) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = [
+        ("exit code", str(return_code)),
+        ("elapsed", f"{elapsed_seconds:0.1f}s"),
+    ]
+    status = payload.get("status")
+    if status is not None:
+        rows.append(("status", str(status)))
+    passed = payload.get("passed")
+    if passed is not None:
+        rows.append(("passed", str(bool(passed)).lower()))
+    steps = payload.get("steps_completed")
+    if steps is not None:
+        rows.append(("steps", str(steps)))
+    validation_loss = _native_train_last_validation_loss(payload)
+    if validation_loss is not None:
+        rows.append(("validation", validation_loss))
+    timing = payload.get("timing")
+    tokens_per_second = None
+    if isinstance(timing, dict):
+        tokens_per_second = timing.get("train_tokens_per_second") or timing.get("setup_amortized_train_tokens_per_second")
+    tokens_per_second = tokens_per_second or payload.get("setup_amortized_train_tokens_per_second")
+    formatted_tps = _format_native_train_int(tokens_per_second)
+    if formatted_tps is not None:
+        rows.append(("tokens/s", formatted_tps))
+    checkpoint_path = _native_train_checkpoint_field(payload, "checkpoint_path")
+    if checkpoint_path:
+        rows.append(("model", str(checkpoint_path)))
+    else:
+        rows.append(("model", "not written"))
+    done_marker = _native_train_checkpoint_field(payload, "done_marker")
+    if done_marker:
+        rows.append(("done marker", str(done_marker)))
+    checkpoint_size = _native_train_checkpoint_field(payload, "actual_file_size")
+    formatted_size = _format_native_train_int(checkpoint_size)
+    if formatted_size is not None:
+        rows.append(("model bytes", formatted_size))
+    if train_log_file:
+        rows.append(("train log", train_log_file))
+    if eval_log_file:
+        rows.append(("eval log", f"{eval_log_file} (full trainer JSON)"))
+    return rows
+
+
+def _print_train_tui_panel(title: str, rows: list[tuple[str, str]], *, stream=None) -> None:
+    target = stream or sys.stderr
+    width = 88
+    print("\033[1;36m+" + "-" * (width - 2) + "+\033[0m", file=target)
+    print(f"\033[1;36m| {title[:width - 5]:<{width - 4}}|\033[0m", file=target)
+    print("\033[1;36m+" + "-" * (width - 2) + "+\033[0m", file=target)
+    for key, value in rows:
+        text = f"{key}: {value}"
+        print(f"| {text[:width - 5]:<{width - 4}}|", file=target)
+    print("\033[1;36m+" + "-" * (width - 2) + "+\033[0m", file=target)
+
+
+def _run_native_train_with_progress(
+    command: list[str],
+    env: dict[str, str],
+    *,
+    train_log_file: str | None,
+    eval_log_file: str | None,
+    progress_tui: bool,
+) -> int:
+    train_log = _open_optional_log(train_log_file)
+    eval_log = _open_optional_log(eval_log_file)
+    started = time.monotonic()
+    last_status = ""
+    if progress_tui:
+        _print_train_tui_panel(
+            "NeuralFn Training Run",
+            [
+                ("command", shlex.join(command)),
+                ("train log", train_log_file or "off"),
+                ("eval log", eval_log_file or "off"),
+            ],
+        )
+    try:
+        process = subprocess.Popen(
+            command,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        selector = selectors.DefaultSelector()
+        assert process.stdout is not None
+        assert process.stderr is not None
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        stdout_chunks: list[str] = []
+        while selector.get_map():
+            for key, _events in selector.select(timeout=0.2):
+                line = key.fileobj.readline()
+                if line == "":
+                    selector.unregister(key.fileobj)
+                    continue
+                if key.data == "stdout":
+                    stdout_chunks.append(line)
+                    _write_log(eval_log, line)
+                else:
+                    _write_log(train_log, line)
+                    is_validation_line = bool(_NATIVE_VALIDATION_RE.search(line))
+                    if is_validation_line:
+                        _write_log(eval_log, line)
+                    match = _NATIVE_PROGRESS_STEP_RE.search(line)
+                    if progress_tui and match and not is_validation_line:
+                        step = match.group(1)
+                        total = match.group(2) or "?"
+                        elapsed = time.monotonic() - started
+                        last_status = f"step {step}/{total} elapsed {elapsed:0.1f}s"
+                        print(f"\033[1;32m[train] {last_status}\033[0m", file=sys.stderr)
+                    elif progress_tui and is_validation_line:
+                        print(f"\033[1;35m[eval] {line.rstrip()}\033[0m", file=sys.stderr)
+                    elif progress_tui:
+                        print(f"\033[2m[setup] {line.rstrip()}\033[0m", file=sys.stderr)
+                    else:
+                        sys.stderr.write(line)
+                        sys.stderr.flush()
+        return_code = process.wait()
+        stdout_text = "".join(stdout_chunks)
+        if eval_log is not None and stdout_chunks:
+            _write_log(eval_log, "\n")
+        payload = _native_train_parse_stdout_json(stdout_text)
+        if payload is None and stdout_text:
+            sys.stdout.write(stdout_text)
+            sys.stdout.flush()
+        elif payload is not None:
+            _print_train_tui_panel(
+                "NeuralFn Training Result",
+                _native_train_summary_rows(
+                    payload,
+                    return_code=return_code,
+                    elapsed_seconds=time.monotonic() - started,
+                    train_log_file=train_log_file,
+                    eval_log_file=eval_log_file,
+                ),
+                stream=sys.stdout,
+            )
+        if progress_tui:
+            status = last_status or f"finished in {time.monotonic() - started:0.1f}s"
+            _print_train_tui_panel(
+                "NeuralFn Training Complete",
+                [("exit code", str(return_code)), ("last status", status)],
+            )
+        return int(return_code)
+    finally:
+        if train_log is not None:
+            train_log.close()
+        if eval_log is not None:
+            eval_log.close()
+
+
+def _direct_native_train_cli_main(
+    argv: list[str] | None = None,
+    *,
+    progress_tui: bool = False,
+) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
     command = _direct_native_train_cli_argv(tokens)
     model = _native_train_model(tokens)
     token_lm_requested = any(arg == "--train-token-lm" for arg in tokens)
+    routed_family = (
+        _native_template_family(command)
+        if _is_dense_gpt_native_model(model) and not (model in {"nanogpt", "nano-gpt"} and token_lm_requested)
+        else model
+    )
     direct_family_cli = (
         not (_is_dense_gpt_native_model(model) and not (model in {"nanogpt", "nano-gpt"} and token_lm_requested))
         and _resolve_direct_native_train_family_cli(model) is not None
@@ -1181,6 +2533,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
     _set_env_default_if_empty(env, "CUDA_VISIBLE_DEVICES", resolve_cuda_visible_devices_value("0"))
     _set_env_default_if_empty(env, "CUDA_DEVICE_MAX_CONNECTIONS", "1")
     _set_env_default_if_empty(env, "CUDA_MODULE_LOADING", "LAZY")
+    train_log_file, eval_log_file = _native_train_log_paths(tokens)
     native_execution_flags = {
         "--print-plan",
         "--list-templates",
@@ -1197,9 +2550,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         "--smoke-embedding-lm-step",
     }
     if (
-        "--dry-run" in command
-        and "--print-command" in command
-        and not direct_family_cli
+        "--print-command" in command
         and not any(flag in command for flag in native_execution_flags)
     ):
         print(shlex.join(command))
@@ -1208,8 +2559,13 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
         if _native_command_is_dense_gpt_cli(command):
             return _run_dense_gpt_compiled_cli_capture(command, env)
         return int(subprocess.run(command, env=env, check=False).returncode)
-    os.execvpe(command[0], command, env)
-    return 127
+    return _run_native_train_with_progress(
+        command,
+        env,
+        train_log_file=train_log_file,
+        eval_log_file=eval_log_file,
+        progress_tui=progress_tui,
+    )
 
 
 def _native_command_is_dense_gpt_cli(command: list[str]) -> bool:
@@ -1303,6 +2659,8 @@ def main(
     stdout_isatty: bool | None = None,
 ) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
+    if _is_native_train_tui_request(tokens, stdin_isatty=stdin_isatty, stdout_isatty=stdout_isatty):
+        return _native_train_tui_main(tokens)
     if _is_direct_native_train_cli_train(tokens):
         return _direct_native_train_cli_main(tokens)
     if stdin_isatty is None and stdout_isatty is None:
@@ -1318,6 +2676,8 @@ def main(
             return _lightweight_kernels_list_main(tokens)
         if _is_lightweight_native_gpt_infer(tokens):
             return _lightweight_native_gpt_infer_main(tokens)
+        if _is_lightweight_native_family_infer(tokens):
+            return _lightweight_native_family_infer_main(tokens)
         if _is_invalid_native_gpt_infer(tokens):
             return _invalid_native_gpt_infer_main(tokens)
         if _is_legacy_graph_train(tokens):
@@ -1332,12 +2692,16 @@ def main(
 
 
 if __name__ == "__main__":
-    if _is_direct_native_train_cli_train(sys.argv[1:]):
+    if _is_native_train_tui_request(sys.argv[1:]):
+        main = _native_train_tui_main
+    elif _is_direct_native_train_cli_train(sys.argv[1:]):
         main = _direct_native_train_cli_main
     elif _is_explicit_native_gpt_train(sys.argv[1:]):
         from train_gpt_native import main as main
     elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
         main = _lightweight_native_gpt_infer_main
+    elif _is_lightweight_native_family_infer(sys.argv[1:]):
+        main = _lightweight_native_family_infer_main
     elif _is_invalid_native_gpt_infer(sys.argv[1:]):
         main = _invalid_native_gpt_infer_main
     elif _is_lightweight_root_help(sys.argv[1:]):
@@ -1354,11 +2718,15 @@ if __name__ == "__main__":
 
 
 if __name__ == "__main__":
+    if _is_native_train_tui_request(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
     if _is_direct_native_train_cli_train(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_explicit_native_gpt_train(sys.argv[1:]):
         raise SystemExit(main(_native_gpt_argv(sys.argv[1:])))
     if _is_lightweight_native_gpt_infer(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_lightweight_native_family_infer(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_legacy_graph_train(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))

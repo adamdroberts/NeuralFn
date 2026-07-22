@@ -178,6 +178,31 @@ int nfn_native_tile_add_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_vector_binary_float32(
+    const float* lhs,
+    const float* rhs,
+    const float* scale0,
+    const float* scale1,
+    float* out,
+    std::int64_t n,
+    std::int64_t dim,
+    std::int64_t op,
+    void* cuda_stream);
+
+int nfn_native_tile_mhc_beta_gradient_float32(
+    const float* beta_logit,
+    const float* input,
+    const float* attention_proj,
+    const float* residual1,
+    const float* ffn_out,
+    const float* grad_second,
+    const float* grad_first,
+    float* grad_beta_logit,
+    std::int64_t rows,
+    std::int64_t model_dim,
+    float scale,
+    void* cuda_stream);
+
 int nfn_native_tile_fill_many_float32(
     float* const* buffers,
     const std::int64_t* elements,
@@ -505,6 +530,21 @@ int nfn_native_tile_uint16_to_int64(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_uint8_to_int64(
+    const std::uint8_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_diffusion_mask_u16_int64(
+    const std::uint16_t* source_tokens,
+    std::uint16_t* masked_tokens,
+    std::int64_t* targets,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t vocab,
+    void* cuda_stream);
+
 int nfn_native_tile_float32_to_bf16_bits(
     const float* source,
     std::uint16_t* dest,
@@ -666,6 +706,12 @@ int nfn_native_tile_sum_accumulate_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_extract_diagonal_float32(
+    const float* matrix,
+    float* diagonal,
+    std::int64_t dim,
+    void* cuda_stream);
+
 int nfn_native_tile_scale_inplace_float32(
     float* values,
     std::int64_t n,
@@ -764,6 +810,26 @@ int nfn_native_tile_merge_heads_float32(
     std::int64_t head_dim,
     void* cuda_stream);
 
+int nfn_native_tile_repeat_kv_float32(
+    const float* input,
+    float* output,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    void* cuda_stream);
+
+int nfn_native_tile_repeat_kv_backward_float32(
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    void* cuda_stream);
+
 int nfn_native_tile_byte_patch_embed_float32(
     const std::int64_t* tokens,
     const float* embedding,
@@ -843,6 +909,73 @@ int nfn_native_tile_topk_route_float32(
     std::int64_t top_k,
     void* cuda_stream);
 
+int nfn_native_tile_topk_route_sqrt_softplus_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream);
+
+int nfn_native_tile_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_shared_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_shared_forced_topk_route_float32(
+    const float* logits,
+    const std::int64_t* semantic_target_matrix,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    std::int64_t ignore_index,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_shared_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_topk_route_sqrt_softplus_backward_float32(
+    const float* logits,
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream);
+
 int nfn_native_tile_broadcast_expert_routes_float32(
     const float* weights,
     const std::int64_t* indices,
@@ -864,6 +997,309 @@ int nfn_native_tile_broadcast_chunk_routes_float32(
     std::int64_t seq_len,
     std::int64_t route_width,
     std::int64_t chunk_size,
+    void* cuda_stream);
+
+int nfn_native_tile_compact_chunk_routes_float32_int64(
+    const float* weights,
+    const std::int64_t* indices,
+    float* chunk_weights,
+    std::int64_t* chunk_indices,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t chunks,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    void* cuda_stream);
+
+int nfn_native_tile_aggregate_chunk_route_gradients_float32(
+    const float* grad_weights,
+    float* aggregated_grad_weights,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_route_distillation_backward_float32(
+    const float* route_logits,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    float teacher_target,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_target_topic_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_hash_table_backward_float32(
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* grad_route_logits,
+    float* grad_hash_embedding,
+    float* grad_table_gate,
+    float* grad_dimension_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_route_policy_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_route_policy_packed_topic_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_target_matrix,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    std::int64_t ignore_index,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_vec_from_packed_topic_float32(
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_packed_topic_to_padded_float32(
+    const float* packed_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* padded_logits,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t max_terms,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_signature_scalar_float32(
+    const float* sig_logits,
+    float* signature_scalar,
+    std::int64_t rows,
+    std::int64_t buckets,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_vec_append_signature_float32(
+    const float* topic_vec,
+    const float* signature_scalar,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_vec_split_signature_grad_float32(
+    const float* grad_semantic_vec,
+    float* grad_topic_vec,
+    float* grad_signature_scalar,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_signature_scalar_backward_float32(
+    const float* sig_logits,
+    const float* signature_scalar,
+    const float* grad_signature_scalar,
+    float* grad_sig_logits,
+    std::int64_t rows,
+    std::int64_t buckets,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_free_expert_projection_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_shared_expert_projection_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_free_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_free_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_shared_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_shared_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_router_bias_add_float32(
+    float* route_logits,
+    const float* shared_logits,
+    const float* free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_router_bias_backward_float32(
+    const float* grad_route_logits,
+    float* grad_shared_logits,
+    float* grad_free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_targets_from_matrix_int64(
+    const std::int64_t* semantic_matrix,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_vocab_dims,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_targets_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::int64_t semantic_vocab_dims,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    std::int64_t* semantic_matrix,
+    const std::int64_t* term_counts,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t ignore_index,
     void* cuda_stream);
 
 int nfn_native_tile_moe_swiglu_forward_float32(
@@ -898,6 +1334,63 @@ int nfn_native_tile_moe_swiglu_backward_float32(
     std::int64_t hidden_dim,
     std::int64_t experts,
     std::int64_t top_k,
+    void* cuda_stream);
+
+int nfn_native_tile_moe_swiglu_backward_with_route_grad_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream);
+
+int nfn_native_tile_moe_swiglu_forward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    std::int64_t quantization_kind,
+    void* cuda_stream);
+
+int nfn_native_tile_moe_swiglu_backward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    std::int64_t quantization_kind,
     void* cuda_stream);
 
 int nfn_native_tile_semantic_hash_int64(
@@ -979,6 +1472,19 @@ int nfn_native_tile_adamw_step_many_with_device_scale_float32(
     float sqrt_bias_correction2,
     void* cuda_stream);
 
+int nfn_native_tile_adamw_step_many_with_device_scale_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    void* cuda_stream);
+
 int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float* const* params,
     const float* const* grads,
@@ -997,6 +1503,21 @@ int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float eps,
     float bias_correction1,
     float sqrt_bias_correction2,
+    void* cuda_stream);
+
+int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const std::int64_t* bf16_shadow_offsets,
+    std::uint16_t* bf16_shadow_bits,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
     void* cuda_stream);
 
 int nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32(
@@ -1044,6 +1565,146 @@ int nfn_native_tile_linear_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     bool has_bias,
+    void* cuda_stream);
+
+// kind: 1=ternary, 2=FP8 E4M3, 3=MXFP4 E2M1 with 32-value blocks.
+int nfn_native_tile_linear_quantized_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    int kind,
+    void* cuda_stream);
+
+int nfn_native_tile_linear_backward_input_quantized_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    int kind,
+    void* cuda_stream);
+
+int nfn_native_tile_fused_causal_attention_forward_float32(
+    const float* x,
+    const float* q_weight,
+    const float* k_weight,
+    const float* v_weight,
+    const float* out_weight,
+    const float* inv_freq,
+    float* q_projection,
+    float* k_projection,
+    float* v_projection,
+    float* q,
+    float* k,
+    float* v,
+    float* q_rope,
+    float* k_rope,
+    float* attention,
+    float* attention_flat,
+    float* output,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float scale,
+    void* cuda_stream);
+
+int nfn_native_tile_fused_causal_attention_backward_float32(
+    const float* x,
+    const float* q_weight,
+    const float* k_weight,
+    const float* v_weight,
+    const float* out_weight,
+    const float* inv_freq,
+    const float* q_rope,
+    const float* k_rope,
+    const float* v,
+    const float* attention_flat,
+    const float* grad_output,
+    float* grad_attention_flat,
+    float* grad_attention,
+    float* grad_q_rope,
+    float* grad_k_rope,
+    float* grad_v,
+    float* grad_q,
+    float* grad_k,
+    float* grad_q_projection,
+    float* grad_k_projection,
+    float* grad_v_projection,
+    float* grad_q_input,
+    float* grad_k_input,
+    float* grad_v_input,
+    float* grad_q_weight,
+    float* grad_k_weight,
+    float* grad_v_weight,
+    float* grad_out_weight,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float scale,
+    void* cuda_stream);
+
+int nfn_native_tile_split_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream);
+
+int nfn_native_tile_merge_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t half_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_split_at_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_concat_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_differential_combine_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_differential_backward_float32(
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
     void* cuda_stream);
 
 int nfn_native_tile_linear_bf16_float32(
@@ -1462,6 +2123,28 @@ int nfn_native_tile_gelu_add_bias_bf16_act_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+// Shared-backbone MoA activation dispatch: kind 0=GELU, 1=ReLU, 2=SiLU, 3=ReLU^2.
+int nfn_native_tile_moa_add_bias_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    void* cuda_stream);
+
+int nfn_native_tile_moa_add_bias_bf16_act_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::uint16_t* activation_bf16_bits,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    void* cuda_stream);
+
 int nfn_native_tile_swiglu_float32(
     const float* gate,
     const float* up,
@@ -1675,6 +2358,20 @@ int nfn_native_tile_gelu_backward_inplace_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     float* grad,
     std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_moa_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    void* cuda_stream);
+
+int nfn_native_tile_moa_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
     void* cuda_stream);
 
 int nfn_native_tile_dropout_forward_float32(
@@ -2035,6 +2732,44 @@ int nfn_native_tile_latent_mse_loss_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_latent_pool_float32(
+    const float* x,
+    const float* mask_values,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    void* cuda_stream);
+
+int nfn_native_tile_latent_pool_backward_float32(
+    const float* grad_pooled,
+    const float* mask_values,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    void* cuda_stream);
+
+int nfn_native_tile_native_family_jepa_mask_float32(
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    void* cuda_stream);
+
+int nfn_native_tile_native_family_jepa_mask_u16_float32(
+    const std::uint16_t* tokens,
+    std::uint16_t* masked_tokens,
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    void* cuda_stream);
+
 int nfn_native_tile_act_weighted_sum_float32(
     const float* states,
     const float* weights,
@@ -2042,6 +2777,39 @@ int nfn_native_tile_act_weighted_sum_float32(
     std::int64_t batch,
     std::int64_t steps,
     std::int64_t inner,
+    void* cuda_stream);
+
+int nfn_native_tile_act_pack_step_float32(
+    const float* state_step,
+    const float* halt_logits_step,
+    float* state_stack,
+    float* halt_logits_stack,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    void* cuda_stream);
+
+int nfn_native_tile_act_prepare_weights_float32(
+    const float* halt_logits_stack,
+    const std::int64_t* targets,
+    float* halt_targets,
+    float* halt_weights,
+    std::int64_t rows,
+    std::int64_t steps,
+    float halt_epsilon,
+    void* cuda_stream);
+
+int nfn_native_tile_act_unpack_step_grad_float32(
+    const float* grad_act,
+    const float* halt_weights,
+    const float* grad_halt_stack,
+    float* grad_state_step,
+    float* grad_halt_step,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
     void* cuda_stream);
 
 int nfn_native_tile_act_halting_bce_grad_float32(
@@ -2063,6 +2831,21 @@ int nfn_native_tile_semantic_alignment_loss_items_float32(
     std::int64_t dims,
     std::int64_t terms,
     std::int64_t ignore_index,
+    void* cuda_stream);
+
+int nfn_native_tile_semantic_alignment_packed_loss_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* losses,
+    float* counts,
+    float* grad_logits,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t total_terms,
+    std::int64_t ignore_index,
+    float grad_scale,
     void* cuda_stream);
 
 int nfn_native_tile_route_balance_density_float32(

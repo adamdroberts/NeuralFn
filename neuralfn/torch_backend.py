@@ -2072,12 +2072,19 @@ class AuxFreeBalancingStage(nn.Module):
         return biased
 
 class TopKRouteStage(RoutingStatsMixin, nn.Module):
-    def __init__(self, top_k: int, experts: int) -> None:
+    def __init__(self, top_k: int, experts: int, score_fn: str = "softmax") -> None:
         super().__init__()
         self.top_k = top_k
+        self.score_fn = str(score_fn or "softmax")
         self._init_routing_stats(num_experts=experts, top_k=top_k)
+
     def forward(self, logits: Tensor) -> tuple[Tensor, Tensor]:
-        scores = F.softmax(logits, dim=-1)
+        if self.score_fn == "sqrt_softplus":
+            scores = torch.sqrt(F.softplus(logits.float()).clamp_min(1.0e-12)).to(dtype=logits.dtype)
+        elif self.score_fn == "sigmoid":
+            scores = torch.sigmoid(logits)
+        else:
+            scores = F.softmax(logits, dim=-1)
         topk_weights, topk_indices = torch.topk(scores, self.top_k, dim=-1)
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
         self._update_routing_stats(
@@ -2747,6 +2754,7 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         return TopKRouteStage(
             top_k=int(cfg["top_k"]),
             experts=int(cfg.get("experts", 8)),
+            score_fn=str(cfg.get("score_fn", "softmax")),
         )
     if module_type == "expert_dispatch":
         return ExpertDispatchStage(

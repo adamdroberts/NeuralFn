@@ -16,7 +16,10 @@ ObjectiveType    = Literal[
 BackboneType     = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType     = Literal["dense", "moe"]
-CompressionType  = Literal["none", "ternary_b158", "binary_1bit", "kv_pca"]
+CompressionType  = Literal[
+    "none", "ternary_b158", "binary_1bit", "kv_pca",
+    "fp8_e4m3", "fp8_e5m2", "mxfp4", "mxfp8",
+]
 AdapterType      = Literal["none", "lora", "qlora", "randmap"]
 RuntimeType      = Literal["eager", "compile", "sdpa", "megakernel"]
 RouterModeType   = Literal["none", "standard", "semantic"]
@@ -88,39 +91,46 @@ SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
 `SHIPPED_GPT_TEMPLATE_BASE_PRESETS` is the canonical SDK catalog for exact names accepted by `build_model_spec_from_config(config={"preset": ...})`, including aliases and megakernel variants such as `mixllama`, `nanogpt_megakernel`, and `gpt2_megakernel`.
 
 `SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense shipped selections dispatch to their strongest compiled native family loop or train-step slice, and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
+The native `gpt2_moa` selector uses a shared four-times-width MLP and probes
+GELU, ReLU, SiLU, and ReLU2 on the current batch at step 1 and every
+`moa_interval` steps before selecting the lowest-loss activation for backward.
+The native full-geometry LLaMA selectors `ternary_b158`, `fp8_llama`, and
+`mxfp4_llama` likewise preserve their compression semantics in compiled
+training: plan JSON reports `architecture.linear_quantization` as
+`ternary_b158`, `fp8_e4m3`, or `mxfp4_e2m1_block32`, respectively. Their
+forward and input-backward paths use the selected quantized values while
+float32 straight-through weight gradients remain compatible with persistent
+AdamW checkpoints.
+The `qwen3_longctx` preset's YaRN RoPE settings are preserved by the native
+family planner as `rope_scaling_type="yarn"`, factor `4`, and original context
+`2048`; compiled CLI callers can override the factor and original position
+through `--rope-factor` and `--original-max-position`. `kv_pca_llama` uses its
+dedicated encode/decode parameter layout in the native full-family path.
+The `diff_transformer` native selector persists the shared scalar
+`attention.diff_lambda` parameter, runs both split-head causal attention
+branches with head-wise RMSNorm, and includes the lambda gradient in the
+persistent AdamW update. Plan JSON reports `attention_variant="differential"`.
+Existing native differential-attention sidecars must be regenerated because
+the persistent parameter layout now includes this scalar buffer.
+The `kv_pca_llama` selector likewise uses a persistent four-matrix per-layer
+encode/decode layout for K and V, with compressed width `head_dim // 4` by
+default. Its native forward and backward path mirrors the compiled linear
+stages around attention, and plan JSON reports `attention_variant="kv_pca"`.
 
 Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with no missing requirements. Other
-shipped presets are classified by the strongest native trainer loop currently
-available plus any remaining production-state gap,
-including LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
-MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet byte-LM
-families. LLaMA-family, Jamba, HNet, seq2seq, diffusion, TTT, and universal-transformer entries now report native
-family dataset-loop coverage while retaining
-`persistent-full-size-family-parameter-state` until full-size checkpoint and
-inference metadata land. LLaMA-family entries now list completed smoke-backed
-slices for RMSNorm, RoPE, SwiGLU/GEGLU, LM-head CE/backward/AdamW,
-token-LM embedding/CE/backward/AdamW, composed token/block/LM AdamW,
-packed-QKV attention forward/backward,
-RMSNorm/QKV-projection/packed-attention/residual forward block, packed-QKV
-RoPE attention-block integration, RoPE/SwiGLU block forward/backward/AdamW,
-and family checkpoint/inference metadata, while their missing list keeps
-`persistent-full-size-family-parameter-state`.
-Standard MoE-family entries list completed top-k route/broadcast, routed
-SwiGLU expert forward/backward, load-balance/AdamW, and
-RMSNorm/QKV-projection/packed-attention/token-router/MoE/residual forward block
-smokes plus the block-to-LM CE/backward/AdamW smoke while keeping the full family loop, JEPA or semantic objective,
-and remaining objective blockers in the missing list. JEPA-family entries
-list completed target-encoder forward, projector/predictor linear, latent-loss,
-backward, AdamW, and base AR+JEPA loss-composition smokes. Dense JEPA keeps
-the full JEPA-family loop as missing, while MoE+JEPA and semantic JEPA
-still keep router/semantic objective composition
-blockers in the missing list. Semantic-family entries list
-completed semantic hash/alignment-loss-items smokes while keeping full
-semantic planner/router, reduction, objective
-composition, checkpoint, and inference blockers in the missing list.
+shipped presets are classified by the strongest native trainer boundary
+currently available. Non-dense LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA,
+MoE+JEPA, semantic MoE/JEPA, seq2seq, diffusion, TTT, universal transformer,
+Jamba, and HNet byte-LM families currently report
+`native-family-dataset-loop-diagnostic` when the available path is a sampled
+native dataset-loop slice rather than a full production trainer. Those entries
+report `production_training_loop: false`, keep
+`optimizer-updated-full-architecture-parameter-persistence` in
+`native_training_missing_requirements`, and do not claim
+`optimizer_updated_full_architecture_parameter_persistence`.
 Semantic dense JEPA entries additionally report the planner/alignment/AdamW
 smoke (`semantic-dense-planner-alignment-adamw-smoke`) once the native preflight
 has the semantic planner forward/backward path and device-side alignment
@@ -438,7 +448,7 @@ when constructing fine-tuning graphs.
 | `build_nanogpt_megakernel_spec(**kwargs)` | nanogpt | dense | megakernel | NanoGPT shape with megakernel runtime metadata |
 | `build_gpt2_spec(**kwargs)` | gpt2 | dense | eager | LayerNorm, GELU MLP, absolute pos, linear bias |
 | `build_gpt2_megakernel_spec(**kwargs)` | gpt2 | dense | megakernel | GPT-2 shape with megakernel runtime metadata |
-| `build_gpt2_evo_spec(**kwargs)` | gpt2 | dense | eager | **[Experimental]** GPT-2 where one block (`layer_evo_index`, default middle) is excluded from the optimizer and trained by an interleaved evolutionary search (`layer_evo_*` knobs); all other parameters train by gradient. The 5090 harness `cli/scripts/train_gpt2_evo.py` is a Torch-free native shim that delegates to the compiled C++ CUDA Tile GPT-2-evo/dense-GPT path with a 12-layer SM120 AdamW run, requested NVFP4 activation intent, 60-step LR warmup, and live validation loss every 1000 steps. Native plan/runtime JSON also reports the effective dense-trainer activation storage; until native FP4 packing is wired into projection/attention inputs, NVFP4 requests are effective `bf16-float32-mixed` with packing inactive. Native inference uses `nfn infer --checkpoint .../gpt2_evo --prompt-tokens IDS`, while legacy graph-backed `.pt/.json` artifacts can still use `python cli/scripts/infer_gpt2.py --evo` or explicit `nfn infer --graph ... --weights ...` |
+| `build_gpt2_evo_spec(**kwargs)` | gpt2 | dense | eager | **[Experimental]** GPT-2 where one block (`layer_evo_index`, default middle) is excluded from the optimizer and trained by an interleaved evolutionary search (`layer_evo_*` knobs); all other parameters train by gradient. The 5090 harness `cli/scripts/train_gpt2_evo.py` is a Torch-free native shim that delegates to the compiled C++ CUDA Tile GPT-2-evo/dense-GPT path with a 12-layer SM120 AdamW run, requested NVFP4 activation intent, 60-step LR warmup, `--lr-schedule cosine` by default, and live validation loss every 1000 steps. Use `--lr-schedule constant` for fixed-LR runs and `--final-lr-fraction F` to set the final LR fraction. Native plan/runtime JSON also reports the effective dense-trainer activation storage; until native FP4 packing is wired into projection/attention inputs, NVFP4 requests are effective `bf16-float32-mixed` with packing inactive. Native inference uses `nfn infer --checkpoint .../gpt2_evo --prompt-tokens IDS`, while legacy graph-backed `.pt/.json` artifacts can still use `python cli/scripts/infer_gpt2.py --evo` or explicit `nfn infer --graph ... --weights ...` |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |
@@ -560,6 +570,7 @@ Builder-specific rules:
 - `top_k` selects non-shared experts; shared experts are prepended to every route.
 - `route_chunk_size` controls how often the causal planner updates routes.
 - `route_evo_enabled` and the `route_evo_*` fields control lightweight evolutionary search over router bias/table parameters during `TorchTrainer.train()`.
+- Native `nfn train` / `nfn-native-train` runs for this preset expose the same expert contract as CLI architecture flags. The current defaults are `semantic_vocab_dims=86`, `semantic_shared_experts=2`, `semantic_free_experts=8`, total `experts=96`, `top_k=2`, `route_chunk_size=32`, `num_layers=1`, and `layers_per_expert=1`. Non-default `layers_per_expert` values run additional optimized MoE expert forward/backward/AdamW slices per routed expert domain in the native semantic-router train step.
 
 **Disclaimer [Experimental]:** This is the full architecture prototype for the semantic MoE router, not a stable production preset.
 

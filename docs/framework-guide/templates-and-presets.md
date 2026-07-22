@@ -51,13 +51,15 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `nanogpt_megakernel` | `build_nanogpt_megakernel_spec` | nanogpt | ar | dense | NanoGPT with `runtime="megakernel"` |
 | `gpt2` | `build_gpt2_spec` | gpt2 | ar | dense | LayerNorm, GELU MLP, absolute position embeddings, bias |
 | `gpt2_megakernel` | `build_gpt2_megakernel_spec` | gpt2 | ar | dense | GPT-2 with `runtime="megakernel"`; native CUDA Tile trainer-compatible |
-| `gpt2_moa` | `build_gpt2_moa_spec` | gpt2 | ar | dense | GPT-2 with mixture-of-activations MLP selection |
+| `gpt2_moa` | `build_gpt2_moa_spec` | gpt2 | ar | dense | GPT-2 with shared-backbone GELU/ReLU/SiLU/ReLU2 loss probing every `moa_interval` steps |
 | `llama` | `build_llama_spec` | llama | ar | dense | RMSNorm, SwiGLU, RoPE, GQA |
 | `moe` / `mixllama` | `build_mixllama_spec` | mixllama | ar | moe | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | `build_llama_fast_spec` | llama | ar | dense | Like llama + `torch.compile` |
 | `mixllama_fast` | `build_mixllama_fast_spec` | mixllama | ar | moe | Like moe + `torch.compile` |
 | `jamba` | `build_jamba_hybrid_spec` | jamba | ar | moe | Hybrid attention + Mamba SSM, MoE, compile |
 | `ternary_b158` | `build_ternary_b158_spec` | llama | ar | dense | BitLinear ternary weights |
+| `fp8_llama` | `build_fp8_llama_spec` | llama | ar | dense | FP8 E4M3 weight-quantized linears; native full-geometry path reports `fp8_e4m3` |
+| `mxfp4_llama` | `build_mxfp4_llama_spec` | llama | ar | dense | MXFP4 E2M1 weight-quantized linears with 32-value blocks; native full-geometry path reports `mxfp4_e2m1_block32` |
 | `seq2seq` | `build_decoder2encoder_moe_spec` | llama | seq2seq | moe | Encoder-decoder, MoE |
 | `diffusion` | `build_diffllama_spec` | llama | diffusion | dense | Discrete diffusion objective |
 | `ttt_llama` | `build_ttt_llama_spec` | ttt | ar | dense | Test-Time Training layers |
@@ -88,7 +90,7 @@ These presets combine the modern-LLM kernels (§21–§33 in `todo-kernels.md`) 
 | Preset | Builder | Mirrors | Key features |
 |--------|---------|---------|--------------|
 | `deepseek_v3` | `build_deepseek_v3_spec` | DeepSeek-V3 | Multi-head Latent Attention (compressed-KV + decoupled RoPE) + auxiliary-loss-free balanced MoE + shared experts |
-| `deepseek_v4` | `build_deepseek_v4_spec` | DeepSeek-V4-Pro | Native-sparse (CSA-spirit) attention + auxfree MoE + Manifold-Constrained Hyper-Connection residuals + QK-norm + FP8 dense/attention linears |
+| `deepseek_v4` | `build_deepseek_v4_spec` | DeepSeek-V4-Pro | Native-sparse (CSA-spirit) attention + auxfree MoE with sqrt-softplus router scoring + Manifold-Constrained Hyper-Connection residuals + QK-norm + FP8 dense/attention linears |
 | `gemma3` | `build_gemma3_spec` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + logit softcap |
 | `diff_transformer` | `build_diff_transformer_spec` | Differential Transformer | Two-softmax-branch differential attention + head-wise norm |
 | `qwen3_longctx` | `build_qwen3_longctx_spec` | Qwen/Llama long-ctx | GQA + YaRN RoPE scaling + QK-norm |
@@ -120,6 +122,10 @@ automatically. Structurally different presets and custom
 graphs are selected and reported by the compiled frontend, then fail with
 `selected-graph-native-trainer-missing` until their graph-specific C++ Tile
 trainer plans are implemented; they do not fall back to Torch by default.
+The native `gpt2_moa` loop probes the same current batch with all four
+weight-preserving activations at step 1 and the configured interval, chooses the
+lowest-loss activation, and records the selected activation and probe counters
+in runtime JSON.
 The compiled `nfn_train_gpt` / `nfn_train_gpt_sm120` launchers use the generated
 C++ copy of `SHIPPED_GPT_TEMPLATE_PRESETS`, so `--base-model <preset>` accepts
 the same shipped template names as `--template-name <preset>`. Non-family
@@ -149,7 +155,7 @@ Every base preset in `MODERN_BASE_PRESETS` has a `<preset>_modern` variant that 
 
 **Optimizer note:** DeepSeek-V3/V4 train with the **Muon** optimizer. Optimizers are training-time choices (trainer/optimizer config), not `BlockSpec` fields, so they are not presets — see the training workflow docs for the optimizer menu (Muon/Lion/Sophia/…).
 
-**Out of scope (documented):** MLA is not stacked onto `kv_pca`; Mixture-of-Depths and `soft_moe` are not implemented (they break the shape-stable `[B,T,D]` / top-k dispatch contracts); FP8 does not reach the fused-megakernel attention or the MoE expert parameters in this reference (experts stay bf16).
+**Out of scope (documented):** MLA is not stacked onto `kv_pca`; Mixture-of-Depths and `soft_moe` are not implemented (they break the shape-stable `[B,T,D]` / top-k dispatch contracts). The native full-geometry LLaMA trainer has explicit `ternary_b158`, `fp8_llama`, and `mxfp4_llama` linear paths; the separate PyTorch fused-megakernel reference retains its existing fusion and expert/storage limitations.
 
 ---
 

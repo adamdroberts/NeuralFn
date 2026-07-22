@@ -102,6 +102,11 @@ void launch_lm_head_prob_only_combined_target_correction_bf16_bits(
     cudaStream_t);
 void launch_unary_float32(const float*, float*, std::int64_t, int, cudaStream_t);
 void launch_binary_float32(const float*, const float*, float*, std::int64_t, int, cudaStream_t);
+void launch_vector_binary_float32(
+    const float*, const float*, const float*, const float*, float*, std::int64_t, std::int64_t, int, cudaStream_t);
+void launch_mhc_beta_gradient_float32(
+    const float*, const float*, const float*, const float*, const float*, const float*, const float*,
+    float*, std::int64_t, std::int64_t, float, cudaStream_t);
 void launch_tanh_backward_float32(const float*, const float*, float*, std::int64_t, cudaStream_t);
 void launch_random_timesteps_float32(float*, std::int64_t, std::int64_t, cudaStream_t);
 void launch_mask_scheduler_int64(
@@ -234,6 +239,15 @@ void launch_evo_adopt_candidate_float32(
     std::int64_t candidate_count,
     cudaStream_t stream);
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
+void launch_uint8_to_int64(const std::uint8_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
+void launch_diffusion_mask_u16_int64(
+    const std::uint16_t* source_tokens,
+    std::uint16_t* masked_tokens,
+    std::int64_t* targets,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t vocab,
+    cudaStream_t stream);
 void launch_float32_to_bf16_bits(const float* source, std::uint16_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_bf16_bits_to_float32(const std::uint16_t* source, float* dest, std::int64_t n, cudaStream_t stream);
 void launch_float32_to_nvfp4_packed(
@@ -391,6 +405,8 @@ void launch_sumsq_partials_many_bf16_bits_float32(
     cudaStream_t stream);
 void launch_sum_partials_float32(const float* values, float* partials, std::int64_t n, cudaStream_t stream);
 void launch_sum_accumulate_float32(const float* values, float* total, std::int64_t n, cudaStream_t stream);
+void launch_extract_diagonal_float32(
+    const float* matrix, float* diagonal, std::int64_t dim, cudaStream_t stream);
 void launch_scale_inplace_float32(float* values, std::int64_t n, float scale, cudaStream_t stream);
 void launch_global_norm_clip_scale_float32(
     const float* sumsq_partials,
@@ -473,6 +489,24 @@ void launch_merge_heads_float32(
     std::int64_t heads,
     std::int64_t seq_len,
     std::int64_t head_dim,
+    cudaStream_t stream);
+void launch_repeat_kv_float32(
+    const float* x,
+    float* out,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    cudaStream_t stream);
+void launch_repeat_kv_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
     cudaStream_t stream);
 void launch_byte_patch_embed_float32(
     const std::int64_t* tokens,
@@ -559,6 +593,285 @@ void launch_broadcast_chunk_routes_float32(
     std::int64_t route_width,
     std::int64_t chunk_size,
     cudaStream_t stream);
+void launch_compact_chunk_routes_float32_int64(
+    const float* weights,
+    const std::int64_t* indices,
+    float* chunk_weights,
+    std::int64_t* chunk_indices,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t chunks,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    cudaStream_t stream);
+void launch_aggregate_chunk_route_gradients_float32(
+    const float* grad_weights,
+    float* aggregated_grad_weights,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    cudaStream_t stream);
+void launch_semantic_route_distillation_backward_float32(
+    const float* route_logits,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    float teacher_target,
+    cudaStream_t stream);
+void launch_semantic_target_topic_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    cudaStream_t stream);
+void launch_semantic_target_topic_packed_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    cudaStream_t stream);
+void launch_semantic_hash_table_backward_float32(
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* grad_route_logits,
+    float* grad_hash_embedding,
+    float* grad_table_gate,
+    float* grad_dimension_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    cudaStream_t stream);
+void launch_semantic_route_policy_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    cudaStream_t stream);
+void launch_semantic_route_policy_packed_topic_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    cudaStream_t stream);
+void launch_semantic_route_policy_packed_topic_matrix_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_target_matrix,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    std::int64_t ignore_index,
+    cudaStream_t stream);
+void launch_semantic_vec_from_packed_topic_float32(
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    cudaStream_t stream);
+void launch_semantic_packed_topic_to_padded_float32(
+    const float* packed_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* padded_logits,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t max_terms,
+    cudaStream_t stream);
+void launch_semantic_signature_scalar_float32(
+    const float* sig_logits,
+    float* signature_scalar,
+    std::int64_t rows,
+    std::int64_t buckets,
+    cudaStream_t stream);
+void launch_semantic_vec_append_signature_float32(
+    const float* topic_vec,
+    const float* signature_scalar,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    cudaStream_t stream);
+void launch_semantic_vec_split_signature_grad_float32(
+    const float* grad_semantic_vec,
+    float* grad_topic_vec,
+    float* grad_signature_scalar,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    cudaStream_t stream);
+void launch_semantic_signature_scalar_backward_float32(
+    const float* sig_logits,
+    const float* signature_scalar,
+    const float* grad_signature_scalar,
+    float* grad_sig_logits,
+    std::int64_t rows,
+    std::int64_t buckets,
+    cudaStream_t stream);
+void launch_semantic_free_expert_projection_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream);
+void launch_semantic_shared_expert_projection_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream);
+void launch_semantic_free_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_free_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream);
+void launch_semantic_shared_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_shared_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream);
+void launch_semantic_router_bias_add_float32(
+    float* route_logits,
+    const float* shared_logits,
+    const float* free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    cudaStream_t stream);
+void launch_semantic_router_bias_backward_float32(
+    const float* grad_route_logits,
+    float* grad_shared_logits,
+    float* grad_free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    cudaStream_t stream);
+void launch_semantic_targets_from_matrix_int64(
+    const std::int64_t* semantic_matrix,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_vocab_dims,
+    cudaStream_t stream);
+void launch_semantic_targets_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::int64_t semantic_vocab_dims,
+    cudaStream_t stream);
+void launch_semantic_target_matrix_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    std::int64_t* semantic_matrix,
+    const std::int64_t* term_counts,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t ignore_index,
+    cudaStream_t stream);
 void launch_moe_swiglu_forward_float32(
     const float* x,
     const float* route_weights,
@@ -585,11 +898,47 @@ void launch_moe_swiglu_backward_float32(
     float* grad_w1,
     float* grad_w2,
     float* grad_w3,
+    float* grad_route_weights,
     std::int64_t tokens,
     std::int64_t dim,
     std::int64_t hidden_dim,
     std::int64_t experts,
     std::int64_t top_k,
+    cudaStream_t stream);
+void launch_moe_swiglu_forward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind,
+    cudaStream_t stream);
+void launch_moe_swiglu_backward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind,
     cudaStream_t stream);
 void launch_latent_mse_partials_float32(
     const float* pred,
@@ -604,6 +953,36 @@ void launch_act_weighted_sum_float32(
     std::int64_t batch,
     std::int64_t steps,
     std::int64_t inner,
+    cudaStream_t stream);
+void launch_act_pack_step_float32(
+    const float* state_step,
+    const float* halt_logits_step,
+    float* state_stack,
+    float* halt_logits_stack,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    cudaStream_t stream);
+void launch_act_prepare_weights_float32(
+    const float* halt_logits_stack,
+    const std::int64_t* targets,
+    float* halt_targets,
+    float* halt_weights,
+    std::int64_t rows,
+    std::int64_t steps,
+    float halt_epsilon,
+    cudaStream_t stream);
+void launch_act_unpack_step_grad_float32(
+    const float* grad_act,
+    const float* halt_weights,
+    const float* grad_halt_stack,
+    float* grad_state_step,
+    float* grad_halt_step,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
     cudaStream_t stream);
 void launch_act_halting_bce_grad_float32(
     const float* logits,
@@ -621,6 +1000,32 @@ void launch_latent_pool_float32(
     std::int64_t seq_len,
     std::int64_t dim,
     cudaStream_t stream);
+void launch_latent_pool_backward_float32(
+    const float* grad_pooled,
+    const float* mask_values,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    cudaStream_t stream);
+void launch_native_family_jepa_mask_float32(
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    cudaStream_t stream);
+void launch_native_family_jepa_mask_u16_float32(
+    const std::uint16_t* tokens,
+    std::uint16_t* masked_tokens,
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    cudaStream_t stream);
 void launch_semantic_alignment_loss_items_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -631,6 +1036,20 @@ void launch_semantic_alignment_loss_items_float32(
     std::int64_t dims,
     std::int64_t terms,
     std::int64_t ignore_index,
+    cudaStream_t stream);
+void launch_semantic_alignment_packed_loss_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* losses,
+    float* counts,
+    float* grad_logits,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t total_terms,
+    std::int64_t ignore_index,
+    float grad_scale,
     cudaStream_t stream);
 void launch_semantic_hash_int64(
     const float* sem_vec,
@@ -648,6 +1067,67 @@ void launch_topk_route_float32(
     std::int64_t rows,
     std::int64_t experts,
     std::int64_t top_k,
+    cudaStream_t stream);
+void launch_topk_route_sqrt_softplus_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream);
+void launch_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    cudaStream_t stream);
+void launch_semantic_shared_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    cudaStream_t stream);
+void launch_semantic_shared_forced_topk_route_float32(
+    const float* logits,
+    const std::int64_t* semantic_target_matrix,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    std::int64_t ignore_index,
+    cudaStream_t stream);
+void launch_semantic_shared_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    float route_scale,
+    cudaStream_t stream);
+void launch_topk_route_sqrt_softplus_backward_float32(
+    const float* logits,
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
     cudaStream_t stream);
 void launch_attentionless_decoder_float32(
     const std::int64_t* bucket_indices,
@@ -713,6 +1193,18 @@ void launch_adamw_step_many_with_device_scale_float32(
     float bias_correction1,
     float sqrt_bias_correction2,
     cudaStream_t stream);
+void launch_adamw_step_many_with_device_scale_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream);
 void launch_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float* const* params,
     const float* const* grads,
@@ -731,6 +1223,20 @@ void launch_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float eps,
     float bias_correction1,
     float sqrt_bias_correction2,
+    cudaStream_t stream);
+void launch_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const std::int64_t* bf16_shadow_offsets,
+    std::uint16_t* bf16_shadow_bits,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
     cudaStream_t stream);
 void launch_adamw_step_many_with_device_scale_bf16_param_float32(
     std::uint16_t* const* params_bf16_bits,
@@ -775,6 +1281,72 @@ void launch_linear_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     bool has_bias,
+    cudaStream_t stream);
+void launch_linear_quantized_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    int kind,
+    cudaStream_t stream);
+void launch_linear_backward_input_quantized_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    int kind,
+    cudaStream_t stream);
+void launch_split_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream);
+void launch_merge_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t half_dim,
+    cudaStream_t stream);
+void launch_split_at_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    cudaStream_t stream);
+void launch_concat_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    cudaStream_t stream);
+void launch_differential_combine_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    cudaStream_t stream);
+void launch_differential_backward_float32(
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
     cudaStream_t stream);
 void launch_linear_bf16_float32(
     const float* x,
@@ -1189,6 +1761,25 @@ void launch_gelu_add_bias_bf16_act_float32(
     std::int64_t rows,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_moa_add_bias_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    cudaStream_t stream);
+void launch_moa_add_bias_bf16_act_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::uint16_t* activation_bf16_bits,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    cudaStream_t stream);
 void launch_swiglu_float32(
     const float* gate,
     const float* up,
@@ -1355,6 +1946,18 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     float* grad,
     std::int64_t n,
+    cudaStream_t stream);
+void launch_moa_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    cudaStream_t stream);
+void launch_moa_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
     cudaStream_t stream);
 void launch_dropout_forward_float32(
     const float* x,
@@ -3518,6 +4121,50 @@ int nfn_native_tile_add_float32(
     return launch_status();
 }
 
+int nfn_native_tile_vector_binary_float32(
+    const float* lhs,
+    const float* rhs,
+    const float* scale0,
+    const float* scale1,
+    float* out,
+    std::int64_t n,
+    std::int64_t dim,
+    std::int64_t op,
+    void* cuda_stream) {
+    if (lhs == nullptr || rhs == nullptr || scale0 == nullptr || out == nullptr || n <= 0 || dim <= 0 ||
+        (op != 0 && op != 1 && op != 2) || (op == 1 && scale1 == nullptr)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_vector_binary_float32(
+        lhs, rhs, scale0, scale1, out, n, dim, static_cast<int>(op), as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_mhc_beta_gradient_float32(
+    const float* beta_logit,
+    const float* input,
+    const float* attention_proj,
+    const float* residual1,
+    const float* ffn_out,
+    const float* grad_second,
+    const float* grad_first,
+    float* grad_beta_logit,
+    std::int64_t rows,
+    std::int64_t model_dim,
+    float scale,
+    void* cuda_stream) {
+    if (beta_logit == nullptr || input == nullptr || attention_proj == nullptr ||
+        residual1 == nullptr || ffn_out == nullptr || grad_second == nullptr ||
+        grad_first == nullptr || grad_beta_logit == nullptr || rows <= 0 ||
+        model_dim <= 0 || !std::isfinite(scale)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_mhc_beta_gradient_float32(
+        beta_logit, input, attention_proj, residual1, ffn_out, grad_second, grad_first,
+        grad_beta_logit, rows, model_dim, scale, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_fill_many_float32(
     float* const* buffers,
     const std::int64_t* elements,
@@ -3698,6 +4345,28 @@ int nfn_native_tile_uint16_to_int64(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_uint16_to_int64(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_uint8_to_int64(
+    const std::uint8_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_uint8_to_int64(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_diffusion_mask_u16_int64(
+    const std::uint16_t* source_tokens,
+    std::uint16_t* masked_tokens,
+    std::int64_t* targets,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t vocab,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_diffusion_mask_u16_int64(
+        source_tokens, masked_tokens, targets, rows, seq_len, vocab, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -3974,6 +4643,16 @@ int nfn_native_tile_sum_accumulate_float32(
     return launch_status();
 }
 
+int nfn_native_tile_extract_diagonal_float32(
+    const float* matrix,
+    float* diagonal,
+    std::int64_t dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_extract_diagonal_float32(
+        matrix, diagonal, dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_scale_inplace_float32(
     float* values,
     std::int64_t n,
@@ -4133,6 +4812,34 @@ int nfn_native_tile_merge_heads_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_merge_heads_float32(
         x, out, batch, heads, seq_len, head_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_repeat_kv_float32(
+    const float* input,
+    float* output,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_repeat_kv_float32(
+        input, output, batch, kv_heads, seq_len, head_dim, repeats, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_repeat_kv_backward_float32(
+    const float* grad_output,
+    float* grad_input,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_repeat_kv_backward_float32(
+        grad_output, grad_input, batch, kv_heads, seq_len, head_dim, repeats, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -4298,6 +5005,126 @@ int nfn_native_tile_topk_route_float32(
     return launch_status();
 }
 
+int nfn_native_tile_topk_route_sqrt_softplus_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 || top_k <= 0 || top_k > experts || top_k > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_topk_route_sqrt_softplus_float32(
+        logits, weights, indices, rows, experts, top_k, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 || top_k <= 0 || top_k > experts || top_k > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_topk_route_backward_float32(
+        weights, indices, grad_weights, grad_logits, rows, experts, top_k, route_scale, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_shared_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    void* cuda_stream) {
+    const std::int64_t route_width = shared_experts + top_k;
+    if (rows <= 0 || experts <= 0 || shared_experts <= 0 || top_k <= 0 ||
+        shared_experts >= experts || top_k > experts - shared_experts || route_width > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_shared_topk_route_float32(
+        logits, weights, indices, rows, experts, shared_experts, top_k, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_shared_forced_topk_route_float32(
+    const float* logits,
+    const std::int64_t* semantic_target_matrix,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    std::int64_t ignore_index,
+    void* cuda_stream) {
+    const std::int64_t route_width = shared_experts + top_k;
+    if (logits == nullptr || semantic_target_matrix == nullptr || weights == nullptr ||
+        indices == nullptr || rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+        shared_experts <= 0 || shared_experts + semantic_vocab_dims > experts ||
+        top_k <= 0 || top_k > experts - shared_experts || route_width > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_shared_forced_topk_route_float32(
+        logits, semantic_target_matrix, weights, indices, rows, experts, semantic_vocab_dims,
+        shared_experts, top_k, ignore_index, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_shared_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream) {
+    const std::int64_t route_width = shared_experts + top_k;
+    if (rows <= 0 || experts <= 0 || shared_experts <= 0 || top_k <= 0 ||
+        shared_experts >= experts || top_k > experts - shared_experts || route_width > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_shared_topk_route_backward_float32(
+        weights, indices, grad_weights, grad_logits, rows, experts, shared_experts, top_k, route_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_topk_route_sqrt_softplus_backward_float32(
+    const float* logits,
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 || top_k <= 0 || top_k > experts || top_k > 64) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_topk_route_sqrt_softplus_backward_float32(
+        logits, weights, indices, grad_weights, grad_logits, rows, experts,
+        top_k, route_scale, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_broadcast_expert_routes_float32(
     const float* weights,
     const std::int64_t* indices,
@@ -4333,6 +5160,570 @@ int nfn_native_tile_broadcast_chunk_routes_float32(
     }
     neuralfn::tile_cuda::launch_broadcast_chunk_routes_float32(
         weights, indices, out_weights, out_indices, batch, chunks, seq_len, route_width, chunk_size, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_compact_chunk_routes_float32_int64(
+    const float* weights,
+    const std::int64_t* indices,
+    float* chunk_weights,
+    std::int64_t* chunk_indices,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t chunks,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || chunks <= 0 || route_width <= 0 || chunk_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_compact_chunk_routes_float32_int64(
+        weights, indices, chunk_weights, chunk_indices, batch, seq_len, chunks, route_width, chunk_size,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_aggregate_chunk_route_gradients_float32(
+    const float* grad_weights,
+    float* aggregated_grad_weights,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || route_width <= 0 || chunk_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_aggregate_chunk_route_gradients_float32(
+        grad_weights, aggregated_grad_weights, batch, seq_len, route_width, chunk_size, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_route_distillation_backward_float32(
+    const float* route_logits,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    float teacher_target,
+    void* cuda_stream) {
+    if (rows <= 0 || seq_len <= 0 || experts <= 1 || semantic_vocab_dims <= 0 || route_chunk_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_route_distillation_backward_float32(
+        route_logits, semantic_targets, semantic_target_valid, grad_route_logits, loss_items,
+        rows, seq_len, experts, semantic_vocab_dims, shared_experts, route_chunk_size,
+        distill_weight, teacher_target, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_target_topic_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    void* cuda_stream) {
+    if (rows <= 0 || seq_len <= 0 || experts <= 1 || semantic_vocab_dims <= 0 || route_chunk_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_target_topic_distillation_backward_float32(
+        route_logits, target_topic_logits, grad_route_logits, loss_items,
+        rows, seq_len, experts, semantic_vocab_dims, shared_experts, route_chunk_size,
+        distill_weight, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    void* cuda_stream) {
+    if (route_logits == nullptr || target_topic_logits == nullptr ||
+        term_counts == nullptr || term_offsets == nullptr ||
+        grad_route_logits == nullptr || loss_items == nullptr ||
+        rows <= 0 || seq_len <= 0 || experts <= 1 || semantic_vocab_dims <= 0 ||
+        total_terms <= 0 || route_chunk_size <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_target_topic_packed_distillation_backward_float32(
+        route_logits, target_topic_logits, term_counts, term_offsets, grad_route_logits,
+        loss_items, rows, seq_len, experts, semantic_vocab_dims, total_terms,
+        shared_experts, route_chunk_size, distill_weight, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_hash_table_backward_float32(
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* grad_route_logits,
+    float* grad_hash_embedding,
+    float* grad_table_gate,
+    float* grad_dimension_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    void* cuda_stream) {
+    if (hash_indices == nullptr || hash_embedding == nullptr || table_gate_logits == nullptr ||
+        grad_route_logits == nullptr || grad_hash_embedding == nullptr ||
+        grad_table_gate == nullptr || grad_dimension_bias == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 || tables <= 0 ||
+        tables > 32 || buckets <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_hash_table_backward_float32(
+        hash_indices, hash_embedding, table_gate_logits, grad_route_logits,
+        grad_hash_embedding, grad_table_gate, grad_dimension_bias, rows, experts,
+        semantic_vocab_dims, shared_experts, tables, buckets, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_route_policy_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    void* cuda_stream) {
+    if (route_logits == nullptr || hash_indices == nullptr || hash_embedding == nullptr ||
+        table_gate_logits == nullptr || dimension_bias == nullptr || semantic_targets == nullptr ||
+        semantic_target_valid == nullptr || rows <= 0 || experts <= 0 ||
+        semantic_vocab_dims <= 0 || tables <= 0 || tables > 32 || buckets <= 0 ||
+        top_k <= 0 || top_k > experts || !std::isfinite(target_boost)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_route_policy_float32(
+        route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+        semantic_targets, semantic_target_valid, rows, experts, semantic_vocab_dims,
+        shared_experts, tables, buckets, top_k, target_boost, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_route_policy_packed_topic_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    void* cuda_stream) {
+    if (route_logits == nullptr || hash_indices == nullptr || hash_embedding == nullptr ||
+        table_gate_logits == nullptr || dimension_bias == nullptr || topic_logits == nullptr ||
+        term_counts == nullptr || term_offsets == nullptr || semantic_targets == nullptr ||
+        semantic_target_valid == nullptr || rows <= 0 || experts <= 0 ||
+        semantic_vocab_dims <= 0 || total_terms <= 0 || tables <= 0 || tables > 32 ||
+        buckets <= 0 || top_k <= 0 || top_k > experts || !std::isfinite(target_boost)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_route_policy_packed_topic_float32(
+        route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+        topic_logits, term_counts, term_offsets, semantic_targets, semantic_target_valid,
+        rows, experts, semantic_vocab_dims, total_terms, shared_experts, tables, buckets,
+        top_k, target_boost, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_target_matrix,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    std::int64_t ignore_index,
+    void* cuda_stream) {
+    if (route_logits == nullptr || hash_indices == nullptr || hash_embedding == nullptr ||
+        table_gate_logits == nullptr || dimension_bias == nullptr || topic_logits == nullptr ||
+        term_counts == nullptr || term_offsets == nullptr || semantic_target_matrix == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 || total_terms <= 0 ||
+        tables <= 0 || tables > 32 || buckets <= 0 || top_k <= 0 || top_k > experts ||
+        !std::isfinite(target_boost)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_route_policy_packed_topic_matrix_float32(
+        route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+        topic_logits, term_counts, term_offsets, semantic_target_matrix, rows, experts,
+        semantic_vocab_dims, total_terms, shared_experts, tables, buckets, top_k,
+        target_boost, ignore_index, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_vec_from_packed_topic_float32(
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    void* cuda_stream) {
+    if (topic_logits == nullptr || term_counts == nullptr || term_offsets == nullptr ||
+        semantic_vec == nullptr || rows <= 0 || semantic_vocab_dims <= 0 ||
+        total_terms <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_vec_from_packed_topic_float32(
+        topic_logits, term_counts, term_offsets, semantic_vec, rows,
+        semantic_vocab_dims, total_terms, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_packed_topic_to_padded_float32(
+    const float* packed_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* padded_logits,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t max_terms,
+    void* cuda_stream) {
+    if (packed_logits == nullptr || term_counts == nullptr || term_offsets == nullptr ||
+        padded_logits == nullptr || rows <= 0 || semantic_vocab_dims <= 0 ||
+        total_terms <= 0 || max_terms <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_packed_topic_to_padded_float32(
+        packed_logits, term_counts, term_offsets, padded_logits, rows,
+        semantic_vocab_dims, total_terms, max_terms, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_signature_scalar_float32(
+    const float* sig_logits,
+    float* signature_scalar,
+    std::int64_t rows,
+    std::int64_t buckets,
+    void* cuda_stream) {
+    if (sig_logits == nullptr || signature_scalar == nullptr ||
+        rows <= 0 || buckets <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_signature_scalar_float32(
+        sig_logits, signature_scalar, rows, buckets, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_vec_append_signature_float32(
+    const float* topic_vec,
+    const float* signature_scalar,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    void* cuda_stream) {
+    if (topic_vec == nullptr || signature_scalar == nullptr || semantic_vec == nullptr ||
+        rows <= 0 || topic_dims <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_vec_append_signature_float32(
+        topic_vec, signature_scalar, semantic_vec, rows, topic_dims, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_vec_split_signature_grad_float32(
+    const float* grad_semantic_vec,
+    float* grad_topic_vec,
+    float* grad_signature_scalar,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    void* cuda_stream) {
+    if (grad_semantic_vec == nullptr || grad_topic_vec == nullptr ||
+        grad_signature_scalar == nullptr || rows <= 0 || topic_dims <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_vec_split_signature_grad_float32(
+        grad_semantic_vec, grad_topic_vec, grad_signature_scalar, rows, topic_dims,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_signature_scalar_backward_float32(
+    const float* sig_logits,
+    const float* signature_scalar,
+    const float* grad_signature_scalar,
+    float* grad_sig_logits,
+    std::int64_t rows,
+    std::int64_t buckets,
+    void* cuda_stream) {
+    if (sig_logits == nullptr || signature_scalar == nullptr ||
+        grad_signature_scalar == nullptr || grad_sig_logits == nullptr ||
+        rows <= 0 || buckets <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_signature_scalar_backward_float32(
+        sig_logits, signature_scalar, grad_signature_scalar, grad_sig_logits,
+        rows, buckets, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_free_expert_projection_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream) {
+    if (semantic_vec == nullptr || free_weight == nullptr || route_logits == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 || semantic_vec_dims <= 0 ||
+        semantic_shared_experts < 0 || semantic_free_experts <= 0 ||
+        weight_stride <= 0 ||
+        semantic_shared_experts + semantic_vocab_dims + semantic_free_experts > experts) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_free_expert_projection_float32(
+        semantic_vec, free_weight, route_logits, rows, experts, semantic_vocab_dims,
+        semantic_vec_dims, semantic_shared_experts, semantic_free_experts, weight_stride,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_shared_expert_projection_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream) {
+    if (semantic_vec == nullptr || shared_weight == nullptr || route_logits == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+        semantic_shared_experts <= 0 || weight_stride <= 0 ||
+        semantic_shared_experts > experts) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_shared_expert_projection_float32(
+        semantic_vec, shared_weight, route_logits, rows, experts, semantic_vocab_dims,
+        semantic_shared_experts, weight_stride, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_free_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_free_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream) {
+    if (semantic_vec == nullptr || free_weight == nullptr || grad_route_logits == nullptr ||
+        grad_semantic_vec == nullptr || grad_free_weight == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 || semantic_vec_dims <= 0 ||
+        semantic_shared_experts < 0 || semantic_free_experts <= 0 ||
+        weight_stride <= 0 ||
+        semantic_shared_experts + semantic_vocab_dims + semantic_free_experts > experts) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_free_expert_projection_backward_float32(
+        semantic_vec, free_weight, grad_route_logits, grad_semantic_vec, grad_free_weight,
+        rows, experts, semantic_vocab_dims, semantic_vec_dims, semantic_shared_experts, semantic_free_experts,
+        weight_stride, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_shared_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_shared_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    void* cuda_stream) {
+    if (semantic_vec == nullptr || shared_weight == nullptr || grad_route_logits == nullptr ||
+        grad_semantic_vec == nullptr || grad_shared_weight == nullptr ||
+        rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+        semantic_shared_experts <= 0 || weight_stride <= 0 ||
+        semantic_shared_experts > experts) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_shared_expert_projection_backward_float32(
+        semantic_vec, shared_weight, grad_route_logits, grad_semantic_vec, grad_shared_weight,
+        rows, experts, semantic_vocab_dims, semantic_shared_experts, weight_stride,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_router_bias_add_float32(
+    float* route_logits,
+    const float* shared_logits,
+    const float* free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    void* cuda_stream) {
+    if (route_logits == nullptr || rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+        semantic_shared_experts < 0 || semantic_free_experts < 0 ||
+        semantic_shared_experts + semantic_vocab_dims + semantic_free_experts > experts ||
+        (semantic_shared_experts > 0 && shared_logits == nullptr) ||
+        (semantic_free_experts > 0 && free_bias == nullptr)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_router_bias_add_float32(
+        route_logits, shared_logits, free_bias, rows, experts, semantic_vocab_dims,
+        semantic_shared_experts, semantic_free_experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_router_bias_backward_float32(
+    const float* grad_route_logits,
+    float* grad_shared_logits,
+    float* grad_free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    void* cuda_stream) {
+    if (grad_route_logits == nullptr || rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+        semantic_shared_experts < 0 || semantic_free_experts < 0 ||
+        semantic_shared_experts + semantic_vocab_dims + semantic_free_experts > experts ||
+        (semantic_shared_experts > 0 && grad_shared_logits == nullptr) ||
+        (semantic_free_experts > 0 && grad_free_bias == nullptr)) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_router_bias_backward_float32(
+        grad_route_logits, grad_shared_logits, grad_free_bias, rows, experts, semantic_vocab_dims,
+        semantic_shared_experts, semantic_free_experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_targets_from_matrix_int64(
+    const std::int64_t* semantic_matrix,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_vocab_dims,
+    void* cuda_stream) {
+    if (semantic_matrix == nullptr || lm_targets == nullptr || semantic_targets == nullptr ||
+        semantic_target_valid == nullptr || rows <= 0 || semantic_dims <= 0 ||
+        semantic_vocab_dims <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_targets_from_matrix_int64(
+        semantic_matrix, lm_targets, semantic_targets, semantic_target_valid,
+        rows, semantic_dims, semantic_vocab_dims, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_targets_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::int64_t semantic_vocab_dims,
+    void* cuda_stream) {
+    if (tokens == nullptr || lm_targets == nullptr || semantic_targets == nullptr ||
+        semantic_target_valid == nullptr || rows <= 0 || semantic_dims <= 0 ||
+        semantic_terms <= 0 || semantic_vocab_dims <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_targets_from_tokens_u16_int64(
+        tokens, lm_targets, semantic_targets, semantic_target_valid,
+        rows, semantic_dims, semantic_terms, semantic_vocab_dims, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    std::int64_t* semantic_matrix,
+    const std::int64_t* term_counts,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t ignore_index,
+    void* cuda_stream) {
+    if (tokens == nullptr || semantic_matrix == nullptr || term_counts == nullptr ||
+        rows <= 0 || semantic_dims <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_target_matrix_from_tokens_u16_int64(
+        tokens, semantic_matrix, term_counts, rows, semantic_dims, ignore_index,
+        as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -4391,11 +5782,131 @@ int nfn_native_tile_moe_swiglu_backward_float32(
         grad_w1,
         grad_w2,
         grad_w3,
+        nullptr,
         tokens,
         dim,
         hidden_dim,
         experts,
         top_k,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_swiglu_backward_with_route_grad_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    void* cuda_stream) {
+    if (tokens <= 0 || dim <= 0 || hidden_dim <= 0 || experts <= 0 || top_k <= 0 || top_k > experts ||
+        grad_route_weights == nullptr) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_swiglu_backward_float32(
+        x,
+        route_weights,
+        route_indices,
+        w1,
+        w2,
+        w3,
+        grad_out,
+        grad_x,
+        grad_w1,
+        grad_w2,
+        grad_w3,
+        grad_route_weights,
+        tokens,
+        dim,
+        hidden_dim,
+        experts,
+        top_k,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_swiglu_forward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    std::int64_t quantization_kind,
+    void* cuda_stream) {
+    if (tokens <= 0 || dim <= 0 || hidden_dim <= 0 || experts <= 0 ||
+        top_k <= 0 || top_k > experts ||
+        quantization_kind <= 0 || quantization_kind > 3) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_swiglu_forward_quantized_float32(
+        x, route_weights, route_indices, w1, w2, w3, out, tokens, dim, hidden_dim,
+        experts, top_k, static_cast<int>(quantization_kind), as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_swiglu_backward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    std::int64_t quantization_kind,
+    void* cuda_stream) {
+    if (tokens <= 0 || dim <= 0 || hidden_dim <= 0 || experts <= 0 ||
+        top_k <= 0 || top_k > experts || grad_route_weights == nullptr ||
+        quantization_kind <= 0 || quantization_kind > 3) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_swiglu_backward_quantized_float32(
+        x,
+        route_weights,
+        route_indices,
+        w1,
+        w2,
+        w3,
+        grad_out,
+        grad_x,
+        grad_w1,
+        grad_w2,
+        grad_w3,
+        grad_route_weights,
+        tokens,
+        dim,
+        hidden_dim,
+        experts,
+        top_k,
+        static_cast<int>(quantization_kind),
         as_stream(cuda_stream));
     return launch_status();
 }
@@ -4552,6 +6063,33 @@ int nfn_native_tile_adamw_step_many_with_device_scale_float32(
     return launch_status();
 }
 
+int nfn_native_tile_adamw_step_many_with_device_scale_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_adamw_step_many_with_device_scale_hyper_float32(
+        params,
+        grads,
+        grad_scale,
+        exp_avgs,
+        exp_avg_sqs,
+        elements,
+        weight_decays,
+        hyper,
+        buffer_count,
+        max_elements,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float* const* params,
     const float* const* grads,
@@ -4589,6 +6127,37 @@ int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32(
         eps,
         bias_correction1,
         sqrt_bias_correction2,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const std::int64_t* bf16_shadow_offsets,
+    std::uint16_t* bf16_shadow_bits,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32(
+        params,
+        grads,
+        grad_scale,
+        exp_avgs,
+        exp_avg_sqs,
+        elements,
+        weight_decays,
+        bf16_shadow_offsets,
+        bf16_shadow_bits,
+        hyper,
+        buffer_count,
+        max_elements,
         as_stream(cuda_stream));
     return launch_status();
 }
@@ -4679,6 +6248,264 @@ int nfn_native_tile_linear_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_float32(
         x, weight, bias, out, rows, input_dim, output_dim, has_bias, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_quantized_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    int kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_quantized_float32(
+        x, weight, bias, out, rows, input_dim, output_dim, has_bias, kind, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_input_quantized_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    int kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_input_quantized_float32(
+        grad_out, weight, grad_x, rows, input_dim, output_dim, kind, as_stream(cuda_stream));
+    return launch_status();
+}
+
+__attribute__((visibility("default"), used))
+int nfn_native_tile_fused_causal_attention_forward_float32(
+    const float* x,
+    const float* q_weight,
+    const float* k_weight,
+    const float* v_weight,
+    const float* out_weight,
+    const float* inv_freq,
+    float* q_projection,
+    float* k_projection,
+    float* v_projection,
+    float* q,
+    float* k,
+    float* v,
+    float* q_rope,
+    float* k_rope,
+    float* attention,
+    float* attention_flat,
+    float* output,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float scale,
+    void* cuda_stream) {
+    const cudaStream_t stream = as_stream(cuda_stream);
+    neuralfn::tile_cuda::launch_linear_float32(
+        x, q_weight, nullptr, q_projection, batch * seq_len, model_dim, model_dim, false, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_float32(
+        x, k_weight, nullptr, k_projection, batch * seq_len, model_dim, kv_heads * head_dim, false, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_float32(
+        x, v_weight, nullptr, v_projection, batch * seq_len, model_dim, kv_heads * head_dim, false, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_reshape_heads_float32(
+        q_projection, q, batch, seq_len, heads, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_reshape_heads_float32(
+        k_projection, k, batch, seq_len, kv_heads, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_reshape_heads_float32(
+        v_projection, v, batch, seq_len, kv_heads, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_rotary_embedding_float32(
+        q, inv_freq, q_rope, batch, heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_rotary_embedding_float32(
+        k, inv_freq, k_rope, batch, kv_heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_scaled_dot_product_attention_float32(
+        q_rope, k_rope, v, attention, batch * model_dim, heads, kv_heads, seq_len, seq_len,
+        head_dim, head_dim, scale, true, false, false, 0, 0, 0, 0, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_merge_heads_float32(
+        attention, attention_flat, batch, heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_float32(
+        attention_flat, out_weight, nullptr, output, batch * seq_len, model_dim, model_dim, false, stream);
+    return launch_status();
+}
+
+__attribute__((visibility("default"), used))
+int nfn_native_tile_fused_causal_attention_backward_float32(
+    const float* x,
+    const float* q_weight,
+    const float* k_weight,
+    const float* v_weight,
+    const float* out_weight,
+    const float* inv_freq,
+    const float* q_rope,
+    const float* k_rope,
+    const float* v,
+    const float* attention_flat,
+    const float* grad_output,
+    float* grad_attention_flat,
+    float* grad_attention,
+    float* grad_q_rope,
+    float* grad_k_rope,
+    float* grad_v,
+    float* grad_q,
+    float* grad_k,
+    float* grad_q_projection,
+    float* grad_k_projection,
+    float* grad_v_projection,
+    float* grad_q_input,
+    float* grad_k_input,
+    float* grad_v_input,
+    float* grad_q_weight,
+    float* grad_k_weight,
+    float* grad_v_weight,
+    float* grad_out_weight,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t heads,
+    std::int64_t kv_heads,
+    std::int64_t head_dim,
+    float scale,
+    void* cuda_stream) {
+    const cudaStream_t stream = as_stream(cuda_stream);
+    neuralfn::tile_cuda::launch_linear_backward_input_float32(
+        grad_output, out_weight, grad_attention_flat, batch * seq_len, model_dim, model_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_weight_float32(
+        attention_flat, grad_output, grad_out_weight, batch * seq_len, model_dim, model_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_reshape_heads_float32(
+        grad_attention_flat, grad_attention, batch, seq_len, heads, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_scaled_dot_product_attention_backward_float32(
+        q_rope, k_rope, v, grad_attention, grad_q_rope, grad_k_rope, grad_v,
+        batch, heads, kv_heads, seq_len, seq_len, head_dim, head_dim, scale, true, false, false,
+        0, 0, 0, 0, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_rotary_embedding_backward_float32(
+        grad_q_rope, inv_freq, grad_q, batch * heads * seq_len * head_dim, heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_rotary_embedding_backward_float32(
+        grad_k_rope, inv_freq, grad_k, batch * kv_heads * seq_len * head_dim, kv_heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_merge_heads_float32(
+        grad_q, grad_q_projection, batch, heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_merge_heads_float32(
+        grad_k, grad_k_projection, batch, kv_heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_merge_heads_float32(
+        grad_v, grad_v_projection, batch, kv_heads, seq_len, head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_input_float32(
+        grad_q_projection, q_weight, grad_q_input, batch * seq_len, model_dim, model_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_input_float32(
+        grad_k_projection, k_weight, grad_k_input, batch * seq_len, model_dim, kv_heads * head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_input_float32(
+        grad_v_projection, v_weight, grad_v_input, batch * seq_len, model_dim, kv_heads * head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_weight_float32(
+        x, grad_q_projection, grad_q_weight, batch * seq_len, model_dim, model_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_weight_float32(
+        x, grad_k_projection, grad_k_weight, batch * seq_len, model_dim, kv_heads * head_dim, stream);
+    if (launch_status() != 0) return launch_status();
+    neuralfn::tile_cuda::launch_linear_backward_weight_float32(
+        x, grad_v_projection, grad_v_weight, batch * seq_len, model_dim, kv_heads * head_dim, stream);
+    return launch_status();
+}
+
+int nfn_native_tile_split_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_split_last_dim_float32(
+        input, first, second, rows, dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_merge_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t half_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_merge_last_dim_float32(
+        first, second, output, rows, half_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_split_at_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_split_at_last_dim_float32(
+        input, first, second, rows, first_dim, second_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_concat_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_concat_last_dim_float32(
+        first, second, output, rows, first_dim, second_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_differential_combine_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_differential_combine_float32(
+        first, second, output, elements, lambda, output_scale, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_differential_backward_float32(
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_differential_backward_float32(
+        grad_output, grad_first, grad_second, elements, lambda, output_scale, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -5419,6 +7246,43 @@ int nfn_native_tile_gelu_add_bias_bf16_act_float32(
     return launch_status();
 }
 
+int nfn_native_tile_moa_add_bias_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_moa_add_bias_float32(
+        x, bias, biased_out, activation_out, rows, output_dim, activation_kind, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moa_add_bias_bf16_act_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::uint16_t* activation_bf16_bits,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_moa_add_bias_bf16_act_float32(
+        x,
+        bias,
+        biased_out,
+        activation_out,
+        activation_bf16_bits,
+        rows,
+        output_dim,
+        activation_kind,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_swiglu_float32(
     const float* gate,
     const float* up,
@@ -5830,6 +7694,28 @@ int nfn_native_tile_gelu_backward_inplace_bf16_bits_float32(
     return launch_status();
 }
 
+int nfn_native_tile_moa_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_moa_backward_inplace_float32(
+        x, grad, n, activation_kind, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moa_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_moa_backward_inplace_bf16_bits_float32(
+        x_bf16_bits, grad, n, activation_kind, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_dropout_forward_float32(
     const float* x,
     float* out,
@@ -6053,8 +7939,13 @@ int nfn_native_tile_rotary_embedding_float32(
     if (head_dim <= 0 || (head_dim % 2) != 0 || heads <= 0 || seq_len <= 0) {
         return 1;
     }
+    const std::int64_t denominator = heads * seq_len * head_dim;
+    if (n <= 0 || denominator <= 0 || (n % denominator) != 0) {
+        return 1;
+    }
+    const std::int64_t batch = n / denominator;
     neuralfn::tile_cuda::launch_rotary_embedding_float32(
-        x, inv_freq, out, n, heads, seq_len, head_dim, as_stream(cuda_stream));
+        x, inv_freq, out, batch, heads, seq_len, head_dim, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -6449,6 +8340,63 @@ int nfn_native_tile_act_weighted_sum_float32(
     return launch_status();
 }
 
+int nfn_native_tile_act_pack_step_float32(
+    const float* state_step,
+    const float* halt_logits_step,
+    float* state_stack,
+    float* halt_logits_stack,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    void* cuda_stream) {
+    if (rows <= 0 || steps <= 0 || inner <= 0 || step < 0 || step >= steps) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_act_pack_step_float32(
+        state_step, halt_logits_step, state_stack, halt_logits_stack,
+        rows, steps, inner, step, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_act_prepare_weights_float32(
+    const float* halt_logits_stack,
+    const std::int64_t* targets,
+    float* halt_targets,
+    float* halt_weights,
+    std::int64_t rows,
+    std::int64_t steps,
+    float halt_epsilon,
+    void* cuda_stream) {
+    if (rows <= 0 || steps <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_act_prepare_weights_float32(
+        halt_logits_stack, targets, halt_targets, halt_weights,
+        rows, steps, halt_epsilon, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_act_unpack_step_grad_float32(
+    const float* grad_act,
+    const float* halt_weights,
+    const float* grad_halt_stack,
+    float* grad_state_step,
+    float* grad_halt_step,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    void* cuda_stream) {
+    if (rows <= 0 || steps <= 0 || inner <= 0 || step < 0 || step >= steps) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_act_unpack_step_grad_float32(
+        grad_act, halt_weights, grad_halt_stack, grad_state_step, grad_halt_step,
+        rows, steps, inner, step, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_act_halting_bce_grad_float32(
     const float* logits,
     const float* targets,
@@ -6481,6 +8429,60 @@ int nfn_native_tile_latent_pool_float32(
     return launch_status();
 }
 
+int nfn_native_tile_latent_pool_backward_float32(
+    const float* grad_pooled,
+    const float* mask_values,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || dim <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_latent_pool_backward_float32(
+        grad_pooled, mask_values, grad_x, batch, seq_len, dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_native_family_jepa_mask_float32(
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    void* cuda_stream) {
+    if (batch <= 0 || seq_len <= 0 || masked_span < 0 || masked_span > seq_len ||
+        mask_ratio < 0.0f || mask_ratio > 1.0f) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_native_family_jepa_mask_float32(
+        mask_values, batch, seq_len, masked_span, mask_ratio, strategy, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_native_family_jepa_mask_u16_float32(
+    const std::uint16_t* tokens,
+    std::uint16_t* masked_tokens,
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    void* cuda_stream) {
+    if (tokens == nullptr || masked_tokens == nullptr || mask_values == nullptr ||
+        batch <= 0 || seq_len <= 0 || masked_span < 0 || masked_span > seq_len ||
+        mask_ratio < 0.0f || mask_ratio > 1.0f) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_native_family_jepa_mask_u16_float32(
+        tokens, masked_tokens, mask_values, batch, seq_len, masked_span, mask_ratio,
+        strategy, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_semantic_alignment_loss_items_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -6497,6 +8499,31 @@ int nfn_native_tile_semantic_alignment_loss_items_float32(
     }
     neuralfn::tile_cuda::launch_semantic_alignment_loss_items_float32(
         logits, targets, term_counts, losses, counts, n, dims, terms, ignore_index, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_semantic_alignment_packed_loss_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* losses,
+    float* counts,
+    float* grad_logits,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t total_terms,
+    std::int64_t ignore_index,
+    float grad_scale,
+    void* cuda_stream) {
+    if (logits == nullptr || targets == nullptr || term_counts == nullptr ||
+        term_offsets == nullptr || losses == nullptr || counts == nullptr ||
+        grad_logits == nullptr || n <= 0 || dims <= 0 || total_terms <= 0) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_semantic_alignment_packed_loss_backward_float32(
+        logits, targets, term_counts, term_offsets, losses, counts, grad_logits,
+        n, dims, total_terms, ignore_index, grad_scale, as_stream(cuda_stream));
     return launch_status();
 }
 

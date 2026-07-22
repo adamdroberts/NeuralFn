@@ -178,6 +178,10 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `aux_loss_add_module` | aux_loss_add | module | 2 | 1 |
 | `loss_scale_module` | loss_scale | module | 1 | 1 |
 
+`topk_route_module` accepts `score_fn` in its module config. The default is
+`"softmax"`; `"sigmoid"` and DeepSeek-V4 `"sqrt_softplus"` are also supported
+before top-k selection and selected-weight normalization.
+
 ### Torch -- Data / Special
 
 | Attribute | Display Name | Kind | Inputs | Outputs |

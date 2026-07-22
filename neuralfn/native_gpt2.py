@@ -102,7 +102,7 @@ class NativeGpt2RunConfig:
     grad_clip_norm: float = 1.0
     eval_batches: int = 1
     eval_batch_size: int = 0
-    train_loss_every_steps: int = 0
+    train_loss_every_steps: int = 250
     lm_head_row_chunk_size: int = 28672
     activation: str = "gelu"
     moa_interval: int = 50
@@ -396,12 +396,12 @@ def resolve_native_gpt2_cli(value: str | None = None) -> str:
     if env_value:
         return env_value
     repo_root = Path(__file__).resolve().parents[1]
-    linked_path = repo_root / DEFAULT_NATIVE_GPT_CLI_LINKED
-    if linked_path.exists():
-        return str(linked_path)
     default_path = repo_root / DEFAULT_NATIVE_GPT2_CLI
     if default_path.exists():
         return str(default_path)
+    linked_path = repo_root / DEFAULT_NATIVE_GPT_CLI_LINKED
+    if linked_path.exists():
+        return str(linked_path)
     legacy_path = repo_root / LEGACY_NATIVE_GPT2_CLI
     if legacy_path.exists():
         return str(legacy_path)
@@ -922,7 +922,7 @@ def build_native_gpt2_run_config(
     grad_clip_norm: float = 1.0,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
-    train_loss_every_steps: int = 0,
+    train_loss_every_steps: int = 250,
     moa_interval: int = 50,
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",
@@ -1051,7 +1051,7 @@ def build_native_gpt2_compiled_cli_run_config(
     grad_clip_norm: float = 1.0,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
-    train_loss_every_steps: int = 0,
+    train_loss_every_steps: int = 250,
     moa_interval: int = 50,
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",

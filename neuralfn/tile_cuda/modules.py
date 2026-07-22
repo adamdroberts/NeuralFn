@@ -2292,16 +2292,34 @@ class TileCudaSemanticChunkProjectorStage(nn.Module):
 
 
 class TileCudaTopKRouteStage(RoutingStatsMixin, nn.Module):
-    def __init__(self, top_k: int, experts: int, config: TileCudaConfig | None = None) -> None:
+    def __init__(
+        self,
+        top_k: int,
+        experts: int,
+        config: TileCudaConfig | None = None,
+        score_fn: str = "softmax",
+    ) -> None:
         super().__init__()
         self.top_k = int(top_k)
         self.experts = int(experts)
         self.config = config or TileCudaConfig()
+        self.score_fn = str(score_fn or "softmax")
         self._init_routing_stats(num_experts=self.experts, top_k=self.top_k)
 
     def forward(self, logits: Tensor) -> tuple[Tensor, Tensor]:
-        weights, indices = tile_topk_route_module(logits, self.top_k, self.config)
-        scores = torch.softmax(logits.detach().float(), dim=-1)
+        if self.score_fn == "sqrt_softplus":
+            scores = torch.sqrt(torch.nn.functional.softplus(logits.float()).clamp_min(1.0e-12))
+            weights, indices = torch.topk(scores, self.top_k, dim=-1)
+            weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1.0e-12)
+            weights = weights.to(dtype=logits.dtype)
+        elif self.score_fn == "sigmoid":
+            scores = torch.sigmoid(logits.float())
+            weights, indices = torch.topk(scores, self.top_k, dim=-1)
+            weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1.0e-12)
+            weights = weights.to(dtype=logits.dtype)
+        else:
+            weights, indices = tile_topk_route_module(logits, self.top_k, self.config)
+            scores = torch.softmax(logits.detach().float(), dim=-1)
         self._update_routing_stats(scores=scores, routing_weights=weights.detach(), routing_indices=indices.detach())
         return weights.to(dtype=logits.dtype), indices
 
@@ -2913,6 +2931,7 @@ def build_tile_module(module_type: str, module_config: dict[str, object], config
             int(cfg["top_k"]),
             int(cfg.get("experts", 8)),
             config,
+            str(cfg.get("score_fn", "softmax")),
         )
     if module_type == "scaled_dot_product_attention":
         return TileCudaScaledDotProductAttentionStage(

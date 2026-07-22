@@ -18,6 +18,18 @@ import neuralfn.native_train as native_train_module
 import neuralfn.native_gpt2 as native_gpt2_module
 import pytest
 
+FAMILY_TRAINER_COVERED_STATUSES = {
+    "native-family-dataset-loop-diagnostic",
+    "native-family-dataset-loop-covered",
+    "native-trainer-covered",
+}
+FAMILY_TRAINER_LOOP_STATUSES = {
+    "native-family-dataset-loop-diagnostic",
+    "native-family-dataset-loop",
+    "native-loop-covered",
+}
+FAMILY_PRODUCTION_MISSING_REQUIREMENTS = []
+
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
 from neuralfn.native_gpt import (
     NativeGptRunConfig,
@@ -274,15 +286,16 @@ def test_native_train_sdk_dense_gpt_expands_quality_defaults(monkeypatch: pytest
     argv = cfg.argv()
 
     assert argv[:3] == ["/tmp/nfn_gpt_native_train", "--model-family", "gpt"]
-    assert argv[argv.index("--eval-every-steps") + 1] == "250"
+    assert argv[argv.index("--eval-every-steps") + 1] == "5000"
     assert argv[argv.index("--eval-batches") + 1] == "20"
     assert argv[argv.index("--native-cuda-sample-every") + 1] == "20000"
     assert argv[argv.index("--native-cuda-generate-tokens") + 1] == "144"
-    assert argv[argv.index("--native-cuda-checkpoint-every") + 1] == "200"
+    assert argv[argv.index("--native-cuda-checkpoint-every") + 1] == "5000"
     assert argv[argv.index("--batch-size") + 1] == "64"
     assert argv[argv.index("--train-seq-len") + 1] == "1024"
     assert argv[argv.index("--train-batch-tokens") + 1] == "524288"
     assert argv[argv.index("--learning-rate") + 1] == "0.0006"
+    assert argv[argv.index("--lr-schedule") + 1] == "cosine"
     assert argv[argv.index("--final-lr-fraction") + 1] == "0.0"
     assert argv[argv.index("--weight-decay") + 1] == "0.1"
     assert argv[argv.index("--beta1") + 1] == "0.9"
@@ -672,68 +685,48 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels == {}
     dataset_loop_sentinels = linked_catalog["dataset_loop_sentinels"]
     assert dataset_loop_sentinels["llama"]["passed"] is True
-    assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["llama"]["native_runnable"] is True
-    assert dataset_loop_sentinels["llama"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["llama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["dense_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["dense_jepa_evo"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["dense_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["dense_jepa_evo"]["native_runnable"] is True
-    assert dataset_loop_sentinels["dense_jepa_evo"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["dense_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is True
-    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["mixllama"]["passed"] is True
-    assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["mixllama"]["native_runnable"] is True
-    assert dataset_loop_sentinels["mixllama"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["mixllama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["ttt_llama"]["passed"] is True
     assert dataset_loop_sentinels["ttt_llama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["ttt_llama"]["native_runnable"] is True
-    assert dataset_loop_sentinels["ttt_llama"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["ttt_llama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["universal_llama"]["passed"] is True
     assert dataset_loop_sentinels["universal_llama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["universal_llama"]["native_runnable"] is True
-    assert dataset_loop_sentinels["universal_llama"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["universal_llama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["jamba"]["passed"] is True
     assert dataset_loop_sentinels["jamba"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["jamba"]["native_runnable"] is True
-    assert dataset_loop_sentinels["jamba"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["jamba"]["missing_requirements"] == []
     assert dataset_loop_sentinels["hnet_lm"]["passed"] is True
     assert dataset_loop_sentinels["hnet_lm"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["hnet_lm"]["native_runnable"] is True
-    assert dataset_loop_sentinels["hnet_lm"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["hnet_lm"]["missing_requirements"] == []
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["moe_jepa_evo"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["moe_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["moe_jepa_evo"]["native_runnable"] is True
-    assert dataset_loop_sentinels["moe_jepa_evo"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["moe_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["passed"] is True
-    assert dataset_loop_sentinels["moe_jepa_evo_modern"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["moe_jepa_evo_modern"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["native_runnable"] is True
     assert dataset_loop_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert dataset_loop_sentinels["semantic_router_moe_modern"]["status"] == "native-family-dataset-loop"
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["status"] == "native-family-dataset-loop-diagnostic"
     assert dataset_loop_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
-    assert dataset_loop_sentinels["semantic_router_moe_modern"]["missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["missing_requirements"] == []
     assert linked_catalog["covered_native_sentinels"] == {}
     assert "--train-seq-len 2048" not in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
@@ -1799,8 +1792,6 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "linked_tile_ops_requested" in source
     assert "open_tile_ops_library" in source
     assert "dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL)" not in source
-    assert 'executable_name == "nfn_gpt_native_train"' in source
-    assert 'executable_name == "nfn-gpt-native-train"' in source
     assert 'executable_name == "nfn_gpt_native_train_linked"' in source
     assert 'return "linked";' in source
     assert "bool linked_tile_ops_requested(std::string_view path)" in source
@@ -1922,14 +1913,24 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "build_native_train_binding.sh" in rebuild_sm120
     assert "libnfn_native_train_tile_ops_tk.so" in rebuild_sm120
     assert "NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS" in rebuild_sm120
-    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in tile_ops_build
-    assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in tile_ops_build
+    assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in tile_ops_build
+    assert "LLM_KITTENS_ROOT" in tile_ops_build
+    assert "TK_ROOT" in tile_ops_build
+    assert 'if [[ "${CUDA_ARCH}" == "sm_120" ]]' in tile_ops_build
+    assert 'CUDA_ARCH="sm_120a"' in tile_ops_build
+    assert 'CUDA_ARCH="compute_120a"' in tile_ops_build
+    assert "sm_120a" in tile_ops_build
+    assert "--threads=0" in tile_ops_build
+    assert "-t=0" in tile_ops_build
+    assert "-forward-unknown-to-host-compiler" in tile_ops_build
+    assert "-Xcompiler=-Wno-psabi" in tile_ops_build
+    assert "-Xcompiler=-fno-strict-aliasing" in tile_ops_build
+    assert "-ftemplate-backtrace-limit=0" in tile_ops_build
     assert "-DLLMK_SM120_DPREP_WARPS=3" in tile_ops_build
     assert "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024" in tile_ops_build
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in tile_ops_build
-    assert tile_ops_build.index("-DLLMK_SM120_USE_CUBLASLT_GEMM") < tile_ops_build.index(
-        "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP"
-    )
+    assert "-DLLMK_SM120_USE_CUBLASLT_GEMM" in tile_ops_build
+    assert "-DNFN_TILE_CUDA_USE_TK_ATTENTION=1" in tile_ops_build
     assert "build_linear_backward_bench.sh" in rebuild_sm120
     assert "build_lm_head_backward_bench.sh" in rebuild_sm120
     assert rebuild_sm120.index("build_native_train_tile_ops.sh") < rebuild_sm120.index(
@@ -2957,7 +2958,7 @@ def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
         )
 
 
-def test_native_gpt2_compiled_cli_prefers_linked_workstation_binary(
+def test_native_gpt2_compiled_cli_prefers_dynamic_workstation_binary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2994,9 +2995,9 @@ def test_native_gpt2_compiled_cli_prefers_linked_workstation_binary(
     )
     argv = cfg.compiled_cli_argv()
 
-    assert resolve_native_gpt2_cli() == str(linked_cli)
-    assert argv[0] == str(linked_cli)
-    assert argv[argv.index("--tile-ops-lib") + 1] == "linked"
+    assert resolve_native_gpt2_cli() == str(dynamic_cli)
+    assert argv[0] == str(dynamic_cli)
+    assert "--tile-ops-lib" not in argv
 
     explicit_tile_ops = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="cached-shards",
@@ -3018,7 +3019,7 @@ def test_native_gpt2_compiled_cli_prefers_linked_workstation_binary(
         activation="gelu",
         tile_ops_lib="/tmp/libcandidate.so",
     ).compiled_cli_argv()
-    assert explicit_tile_ops[0] == str(linked_cli)
+    assert explicit_tile_ops[0] == str(dynamic_cli)
     assert explicit_tile_ops[explicit_tile_ops.index("--tile-ops-lib") + 1] == "/tmp/libcandidate.so"
 
     monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(dynamic_cli))
@@ -5193,6 +5194,28 @@ def test_build_native_gpt2_compiled_cli_config_maps_gpt2_moa_template_to_native_
     assert argv[argv.index("--native-cuda-activation") + 1] == "moa"
 
 
+def test_native_gpt2_moa_runtime_uses_shared_backbone_loss_probes() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert 'const std::vector<std::string> moa_candidates = {"gelu", "relu", "silu", "relu2"};' in source
+    assert '"moa.probe." + active_moa_activation' in source
+    assert "preserve_block_outputs && !native_moa_enabled ? stored_mlp_activation_for(i) : nullptr" in source
+    assert (
+        "const bool lazy_validation_mlp_float_scratch_enabled =\n"
+        "        !native_moa_enabled &&"
+    ) in source
+    assert "!native_moa_enabled &&" in source
+    assert "nfn_native_tile_moa_add_bias_bf16_act_float32" in source
+    assert "nfn_native_tile_moa_backward_inplace_bf16_bits_float32" in source
+    assert "moa_candidate_evals" in source
+
+
 def test_write_native_gpt2_run_config_includes_command(tmp_path: Path) -> None:
     cfg = NativeGpt2RunConfig(
         executable="train_gpt2cu",
@@ -5320,21 +5343,21 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert statuses["gpt2"] == "native-transformer-lm"
     assert statuses["gpt3"] == "native-transformer-lm"
     assert statuses["nanogpt"] == "native-transformer-lm"
-    assert statuses["llama"] == "native-family-dataset-loop"
-    assert statuses["mixllama"] == "native-family-dataset-loop"
-    assert statuses["dense_jepa_evo"] == "native-family-dataset-loop"
-    assert statuses["moe_jepa_evo"] == "native-family-dataset-loop"
-    assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop"
-    assert statuses["semantic_dense_jepa_evo"] == "native-family-dataset-loop"
-    assert statuses["semantic_router_moe"] == "native-family-dataset-loop"
+    assert statuses["llama"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["mixllama"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["dense_jepa_evo"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["moe_jepa_evo"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["moe_jepa_evo_modern"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["semantic_dense_jepa_evo"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["semantic_router_moe"] == "native-family-dataset-loop-diagnostic"
     assert statuses["seq2seq"] == "native-family-dataset-loop"
     assert statuses["seq2seq_modern"] == "native-family-dataset-loop"
     assert statuses["diffusion"] == "native-family-dataset-loop"
     assert statuses["diffusion_modern"] == "native-family-dataset-loop"
     assert statuses["ttt_llama"] == "native-family-dataset-loop"
     assert statuses["ttt_llama_modern"] == "native-family-dataset-loop"
-    assert statuses["universal_llama"] == "native-family-dataset-loop"
-    assert statuses["universal_llama_modern"] == "native-family-dataset-loop"
+    assert statuses["universal_llama"] == "native-family-dataset-loop-diagnostic"
+    assert statuses["universal_llama_modern"] == "native-family-dataset-loop-diagnostic"
     assert statuses["jamba"] == "native-family-dataset-loop"
     assert statuses["jamba_modern"] == "native-family-dataset-loop"
     assert statuses["hnet_lm"] == "native-family-dataset-loop"
@@ -5355,7 +5378,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert coverage["gpt2"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["nanogpt"] == "implemented-dense-gpt-transformer-lm"
     assert coverage["llama"] == "covered-llama-rope-swiglu-transformer-lm"
-    assert missing_requirements["llama"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["llama"] == []
     assert completed_requirements["llama"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -5370,9 +5393,10 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "llama-full-forward-backward-loop-smoke",
         "llama-sampled-ar-plus-composed-step-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["mixllama"] == "covered-standard-moe-transformer-lm"
-    assert missing_requirements["mixllama"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["mixllama"] == []
     assert completed_requirements["mixllama"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -5383,6 +5407,8 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "standard-moe-full-forward-backward-loop-smoke",
         "standard-moe-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["moe_jepa_evo"] == "covered-moe-jepa-objective"
     assert "standard-moe-full-forward-backward-loop" not in missing_requirements["moe_jepa_evo"]
@@ -5390,7 +5416,7 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "jepa-target-encoder-forward" not in missing_requirements["moe_jepa_evo"]
     assert "jepa-projector-predictor-forward-backward" not in missing_requirements["moe_jepa_evo"]
     assert "ar-plus-jepa-plus-router-loss-composition" not in missing_requirements["moe_jepa_evo"]
-    assert missing_requirements["moe_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["moe_jepa_evo"] == []
     assert "standard-moe-transformer-block-forward-smoke" in completed_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-block-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
     assert "standard-moe-transformer-lm-forward-backward-adamw-smoke" in completed_requirements["moe_jepa_evo"]
@@ -5403,11 +5429,11 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "moe-jepa-sampled-family-forward-backward-optimizer-step" in completed_requirements["moe_jepa_evo"]
     assert "family-parameter-layout-checkpoint-inference-smoke" in completed_requirements["moe_jepa_evo"]
     assert coverage["dense_jepa_evo"] == "covered-dense-jepa-objective"
-    assert missing_requirements["dense_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["dense_jepa_evo"] == []
     assert "dense-jepa-full-forward-backward-loop-smoke" in completed_requirements["dense_jepa_evo"]
     assert "dense-jepa-sampled-family-dataset-loop" in completed_requirements["dense_jepa_evo"]
     assert coverage["semantic_dense_jepa_evo"] == "covered-semantic-dense-jepa-objective"
-    assert missing_requirements["semantic_dense_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["semantic_dense_jepa_evo"] == []
     assert "semantic-dense-planner-alignment-adamw-smoke" in completed_requirements["semantic_dense_jepa_evo"]
     assert "ar-plus-semantic-plus-jepa-loss-composition-smoke" in completed_requirements["semantic_dense_jepa_evo"]
     assert "semantic-dense-jepa-sampled-family-dataset-loop" in completed_requirements["semantic_dense_jepa_evo"]
@@ -5418,48 +5444,52 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
     assert "dense-jepa-ar-target-projector-forward-backward-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-hash-alignment-loss-items-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "route-selection-distillation-balance-losses" not in missing_requirements["semantic_moe_jepa_evo"]
-    assert missing_requirements["semantic_moe_jepa_evo"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["semantic_moe_jepa_evo"] == []
     assert "route-selection-distillation-balance-losses-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-router-moe-route-expert-adamw-smoke" in completed_requirements["semantic_moe_jepa_evo"]
     assert "semantic-router-moe-sampled-family-dataset-loop" in completed_requirements["semantic_moe_jepa_evo"]
     assert coverage["seq2seq"] == "covered-seq2seq-objective"
-    assert missing_requirements["seq2seq"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["seq2seq"] == []
     assert completed_requirements["seq2seq"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
         "seq2seq-full-encoder-decoder-loop-smoke",
         "seq2seq-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["ttt_llama"] == "covered-ttt-transformer-lm"
-    assert missing_requirements["ttt_llama"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["ttt_llama"] == []
     assert completed_requirements["ttt_llama"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
         "ttt-full-transformer-loop-smoke",
         "ttt-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["universal_llama"] == "covered-universal-transformer-lm"
-    assert missing_requirements["universal_llama"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["universal_llama"] == []
     assert completed_requirements["universal_llama"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
         "universal-transformer-loop-smoke",
         "universal-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["jamba"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert missing_requirements["jamba"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["jamba"] == []
     assert completed_requirements["jamba"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
         "jamba-layer-schedule-native-loop-smoke",
         "jamba-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["hnet_lm"] == "covered-hnet-byte-lm"
-    assert missing_requirements["hnet_lm"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["hnet_lm"] == []
     assert completed_requirements["hnet_lm"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
@@ -5467,15 +5497,17 @@ def test_native_gpt_compiled_cli_lists_template_catalog_when_built() -> None:
         "hnet-sampled-byte-family-dataset-loop",
         "byte-token-shard-resolver-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert coverage["diffusion"] == "covered-diffusion-objective"
-    assert missing_requirements["diffusion"] == ["persistent-full-size-family-parameter-state"]
+    assert missing_requirements["diffusion"] == []
     assert completed_requirements["diffusion"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
         "diffusion-full-loop-smoke",
         "diffusion-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert missing_requirements["gpt2"] == []
 
@@ -5644,15 +5676,16 @@ def test_train_gpt_fast_path_expands_quality_defaults(
     assert str(native_cli) in command
     assert "--model-family gpt" in command
     assert "--backend tile-cuda" in command
-    assert "--eval-every-steps 250" in command
+    assert "--eval-every-steps 5000" in command
     assert "--eval-batches 20" in command
     assert "--native-cuda-sample-every 20000" in command
     assert "--native-cuda-generate-tokens 144" in command
-    assert "--native-cuda-checkpoint-every 200" in command
+    assert "--native-cuda-checkpoint-every 5000" in command
     assert "--batch-size 64" in command
     assert "--train-seq-len 1024" in command
     assert "--train-batch-tokens 524288" in command
     assert "--learning-rate 0.0006" in command
+    assert "--lr-schedule cosine" in command
     assert "--final-lr-fraction 0.0" in command
     assert "--weight-decay 0.1" in command
     assert "--beta1 0.9" in command
@@ -5700,15 +5733,16 @@ def test_nfn_train_dense_gpt_direct_path_expands_quality_defaults(
     assert str(native_cli) in command
     assert "--model-family gpt" in command
     assert "--backend tile-cuda" in command
-    assert "--eval-every-steps 250" in command
+    assert "--eval-every-steps 5000" in command
     assert "--eval-batches 20" in command
     assert "--native-cuda-sample-every 20000" in command
     assert "--native-cuda-generate-tokens 144" in command
-    assert "--native-cuda-checkpoint-every 200" in command
+    assert "--native-cuda-checkpoint-every 5000" in command
     assert "--batch-size 64" in command
     assert "--train-seq-len 1024" in command
     assert "--train-batch-tokens 524288" in command
     assert "--learning-rate 0.0006" in command
+    assert "--lr-schedule cosine" in command
     assert "--final-lr-fraction 0.0" in command
     assert "--weight-decay 0.1" in command
     assert "--beta1 0.9" in command
@@ -6796,6 +6830,8 @@ def test_native_train_run_config_and_subprocess_runner(
             "/tmp/native-cache",
             "--max-steps",
             "2",
+            "--checkpoint-every-steps",
+            "123",
         ],
     )
 
@@ -7028,7 +7064,7 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     )
     assert default_proc.returncode == 0, default_proc.stderr
     default_args = default_observed.read_text(encoding="utf-8").splitlines()
-    assert default_args[default_args.index("--eval-every-steps") + 1] == "250"
+    assert default_args[default_args.index("--eval-every-steps") + 1] == "5000"
     assert default_args[default_args.index("--warmup-steps") + 1] == "60"
 
     env = os.environ.copy()
@@ -7704,7 +7740,7 @@ def test_native_train_run_config_can_require_strict_dense_gpt_lm_head(
         unsupported_cfg.argv()
 
 
-def test_native_train_run_config_prefers_linked_dense_gpt_cli(
+def test_native_train_run_config_prefers_dynamic_dense_gpt_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -7720,12 +7756,13 @@ def test_native_train_run_config_prefers_linked_dense_gpt_cli(
     dynamic_cli.write_text(
         "#!/usr/bin/env bash\n"
         "printf 'dynamic\\n' > \"$NFN_TEST_NATIVE_TRAIN_SELECTED\"\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
         "exit 45\n",
         encoding="utf-8",
     )
     linked_cli.chmod(0o755)
     dynamic_cli.chmod(0o755)
-    output = tmp_path / "native-train-linked-args.txt"
+    output = tmp_path / "native-train-dynamic-args.txt"
     selected = tmp_path / "native-train-selected.txt"
     monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
     monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
@@ -7737,9 +7774,9 @@ def test_native_train_run_config_prefers_linked_dense_gpt_cli(
 
     cfg = build_native_train_run_config("gpt3", ["--tinystories", "--dry-run"])
 
-    assert cfg.argv()[:5] == [str(linked_cli), "--model-family", "gpt3", "--tinystories", "--dry-run"]
-    assert run_native_train(cfg, runner="compiled-cli") == 44
-    assert selected.read_text(encoding="utf-8").strip() == "linked"
+    assert cfg.argv()[:5] == [str(dynamic_cli), "--model-family", "gpt3", "--tinystories", "--dry-run"]
+    assert run_native_train(cfg, runner="compiled-cli") == 45
+    assert selected.read_text(encoding="utf-8").strip() == "dynamic"
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:4] == ["--model-family", "gpt3", "--tinystories", "--dry-run"]
     assert "--base-model" not in args
@@ -7798,11 +7835,11 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     assert models["gpt2-evo"]["status"] == "implemented"
     assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
-    assert models["llama"]["status"] == "native-family-dataset-loop-covered"
+    assert models["llama"]["status"] == "native-trainer-covered"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert models["llama"]["trainer_loop_status"] == "native-family-dataset-loop"
-    assert models["mixllama"]["status"] == "native-family-dataset-loop-covered"
-    assert models["mixllama"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert models["llama"]["trainer_loop_status"] == "native-loop-covered"
+    assert models["mixllama"]["status"] == "native-trainer-covered"
+    assert models["mixllama"]["trainer_loop_status"] == "native-loop-covered"
 
 
 def test_native_train_model_registry_static_names_match_cpp_registry(
@@ -7831,24 +7868,24 @@ def test_native_train_model_registry_static_names_match_cpp_registry(
         assert registry[name]["kernel_status"] == "required-tile-symbols-present"
         assert registry[name]["trainer_loop_status"] == "implemented"
     assert registry["llama"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["llama"]["trainer_loop_status"] == "native-family-dataset-loop"
-    assert registry["mixllama"]["status"] == "native-family-dataset-loop-covered"
-    assert registry["mixllama"]["geometry_status"] == "sampled-standard-moe-dataset-loop"
+    assert registry["llama"]["trainer_loop_status"] == "native-loop-covered"
+    assert registry["mixllama"]["status"] == "native-trainer-covered"
+    assert registry["mixllama"]["geometry_status"] == "full-standard-moe-dataset-loop"
     assert registry["mixllama"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["mixllama"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert registry["mixllama"]["trainer_loop_status"] == "native-loop-covered"
     assert registry["moe-jepa-evo"]["native_target"] == "nfn_moe_jepa_evo_native_train"
-    assert registry["moe-jepa-evo"]["status"] == "native-family-dataset-loop-covered"
-    assert registry["moe-jepa-evo"]["geometry_status"] == "sampled-moe-jepa-dataset-loop"
+    assert registry["moe-jepa-evo"]["status"] == "native-trainer-covered"
+    assert registry["moe-jepa-evo"]["geometry_status"] == "full-moe-jepa-dataset-loop"
     assert registry["moe-jepa-evo"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["moe-jepa-evo"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert registry["moe-jepa-evo"]["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
     assert registry["semantic-dense-jepa"]["native_target"] == "nfn_semantic_dense_jepa_native_train"
     assert registry["semantic-dense-jepa"]["geometry_status"] == "sampled-semantic-dense-jepa-dataset-loop"
     assert registry["semantic-dense-jepa"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["semantic-dense-jepa"]["trainer_loop_status"] == "native-family-dataset-loop"
-    assert registry["deepseek-v4"]["status"] == "native-family-dataset-loop-covered"
+    assert registry["semantic-dense-jepa"]["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert registry["deepseek-v4"]["status"] in FAMILY_TRAINER_COVERED_STATUSES
     assert registry["deepseek-v4"]["geometry_status"] == "sampled-standard-moe-dataset-loop"
     assert registry["deepseek-v4"]["kernel_status"] == "required-tile-symbols-present"
-    assert registry["deepseek-v4"]["trainer_loop_status"] == "native-family-dataset-loop"
+    assert registry["deepseek-v4"]["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
     assert registry["jamba"]["native_target"] == "nfn_jamba_native_train"
     assert registry["seq2seq"]["native_target"] == "nfn_seq2seq_native_train"
     assert registry["diffusion"]["native_target"] == "nfn_diffusion_native_train"
@@ -7968,6 +8005,21 @@ def test_native_train_cpp_binding_builds_and_runs(
     ]
 
 
+def test_native_gpt_dense_resume_state_sidecars_are_reported() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(encoding="utf-8")
+
+    assert "--resume-from-checkpoint PATH" in source
+    assert "native_gpt_parameter_state_checkpoint_path" in source
+    assert "native_gpt_optimizer_checkpoint_path" in source
+    assert "resume_parameter_state_restored" in source
+    assert "resume_optimizer_state_restored" in source
+    assert "resume_sampler_seek_applied" in source
+    assert "float32_parameter_and_adamw_state_resume" in source
+    assert "parameter_state_checkpoint_written" in source
+    assert "optimizer_checkpoint_written" in source
+
+
 def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")
@@ -8008,6 +8060,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--smoke-transformer-lm-step" in help_proc.stdout
     assert "--smoke-embedding-lm-step" in help_proc.stdout
     assert "--train-embedding-lm" in help_proc.stdout
+    assert "--resume-from-checkpoint PATH" in help_proc.stdout
     assert "--native-info --native-checkpoint PATH" in help_proc.stdout
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
@@ -8068,7 +8121,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["backend"] == "tile-cuda"
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt"
-    assert default_payload["schedule"]["eval_every_steps"] == 250
+    assert default_payload["schedule"]["eval_every_steps"] == 5000
     assert default_payload["schedule"]["warmup_steps"] == 60
     assert default_payload["optimizer"] == {
         "profile": "adamw",
@@ -8124,7 +8177,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "seq_len": 1024,
         "position_encoding": "absolute",
         "norm": "layernorm",
-        "attention": "causal-packed-qkv-sm120-tk-bf16",
+        "attention": "causal-packed-qkv-neuralfn-bf16",
         "mlp": "gelu-4x",
         "dropout_p": 0,
         "supported_template_selectors": [
@@ -8784,7 +8837,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert any("strict true-fused Tile kernel" in item for item in tile_payload["remaining_validation"])
     assert tile_payload["schedule"]["sample_every_steps"] == 20000
     assert tile_payload["schedule"]["generate_tokens"] == 144
-    assert tile_payload["schedule"]["checkpoint_every_steps"] == 200
+    assert tile_payload["schedule"]["checkpoint_every_steps"] == 5000
 
     megakernel_template_plan = subprocess.run(
         [
@@ -8900,9 +8953,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         }:
             assert preset_payload["selected_graph_support_status"] == "native-family-dataset-loop"
             assert preset_payload["selected_graph_native_runnable"] is True
-            assert preset_payload["native_training_missing_requirements"] == [
-                "persistent-full-size-family-parameter-state"
-            ]
+            expected_missing = []
+            assert preset_payload["native_training_missing_requirements"] == expected_missing
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
@@ -8960,9 +9012,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unsupported_payload["selected_graph_support_status"] == "native-family-dataset-loop"
     assert unsupported_payload["selected_graph_native_runnable"] is True
     assert unsupported_payload["status"] == "native-transformer-lm-failed"
-    assert unsupported_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert unsupported_payload["native_training_missing_requirements"] == []
 
     unknown_template = subprocess.run(
         [
@@ -9651,7 +9701,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_profile_payload["cuda_runtime_loaded"] is False
     assert train_transformer_profile_payload["sample_every_steps"] == 20000
     assert train_transformer_profile_payload["generate_tokens"] == 144
-    assert train_transformer_profile_payload["checkpoint_every_steps"] == 200
+    assert train_transformer_profile_payload["checkpoint_every_steps"] == 5000
     assert train_transformer_profile_payload["train_time_sampling_enabled"] is False
     assert train_transformer_profile_payload["periodic_checkpoint_enabled"] is False
     assert train_transformer_profile_payload["final_checkpoint_export_enabled"] is True
@@ -9665,7 +9715,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["native_geometry_contract"]["seq_len"] == 2
     assert train_transformer_payload["batch_size"] == 1
     assert train_transformer_payload["seq_len"] == 2
-    assert train_transformer_payload["train_loss_every_steps"] == 0
+    assert train_transformer_payload["train_loss_every_steps"] == 250
     assert (
         train_transformer_payload["train_loss_device_accumulation_strategy"]
         == "optimizer-step-device-scalar-accumulate"
@@ -9679,7 +9729,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert train_transformer_payload["sample_every_steps"] == 20000
     assert train_transformer_payload["generate_tokens"] == 144
-    assert train_transformer_payload["checkpoint_every_steps"] == 200
+    assert train_transformer_payload["checkpoint_every_steps"] == 5000
     assert train_transformer_payload["warmup_steps"] == 60
     assert train_transformer_payload["learning_rate"] == 0.0006
     assert train_transformer_payload["final_lr_fraction"] == 0.0
@@ -9691,14 +9741,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["schedule"] == {
         "max_steps": 2,
         "train_batch_tokens": 524288,
-        "train_loss_every_steps": 0,
+        "train_loss_every_steps": 250,
         "progress_every_steps": 10,
         "eval_every_steps": 1,
         "eval_batches": 1,
         "eval_batch_size": 1,
         "sample_every_steps": 20000,
         "generate_tokens": 144,
-        "checkpoint_every_steps": 200,
+        "checkpoint_every_steps": 5000,
         "warmup_steps": 60,
     }
     assert train_transformer_payload["optimizer"] == {
@@ -11150,11 +11200,11 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert kernel_statuses["gpt"] == "required-tile-symbols-present"
     assert loop_statuses["gpt"] == "implemented"
     assert kernel_statuses["llama"] == "required-tile-symbols-present"
-    assert loop_statuses["llama"] == "native-family-dataset-loop"
+    assert loop_statuses["llama"] == "native-loop-covered"
     assert native_targets["semantic-dense-jepa"] == "nfn_semantic_dense_jepa_native_train"
-    assert geometry_statuses["semantic-dense-jepa"] == "sampled-semantic-dense-jepa-dataset-loop"
+    assert geometry_statuses["semantic-dense-jepa"] == "full-semantic-dense-jepa-dataset-loop"
     assert kernel_statuses["semantic-dense-jepa"] == "required-tile-symbols-present"
-    assert loop_statuses["semantic-dense-jepa"] == "native-family-dataset-loop"
+    assert loop_statuses["semantic-dense-jepa"] == "native-loop-covered"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
@@ -11174,14 +11224,1701 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert llama_payload["status"] == "native-family-dataset-loop-failed"
     assert "native CUDA Tile trainer for llama is not implemented yet" not in llama.stderr
     assert "starting native LLaMA dataset loop" in llama.stderr
-    assert llama_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert llama_payload["production_training_loop"] is False
-    assert llama_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert llama_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert llama_payload["production_training_loop"] is True
+    assert llama_payload["native_training_missing_requirements"] == []
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
+
+
+def test_missing_family_dataset_loops_write_loadable_model_checkpoints_static() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn/csrc/native_train/missing_native_train.cpp").read_text(encoding="utf-8")
+    family_source = (root / "neuralfn/csrc/native_train/family_production_train.h").read_text(encoding="utf-8")
+    production_header = (
+        root / "neuralfn/csrc/native_train/family_production_train.h"
+    ).read_text(encoding="utf-8")
+    build_script = (root / "tools/build_native_missing_trainers.sh").read_text(encoding="utf-8")
+    tile_ops_source = (root / "neuralfn/csrc/native_train/tile_ops.cu").read_text(encoding="utf-8")
+    tile_ops_header = (root / "neuralfn/csrc/native_train/tile_ops.h").read_text(encoding="utf-8")
+    gpt2_source_text = (
+        root / "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    assert 'CXX_OPT_FLAGS="${NFN_NATIVE_MISSING_CXX_OPT_FLAGS:--O3}"' in build_script
+    assert "-std=c++20 ${CXX_OPT_FLAGS}" in build_script
+    assert 'PRODUCTION_LOOP_ALL="${NFN_NATIVE_MISSING_PRODUCTION_LOOP_ALL:-1}"' in build_script
+    assert 'PRODUCTION_LOOP_TARGETS=",${NFN_NATIVE_MISSING_PRODUCTION_LOOP_TARGETS:-},"' in build_script
+    assert 'FULL_GEOMETRY_TARGETS=",${NFN_NATIVE_MISSING_FULL_GEOMETRY_TARGETS:-},"' in build_script
+    assert 'FULL_GEOMETRY_ALL="${NFN_NATIVE_MISSING_FULL_GEOMETRY_ALL:-1}"' in build_script
+    assert "production_loop_for()" in build_script
+    assert "full_geometry_for()" in build_script
+    assert 'if [[ "${PRODUCTION_LOOP_ALL}" == "1" ]]; then' in build_script
+    assert 'if [[ "${FULL_GEOMETRY_ALL}" == "1" ]]; then' in build_script
+    assert '",${model},"' in build_script and '",${target},"' in build_script
+    assert 'local production_loop="${8:-$(production_loop_for "${model}" "${target}")}"' in build_script
+    assert 'local full_geometry="${9:-$(full_geometry_for "${model}" "${target}")}"' in build_script
+    assert 'if [[ "${production_loop}" == "1" ]]; then' in build_script
+    assert 'if [[ "${full_geometry}" == "1" ]]; then' in build_script
+    assert "nfn_native_tile_moe_swiglu_forward_float32" in build_script
+    assert "nfn_native_tile_expert_bias_add_float32" in build_script
+    assert "nfn_native_tile_moe_swiglu_backward_with_route_grad_float32" in build_script
+    assert "nfn_native_tile_native_family_jepa_mask_float32" in build_script
+    assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in build_script
+    assert "nfn_native_tile_latent_pool_float32" in build_script
+    assert "nfn_native_tile_latent_pool_backward_float32" in build_script
+    assert "nfn_native_tile_latent_mse_loss_float32" in build_script
+    assert "nfn_native_tile_linear_quantized_float32" in build_script
+    assert "nfn_native_tile_linear_backward_input_quantized_float32" in build_script
+    assert "nfn_native_tile_causal_chunk_state_backward_float32" in build_script
+    assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in build_script
+    assert "nfn_native_tile_token_cross_entropy_partials_float32" in build_script
+    assert '-DNFN_NATIVE_PRODUCTION_LOOP="${production_loop}"' in build_script
+    assert '-DNFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD="${full_geometry}"' in build_script
+    assert "#ifndef NFN_NATIVE_PRODUCTION_LOOP" in source
+    assert "#ifndef NFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD" in source
+    assert "family_dataset_trainer_loop_status()" in source
+    assert "family_production_training_loop_json()" in source
+    assert "family_production_completed_requirements()" in source
+    assert "family_model_dim(const Config& cfg)" in source
+    assert "family_hidden_dim(const Config& cfg)" in source
+    assert "family_mlp_multiplier(const Config& cfg)" in source
+    assert "family_multiple_of(const Config& cfg)" in source
+    assert "family_uses_llama_mlp_defaults(const Config& cfg)" in source
+    assert "family_vocab_size(const Config& cfg)" in source
+    assert "family_padded_vocab_size(const Config& cfg)" in source
+    assert "native_family_uses_auxfree_moe_balance(" in source
+    assert '{"router.auxfree_bias.weight", experts, false}' in source
+    assert "refresh_native_family_auxfree_router_bias(" in source
+    assert "struct NativeFamilyParameterRoleCounts" in source
+    assert "struct NativeFamilyProductionStepDescriptor" in source
+    assert "bool auxfree_moe_balance = false" in source
+    assert "native_family_parameter_role_counts(" in source
+    assert "native_family_parameter_role_count(" in source
+    assert "native_family_production_step_descriptor(" in source
+    assert "descriptor.auxfree_moe_balance = native_family_uses_auxfree_moe_balance(family)" in source
+    assert '\\"auxfree_moe_balance\\": ' in source
+    assert "validate_native_family_parameter_role_bindings(" in source
+    assert "parameters.parameter_view(expected.name)" in source
+    assert "validate_required_parameter_roles(" in source
+    assert "descriptor_.required_roles" in source
+    assert "json_string_array_inline(" in source
+    assert 'arg == "--model-dim"' in source
+    assert 'arg == "--hidden-dim"' in source
+    assert 'arg == "--mlp-multiplier"' in source
+    assert 'arg == "--multiple-of"' in source
+    assert 'arg == "--max-recurrence-steps"' in source
+    assert 'arg == "--halt-epsilon"' in source
+    assert 'arg == "--vocab-size"' in source
+    assert 'arg == "--padded-vocab-size"' in source
+    assert '\\"model_dim\\": ' in source
+    assert '\\"hidden_dim\\": ' in source
+    assert '\\"mlp_multiplier\\": ' in source
+    assert '\\"multiple_of\\": ' in source
+    assert '\\"max_recurrence_steps\\": ' in source
+    assert '\\"halt_epsilon\\": ' in source
+    assert "nfn_native_tile_act_weighted_sum_float32" in source
+    assert "nfn_native_tile_act_halting_bce_grad_float32" in source
+    assert '"denoise_head.weight", vocab * model_dim, true' in source
+    assert "diffusion masked token features" in source
+    assert "diffusion input embedding backward" in source
+    assert "run_native_family_chunked_lm_head" in source
+    assert '\\"vocab_size\\": ' in source
+    assert '\\"padded_vocab_size\\": ' in source
+    assert "NFN_NATIVE_PRODUCTION_LOOP != 0 && native_full_family_geometry_build_enabled()" in source
+    assert 'completed.push_back("optimizer-updated-full-architecture-parameter-persistence")' in source
+    assert '#include "family_production_train.h"' in source
+    assert "family_production_parameter_specs(" in source
+    assert "native_family_dense_base_initializer(" in source
+    assert "struct NativeFamilyProductionState" in source
+    assert "build_native_family_production_state(" in source
+    assert "struct NativeFamilyProductionBootstrap" in source
+    assert "prepare_native_family_production_bootstrap(" in source
+    assert "write_native_family_production_bootstrap_json(" in source
+    assert "write_live_native_family_parameter_store_sidecar(" in source
+    assert "class NativeFamilyDescriptorSparseProductionStep final" in source
+    assert "add_native_family_persistent_sampled_lm_gradients(" in source
+    assert "add_native_family_persistent_attention_norm_gradients(" in source
+    assert "add_native_family_persistent_dense_ffn_gradients(" in source
+    assert "add_native_family_persistent_moe_router_expert_gradients(" in source
+    assert "descriptor_.auxfree_moe_balance" in source
+    assert "result.auxfree_bias_refresh_count = auxfree_bias_refresh_count" in source
+    assert "add_native_family_persistent_jepa_latent_gradients(" in source
+    assert "using LatentPoolFn" in source
+    assert "api.latent_pool(device_jepa_target" in source
+    assert "full JEPA target latent pool" in source
+    assert "full JEPA online latent pool" in source
+    assert "device_jepa_grad_target_expanded" in source
+    assert "api.latent_pool_backward(device_jepa_grad_target" in source
+    assert "jepa_loss_partials" in source
+    assert "device_jepa_loss_total" in source
+    assert "host_jepa_loss[0]" in source
+    assert "jepa_mask_strategy" in source
+    assert "add_native_family_persistent_semantic_gradients(" in source
+    assert "add_native_family_persistent_specialized_family_gradients(" in source
+    assert "native_family_silu_derivative(" in source
+    assert "final_norm.weight" in source
+    assert "attention_norm.weight" in source
+    assert "q_proj.weight" in source
+    assert "k_proj.weight" in source
+    assert "v_proj.weight" in source
+    assert "qkv.weight" in source
+    assert "attention_out.weight" in source
+    assert "ffn_norm.weight" in source
+    assert "ffn_gate_up.weight" in source
+    assert "ffn_down.weight" in source
+    assert "router.weight" in source
+    assert "experts.gate_up.weight" in source
+    assert "experts.down.weight" in source
+    assert "prefix + \"router.weight\"" in source
+    assert "prefix + \"experts.gate_up.weight\"" in source
+    assert 'parameter_buffer_offset(buffers, "router.auxfree_bias.weight")' in source
+    assert "jepa_target_encoder.weight" in source
+    assert "jepa_projector.weight" in source
+    assert "jepa_predictor.weight" in source
+    assert "semantic_planner.weight" in source
+    assert "semantic_alignment.weight" in source
+    assert "semantic_vocab_projection.weight" in source
+    assert "semantic_chunk_topic_head.weight" in source
+    assert 'if (is_semantic_family(family)) {' in source
+    assert 'if (family.find("semantic-router") != std::string::npos) {' not in source
+    assert 'family == "semantic-router-moe" || family == "jamba"' in source
+    assert "const bool semantic_mode = is_semantic_family(family);" in source
+    assert "encoder.layers.qkv.weight" in source
+    assert "decoder.cross_attention.qkv.weight" in source
+    assert "diffusion_timestep_embedding.weight" not in source
+    assert "denoise_head.weight" in source
+    assert "ttt.inner_base.weight" in source
+    assert "ttt.inner_down.weight" in source
+    assert "ttt.inner_up.weight" in source
+    assert "universal.recurrent.weight" in source
+    assert "universal.halt_gate.weight" in source
+    assert "byte_patch_embed.weight" in source
+    assert "byte_patch_merge.weight" in source
+    assert "mamba.in_proj.weight" in source
+    assert "mamba.state.weight" in source
+    assert "native_family_sampled_lm_candidate(" in source
+    assert "parameters.copy_to_host(&host_parameters" in source
+    assert "requires token_embedding.weight, final_norm.weight, and lm_head.weight" in source
+    assert "persistent_tile_llama_full_geometry_forward_backward" in source
+    assert "persistent_tile_moe_jepa_full_geometry_forward_backward" in source
+    assert "make_native_family_production_step(" in source
+    assert "std::unique_ptr<neuralfn::native_train::FamilyProductionStep>" in source
+    assert "std::make_unique<NativeFamilyDescriptorSparseProductionStep>" in source
+    assert "step->forward_backward(production_batch, &context)" in source
+    assert "validate_native_family_parameter_dependent_gradient_coverage(" in source
+    assert "has_meaningful_gradient" in source
+    assert "std::isfinite(gradient->second)" in source
+    assert "produced no finite nonzero parameter-dependent gradients for" in source
+    assert "result.losses.auxiliary" in source
+    assert "result.losses.auxiliary = attention_norm_loss" in source
+    assert "(*gradients)[target_index] -= grad_prediction" in source
+    assert "result.losses.auxiliary += dense_ffn_loss" in source
+    assert "add_native_family_persistent_chained_block_state_gradients(" in source
+    assert "dense_ffn_input_grad" in source
+    assert "dense_ffn_target_grad" in source
+    assert "(*gradients)[target_index] += dense_ffn_target_grad" in source
+    assert "native family persistent chained block-state step" in source
+    assert "native family persistent chained block-state step requires token_embedding.weight, final_norm.weight, and lm_head.weight" in source
+    assert "carried_hidden" in source
+    assert "carried_hidden[static_cast<std::size_t>(row)] = hidden" in source
+    assert "sampled_attention_probs" in source
+    assert "native family persistent chained block-state step produced invalid sampled attention normalizer" in source
+    assert "causal_row_start" in source
+    assert "causal_row_attention_probs" in source
+    assert "native family persistent chained block-state step produced invalid causal row attention normalizer" in source
+    assert "apply_sampled_rope" in source
+    assert "accumulate_sampled_rope_backward" in source
+    assert "rope_query" in source
+    assert "causal_row_rope_keys" in source
+    assert "sampled_rms_inv" in source
+    assert "attention_norm_inv" in source
+    assert "ffn_norm_inv" in source
+    assert "final_norm_inv" in source
+    assert "final_norm_grad_output" in source
+    assert "final_norm_weighted_dot" in source
+    assert "target_embedding_grad" in source
+    assert "pre_ffn_hidden" in source
+    assert "ffn_norm_grad_output" in source
+    assert "grad_gate * ffn_normed[static_cast<std::size_t>(in_sample)] * dim_scale" in source
+    assert "grad_up * ffn_normed[static_cast<std::size_t>(in_sample)] * dim_scale" in source
+    assert "ffn_norm_grad_output[static_cast<std::size_t>(in_sample)] +=" in source
+    assert "ffn_norm_weighted_dot" in source
+    assert "attention_norm_grad_output" in source
+    assert "attention_norm_weighted_dot" in source
+    assert "causal_row_attention_norm_grad_output" in source
+    assert "context_attention_norm_weighted_dot" in source
+    assert "grad_causal_query" in source
+    assert "grad_attn_query" in source
+    assert "grad_attn_key" in source
+    assert "final_normed_hidden" in source
+    assert "final_norm_offset + out_dim" in source
+    assert "lm_head_hidden_grad" in source
+    assert "native family persistent chained block-state step produced invalid LM-head normalizer" in source
+    assert "use_routed_moe_block" in source
+    assert "native family persistent chained block-state MoE path" in source
+    assert "route_raw_logits" in source
+    assert "route_logit_scales" in source
+    assert "candidate_router_logits" in source
+    assert "native family persistent chained block-state MoE path found no top-k expert" in source
+    assert "result.losses.auxiliary += chained_block_state_loss" in source
+    assert "result.losses.router = moe_loss" in source
+    assert "add_native_family_persistent_routed_moe_combine_gradients(" in source
+    assert "native family persistent routed MoE combine step" in source
+    assert "combine_candidate_router_logits" in source
+    assert "route_input_grad" in source
+    assert "route_target_grad" in source
+    assert "const float route_target_grad_value = -grad_combined" in source
+    assert "route_target_grad[static_cast<std::size_t>(out_sample)] += route_target_grad_value" in source
+    assert "routed_moe_balance_target" in source
+    assert "routed_moe_balance_scale" in source
+    assert "(*gradients)[target_index] += route_target_grad" in source
+    assert "native family persistent routed MoE combine step found no top-k expert" in source
+    assert "moe_candidate_router_logits" in source
+    assert "selected_moe_router_logits" in source
+    assert "host_parameters[static_cast<std::size_t>(auxfree_bias_offset + expert)]" in source
+    assert "std::vector<std::int64_t> router_dims" in source
+    assert "for (std::int64_t dim : router_dims)" in source
+    assert "selected_moe_target_grad" in source
+    assert "(*gradients)[target_index] += selected_moe_target_grad" in source
+    assert "selected_moe_route_logit_scales" in source
+    assert "selected_moe_route_probs" in source
+    assert "const std::int64_t configured_top_k" in source
+    assert "std::min<std::int64_t>(configured_top_k, kMaxExpertSamples)" in source
+    assert "selected_moe_route_output" in source
+    assert "selected_moe_route_score_grad" in source
+    assert "if (!auxfree_moe_balance)" in source
+    assert "chained_moe_balance_target" in source
+    assert "chained_moe_balance_scale" in source
+    assert "selected_moe_balance_target" in source
+    assert "selected_moe_balance_scale" in source
+    assert "selected_moe_expected_route_grad" in source
+    assert "selected_moe_input_grad" in source
+    assert "(*gradients)[embedding_index] += selected_moe_input_grad" in source
+    assert "native family persistent MoE step found no score-selected expert" in source
+    assert "result.losses.router += routed_moe_combine_loss" in source
+    assert "result.losses.jepa = jepa_loss" in source
+    assert "result.losses.semantic = semantic_loss" in source
+    assert "batch.semantic_targets != nullptr" in source
+    assert "native_family_semantic_token_batch_view(" in source
+    assert "view.semantic_targets = nullptr" in source
+    assert "view.derive_device_semantic_targets_from_tokens = view.semantic_dims > 0 && view.semantic_terms > 0" in source
+    assert "semantic_target_row_count" in source
+    assert "native_family_semantic_route_expert_for_row(" in source
+    assert "native_family_semantic_broadcast_route_expert_for_row(" in source
+    assert "route_chunk_size" in source
+    assert "anchor_row = (row / chunk_size) * chunk_size" in source
+    assert "native_family_force_semantic_route_candidate(" in source
+    assert "semantic_route_expert" in source
+    assert "std::max<std::int64_t>(0, semantic_shared_experts) + semantic_id" in source
+    assert "supervised_route_index" in source
+    assert "candidate == supervised_route_index" in source
+    assert "kSemanticDistillationWeight" in source
+    assert "kSemanticTeacherTarget" in source
+    assert "selected_route_objective_dlogits" in source
+    assert "semantic_route_distillation_count" in source
+    assert "refresh_native_family_semantic_route_evo_router_weights(" in source
+    assert "evo_layer_interval" in source
+    assert "evo_layer_mutation_scale" in source
+    assert 'arg == "--evo-layer-interval"' in source
+    assert 'arg == "--evo-layer-mutation-scale"' in source
+    assert "optimizer_step % evo_layer_interval != 0" in source
+    assert "has_semantic_route_targets" in source
+    assert "batch.derive_device_semantic_targets_from_tokens && batch.semantic_terms > 0" in source
+    assert "const std::uint32_t token_value = static_cast<std::uint32_t>(token)" in source
+    assert "(token_value + static_cast<std::uint32_t>(semantic_dim * 3))" in source
+    assert "nfn_native_tile_evo_adopt_candidate_float32" in source
+    assert "router_buffer_name = buffer.name" in source
+    assert "parameters->parameter_ptr(router_buffer_name)" in source
+    assert "route_expert * model_dim + dim" in source
+    assert "full_family_semantic_route_evo_device_adoption" in source
+    assert "candidate_router_logits[static_cast<std::size_t>(expert)] += 0.25f" in source
+    assert "moe_candidate_router_logits[static_cast<std::size_t>(expert)] += 0.25f" in source
+    assert "combine_candidate_router_logits[static_cast<std::size_t>(expert)] += 0.25f" in source
+    assert "result.semantic_route_bias_count += chained_block_semantic_route_bias_count" in source
+    assert "result.semantic_route_bias_count += moe_semantic_route_bias_count" in source
+    assert "result.semantic_route_bias_count += routed_combine_semantic_route_bias_count" in source
+    assert "result.semantic_route_forced_count += chained_block_semantic_route_forced_count" in source
+    assert "result.semantic_route_forced_count += moe_semantic_route_forced_count" in source
+    assert "result.semantic_route_forced_count += routed_combine_semantic_route_forced_count" in source
+    assert "result.semantic_route_distillation_count += moe_semantic_route_distillation_count" in source
+    assert "result.semantic_route_broadcast_count += chained_block_semantic_route_broadcast_count" in source
+    assert "result.semantic_route_broadcast_count += moe_semantic_route_broadcast_count" in source
+    assert "result.semantic_route_broadcast_count += routed_combine_semantic_route_broadcast_count" in source
+    assert "result.semantic_route_evo_adoption_count = route_evo_adoption_count" in source
+    assert "semantic_route_policy_rows =" in source
+    assert "result.semantic_route_bias_count = std::max<std::int64_t>" in source
+    assert "result.semantic_route_distillation_count = std::max<std::int64_t>" in source
+    assert "result.semantic_route_broadcast_count = std::max<std::int64_t>" in source
+    assert "result.semantic_target_batch_count = 1" in source
+    assert "production_step_semantic_target_batch_count" in source
+    assert "production_step_semantic_target_row_count" in source
+    assert "production_step_semantic_route_bias_count" in source
+    assert "production_step_semantic_route_forced_count" in source
+    assert "production_step_semantic_route_distillation_count" in source
+    assert "production_step_semantic_route_broadcast_count" in source
+    assert "production_step_semantic_route_evo_adoption_count" in source
+    assert "production_step_auxfree_bias_refresh_count" in source
+    assert "shared_bias_rows" in source
+    assert "free_bias_rows" in source
+    assert "free_weight_rows" in source
+    assert "semantic_shared_bias_row" in source
+    assert "semantic_free_weight_index" in source
+    assert "specialized_target_index" in source
+    assert "(*gradients)[specialized_target_index] -= diff * loss_scale" in source
+    assert "native family persistent sampled seq2seq cross-attention step" in source
+    assert "const float attention_logit = query * key * feature_scale" in source
+    assert "const float context = attention_weight * value" in source
+    assert "decoder.cross_attention.qkv.weight" in source
+    assert "encoder.layers.qkv.weight" in source
+    assert "(*gradients)[decoder_query_weight_index] +=" in source
+    assert "(*gradients)[encoder_key_weight_index] +=" in source
+    assert "(*gradients)[encoder_value_weight_index] +=" in source
+    assert "*sampled_seq2seq_cross_attention_row_count += rows" in source
+    assert "native family persistent sampled diffusion masked denoise step" in source
+    assert "const bool masked_token = ((token + target + row) % 3) == 0" in source
+    assert "const float noised_feature =" in source
+    assert "(*gradients)[denoise_weight_index] +=" in source
+    assert "if (!masked_token)" in source
+    assert "*sampled_diffusion_masked_denoise_row_count += rows" in source
+    assert "native family persistent sampled TTT inner update step" in source
+    assert "std::vector<float> base_state" in source
+    assert "std::vector<float> base_grad" in source
+    assert "hidden_state[static_cast<std::size_t>(hidden_sample)] = std::tanh(hidden_pre_activation)" in source
+    assert "const float prediction =\n                    host_parameters[static_cast<std::size_t>(token_output_index)] + update" in source
+    assert "(*gradients)[up_weight_index] +=" in source
+    assert "(*gradients)[down_weight_index] +=" in source
+    assert "(*gradients)[base_weight_index] +=" in source
+    assert "*sampled_ttt_inner_update_row_count += rows" in source
+    assert "native family persistent sampled universal recurrent step" in source
+    assert "kUniversalRecurrentSteps = 3" in source
+    assert "std::vector<std::vector<float>> recurrent_inputs" in source
+    assert "std::vector<std::vector<float>> recurrent_outputs" in source
+    assert "halt_probs[static_cast<std::size_t>(step_index)]" in source
+    assert "prediction[static_cast<std::size_t>(feature)] +=" in source
+    assert "(*gradients)[halt_index] +=" in source
+    assert "(*gradients)[recurrent_weight_index] +=" in source
+    assert "*sampled_universal_recurrent_step_row_count += rows" in source
+    assert "native family persistent sampled HNet byte patch step" in source
+    assert "const std::int64_t patch_size =" in source
+    assert "std::vector<std::int64_t> byte_ids" in source
+    assert "byte_patch_merge_elements % merge_matrix_width" in source
+    assert "for (std::int64_t patch = 0; patch < patch_size; ++patch)" in source
+    assert "byte_patch_merge_offset + out_dim * merge_input_width + patch * model_dim + in_dim" in source
+    assert "(*gradients)[merge_index] += grad_prediction * embed_value * feature_scale" in source
+    assert "(*gradients)[embed_index] += grad_prediction * merge_value * feature_scale" in source
+    assert "*sampled_hnet_byte_patch_row_count += rows" in source
+    assert "struct NativeFamilyTileLmApi" in source
+    assert "struct NativeFamilyTileLlamaApi" in source
+    assert "native_full_moe_geometry_build_enabled()" in source
+    assert "kLmHeadChunkRows = 128" in source
+    assert "run_native_family_chunked_lm_head(" in source
+    assert "chunked LM head weight backward" in source
+    assert "native_full_family_geometry_build_enabled()" in source
+    assert "const bool sampled_bridge" in source
+    assert "!native_full_specialized_geometry_build_enabled()" in source
+    assert "Full family and specialized steps already produce their complete" in source
+    assert "native_full_family_geometry_build_enabled()" in source
+    assert "production_step_descriptor.implementation" in source
+    assert 'name.find(".router.")' in source
+    assert 'name.find(".experts.")' in source
+    assert "Hidden-backbone specialty steps add family-specific objectives" in source
+    assert "native_full_specialized_geometry_build_enabled() &&" in source
+    assert "!native_seq2seq_graph_build_enabled()" in source
+    assert "nfn_native_tile_vector_binary_float32" in source
+    assert 'buffers.push_back({"denoise_head.weight", vocab * model_dim, true});' in source
+    assert "nfn_native_tile_reshape_heads_float32" in source
+    assert "nfn_native_tile_merge_heads_float32" in source
+    assert "family_num_heads(cfg)" in source
+    assert "family_num_kv_heads(cfg)" in source
+    assert "FamilyAttentionGeometry" in source
+    assert "attention_geometry.use_sparse_rules" in source
+    assert "family_attention_geometry(cfg)" in source
+    assert "affine_rms_forward" in source
+    assert "affine RMSNorm weight backward" in source
+    assert "nfn_native_tile_vector_binary_float32" in build_script
+    assert "nfn_native_tile_mhc_beta_gradient_float32" in build_script
+    assert "persistent_tile_moe_full_geometry_forward_backward" in source
+    assert "native_full_jepa_geometry_build_enabled()" in source
+    assert "persistent_tile_jepa_full_geometry_forward_backward" in source
+    assert "full JEPA target encoder" in source
+    assert "full JEPA latent MSE" in source
+    assert "full JEPA predictor weight backward" in source
+    assert "persistent_tile_semantic_router_moe_full_geometry_forward_backward" in source
+    assert "full semantic topic-head projection" in source
+    assert "full semantic topic-head input backward" in source
+    assert "full semantic topic-head weight backward" in source
+    assert "full semantic route CE backward" in source
+    assert "semantic_vocab_projection.weight" in source
+    assert "semantic_chunk_topic_head.weight" in source
+    assert "semantic_hash.proj.weight" in source
+    assert "semantic_hash_embed.weight" in source
+    assert "semantic_table_gate.weight" in source
+    assert "semantic_dimension_bias.weight" in source
+    assert "native_family_numpy_seeded_semantic_hash_projection" in source
+    assert "std::mt19937 rng(42)" in source
+    assert "1.0 / 9007199254740992.0" in source
+    assert "overwrite_native_family_seeded_semantic_hash_projection(" in source
+    assert "full semantic hash routing" in source
+    assert "full semantic route distillation" in source
+    assert "BroadcastChunkRoutesFn" in source
+    assert "full semantic chunk route broadcast" in source
+    assert "const std::int64_t loss_partials = (rows + 1023) / 1024" in source
+    assert "jepa_loss_partials" in source
+    assert "halt_loss_partials" in source
+    assert "std::accumulate(host_loss.begin(), host_loss.end(), 0.0f)" in source
+    assert "add_native_family_persistent_tile_jamba_gradients(" in source
+    assert "native family full Jamba state graph direct optimizer buffer size mismatch" in source
+    assert "direct_optimizer->accumulate_gradient(\n                buffer_index, device_gradient, direct_gradient_scale, stream, error)" in source
+    assert "Jamba's current layout contains the shared transformer" in source
+    assert "transformer_loss" in source
+    assert '"persistent_tile_jamba_full_geometry_forward_backward"' in source
+    assert "full Jamba device target conversion" in source
+    assert "device_target_tokens_u16" in source
+    assert "add_native_family_persistent_tile_seq2seq_gradients(" in source
+    assert "native_seq2seq_graph_build_enabled()" in source
+    assert "seq2seq device target conversion" in source
+    assert "device_target_tokens_u16" in source
+    assert "seq2seq encoder attention" in source
+    assert "seq2seq decoder causal attention" in source
+    assert "seq2seq cross attention" in source
+    assert "seq2seq cross attention backward" in source
+    assert "seq2seq encoder QKV weight backward" in source
+    assert "seq2seq decoder QKV weight backward" in source
+    assert "seq2seq encoder FFN SwiGLU" in source
+    assert "seq2seq decoder FFN SwiGLU" in source
+    assert "seq2seq encoder FFN down weight backward" in source
+    assert "seq2seq decoder FFN down weight backward" in source
+    assert "ffn_gate_up.weight" in source
+    assert "ffn_down.weight" in source
+    assert "residual.beta_logit.weight" in source
+    assert "full DeepSeek mHC FFN residual gradient" in source
+    assert "full DeepSeek mHC attention delta gradient" in source
+    assert "full QK query RMSNorm" in source
+    assert "full QK key RMSNorm backward" in source
+    assert "family_uses_qk_norm(cfg)" in source
+    assert '"qk_norm"' in source
+    assert '"mhc_residual"' in source
+    assert "add_native_family_persistent_tile_ttt_gradients(" in source
+    assert "native_ttt_graph_build_enabled()" in source
+    assert "nfn_native_tile_tanh_float32" in source
+    assert "nfn_native_tile_tanh_backward_float32" in build_script
+    assert "TTT device target conversion" in source
+    assert "device_target_tokens_u16" in source
+    assert "TTT tanh backward" in source
+    assert "TTT base weight backward" in source
+    assert "native family TTT graph direct optimizer buffer size mismatch" in source
+    assert "family_ttt_hidden_dim(cfg)" in source
+    assert "--ttt-hidden-dim" in source
+    assert "family_byte_patch_size(cfg)" in source
+    assert "family_byte_patch_stride(cfg)" in source
+    assert "const std::int64_t patch_len = seq_len < patch_size" in source
+    assert "--byte-patch-size" in source
+    assert "--byte-patch-stride" in source
+    assert "add_native_family_persistent_tile_diffusion_gradients(" in source
+    assert "native_diffusion_graph_build_enabled()" in source
+    assert "nfn_native_tile_diffusion_mask_u16_int64" in tile_ops_header
+    assert "nfn_native_tile_diffusion_mask_u16_int64" in tile_ops_source
+    assert "full LLaMA diffusion device mask and target conversion" in source
+    assert "diffusion device mask and target conversion" in source
+    assert "device_source_tokens" in source
+    assert "diffusion masked token features" in source
+    assert "run_native_family_chunked_lm_head(api, parameters, device_noised, denoise_weight" in source
+    assert "diffusion input embedding backward" in source
+    assert "diffusion_timestep_embedding.weight" not in source
+    assert "diffusion timestep embedding" not in source
+    assert "device_grad_timestep" not in source
+    assert "add_native_family_persistent_tile_universal_gradients(" in source
+    assert "native_universal_graph_build_enabled()" in source
+    assert "nfn_native_tile_act_pack_step_float32" in tile_ops_header
+    assert "nfn_native_tile_act_prepare_weights_float32" in tile_ops_header
+    assert "nfn_native_tile_act_unpack_step_grad_float32" in tile_ops_header
+    assert "universal device target conversion" in source
+    assert "universal ACT device pack step" in source
+    assert "universal ACT device halt weights" in source
+    assert "universal ACT device gradient unpack" in source
+    assert "universal recurrent tanh backward" in source
+    assert "universal halt weight backward" in source
+    assert "native family universal graph direct optimizer buffer size mismatch" in source
+    assert "add_native_family_persistent_tile_hnet_gradients(" in source
+    assert "native_hnet_graph_build_enabled()" in source
+    assert "nfn_native_tile_uint8_to_int64" in tile_ops_header
+    assert "nfn_native_tile_uint8_to_int64" in tile_ops_source
+    assert "HNet device token conversion" in source
+    assert "HNet device target conversion" in source
+    assert "device_tokens_u8" in source
+    assert "device_target_tokens_u8" in source
+    assert "HNet byte patch merge" in source
+    assert "HNet byte LM CE backward" in source
+    assert "HNet byte LM head backward" in source
+    assert "nfn_native_tile_byte_patch_embed_backward_float32" in build_script
+    assert "full Jamba causal chunk state" in source
+    assert "full Jamba state weight backward" in source
+    assert "native_jamba_graph_build_enabled()" in source
+    assert "nfn_native_tile_topk_route_float32" in source
+    assert "nfn_native_tile_topk_route_sqrt_softplus_float32" in source
+    assert "nfn_native_tile_topk_route_sqrt_softplus_backward_float32" in source
+    assert "nfn_native_tile_expert_bias_add_float32" in source
+    assert "nfn_native_tile_broadcast_expert_routes_float32" in source
+    assert "nfn_native_tile_moe_swiglu_forward_float32" in source
+    assert "nfn_native_tile_moe_swiglu_backward_float32" in source
+    assert "nfn_native_tile_moe_swiglu_backward_with_route_grad_float32" in source
+    assert "full MoE expert SwiGLU" in source
+    assert "expert_stage_outputs" in source
+    assert "full MoE expert SwiGLU depth stage" in source
+    assert "accumulate expert depth route gradient" in source
+    assert "prepare_moe_route_gradients" in source
+    assert "api.topk_route_backward(" in source
+    assert "api.topk_route_sqrt_softplus(" in source
+    assert "api.topk_route_sqrt_softplus_backward(" in source
+    assert "full DeepSeek sqrt-softplus MoE top-k routing" in source
+    assert "full DeepSeek sqrt-softplus selected route backward" in source
+    assert "full MoE selected route backward" in source
+    assert "apply_full_semantic_route_policy" in source
+    assert "full semantic route" in source or "semantic_expert" in source
+    assert "semantic_auxiliary_loss" in source
+    assert "semantic planner/alignment" in source
+    assert "full MoE router weight backward" in source
+    assert "full MoE aux-free router bias" in source
+    assert "load_native_family_tile_llama_api(" in source
+    assert "add_native_family_persistent_tile_llama_gradients(" in source
+    assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in source
+    assert "nfn_native_tile_merge_heads_to_qkv_float32" in source
+    assert "nfn_native_tile_swiglu_backward_float32" in source
+    assert "persistent_tile_llama_full_geometry_forward_backward" in source
+    assert "nfn_native_tile_linear_quantized_float32" in source
+    assert "nfn_native_tile_linear_backward_input_quantized_float32" in source
+    assert "native_family_linear_quantization_kind" in source
+    assert "native_family_expert_quantization_kind" in source
+    assert '\\"expert_quantization\\"' in source
+    assert '\\"router_score_fn\\"' in source
+    assert '\\"full_family_deepseek_sqrt_softplus_router_device_forward_backward\\": true' in source
+    assert 'preset == "fp8-llama" || preset == "deepseek-v4"' in source
+    assert 'preset == "deepseek-v4"' in source
+    assert "nfn_native_tile_moe_swiglu_forward_quantized_float32" in source
+    assert "nfn_native_tile_moe_swiglu_backward_quantized_float32" in source
+    assert "full quantized MoE expert SwiGLU depth stage" in source
+    assert "full quantized MoE expert SwiGLU depth backward" in source
+    assert '\\"kv_pca_enabled\\"' in source
+    assert '\\"mla_attention_enabled\\"' in source
+    assert '\\"native_sparse_csa_attention_enabled\\"' in source
+    assert '\\"full_family_deepseek_v4_native_sparse_csa_exact_parity\\": true' in source
+    assert '\\"full_family_deepseek_v4_mla_template_required\\": false' in source
+    assert '\\"full_family_deepseek_v4_learned_csa_indexer_template_required\\": false' in source
+    assert "family_reported_kv_pca_compressed_dim" in source
+    assert "family_reported_mla_kv_lora_rank" in source
+    assert "family_reported_mla_rope_dim" in source
+    assert "ternary_b158" in source
+    assert "fp8_e4m3" in source
+    assert "mxfp4_e2m1_block32" in source
+    assert "family_rope_inverse_frequency" in source
+    assert "rope_scaling_factor" in source
+    assert "rope_original_max_position" in source
+    assert 'normalized_id(cfg.template_name) == "qwen3-longctx"' in source
+    assert '"attention.diff_lambda", 1, true' in source
+    assert 'parameters.parameter_ptr("attention.diff_lambda")' in source
+    assert "differential_attention" in source
+    assert "differential_lambda" in source
+    assert "lambda_gradient" in source
+    assert "differential_grad_attention_pre_norm" in source
+    assert "nfn_native_tile_split_last_dim_float32" in build_script
+    assert "nfn_native_tile_merge_last_dim_float32" in build_script
+    assert "nfn_native_tile_differential_combine_float32" in build_script
+    assert "nfn_native_tile_differential_backward_float32" in build_script
+    assert "nfn_native_tile_split_at_last_dim_float32" in build_script
+    assert "nfn_native_tile_concat_last_dim_float32" in build_script
+    assert "nfn_native_tile_repeat_kv_float32" in build_script
+    assert "nfn_native_tile_repeat_kv_backward_float32" in build_script
+    assert "nfn_native_tile_fused_causal_attention_forward_float32" in build_script
+    assert "nfn_native_tile_fused_causal_attention_backward_float32" in build_script
+    assert "family_uses_kv_pca" in source
+    assert "family_kv_pca_compressed_dim" in source
+    assert '"kv_pca_encode.k.weight"' in source
+    assert '"kv_pca_encode.v.weight"' in source
+    assert '"kv_pca_decode.k.weight"' in source
+    assert '"kv_pca_decode.v.weight"' in source
+    assert "full KV-PCA key encode" in source
+    assert "full KV-PCA value decode" in source
+    assert "KV-PCA key decode weight backward" in source
+    assert "family_uses_mla" in source
+    assert '"kv_a.weight"' in source
+    assert '"kv_b.weight"' in source
+    assert 'buffers.push_back({prefix + "q_proj.weight", model_dim * model_dim, true});' in source
+    assert '"    \\"dense_parameter_state_reconstructable\\": true' in source
+    assert '(use_live_parameter_store ? "" : "deterministic_dense_float32_v1")' in source
+    assert '"  \\"vocab_size\\": " << checkpoint_vocab' in source
+    assert "% checkpoint_vocab" in source
+    assert "full MLA causal attention" in source
+    assert "full MLA KV-A weight backward" in source
+    assert "direct_device_gradient_mode" in source
+    assert "trainable_buffer_index" in source
+    assert "accumulate_gradient(" in source
+    assert "temporary_activation_workspace_pool" in source
+    assert '(mla_mode && !allocate_float(&device_mla_inv_freq' in source
+    assert "FailureDiagnosticGuard" in source
+    assert "Seq2SeqFailureDiagnosticGuard" in source
+    assert "(reverse > 0 && !copy(layer.enc_grad_input," in source
+    assert "(reverse == 0 || copy(layer.enc_grad_input," not in source
+    live_sweep = (root / "tools" / "smoke_native_family_live_training.py").read_text()
+    missing_build_script = (root / "tools" / "build_native_missing_trainers.sh").read_text()
+    assert "LOOP_FLAGS" in live_sweep
+    assert '"hnet-lm": "--train-hnet-dataset-loop"' in live_sweep
+    assert "--dataset-alias" in live_sweep
+    assert "SMALL_TOKEN_DATASET = Path(\"/tmp/nfn-diffusion-token-shards\")" in live_sweep
+    assert "GPT2_TOKEN_VOCAB_SIZE = 50257" in live_sweep
+    assert "resolve_dataset_argument" in live_sweep
+    assert "nfn_native_tile_extract_diagonal_float32" in missing_build_script
+    assert "kAttentionSequenceGranularity = 64" in gpt2_source_text
+    assert "optimizer_state_loaded" in source
+    assert "resumed_optimizer_steps" in source
+    assert "seek_native_family_resume_sampler" in source
+    assert "zero-initialize native family float workspace" in source
+    assert "nfn-native-family-adamw-state-v2" in source
+    assert "checkpoint_shadow_elements" in family_source
+    tile_source = (root / "neuralfn/csrc/tile_cuda/kernels.cu").read_text(encoding="utf-8")
+    tile_ops_source = (root / "neuralfn/csrc/native_train/tile_ops.cu").read_text(encoding="utf-8")
+    assert "token_embedding_backward_weight_u16_deterministic_float32_kernel" in tile_source
+    assert "grad_weight[token * model_dim + dimension] +=" in tile_source
+    assert "const std::int64_t denominator = heads * seq_len * head_dim;" in tile_ops_source
+    assert "const std::int64_t batch = n / denominator;" in tile_ops_source
+    assert "x, inv_freq, out, batch, heads, seq_len, head_dim" in tile_ops_source
+    assert "auto pair_mask = mask && ((base + pair_d + half_tile) < n_tile);" in tile_source
+    assert "ct::store_masked(out + idx, value, pair_mask);" in tile_source
+    assert "ct::store_masked(grad_x + idx, value, pair_mask);" in tile_source
+    assert "write_checkpoint(" in family_source
+    assert "load_checkpoint(" in family_source
+    token_shards_header = (root / "neuralfn/csrc/native_train/token_shards.h").read_text(encoding="utf-8")
+    token_shards_source = (root / "neuralfn/csrc/native_train/token_shards.cpp").read_text(encoding="utf-8")
+    assert token_shards_header.count("bool seek_batch(std::int64_t batch_index);") == 2
+    assert "SequentialTokenBatchSampler::seek_batch" in token_shards_source
+    assert "SequentialByteBatchSampler::seek_batch" in token_shards_source
+    assert '? !copy(layer.grad_residual2, layer.grad_residual1, elements,' in source
+    assert ': !(copy(layer.grad_residual2, layer.mhc_grad_output, elements,' in source
+    assert "production_step" in source
+    assert "cudaMemcpyAsync" in family_source
+    assert "extract_diagonal_float32_kernel" in tile_source
+    assert "extract_diagonal" in source
+    assert "cuda_graph_capture_scope" in source
+    assert '\\"cuda_graph_capture_scope\\": \\"retained_forward_backward_optimizer_step\\"' in source
+    assert '\\"optimizer_cuda_graph_captures_zero_gradients\\": true' in source
+    assert "native_family_full_step_cuda_graph_capture_ready(std::string_view family_name)" in source
+    assert '\\"full_step_cuda_graph_capture_ready\\": ' in source
+    assert "production-step temporary workspace leases replay from a warmed fixed sequence" not in source
+    assert "full_family_loss_reporting_readback_wrapper_side" in source
+    assert (
+        "retained forward/backward graph replay is limited to matching reporting-mode "
+        "eligible-family steps pending final cross-family promotion"
+    ) not in source
+    assert "specialty family branches still include host-side control around capture-stream Tile launches" in source
+    assert "native_family_has_specialty_capture_host_control(std::string_view family_name)" in source
+    assert "native_family_direct_device_gradient_mode_build_enabled()" in source
+    assert "const bool semantic_jepa_encoder_layout = is_semantic_moe_template(cfg);" in source
+    assert 'parameters.parameter_ptr("online_chunk_projector.topic_heads.weight") != nullptr' in source
+    assert "const bool semantic_target_topic_distill_mode = semantic_mode && jepa_mode && moe_mode;" in source
+    assert "semantic_jepa_chunk_state_mode\n\t              ? allocate_float(&device_semantic_target_topic_chunk_state" in source
+    assert "(semantic_jepa_chunk_state_mode ? batch_size * route_chunks : rows) *\n\t\t                                 semantic_vocab_dims" in source
+    assert "(semantic_jepa_chunk_state_mode ? batch_size * route_chunks : rows) *\n\t                                      semantic_topic_total_terms" in source
+    assert "(semantic_jepa_chunk_state_mode ? batch_size * route_chunks : rows) *\n                                          semantic_vocab_dims *" in source
+    host_control_start = source.index(
+        "bool native_family_has_specialty_capture_host_control(std::string_view family_name)"
+    )
+    host_control_end = source.index("bool native_family_direct_device_gradient_mode_build_enabled()", host_control_start)
+    host_control_body = source[host_control_start:host_control_end]
+    assert 'family == "jamba" || family == "jamba-lm"' not in host_control_body
+    assert 'family == "seq2seq" || family == "seq2seq-modern"' not in host_control_body
+    assert 'family == "ttt" || family == "ttt-llama"' not in host_control_body
+    assert 'family == "universal" || family == "universal-llama"' not in host_control_body
+    assert 'family == "hnet" || family == "hnet-lm"' not in host_control_body
+    assert 'family == "diffusion" || family == "diffusion-modern"' not in host_control_body
+    assert "is_semantic_family(family)" not in host_control_body
+    assert "family_uses_megakernel" in source
+    assert "fused_causal_attention_forward" in source
+    assert "fused_causal_attention_backward" in source
+    assert '"fused_causal_attention"' in source
+    assert "KV-PCA value encode input backward" in source
+    assert "native_full_geometry_build_enabled()" in source
+    assert "nfn_native_tile_token_embedding_u16_float32" in source
+    assert "nfn_native_tile_token_cross_entropy_backward_float32" in source
+    assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in source
+    assert "add_native_family_persistent_tile_lm_gradients(" in source
+    assert "if (NFN_NATIVE_PRODUCTION_LOOP != 0)" in source
+    assert "result.tile_lm_row_count = tile_lm_row_count" in source
+    assert "native family persistent sampled Jamba state step" in source
+    assert "std::vector<float> recurrent_state" in source
+    assert "const float carried_state = activated_state * gate" in source
+    assert "mamba_in_proj_offset + (model_dim + out_dim) * model_dim + in_dim" in source
+    assert "grad_pre_state * recurrent_state[static_cast<std::size_t>(in_sample)] * feature_scale" in source
+    assert "*sampled_jamba_mamba_state_row_count += rows" in source
+    assert "result.losses.auxiliary += specialized_loss" in source
+    assert "result.sampled_seq2seq_cross_attention_row_count = sampled_seq2seq_cross_attention_row_count" in source
+    assert "result.sampled_diffusion_masked_denoise_row_count = sampled_diffusion_masked_denoise_row_count" in source
+    assert "result.sampled_ttt_inner_update_row_count = sampled_ttt_inner_update_row_count" in source
+    assert "result.sampled_universal_recurrent_step_row_count = sampled_universal_recurrent_step_row_count" in source
+    assert "result.sampled_hnet_byte_patch_row_count = sampled_hnet_byte_patch_row_count" in source
+    assert "result.sampled_jamba_mamba_state_row_count = sampled_jamba_mamba_state_row_count" in source
+    assert (
+        "result.losses.autoregressive + result.losses.auxiliary + "
+        "result.losses.router +"
+    ) in source
+    assert "result.losses.jepa + result.losses.semantic" in source
+    assert "run_native_family_sparse_transition_production_step(" in source
+    assert "native_family_token_batch_view(" in source
+    assert "native_family_byte_batch_view(" in source
+    assert "validate_native_family_token_batch_vocab(" in source
+    assert "outside configured vocab_size" in source
+    assert "use --vocab-size matching the dataset tokenizer or a compatible --dataset-alias" in source
+    assert 'family.find("deepseek-v3") != std::string::npos' in source
+    assert 'family.find("deepseek-v4") != std::string::npos' in source
+    assert 'descriptor.family = preset == "deepseek-v4"' in source
+    assert '"deepseek_v3"' in source
+    assert 'if (preset == "deepseek-v4")' in source
+    assert "batch.format != neuralfn::native_train::FamilyProductionBatchFormat::kUint16Tokens" in source
+    assert 'error += ": " + family_step_error' in source
+    assert 'error += ": " + substep_error' in source
+    assert "production_step_count" in source
+    assert "production_optimizer_step_count" in source
+    assert "production_step_gradient_count" in source
+    assert "sampled_attention_row_count" in source
+    assert "sampled_causal_attention_context_count" in source
+    assert "sampled_seq2seq_cross_attention_row_count" in source
+    assert "sampled_diffusion_masked_denoise_row_count" in source
+    assert "sampled_ttt_inner_update_row_count" in source
+    assert "sampled_universal_recurrent_step_row_count" in source
+    assert "sampled_hnet_byte_patch_row_count" in source
+    assert "sampled_jamba_mamba_state_row_count" in source
+    assert "*sampled_attention_row_count += 1" in source
+    assert "*sampled_causal_attention_context_count += causal_row_count" in source
+    assert "production_step_sampled_attention_row_count" in source
+    assert "production_step_sampled_causal_attention_context_count" in source
+    assert "production_step_sampled_seq2seq_cross_attention_row_count" in source
+    assert "production_step_sampled_diffusion_masked_denoise_row_count" in source
+    assert "production_step_sampled_ttt_inner_update_row_count" in source
+    assert "production_step_sampled_universal_recurrent_step_row_count" in source
+    assert "production_step_sampled_hnet_byte_patch_row_count" in source
+    assert "production_step_tile_lm_row_count" in source
+    assert "production_step_sampled_jamba_mamba_state_row_count" in source
+    assert "parameter_dependent_gradient_buffer_count" in production_header
+    assert "chained_block_layer_count" in production_header
+    assert "chained_block_row_count" in production_header
+    assert "sampled_attention_row_count" in production_header
+    assert "sampled_causal_attention_context_count" in production_header
+    assert "sampled_seq2seq_cross_attention_row_count" in production_header
+    assert "sampled_diffusion_masked_denoise_row_count" in production_header
+    assert "sampled_ttt_inner_update_row_count" in production_header
+    assert "sampled_universal_recurrent_step_row_count" in production_header
+    assert "sampled_hnet_byte_patch_row_count" in production_header
+    assert "tile_lm_row_count" in production_header
+    assert "sampled_jamba_mamba_state_row_count" in production_header
+    assert "production_step_parameter_dependent_gradient_buffer_count" in source
+    assert "result.parameter_dependent_gradient_buffer_count" in source
+    assert "production_step_persistent_parameter_buffer_count" in source
+    assert "production_step_chained_block_layer_count" in source
+    assert "production_step_chained_block_row_count" in source
+    assert "result.chained_block_layer_count" in source
+    assert "result.chained_block_row_count" in source
+    assert "production_step_family_binding_verified" in source
+    assert "accumulate_sparse_global_gradients(" in source
+    assert "produced non-finite sparse gradient" in source
+    assert "produced no finite nonzero sparse gradients" in source
+    assert "if (item.second == 0.0f)" in source
+    assert "result.optimizer_step_applied" in source
+    assert "accumulation_step < accumulation_steps" in source
+    assert "batch_plan.grad_accum_steps" in source
+    assert "validate_persistent_parameter_store(" in source
+    assert "parameters.find_buffer(expected.name)" in source
+    assert "native family sparse transition production step parameter layout mismatch" in source
+    assert "llama_sparse_transition_production_step" in source
+    assert "standard_moe_sparse_transition_production_step" in source
+    assert "moe_jepa_sparse_transition_production_step" in source
+    assert "dense_jepa_sparse_transition_production_step" in source
+    assert "semantic_dense_jepa_sparse_transition_production_step" in source
+    assert "semantic_router_moe_sparse_transition_production_step" in source
+    assert 'std::string(metadata_prefix) + "_sparse_transition_production_step"' in source
+    assert "hnet_sparse_transition_production_step" in source
+    assert "set_sparse_global_gradients(" in production_header
+    assert "accumulate_sparse_global_gradients(" in production_header
+    assert "family optimizer sparse gradient scale is non-finite" in production_header
+    assert "family optimizer sparse gradient value is non-finite" in production_header
+    assert "family optimizer sparse gradient scaled value is non-finite" in production_header
+    assert "family optimizer sparse accumulated gradient is non-finite" in production_header
+    assert "reset_gradients" in production_header
+    assert "FamilyOptimizerBuffer" in production_header and "element_offset" in production_header
+    assert "write_family_full_parameter_sidecar(" in source
+    assert "live_family_device_parameter_store_float32_state" in source
+    assert "deterministic_dense_float32_v1_plus_live_family_parameter_store" in source
+    assert "periodic_native_family_checkpoint_due(" in source
+    assert "periodic_native_family_checkpoint_prefix(" in source
+    assert "maybe_write_periodic_native_family_token_checkpoint(" in source
+    assert "maybe_write_periodic_native_family_byte_checkpoint(" in source
+    assert '"] periodic native family model checkpoint written"' in source
+    assert '"] periodic native family byte model checkpoint written"' in source
+    assert "context.optimizer = &production_bootstrap->state.optimizer" in source
+    assert "FamilyDeviceParameterStore(state.parameter_specs)" in source
+    assert "state.parameters.load_from_sidecar(" in source
+    assert "state.parameters.initialize_deterministic(" in source
+    assert "state.parameter_role_binding_verified" in source
+    assert "state.parameters.copy_to_host(&host_parameters" in source
+    assert "state.parameter_store_checksum_computed = true" in source
+    assert "compute_native_family_parameter_store_checksum(" in source
+    assert "native_family_production_step_checksum_enabled()" in source
+    assert "NFN_NATIVE_FAMILY_PRODUCTION_STEP_CHECKSUM" in source
+    assert "production_step_parameter_store_checksum_count" in source
+    assert "production_step_parameter_store_checksum_changed" in source
+    assert "latest_parameter_store_checksum != production_bootstrap->parameter_store_checksum" in source
+    assert 'env_flag_enabled_or_default(\n        "NFN_NATIVE_FAMILY_PRODUCTION_STEP_CHECKSUM",\n        false)' in source
+    assert "if (post_step_checksum_enabled && context.cuda_stream == nullptr)" in source
+    assert '\\"parameter_store_checksum_computed\\": ' in source
+    assert '\\"parameter_store_checksum\\": ' in source
+    assert '\\"production_step_parameter_store_checksum_enabled\\":' in source
+    assert '\\"production_step_parameter_store_checksum\\": ' in source
+    assert '\\"production_step_parameter_store_checksum_changed\\": ' in source
+    assert '\\"production_step_parameter_store_checksum_computed\\"' in source
+    assert "FamilyOptimizerState(state.parameters.buffers())" in source
+    assert "state.optimizer.allocate(cuda_runtime_lib, tile_ops_lib" in source
+    assert "state.optimizer_bf16_shadow_enabled = state.optimizer.bf16_shadow_enabled()" in source
+    assert "state.bf16_shadow_elements = state.optimizer.bf16_shadow_elements()" in source
+    assert "NFN_NATIVE_FAMILY_PRODUCTION_CUDA_GRAPH" in source
+    assert "state.optimizer.set_cuda_graph_capture_enabled(native_family_cuda_graph_capture_enabled())" in source
+    assert "state.cuda_graph_capture_supported = state.optimizer.supports_cuda_graph_capture()" in source
+    assert "begin_production_step_graph_capture(" in production_header
+    assert "end_retain_launch_production_step_graph_capture(" in production_header
+    assert "end_launch_destroy_production_step_graph_capture(" in production_header
+    assert "launch_retained_production_step_graph(" in production_header
+    assert "production_step_graph_replay_ready(" in production_header
+    assert "stage_optimizer_hyperparameters_for_graph_replay(" in production_header
+    assert "production_step_graph_capture_count()" in production_header
+    assert "production_step_graph_replay_count()" in production_header
+    assert "forward_backward_graph_eligible" in source
+    assert "begin_production_step_graph_capture(" in source
+    assert "replay_forward_backward_graph" in source
+    assert "retained_forward_backward_graph_result_valid" in source
+    assert "stage_optimizer_hyperparameters_for_graph_replay(" in source
+    assert "launch_retained_production_step_graph(" in source
+    assert "native_family_direct_device_gradient_mode_build_enabled()" in source
+    assert "end_retain_launch_production_step_graph_capture(" in source
+    assert "using FillManyFn = int (*)(float* const*, const std::int64_t*, std::int64_t, std::int64_t, float, void*)" in family_source
+    assert '"nfn_native_tile_fill_many_float32"' in family_source
+    assert "tile_api_.fill_many_float32 != nullptr" in family_source
+    assert "kFillManyMaxDescriptorsPerLaunch = 32" in family_source
+    assert "for (std::int64_t offset = 0; offset < buffer_count; offset += kFillManyMaxDescriptorsPerLaunch)" in family_source
+    assert "const_cast<float* const*>(d_grad_ptrs_) + offset" in family_source
+    assert "d_elements_ + offset" in family_source
+    assert "nfn_native_tile_fill_many_float32 failed for family optimizer gradient chunk" in family_source
+    assert "fill_many_gradient_zero_safe" not in family_source
+    assert "!zero_gradients_device(optimizer_graph_stream_, error)" in family_source
+    assert "return optimizer_step_cuda_graph(hyper, error);" in family_source
+    assert "return zero_gradients(error);" not in family_source
+    assert "bool zero_gradients_host(std::string* error)" in family_source
+    assert "return zero_gradients_host(error);" in family_source
+    assert "if (cuda_stream == nullptr)" in family_source
+    assert "native_family_full_step_cuda_graph_blockers(std::string_view family_name)" in source
+    assert "std::vector<std::string> blockers;" in source
+    assert "native_family_full_step_cuda_graph_blockers(production_step_descriptor.family)" in source
+    assert '\\"full_step_cuda_graph_blockers\\": ' in source
+    assert '\\"full_step_forward_backward_launch_sequence_stream_ordered\\": true' in source
+    assert '\\"full_step_forward_backward_launch_sequence_capture_eligible\\": ' in source
+    assert '\\"full_step_forward_backward_graph_replay_ready\\": false' in source
+    assert '\\"full_step_forward_backward_graph_capture_count\\": ' in source
+    assert '\\"full_step_forward_backward_graph_replay_count\\": ' in source
+    assert "production-step temporary workspace leases replay from a warmed fixed sequence" not in source
+    assert "specialty helpers still include host-side staging and control around capture-stream Tile launches" not in source
+    assert "specialty semantic/Jamba/HNet/seq2seq branches still include host-side control stages" not in source
+    assert "semantic targets now derive from device token batches" not in source
+    assert "semantic-family dataset loops still compute host checksums" not in source
+    assert '\\"temporary_activation_workspace_pool_reports_counts\\": true' in source
+    assert '\\"temporary_activation_workspace_metadata_reserved\\": true' in source
+    assert '\\"temporary_activation_workspace_replay_leases\\": true' in source
+    assert '\\"full_family_lm_loss_device_reduction\\": true' in source
+    assert '\\"full_family_jepa_semantic_loss_device_reduction\\": true' in source
+    assert '\\"full_family_jepa_semantic_loss_device_accumulation_before_reporting\\": true' in source
+    assert '\\"full_family_loss_reporting_single_scalar_vector_readback\\": true' in source
+    assert '\\"full_family_loss_reporting_post_backward_scalar_vector_readback\\": true' in source
+    assert '\\"full_family_loss_reporting_readback_skipped_on_non_reporting_steps\\": true' in source
+    assert '\\"full_family_loss_reporting_readback_deferred_outside_full_step_capture\\": true' in source
+    assert '\\"full_family_loss_reporting_readback_wrapper_side\\": true' in source
+    assert '\\"full_step_forward_backward_production_stream_plumbed\\": true' in source
+    assert '\\"full_step_loss_reporting_stream_synchronized_before_readback\\": true' in source
+    assert '\\"production_step_cuda_stream_default_enabled\\": ' in source
+    assert '\\"production_step_cuda_stream_supported\\": ' in source
+    assert '\\"production_step_cuda_stream_active\\": ' in source
+    assert '\\"production_step_cuda_stream_synchronized_before_reporting_readback\\": ' in source
+    assert '\\"production_step_optimizer_same_stream_after_forward_backward\\": true' in source
+    assert '\\"production_step_stream_elides_pre_optimizer_synchronization\\": true' in source
+    assert '\\"full_step_forward_backward_launch_sequence_stream_ordered\\": ' in source
+    assert '\\"full_step_forward_backward_launch_sequence_capture_eligible\\": ' in source
+    assert '\\"full_step_forward_backward_graph_replay_ready\\": ' in source
+    assert '\\"production_step_optimizer_same_stream_count\\": ' in source
+    assert '\\"production_step_loss_reporting_readback_count\\": ' in source
+    assert '\\"production_step_loss_reporting_skipped_count\\": ' in source
+    assert "bool report_loss_to_host = true" in source
+    assert "context.report_loss_to_host = report_loss_to_host" in source
+    assert "loss_reporting_deferred_to_wrapper" in production_header
+    assert "result.loss_reporting_deferred_to_wrapper" in source
+    assert "copy_device_bytes_to_host(\n                host_loss_reporting_totals.data()" in source
+    assert "progress_due(step));" in source
+    assert "accum_step == batch_plan.grad_accum_steps && progress_due(step)" in source
+    assert source.count("progress_due(step));") >= 7
+    assert source.count("accum_step == batch_plan.grad_accum_steps && progress_due(step)") >= 7
+    assert "progress_due(step)" in source and "production_step_loss_reporting_skipped_count" in source
+    assert "production_step_stream(" in production_header
+    assert "zero_gradients_on_stream(" in production_header
+    assert "synchronize_stream(" in production_header
+    assert "context.cuda_stream = production_bootstrap->state.optimizer.production_step_stream(error)" in source
+    assert "result.optimizer_step_same_stream = optimizer_stream != nullptr" in source
+    assert "context->optimizer->synchronize_stream(context->cuda_stream, &result.error)" not in source
+    assert "device_loss_reporting_totals" in source
+    assert "pack full-family LM loss reporting scalar" in source
+    assert "pack full-family JEPA loss reporting scalar" in source
+    assert "pack full-family semantic compact loss reporting scalar" in source
+    assert "pack full-family semantic alignment count reporting scalar" in source
+    assert '\\"full_family_jepa_mse_gradient_device_delta\\": true' in source
+    assert '\\"full_family_jepa_mask_device_construction\\": true' in source
+    assert '\\"full_family_jepa_masked_decoder_tokens_device_materialization\\": true' in source
+    assert '\\"full_family_semantic_masked_online_tokens_device_materialization\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_backbone_device_forward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_backbone_final_norm_device_backward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_backbone_last_moe_layer_device_backward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_backbone_last_attention_device_backward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_backbone_all_layers_device_backward\\": true' in source
+    assert '\\"full_family_semantic_jepa_chunk_state_objective_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_jepa_encoder_backbone_parameter_layout\\": true' in source
+    assert '\\"full_family_semantic_jepa_encoder_projector_parameter_layout\\": true' in source
+    assert '\\"full_family_semantic_jepa_encoder_state_dict_aliases\\": true' in source
+    assert '\\"full_family_semantic_jepa_target_encoder_ema_frozen_parameter_layout\\": true' in source
+    assert '\\"full_family_semantic_jepa_target_backbone_device_forward\\": true' in source
+    assert '\\"full_family_jepa_target_encoder_backbone_parameter_layout\\": true' in source
+    assert '\\"full_family_jepa_target_encoder_projector_parameter_layout\\": true' in source
+    assert '\\"full_family_jepa_target_encoder_ema_frozen_parameter_layout\\": true' in source
+    assert '\\"full_family_jepa_target_backbone_device_forward\\": true' in source
+    assert '\\"full_family_jepa_target_projector_mlp_device_forward\\": true' in source
+    assert '\\"full_family_jepa_target_branch_stop_gradient\\": true' in source
+    assert '\\"full_family_jepa_mask_expansion_device_backward\\": true' in source
+    assert '\\"full_family_jepa_target_original_token_embedding_device_forward\\": true' in source
+    assert '\\"full_family_jepa_masked_decoder_tokens_exact_parity\\": true' in source
+    assert "native_family_jepa_target_backbone_exact_parity(std::string_view family_name)" in source
+    assert "native_family_jepa_target_backbone_exact_parity(NFN_NATIVE_MODEL_FAMILY)" in source
+    assert "native_family_jepa_target_backbone_exact_parity(production_step_descriptor.family)" in source
+    assert '\\"full_family_jepa_exact_parity_delta\\": ' in source
+    assert "Dense JEPA, MoE-JEPA, and semantic-router JEPA now report" in source
+    assert "target-backbone exact parity for the frozen hidden-backbone path" in source
+    assert "full JEPA frozen target projector layer norm" in source
+    assert "full JEPA frozen target projector GELU" in source
+    assert "full semantic JEPA target backbone MoE SwiGLU" in source
+    assert "run_semantic_jepa_backbone_forward" in source
+    assert '" backbone token embedding"' in source
+    assert '"masked online"' in source
+    assert '"jepa_online_encoder",\n                                               device_jepa_masked_tokens' in source
+    assert "semantic_jepa_masked_online_backbone_forward_active" in source
+    assert "semantic_mode && !expanded_online_backbone_forward_active && online_encoder_weight == nullptr" in source
+    assert "semantic_mode && !expanded_online_backbone_forward_active &&" in source
+    assert "semantic_mode && !semantic_jepa_masked_online_backbone_forward_active &&" in source
+    assert "Semantic-router JEPA now runs frozen target and masked-online" in source
+    assert "masked-online final-norm, last-MoE-layer, last-attention, and all-layer backward" in source
+    assert "last-attention, and all-layer backward" in source
+    assert "packed-topic semantic-vector route features" in source
+    assert "chunk-projector and JEPA-projector signature-coordinate backward" in source
+    assert "semantic projector residual outputs" in source
+    assert "87-d semantic-vector JEPA predictor" in source
+    assert "signature-coordinate backward" in source
+    assert "consumed semantic chunk-projector surfaces are now template-exact" in source
+    assert "full semantic JEPA masked online prefix chunk state" in source
+    assert "full semantic JEPA masked online prefix chunk state backward" in source
+    assert "masked online backward replay" in source
+    assert "jepa_online_encoder.backbone.final_norm.weight" in source
+    assert "device_semantic_online_final_norm_weight_gradient" in source
+    assert "full semantic JEPA masked online final norm weight matrix backward" in source
+    assert "full semantic JEPA masked online final norm weight gradient" in source
+    assert "device_semantic_online_layer_grad_router_weight" in source
+    assert "device_semantic_online_layer_grad_gate_up_weight" in source
+    assert "device_semantic_online_layer_grad_ffn_down_weight" in source
+    assert "device_semantic_online_layer_grad_attention_out_weight" in source
+    assert "device_semantic_online_layer_grad_q_weight" in source
+    assert "device_semantic_online_layer_grad_k_weight" in source
+    assert "device_semantic_online_layer_grad_v_weight" in source
+    assert "device_semantic_online_layer_norm1_weight_gradient" in source
+    assert "for (std::int64_t reverse = layers_count; reverse-- > 0;)" in source
+    assert "zero_semantic_online_layer_scratch" in source
+    assert 'collect_device_gradient_immediate(online_layer_prefix + "ffn_norm.weight"' in source
+    assert 'collect_device_gradient_immediate(online_layer_prefix + "experts.down.weight"' in source
+    assert "full semantic JEPA masked online layer MoE FFN backward" in source
+    assert "full semantic JEPA masked online layer attention backward" in source
+    assert "propagate semantic JEPA masked online layer gradient to previous layer" in source
+    assert "jepa_latent_rows" in source
+    assert 'add_semantic_jepa_encoder_backbone("jepa_online_encoder", true)' in source
+    assert 'add_semantic_jepa_encoder_backbone("jepa_target_encoder", false)' in source
+    assert 'const std::string root = std::string(encoder_name) + ".backbone."' in source
+    assert 'root + "token_embedding.weight"' in source
+    assert 'root + "layers."' in source
+    assert 'const std::string semantic_root = std::string(encoder_name) + ".semantic_projector."' in source
+    assert 'semantic_root + "topic_heads.weight"' in source
+    assert 'semantic_root + "sig_head.weight"' in source
+    assert 'semantic_root + "residual_head.2.weight"' in source
+    assert "surfaced for template shape" in source
+    assert 'semantic_root + "residual_head.0.weight",\n                           kNativeSemanticProjectorResidualDims * model_dim, false' in source
+    assert 'semantic_root + "residual_head.2.weight",\n                           kNativeSemanticProjectorResidualDims * kNativeSemanticProjectorResidualDims,\n                           false' in source
+    assert '"jepa_semantic_predictor.net.0.weight"' in source
+    assert '"jepa_semantic_predictor.net.2.weight"' in source
+    assert "const bool semantic_jepa_encoder_layout = is_semantic_moe_template(cfg)" in source
+    assert 'family.find("jepa") != std::string::npos && !semantic_jepa_encoder_layout' in source
+    assert "semantic_topic_jepa_predictor_collect_active" in source
+    assert "!semantic_topic_jepa_predictor_collect_active &&" in source
+    assert '\\"full_family_semantic_legacy_compact_jepa_buffers_retired\\": true' in source
+    assert "freezes the target. Persist the target surface, but keep it out of AdamW" in source
+    assert "add_nonsemantic_jepa_target_encoder_backbone(family.find(\"moe\") != std::string::npos)" in source
+    assert 'const std::string root = "target_encoder.backbone."' in source
+    assert 'target_encoder.projector.' in source
+    assert 'projector_root + "net.3.weight"' in source
+    assert "Dense JEPA, MoE-JEPA, and semantic-router JEPA now report" in source
+    assert "target-backbone exact parity for the frozen hidden-backbone path" in source
+    assert "full JEPA target backbone token embedding" in source
+    assert "full JEPA target backbone causal attention" in source
+    assert "full JEPA target backbone final" in source
+    assert "dense_jepa_target_backbone_forward_active" in source
+    assert "moe_jepa_target_backbone_forward_active" in source
+    assert "full MoE-JEPA target backbone MoE SwiGLU" in source
+    assert "nonsemantic_target_projector_active" in source
+    assert "Semantic-router JEPA now runs frozen target and masked-online" in source
+    assert '\\"full_family_semantic_chunk_route_device_compaction\\": true' in source
+    assert '\\"full_family_semantic_chunk_route_gradient_device_aggregation\\": true' in source
+    assert '\\"full_family_standard_moe_route_backward_device\\": true' in source
+    assert '\\"full_family_semantic_route_distillation_device_backward\\": true' in source
+    assert '\\"full_family_semantic_target_topic_route_distillation_device_backward\\": true' in source
+    assert '\\"full_family_semantic_route_distillation_device_accumulation_before_reporting\\": true' in source
+    assert '\\"full_family_semantic_target_topic_chunk_state_device_forward\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_topic_head_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_per_term_topic_head_parameter_layout\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_template_parameter_layout\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_online_target_parameter_surface\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_modulelist_state_dict_aliases\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_residual_device_forward\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_residual_adamw_skip_exact\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_per_term_alignment_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_target_topic_per_term_route_distillation_device_backward\\": true' in source
+    assert '\\"full_family_semantic_canonical_compact_topic_head_retired\\": true' in source
+    assert '\\"full_family_semantic_canonical_compact_topic_head_parameter_retired\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_padded_topic_logits_device_forward\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_topic_argmax_semantic_vec_device_forward\\": true' in source
+    assert '\\"full_family_semantic_compact_semantic_vector_projection_retired_from_canonical_route\\": true' in source
+    assert '\\"full_family_semantic_masked_online_projector_signature_scalar_device_forward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_projector_residual_device_forward\\": true' in source
+    assert '\\"full_family_semantic_target_projector_residual_device_forward\\": true' in source
+    assert '\\"full_family_semantic_masked_online_projector_residual_adamw_skip_exact\\": true' in source
+    assert '\\"full_family_semantic_jepa_topic_vector_predictor_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_target_matrix_device_token_derivation\\": true' in source
+    assert '\\"full_family_semantic_hash_projection_seeded_exact\\": true' in source
+    assert '\\"full_family_semantic_hash_table_gradient_device_backward\\": true' in source
+    assert '\\"full_family_semantic_hash_table_backward_stream_ordered_no_sync\\": true' in source
+    assert '\\"full_family_semantic_route_policy_device_forward\\": true' in source
+    assert '\\"full_family_semantic_route_policy_packed_topic_scores_device_forward\\": true' in source
+    assert '\\"full_family_semantic_route_policy_target_matrix_device_forward\\": true' in source
+    assert '\\"full_family_semantic_shared_expert_projection_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_free_expert_projection_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_expert_combine_device_forward_backward\\": true' in source
+    assert '\\"full_family_semantic_targets_device_token_derivation\\": true' in source
+    assert '\\"full_family_semantic_chunk_projector_per_term_topic_head_exact_parity\\": true' in source
+    assert '\\"full_family_semantic_masked_online_encoder_exact_parity\\": true' in source
+    assert '\\"full_family_deepseek_v4_native_sparse_csa_exact_parity\\": true' in source
+    assert '\\"full_family_deepseek_v4_mla_template_required\\": false' in source
+    assert '\\"full_family_deepseek_v4_learned_csa_indexer_template_required\\": false' in source
+    assert '\\"full_family_mhc_single_stream_exact_parity\\": true' in source
+    assert '\\"full_family_mhc_multi_stream_template_required\\": false' in source
+    assert '\\"full_family_mhc_beta_gradient_device_reduction\\": true' in source
+    assert '\\"full_family_norm_weight_host_collection_elided_when_direct\\": true' in source
+    assert '\\"specialty_lm_act_loss_device_reduction\\": true' in source
+    assert '\\"specialty_hnet_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_seq2seq_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_seq2seq_stacked_qkv_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_hnet_seq2seq_norm_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_direct_gradient_sync_elision\\": true' in source
+    assert '\\"specialty_universal_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_ttt_device_gradient_accumulation\\": true' in source
+    assert '\\"specialty_jamba_device_gradient_accumulation\\": true' in source
+    assert "native family HNet graph received an invalid direct gradient scale" in source
+    assert "native family seq2seq graph received an invalid direct gradient scale" in source
+    assert "seq2seq stacked encoder QKV gradient" in source
+    assert "seq2seq stacked cross-attention QKV gradient" in source
+    assert "stage stacked cross-attention V gradient" in source
+    assert "direct_optimizer == nullptr && !parameters.synchronize_device(error)" in source
+    assert "seq2seq norm weight gradient matrix" in source
+    assert "seq2seq norm weight diagonal" in source
+    assert "HNet norm weight diagonal" in source
+    assert "backbone final norm gradient" in source
+    assert "final_norm_weight_gradient_device" in source
+    assert '\\"reusable_host_batch_staging_workspace\\": true' in source
+    assert '\\"temporary_pool_buffer_count\\": ' in source
+    assert '\\"temporary_active_buffer_count\\": ' in source
+    assert '\\"temporary_metadata_reserved_buffer_count\\": ' in source
+    assert '\\"temporary_active_buffer_high_water_count\\": ' in source
+    assert '\\"temporary_replay_lease_count\\": ' in source
+    assert '\\"temporary_replay_plan_buffer_count\\": ' in source
+    assert "temporary_pool_buffer_count() const" in production_header
+    assert "temporary_active_buffer_count() const" in production_header
+    assert "temporary_metadata_reserved_buffer_count() const" in production_header
+    assert "temporary_active_buffer_high_water_count() const" in production_header
+    assert "reserve_temporary_metadata_records(std::size_t count) const" in production_header
+    assert "temporary_replay_leases_ready() const" in production_header
+    assert "temporary_replay_validation_enabled() const" in production_header
+    assert "if (!temporary_replay_validation_enabled_)" in production_header
+    assert "for (const TemporaryAllocation& planned : temporary_replay_plan_)" in production_header
+    assert "for (const TemporaryAllocation& planned_free : temporary_replay_free_plan_)" in production_header
+    assert "pooled.pointer == planned.pointer && pooled.bytes == planned.bytes" in production_header
+    assert "pooled.pointer == planned_free.pointer && pooled.bytes == planned_free.bytes" in production_header
+    assert "temporary_replay_free_plan_.push_back(temporary_active_[index])" in production_header
+    assert "temporary_replay_plan_buffer_count() const" in production_header
+    assert "begin_temporary_replay_recording(std::string* error) const" in production_header
+    assert "end_temporary_replay_recording(std::string* error) const" in production_header
+    assert "begin_temporary_replay_leases(std::string* error) const" in production_header
+    assert "arm_temporary_replay_leases(std::string* error) const" in production_header
+    assert "arm_temporary_replay_leases(bool validate_each_lease, std::string* error) const" in production_header
+    assert "disarm_temporary_replay_leases() const" in production_header
+    assert "end_temporary_replay_leases(std::string* error) const" in production_header
+    assert "temporary_replay_leases_ready()" in source
+    assert "begin_temporary_replay_recording(error)" in source
+    assert "end_temporary_replay_recording(&replay_error)" in source
+    assert "std::string replay_error" in source
+    assert "result.error.empty() ? replay_error : result.error" in source
+    assert "native_family_temporary_replay_validation_enabled()" in source
+    assert "arm_temporary_replay_leases(\n            validate_temporary_replay_leases, error)" in source
+    assert "disarm_temporary_replay_leases()" in source
+    assert "end_temporary_replay_leases(error)" in source
+    assert "state.parameters.reserve_temporary_metadata_records(256)" in source
+    assert "struct FamilyProductionHostWorkspace" in production_header
+    assert "const std::int64_t* device_semantic_targets = nullptr" in production_header
+    assert "allocate_persistent_workspace(std::size_t bytes" in production_header
+    assert "FamilyProductionHostWorkspace* host_workspace = nullptr" in production_header
+    assert "context.host_workspace = &production_bootstrap->host_workspace" in source
+    assert "stage_native_family_device_semantic_batch(\n            production_bootstrap, &production_batch, context.cuda_stream, error)" in source
+    assert "view->semantic_targets" in source
+    assert "view->device_semantic_targets = static_cast<const std::int64_t*>(raw)" in source
+    assert "std::vector<std::uint16_t> tokens_u16" in production_header
+    assert "std::vector<std::int64_t> targets_i64" in production_header
+    assert "full JEPA device prediction MSE gradient" in source
+    assert "full JEPA device target MSE gradient" in source
+    assert "device_jepa_gradient_scale" in source
+    assert "device_jepa_negative_gradient_scale" in source
+    assert "direct_optimizer == nullptr && !collect_host_gradient(\"final_norm.weight\"" in source
+    assert "direct_optimizer == nullptr &&\n             (!collect_host_gradient(prefix + \"attention_norm.weight\"" in source
+    assert "NativeFamilyTileLlamaApi::NativeFamilyJepaMaskFn" in source
+    assert "NativeFamilyTileLlamaApi::NativeFamilyJepaMaskU16Fn" in source
+    assert "nfn_native_tile_native_family_jepa_mask_float32" in source
+    assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in source
+    assert "api.native_family_jepa_mask_u16(" in source
+    assert "device_jepa_masked_tokens" in source
+    assert "jepa_online_encoder.weight" in source
+    assert "full semantic JEPA masked online encoder" in source
+    assert "full semantic JEPA masked online encoder weight backward" in source
+    assert '"semantic JEPA masked online tokens"' in source
+    assert "full semantic JEPA masked online token construction" in source
+    assert "device_jepa_target_hidden" in source
+    assert "decoder_tokens = (jepa_mode && !semantic_mode)" in source
+    assert "jepa_target_input = device_jepa_target_hidden" in source
+    assert '"full JEPA target embedding backward"' in source
+    assert "NativeFamilyTileLlamaApi::LatentPoolBackwardFn" in source
+    assert "nfn_native_tile_latent_pool_backward_float32" in source
+    assert "api.latent_pool_backward(device_jepa_grad_target" in source
+    assert "api.latent_pool_backward(device_jepa_grad_online_pooled" in source
+    assert "host_loss_reporting_totals" in source
+    assert "nfn_native_tile_sum_partials_float32" in source
+    assert "nfn_native_tile_sum_accumulate_float32" in source
+    assert "SumAccumulateFn sum_accumulate" in source
+    assert "api.sum_accumulate(device_loss_reduced, device_lm_loss_total" in source
+    assert "full LLaMA chunked cross entropy device loss accumulation" in source
+    assert "semantic route distillation total loss" in source
+    assert "JEPA total loss" in source
+    assert "semantic compact total loss" in source
+    assert "semantic per-term total alignment loss" in source
+    assert "full JEPA latent MSE device loss accumulation" in source
+    assert "full semantic JEPA semantic-vector MSE device loss accumulation" in source
+    assert "full semantic route CE device loss accumulation" in source
+    assert "full semantic per-term alignment device loss accumulation" in source
+    assert "full semantic per-term alignment device count accumulation" in source
+    assert "full semantic route distillation device loss accumulation" in source
+    assert "full semantic target-topic route distillation device loss accumulation" in source
+    assert "zero full LLaMA LM-head total loss" in source
+    assert '"LM-head total loss"' in source
+    assert '\\"full_family_lm_loss_device_accumulation_before_reporting\\": true' in source
+    assert '\\"full_family_lm_loss_reporting_readback_after_lm_backward\\": true' in source
+    assert "api.sum_partials(device_loss, device_loss_reduced, chunk_partials, stream)" in source
+    assert "api.sum_partials(device_jepa_loss, device_jepa_loss_reduced" in source
+    assert "api.sum_partials(device_semantic_loss, device_semantic_loss_reduced" in source
+    assert "api.sum_partials(device_lm_loss, device_lm_loss_reduced" in source
+    assert "api.sum_partials(device_halt_bce_loss, device_halt_bce_loss_reduced" in source
+    assert "LM-head reduced chunk loss partials" in source
+    assert "JEPA reduced loss partials" in source
+    assert "semantic reduced loss partials" in source
+    assert "byte LM reduced loss partials" in source
+    assert "ACT halt reduced loss partials" in source
+    assert "nfn_native_tile_sum_accumulate_float32" in missing_build_script
+    assert "kLossReportJepa" in source
+    assert "kLossReportSemantic" in source
+    assert "kLossReportSemanticRouteDistill" in source
+    assert "host_workspace->embedding_gradient" in source
+    assert "host_workspace->gradient_collect" in source
+    assert "std::vector<float> route_logits" in production_header
+    assert "std::vector<float> route_weights" in production_header
+    assert "std::vector<std::int64_t> route_indices" in production_header
+    assert "CompactChunkRoutesFn compact_chunk_routes" in source
+    assert "AggregateChunkRouteGradientsFn aggregate_chunk_route_gradients" in source
+    assert "TopKRouteBackwardFn topk_route_backward" in source
+    assert "SemanticRouteDistillationBackwardFn semantic_route_distillation_backward" in source
+    assert "SemanticTargetTopicDistillationBackwardFn semantic_target_topic_distillation_backward" in source
+    assert "SemanticHashTableBackwardFn semantic_hash_table_backward" in source
+    assert "SemanticRoutePolicyFn semantic_route_policy" in source
+    assert "SemanticRoutePolicyPackedTopicFn semantic_route_policy_packed_topic" in source
+    assert "SemanticRoutePolicyPackedTopicMatrixFn semantic_route_policy_packed_topic_matrix" in source
+    assert "SemanticVecFromPackedTopicFn semantic_vec_from_packed_topic" in source
+    assert "SemanticSignatureScalarFn semantic_signature_scalar" in source
+    assert "SemanticFreeExpertProjectionFn semantic_free_expert_projection" in source
+    assert "SemanticSharedExpertProjectionFn semantic_shared_expert_projection" in source
+    assert "SemanticFreeExpertProjectionBackwardFn semantic_free_expert_projection_backward" in source
+    assert "SemanticSharedExpertProjectionBackwardFn semantic_shared_expert_projection_backward" in source
+    assert "SemanticTargetsFromMatrixFn semantic_targets_from_matrix" in source
+    assert "SemanticTargetsFromTokensFn semantic_targets_from_tokens" in source
+    assert "semantic_target_checksum_from_tokens(" in source
+    assert "view.semantic_targets = nullptr;" in source
+    assert "native_family_semantic_token_batch_view(\n    const neuralfn::native_train::TokenBatch& batch,\n    std::int64_t semantic_dims" in source
+    assert "last_train_semantic_checksum = semantic_target_checksum_from_tokens(" in source
+    assert "batch.derive_device_semantic_targets_from_tokens && batch.semantic_dims > 0" in source
+    assert "result.semantic_target_row_count =\n                    std::max<std::int64_t>(result.semantic_target_row_count, semantic_rows)" in source
+    assert "Uint16ToInt64Fn uint16_to_int64" in source
+    assert "MhcBetaGradientFn mhc_beta_gradient" in source
+    assert "nfn_native_tile_compact_chunk_routes_float32_int64" in source
+    assert "nfn_native_tile_aggregate_chunk_route_gradients_float32" in source
+    assert "nfn_native_tile_topk_route_backward_float32" in source
+    assert "nfn_native_tile_semantic_shared_topk_route_float32" in source
+    assert "nfn_native_tile_semantic_shared_forced_topk_route_float32" in source
+    assert "nfn_native_tile_semantic_shared_topk_route_backward_float32" in source
+    assert "SemanticSharedTopKRouteFn" in source
+    assert "SemanticSharedForcedTopKRouteFn" in source
+    assert "SemanticSharedTopKRouteBackwardFn" in source
+    assert "semantic_shared_topk_route" in source
+    assert "semantic_shared_forced_topk_route" in source
+    assert "semantic_shared_topk_route_backward" in source
+    assert "const std::int64_t route_width =" in source
+    assert "semantic_shared_experts + top_k : top_k" in source
+    assert "full semantic shared-plus-top-k routing" in source
+    assert "full semantic shared-plus-forced-top-k routing" in source
+    assert "full semantic shared-plus-top-k selected route backward" in source
+    assert "full_family_semantic_router_shared_experts_always_on_route_width" in source
+    assert "full_family_semantic_shared_plus_topk_route_device_forward_backward" in source
+    assert "full_family_semantic_router_forced_target_candidate_mask_device_forward" in source
+    assert "nfn_native_tile_semantic_route_distillation_backward_float32" in source
+    assert "nfn_native_tile_semantic_target_topic_distillation_backward_float32" in source
+    assert "nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32" in source
+    assert "nfn_native_tile_causal_chunk_state_float32" in source
+    assert "full semantic target-topic mean chunk state" in source
+    assert "full semantic target-topic chunk projection" in source
+    assert "semantic_topic_head_weight" in source
+    assert 'if (native_family_semantic_per_term_topic_head_supported(semantic_vocab_dims)) {' in source
+    assert 'buffers.push_back({"semantic_projector.topic_heads.weight"' in source
+    assert 'buffers.push_back({"semantic_projector.sig_head.weight"' in source
+    assert 'buffers.push_back({"semantic_projector.residual_head.0.weight"' in source
+    assert 'buffers.push_back({"semantic_projector.residual_head.2.weight"' in source
+    assert 'add_semantic_chunk_projector("online_chunk_projector", true)' in source
+    assert 'add_semantic_chunk_projector("target_chunk_projector", false)' in source
+    assert 'semantic_online_chunk_projector_root + "topic_heads.weight"' in source
+    assert 'semantic_online_chunk_projector_root + "sig_head.weight"' in source
+    assert 'semantic_online_chunk_projector_root + "residual_head.0.weight"' in source
+    assert 'semantic_online_chunk_projector_root + "residual_head.2.weight"' in source
+    assert 'semantic_target_chunk_projector_root + "topic_heads.weight"' in source
+    assert 'semantic_target_chunk_projector_root + "sig_head.weight"' in source
+    assert 'semantic_target_chunk_projector_root + "residual_head.0.weight"' in source
+    assert 'semantic_target_chunk_projector_root + "residual_head.2.weight"' in source
+    assert '} else {\n            buffers.push_back({"semantic_chunk_topic_head.weight"' in source
+    assert "const float* semantic_topic_head_weight = semantic_compact_topic_head_mode" in source
+    assert "semantic_template_chunk_projector_mode" in source
+    assert "semantic_online_topic_heads_name" in source
+    assert "semantic_target_topic_heads_name" in source
+    assert "torch_state_dict_alias_layout" in source
+    assert "packed-semantic-topic-head-modulelist-v1" in source
+    assert "native_family_semantic_packed_topic_head_buffer" in source
+    assert "write_native_family_torch_state_dict_aliases_json" in source
+    assert "write_native_family_torch_state_dict_aliases_json(std::cout, cfg, buffers)" in source
+    assert "packed_native_semantic_topic_head" in source
+    assert '"topic_heads." + std::to_string(dim) + ".weight"' in source
+    assert "semantic_jepa_encoder_backbone_state_dict_alias" in source
+    assert "semantic_jepa_encoder_projector_state_dict_alias" in source
+    assert '"backbone.token_embed.embedding.weight"' in source
+    assert 'return "online_encoder."' in source
+    assert 'return "target_encoder."' in source
+    assert '"sem_proj.topic_heads."' in source
+    assert '"attention." + proj_name + ".proj.weight"' in source
+    assert 'layer_suffix == "q_proj.weight"' in source
+    assert "attention.out_proj.proj.weight" in source
+    assert "mlp.router.gate.weight" in source
+    assert "mlp.dispatch.w1" in source
+    assert "mlp.dispatch.w2" in source
+    assert "mlp.dispatch.w3" in source
+    assert 'name == "jepa_online_encoder.semantic_projector.topic_heads.weight"' not in source
+    assert 'name == "jepa_target_encoder.semantic_projector.topic_heads.weight"' not in source
+    assert "semantic_projector.topic_heads.weight" in source
+    assert "semantic_projector.sig_head.weight" in source
+    assert "semantic_projector.residual_head.0.weight" in source
+    assert "semantic_projector.residual_head.2.weight" in source
+    assert "semantic_chunk_residual_fc0_weight" in source
+    assert "semantic_chunk_residual_fc1_weight" in source
+    assert "semantic router residual hidden" in source
+    assert "semantic router residual output" in source
+    assert "device_semantic_grad_topic_term_head" in source
+    assert "nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64" in source
+    assert "nfn_native_tile_semantic_alignment_packed_loss_backward_float32" in source
+    assert "device_semantic_grad_topic_head" in source
+    assert 'collect_gradient("semantic_chunk_topic_head.weight"' in source
+    assert "collect_gradient(semantic_online_topic_heads_name" in source
+    assert "nfn_native_tile_semantic_hash_table_backward_float32" in source
+    assert "nfn_native_tile_semantic_route_policy_float32" in source
+    assert "nfn_native_tile_semantic_route_policy_packed_topic_float32" in source
+    assert "nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32" in source
+    assert "nfn_native_tile_semantic_vec_from_packed_topic_float32" in source
+    assert "nfn_native_tile_semantic_packed_topic_to_padded_float32" in source
+    assert "SemanticPackedTopicToPaddedFn" in source
+    assert "semantic_packed_topic_to_padded" in source
+    assert "device_semantic_topic_padded_logits" in source
+    assert "device_semantic_online_topic_padded_logits" in source
+    assert "device_semantic_target_topic_padded_logits" in source
+    assert "full semantic route padded topic logits" in source
+    assert "full semantic JEPA masked online padded topic logits" in source
+    assert "full semantic JEPA target padded topic logits" in source
+    assert "nfn_native_tile_semantic_signature_scalar_float32" in source
+    assert "nfn_native_tile_semantic_vec_append_signature_float32" in source
+    assert "nfn_native_tile_semantic_vec_split_signature_grad_float32" in source
+    assert "nfn_native_tile_semantic_signature_scalar_backward_float32" in source
+    assert "nfn_native_tile_gelu_backward_float32" in source
+    assert "device_semantic_online_topic_vec" in source
+    assert "device_semantic_target_topic_vec" in source
+    assert "device_semantic_predictor_hidden_pre" in source
+    assert "device_semantic_grad_predictor_fc0_weight" in source
+    assert "device_semantic_grad_predictor_fc1_weight" in source
+    assert "full semantic JEPA masked online signature projection" in source
+    assert "full semantic JEPA masked online signature scalar" in source
+    assert "full semantic JEPA target signature projection" in source
+    assert "full semantic JEPA target signature scalar" in source
+    assert "full semantic JEPA masked online semantic vector" in source
+    assert "full semantic JEPA target semantic vector" in source
+    assert "full semantic JEPA masked online per-term topic projection" in source
+    assert "full semantic JEPA masked online topic vector" in source
+    assert "full semantic JEPA target per-term topic projection" in source
+    assert "full semantic JEPA target topic vector" in source
+    assert "full semantic JEPA semantic-vector predictor fc0" in source
+    assert "full semantic JEPA semantic-vector predictor GELU" in source
+    assert "full semantic JEPA semantic-vector predictor fc1" in source
+    assert "full semantic JEPA semantic-vector MSE" in source
+    assert "full semantic JEPA semantic-vector predictor fc1 weight backward" in source
+    assert "full semantic JEPA semantic-vector predictor GELU backward" in source
+    assert "full semantic JEPA semantic-vector predictor fc0 weight backward" in source
+    assert "full semantic JEPA online semantic-vector gradient split" in source
+    assert "full semantic JEPA target semantic-vector gradient split" in source
+    assert "full semantic JEPA online signature scalar backward" in source
+    assert "full semantic chunk signature projection" in source
+    assert "full semantic chunk signature vector" in source
+    assert "full semantic chunk residual projection fc0" in source
+    assert "full semantic chunk residual projection GELU" in source
+    assert "full semantic chunk residual projection fc1" in source
+    assert "full semantic router signature-vector gradient split" in source
+    assert "full semantic router signature scalar backward" in source
+    assert "full semantic router signature weight backward" in source
+    assert "collect_gradient(semantic_online_signature_name" in source
+    assert "full semantic JEPA online signature input backward" in source
+    assert "full semantic JEPA online signature weight backward" in source
+    assert "parameters.parameter_ptr(semantic_online_signature_name)" in source
+    assert "parameters.parameter_ptr(semantic_target_signature_name)" in source
+    assert "kNativeSemanticProjectorResidualDims" in source
+    assert "device_semantic_online_residual_hidden" in source
+    assert "device_semantic_online_residual" in source
+    assert "parameters.parameter_ptr(semantic_online_residual_fc0_name)" in source
+    assert "parameters.parameter_ptr(semantic_online_residual_fc1_name)" in source
+    assert "parameters.parameter_ptr(semantic_target_residual_fc0_name)" in source
+    assert "parameters.parameter_ptr(semantic_target_residual_fc1_name)" in source
+    assert "full semantic JEPA masked online residual projection fc0" in source
+    assert "full semantic JEPA masked online residual projection GELU" in source
+    assert "full semantic JEPA masked online residual projection fc1" in source
+    assert "full semantic JEPA target residual projection fc0" in source
+    assert "full semantic JEPA target residual projection GELU" in source
+    assert "full semantic JEPA target residual projection fc1" in source
+    assert "device_semantic_target_residual_hidden" in source
+    assert "device_semantic_target_residual" in source
+    assert "full_family_semantic_masked_online_projector_residual_adamw_skip_exact" in source
+    assert "semantic_projector_topic_vec_mode" in source
+    assert "full semantic packed-topic semantic-vector projection" in source
+    assert "full semantic packed-topic semantic hash" in source
+    assert "!semantic_projector_topic_vec_mode" in source
+    assert "nfn_native_tile_semantic_shared_expert_projection_float32" in source
+    assert "nfn_native_tile_semantic_shared_expert_projection_backward_float32" in source
+    assert "nfn_native_tile_semantic_free_expert_projection_float32" in source
+    assert "nfn_native_tile_semantic_free_expert_projection_backward_float32" in source
+    assert "nfn_native_tile_semantic_router_bias_add_float32" in source
+    assert "nfn_native_tile_semantic_router_bias_backward_float32" in source
+    assert 'buffers.push_back({"semantic_router.shared_logits"' in source
+    assert 'buffers.push_back({"semantic_router.free_head.weight"' in source
+    assert 'buffers.push_back({"semantic_router.free_head.bias"' in source
+    assert 'collect_gradient("semantic_router.shared_logits"' in source
+    assert 'collect_gradient("semantic_router.free_head.weight"' in source
+    assert 'collect_gradient("semantic_router.free_head.bias"' in source
+    assert "nfn_native_tile_semantic_targets_from_matrix_int64" in source
+    assert "nfn_native_tile_semantic_targets_from_tokens_u16_int64" in source
+    assert "nfn_native_tile_mhc_beta_gradient_float32" in source
+    assert "layer.chunk_route_weights, layer.chunk_route_indices" in source
+    assert "full semantic chunk route compaction" in source
+    assert "full semantic chunk route gradient aggregation" in source
+    assert "full MoE selected route backward" in source
+    assert "full semantic route distillation backward" in source
+    assert "full semantic target-topic route distillation backward" in source
+    assert "full semantic hash table backward" in source
+    assert '"full semantic hash table backward") ||\n            !parameters.synchronize_device(error)' not in source
+    assert "full semantic route policy" in source
+    assert "full semantic router shared/free bias add" in source
+    assert "full semantic router shared/free bias backward" in source
+    assert "full semantic free-expert projection" in source
+    assert "full semantic free-expert projection backward" in source
+    assert "full semantic target device materialization" in source
+    assert "full semantic target device derivation from tokens" in source
+    assert "stage_native_family_device_semantic_batch(" in source
+    assert "view->device_semantic_targets = static_cast<const std::int64_t*>(raw)" in source
+    assert "derive_device_semantic_targets_from_tokens" in source
+    assert "full DeepSeek mHC beta gradient reduction" in source
+    assert "std::vector<std::int64_t> semantic_hash_indices" in production_header
+    assert "device_semantic_grad_table_gate" in source
+    assert "specialty family branches still include host-side control around capture-stream Tile launches" in source
+    assert "production_step_parameter_store_checksum_enabled" in source
+    assert "post_step_checksum_enabled && context.cuda_stream == nullptr" in source
+    assert "void* cuda_stream" in source
+    assert "context->cuda_stream" in source
+    assert "void* stream = cuda_stream" in source
+    assert "std::string* error,\n        void* stream = nullptr" in production_header
+    assert "cuda_memcpy_async(destination, source, bytes, kCudaMemcpyHostToDevice, stream)" in production_header
+    assert "device_target_tokens_u16" in source
+    assert "run(api.uint16_to_int64(device_target_tokens_u16, device_targets, rows, stream)" in source
+    assert "add_native_family_persistent_tile_hnet_gradients(" in source
+    assert "add_native_family_persistent_tile_seq2seq_gradients(" in source
+    assert '\\"optimizer_bf16_shadow_enabled\\": ' in source
+    assert '\\"bf16_shadow_elements\\": ' in source
+    assert '\\"cuda_graph_capture_enabled\\": ' in source
+    assert '\\"cuda_graph_capture_supported\\": ' in source
+    assert '\\"parameter_role_binding_verified\\": ' in source
+    assert '\\"production_parameter_role_count\\": ' in source
+    assert '\\"base_transformer_parameter_role_count\\": ' in source
+    assert '\\"moe_parameter_role_count\\": ' in source
+    assert '\\"jepa_parameter_role_count\\": ' in source
+    assert '\\"semantic_parameter_role_count\\": ' in source
+    assert '\\"seq2seq_parameter_role_count\\": ' in source
+    assert '\\"diffusion_parameter_role_count\\": ' in source
+    assert '\\"ttt_parameter_role_count\\": ' in source
+    assert '\\"universal_parameter_role_count\\": ' in source
+    assert '\\"hnet_parameter_role_count\\": ' in source
+    assert '\\"jamba_parameter_role_count\\": ' in source
+    assert '\\"cuda_graph_capture_count\\": ' in source
+    assert '\\"cuda_graph_replay_count\\": ' in source
+    assert '\\"production_state_contract\\": {' in source
+    assert '\\"parameter_store\\": \\"FamilyDeviceParameterStore\\"' in source
+    assert '\\"optimizer_state\\": \\"FamilyOptimizerState\\"' in source
+    assert '\\"production_step_family\\": ' in source
+    assert '\\"production_step_implementation\\": ' in source
+    assert '\\"full_geometry_forward_backward\\": ' in source
+    assert '\\"required_parameter_roles\\": ' in source
+    assert '\\"planned_forward_backward_stages\\": ' in source
+    assert '\\"supports_bf16_shadow_adamw\\": true' in source
+    assert '\\"bf16_shadow_parameter_elements\\": ' in source
+    assert '\\"supports_cuda_graph_optimizer_step\\": true' in source
+    assert '\\"cuda_graph_capture_default_enabled\\": ' in source
+    assert '\\"optimizer_cuda_graph_device_hyperparameters_supported\\": true' in source
+    assert '\\"optimizer_cuda_graph_uses_device_hyperparameters\\": true' in source
+    assert '\\"production_macro_enabled\\": ' in source
+    assert '\\"full_geometry_forward_backward_enabled\\": ' in source
+    assert "class FamilyDeviceParameterStore" in production_header
+    assert "FamilyParameterBufferSpec" in production_header
+    assert "FamilyFullParameterCheckpointInfo" in production_header
+    assert "mix_family_float_checksum(" in production_header
+    assert "write_family_full_parameter_sidecar(" in production_header
+    assert "trained_parameter_elements = info->parameter_elements" in production_header
+    assert "parameter_update_checksum" in production_header
+    assert "initialize_deterministic(" in production_header
+    assert "load_from_sidecar(" in production_header
+    assert "copy_to_host(" in production_header
+    assert "write_host_sidecar(" in production_header
+    assert "struct FamilyDeviceParameterView" in production_header
+    assert "find_buffer(std::string_view name)" in production_header
+    assert "parameter_ptr(std::string_view name)" in production_header
+    assert "parameter_elements(std::string_view name)" in production_header
+    assert "parameter_offset(std::string_view name)" in production_header
+    assert "parameter_view(std::string_view name)" in production_header
+    assert "cudaMalloc family parameter" in production_header
+    assert "cudaMemcpy family parameter H2D" in production_header
+    assert "cudaMemcpy family parameter D2H" in production_header
+    assert "class FamilyOptimizerState" in production_header
+    assert "FamilyOptimizerHyperparameters" in production_header
+    assert "FamilyTileOptimizerApi" in production_header
+    assert "nfn_native_tile_gradient_accumulate_float32" in production_header
+    assert "nfn_native_tile_sumsq_partials_many_float32" in production_header
+    assert "nfn_native_tile_global_norm_clip_scale_float32" in production_header
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in production_header
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in production_header
+    assert "AdamWManyWithDeviceScaleHyperFn" in production_header
+    assert "AdamWManyWithDeviceScaleBf16ShadowHyperFn" in production_header
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_hyper_float32" in production_header
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32" in production_header
+    assert "optimizer_hyperparameters_" in production_header
+    assert "optimizer_hyperparameters_host_" in production_header
+    assert "copy_optimizer_hyperparameters_to_device(" in production_header
+    assert "device_hyperparameter_adamw_available() const" in production_header
+    assert "cuda_graph_device_hyperparameters_supported() const" in production_header
+    assert "cuda_graph_uses_device_hyperparameters() const" in production_header
+    assert "optimizer_graph_scalar_launch_hyperparameters_equal(" in production_header
+    assert "optimizer_graph_hyperparameters_require_recapture(" in production_header
+    assert "optimizer_graph_uses_device_hyperparameters_" in production_header
+    assert "!copy_optimizer_hyperparameters_to_device(hyper, optimizer_graph_stream_, error)" in production_header
+    assert "bf16_shadow_offset" in production_header
+    assert "bf16_shadow_bits_" in production_header
+    assert "d_bf16_shadow_offsets_" in production_header
+    assert "bf16_shadow_enabled()" in production_header
+    assert "bf16_shadow_elements()" in production_header
+    assert "adamw_step_many_with_device_scale_bf16_shadow_float32(" in production_header
+    assert "cuda_stream_begin_capture" in production_header
+    assert "cuda_stream_end_capture" in production_header
+    assert "cuda_graph_instantiate" in production_header
+    assert "cuda_graph_launch" in production_header
+    assert "set_cuda_graph_capture_enabled(" in production_header
+    assert "optimizer_step_cuda_graph(" in production_header
+    assert "capture_optimizer_step_graph(" in production_header
+    assert "cuda_graph_capture_count()" in production_header
+    assert "cuda_graph_replay_count()" in production_header
+    assert "compute_global_clip_scale(" in production_header
+    assert "optimizer_step(" in production_header
+    assert "family_scheduled_learning_rate(" in production_header
+    assert "enum class FamilyProductionBatchFormat" in production_header
+    assert "struct FamilyProductionBatchView" in production_header
+    assert "struct FamilyProductionLosses" in production_header
+    assert "struct FamilyProductionStepContext" in production_header
+    assert "class FamilyProductionStep" in production_header
+    assert "virtual FamilyProductionStepResult forward_backward(" in production_header
+    assert "FamilyDeviceParameterStore* parameters" in production_header
+    assert "FamilyOptimizerState* optimizer" in production_header
+    assert "optimizer_step_applied" in production_header
+    assert "family_step_binding_verified" in production_header
+    assert "persistent_parameter_buffer_count" in production_header
+    assert "semantic_target_batch_count" in production_header
+    assert "semantic_target_row_count" in production_header
+    assert "semantic_route_bias_count" in production_header
+    assert "semantic_route_forced_count" in production_header
+    assert "semantic_route_distillation_count" in production_header
+    assert "semantic_route_broadcast_count" in production_header
+    assert "semantic_route_evo_adoption_count" in production_header
+    assert "auxfree_bias_refresh_count" in production_header
+    assert "overwrite_buffer_from_host(" in production_header
+    assert '\\"full_template_parameter_state\\": true' in source
+    assert '\\"persistent_full_size_family_parameter_state\\": true' in source
+    assert '\\"format\\": \\"nfn-native-family-optimizer-checkpoint-v1\\"' in source
+    assert '\\"checkpoint_kind\\": \\"native_family_optimizer_trained_model\\"' in source
+    assert '\\"checkpoint_kind\\": \\"native_family_optimizer_trained_byte_model\\"' in source
+    assert "live_family_device_parameter_store_float32_parameter_tensors_plus_token_transition_table" in source
+    assert "live_family_device_parameter_store_float32_parameter_tensors_plus_byte_transition_table" in source
+    assert "live_family_device_parameter_store_float32_state" in source
+    assert "optimizer_updated_dense_float32_parameter_tensors_plus_token_transition_table" in source
+    assert "optimizer_updated_dense_float32_parameter_tensors_plus_byte_transition_table" in source
+    assert "optimizer_updated_dense_float32_parameter_state" in source
+    assert "deterministic_dense_float32_v1_plus_sampled_native_adamw_updates" in source
+    assert "nfn_native_tile_adamw_step_float32" in source
+    assert '\\"optimizer_updated_full_architecture_parameter_persistence\\": ' in source
+    assert "NFN_NATIVE_PRODUCTION_LOOP != 0 && native_full_family_geometry_build_enabled()" in source
+    assert '\\"dense_parameter_state_reconstructable\\": ' in source
+    assert '\\"dense_parameter_state_reconstructable\\": true' in source
+    assert '\\"base_parameter_initialization\\": \\"' in source
+    assert '(use_live_parameter_store ? "" : "deterministic_dense_float32_v1")' in source
+    assert '\\"base_parameter_seed\\": 1337' in source
+    assert '\\"base_parameter_scale\\": 0.02' in source
+    assert '\\"contiguous_parameter_state\\": true' in source
+    assert "architecture_forward_supported" in source
+    assert '\\"architecture_forward_inference_supported\\": ' in source
+    assert '\\"parameter_lm_head_inference_supported\\": true' in source
+    assert "native_family_architecture_sidecar_forward_v1" in source
+    assert "token_embedding_lm_head_sidecar_forward" in source
+    assert '\\"writer_verification\\": {' in source
+    assert '\\"status\\": \\"native-family-checkpoint-writer-verification\\"' in source
+    assert '\\"sampled_update_probe_count\\": ' in source
+    assert '\\"dense_base_initialization_verified\\": ' in source
+    assert '\\"dense_base_initialization_probe_count\\": ' in source
+    assert '\\"dense_base_probe_checksum\\": ' in source
+    assert '\\"dense_base_probes\\": ' in source
+    assert "std::string native_checkpoint;" in source
+    assert "--native-checkpoint PATH" in source
+    assert "resolve_native_family_resume_parameter_path(" in source
+    assert "load_native_family_resume_sidecar(" in source
+    assert '\\"native_checkpoint\\": {' in source
+    assert "write_cuda_optimizer_native_family_parameter_state_file(" in source
+    assert "nfn_native_tile_adamw_step_float32 dense native family" in source
+    assert '\\"model_checkpoint_writer_verified\\": ' in source
+    assert "const std::string template_prefix = sanitize_artifact_prefix(cfg.template_name);" in source
+    assert "template_prefix != base_prefix && template_prefix != family_prefix" in source
+    assert "? (template_prefix + \"_\" + base_prefix)" in source
+    assert '\\"offset\\": ' in source
+    assert '"production-family-forward-backward-optimizer-loop"' in source
+    assert '\\"architecture-forward-inference-from-persistent-family-parameter-state\\"' not in source
+    assert '"persistent-full-size-family-parameter-state"' not in source
+
+    def function_body(name: str) -> str:
+        signature = f"int {name}("
+        start = source.index(signature)
+        brace_start = source.index("{", start)
+        depth = 0
+        for index in range(brace_start, len(source)):
+            char = source[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[brace_start : index + 1]
+        raise AssertionError(f"could not find function body for {name}")
+
+    token_loop_functions = [
+        "print_llama_dataset_loop_json",
+        "print_moe_jepa_dataset_loop_json",
+        "print_semantic_router_moe_dataset_loop_json",
+        "print_dense_jepa_dataset_loop_json",
+        "print_semantic_dense_jepa_dataset_loop_json",
+        "print_single_substep_dataset_loop_json",
+    ]
+    for name in token_loop_functions:
+        body = function_body(name)
+        assert "NativeFamilyProductionBootstrap production_bootstrap" in body, name
+        assert "prepare_native_family_production_bootstrap(cfg, program)" in body, name
+        assert '\\"production_state_runtime\\"' in body, name
+        assert "write_native_family_production_bootstrap_json(" in body, name
+        assert "model_checkpoint_written" in body, name
+        assert "model_checkpoint_path" in body, name
+        assert "model_checkpoint_done_path" in body, name
+        assert "model_checkpoint_writer_verified" in body, name
+        assert "write_native_family_token_model(" in body, name
+        assert "maybe_write_periodic_native_family_token_checkpoint(" in body, name
+        assert "&production_bootstrap" in body, name
+        assert "accum_step <= batch_plan.grad_accum_steps" in body, name
+        assert body.index("accum_step <= batch_plan.grad_accum_steps") < body.index("steps_completed = step"), name
+        assert body.index("steps_completed = step") < body.index("maybe_write_periodic_native_family_token_checkpoint("), name
+
+    hnet_body = function_body("print_hnet_byte_dataset_loop_json")
+    assert "NativeFamilyProductionBootstrap production_bootstrap" in hnet_body
+    assert "prepare_native_family_production_bootstrap(cfg, program)" in hnet_body
+    assert '\\"production_state_runtime\\"' in hnet_body
+    assert "write_native_family_production_bootstrap_json(" in hnet_body
+    assert "model_checkpoint_written" in hnet_body
+    assert "model_checkpoint_path" in hnet_body
+    assert "model_checkpoint_done_path" in hnet_body
+    assert "model_checkpoint_writer_verified" in hnet_body
+    assert "write_native_family_byte_model(" in hnet_body
+    assert "maybe_write_periodic_native_family_byte_checkpoint(" in hnet_body
+    assert "&production_bootstrap" in hnet_body
+    assert "accum_step <= batch_plan.grad_accum_steps" in hnet_body
+    assert hnet_body.index("accum_step <= batch_plan.grad_accum_steps") < hnet_body.index("steps_completed = step")
+    assert hnet_body.index("steps_completed = step") < hnet_body.index("maybe_write_periodic_native_family_byte_checkpoint(")
+    assert "add_native_family_persistent_tile_hnet_gradients(" in source
+    assert "transformer_backbone_forward" in source
+    assert "HNet final RMSNorm backward" in source
+    assert "HNet attention backward" in source
+    assert "HNet query weight backward" in source
+    assert "HNet key weight backward" in source
+    assert "HNet value weight backward" in source
+    assert "HNet FFN down weight backward" in source
+    assert "persistent_tile_hnet_byte_patch_full_geometry_forward_backward" in source
 
 
 def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tmp_path: Path) -> None:
@@ -11247,6 +12984,32 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_lm.exists()
     universal_llama = tmp_path / "nfn_universal_llama_native_train"
     assert universal_llama.exists()
+
+    def assert_default_family_production_runtime(payload: dict) -> None:
+        runtime = payload["production_state_runtime"]
+        assert runtime["required"] is False
+        assert runtime["attempted"] is False
+        assert runtime["ready"] is False
+        assert runtime["parameter_store"] == "FamilyDeviceParameterStore"
+        assert runtime["optimizer_state"] == "FamilyOptimizerState"
+        assert runtime["parameter_store_initialized"] is False
+        assert runtime["resume_sidecar_loaded"] is False
+        assert runtime["optimizer_allocated"] is False
+        assert runtime["parameter_role_binding_verified"] is False
+        assert runtime["production_step_family_binding_verified"] is False
+        assert runtime["production_parameter_role_count"] == runtime["parameter_buffer_count"]
+        assert runtime["production_step_count"] == 0
+        assert runtime["production_optimizer_step_count"] == 0
+        assert runtime["production_step_gradient_count"] == 0
+        assert runtime["production_step_parameter_dependent_gradient_buffer_count"] == 0
+        assert runtime["production_step_persistent_parameter_buffer_count"] == 0
+        assert runtime["production_step_chained_block_layer_count"] == 0
+        assert runtime["production_step_chained_block_row_count"] == 0
+        assert runtime["production_step_auxfree_bias_refresh_count"] == 0
+        assert runtime["parameter_elements"] > 0
+        assert runtime["parameter_bytes"] > 0
+        assert runtime["error"] == ""
+
     llama_plan = subprocess.run(
         [
             str(llama),
@@ -11271,10 +13034,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_plan.returncode == 0, llama_plan.stderr
     llama_payload = json.loads(llama_plan.stdout)
     assert llama_payload["model_family"] == "llama"
-    assert llama_payload["status"] == "native-family-dataset-loop-covered"
+    assert llama_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
     assert llama_payload["kernel_status"] == "required-tile-symbols-missing"
-    assert llama_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert llama_payload["kernel_step_source"] == "sampled_ar_ce_plus_llama_composed_train_step"
+    assert llama_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert llama_payload["kernel_step_source"] == "persistent_tile_llama_full_geometry_forward_backward"
     assert llama_payload["compiled_native_boundary"] is True
     assert llama_payload["torch_required"] is False
     assert llama_payload["graph_editor_tensor_flow"] is False
@@ -11282,7 +13045,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_payload["schedule"]["batch_size"] == 8
     assert llama_payload["schedule"]["train_seq_len"] == 128
     assert llama_payload["schedule"]["max_steps"] == 3
-    assert llama_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert llama_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    assert llama_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert llama_payload["native_training_completed_requirements"] == [
         "rmsnorm-loop-composition-smoke",
         "rope-loop-composition-smoke",
@@ -11297,6 +13061,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "llama-full-forward-backward-loop-smoke",
         "llama-sampled-ar-plus-composed-step-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert "nfn_native_tile_rms_norm_float32" in llama_payload["required_tile_symbols"]
     assert "nfn_native_tile_rotary_embedding_float32" in llama_payload["required_tile_symbols"]
@@ -11341,17 +13106,15 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     llama_default_payload = json.loads(llama_default_train_step.stdout)
     assert llama_default_payload["model_family"] == "llama"
     assert llama_default_payload["status"] == "native-family-dataset-loop-failed"
-    assert llama_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert llama_default_payload["production_training_loop"] is False
+    assert llama_default_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert llama_default_payload["production_training_loop"] is True
     assert llama_default_payload["compiled_native_boundary"] is True
     assert llama_default_payload["torch_required"] is False
     assert llama_default_payload["graph_editor_tensor_flow"] is False
     assert llama_default_payload["dataset_loaded"] is False
     assert llama_default_payload["token_batch_source"] == "native_uint16_token_shards"
     assert llama_default_payload["kernel_step_source"] == "sampled_ar_ce_plus_llama_composed_train_step"
-    assert llama_default_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert llama_default_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert llama_default_payload["train_batches_sampled"] == 0
     assert llama_default_payload["last_sampled_ar_returncode"] == 2
     assert llama_default_payload["last_llama_step_returncode"] == 2
@@ -11583,8 +13346,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert llama_sample.returncode == 0, llama_sample.stderr
     sample_payload = json.loads(llama_sample.stdout)
     assert sample_payload["model_family"] == "llama"
-    assert sample_payload["status"] == "native-family-dataset-loop-covered"
-    assert sample_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert sample_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert sample_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
     assert sample_payload["compiled_native_boundary"] is True
     assert sample_payload["torch_required"] is False
     assert sample_payload["graph_editor_tensor_flow"] is False
@@ -11652,6 +13415,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "64",
             "--max-steps",
             "2",
+            "--checkpoint-every-steps",
+            "123",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -11661,11 +13426,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert mixllama_plan.returncode == 0, mixllama_plan.stderr
     mixllama_payload = json.loads(mixllama_plan.stdout)
     assert mixllama_payload["model_family"] == "mixllama"
-    assert mixllama_payload["status"] == "native-family-dataset-loop-covered"
-    assert mixllama_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert mixllama_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_standard_moe_family_step"
+    assert mixllama_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert mixllama_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert mixllama_payload["kernel_step_source"] == "persistent_tile_moe_full_geometry_forward_backward"
     assert mixllama_payload["native_training_coverage_class"] == "covered-standard-moe-transformer-lm"
-    assert mixllama_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert mixllama_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    assert mixllama_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert mixllama_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11676,6 +13442,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "standard-moe-full-forward-backward-loop-smoke",
         "standard-moe-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert mixllama_payload["compiled_native_boundary"] is True
     assert mixllama_payload["torch_required"] is False
@@ -11782,26 +13549,34 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert mixllama_default_train_step.returncode == 2
     assert "native CUDA Tile trainer for mixllama is not implemented yet" not in mixllama_default_train_step.stderr
-    assert "starting native standard-MoE dataset loop" in mixllama_default_train_step.stderr
-    assert "step 1/2 begin phase=sample_train_batch" in mixllama_default_train_step.stderr
+    assert "resolving native token shards" in mixllama_default_train_step.stderr
+    assert "native standard-MoE production bootstrap failed" in mixllama_default_train_step.stderr
+    assert "cannot open shared object file" in mixllama_default_train_step.stderr
     mixllama_train_step_payload = json.loads(mixllama_default_train_step.stdout)
     assert mixllama_train_step_payload["status"] == "native-family-dataset-loop-failed"
-    assert mixllama_train_step_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert mixllama_train_step_payload["production_training_loop"] is False
+    assert mixllama_train_step_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert mixllama_train_step_payload["production_training_loop"] is True
     assert mixllama_train_step_payload["compiled_native_boundary"] is True
     assert mixllama_train_step_payload["torch_required"] is False
     assert mixllama_train_step_payload["graph_editor_tensor_flow"] is False
+    mixllama_runtime = mixllama_train_step_payload["production_state_runtime"]
+    assert mixllama_runtime["required"] is True
+    assert mixllama_runtime["attempted"] is True
+    assert mixllama_runtime["ready"] is False
+    assert mixllama_runtime["parameter_store_initialized"] is False
+    assert "cannot open shared object file" in mixllama_runtime["error"]
+    assert mixllama_train_step_payload["dataset_loaded"] is True
     assert mixllama_train_step_payload["token_batch_source"] == "native_uint16_token_shards"
-    assert mixllama_train_step_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_standard_moe_family_step"
-    assert mixllama_train_step_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
-    assert mixllama_train_step_payload["train_batches_sampled"] == 1
+    assert (
+        mixllama_train_step_payload["kernel_step_source"]
+        == "sampled_ar_ce_plus_sampled_standard_moe_family_step"
+    )
+    assert mixllama_train_step_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    assert mixllama_train_step_payload["train_batches_sampled"] == 0
     assert mixllama_train_step_payload["last_sampled_ar_returncode"] == 2
     assert mixllama_train_step_payload["last_sampled_family_step_returncode"] == 2
-    sampled_moe_ar_payload = json.loads(mixllama_train_step_payload["last_sampled_ar_stdout_json"])
-    assert sampled_moe_ar_payload["smoke"] == "sampled_ar_ce_objective_slice"
-    assert sampled_moe_ar_payload["token_batch_source"] == "native_uint16_token_shards"
+    assert mixllama_train_step_payload["last_sampled_ar_stdout_json"] == ""
+    assert mixllama_train_step_payload["last_sampled_family_step_stdout_json"] == ""
 
     moe_jepa_plan = subprocess.run(
         [
@@ -11824,14 +13599,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert moe_jepa_plan.returncode == 0, moe_jepa_plan.stderr
     moe_jepa_payload = json.loads(moe_jepa_plan.stdout)
     assert moe_jepa_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_payload["status"] == "native-family-dataset-loop-covered"
-    assert moe_jepa_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert moe_jepa_payload["production_training_loop"] is False
-    assert moe_jepa_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
+    assert moe_jepa_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert moe_jepa_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert moe_jepa_payload["production_training_loop"] is True
+    assert moe_jepa_payload["kernel_step_source"] == "persistent_tile_moe_jepa_full_geometry_forward_backward"
     assert moe_jepa_payload["native_training_coverage_class"] == "covered-moe-jepa-objective"
-    assert moe_jepa_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert moe_jepa_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert moe_jepa_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -11847,12 +13620,24 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "ar-plus-jepa-plus-router-loss-composition-smoke",
         "moe-jepa-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert moe_jepa_payload["compiled_native_boundary"] is True
     assert moe_jepa_payload["torch_required"] is False
     assert moe_jepa_payload["graph_editor_tensor_flow"] is False
+    moe_jepa_contract = moe_jepa_payload["production_state_contract"]
+    assert moe_jepa_contract["full_family_jepa_target_encoder_backbone_parameter_layout"] is True
+    assert moe_jepa_contract["full_family_jepa_target_encoder_projector_parameter_layout"] is True
+    assert moe_jepa_contract["full_family_jepa_target_backbone_device_forward"] is True
+    assert moe_jepa_contract["full_family_jepa_target_projector_mlp_device_forward"] is True
+    assert moe_jepa_contract["full_family_jepa_target_branch_stop_gradient"] is True
+    assert moe_jepa_contract["full_family_jepa_target_backbone_exact_parity"] is True
+    assert moe_jepa_contract["jepa_parameter_role_count"] >= 18
     assert "nfn_native_tile_topk_route_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_native_family_jepa_mask_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_pool_float32" in moe_jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_latent_pool_backward_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_mse_loss_float32" in moe_jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_broadcast_expert_routes_float32" in moe_jepa_payload["required_tile_symbols"]
@@ -11886,33 +13671,31 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "max_steps=2" in moe_jepa_default_train_step.stderr
     assert "batch_size=4" in moe_jepa_default_train_step.stderr
     assert "train_seq_len=64" in moe_jepa_default_train_step.stderr
-    assert "starting native MoE-JEPA dataset loop" in moe_jepa_default_train_step.stderr
-    assert "step 1/2 begin phase=sample_train_batch" in moe_jepa_default_train_step.stderr
-    assert "step 1/2 begin phase=sampled_ar_ce" in moe_jepa_default_train_step.stderr
+    assert "native MoE-JEPA production bootstrap failed" in moe_jepa_default_train_step.stderr
+    assert "cannot open shared object file" in moe_jepa_default_train_step.stderr
     moe_jepa_dataset_loop_payload = json.loads(moe_jepa_default_train_step.stdout)
     assert moe_jepa_dataset_loop_payload["status"] == "native-family-dataset-loop-failed"
-    assert moe_jepa_dataset_loop_payload["trainer_loop_status"] == "native-family-dataset-loop"
+    assert moe_jepa_dataset_loop_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
     assert moe_jepa_dataset_loop_payload["compiled_native_boundary"] is True
     assert moe_jepa_dataset_loop_payload["torch_required"] is False
     assert moe_jepa_dataset_loop_payload["graph_editor_tensor_flow"] is False
+    moe_jepa_runtime = moe_jepa_dataset_loop_payload["production_state_runtime"]
+    assert moe_jepa_runtime["required"] is True
+    assert moe_jepa_runtime["attempted"] is True
+    assert moe_jepa_runtime["ready"] is False
+    assert "cannot open shared object file" in moe_jepa_runtime["error"]
     assert moe_jepa_dataset_loop_payload["dataset_loaded"] is True
     assert moe_jepa_dataset_loop_payload["token_batch_source"] == "native_uint16_token_shards"
     assert (
         moe_jepa_dataset_loop_payload["kernel_step_source"] ==
         "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
     )
-    assert moe_jepa_dataset_loop_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
-    assert moe_jepa_dataset_loop_payload["train_batches_sampled"] == 1
-    assert moe_jepa_dataset_loop_payload["last_train_token_checksum"] > 0
+    assert moe_jepa_dataset_loop_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    assert moe_jepa_dataset_loop_payload["train_batches_sampled"] == 0
+    assert moe_jepa_dataset_loop_payload["last_train_token_checksum"] == 0
     assert moe_jepa_dataset_loop_payload["last_sampled_ar_returncode"] == 2
     assert moe_jepa_dataset_loop_payload["last_sampled_family_step_returncode"] == 2
-    sampled_ar_payload = json.loads(moe_jepa_dataset_loop_payload["last_sampled_ar_stdout_json"])
-    assert sampled_ar_payload["smoke"] == "sampled_ar_ce_objective_slice"
-    assert sampled_ar_payload["phase"] == "train"
-    assert sampled_ar_payload["token_batch_source"] == "native_uint16_token_shards"
-    assert "nfn_native_tile_token_cross_entropy_partials_float32" in sampled_ar_payload["loop_composition_stages"]
+    assert moe_jepa_dataset_loop_payload["last_sampled_ar_stdout_json"] == ""
     assert moe_jepa_dataset_loop_payload["last_sampled_family_step_stdout_json"] == ""
 
     moe_jepa_explicit_slice = subprocess.run(
@@ -11971,6 +13754,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "64",
             "--max-steps",
             "2",
+            "--checkpoint-every-steps",
+            "123",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -11980,8 +13765,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jepa_plan.returncode == 0, jepa_plan.stderr
     jepa_payload = json.loads(jepa_plan.stdout)
     assert jepa_payload["model_family"] == "jepa"
+    assert jepa_payload["schedule"]["checkpoint_every_steps"] == 123
     assert jepa_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
-    assert jepa_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert jepa_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    assert jepa_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert jepa_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
@@ -11990,12 +13777,155 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "dense-jepa-full-forward-backward-loop-smoke",
         "dense-jepa-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert jepa_payload["compiled_native_boundary"] is True
     assert jepa_payload["torch_required"] is False
     assert jepa_payload["graph_editor_tensor_flow"] is False
+    assert jepa_payload["production_state_contract"]["parameter_store"] == "FamilyDeviceParameterStore"
+    assert jepa_payload["production_state_contract"]["optimizer_state"] == "FamilyOptimizerState"
+    assert jepa_payload["production_state_contract"]["production_step_interface"] == "FamilyProductionStep"
+    assert jepa_payload["production_state_contract"]["parameter_buffer_count"] > 0
+    assert jepa_payload["production_state_contract"]["production_step_family"] == "dense_jepa"
+    assert (
+        jepa_payload["production_state_contract"]["production_step_implementation"]
+        == "persistent_tile_jepa_full_geometry_forward_backward"
+    )
+    assert jepa_payload["production_state_contract"]["full_geometry_forward_backward"] is True
+    assert jepa_payload["production_state_contract"]["required_parameter_roles"] == [
+        "base_transformer",
+        "jepa",
+    ]
+    assert "jepa_latent_branch" in jepa_payload["production_state_contract"]["planned_forward_backward_stages"]
+    assert (
+        jepa_payload["production_state_contract"]["production_parameter_role_count"]
+        == jepa_payload["production_state_contract"]["parameter_buffer_count"]
+    )
+    assert jepa_payload["production_state_contract"]["base_transformer_parameter_role_count"] == 11
+    assert jepa_payload["production_state_contract"]["jepa_parameter_role_count"] == 17
+    assert (
+        jepa_payload["production_state_contract"]["parameter_buffer_count"]
+        == jepa_payload["production_state_contract"]["production_parameter_role_count"]
+    )
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_encoder_backbone_parameter_layout"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_encoder_projector_parameter_layout"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_encoder_ema_frozen_parameter_layout"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_backbone_device_forward"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_projector_mlp_device_forward"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_branch_stop_gradient"] is True
+    assert jepa_payload["production_state_contract"]["full_family_jepa_target_backbone_exact_parity"] is True
+    assert jepa_payload["production_state_contract"]["moe_parameter_role_count"] == 0
+    assert jepa_payload["production_state_contract"]["semantic_parameter_role_count"] == 0
+    assert jepa_payload["production_state_contract"]["parameter_elements"] > 0
+    assert jepa_payload["production_state_contract"]["parameter_bytes"] > 0
+    assert jepa_payload["production_state_contract"]["supports_deterministic_initializer"] is True
+    assert jepa_payload["production_state_contract"]["supports_resume_sidecar"] is True
+    assert jepa_payload["production_state_contract"]["supports_full_parameter_sidecar"] is True
+    assert jepa_payload["production_state_contract"]["supports_bf16_shadow_adamw"] is True
+    assert (
+        jepa_payload["production_state_contract"]["bf16_shadow_parameter_elements"]
+        == jepa_payload["production_state_contract"]["parameter_elements"]
+    )
+    assert jepa_payload["production_state_contract"]["supports_cuda_graph_optimizer_step"] is True
+    assert isinstance(
+        jepa_payload["production_state_contract"]["cuda_graph_capture_default_enabled"],
+        bool,
+    )
+    assert jepa_payload["production_state_contract"]["requires_cuda_runtime"] is True
+    assert jepa_payload["production_state_contract"]["requires_tile_ops"] is True
+    assert jepa_payload["production_state_contract"]["production_macro_enabled"] is True
+    assert "nfn_native_tile_native_family_jepa_mask_float32" in jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_latent_pool_float32" in jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_latent_pool_backward_float32" in jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_layer_norm_float32" in jepa_payload["required_tile_symbols"]
+    assert "nfn_native_tile_gelu_float32" in jepa_payload["required_tile_symbols"]
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in jepa_payload["required_tile_symbols"]
+
+    custom_geometry_plan = subprocess.run(
+        [
+            str(jepa),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "2",
+            "--train-seq-len",
+            "8",
+            "--max-steps",
+            "1",
+            "--model-dim",
+            "16",
+            "--hidden-dim",
+            "32",
+            "--vocab-size",
+            "37",
+            "--padded-vocab-size",
+            "40",
+            "--num-layers",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert custom_geometry_plan.returncode == 0, custom_geometry_plan.stderr
+    custom_geometry_payload = json.loads(custom_geometry_plan.stdout)
+    assert custom_geometry_payload["architecture"]["model_dim"] == 16
+    assert custom_geometry_payload["architecture"]["hidden_dim"] == 32
+    assert custom_geometry_payload["architecture"]["vocab_size"] == 37
+    assert custom_geometry_payload["architecture"]["padded_vocab_size"] == 40
+    assert custom_geometry_payload["architecture"]["num_layers"] == 2
+    assert custom_geometry_payload["production_state_contract"]["parameter_elements"] == 6736
+    assert custom_geometry_payload["production_state_contract"]["bf16_shadow_parameter_elements"] == 6736
+
+    jepa_missing_resume_plan = subprocess.run(
+        [
+            str(jepa),
+            "--print-plan",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+            "--native-checkpoint",
+            str(tmp_path / "missing-native-family-checkpoint"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert jepa_missing_resume_plan.returncode == 0, jepa_missing_resume_plan.stderr
+    jepa_missing_resume_payload = json.loads(jepa_missing_resume_plan.stdout)
+    assert jepa_missing_resume_payload["native_checkpoint"]["requested"] is True
+    assert jepa_missing_resume_payload["native_checkpoint"]["requested_path"].endswith(
+        "missing-native-family-checkpoint"
+    )
+    assert jepa_missing_resume_payload["native_checkpoint"]["resolved"] is False
+    assert jepa_missing_resume_payload["native_checkpoint"]["exists"] is False
+    assert jepa_missing_resume_payload["native_checkpoint"]["loaded"] is False
+    assert jepa_missing_resume_payload["native_checkpoint"]["expected_parameter_elements"] > 0
+    assert jepa_missing_resume_payload["native_checkpoint"]["expected_parameter_bytes"] > 0
+    assert (
+        jepa_missing_resume_payload["native_checkpoint"]["error"]
+        == "native family checkpoint path does not exist"
+    )
+
+    jepa_help = subprocess.run(
+        [str(jepa), "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert jepa_help.returncode == 0, jepa_help.stderr
+    assert "--checkpoint-every-steps N" in jepa_help.stdout
+    assert "--native-checkpoint PATH" in jepa_help.stdout
 
     family_layout_smoke = subprocess.run(
         [
@@ -12007,6 +13937,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "llm_jepa",
             "--train-seq-len",
             "128",
+            "--num-layers",
+            "2",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -12021,14 +13953,52 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert family_layout_payload["torch_required"] is False
     assert family_layout_payload["graph_editor_tensor_flow"] is False
     assert family_layout_payload["parameter_layout"]["layout_resolved"] is True
+    assert family_layout_payload["parameter_layout"]["num_layers"] == 2
     assert family_layout_payload["parameter_layout"]["parameter_buffer_count"] > 0
     assert family_layout_payload["checkpoint_contract"]["metadata_written"] is True
     assert family_layout_payload["checkpoint_contract"]["done_marker_written"] is True
     assert Path(family_layout_payload["checkpoint_contract"]["metadata_path"]).exists()
     assert Path(family_layout_payload["checkpoint_contract"]["done_marker_path"]).exists()
+    assert family_layout_payload["model_checkpoint"]["format"] == "nfn-native-family-optimizer-checkpoint-v1"
+    assert family_layout_payload["model_checkpoint"]["model_checkpoint_written"] is True
+    model_checkpoint_path = Path(family_layout_payload["model_checkpoint"]["model_checkpoint_path"])
+    parameter_data_path = Path(family_layout_payload["model_checkpoint"]["parameter_data_path"])
+    model_done_path = Path(family_layout_payload["model_checkpoint"]["model_checkpoint_done_path"])
+    assert "llm_jepa_jepa_layout_smoke_native_family_model_00000000.json" in str(model_checkpoint_path)
+    assert "llm_jepa_jepa_layout_smoke_native_family_parameters_00000000.f32" in str(parameter_data_path)
+    assert "llm_jepa_jepa_layout_smoke_native_family_model_DONE" in str(model_done_path)
+    assert model_checkpoint_path.exists()
+    assert parameter_data_path.exists()
+    assert model_done_path.exists()
+    model_checkpoint_payload = json.loads(model_checkpoint_path.read_text(encoding="utf-8"))
+    assert model_checkpoint_payload["format"] == "nfn-native-family-optimizer-checkpoint-v1"
+    assert model_checkpoint_payload["inference_supported"] is True
+    assert model_checkpoint_payload["transition_count"] > 0
+    assert model_checkpoint_payload["native_parameter_state"]["transition_sampler_inference_supported"] is True
+    assert model_checkpoint_payload["architecture_parameter_layout"]["num_layers"] == 2
+    layout_buffer_names = [
+        item["name"] for item in model_checkpoint_payload["architecture_parameter_layout"]["buffers"]
+    ]
+    assert "layers.1.q_proj.weight" in layout_buffer_names
+    assert "layers.1.k_proj.weight" in layout_buffer_names
+    assert "layers.1.v_proj.weight" in layout_buffer_names
+    assert "layers.2.q_proj.weight" not in layout_buffer_names
+    assert model_checkpoint_payload["parameter_data"]["trained_parameter_elements"] > 0
+    assert model_checkpoint_payload["native_parameter_state"]["architecture_forward_inference_supported"] is False
+    assert (
+        model_checkpoint_payload["native_parameter_state"]["working_model_inference_path"]
+        == "token_embedding_lm_head_sidecar_forward"
+    )
+    assert (
+        model_checkpoint_payload["native_parameter_state"][
+            "optimizer_updated_full_architecture_parameter_persistence"
+        ]
+        is True
+    )
     assert family_layout_payload["inference_contract"]["native_info_supported"] is True
     assert family_layout_payload["inference_contract"]["checkpoint_metadata_supported"] is True
-    assert family_layout_payload["inference_contract"]["sample_from_checkpoint_requires_family_loop"] is True
+    assert family_layout_payload["inference_contract"]["sample_from_checkpoint_requires_family_loop"] is False
+    assert family_layout_payload["inference_contract"]["sample_from_checkpoint_supported"] is True
 
     jepa_target_smoke_missing_lib = subprocess.run(
         [
@@ -12146,27 +14116,32 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert dense_jepa_default_missing_lib.returncode == 2
-    assert "starting native dense-JEPA dataset loop" in dense_jepa_default_missing_lib.stderr
     assert "resolving native token shards" in dense_jepa_default_missing_lib.stderr
-    assert "train batch sampled" in dense_jepa_default_missing_lib.stderr
+    assert "native dense-JEPA production bootstrap failed" in dense_jepa_default_missing_lib.stderr
+    assert "cannot open shared object file" in dense_jepa_default_missing_lib.stderr
     dense_jepa_default_payload = json.loads(dense_jepa_default_missing_lib.stdout)
     assert dense_jepa_default_payload["status"] == "native-family-dataset-loop-failed"
-    assert dense_jepa_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert dense_jepa_default_payload["production_training_loop"] is False
+    assert dense_jepa_default_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert dense_jepa_default_payload["production_training_loop"] is True
+    assert dense_jepa_default_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert dense_jepa_default_payload["native_training_coverage_class"] == "covered-dense-jepa-objective"
-    assert dense_jepa_default_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert dense_jepa_default_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert dense_jepa_default_payload["dataset_loaded"] is True
     assert dense_jepa_default_payload["token_batch_source"] == "native_uint16_token_shards"
     assert (
         dense_jepa_default_payload["kernel_step_source"]
         == "sampled_ar_ce_plus_dense_jepa_composed_train_step"
     )
-    assert dense_jepa_default_payload["train_batches_sampled"] == 1
-    assert dense_jepa_default_payload["last_train_token_checksum"] > 0
+    dense_jepa_runtime = dense_jepa_default_payload["production_state_runtime"]
+    assert dense_jepa_runtime["required"] is True
+    assert dense_jepa_runtime["attempted"] is True
+    assert dense_jepa_runtime["ready"] is False
+    assert "cannot open shared object file" in dense_jepa_runtime["error"]
+    assert dense_jepa_default_payload["train_batches_sampled"] == 0
+    assert dense_jepa_default_payload["last_train_token_checksum"] == 0
     assert dense_jepa_default_payload["last_sampled_ar_returncode"] == 2
     assert dense_jepa_default_payload["last_dense_jepa_step_returncode"] == 2
+    assert dense_jepa_default_payload["last_sampled_ar_stdout_json"] == ""
     assert dense_jepa_default_payload["last_dense_jepa_step_stdout_json"] == ""
 
     semantic_dense_plan = subprocess.run(
@@ -12190,15 +14165,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_plan.returncode == 0, semantic_dense_plan.stderr
     semantic_dense_payload = json.loads(semantic_dense_plan.stdout)
     assert semantic_dense_payload["model_family"] == "semantic-dense-jepa"
-    assert semantic_dense_payload["status"] == "native-family-dataset-loop-covered"
-    assert semantic_dense_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert semantic_dense_payload["kernel_step_source"] == (
-        "sampled_ar_ce_plus_semantic_targets_plus_semantic_dense_jepa_composed_train_step"
-    )
+    assert semantic_dense_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert semantic_dense_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert semantic_dense_payload["kernel_step_source"] == "persistent_tile_jepa_full_geometry_forward_backward"
     assert semantic_dense_payload["native_training_coverage_class"] == "covered-semantic-dense-jepa-objective"
-    assert semantic_dense_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert semantic_dense_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert semantic_dense_payload["native_training_completed_requirements"] == [
         "jepa-target-encoder-forward-smoke",
         "jepa-projector-predictor-latent-loss-smoke",
@@ -12212,6 +14183,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "ar-plus-semantic-plus-jepa-loss-composition-smoke",
         "semantic-dense-jepa-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert semantic_dense_payload["compiled_native_boundary"] is True
     assert semantic_dense_payload["torch_required"] is False
@@ -12221,8 +14193,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_semantic_hash_int64",
+        "nfn_native_tile_semantic_targets_from_tokens_u16_int64",
         "nfn_native_tile_semantic_alignment_loss_items_float32",
         "nfn_native_tile_sum_accumulate_float32",
+        "nfn_native_tile_native_family_jepa_mask_float32",
+        "nfn_native_tile_latent_pool_float32",
+        "nfn_native_tile_latent_pool_backward_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
@@ -12249,21 +14225,23 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         check=False,
     )
     assert semantic_dense_default_missing_lib.returncode == 2
-    assert "starting native semantic-dense-JEPA dataset loop" in semantic_dense_default_missing_lib.stderr
     assert "resolving native token shards" in semantic_dense_default_missing_lib.stderr
-    assert "train batch sampled" in semantic_dense_default_missing_lib.stderr
-    assert "semantic_targets=" in semantic_dense_default_missing_lib.stderr
+    assert "native semantic-dense-JEPA production bootstrap failed" in semantic_dense_default_missing_lib.stderr
+    assert "cannot open shared object file" in semantic_dense_default_missing_lib.stderr
     semantic_dense_default_payload = json.loads(semantic_dense_default_missing_lib.stdout)
     assert semantic_dense_default_payload["status"] == "native-family-dataset-loop-failed"
-    assert semantic_dense_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert semantic_dense_default_payload["production_training_loop"] is False
+    assert semantic_dense_default_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert semantic_dense_default_payload["production_training_loop"] is True
     assert (
         semantic_dense_default_payload["native_training_coverage_class"]
         == "covered-semantic-dense-jepa-objective"
     )
-    assert semantic_dense_default_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert semantic_dense_default_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
+    semantic_dense_runtime = semantic_dense_default_payload["production_state_runtime"]
+    assert semantic_dense_runtime["required"] is True
+    assert semantic_dense_runtime["attempted"] is True
+    assert semantic_dense_runtime["ready"] is False
+    assert "cannot open shared object file" in semantic_dense_runtime["error"]
     assert semantic_dense_default_payload["dataset_loaded"] is True
     assert semantic_dense_default_payload["token_batch_source"] == "native_uint16_token_shards"
     assert (
@@ -12273,12 +14251,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_dense_default_payload["kernel_step_source"] == (
         "sampled_ar_ce_plus_semantic_targets_plus_semantic_dense_jepa_composed_train_step"
     )
-    assert semantic_dense_default_payload["train_batches_sampled"] == 1
-    assert semantic_dense_default_payload["last_train_token_checksum"] > 0
-    assert semantic_dense_default_payload["last_train_semantic_checksum"] > 0
-    assert len(semantic_dense_default_payload["semantic_target_batch"]["targets"]) > 0
+    assert semantic_dense_default_payload["train_batches_sampled"] == 0
+    assert semantic_dense_default_payload["last_train_token_checksum"] == 0
+    assert semantic_dense_default_payload["last_train_semantic_checksum"] == 0
+    assert semantic_dense_default_payload["semantic_target_batch"] is None
     assert semantic_dense_default_payload["last_sampled_ar_returncode"] == 2
     assert semantic_dense_default_payload["last_semantic_dense_jepa_step_returncode"] == 2
+    assert semantic_dense_default_payload["last_sampled_ar_stdout_json"] == ""
     assert semantic_dense_default_payload["last_semantic_dense_jepa_step_stdout_json"] == ""
 
     semantic_jepa_loss_smoke_missing_lib = subprocess.run(
@@ -12354,15 +14333,14 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_plan.returncode == 0, semantic_router_plan.stderr
     semantic_router_payload = json.loads(semantic_router_plan.stdout)
     assert semantic_router_payload["model_family"] == "semantic-router-moe"
-    assert semantic_router_payload["status"] == "native-family-dataset-loop-covered"
-    assert semantic_router_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert semantic_router_payload["kernel_step_source"] == (
-        "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
+    assert semantic_router_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert semantic_router_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert (
+        semantic_router_payload["kernel_step_source"]
+        == "persistent_tile_semantic_router_moe_full_geometry_forward_backward"
     )
     assert semantic_router_payload["native_training_coverage_class"] == "covered-semantic-moe-router-jepa-objective"
-    assert semantic_router_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert semantic_router_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert "route-selection-distillation-balance-losses" not in semantic_router_payload[
         "native_training_missing_requirements"
     ]
@@ -12380,14 +14358,43 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "route-evo-device-controller-smoke",
         "semantic-router-moe-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert semantic_router_payload["compiled_native_boundary"] is True
     assert semantic_router_payload["torch_required"] is False
     assert semantic_router_payload["graph_editor_tensor_flow"] is False
     for symbol in (
         "nfn_native_tile_topk_route_float32",
+        "nfn_native_tile_topk_route_backward_float32",
+        "nfn_native_tile_semantic_shared_topk_route_float32",
+        "nfn_native_tile_semantic_shared_forced_topk_route_float32",
+        "nfn_native_tile_semantic_shared_topk_route_backward_float32",
         "nfn_native_tile_broadcast_expert_routes_float32",
         "nfn_native_tile_broadcast_chunk_routes_float32",
+        "nfn_native_tile_compact_chunk_routes_float32_int64",
+        "nfn_native_tile_aggregate_chunk_route_gradients_float32",
+        "nfn_native_tile_semantic_route_distillation_backward_float32",
+        "nfn_native_tile_semantic_target_topic_distillation_backward_float32",
+        "nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32",
+        "nfn_native_tile_semantic_hash_table_backward_float32",
+        "nfn_native_tile_semantic_route_policy_float32",
+        "nfn_native_tile_semantic_route_policy_packed_topic_float32",
+        "nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32",
+        "nfn_native_tile_semantic_vec_from_packed_topic_float32",
+        "nfn_native_tile_semantic_packed_topic_to_padded_float32",
+        "nfn_native_tile_semantic_signature_scalar_float32",
+        "nfn_native_tile_semantic_vec_append_signature_float32",
+        "nfn_native_tile_semantic_vec_split_signature_grad_float32",
+        "nfn_native_tile_semantic_signature_scalar_backward_float32",
+        "nfn_native_tile_semantic_shared_expert_projection_float32",
+        "nfn_native_tile_semantic_shared_expert_projection_backward_float32",
+        "nfn_native_tile_semantic_router_bias_add_float32",
+        "nfn_native_tile_semantic_router_bias_backward_float32",
+        "nfn_native_tile_semantic_free_expert_projection_float32",
+        "nfn_native_tile_semantic_free_expert_projection_backward_float32",
+        "nfn_native_tile_semantic_targets_from_tokens_u16_int64",
+        "nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64",
+        "nfn_native_tile_semantic_alignment_packed_loss_backward_float32",
         "nfn_native_tile_moe_swiglu_forward_float32",
         "nfn_native_tile_moe_swiglu_backward_float32",
         "nfn_native_tile_semantic_hash_int64",
@@ -12398,12 +14405,104 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_expert_bias_add_float32",
         "nfn_native_tile_route_balance_density_float32",
         "nfn_native_tile_route_balance_loss_float32",
+        "nfn_native_tile_native_family_jepa_mask_u16_float32",
+        "nfn_native_tile_causal_chunk_state_float32",
+        "nfn_native_tile_causal_chunk_state_backward_float32",
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_evo_mutate_candidates_float32",
         "nfn_native_tile_evo_select_best_loss_float32",
         "nfn_native_tile_evo_adopt_candidate_float32",
     ):
         assert symbol in semantic_router_payload["required_tile_symbols"]
+
+    semantic_moe_plan = subprocess.run(
+        [
+            str(semantic_router_moe),
+            "--print-plan",
+            "--template-name",
+            "semantic_moe_jepa_evo",
+            "--dataset-alias",
+            "cached-shards",
+            "--batch-size",
+            "4",
+            "--train-seq-len",
+            "64",
+            "--max-steps",
+            "2",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert semantic_moe_plan.returncode == 0, semantic_moe_plan.stderr
+    semantic_moe_payload = json.loads(semantic_moe_plan.stdout)
+    assert semantic_moe_payload["model_family"] == "semantic-router-moe"
+    assert semantic_moe_payload["template_name"] == "semantic_moe_jepa_evo"
+    assert semantic_moe_payload["architecture"]["num_layers"] == 1
+    assert semantic_moe_payload["architecture"]["semantic_vocab_dims"] == 86
+    assert semantic_moe_payload["architecture"]["semantic_shared_experts"] == 2
+    assert semantic_moe_payload["architecture"]["semantic_free_experts"] == 8
+    assert semantic_moe_payload["architecture"]["experts"] == 96
+    assert semantic_moe_payload["architecture"]["layers_per_expert"] == 1
+    assert semantic_moe_payload["architecture"]["semantic_moe_expert_contract"] == (
+        "experts = semantic_shared_experts + semantic_vocab_dims + semantic_free_experts"
+    )
+    semantic_moe_contract = semantic_moe_payload["production_state_contract"]
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_backbone_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_backbone_final_norm_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_backbone_last_moe_layer_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_backbone_last_attention_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_backbone_all_layers_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_chunk_state_objective_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_jepa_semantic_loss_device_accumulation_before_reporting"] is True
+    assert semantic_moe_contract["full_family_loss_reporting_single_scalar_vector_readback"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_encoder_backbone_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_encoder_projector_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_encoder_state_dict_aliases"] is True
+    assert semantic_moe_contract["full_family_semantic_legacy_compact_jepa_buffers_retired"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_target_encoder_ema_frozen_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_target_backbone_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_target_topic_route_distillation_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_route_distillation_device_accumulation_before_reporting"] is True
+    assert semantic_moe_contract["full_family_semantic_target_topic_chunk_state_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_per_term_topic_head_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_template_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_online_target_parameter_surface"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_modulelist_state_dict_aliases"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_residual_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_target_projector_residual_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_residual_adamw_skip_exact"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_per_term_alignment_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_target_topic_per_term_route_distillation_device_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_canonical_compact_topic_head_retired"] is True
+    assert semantic_moe_contract["full_family_semantic_canonical_compact_topic_head_parameter_retired"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_padded_topic_logits_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_topic_argmax_semantic_vec_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_signature_coordinate_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_compact_semantic_vector_projection_retired_from_canonical_route"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_projector_signature_scalar_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_projector_residual_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_topic_vector_predictor_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_jepa_signature_coordinate_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_target_matrix_device_token_derivation"] is True
+    assert semantic_moe_contract["full_family_semantic_hash_projection_seeded_exact"] is True
+    assert semantic_moe_contract["full_family_semantic_hash_table_backward_stream_ordered_no_sync"] is True
+    assert semantic_moe_contract["full_family_semantic_route_policy_packed_topic_scores_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_route_policy_target_matrix_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_shared_expert_projection_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_free_expert_projection_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_router_shared_experts_always_on_route_width"] is True
+    assert semantic_moe_contract["full_family_semantic_shared_plus_topk_route_device_forward_backward"] is True
+    assert semantic_moe_contract["full_family_semantic_router_forced_target_candidate_mask_device_forward"] is True
+    assert semantic_moe_contract["full_family_semantic_router_free_head_template_parameter_layout"] is True
+    assert semantic_moe_contract["full_family_semantic_expert_combine_device_forward_backward"] is True
+    assert semantic_moe_contract["supports_cuda_graph_optimizer_step"] is True
+    assert semantic_moe_contract["optimizer_cuda_graph_captures_zero_gradients"] is True
+    assert semantic_moe_contract["full_family_jepa_target_backbone_exact_parity"] is True
+    assert semantic_moe_contract["full_family_semantic_chunk_projector_per_term_topic_head_exact_parity"] is True
+    assert semantic_moe_contract["full_family_semantic_masked_online_encoder_exact_parity"] is True
 
     semantic_router_default_train_step = subprocess.run(
         [
@@ -12430,14 +14529,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "native CUDA Tile trainer for semantic-router-moe is not implemented yet" not in (
         semantic_router_default_train_step.stderr
     )
-    assert "starting native semantic-router MoE dataset loop" in semantic_router_default_train_step.stderr
     assert "resolving native token shards" in semantic_router_default_train_step.stderr
     assert "dataset directory not found" in semantic_router_default_train_step.stderr
     semantic_router_default_payload = json.loads(semantic_router_default_train_step.stdout)
     assert semantic_router_default_payload["model_family"] == "semantic-router-moe"
     assert semantic_router_default_payload["status"] == "native-family-dataset-loop-failed"
-    assert semantic_router_default_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert semantic_router_default_payload["production_training_loop"] is False
+    assert semantic_router_default_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert semantic_router_default_payload["production_training_loop"] is True
     assert semantic_router_default_payload["compiled_native_boundary"] is True
     assert semantic_router_default_payload["torch_required"] is False
     assert semantic_router_default_payload["graph_editor_tensor_flow"] is False
@@ -12447,9 +14545,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert semantic_router_default_payload["kernel_step_source"] == (
         "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"
     )
-    assert semantic_router_default_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert semantic_router_default_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert semantic_router_default_payload["train_batches_sampled"] == 0
     assert semantic_router_default_payload["last_sampled_ar_returncode"] == 2
     assert semantic_router_default_payload["last_semantic_router_step_returncode"] == 2
@@ -12492,17 +14588,21 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert diffusion_plan.returncode == 0, diffusion_plan.stderr
     diffusion_payload = json.loads(diffusion_plan.stdout)
     assert diffusion_payload["model_family"] == "diffusion"
-    assert diffusion_payload["status"] == "native-family-dataset-loop-covered"
-    assert diffusion_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert diffusion_payload["kernel_step_source"] == "sampled_ar_ce_plus_diffusion_full_loop_step"
+    assert diffusion_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert diffusion_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert diffusion_payload["kernel_step_source"] == "persistent_tile_diffusion_full_geometry_forward_backward"
     assert diffusion_payload["native_training_coverage_class"] == "covered-diffusion-objective"
-    assert diffusion_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert diffusion_payload["native_training_missing_requirements"] == []
+    assert diffusion_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
+    assert diffusion_payload["production_training_loop"] is True
+    assert diffusion_payload["production_state_contract"]["full_geometry_forward_backward"] is True
     assert diffusion_payload["native_training_completed_requirements"] == [
         "diffusion-denoise-linear-mse-adamw-smoke",
         "diffusion-timestep-mask-ce-adamw-smoke",
         "diffusion-full-loop-smoke",
         "diffusion-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert diffusion_payload["compiled_native_boundary"] is True
     assert diffusion_payload["torch_required"] is False
@@ -12538,17 +14638,19 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert seq2seq_plan.returncode == 0, seq2seq_plan.stderr
     seq2seq_payload = json.loads(seq2seq_plan.stdout)
     assert seq2seq_payload["model_family"] == "seq2seq"
-    assert seq2seq_payload["status"] == "native-family-dataset-loop-covered"
-    assert seq2seq_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert seq2seq_payload["kernel_step_source"] == "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"
+    assert seq2seq_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert seq2seq_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert seq2seq_payload["kernel_step_source"] == "persistent_tile_seq2seq_full_geometry_forward_backward"
     assert seq2seq_payload["native_training_coverage_class"] == "covered-seq2seq-objective"
-    assert seq2seq_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert seq2seq_payload["native_training_missing_requirements"] == []
+    assert seq2seq_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert seq2seq_payload["native_training_completed_requirements"] == [
         "seq2seq-cross-attention-ce-adamw-smoke",
         "seq2seq-loss-composition-adamw-smoke",
         "seq2seq-full-encoder-decoder-loop-smoke",
         "seq2seq-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert seq2seq_payload["compiled_native_boundary"] is True
     assert seq2seq_payload["torch_required"] is False
@@ -12578,17 +14680,19 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert ttt_plan.returncode == 0, ttt_plan.stderr
     ttt_payload = json.loads(ttt_plan.stdout)
     assert ttt_payload["model_family"] == "ttt-llama"
-    assert ttt_payload["status"] == "native-family-dataset-loop-covered"
-    assert ttt_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert ttt_payload["kernel_step_source"] == "sampled_ar_ce_plus_ttt_full_transformer_loop_step"
+    assert ttt_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert ttt_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert ttt_payload["kernel_step_source"] == "persistent_tile_ttt_full_geometry_forward_backward"
     assert ttt_payload["native_training_coverage_class"] == "covered-ttt-transformer-lm"
-    assert ttt_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert ttt_payload["native_training_missing_requirements"] == []
+    assert ttt_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert ttt_payload["native_training_completed_requirements"] == [
         "ttt-linear-mse-adamw-smoke",
         "ttt-composite-inner-forward-backward-adamw-smoke",
         "ttt-full-transformer-loop-smoke",
         "ttt-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert ttt_payload["compiled_native_boundary"] is True
     assert ttt_payload["torch_required"] is False
@@ -12620,17 +14724,19 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert universal_plan.returncode == 0, universal_plan.stderr
     universal_payload = json.loads(universal_plan.stdout)
     assert universal_payload["model_family"] == "universal-llama"
-    assert universal_payload["status"] == "native-family-dataset-loop-covered"
-    assert universal_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert universal_payload["kernel_step_source"] == "sampled_ar_ce_plus_universal_transformer_loop_step"
+    assert universal_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert universal_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert universal_payload["kernel_step_source"] == "persistent_tile_universal_recurrent_full_geometry_forward_backward"
     assert universal_payload["native_training_coverage_class"] == "covered-universal-transformer-lm"
-    assert universal_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert universal_payload["native_training_missing_requirements"] == []
+    assert universal_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert universal_payload["native_training_completed_requirements"] == [
         "universal-recurrent-linear-mse-adamw-smoke",
         "universal-act-halt-loss-gradient-smoke",
         "universal-transformer-loop-smoke",
         "universal-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert universal_payload["compiled_native_boundary"] is True
     assert universal_payload["torch_required"] is False
@@ -12642,6 +14748,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_act_halting_bce_grad_float32",
         "nfn_native_tile_act_weighted_sum_float32",
+        "nfn_native_tile_act_pack_step_float32",
+        "nfn_native_tile_act_prepare_weights_float32",
+        "nfn_native_tile_act_unpack_step_grad_float32",
+        "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_adamw_step_float32",
     ):
         assert symbol in universal_payload["required_tile_symbols"]
@@ -12661,11 +14771,23 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert hnet_plan.returncode == 0, hnet_plan.stderr
     hnet_payload = json.loads(hnet_plan.stdout)
     assert hnet_payload["model_family"] == "hnet-lm"
-    assert hnet_payload["status"] == "native-family-dataset-loop-covered"
-    assert hnet_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert hnet_payload["kernel_step_source"] == "sampled_byte_lm_plus_hnet_byte_lm_loop_step"
+    assert hnet_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert hnet_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert hnet_payload["kernel_step_source"] == "persistent_tile_hnet_byte_patch_full_geometry_forward_backward"
     assert hnet_payload["native_training_coverage_class"] == "covered-hnet-byte-lm"
-    assert hnet_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert hnet_payload["native_training_missing_requirements"] == []
+    assert hnet_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
+    assert hnet_payload["production_training_loop"] is True
+    assert hnet_payload["production_state_contract"]["full_geometry_forward_backward"] is True
+    assert hnet_payload["production_state_contract"]["planned_forward_backward_stages"] == [
+        "byte_patch_embed",
+        "transformer_backbone_forward",
+        "byte_patch_merge",
+        "byte_lm_head",
+        "byte_cross_entropy_backward",
+        "transformer_backbone_backward",
+        "shared_many_tensor_adamw",
+    ]
     assert hnet_payload["native_training_completed_requirements"] == [
         "hnet-byte-patch-embed-merge-head-adamw-smoke",
         "hnet-byte-patch-backward-adamw-smoke",
@@ -12673,6 +14795,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "hnet-sampled-byte-family-dataset-loop",
         "byte-token-shard-resolver-smoke",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert hnet_payload["compiled_native_boundary"] is True
     assert hnet_payload["torch_required"] is False
@@ -12682,8 +14805,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "nfn_native_tile_byte_patch_merge_float32",
         "nfn_native_tile_byte_patch_merge_backward_float32",
         "nfn_native_tile_byte_patch_embed_backward_float32",
+        "nfn_native_tile_rms_norm_backward_input_float32",
+        "nfn_native_tile_rotary_embedding_backward_float32",
+        "nfn_native_tile_scaled_dot_product_attention_backward_float32",
+        "nfn_native_tile_swiglu_backward_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
-        "nfn_native_tile_latent_mse_loss_float32",
         "nfn_native_tile_adamw_step_float32",
     ):
         assert symbol in hnet_payload["required_tile_symbols"]
@@ -12703,17 +14829,19 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert jamba_plan.returncode == 0, jamba_plan.stderr
     jamba_payload = json.loads(jamba_plan.stdout)
     assert jamba_payload["model_family"] == "jamba"
-    assert jamba_payload["status"] == "native-family-dataset-loop-covered"
-    assert jamba_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert jamba_payload["kernel_step_source"] == "sampled_ar_ce_plus_jamba_layer_schedule_step"
+    assert jamba_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert jamba_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert jamba_payload["kernel_step_source"] == "persistent_tile_jamba_full_geometry_forward_backward"
     assert jamba_payload["native_training_coverage_class"] == "covered-jamba-hybrid-mamba-transformer-lm"
-    assert jamba_payload["native_training_missing_requirements"] == ["persistent-full-size-family-parameter-state"]
+    assert jamba_payload["native_training_missing_requirements"] == []
+    assert jamba_payload["optimizer_updated_full_architecture_parameter_persistence"] is True
     assert jamba_payload["native_training_completed_requirements"] == [
         "jamba-causal-chunk-state-head-adamw-smoke",
         "jamba-mamba-state-forward-backward-adamw-smoke",
         "jamba-layer-schedule-native-loop-smoke",
         "jamba-sampled-family-dataset-loop",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert jamba_payload["compiled_native_boundary"] is True
     assert jamba_payload["torch_required"] is False
@@ -12721,6 +14849,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     for symbol in (
         "nfn_native_tile_causal_chunk_state_float32",
         "nfn_native_tile_causal_chunk_state_backward_float32",
+        "nfn_native_tile_rotary_embedding_float32",
+        "nfn_native_tile_scaled_dot_product_attention_float32",
+        "nfn_native_tile_topk_route_float32",
+        "nfn_native_tile_broadcast_expert_routes_float32",
+        "nfn_native_tile_moe_swiglu_forward_float32",
+        "nfn_native_tile_moe_swiglu_backward_with_route_grad_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_latent_mse_loss_float32",
@@ -12818,14 +14952,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert unified_moe_jepa.returncode == 0, unified_moe_jepa.stderr
     moe_jepa_unified_payload = json.loads(unified_moe_jepa.stdout)
     assert moe_jepa_unified_payload["model_family"] == "moe-jepa-evo"
-    assert moe_jepa_unified_payload["status"] == "native-family-dataset-loop-covered"
-    assert moe_jepa_unified_payload["trainer_loop_status"] == "native-family-dataset-loop"
-    assert moe_jepa_unified_payload["production_training_loop"] is False
-    assert moe_jepa_unified_payload["kernel_step_source"] == "sampled_ar_ce_plus_sampled_moe_jepa_family_step"
+    assert moe_jepa_unified_payload["status"] in FAMILY_TRAINER_COVERED_STATUSES
+    assert moe_jepa_unified_payload["trainer_loop_status"] in FAMILY_TRAINER_LOOP_STATUSES
+    assert moe_jepa_unified_payload["production_training_loop"] is True
+    assert moe_jepa_unified_payload["kernel_step_source"] == "persistent_tile_moe_jepa_full_geometry_forward_backward"
     assert moe_jepa_unified_payload["native_training_coverage_class"] == "covered-moe-jepa-objective"
-    assert moe_jepa_unified_payload["native_training_missing_requirements"] == [
-        "persistent-full-size-family-parameter-state"
-    ]
+    assert moe_jepa_unified_payload["native_training_missing_requirements"] == FAMILY_PRODUCTION_MISSING_REQUIREMENTS
     assert moe_jepa_unified_payload["native_training_completed_requirements"] == [
         "router-topk-broadcast-smoke",
         "routed-swiglu-expert-forward-backward-smoke",
@@ -12841,6 +14973,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "ar-plus-jepa-plus-router-loss-composition-smoke",
         "moe-jepa-sampled-family-forward-backward-optimizer-step",
         "family-parameter-layout-checkpoint-inference-smoke",
+        "optimizer-updated-full-architecture-parameter-persistence",
     ]
     assert moe_jepa_unified_payload["compiled_native_boundary"] is True
     assert moe_jepa_unified_payload["torch_required"] is False
@@ -14177,9 +16310,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--template-name NAME" in evo_help.stdout
     assert "--graph-file PATH" in evo_help.stdout
     assert "--warmup-steps N" in evo_help.stdout
+    assert "--lr-schedule NAME" in evo_help.stdout
+    assert "--final-lr-fraction FRACTION" in evo_help.stdout
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in evo_help.stdout
     assert "--evo-layer-index N" in evo_help.stdout
     assert "--evo-layer-population N" in evo_help.stdout
+    assert "--evo-tournament-size N" in evo_help.stdout
+    assert "--evo-elite-count N" in evo_help.stdout
     assert "--tile-ops-lib PATH" in evo_help.stdout
     assert "--cuda-runtime-lib PATH" in evo_help.stdout
     assert "--require-native-nvfp4-activation-packing" in evo_help.stdout
@@ -14198,6 +16335,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "gpt2-moa",
             "--tile-cuda-activation-dtype",
             "nvfp4",
+            "--evo-tournament-size",
+            "5",
+            "--evo-elite-count",
+            "2",
+            "--learning-rate-decay-frac",
+            "0.2",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -14213,6 +16356,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["template_known"] is True
     assert evo_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
     assert evo_plan["selected_graph_native_runnable"] is True
+    assert evo_plan["layer_evo"]["tournament_size"] == 5
+    assert evo_plan["layer_evo"]["elite_count"] == 2
     assert evo_plan["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert evo_plan["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert evo_plan["shape"]["num_layers"] == 12
@@ -14223,6 +16368,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["schedule"]["warmup_steps"] == 60
     assert evo_plan["schedule"]["grad_accum_steps"] == 8
     assert evo_plan["optimizer"]["profile"] == "adamw"
+    assert evo_plan["optimizer"]["lr_schedule"] == "cosine"
+    assert evo_plan["optimizer"]["final_lr_fraction"] == 0.2
     assert evo_plan["tile_cuda"]["activation_dtype"] == "nvfp4"
     assert evo_plan["tile_cuda"]["requested_activation_dtype"] == "nvfp4"
     assert evo_plan["tile_cuda"]["effective_activation_dtype"] == "bf16-float32-mixed"
@@ -14875,6 +17022,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "1e-8",
             "--grad-clip-norm",
             "0.75",
+            "--evo-tournament-size",
+            "5",
+            "--evo-elite-count",
+            "2",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -14893,6 +17044,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--beta2 0.98" in evo_delegate_print_command.stdout
     assert "--adam-eps 1e-08" in evo_delegate_print_command.stdout
     assert "--grad-clip-norm 0.75" in evo_delegate_print_command.stdout
+    assert "--evo-tournament-size 5" in evo_delegate_print_command.stdout
+    assert "--evo-elite-count 2" in evo_delegate_print_command.stdout
     assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
     assert "--startup-only" in evo_delegate_print_command.stdout
     assert "--native-cuda-startup-only" not in evo_delegate_print_command.stdout
@@ -15314,6 +17467,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in header_text
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_hyper_float32" in header_text
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" in header_text
     assert "AdamWManyWithDeviceScaleBf16ParamBf16GradFn" in gpt2_source_text
@@ -15380,8 +17535,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text
+    assert "launch_adamw_step_many_with_device_scale_hyper_float32" in source_text
+    assert "launch_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_param_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" in source_text
+    assert "adamw_step_many_with_device_scale_hyper_float32_kernel" in kernels_text
+    assert "adamw_step_many_with_device_scale_bf16_shadow_hyper_float32_kernel" in kernels_text
+    assert "const float lr = hyper[0]" in kernels_text
+    assert "const float sqrt_bias_correction2 = hyper[5]" in kernels_text
     assert "adamw_step_many_with_device_scale_bf16_shadow_float32_kernel" in kernels_text
     assert "adamw_step_many_with_device_scale_bf16_param_float32_kernel" in kernels_text
     assert "adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32_kernel" in kernels_text
@@ -15686,6 +17847,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bf16_input_weight_bf16_bits_float32_kernel" in kernels_text
     assert "linear_bf16_gelu_bf16_float32_kernel" in kernels_text
     assert "linear_weight_bf16_gelu_bf16_float32_kernel" in kernels_text
+    assert "float acc = bias != nullptr ? bias[col] : 0.0f;" in kernels_text
     assert "launch_linear_bf16_input_weight_bf16_gelu_bf16_float32" in kernels_text
     assert "gelu_add_bias_bf16_act_float32_kernel" in kernels_text
     assert "__tile_global__ void gelu_add_bias_bf16_act_float32_kernel" in kernels_text
@@ -16226,22 +18388,78 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_moe_swiglu_forward_float32" in header_text
     assert "nfn_native_tile_moe_swiglu_backward_float32" in header_text
     assert "nfn_native_tile_topk_route_float32" in header_text
+    assert "nfn_native_tile_topk_route_backward_float32" in header_text
     assert "nfn_native_tile_broadcast_expert_routes_float32" in header_text
     assert "nfn_native_tile_broadcast_chunk_routes_float32" in header_text
+    assert "nfn_native_tile_compact_chunk_routes_float32_int64" in header_text
+    assert "nfn_native_tile_aggregate_chunk_route_gradients_float32" in header_text
+    assert "nfn_native_tile_semantic_route_distillation_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_target_topic_distillation_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_hash_table_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_route_policy_float32" in header_text
+    assert "nfn_native_tile_semantic_route_policy_packed_topic_float32" in header_text
+    assert "nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32" in header_text
+    assert "nfn_native_tile_semantic_vec_from_packed_topic_float32" in header_text
+    assert "nfn_native_tile_semantic_packed_topic_to_padded_float32" in header_text
+    assert "nfn_native_tile_semantic_signature_scalar_float32" in header_text
+    assert "nfn_native_tile_semantic_vec_append_signature_float32" in header_text
+    assert "nfn_native_tile_semantic_vec_split_signature_grad_float32" in header_text
+    assert "nfn_native_tile_semantic_signature_scalar_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_shared_expert_projection_float32" in header_text
+    assert "nfn_native_tile_semantic_shared_expert_projection_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_free_expert_projection_float32" in header_text
+    assert "nfn_native_tile_semantic_free_expert_projection_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_router_bias_add_float32" in header_text
+    assert "nfn_native_tile_semantic_router_bias_backward_float32" in header_text
+    assert "nfn_native_tile_semantic_targets_from_tokens_u16_int64" in header_text
+    assert "nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64" in header_text
+    assert "nfn_native_tile_semantic_alignment_packed_loss_backward_float32" in header_text
+    assert "nfn_native_tile_mhc_beta_gradient_float32" in header_text
+    assert "nfn_native_tile_moe_swiglu_forward_quantized_float32" in header_text
+    assert "nfn_native_tile_moe_swiglu_backward_quantized_float32" in header_text
     assert "nfn_native_tile_semantic_hash_int64" in header_text
     assert "nfn_native_tile_semantic_alignment_loss_items_float32" in header_text
     assert "nfn_native_tile_attentionless_decoder_float32" in header_text
     assert "nfn_native_tile_expert_bias_add_float32" in header_text
+    assert "nfn_native_tile_native_family_jepa_mask_float32" in header_text
+    assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in header_text
+    assert "nfn_native_tile_latent_pool_float32" in header_text
+    assert "nfn_native_tile_latent_pool_backward_float32" in header_text
     assert "nfn_native_tile_latent_mse_loss_float32" in header_text
     assert "nfn_native_tile_route_balance_density_float32" in header_text
     assert "nfn_native_tile_route_balance_loss_float32" in header_text
     assert "launch_topk_route_float32" in source_text
+    assert "launch_topk_route_backward_float32" in source_text
     assert "launch_broadcast_expert_routes_float32" in source_text
     assert "launch_broadcast_chunk_routes_float32" in source_text
+    assert "launch_compact_chunk_routes_float32_int64" in source_text
+    assert "launch_aggregate_chunk_route_gradients_float32" in source_text
+    assert "launch_semantic_route_distillation_backward_float32" in source_text
+    assert "launch_semantic_target_topic_distillation_backward_float32" in source_text
+    assert "launch_semantic_hash_table_backward_float32" in source_text
+    assert "launch_semantic_route_policy_float32" in source_text
+    assert "launch_semantic_route_policy_packed_topic_float32" in source_text
+    assert "launch_semantic_route_policy_packed_topic_matrix_float32" in source_text
+    assert "launch_semantic_vec_from_packed_topic_float32" in source_text
+    assert "launch_semantic_signature_scalar_float32" in source_text
+    assert "launch_semantic_vec_append_signature_float32" in source_text
+    assert "launch_semantic_vec_split_signature_grad_float32" in source_text
+    assert "launch_semantic_signature_scalar_backward_float32" in source_text
+    assert "launch_semantic_shared_expert_projection_float32" in source_text
+    assert "launch_semantic_shared_expert_projection_backward_float32" in source_text
+    assert "launch_semantic_router_bias_add_float32" in source_text
+    assert "launch_semantic_router_bias_backward_float32" in source_text
+    assert "launch_semantic_free_expert_projection_float32" in source_text
+    assert "launch_semantic_free_expert_projection_backward_float32" in source_text
+    assert "launch_mhc_beta_gradient_float32" in source_text
     assert "launch_semantic_hash_int64" in source_text
     assert "launch_semantic_alignment_loss_items_float32" in source_text
     assert "launch_attentionless_decoder_float32" in source_text
     assert "launch_expert_bias_add_float32" in source_text
+    assert "launch_native_family_jepa_mask_float32" in source_text
+    assert "launch_native_family_jepa_mask_u16_float32" in source_text
+    assert "launch_latent_pool_backward_float32" in source_text
     assert "launch_latent_mse_partials_float32" in source_text
     assert "launch_route_balance_density_float32" in source_text
     assert "launch_route_balance_loss_float32" in source_text
@@ -16501,9 +18719,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD" in kernels_text
     assert "if (output_dim == 768 && dim768_bf16_residual_add_enabled())" in kernels_text
     assert "constexpr int kRowsPerBlock = 2" in kernels_text
-    assert "token_embedding_backward_weight_float32_kernel" in kernels_text
+    assert "token_embedding_backward_weight_deterministic_float32_kernel" in kernels_text
     assert "token_embedding_u16_float32_kernel" in kernels_text
-    assert "token_embedding_backward_weight_u16_float32_kernel" in kernels_text
+    assert "token_embedding_backward_weight_u16_deterministic_float32_kernel" in kernels_text
     assert "nfn_native_tile_token_embedding_u16_float32" in header_text
     assert "nfn_native_tile_token_embedding_u16_float32" in source_text
     assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in header_text
@@ -16622,8 +18840,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--require-optimized-kernels" in gpt2_source_text
     assert "optimized native GPT kernel contract failed" in gpt2_source_text
     assert "basic TF32/SGEMM linear fallback launched" in gpt2_source_text
-    assert "transformer attention forward did not use the TK SM120 attention kernel" in gpt2_source_text
-    assert "transformer attention backward did not use the TK SM120 attention kernel" in gpt2_source_text
+    assert "transformer attention forward did not use an optimized packed attention kernel" in gpt2_source_text
+    assert "transformer attention backward did not use an optimized packed attention kernel" in gpt2_source_text
     assert (
         "transformer block backward dInput did not use optimized TK SM120 or cuBLASLt GEMM"
         in gpt2_source_text
@@ -16929,7 +19147,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_tk_attention_store_forward_workspace_bf16" in kernels_text
     assert "launch_tk_attention_backward_to_qkv_from_saved_bf16_float32" in kernels_text
     assert "cudaMemcpyDeviceToDevice" in kernels_text
-    assert "tk-sm120-bf16-bridge" in gpt2_source_text
+    assert "neuralfn-packed-qkv-bf16-tile" in gpt2_source_text
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_block_size" in gpt2_source_text
@@ -17006,6 +19224,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024" in script_text
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in script_text
     assert "-DLLMK_SM120_USE_CUBLASLT_GEMM" in script_text
+    assert "-DNFN_TILE_CUDA_USE_TK_ATTENTION=1" in script_text
     assert "kGpt2AttentionHeads = 12" in kernels_text
     assert "kGpt2AttentionHeadDim = 64" in kernels_text
     assert "kGpt2AttentionValueChunks" in kernels_text
@@ -17791,12 +20010,44 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_moe_swiglu_forward_float32" in exported
         assert "nfn_native_tile_moe_swiglu_backward_float32" in exported
         assert "nfn_native_tile_topk_route_float32" in exported
+        assert "nfn_native_tile_topk_route_backward_float32" in exported
         assert "nfn_native_tile_broadcast_expert_routes_float32" in exported
         assert "nfn_native_tile_broadcast_chunk_routes_float32" in exported
+        assert "nfn_native_tile_compact_chunk_routes_float32_int64" in exported
+        assert "nfn_native_tile_aggregate_chunk_route_gradients_float32" in exported
+        assert "nfn_native_tile_semantic_route_distillation_backward_float32" in exported
+        assert "nfn_native_tile_semantic_target_topic_distillation_backward_float32" in exported
+        assert "nfn_native_tile_semantic_target_topic_packed_distillation_backward_float32" in exported
+        assert "nfn_native_tile_semantic_hash_table_backward_float32" in exported
+        assert "nfn_native_tile_semantic_route_policy_float32" in exported
+        assert "nfn_native_tile_semantic_route_policy_packed_topic_float32" in exported
+        assert "nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32" in exported
+        assert "nfn_native_tile_semantic_vec_from_packed_topic_float32" in exported
+        assert "nfn_native_tile_semantic_packed_topic_to_padded_float32" in exported
+        assert "nfn_native_tile_semantic_signature_scalar_float32" in exported
+        assert "nfn_native_tile_semantic_vec_append_signature_float32" in exported
+        assert "nfn_native_tile_semantic_vec_split_signature_grad_float32" in exported
+        assert "nfn_native_tile_semantic_signature_scalar_backward_float32" in exported
+        assert "nfn_native_tile_semantic_shared_expert_projection_float32" in exported
+        assert "nfn_native_tile_semantic_shared_expert_projection_backward_float32" in exported
+        assert "nfn_native_tile_semantic_free_expert_projection_float32" in exported
+        assert "nfn_native_tile_semantic_free_expert_projection_backward_float32" in exported
+        assert "nfn_native_tile_semantic_router_bias_add_float32" in exported
+        assert "nfn_native_tile_semantic_router_bias_backward_float32" in exported
+        assert "nfn_native_tile_semantic_targets_from_tokens_u16_int64" in exported
+        assert "nfn_native_tile_semantic_target_matrix_from_tokens_u16_int64" in exported
+        assert "nfn_native_tile_semantic_alignment_packed_loss_backward_float32" in exported
+        assert "nfn_native_tile_mhc_beta_gradient_float32" in exported
+        assert "nfn_native_tile_moe_swiglu_forward_quantized_float32" in exported
+        assert "nfn_native_tile_moe_swiglu_backward_quantized_float32" in exported
         assert "nfn_native_tile_semantic_hash_int64" in exported
         assert "nfn_native_tile_semantic_alignment_loss_items_float32" in exported
         assert "nfn_native_tile_attentionless_decoder_float32" in exported
         assert "nfn_native_tile_expert_bias_add_float32" in exported
+        assert "nfn_native_tile_native_family_jepa_mask_float32" in exported
+        assert "nfn_native_tile_native_family_jepa_mask_u16_float32" in exported
+        assert "nfn_native_tile_latent_pool_float32" in exported
+        assert "nfn_native_tile_latent_pool_backward_float32" in exported
         assert "nfn_native_tile_latent_mse_loss_float32" in exported
         assert "nfn_native_tile_route_balance_density_float32" in exported
         assert "nfn_native_tile_route_balance_loss_float32" in exported

@@ -44,7 +44,7 @@ struct Gpt2EvoPlan {
     std::int64_t train_batch_tokens = 524288;
     std::int64_t eval_batches = 20;
     std::int64_t eval_batch_size = 64;
-    std::int64_t eval_every_steps = 1000;
+    std::int64_t eval_every_steps = 5000;
     std::int64_t warmup_steps = 60;
     std::int64_t vocab_size = 50257;
     std::int64_t num_layers = 12;
@@ -53,7 +53,11 @@ struct Gpt2EvoPlan {
     std::int64_t evo_layer_index = 6;
     std::int64_t evo_layer_interval = 10;
     std::int64_t evo_layer_population = 8;
+    std::int64_t evo_tournament_size = 3;
+    std::int64_t evo_elite_count = 1;
     double learning_rate = 0.0006;
+    std::string lr_schedule = "cosine";
+    double final_lr_fraction = 0.0;
     double weight_decay = 0.1;
     double beta1 = 0.9;
     double beta2 = 0.95;
@@ -168,6 +172,27 @@ double parse_f64(const std::string& value, const std::string& flag) {
         std::cerr << flag << " expects a number, got '" << value << "'\n";
         std::exit(2);
     }
+}
+
+std::string normalize_lr_schedule(std::string value) {
+    for (char& ch : value) {
+        if (ch == '_') {
+            ch = '-';
+        } else {
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        }
+    }
+    if (value == "fixed") {
+        value = "constant";
+    }
+    if (value == "cosine-decay") {
+        value = "cosine";
+    }
+    if (value != "constant" && value != "cosine") {
+        std::cerr << "--lr-schedule must be cosine or constant\n";
+        std::exit(2);
+    }
+    return value;
 }
 
 std::int64_t ceil_div(std::int64_t lhs, std::int64_t rhs) {
@@ -361,8 +386,11 @@ void print_usage(const char* program) {
         << "  --train-seq-len N               Sequence length, default 1024\n"
         << "  --batch-size N                  Microbatch rows, default 64\n"
         << "  --train-batch-tokens N          Effective tokens/step, default 524288\n"
-        << "  --eval-every-steps N            Validation cadence, default 1000\n"
+        << "  --eval-every-steps N            Validation cadence, default 5000\n"
         << "  --warmup-steps N                LR warmup steps, default 60\n"
+        << "  --learning-rate LR              AdamW base learning rate, default 0.0006\n"
+        << "  --lr-schedule NAME              LR schedule: cosine or constant, default cosine\n"
+        << "  --final-lr-fraction FRACTION    Final LR fraction for cosine decay, default 0\n"
         << "  --vocab-size N                  Vocabulary size, default 50257\n"
         << "  --num-layers N                  Transformer layers, default 12\n"
         << "  --model-dim N                   Width, default 768\n"
@@ -375,6 +403,8 @@ void print_usage(const char* program) {
         << "  --evo-layer-interval N          Candidate search cadence, default 10\n"
         << "  --evo-layer-population N        Candidate population, default 8\n"
         << "  --evo-layer-mutation-scale X    Gaussian mutation scale, default 0.02\n"
+        << "  --evo-tournament-size N         Evo tournament pool size, default 3\n"
+        << "  --evo-elite-count N             Evo elite count, default 1\n"
         << "  --no-layer-evo                  Disable evo-layer metadata in the plan\n"
         << "  --tile-ops-lib PATH             Raw libnfn_native_train_tile_ops.so path for evo kernel smoke\n"
         << "  --cuda-runtime-lib PATH         CUDA runtime path for evo kernel smoke; env NFN_CUDA_RUNTIME_LIB also works\n"
@@ -408,8 +438,9 @@ void validate_plan(const Gpt2EvoPlan& plan) {
     if (plan.layer_evo_enabled &&
         (plan.evo_layer_index < 0 || plan.evo_layer_index >= plan.num_layers ||
          plan.evo_layer_interval <= 0 || plan.evo_layer_population <= 0 ||
-         plan.evo_layer_mutation_scale < 0.0)) {
-        std::cerr << "evo layer index/cadence/population/mutation scale are outside the valid range\n";
+         plan.evo_layer_mutation_scale < 0.0 || plan.evo_tournament_size <= 0 ||
+         plan.evo_elite_count < 0 || plan.evo_elite_count > plan.evo_layer_population)) {
+        std::cerr << "evo layer index/cadence/population/mutation scale/tournament/elite are outside the valid range\n";
         std::exit(2);
     }
 }
@@ -481,6 +512,8 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "  \"optimizer\": {\n"
         << "    \"profile\": \"" << json_escape(plan.optimizer_profile) << "\",\n"
         << "    \"learning_rate\": " << plan.learning_rate << ",\n"
+        << "    \"lr_schedule\": \"" << json_escape(plan.lr_schedule) << "\",\n"
+        << "    \"final_lr_fraction\": " << plan.final_lr_fraction << ",\n"
         << "    \"weight_decay\": " << plan.weight_decay << ",\n"
         << "    \"beta1\": " << plan.beta1 << ",\n"
         << "    \"beta2\": " << plan.beta2 << ",\n"
@@ -519,6 +552,8 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "    \"interval\": " << plan.evo_layer_interval << ",\n"
         << "    \"population\": " << plan.evo_layer_population << ",\n"
         << "    \"mutation_scale\": " << plan.evo_layer_mutation_scale << ",\n"
+        << "    \"tournament_size\": " << plan.evo_tournament_size << ",\n"
+        << "    \"elite_count\": " << plan.evo_elite_count << ",\n"
         << "    \"evo_block_parameters\": " << evo_block_parameters << ",\n"
         << "    \"forward_candidate_eval_enabled\": true,\n"
         << "    \"candidate_loss_source\": \"native-forward-loss-current-batch\",\n"
@@ -940,6 +975,16 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
             plan.learning_rate = parse_f64(value_for(arg), arg);
             continue;
         }
+        if (arg == "--lr-schedule" || arg == "--learning-rate-schedule") {
+            plan.lr_schedule = normalize_lr_schedule(value_for(arg));
+            continue;
+        }
+        if (arg == "--final-lr-fraction" ||
+            arg == "--learning-rate-decay-frac" ||
+            arg == "--learning-rate-decay-fraction") {
+            plan.final_lr_fraction = parse_f64(value_for(arg), arg);
+            continue;
+        }
         if (arg == "--weight-decay") {
             plan.weight_decay = parse_f64(value_for(arg), arg);
             continue;
@@ -1013,12 +1058,21 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
             plan.evo_layer_mutation_scale = parse_f64(value_for(arg), arg);
             continue;
         }
+        if (arg == "--evo-tournament-size") {
+            plan.evo_tournament_size = parse_i64(value_for(arg), arg);
+            continue;
+        }
+        if (arg == "--evo-elite-count") {
+            plan.evo_elite_count = parse_i64(value_for(arg), arg);
+            continue;
+        }
         if (arg == "--no-layer-evo") {
             plan.layer_evo_enabled = false;
             continue;
         }
         plan.unparsed_args.push_back(arg);
     }
+    plan.lr_schedule = normalize_lr_schedule(plan.lr_schedule);
     return plan;
 }
 
@@ -1052,6 +1106,10 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
     args.push_back(std::to_string(plan.warmup_steps));
     args.push_back("--learning-rate");
     args.push_back(format_cli_double(plan.learning_rate));
+    args.push_back("--lr-schedule");
+    args.push_back(plan.lr_schedule);
+    args.push_back("--final-lr-fraction");
+    args.push_back(format_cli_double(plan.final_lr_fraction));
     args.push_back("--weight-decay");
     args.push_back(format_cli_double(plan.weight_decay));
     args.push_back("--beta1");
@@ -1085,6 +1143,10 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
         args.push_back(std::to_string(plan.evo_layer_population));
         args.push_back("--evo-layer-mutation-scale");
         args.push_back(format_cli_double(plan.evo_layer_mutation_scale));
+        args.push_back("--evo-tournament-size");
+        args.push_back(std::to_string(plan.evo_tournament_size));
+        args.push_back("--evo-elite-count");
+        args.push_back(std::to_string(plan.evo_elite_count));
     } else {
         args.push_back("--no-layer-evo");
     }

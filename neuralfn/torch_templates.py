@@ -513,7 +513,11 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
         NeuronInstance(
             clone_neuron_def(
                 BuiltinNeurons.topk_route_module,
-                config={"top_k": spec.top_k, "experts": spec.experts},
+                config={
+                    "top_k": spec.top_k,
+                    "experts": spec.experts,
+                    "score_fn": getattr(spec, "router_score_fn", "softmax"),
+                },
             ),
             instance_id="topk",
             position=(480, 60),

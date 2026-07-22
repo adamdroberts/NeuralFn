@@ -61,6 +61,7 @@ public:
 
     bool next(TokenBatch& out);
     bool next_into(std::uint16_t* tokens, std::uint16_t* targets, std::int64_t token_capacity);
+    bool seek_batch(std::int64_t batch_index);
     void reset();
     std::int64_t total_batches() const;
 
@@ -79,6 +80,7 @@ public:
 
     bool next(ByteBatch& out);
     bool next_into(std::uint8_t* tokens, std::uint8_t* targets, std::int64_t token_capacity);
+    bool seek_batch(std::int64_t batch_index);
     void reset();
     std::int64_t total_batches() const;
 

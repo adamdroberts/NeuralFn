@@ -839,7 +839,7 @@ topk_route_module = module_neuron(
         Port("weights", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
         Port("indices", range=(0, 100), precision=1.0, dtype="tensor"),
     ],
-    module_config={"top_k": 2, "experts": 8},
+    module_config={"top_k": 2, "experts": 8, "score_fn": "softmax"},
 )
 
 expert_dispatch_module = module_neuron(

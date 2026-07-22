@@ -438,6 +438,34 @@ bool SequentialTokenBatchSampler::next_into(
     return static_cast<std::int64_t>(produced) == total;
 }
 
+bool SequentialTokenBatchSampler::seek_batch(std::int64_t batch_index) {
+    if (batch_index < 0) {
+        return false;
+    }
+    const std::int64_t batches = total_batches();
+    if (batches <= 0) {
+        return false;
+    }
+    std::uintmax_t chunks_to_skip =
+        static_cast<std::uintmax_t>(batch_index % batches) * static_cast<std::uintmax_t>(batch_size_);
+    shard_index_ = 0;
+    local_chunk_index_ = 0;
+    while (shard_index_ < shards_.size()) {
+        const TokenShardFile& shard = shards_[shard_index_];
+        const std::uintmax_t chunk_count = shard.tokens > 0
+            ? (shard.tokens - 1U) / static_cast<std::uintmax_t>(seq_len_)
+            : 0U;
+        if (chunks_to_skip < chunk_count) {
+            local_chunk_index_ = chunks_to_skip;
+            return true;
+        }
+        chunks_to_skip -= chunk_count;
+        shard_index_ += 1;
+    }
+    reset();
+    return chunks_to_skip == 0;
+}
+
 void SequentialTokenBatchSampler::reset() {
     shard_index_ = 0;
     local_chunk_index_ = 0;
@@ -517,6 +545,34 @@ bool SequentialByteBatchSampler::next_into(
     }
 
     return static_cast<std::int64_t>(produced) == total;
+}
+
+bool SequentialByteBatchSampler::seek_batch(std::int64_t batch_index) {
+    if (batch_index < 0) {
+        return false;
+    }
+    const std::int64_t batches = total_batches();
+    if (batches <= 0) {
+        return false;
+    }
+    std::uintmax_t chunks_to_skip =
+        static_cast<std::uintmax_t>(batch_index % batches) * static_cast<std::uintmax_t>(batch_size_);
+    shard_index_ = 0;
+    local_chunk_index_ = 0;
+    while (shard_index_ < shards_.size()) {
+        const TokenShardFile& shard = shards_[shard_index_];
+        const std::uintmax_t chunk_count = shard.tokens > 0
+            ? (shard.tokens - 1U) / static_cast<std::uintmax_t>(seq_len_)
+            : 0U;
+        if (chunks_to_skip < chunk_count) {
+            local_chunk_index_ = chunks_to_skip;
+            return true;
+        }
+        chunks_to_skip -= chunk_count;
+        shard_index_ += 1;
+    }
+    reset();
+    return chunks_to_skip == 0;
 }
 
 void SequentialByteBatchSampler::reset() {

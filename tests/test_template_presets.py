@@ -267,10 +267,12 @@ def test_train_gpt_fast_path_accepts_every_gpt_template_name() -> None:
             ["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", "--template-name", preset]
         )
         assert argv is not None
-        assert "--model-family" in argv
-        assert argv[argv.index("--model-family") + 1] == "gpt"
         assert "--template-name" in argv
         assert argv[argv.index("--template-name") + 1] == preset
+        if "--model-family" in argv:
+            assert argv[argv.index("--model-family") + 1] == "gpt"
+        else:
+            assert Path(argv[0]).name.startswith("nfn_")
 
 
 def test_compiled_gpt_launcher_accepts_every_shipped_template_name(tmp_path: Path) -> None:
@@ -311,9 +313,12 @@ def test_compiled_gpt_launcher_accepts_every_shipped_template_name(tmp_path: Pat
         )
         assert proc.returncode == 0, f"{preset}: {proc.stderr}"
         argv = observed.read_text(encoding="utf-8").splitlines()
-        expected_family = preset if preset in {"gpt2", "nanogpt"} else "gpt"
-        assert argv[argv.index("--model-family") + 1] == expected_family
         assert argv[argv.index("--template-name") + 1] == preset
+        if "--model-family" in argv:
+            expected_family = preset if preset in {"gpt2", "nanogpt"} else "gpt"
+            assert argv[argv.index("--model-family") + 1] == expected_family
+        else:
+            assert Path(argv[0]).name.startswith("nfn_")
 
 
 def test_train_gpt_fast_path_treats_auto_runner_as_compiled_cli() -> None:
@@ -509,6 +514,19 @@ def test_nonsemantic_jepa_evo_presets_do_not_use_semantic_router() -> None:
                 for node in mlp.nodes.values()
             }
             assert {"router_logits", "topk_route", "expert_dispatch", "expert_combine"} <= mlp_module_types
+
+    deepseek_spec = build_model_spec_from_config(
+        {"preset": "deepseek_v4", "vocab_size": 128, **_tiny_kwargs()},
+        preview_defaults=True,
+    )
+    deepseek_graph = build_gpt_root_graph(name="deepseek_v4_router_score", model_spec=deepseek_spec)
+    deepseek_mlp = deepseek_graph.variant_library["mlp"]["default"]
+    topk_nodes = [
+        node for node in deepseek_mlp.nodes.values()
+        if getattr(node.neuron_def, "module_type", "") == "topk_route"
+    ]
+    assert topk_nodes
+    assert topk_nodes[0].neuron_def.module_config["score_fn"] == "sqrt_softplus"
 
 
 def test_ttt_llama_forward_smoke() -> None:

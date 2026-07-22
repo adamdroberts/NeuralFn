@@ -43,17 +43,18 @@ NATIVE_GPT_DEFAULTS = {
     "train_batch_tokens": 524_288,
     "warmup_steps": 60,
     "learning_rate": 6e-4,
+    "lr_schedule": "cosine",
     "weight_decay": 0.1,
     "beta1": 0.9,
     "beta2": 0.95,
     "adam_eps": 1e-8,
     "grad_clip_norm": 1.0,
-    "eval_every_steps": 250,
+    "eval_every_steps": 5000,
     "eval_batches": 20,
-    "train_loss_every_steps": 0,
+    "train_loss_every_steps": 250,
     "lm_head_row_chunk_size": 28_672,
     "num_layers": 12,
-    "native_cuda_checkpoint_every": 200,
+    "native_cuda_checkpoint_every": 5000,
     "native_cuda_sample_every": 20_000,
     "native_cuda_generate_tokens": 144,
     "native_cuda_runner": "compiled-cli",
@@ -340,14 +341,14 @@ def _resolve_native_compiled_cli_path(args: argparse.Namespace) -> str:
 
 def _compiled_cli_uses_linked_tile_ops(path: str) -> bool:
     return Path(path).name in {
-        "nfn_gpt_native_train",
-        "nfn-gpt-native-train",
         "nfn_gpt_native_train_linked",
         "nfn-gpt-native-train-linked",
     }
 
 
 def _fast_final_lr_fraction(args: argparse.Namespace) -> float:
+    if getattr(args, "final_lr_fraction", None) is not None:
+        return max(0.0, min(float(args.final_lr_fraction), 1.0))
     lr = float(args.learning_rate)
     if args.min_lr is None or lr <= 0.0:
         return 0.0
@@ -395,6 +396,8 @@ def _fast_compiled_cli_argv(args: argparse.Namespace, dataset_arg: str | Path) -
         str(int(args.train_batch_tokens)),
         "--learning-rate",
         str(float(args.learning_rate)),
+        "--lr-schedule",
+        str(args.lr_schedule),
         "--final-lr-fraction",
         str(float(_fast_final_lr_fraction(args))),
         "--weight-decay",
@@ -542,7 +545,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=env_int("TRAIN_BATCH_TOKENS", NATIVE_GPT_DEFAULTS["train_batch_tokens"]),
     )
     parser.add_argument("--learning-rate", type=float, default=env_float("LEARNING_RATE", NATIVE_GPT_DEFAULTS["learning_rate"]))
+    parser.add_argument(
+        "--lr-schedule",
+        "--learning-rate-schedule",
+        choices=("constant", "fixed", "cosine", "cosine-decay"),
+        default=(
+            os.environ.get("LR_SCHEDULE")
+            or os.environ.get("NFN_NATIVE_GPT_LR_SCHEDULE")
+            or os.environ.get("NFN_SM120_NATIVE_LR_SCHEDULE")
+            or os.environ.get("NFN_SM120_LR_SCHEDULE")
+            or NATIVE_GPT_DEFAULTS["lr_schedule"]
+        ),
+        help="Learning-rate schedule for native AdamW: cosine decay after warmup, or constant/fixed.",
+    )
     parser.add_argument("--min-lr", type=float, default=None)
+    parser.add_argument(
+        "--final-lr-fraction",
+        "--learning-rate-decay-frac",
+        "--learning-rate-decay-fraction",
+        type=float,
+        default=None,
+    )
     parser.add_argument("--weight-decay", type=float, default=env_float("WEIGHT_DECAY", NATIVE_GPT_DEFAULTS["weight_decay"]))
     parser.add_argument("--beta1", type=float, default=env_float("BETA1", NATIVE_GPT_DEFAULTS["beta1"]))
     parser.add_argument("--beta2", type=float, default=env_float("BETA2", NATIVE_GPT_DEFAULTS["beta2"]))

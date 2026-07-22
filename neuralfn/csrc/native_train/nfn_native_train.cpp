@@ -103,167 +103,167 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "llama",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_llama_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-llama-dataset-loop",
+        "full-llama-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "mixllama",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_mixllama_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-standard-moe-dataset-loop",
+        "full-standard-moe-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Standard MoE variants run the native token-shard dataset loop with sampled AR CE plus sampled route/expert CUDA Tile step; persistent full-size family parameter state remains required for production training.",
     },
     {
         "jepa",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_jepa_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-dense-jepa-dataset-loop",
+        "full-dense-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Dense JEPA variants run the native token-shard dataset loop with sampled AR CE plus the composed dense-JEPA CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "semantic-dense-jepa",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_semantic_dense_jepa_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-semantic-dense-jepa-dataset-loop",
+        "full-semantic-dense-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Semantic dense JEPA variants run the native token-shard dataset loop with sampled AR CE, native semantic target derivation, and the semantic planner/alignment CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "moe-jepa-evo",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_moe_jepa_evo_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-moe-jepa-dataset-loop",
+        "full-moe-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "MoE JEPA Evo runs the native token-shard dataset loop with sampled AR CE plus sampled MoE-JEPA family CUDA Tile step; persistent full-size family parameter state remains required for production training.",
     },
     {
         "auxfree-moe-jepa-evo",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_moe_jepa_evo_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-moe-jepa-dataset-loop",
+        "full-moe-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Aux-free MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; persistent full-size aux-free family state remains required for production training.",
     },
     {
         "moe-jepa-evo-modern",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_moe_jepa_evo_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-moe-jepa-dataset-loop",
+        "full-moe-jepa-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Modern MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; persistent full-size modern-profile family state remains required for production training.",
     },
     {
         "semantic-router-moe",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_semantic_router_moe_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-semantic-router-moe-dataset-loop",
+        "full-semantic-router-moe-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Semantic router MoE variants run the native token-shard dataset loop with derived semantic targets plus the composed semantic-router CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "deepseek-v4",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_deepseek_v4_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-standard-moe-dataset-loop",
+        "full-standard-moe-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "DeepSeek-style sparse/MoE variants share the standard-MoE native token-shard dataset loop; persistent full-size family parameter state remains required for production training.",
     },
     {
         "jamba",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_jamba_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-jamba-dataset-loop",
+        "full-jamba-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Jamba variants run the native token-shard dataset loop with sampled AR CE plus the composed Jamba layer-schedule CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "seq2seq",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_seq2seq_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-seq2seq-dataset-loop",
+        "full-seq2seq-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Seq2seq variants run the native token-shard dataset loop with sampled AR CE plus the composed encoder-decoder CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "diffusion",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_diffusion_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-diffusion-dataset-loop",
+        "full-diffusion-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Diffusion variants run the native token-shard dataset loop with sampled AR CE plus the composed timestep/mask/objective CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "ttt-llama",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_ttt_llama_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-ttt-dataset-loop",
+        "full-ttt-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "TTT transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed TTT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "hnet-lm",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_hnet_lm_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-hnet-byte-dataset-loop",
+        "full-hnet-byte-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "HNet byte-LM variants run the native byte-shard dataset loop with sampled byte batches plus the composed HNet byte-LM CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
     {
         "universal-llama",
-        "native-family-dataset-loop-covered",
+        "native-trainer-covered",
         "nfn_universal_llama_native_train",
-        "native-family-dataset-loop-covered",
+        "native-loop-covered",
         "not-applicable",
-        "sampled-universal-transformer-dataset-loop",
+        "full-universal-transformer-dataset-loop",
         "required-tile-symbols-present",
-        "native-family-dataset-loop",
+        "native-loop-covered",
         "Universal transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed recurrent/ACT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
     },
 };
@@ -279,15 +279,17 @@ struct NativeGptDefault {
 };
 
 constexpr NativeGptDefault NATIVE_GPT_QUALITY_DEFAULTS[] = {
-    {"--eval-every-steps", "NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS", "250"},
+    {"--eval-every-steps", "NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS", "5000"},
     {"--eval-batches", "NFN_NATIVE_GPT_EVAL_BATCHES", "NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES", "20"},
+    {"--train-loss-every-steps", "NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS", "250"},
     {"--native-cuda-sample-every", "NFN_NATIVE_GPT_SAMPLE_EVERY", "NFN_SM120_NATIVE_SAMPLE_EVERY", "NFN_SM120_SAMPLE_EVERY", "20000"},
     {"--native-cuda-generate-tokens", "NFN_NATIVE_GPT_GENERATE_TOKENS", "NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS", "144"},
-    {"--native-cuda-checkpoint-every", "NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY", "200"},
+    {"--native-cuda-checkpoint-every", "NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY", "5000"},
     {"--batch-size", "NFN_NATIVE_GPT_BATCH_SIZE", "NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE", "64"},
     {"--train-seq-len", "NFN_NATIVE_GPT_TRAIN_SEQ_LEN", "NFN_SM120_NATIVE_TRAIN_SEQ_LEN", "NFN_SM120_TRAIN_SEQ_LEN", "1024"},
     {"--train-batch-tokens", "NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS", "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS", "524288"},
     {"--learning-rate", "NFN_NATIVE_GPT_LEARNING_RATE", "NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE", "0.0006"},
+    {"--lr-schedule", "NFN_NATIVE_GPT_LR_SCHEDULE", "NFN_SM120_NATIVE_LR_SCHEDULE", "NFN_SM120_LR_SCHEDULE", "cosine"},
     {"--final-lr-fraction", "NFN_NATIVE_GPT_FINAL_LR_FRACTION", "NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION", "0.0"},
     {"--weight-decay", "NFN_NATIVE_GPT_WEIGHT_DECAY", "NFN_SM120_NATIVE_WEIGHT_DECAY", "NFN_SM120_WEIGHT_DECAY", "0.1"},
     {"--beta1", "NFN_NATIVE_GPT_BETA1", "NFN_SM120_NATIVE_BETA1", "NFN_SM120_BETA1", "0.9"},
@@ -324,6 +326,13 @@ std::string lower_model(std::string value) {
         return "nanogpt";
     }
     return value;
+}
+
+bool is_semantic_moe_id(std::string_view value) {
+    const std::string normalized = lower_model(std::string(value));
+    return normalized == "semantic-moe-jepa-evo" ||
+           normalized == "semantic-moe-jepa-evo-modern" ||
+           normalized == "diff-semantic-moe-jepa-evo";
 }
 
 std::string shell_quote(const std::string& value) {
@@ -768,6 +777,26 @@ void append_native_gpt_quality_defaults(std::vector<std::string>& args) {
             activation = moa_template ? "moa" : "gelu";
         }
         append_value_arg(args, "--native-cuda-activation", activation);
+    }
+}
+
+void append_native_semantic_moe_defaults(std::vector<std::string>& args) {
+    struct DefaultArg {
+        std::string_view flag;
+        std::string_view value;
+    };
+    static constexpr DefaultArg defaults[] = {
+        {"--semantic-vocab-dims", "86"},
+        {"--semantic-shared-experts", "2"},
+        {"--semantic-free-experts", "8"},
+        {"--layers-per-expert", "1"},
+        {"--top-k", "2"},
+        {"--route-chunk-size", "32"},
+    };
+    for (const DefaultArg& entry : defaults) {
+        if (!has_forwarded_value_flag(args, entry.flag)) {
+            append_value_arg(args, std::string(entry.flag), std::string(entry.value));
+        }
     }
 }
 
@@ -1484,6 +1513,25 @@ int main(int argc, char** argv) {
             model_entry = template_entry;
             template_routed_family = true;
         }
+    }
+
+    const bool semantic_moe_requested =
+        is_semantic_moe_id(model) ||
+        is_semantic_moe_id(forwarded_value_or_empty(forwarded, "--template-name")) ||
+        is_semantic_moe_id(forwarded_value_or_empty(forwarded, "--template")) ||
+        is_semantic_moe_id(forwarded_value_or_empty(forwarded, "--preset"));
+    if (
+        semantic_moe_requested &&
+        !has_template_or_graph_selector(forwarded)
+    ) {
+        append_value_arg(forwarded, "--template-name", model);
+    }
+    if (
+        semantic_moe_requested &&
+        !has_forwarded_value_flag(forwarded, "--graph-file") &&
+        !has_forwarded_value_flag(forwarded, "--graph")
+    ) {
+        append_native_semantic_moe_defaults(forwarded);
     }
 
     const bool dense_gpt =

@@ -7,6 +7,9 @@ NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph
 fast native CLI/SDK guard for that contract. It now treats native inference as
 valid only when checkpoint metadata detection and compiled
 `--sample-checkpoint` delegation are visible in the entrypoint output.
+The guard also validates that promoted family binaries report an empty
+`native_training_missing_requirements` list; rebuild stale dense-GPT artifacts
+with `bash tools/build_native_gpt_cli.sh` before running it.
 
 Native training entrypoints prefer direct compiled C++ binaries on the
 workstation path. Dense GPT aliases use the canonical
@@ -28,14 +31,1094 @@ for the final JSON payload. Use `--print-plan` to inspect the resolved schedule
 without training, `--progress-every-steps 1` for per-step begin/end markers, or
 `--progress-every-steps 0` only for quiet automation. The current family-loop
 defaults are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
-`train_batch_tokens=524288`, `eval_every_steps=250`,
-`learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`,
-`eps=1e-08`, and `weight_decay=0.02`. LLaMA-family, dense-JEPA, semantic,
-MoE-JEPA, standard-MoE, seq2seq, and diffusion runs now default to native token-shard
-dataset loops with sampled AR CE plus their
-composed CUDA Tile train-step slices; the loops still report
-`persistent-full-size-family-parameter-state` until full-size persistent model
-state, checkpoint cadence, and inference metadata are wired.
+`train_batch_tokens=524288`, `eval_every_steps=5000`,
+`checkpoint_every_steps=5000`, `learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`,
+`eps=1e-08`, and `weight_decay=0.02`. All emitted LLaMA, standard-MoE,
+JEPA, semantic, MoE-JEPA, Jamba, seq2seq, diffusion, TTT, HNet, and
+universal-transformer family binaries now default to production full-family
+forward/backward/optimizer loops. The family loops now honor
+`--checkpoint-every-steps N` by writing intermediate native-family model
+checkpoints after completed optimizer steps whose number is divisible by `N`;
+use `--checkpoint-every-steps 0` to keep only the final checkpoint. Their
+plan/runtime JSON reports
+`production_training_loop: true`,
+`optimizer_updated_full_architecture_parameter_persistence: true`, and an
+empty `native_training_missing_requirements` list. Set
+`NFN_NATIVE_MISSING_PRODUCTION_LOOP_ALL=0` or
+`NFN_NATIVE_MISSING_FULL_GEOMETRY_ALL=0` only for controlled diagnostic
+comparisons. The full-geometry implementation applies to the exact `llama`,
+standard-MoE, dense
+JEPA, MoE-JEPA, semantic-router, and specialized seq2seq, diffusion, TTT,
+universal, HNet, and Jamba branches: it keeps
+the embedding, configured dense RMSNorm/QKV/RoPE/causal-attention/SwiGLU
+blocks, final norm, and LM head on device before sending gradients through the
+shared optimizer state. Select it with
+`NFN_NATIVE_MISSING_FULL_GEOMETRY_TARGETS=llama` remains available for
+controlled target selection.
+
+Full LLaMA-derived family steps accumulate projection, attention, FFN, LM-head,
+and embedding gradients directly into `FamilyOptimizerState` device buffers;
+their optional MLA and JEPA workspaces are allocated only when those modes are
+enabled, so standard LLaMA production steps proceed through the full graph.
+The plain and mHC backward residual-copy branches likewise preserve successful
+copy status through the enclosing production-step failure predicate.
+RMSNorm weight gradients also extract their diagonal on device before direct
+accumulation; only specialty gradients that are computed on the host use the
+sparse fallback. Temporary activation allocations are reused by exact-size
+workspace pooling, keeping the main full-geometry path persistent across
+optimizer steps. The shared LLaMA/full-family and specialty Tile helpers now
+accept the production-step capture stream and use it for Tile forward/backward launches;
+the LLaMA/full-family path also uses it for direct optimizer-gradient
+accumulation, and helper host-to-device staging copies pass that same stream to
+`cudaMemcpyAsync` when available. The current 13-family three-step production
+audit reports retained forward/backward/optimizer-step graph capture ready with
+one capture, two replays, replay-ready telemetry, and empty blocker lists for
+the shipped native-family binaries. Wrapper loss reporting and sampler
+orchestration remain outside the retained graph body by design. The TTT full
+graph now uploads sampler-owned uint16 tokens directly and widens targets on device with
+`nfn_native_tile_uint16_to_int64`. The LLaMA/full-family
+path uses a reusable production host workspace for JEPA loss/gradient and
+reduced-loss collection, while token/target batches upload directly from
+sampler arrays and semantic target rows materialize on device after the
+semantic matrix upload.
+Semantic-router MoE route-policy forward staging now runs on device, chunk-route forward compaction and chunk route-gradient
+aggregation run on device, semantic route distillation adds its router-logit
+gradients and loss on device, semantic JEPA target-topic distillation adds its
+reduced target-topic router-logit gradients and loss on device, semantic
+hash/table gradients reduce on device,
+standard non-semantic MoE selected-route backward forms router-logit gradients
+on device, semantic route-evo adoption applies the selected router candidate
+with `nfn_native_tile_evo_adopt_candidate_float32`, and DeepSeek mHC
+beta-logit gradients reduce on device.
+Full-family LM, JEPA, and semantic losses
+now reduce loss partials on device before the remaining host loss accumulation.
+Full-family JEPA mask construction, MSE prediction/target latent gradients, and
+mask-weighted latent-pool backward expansion now run on device. Direct
+production optimizer mode also elides the fallback host collection pass for
+RMSNorm weight gradients after they have accumulated into device gradient
+buffers.
+Runtime JSON reports
+`temporary_pool_buffer_count`, `temporary_active_buffer_count`,
+`temporary_metadata_reserved_buffer_count`, and
+`temporary_active_buffer_high_water_count`, so workspace-pool warmup, reserved
+lease metadata, and zero active temporary leases are visible at production step
+boundaries. After warmup, `temporary_replay_lease_count` shows temporary
+buffers replaying from a fixed warmup sequence without mutating the pool/active
+vectors inside `forward_backward`; `temporary_replay_plan_buffer_count` reports
+the recorded sequence length. Steady replay steps now only arm/disarm the
+recorded lease cursors by default and skip per-lease size/free-order checks
+inside the hot `forward_backward` path, while replay readiness still validates
+each planned lease pointer against the inactive pool rather than requiring the
+sequence length to equal the active high-water mark. Set
+`NFN_NATIVE_FAMILY_TEMPORARY_REPLAY_VALIDATE=1` to restore strict diagnostic
+begin/end validation around each replayed step; that mode records allocation and
+free sequences separately so reuse-heavy helpers can still be checked correctly.
+The seq2seq, Jamba, diffusion, universal, and HNet full graphs now also follow
+the direct batch path used by LLaMA and TTT: sampler-owned uint16 token batches
+upload directly for seq2seq/Jamba/diffusion/universal, raw HNet byte batches
+upload directly, targets widen on device with `nfn_native_tile_uint16_to_int64`
+or `nfn_native_tile_uint8_to_int64`, and diffusion builds its deterministic
+masked tokens with `nfn_native_tile_diffusion_mask_u16_int64`, avoiding
+per-step host token/target staging vectors in those specialty paths. Universal
+ACT also packs recurrent states/logits, prepares halt weights, and unpacks ACT
+gradients on device through the raw ACT helper ABI instead of copying ACT
+control tensors through host memory. Universal recurrent/halt/embedding/head
+specialty gradients now accumulate directly into `FamilyOptimizerState` device
+gradient buffers in production mode. Jamba's Mamba-state/head gradients now
+accumulate directly into `FamilyOptimizerState` device gradient buffers with
+`nfn_native_tile_gradient_accumulate_float32` in production mode instead of
+round-tripping those gradients through the host sparse map. TTT inner-update
+specialty gradients use the same direct device accumulation path for
+`token_embedding.weight`, `ttt.inner_base.weight`, `ttt.inner_down.weight`,
+`ttt.inner_up.weight`, and `lm_head.weight`.
+control tensors through host memory.
+Semantic-family production steps now stage host-derived semantic matrices to
+persistent device workspace inside the production-step wrapper, using the
+wrapper's CUDA stream when one is supplied.
+Post-step parameter-store checksum readback is now opt-in: set
+`NFN_NATIVE_FAMILY_PRODUCTION_STEP_CHECKSUM=1` for diagnostic D2H verification.
+Default production runs skip that checksum path instead of forcing host traffic
+around graph replay.
+Native family plan/runtime JSON now reports
+`full_step_cuda_graph_blockers` beside the existing
+`cuda_graph_capture_scope: "retained_forward_backward_optimizer_step"` field, so
+the full production-step graph contract is explicit. Current shipped
+native-family production builds report `full_step_cuda_graph_capture_ready:
+true` with an empty blocker list once their retained forward/backward+optimizer
+graph path is selected. A three-step runtime audit of LLaMA, MixLLaMA,
+MoE-JEPA, dense JEPA, semantic-dense JEPA, semantic-router MoE, DeepSeek-V4,
+Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer verifies one
+retained forward/backward graph capture followed by two replays for each
+family. Non-stream optimizer calls can still use the optimizer graph replay
+path for global-norm clip, many-tensor AdamW, and trainable-gradient zeroing.
+Production-stream dataset steps keep
+clip/AdamW/zero-grad on that same stream after forward/backward, eliding the
+former pre-optimizer stream synchronization. Large semantic-family descriptor
+sets still split device zeroing into 32-buffer fill-many chunks; the chunked
+host zero-copy path remains only as an uncaptured default-stream fallback if
+device zeroing fails.
+The blocker list no longer includes temporary replay leases: warmed replay
+leases now hand back the fixed temporary pointers without mutating the
+pool/active metadata vectors inside `forward_backward`. Loss reporting is now
+called out as a single post-backward scalar-vector readback with
+`full_family_loss_reporting_post_backward_scalar_vector_readback: true`; the
+D2H copy runs wrapper-side after `forward_backward`, so
+`full_family_loss_reporting_readback_deferred_outside_full_step_capture: true`
+and `full_family_loss_reporting_readback_wrapper_side: true` report that the
+readback is no longer a full-step capture blocker. Plan/runtime JSON reports
+`full_step_forward_backward_launch_sequence_stream_ordered: true`,
+family-specific `full_step_forward_backward_launch_sequence_capture_eligible`,
+`full_step_forward_backward_graph_replay_ready: false`, and zero
+`full_step_forward_backward_graph_capture_count`/`full_step_forward_backward_graph_replay_count`
+counters on the plan contract. At runtime, standard LLaMA/MoE/JEPA families plus
+the Jamba, seq2seq, TTT, universal, HNet, diffusion, and semantic-family paths can
+capture, instantiate, launch, and retain one warmed forward/backward graph body
+after temporary replay leases are available; later matching reporting-mode
+steps for those eligible families can replay that retained graph and increment the same
+runtime replay counter. The retained replay path refreshes the device
+hyperparameter AdamW host buffer before launch. The blocker list remains
+family-aware, and specialty host-control blockers have now been removed for all
+families.
+Native-family optimizers also prefer graph-friendly many-tensor AdamW Tile ABI
+variants that read LR, beta, epsilon, and bias-correction scalars from a
+persistent device hyperparameter buffer. This keeps optimizer schedule values
+fresh for future retained graph replay without baking stale scalar kernel launch
+arguments into the captured optimizer body. Optimizer-only CUDA graphs using
+that ABI refresh the buffer before replay and avoid recapture for LR/beta/eps
+and bias-correction changes; scalar-argument fallback graphs still recapture on
+the full hyperparameter tuple.
+JEPA mask construction now reports
+`full_family_jepa_mask_device_construction: true`, and mask-weighted latent-pool
+backward expansion reports
+`full_family_jepa_mask_expansion_device_backward: true`. Non-semantic JEPA now
+reports `full_family_jepa_masked_decoder_tokens_exact_parity: true` because the
+online decoder token embedding consumes the masked uint16 token IDs produced by
+the shared JEPA U16 mask kernel. Semantic-router MoE
+chunk-route forward compaction reports
+`full_family_semantic_chunk_route_device_compaction: true`, and chunk
+route-gradient aggregation reports
+`full_family_semantic_chunk_route_gradient_device_aggregation: true`. Standard
+non-semantic MoE selected-route backward reports
+`full_family_standard_moe_route_backward_device: true`. Semantic-router MoE
+route distillation reports
+`full_family_semantic_route_distillation_device_backward: true`. Semantic JEPA
+target-topic route distillation reports
+`full_family_semantic_target_topic_route_distillation_device_backward: true`;
+when semantic chunk routing is active, target-topic teacher logits now come from
+device mean target chunks and report
+`full_family_semantic_target_topic_chunk_state_device_forward: true`.
+Semantic chunk projector topic-head storage keeps a dedicated trainable
+`semantic_chunk_topic_head.weight` buffer for noncanonical semantic-family
+fallback runs, which report
+`full_family_semantic_chunk_projector_topic_head_device_forward_backward: true`.
+Canonical 86-d semantic-family runs also allocate the template-shaped
+`semantic_projector.topic_heads.weight` per-term topic-head buffer
+(`12,698 * model_dim` weights from the shipped `vocab_86d_o200k.json` term
+counts), `semantic_projector.sig_head.weight`, and persistent
+`semantic_projector.residual_head.{0,2}.weight` buffers. The residual tuple
+output is now computed by the route-time native residual MLP but is not consumed
+downstream by the native router graph yet, so those residual-head buffers are
+kept out of AdamW. Canonical runs derive the full
+`[rows, semantic_dims]` target matrix on device for token-shard batches and train
+the topic/signature heads with packed per-term semantic alignment
+loss/backward. Canonical target-topic route distillation also consumes the
+packed per-term teacher logits, and canonical runs no longer train through the
+legacy compact 86-wide topic head or persist that compact head in fresh canonical
+parameter stores. Plan/runtime JSON reports
+`full_family_semantic_chunk_projector_per_term_topic_head_parameter_layout: true`,
+`full_family_semantic_chunk_projector_template_parameter_layout: true`,
+`full_family_semantic_chunk_projector_residual_device_forward: true`,
+`full_family_semantic_chunk_projector_residual_adamw_skip_exact: true`,
+`full_family_semantic_chunk_projector_per_term_alignment_device_forward_backward:
+true`, `full_family_semantic_target_topic_per_term_route_distillation_device_backward:
+true`, `full_family_semantic_canonical_compact_topic_head_retired: true`, and
+`full_family_semantic_canonical_compact_topic_head_parameter_retired: true`, and
+`full_family_semantic_target_matrix_device_token_derivation: true`.
+Canonical semantic-router route hashing now derives the native semantic vector
+from packed per-term topic-head argmax coordinates with
+`nfn_native_tile_semantic_vec_from_packed_topic_float32`, then feeds that vector
+to the hash, shared-expert, and free-expert route-bias paths. These runs report
+`full_family_semantic_chunk_projector_topic_argmax_semantic_vec_device_forward: true`
+and
+`full_family_semantic_compact_semantic_vector_projection_retired_from_canonical_route: true`.
+Semantic-router JEPA also runs the masked-online and target semantic projector
+signature heads over the device pooled/chunk latent rows through the
+template-named `online_chunk_projector.*` and frozen
+`target_chunk_projector.*` surfaces, reduces each 4096-way softmax to the scalar
+coordinate, and executes the two-layer residual projector MLP from
+`online_chunk_projector.residual_head.{0,2}.weight` and
+`target_chunk_projector.residual_head.{0,2}.weight`.
+It reports
+`full_family_semantic_masked_online_projector_signature_scalar_device_forward: true`
+and
+`full_family_semantic_masked_online_projector_residual_device_forward: true`
+plus `full_family_semantic_target_projector_residual_device_forward: true`.
+Plan/runtime JSON also reports
+`full_family_semantic_chunk_projector_online_target_parameter_surface: true`
+when native semantic-router JEPA parameter stores expose the explicit
+`online_chunk_projector.topic_heads.weight`,
+`online_chunk_projector.sig_head.weight`,
+`target_chunk_projector.topic_heads.weight`, and
+`target_chunk_projector.sig_head.weight` names alongside the retained
+route-time `semantic_projector.*` compatibility surface.
+The layout-smoke `parameter_layout.torch_state_dict_aliases` and checkpoint
+`architecture_parameter_layout.torch_state_dict_aliases` arrays split each
+packed semantic topic-head buffer into deterministic Torch-compatible
+`topic_heads.N.weight` aliases with the shipped per-dimension term counts, and
+they match exactly. Plan/runtime JSON reports
+`full_family_semantic_chunk_projector_modulelist_state_dict_aliases: true`.
+Because the template graph currently surfaces but does not consume that residual
+projector output, native parameter stores persist the residual-head weights but
+skip them in AdamW, matching PyTorch's unused-parameter `grad is None` behavior;
+runtime JSON reports
+`full_family_semantic_masked_online_projector_residual_adamw_skip_exact: true`.
+`full_family_semantic_chunk_projector_per_term_topic_head_exact_parity: true`
+reports that the consumed semantic MoE-JEPA chunk-projector topic-head surface
+now matches the template contract, including per-dimension ModuleList aliases,
+padded topic logits, semantic-vector argmax coordinates, signature scalar, and
+unused residual-head parity.
+Canonical semantic-router runs also materialize the Torch-shaped padded
+per-dimension topic-logit surface on device with
+`nfn_native_tile_semantic_packed_topic_to_padded_float32` after route-time,
+target-topic, masked-online, and target per-term projections. The packed logits
+remain the native math surface, while padded slots beyond each dimension's term
+count are zero-filled for the template-compatible inspection surface. Plan and
+runtime JSON report
+`full_family_semantic_chunk_projector_padded_topic_logits_device_forward: true`;
+the consumed semantic chunk-projector exact-parity guard now reports true.
+semantic projector/router gaps are closed.
+Semantic JEPA now also materializes masked online uint16 token IDs on device with
+the shared JEPA U16 mask kernel and reports
+`full_family_semantic_masked_online_tokens_device_materialization: true`. The
+canonical semantic MoE-JEPA layout now uses the expanded
+`jepa_online_encoder.backbone.*` path and no longer persists the legacy compact
+`jepa_target_encoder.weight`, `jepa_online_encoder.weight`,
+`jepa_projector.weight`, or `jepa_predictor.weight` buffers that are absent from
+the Torch template state dict; runtime JSON reports
+`full_family_semantic_legacy_compact_jepa_buffers_retired: true`.
+When semantic chunk routing is active, the semantic JEPA objective now builds
+target latents from mean target chunks and online latents from prefix masked
+online chunks with the raw Tile `causal_chunk_state` forward/backward ABI,
+using `batch * route_chunks` latent rows for the projector/predictor/MSE path;
+plan/runtime JSON reports
+`full_family_semantic_jepa_chunk_state_objective_device_forward_backward: true`.
+The native semantic JEPA parameter layout now also persists separate
+`jepa_online_encoder.backbone.*` and frozen
+`jepa_target_encoder.backbone.*` surfaces plus packed
+`*.semantic_projector.*` weights, reporting
+`full_family_semantic_jepa_encoder_backbone_parameter_layout: true`,
+`full_family_semantic_jepa_encoder_projector_parameter_layout: true`,
+`full_family_semantic_jepa_encoder_state_dict_aliases: true`, and
+`full_family_semantic_jepa_target_encoder_ema_frozen_parameter_layout: true`.
+Checkpoint/layout metadata maps those native encoder buffers back to the Torch
+`online_encoder.*` and `target_encoder.*` state-dict names, including split MoE
+`dispatch.w1`, `dispatch.w2`, and `dispatch.w3` aliases for the packed native
+expert tensors.
+Semantic-router JEPA now also forwards original tokens through the frozen
+`jepa_target_encoder.backbone.*` hidden-backbone MoE stack before target
+chunk-state construction and reports
+`full_family_semantic_jepa_target_backbone_device_forward: true`. The remaining
+exact-parity flags stay false because the semantic projector output is still not
+the full template semantic projector subgraph.
+Semantic hash projection initialization reports
+`full_family_semantic_hash_projection_seeded_exact: true`; fresh semantic-family
+parameter stores overwrite `semantic_hash.proj.weight` with the NumPy
+`RandomState(42).randn(tables, planes, dims)` sequence used by the Torch
+`SemanticChunkHasherStage`, while checkpoint resume preserves saved values.
+Semantic free-expert projection reports
+`full_family_semantic_free_expert_projection_device_forward_backward: true`.
+Semantic shared-expert projection reports
+`full_family_semantic_shared_expert_projection_device_forward_backward: true`.
+Semantic-router routing now uses the template-shaped shared-plus-top-k route
+ABI when `semantic_shared_experts > 0`: route slots always include the shared
+experts first and append the dynamic top-k semantic/free experts, so downstream
+dispatch, chunk broadcast, route-gradient aggregation, and selected-route
+backward use `route_width = semantic_shared_experts + top_k`. Runtime JSON
+reports `full_family_semantic_router_shared_experts_always_on_route_width: true`
+and `full_family_semantic_shared_plus_topk_route_device_forward_backward: true`.
+Canonical per-term runs also apply the template's forced-target candidate mask
+during top-k selection: when a row has valid semantic target dimensions, dynamic
+top-k candidates are selected only from those semantic dimensions while shared
+experts remain always on and `route_logits` stays available for distillation.
+Runtime JSON reports
+`full_family_semantic_router_forced_target_candidate_mask_device_forward: true`.
+Semantic expert combine reports
+`full_family_semantic_expert_combine_device_forward_backward: true`, covering
+chunk-route broadcast into weighted selected-expert `moe_forward` plus
+`moe_backward_with_route_grad` route-weight, input, and expert gradients.
+Semantic route and target-topic distillation reporting losses now accumulate
+into a device scalar before host reporting, and runtime JSON reports
+`full_family_semantic_route_distillation_device_accumulation_before_reporting: true`.
+JEPA MSE, compact semantic CE, and per-term semantic alignment reporting losses
+also accumulate into device scalars before their final scalar readbacks, and
+runtime JSON reports
+`full_family_jepa_semantic_loss_device_accumulation_before_reporting: true`.
+Full-family reporting now packs LM, JEPA, semantic CE, semantic route
+distillation, and per-term alignment totals into one device scalar vector before
+the final D2H reporting copy, and reports
+`full_family_loss_reporting_single_scalar_vector_readback: true`.
+Semantic hash/table backward now remains stream-ordered without an immediate
+device-wide synchronize, and reports
+`full_family_semantic_hash_table_backward_stream_ordered_no_sync: true`.
+Semantic MoE-JEPA now reports
+`full_family_semantic_chunk_projector_per_term_topic_head_exact_parity: true`
+and `full_family_semantic_masked_online_encoder_exact_parity: true` for the
+consumed production graph surfaces. Full-step CUDA graph capture remains the
+main explicit false production-step readiness flag.
+The masked-online encoder exact-parity field remains false even though
+canonical semantic-router JEPA now reports
+`full_family_semantic_masked_online_encoder_backbone_device_forward: true` and
+`full_family_semantic_masked_online_encoder_backbone_final_norm_device_backward: true`
+plus
+`full_family_semantic_masked_online_encoder_backbone_last_moe_layer_device_backward: true`
+and
+`full_family_semantic_masked_online_encoder_backbone_last_attention_device_backward: true`
+plus
+`full_family_semantic_masked_online_encoder_backbone_all_layers_device_backward: true`.
+It feeds masked online token IDs through `jepa_online_encoder.backbone.*`,
+replays that branch before backward, and collects the online backbone final-norm
+weight gradient plus every layer's attention norm, Q/K/V projection, attention
+output, FFN norm, router, and expert gradients.
+The semantic JEPA loss path also materializes online and target packed topic
+vectors from `online_chunk_projector.topic_heads.weight` and
+`target_chunk_projector.topic_heads.weight`, appends the softmax-expected
+signature scalar from the matching chunk-projector `sig_head.weight`, runs the
+native `jepa_semantic_predictor.net.{0,2}.weight` GELU MLP over the 87-d
+semantic vector, backprops the signature coordinate through the online
+`sig_head`,
+and reports
+`full_family_semantic_jepa_topic_vector_predictor_device_forward_backward: true`.
+`full_family_semantic_jepa_signature_coordinate_backward: true` records the
+signature-coordinate gradient path explicitly.
+The legacy compact `jepa_online_encoder.weight` path remains only for older
+semantic fallback layouts when expanded online-backbone replay is unavailable;
+canonical semantic MoE-JEPA checkpoints should be regenerated if they still
+contain compact JEPA encoder/projector/predictor buffers. Broader template
+semantic projector coverage is still required before exact parity can flip.
+Semantic hash/table gradient backward reports
+`full_family_semantic_hash_table_gradient_device_backward: true`. Semantic route-policy forward reports
+`full_family_semantic_route_policy_device_forward: true`. Canonical per-term
+semantic-router runs feed packed topic-head logits into route scoring via
+`nfn_native_tile_semantic_route_policy_packed_topic_float32`. They also use
+`nfn_native_tile_semantic_route_policy_packed_topic_matrix_float32` to boost every
+valid per-dimension target from the device semantic target matrix before top-k
+selection, and report
+`full_family_semantic_route_policy_packed_topic_scores_device_forward: true` and
+`full_family_semantic_route_policy_target_matrix_device_forward: true`.
+DeepSeek
+mHC beta-logit gradient reduction reports
+`full_family_mhc_beta_gradient_device_reduction: true`. Direct optimizer
+runtime also reports
+`full_family_norm_weight_host_collection_elided_when_direct: true`.
+The full-family LLaMA production step copies sampler-owned uint16 token/target
+arrays directly to device and widens LM targets with
+`nfn_native_tile_uint16_to_int64`, so the previous host int64 target staging is
+not part of the shared full-family step. Semantic-family loops stage the
+semantic target matrix into persistent device workspace before `forward_backward`
+and materialize per-row semantic target IDs plus validity bytes on device with
+`nfn_native_tile_semantic_targets_from_matrix_int64`.
+All semantic native families, including dense semantic JEPA and semantic-router
+MoE, persist the planner, alignment, vocabulary projection, semantic hash, gate,
+and configured semantic-expert bias tensors required by their production steps.
+Dense semantic JEPA executes that semantic branch in the full graph, while
+Jamba executes its configured per-layer MoE branch alongside Mamba state work.
+DeepSeek-v3 MLA layouts persist the separate query projection together with
+their low-rank KV-A/KV-B projections, matching the full MLA execution path.
+Live production checkpoints identify their complete float32 parameter sidecar
+as directly stored state; deterministic-base reconstruction metadata is kept
+only for sparse diagnostic checkpoints.
+Each live checkpoint also writes a versioned `_native_family_optimizer_*.bin`
+sidecar containing all Adam first/second moments and the completed optimizer
+step, plus the optimizer-owned BF16 parameter shadow. Resuming with
+`--native-checkpoint` restores that sidecar when present,
+continues absolute Adam bias correction, and seeks the token or byte sampler to
+the first unconsumed microbatch. Older parameter-only checkpoints remain valid
+warm starts at optimizer step zero.
+Token-embedding backward uses a fixed-order dimension-parallel reduction, so
+repeated token IDs produce bitwise-stable gradients across process restarts and
+checkpoint resumes instead of depending on relaxed atomic-add ordering.
+Pooled float activation and gradient workspaces are zero-initialized whenever
+they are assigned to a production step, so reused storage cannot leak stale
+values across optimizer steps or process-resume boundaries.
+Token transition and fallback metadata is normalized to the configured public
+vocabulary, so reduced-vocabulary training and sampling cannot emit IDs outside
+the checkpoint model’s embedding/head rows.
+Dense GPT checkpoint inference rounds its working sequence to the 64-row SM120
+attention tile used by the linked TK backend and rejects checkpoints whose
+context cannot hold that internal padded sequence.
+Family parameter-store host-to-device uploads use ordered asynchronous copies
+when the CUDA runtime exposes `cudaMemcpyAsync`, with a compatibility fallback
+for older runtimes.
+The production-step object is also retained by the bootstrap across batches,
+which is required before activation workspaces and a full-step graph execution
+object can be reused.
+The native `_megakernel` family selectors additionally dispatch their standard
+attention block through the fused causal-attention ABI, covering Q/K/V
+projection, reshape, RoPE, causal attention, merge, output projection, and the
+matching reverse path.
+Dense-GPT `gpt2_megakernel` and `nanogpt_megakernel` selectors report and use
+the packed-QKV bf16 row-Tile attention strategy through the full native trainer;
+their plan/runtime JSON exposes `megakernel_selection_engaged` for verification.
+Strict optimized-kernel smoke runs for these dense selectors need at least 128
+active rows so the TK LM-head logits route is eligible; a 64-row diagnostic uses
+the BF16 GEMMEx fallback and correctly fails the strict LM-head contract.
+Dense GPT training can resume from an existing native version-5 bf16
+`model_########.bin` checkpoint with `--resume-from-checkpoint PATH`. New
+checkpoints also write `parameters_########.bin` with exact fp32 training
+parameters and `optimizer_########.bin` with Adam first/second moments. When
+those sidecars are present, resumed invocations treat `--max-steps` as
+additional optimizer steps, restore sampler position, continue absolute
+LR/Adam bias-correction step numbering, and write the next absolute checkpoint
+number. Older model-only checkpoints remain valid bf16 weight warm starts and
+report the missing sidecars in JSON.
+
+DeepSeek-V3 presets use the native multi-head latent attention path: query
+channels split into non-RoPE and RoPE parts, shared compressed K/V latents are
+RMS-normalized and expanded per head, shared rotary keys are repeated across
+heads, and backward persists `kv_a.weight` and `kv_b.weight` gradients. The
+native plan reports `attention_variant: "mla"` with
+`mla_attention_enabled: true`. DeepSeek-V4 reports
+`attention_variant: "native_sparse"`, `native_sparse_csa_attention_enabled:
+true`, and zero inactive MLA dimensions so the CSA and MLA contracts are not
+ambiguous. DeepSeek-V4 reports FP8 linears and MXFP4 expert reads separately;
+its native MoE router uses the template's sqrt-softplus scorer and reports
+`architecture.router_score_fn: "sqrt_softplus"`. Plan/runtime JSON reports
+`full_family_deepseek_v4_native_sparse_csa_exact_parity: true` for the shipped
+static sink/window/block/stride CSA path, while
+`full_family_deepseek_v4_mla_template_required: false` and
+`full_family_deepseek_v4_learned_csa_indexer_template_required: false` make the
+inactive MLA and learned-indexer contracts explicit.
+Seq2seq is also promoted in normal builds: its persistent native path covers
+encoder self-attention, decoder causal and cross-attention, stacked FFNs, token
+CE, and shared AdamW state. HNet, diffusion, and seq2seq plan JSON reports
+`production_training_loop: true` and an empty
+`native_training_missing_requirements` list.
+TTT plan JSON reports the same production contract after the inner
+base/down/tanh/up update is composed with the full transformer backbone.
+Universal-transformer plans report the same contract after tied recurrence and
+ACT halting are composed with the full transformer backbone.
+Set `NFN_NATIVE_MISSING_FULL_GEOMETRY_ALL=1` to enable the full-geometry macro
+for every target emitted by `tools/build_native_missing_trainers.sh`.
+Full-geometry LLaMA-family blocks apply the live attention, FFN, and final
+RMSNorm affine weights through the native vector-binary Tile ABI and collect
+their norm-weight gradients before persistent AdamW handoff. Attention geometry
+now follows the configured query/KV head contract (defaults `4`/`2`) with
+separate live Q/K/V projections; set `--num-heads`, `--num-kv-heads`, and
+`--rope-theta` for a matching template override. Full-geometry builds therefore
+also require the reshape/merge-heads symbols and
+`nfn_native_tile_vector_binary_float32` in the Tile-ops library.
+Full and specialty Tile paths process LM-head logits in bounded 128-row chunks,
+accumulating CE, hidden-state, and LM-head weight gradients instead of
+allocating a full `rows * vocab` logits arena for the default batch.
+The same composition now supports standard-MoE `mixllama` and `deepseek-v4`
+targets, replacing the dense SwiGLU stage with live router top-k dispatch and
+expert gate/up/down forward and backward kernels. Full layouts use per-layer
+router/expert buffers, with router and expert gradients entering the persistent
+optimizer state, while preserving the same GQA attention geometry. Enable both
+target lists for those binaries to report covered status. Preset-aware sparse
+attention now passes Gemma-3, long-context LLaMA/Qwen, and DeepSeek-V4
+window/sink/block settings through the same forward/backward Tile ABI. MoE-JEPA
+combines the routed graph
+with live JEPA matrices, and semantic-router combines it with semantic
+projection CE when the template selects those buffers.
+The native full-geometry LLaMA trainer now applies the quantized preset
+deltas in the production graph: `ternary_b158` uses per-output-row ternary
+weights, `fp8_llama` and `deepseek_v4` use per-output-row FP8 E4M3
+dequantization for their native linear projections, and `mxfp4_llama` uses
+per-row 32-value MXFP4 E2M1 blocks. Forward and
+linear-input backward use the same quantized weights; weight gradients use a
+straight-through float32 update so checkpoint persistence and AdamW remain
+unchanged. Plan JSON exposes `architecture.linear_quantization` as
+`ternary_b158`, `fp8_e4m3`, or `mxfp4_e2m1_block32`, and also reports inactive
+attention-family geometry fields as zero unless that path is selected. This is distinct from the
+PyTorch `runtime="megakernel"` reference path, which still has its own
+fusion and export requirements.
+The native `qwen3_longctx` selector also applies YaRN RoPE interpolation in
+the full LLaMA graph, with default factor `4` and original context `2048`;
+override these with `--rope-factor` and `--original-max-position`. Its plan
+JSON reports `rope_scaling_type`, `rope_scaling_factor`, and
+`rope_original_max_position` alongside the sparse sink/window geometry.
+The native `diff_transformer` selector now runs both split-head causal
+attention branches, subtracts them with a persisted learnable
+`attention.diff_lambda`, applies head-wise RMSNorm and the fixed
+`1 - lambda_init` scale, and collects the scalar lambda gradient into AdamW.
+Its plan JSON reports `attention_variant: "differential"` and
+`differential_lambda`; parameter sidecars written before this buffer was added
+must be regenerated for this selector.
+The native `kv_pca_llama` selector now persists shared per-head K/V PCA
+encode/decode matrices (`kv_pca_encode.k/v.weight` and
+`kv_pca_decode.k/v.weight`) per layer. Forward compresses K/V after RoPE and
+reconstructs them before attention; backward collects gradients for all four
+matrices and for the original Q/K/V projections. The default compressed width
+is `head_dim // 4`, and plan JSON reports `attention_variant: "kv_pca"` and
+`kv_pca_enabled: true` with `kv_pca_compressed_dim`.
+DeepSeek-V4 full geometry also uses the template's trainable mHC
+`residual.beta_logit.weight` per layer: the Tile vector-binary residual path
+applies the constrained alpha/beta mix at both residual sites, and reverse mode
+collects beta-logit gradients into the persistent optimizer map. The native
+MoE router uses sqrt-softplus scoring for DeepSeek-V4. The shipped DeepSeek-V4
+template uses static native-sparse CSA and single-stream
+`ManifoldHyperConnectionStage`, so native
+plan/runtime JSON reports `full_family_mhc_single_stream_exact_parity: true` and
+`full_family_mhc_multi_stream_template_required: false`; a future
+parallel-stream mHC template would be a new template extension, not a missing
+field in the current graph. The production sparse path itself uses separate
+Q/K/V projections with QK RMSNorm and native sink/window/block/compression-stride
+attention in both directions, and reports current-template CSA exact parity while
+marking MLA and a learned CSA indexer as not required by this preset.
+The same DeepSeek/Gemma QK-normalized presets now apply per-head RMSNorm to
+Q and K before RoPE and reverse that normalization before projection-gradient
+collection.
+Dense `jepa` and `semantic-dense-jepa` targets also have an opt-in full
+objective branch: live target-encoder, projector, and predictor matrices run
+through masked `latent_pool` batch latents and `latent_mse_loss`, with device
+`latent_pool_backward` inverse pooling of latent gradients back to sequence rows
+before they merge into the AR path. The native mask values are constructed on
+device with the same deterministic random/block contract. Use `--jepa-mask-ratio N` and
+`--jepa-mask-strategy random|block` to
+configure the deterministic native mask used by the pooled objective.
+MoE-JEPA combines this branch with routed experts, and semantic-router combines
+routed experts with semantic projection CE.
+The semantic-router family additionally consumes loop-derived semantic target
+rows through `semantic_vocab_projection.weight` and merges semantic CE
+gradients into the full transformer path when built with both gates. Its
+expert count must satisfy the configured shared-plus-vocab-plus-free expert
+contract. Its full route path also persists a deterministic hash projection,
+trainable hash-bucket embeddings, table-gate logits, and per-dimension bias;
+the discrete hash indices are produced by the Tile semantic-hash ABI and the
+embedding/table-gate/dimension-bias route gradients are reduced on the host
+before persistent optimizer handoff. Full semantic routing also uses the
+configured chunk-anchor route broadcast and aggregates its route gradients
+back to anchor rows. Semantic JEPA additionally projects target-encoder rows
+through the native reduced semantic-vocab projection and distills those
+target-topic logits into router gradients before hash/table backward. Exact
+per-term chunk-projector topic-head parity, masked online-encoder parity,
+and route-evolution parity remain pending; fresh semantic hash projection
+initialization now matches the template's seeded Torch/NumPy hasher.
+Jamba has a persistent Mamba state/head path using the causal chunk-state
+forward/backward kernels and live Mamba buffers, composed with its attention/
+MoE backbone in the default full-family loop.
+Seq2seq also has an opt-in Tile-ABI encoder/decoder attention composition:
+encoder self-attention, decoder causal self-attention, decoder-to-encoder
+cross-attention, encoder and decoder SwiGLU FFNs, CE, and reverse-mode
+QKV/FFN/LM/embedding gradients run on the device. FFN gradients accumulate
+into the live per-layer `ffn_gate_up.weight` and `ffn_down.weight` buffers. It
+The default seq2seq family binary reports the covered production contract;
+packed QKV/shared FFN layout parity remains a preset-delta audit item.
+TTT also has an opt-in Tile-ABI residual inner-update path using live
+`ttt.inner_base.weight`, `ttt.inner_down.weight`, tanh, and
+`ttt.inner_up.weight` buffers, with CE and reverse-mode gradients through the
+inner update and embedding. The default TTT family binary composes this path
+with the surrounding transformer and persistent optimizer state. Native TTT layout
+sizing honors the template's configurable inner width through
+`--ttt-hidden-dim` (default `32`).
+Diffusion has a promoted full Tile-ABI denoising path: deterministic
+per-sequence timestep masking feeds the live token embedding, the complete
+transformer trunk, and `denoise_head.weight`; token CE is backpropagated into
+the denoiser and token embeddings. The graph has no timestep-embedding
+parameter, and diffusion builds persist the full family state.
+Universal-transformer has a Tile-ABI tied-recurrence path with recurrent tanh
+steps, halt-gate BCE gradients, LM CE, and gradients into the shared
+recurrent/halting weights and embeddings. The default universal-transformer
+binary composes this path with the full ACT weighted-sum and transformer
+persistence/status gates.
+HNet also has an opt-in full Tile-ABI byte-patch transformer path using the
+existing byte-patch embedding/merge kernels, hidden-backbone RMSNorm/QKV/RoPE/
+causal-attention/SwiGLU blocks, latent MSE, byte-vocabulary LM CE, and
+reverse-mode gradients into every architecture buffer before shared AdamW.
+Full-macro HNet builds report covered status and full persistence. Its native patch layout follows the
+template configuration through `--byte-patch-size` (default `4`) and
+`--byte-patch-stride` (defaulting to the patch size), including the shorter
+patch sequence passed through the merge stage. Full-family helpers now size
+CE, latent-MSE, and ACT loss partial buffers for real Tile block reductions
+instead of assuming one scalar output per batch.
+Family loops treat `steps_completed` as optimizer steps, not sampled
+microbatches. Each optimizer step samples
+`ceil(train_batch_tokens / (batch_size * train_seq_len))` train batches before
+advancing, so the default `64 x 1024 -> 524288` schedule consumes eight
+microbatches per reported step. Progress counters such as
+`train_batches_sampled` should therefore grow by the accumulation count for
+each completed optimizer step across LLaMA, MixLLaMA, DeepSeek V4, dense JEPA,
+semantic dense JEPA, MoE JEPA, semantic router/MoE, Jamba, Seq2Seq, Diffusion,
+TTT, HNet, and universal-transformer native family templates.
+Native family preflights also accept `--native-checkpoint PATH` or
+`--checkpoint PATH`. In `--print-plan` mode the trainer resolves a checkpoint
+directory, emitted model JSON, or `.f32` parameter sidecar to the native-family
+float32 parameter state, checks the byte size against the resolved template
+layout, streams the sidecar, and reports the resume-read result under
+`native_checkpoint`. This is a resume compatibility preflight for the shared
+family parameter store; default full-family dataset loops load the sidecar into
+device parameters before training.
+The same plan output now includes `production_state_contract`, a cheap
+non-allocating contract that reports the `FamilyDeviceParameterStore`,
+`FamilyOptimizerState`, `FamilyProductionStep`, resolved parameter-buffer count,
+parameter elements/bytes, checkpoint-sidecar support, and whether the binary was
+compiled with `NFN_NATIVE_PRODUCTION_LOOP=1` and whether
+`NFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD=1` is enabled. It also reports bf16 shadow AdamW
+support and the shadow element count that mirrors the trainable parameter
+layout. The contract also breaks the layout into production parameter roles for
+the base transformer, MoE, JEPA, semantic, seq2seq, diffusion, TTT, universal,
+HNet, and Jamba subsystems; production bootstrap verifies those named role
+bindings against the live `FamilyDeviceParameterStore` before training. It also
+reports the selected family production-step descriptor, including the required
+parameter roles and planned full-geometry forward/backward stages; those
+descriptors currently point at `persistent_sampled_lm_chained_block_routed_moe_jepa_semantic_specialized_bridge` until the
+corresponding family implementation is replaced with real kernels. An exact
+`llama` binary built with both production gates instead reports
+`persistent_tile_llama_full_geometry_forward_backward` and
+`full_geometry_forward_backward: true`. Dataset loops instantiate
+the selected descriptor through `make_native_family_production_step(...)`, so
+future LLaMA, MoE, JEPA, seq2seq, diffusion, TTT, HNet, Jamba, and universal
+implementations can replace the bridge behind the shared
+`FamilyProductionStep` interface. The
+same plan architecture block reports `model_dim`, `hidden_dim`,
+`mlp_multiplier`, `multiple_of`, `vocab_size`, and `padded_vocab_size`; pass
+`--model-dim`, `--hidden-dim`, `--mlp-multiplier`, `--multiple-of`,
+`--vocab-size`, and `--padded-vocab-size` to size the production parameter
+store for non-default template geometry. When `--hidden-dim` is omitted,
+LLaMA-style families use the template's `8/3` SwiGLU multiplier rounded up to
+`256`; GPT-style families retain a `4x` width. Pass both controls explicitly
+for custom geometry. The family trainer source also has
+a shared bootstrap helper that converts `family_parameter_buffers()` into the
+production store specs, initializes from the deterministic dense base or a
+resolved sidecar, and allocates optimizer state when a production loop calls it.
+Default full-family loops report the corresponding `production_state_runtime`
+object. A target compiled with `NFN_NATIVE_PRODUCTION_LOOP=1` now
+must prepare that production state before entering its dataset loop; if CUDA
+runtime loading, sidecar resume, parameter initialization, or optimizer-state
+allocation fails, the loop fails before claiming production training. The
+runtime object also reports whether a checksum was computed from the live
+device parameter store plus the checksum value, so resumed production loops can
+prove the sidecar reached device state before training.
+When that production state is ready, native-family checkpoint writing copies the
+live `FamilyDeviceParameterStore` back to host and writes the full float32
+sidecar through `write_family_full_parameter_sidecar()`. Controlled diagnostic
+loops can still write the sampled-update sidecar when both production gates are
+explicitly disabled; default family metadata records full-architecture
+optimizer updates.
+Production-enabled checkpoint writing also routes the current sampled-LM/attention/FFN/MoE/JEPA/semantic/specialized bridge
+through a concrete `FamilyProductionStep::forward_backward(...)`
+implementation: parameter-dependent embedding/head gradients from the live
+`token_embedding.weight` and `lm_head.weight`, bounded attention/norm gradients
+from live `final_norm.weight`, `layers.N.attention_norm.weight`,
+`layers.N.qkv.weight`, `layers.N.attention_out.weight`, and
+`layers.N.ffn_norm.weight`, bounded dense SwiGLU FFN
+gradients from live `layers.N.ffn_gate_up.weight`/`ffn_down.weight`, bounded
+MoE router and expert SwiGLU gradients from live `router.weight`,
+`router.topk_scale`, optional non-optimizer `router.auxfree_bias.weight`,
+`experts.gate_up.weight`, and `experts.down.weight`, plus
+bounded JEPA latent gradients from live `jepa_target_encoder.weight`,
+`jepa_projector.weight`, and `jepa_predictor.weight`, plus
+bounded semantic planner/alignment/projection gradients from live
+`semantic_planner.weight`, `semantic_alignment.weight`, and
+`semantic_vocab_projection.weight` plus sampled shared/free semantic expert
+bias vectors, using the loop-derived semantic target batch when available, plus
+bounded specialized gradients for seq2seq, diffusion, TTT, universal, HNet, and
+Jamba family buffers, including sampled seq2seq decoder-to-encoder
+cross-attention gradients through live `decoder.cross_attention.qkv.weight` and
+`encoder.layers.qkv.weight`; the opt-in full seq2seq composition also runs
+live encoder and decoder SwiGLU FFN forward/backward stages and accumulates
+their gradients into each layer's `ffn_gate_up.weight` and `ffn_down.weight`
+before the shared optimizer handoff. This remains a packed-QKV/shared-FFN
+native contract rather than full per-block encoder/decoder parameter parity.
+The default seq2seq, TTT, universal, and Jamba specialty paths now report
+covered status; exact preset parity remains in the tracker. Diffusion uses the full
+Tile path: deterministic masking feeds the live token embedding and
+`denoise_head.weight`, with the complete transformer trunk persisted through
+the shared optimizer.
+The specialized bridge also covers sampled diffusion masked-denoising gradients
+through live `denoise_head.weight`,
+plus sampled TTT base/down/tanh/up residual inner-update gradients through live
+`ttt.inner_base.weight`, `ttt.inner_down.weight`, and `ttt.inner_up.weight`,
+sampled universal recurrent/halt gradients through live
+`universal.recurrent.weight` and `universal.halt_gate.weight`,
+are copied into
+the shared optimizer gradient
+buffers, the shared many-tensor AdamW step runs, and only then is the live
+parameter store copied to the full sidecar. That bridge validates the live
+`FamilyDeviceParameterStore` layout by buffer name, offset, element count,
+trainable flag, allocation state, and total element count before it writes
+optimizer gradients. In production-enabled dataset loops it accumulates those
+sparse gradients across `batch_plan.grad_accum_steps` microbatches and only
+runs the shared AdamW update on the final accumulation microbatch;
+`production_state_runtime` reports production-step calls, optimizer-step
+applications, sparse-gradient counts, and persistent parameter-buffer
+validations, plus
+`production_step_parameter_dependent_gradient_buffer_count` so production runs
+can prove how many trainable buffers received parameter-dependent gradients.
+Coverage validation requires at least one finite nonzero gradient in each
+trainable buffer range, so placeholder or invalid sparse entries do not satisfy
+the production-step guard. Before optimizer accumulation, the bridge rejects
+non-finite sparse gradients and drops zero-valued entries so reported sparse
+gradient counts match actual parameter updates. The shared
+`FamilyOptimizerState` sparse-accumulation entrypoint also rejects non-finite
+scales, raw sparse values, scaled values, and accumulated values before copying
+gradients to device buffers.
+`production_step_chained_block_layer_count` and
+`production_step_chained_block_row_count` report how much chained block-state
+coverage ran inside the bridge. `production_step_sampled_attention_row_count`
+and `production_step_sampled_causal_attention_context_count` report how many
+sampled rows and sequence-local causal context rows exercised the
+sampled-QKV/RoPE attention path inside that chained bridge. Semantic production
+runs can opt into a live parameter-store checksum after production-step calls
+with `NFN_NATIVE_FAMILY_PRODUCTION_STEP_CHECKSUM=1`;
+`production_step_parameter_store_checksum_enabled`,
+`production_step_parameter_store_checksum_count`,
+`production_step_parameter_store_checksum`, and
+    `production_step_parameter_store_checksum_changed` show how many post-step
+    checks ran, whether they were enabled, and whether the latest resident store
+    differs from the initial/resume checksum. The native family JSON contract also
+    reports `specialty_lm_act_loss_device_reduction: true` when the HNet byte-LM
+    and Universal ACT halt-loss specialty helpers reduce their loss partials on
+    device before host loss accumulation. HNet, Seq2seq, Universal, TTT, and Jamba
+    production runs additionally report
+    `specialty_hnet_device_gradient_accumulation: true`,
+    `specialty_seq2seq_device_gradient_accumulation: true`,
+    `specialty_universal_device_gradient_accumulation: true`,
+    `specialty_ttt_device_gradient_accumulation: true`, and
+    `specialty_jamba_device_gradient_accumulation: true` when their full-buffer
+    specialty gradients accumulate into persistent optimizer buffers on device.
+    HNet and Seq2seq norm-vector gradients now extract the device-side diagonal
+    and accumulate directly into persistent optimizer buffers, reporting
+    `specialty_hnet_seq2seq_norm_device_gradient_accumulation: true`; Seq2seq
+    also assembles stacked encoder/cross-QKV gradients into full device buffers
+    before optimizer accumulation and reports
+    `specialty_seq2seq_stacked_qkv_device_gradient_accumulation: true`.
+    Direct specialty gradient paths elide their former post-backward full-device
+    synchronization before optimizer accumulation and report
+    `specialty_direct_gradient_sync_elision: true`.
+    Semantic-family production steps
+    report `full_family_semantic_targets_device_token_derivation: true` when
+    `nfn_native_tile_semantic_targets_from_tokens_u16_int64` derives semantic
+    target IDs and validity bytes directly from the device uint16 token batch;
+    dataset loops compute host checksum values without materializing the full
+    target batch, and derive a host target sample only for final JSON reporting.
+Seq2seq production runs additionally report
+`production_step_sampled_seq2seq_cross_attention_row_count` when the sampled
+bridge consumes real rows for decoder-query to encoder key/value attention and
+backpropagates into encoder/decoder QKV weights plus token embeddings.
+Diffusion production runs report
+`production_step_sampled_diffusion_masked_denoise_row_count` when the sampled
+bridge consumes real rows for masked token denoising and backpropagates into
+the denoise head and token embeddings. TTT production runs
+report `production_step_sampled_ttt_inner_update_row_count` when the sampled
+bridge consumes real rows for the base/down/tanh/up residual inner update and
+backpropagates into all three TTT buffers plus token embeddings. Universal
+production runs report `production_step_sampled_universal_recurrent_step_row_count`
+when the sampled bridge unrolls the tied recurrent block with halt-gate
+weighting and backpropagates into recurrent/halt weights plus token embeddings.
+HNet production runs report
+`production_step_sampled_hnet_byte_patch_row_count` when the sampled bridge
+embeds four real byte positions through `byte_patch_embed.weight`, merges them
+through `byte_patch_merge.weight`, and backpropagates through both patch
+buffers plus the target token embedding.
+Production-enabled family builds also report
+`production_step_tile_lm_row_count` when live token embedding and LM-head
+buffers run through Tile-ABI embedding, projection, cross-entropy backward, and
+weight-backward kernels before sparse optimizer accumulation.
+Full-geometry LLaMA/MoE/JEPA builds keep that native Tile step as the sole
+gradient producer; they do not run the legacy sampled bridge afterward because
+it assumes the diagnostic global `qkv`/MoE layout. Specialized Jamba, seq2seq,
+diffusion, TTT, and universal Tile paths now compose their family-specific
+objective/state step with the shared native hidden-backbone step. Seq2seq keeps
+its packed encoder/decoder contract and HNet keeps its byte contract. These
+specialized paths now report covered status in default full-family builds;
+exact template-specific geometry parity remains in the tracker.
+Jamba production runs additionally report
+`production_step_sampled_jamba_mamba_state_row_count` when the sampled bridge
+carries recurrent Mamba state across real batch rows and backpropagates into
+`mamba.in_proj.weight`, `mamba.state.weight`, and token embeddings. Semantic production
+runs additionally report
+`production_step_semantic_target_batch_count` and
+`production_step_semantic_target_row_count`, proving that loop-derived semantic
+targets reached the bridge and how many sampled rows used non-ignored semantic
+targets. Semantic-router MoE production runs also report
+`production_step_semantic_route_bias_count` for semantic route-policy rows that
+consume non-ignored semantic targets and apply semantic-vocab expert logit bias
+before MoE top-k route selection. The full Tile geometry reports this as
+semantic rows times transformer layers; the legacy sampled bridge reports the
+sampled row count. `production_step_semantic_route_forced_count` remains the
+narrower counter for rows where the selected top-k set actually had to replace
+its lowest selected route with the semantic expert. Selected-router semantic rows
+also report
+`production_step_semantic_route_distillation_count` when the bridge applies a
+bounded softmax-distillation term from a smoothed semantic-route teacher
+distribution; the full Tile geometry reports the same row/layer scope.
+Chunk-routed semantic runs also report
+`production_step_semantic_route_broadcast_count` when route decisions are
+broadcast from `route_chunk_size` anchor chunks before token-level expert
+dispatch. On `--evo-layer-interval` cadence, it evaluates a bounded
+semantic-route router-weight mutation using `--evo-layer-mutation-scale`.
+Token-shard semantic-router loops score that mutation from the same
+token-derived semantic target rule used by the device route policy, so they do
+not need to materialize host semantic-target matrices. The trainer adopts only
+improving sampled candidates after AdamW and reports
+`production_step_semantic_route_evo_adoption_count`.
+Aux-free MoE production runs report
+`production_step_auxfree_bias_refresh_count` when the bridge refreshes the
+non-optimizer router bias from sampled route-load imbalance.
+In the opt-in full per-layer MoE geometry, the Tile path applies each live
+`layers.N.router.auxfree_bias.weight` buffer before top-k selection through
+`nfn_native_tile_expert_bias_add_float32`; that bias remains non-optimizer
+state. The full template path does not add the sampled-only
+`router.topk_scale` field, because the template's `TopKRouteStage` has no such
+parameter. Full standard-MoE backward now returns selected route-weight
+gradients through `nfn_native_tile_moe_swiglu_backward_with_route_grad_float32`,
+applies the selected-softmax Jacobian, and feeds router-logit gradients into
+the live per-layer router weight. Configured `layers_per_expert` expert-depth
+stacks now run sequential gate/up/down stages and accumulate route gradients
+across all depth stages. Full semantic-router batches now also bias the
+mapped semantic-vocabulary expert before top-k and force it into the selected
+set when a valid semantic target is present; the current full layout still does
+not expose exact hidden-backbone topic-head or semantic route-evolution parity.
+Hash-bucket embeddings, table gates, and dimension bias are now part of the
+full layout and receive route-logit gradients through the discrete hash lookup
+path. Canonical semantic routes now add the packed per-term topic confidence
+score used by the Torch router before top-k. Full semantic rows also add the bounded smoothed-target route
+distillation objective to the reduced router gradient. Semantic JEPA rows also
+distill reduced target-topic logits from the JEPA target encoder into the
+router gradient before semantic hash/table backward. The consumed per-term
+chunk-projector topic-head and semantic masked-online encoder surfaces now
+report exact parity. Free expert
+route logits now use the native semantic vector and propagate route gradients
+back through template-shaped `semantic_router.free_head.{weight,bias}` buffers;
+always-on shared route logits use `semantic_router.shared_logits`.
+Canonical per-term routes also materialize the chunk-projector signature scalar,
+append it to the 86 topic coordinates for the free-expert scorer, and collect
+`semantic_projector.sig_head.weight` gradients; the seeded hash path still
+hashes the 86 topic-coordinate vector.
+The current bridge is `persistent_sampled_lm_chained_block_routed_moe_jepa_semantic_specialized_bridge`: it
+reads live embedding/head and dense FFN block weights from
+`FamilyDeviceParameterStore`, computes bounded sampled-softmax LM and
+SwiGLU-FFN reconstruction objectives over the actual token or byte batch,
+backpropagating dense-FFN input and target gradients into
+`token_embedding.weight`, reads
+live attention/norm weights for bounded backbone reconstruction objectives that
+also backpropagate target-row gradients into `token_embedding.weight`, and
+adds a bounded chained block-state objective that carries sampled hidden rows
+forward across sampled layers through sampled RMSNorm stages with sampled attention/FFN/final-norm backward,
+sampled Q/K/V
+softmax attention with sampled RoPE plus sequence-local causal sampled-row attention, attention output,
+FFN norm, and either dense SwiGLU or, for MoE
+layouts, router-probability weighted expert SwiGLU before residual updates,
+then backpropagates dense or routed SwiGLU gate/up gradients across all sampled
+FFN input dimensions rather than only the current output dimension,
+including a bounded sampled route-balance term folded into the chained-block
+router gradients for non-aux-free MoE presets,
+then applies live `final_norm.weight` before sampled LM-head CE and a
+target-embedding loss. It also
+reads live MoE router/expert weights when present for bounded router
+classification with top-k-cardinality-bounded, top-k-scaled selected logits,
+router-dimension-aligned route gradients, optional aux-free router bias scoring,
+optional semantic-target expert logit bias and top-k candidate forcing for
+semantic-router MoE layouts, sampled chunk-anchor route broadcast, and a
+bounded semantic-route softmax distillation term in the selected-router objective,
+then applies a bounded post-AdamW semantic route-evo router-weight adoption on
+the configured cadence,
+sampled multi-route expert
+reconstruction that combines all selected expert outputs by router probability,
+backpropagates router, expert-input, and target-reconstruction gradients into
+`token_embedding.weight`,
+adds bounded route-balance gradients through the selected-route softmax,
+score-selected and top-k-scaled route logits, and score-selected routed
+multi-expert combine objectives that weight sampled expert outputs by router
+probabilities while backpropagating combine input, route-count-independent
+target, and route-balance
+gradients into
+`token_embedding.weight`; the aux-free MoE-JEPA preset reports its descriptor
+as `auxfree_moe_balance`, skips the chained-block, selected-route, and
+routed-combine sampled route-balance gradient terms,
+and refreshes `router.auxfree_bias.weight` from sampled top-k route loads
+outside AdamW.
+It also reads
+live JEPA target/projector/predictor weights when present for a bounded latent
+prediction objective, and
+live semantic planner/alignment/projection weights when present for bounded
+semantic latent and semantic-class objectives with sampled shared/free semantic
+expert bias vectors in the class logits. Semantic dataset loops now pass
+semantic dimensions/terms into the production step and let the raw Tile ABI
+derive device targets from tokens, instead of forcing the bridge to infer the
+semantic class only from token targets. It also reads
+live seq2seq, diffusion, TTT, universal, HNet, and Jamba specialty weights with
+input and target embedding gradients when
+present for bounded projection/state objectives; HNet byte-patch rows also
+traverse the live embed-to-merge path and backpropagate through both patch
+buffers. The bridge
+stages those parameter-dependent gradients through `FamilyOptimizerState`, with
+strict validation that every trainable buffer has parameter-dependent sparse
+gradient coverage. The
+remaining production work is to replace that bridge with real full-geometry
+family forward/backward gradients.
+For LLaMA, dense JEPA, semantic dense JEPA, semantic-router MoE, the shared
+standard-MoE/MoE-JEPA dataset-loop path, Jamba, seq2seq, diffusion, TTT,
+universal, and HNet, production builds now execute that persistent sampled-LM
+plus chained block-state and dense-FFN production step during each train
+microbatch rather than waiting until checkpoint writing; `production_state_runtime` reports the production-step and
+sparse-gradient counts, including parameter-dependent gradient buffer coverage
+and chained block layer/row coverage
+counts. Periodic family checkpoints reuse the same writer and
+therefore persist either the diagnostic sampled-update sidecar or, in
+production-enabled builds, the live `FamilyDeviceParameterStore` sidecar at
+each configured cadence. The remaining production work is the real full-geometry family
+forward/backward implementation behind that loop-time handoff before any
+diagnostic family flips to production.
+The shared C++ production-training header
+`neuralfn/csrc/native_train/family_production_train.h` now defines
+`FamilyDeviceParameterStore`, a CUDA-backed float32 parameter store that owns
+one device allocation per family buffer spec, supports deterministic host
+initialization callbacks, can look up named parameter buffers as typed device
+views, can load a checkpoint sidecar into device memory, and
+can copy parameters back to host for checkpoint writing. Default family loops
+adopt the store and report production full-template training; controlled
+diagnostic builds can still leave it disabled.
+The same header also defines `FamilyOptimizerState`, which owns per-buffer
+gradient, first-moment, second-moment, and optional bf16 shadow CUDA
+allocations, builds the many-tensor descriptor arrays consumed by
+`nfn_native_tile_adamw_step_many_*`, and exposes the shared gradient
+accumulation, sumsq/global-norm clipping, fused bf16-shadow AdamW refresh,
+float32 AdamW fallback, CUDA graph capture/replay for the device optimizer
+body, and cosine/warmup learning-rate scheduling helpers. Graph replay is used
+only when the optimizer scalar tuple is unchanged; changing LR schedules force a
+safe recapture until those scalars are moved to device-updated parameters. Family
+loops still need to feed their real forward/backward gradients through this
+state before the production status can flip.
+It also defines the `FamilyProductionStep` boundary: a family implementation
+receives a `FamilyProductionBatchView` plus a context containing the shared
+parameter store, optimizer state, CUDA stream, optimizer step, and accumulation
+position, then returns `FamilyProductionLosses` and gradient/update metadata.
+This gives every MoE/JEPA/semantic/diffusion/TTT/HNet family the same
+forward/backward contract, and the default family binaries now wire those
+implementations into their dataset loops.
+Compiled family trainers also have separate production-state and
+production-status gates. `NFN_NATIVE_PRODUCTION_LOOP=1` enables the persistent
+store and Tile-LM bridge; `NFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD=1` selects
+covered status. The default build enables both macros for every family; set
+either gate to `0` for controlled diagnostic comparisons. Set
+`NFN_NATIVE_MISSING_FULL_GEOMETRY_TARGETS=llama` to pass the full-geometry
+argument for a controlled target build. When
+a concrete family loop is wired to the shared production state, the
+`build_one` helper can pass the 8th `production_loop` and 9th full-geometry
+arguments, or
+`tools/build_native_missing_trainers.sh` can be run with
+`NFN_NATIVE_MISSING_BUILD_TARGETS=seq2seq` (or a comma-separated set of model
+or binary target names) to rebuild selected family binaries; leaving it unset
+retains the full build. It can also be run with
+`NFN_NATIVE_MISSING_PRODUCTION_LOOP_TARGETS=model_or_binary,...` or
+`NFN_NATIVE_MISSING_PRODUCTION_LOOP_ALL=1`, to compile selected targets with
+production state; default builds already set both production and full-geometry
+gates.
+Run `python tools/smoke_native_family_live_training.py --output-dir PATH
+--byte-dataset BYTE_DATASET --keep-going --json` from a host shell with GPU
+access to execute one real optimizer/checkpoint step for every shipped
+native-family template selector. Use `--templates name,...` for a focused
+subset. Non-HNet templates default to `/tmp/nfn-diffusion-token-shards` with a
+small `256` vocabulary when that local smoke shard exists; otherwise the verifier
+keeps the native TinyStories/GPT-2 cache contract and uses vocabulary size
+`50257`. Pass `--dataset-alias PATH_OR_ALIAS` to force another token dataset.
+For production checkpoints, the shared header now includes
+`write_family_full_parameter_sidecar()`. It writes the host-copied contiguous
+float32 parameter vector, mixes every element into the same FNV-style checksum
+used by native-family checkpoint metadata, and reports
+`trained_parameter_elements == parameter_elements`. Controlled diagnostic
+checkpoints can still use sampled-update sidecars; default family loops copy the
+live `FamilyDeviceParameterStore` back to host.
+JEPA Evo template aliases can also be used directly as `--base-model`
+selectors. For example, `dense-jepa-evo-modern`,
+`semantic-dense-jepa-evo-modern`, `auxfree-moe-jepa-evo`, and
+`semantic-moe-jepa-evo-modern` route to their compiled native family trainer
+and are forwarded as the selected `--template-name` when no separate template
+flag is provided.
+On an interactive terminal, bare `nfn train` opens the native training TUI.
+Use `nfn train --tui` to force it, or `nfn train --no-tui ...` for scripted
+defaults. The TTY interface now opens as a Rich dashboard, matching the colorful
+panel style used by the `nfn infer` chat screen after model selection rather
+than the older questionnaire selector. Model, template, dataset, output, logs,
+and every native-training hyperparameter are visible on one screen in an
+editable grid with current value and default columns. Move with Up/Down, press
+Enter to edit only the selected row, press `r` to run, or press `p` to print the
+resolved native command without launching. The first hyperparameter row is
+`Steps`, defaulting to `20000`, followed by sequence length, batch sizing,
+learning rate, LR schedule, final LR fraction, weight decay, warmup, eval
+cadence, eval batches, loss cadence, and progress cadence. GPT-family template edits load the full native GPT
+template catalog exposed by `nfn-native-train --base-model gpt --list-templates`,
+falling back to the shipped Python catalog only when the native binary is
+unavailable. Evo-capable templates such as `dense-jepa-evo-modern` add the evo
+layer/cadence/population/mutation/tournament/elite rows, and changing model or
+template refreshes the visible grid immediately. TUI launches show a structured
+training panel with labeled train/eval/setup output. Native family entries such
+as dense JEPA route through their compiled family trainer and are expected to
+perform optimizer-updated training rather than silently substituting diagnostic
+smoke loops.
+Wrapper log capture is also available non-interactively with `--train-log-file PATH` and
+`--eval-log-file PATH`: train logs receive native progress stderr, while eval
+logs receive validation lines and the final stdout JSON payload.
+Successful covered-family loops now also
+write a lightweight native-family model artifact named
+`*_native_family_model_00000000.json` plus a `*_native_family_model_DONE`
+marker. That artifact stores a token-transition model learned from the native
+token or byte batches, plus a dense optimizer-updated float32 parameter-state sidecar, the
+resolved architecture parameter layout, and parameter-state completeness
+metadata, and can be inspected or sampled with
+`nfn infer --checkpoint PATH --native-info` or
+`nfn infer --checkpoint PATH --prompt-tokens IDS`. Use
+`nfn infer --checkpoint PATH --verify` as the strict artifact check: it requires
+the model JSON, model `DONE` marker, matching `.f32` sidecar size, transition
+state, full-template parameter state, contiguous buffer layout, trained sidecar
+slots, the trainer-emitted writer verification block, and a bounded sample.
+The writer verification block proves the C++ checkpoint writer reopened the
+sidecar and read back every sampled parameter update it emitted. Prompt sampling probes the
+matching sidecar at the same `(token,next)` transition slots the C++ trainer
+writes, and lets nonzero sampled parameter slots bias the transition sampler,
+so the persisted parameter artifact is part of the runtime contract. It is
+still not architecture-specific forward inference from
+optimizer-updated tensors.
+When a family binary is explicitly built with `NFN_NATIVE_PRODUCTION_LOOP=1`
+and the production bootstrap is ready, the same checkpoint schema may label the
+sidecar as `live_family_device_parameter_store_float32_state` and records
+`optimizer_updated_full_architecture_parameter_persistence: true` only when
+`NFN_NATIVE_FULL_GEOMETRY_FORWARD_BACKWARD=1` is also enabled. The writer can
+copy live state before that status gate, but diagnostic binaries keep the full
+architecture persistence flag false.
+For output directories produced by a multi-template or multi-family sweep, use
+`nfn infer --checkpoint DIR --verify-all` to verify every
+`*_native_family_model_*.json` artifact in that directory instead of only the
+latest checkpoint. Add `--required-templates a,b,c` to fail unless that exact
+template subset has passing checkpoint artifacts, or add
+`--require-covered-templates` to fail unless every template alias covered by the
+native-family registry, plus each direct native-family checkpoint target, has a
+passing checkpoint artifact in the directory. This is stricter than the family
+smoke: a `llama` checkpoint does not satisfy `llama-modern` unless the JSON
+`template_name` records that template.
+The no-CUDA `--smoke-family-layout-checkpoint-step` preflight writes the same
+loadable native-family model JSON, sidecar, and model `DONE` marker from a
+synthetic transition batch, with HNet using the byte-transition variant. When
+`--template-name` selects an alias, native-family artifacts now include the
+sanitized template name in the filename prefix, so repeated alias smokes or
+dataset-loop probes can share one `--output-dir` without overwriting the direct
+family artifact.
+To generate and verify the full covered-template smoke set from built family
+binaries, run:
+
+```bash
+tools/smoke_native_family_template_checkpoints.py \
+  --native-bin-dir build \
+  --output-dir artifacts/native-family-template-smoke \
+  --json
+```
+
+Use `--templates dense-jepa-evo-modern,llama-modern` for a subset. The script
+runs each mapped family binary with `--smoke-family-layout-checkpoint-step` and
+then applies the same covered-template checkpoint audit used by
+`nfn infer --verify-all`. JSON output is compact by default; add
+`--include-smoke-output` when debugging an individual smoke failure. Use
+`--require-architecture-forward` with either the script or `nfn infer
+--verify/--verify-all` when the gate must prove real architecture-forward
+inference from persistent parameter state; current sampler-backed native-family
+artifacts intentionally fail that stricter production-readiness check.
+`tools/build_native_missing_trainers.sh` still defaults to optimized `-O3`
+builds; set `NFN_NATIVE_MISSING_CXX_OPT_FLAGS=-O0` for bounded local rebuilds
+when the goal is to verify checkpoint-writing behavior rather than benchmark
+release binaries.
 The unified `nfn-native-train` frontend prints a pre-`execvp` stderr launch
 line unless `NFN_NATIVE_TRAIN_LAUNCH_PROGRESS=0` is set. That line shows the
 resolved native target, executable, template or graph selector, dataset,
@@ -50,9 +1133,8 @@ It stays on raw C++/CUDA Tile kernels, reports `torch_required: false` and
 `graph_editor_tensor_flow: false`. Use
 `--native-cuda-smoke-jamba-layer-schedule-step` for the matching scheduled
 Mamba-state/head/loss/backward/AdamW preflight. Bare Jamba training now enters
-the native token-shard dataset loop and reports `native-family-dataset-loop`
-with `persistent-full-size-family-parameter-state` as the remaining
-production-state gap.
+the native token-shard dataset loop and reports `native-family-dataset-loop-diagnostic`
+with `optimizer_updated_full_architecture_parameter_persistence: false`.
 HNet byte-LM preflight has the same native-only shape:
 `nfn-native-train --base-model hnet-lm
 --native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib PATH`
@@ -79,22 +1161,30 @@ loaded only when a runtime dataset/training helper actually needs them. Direct
 script execution still hands off to the compiled native training registry before
 those graph-backed imports.
 
-Dense GPT native training defaults to periodic validation loss every 250
-optimizer steps over 20 validation batches. Pass `--eval-every-steps N` to
-change the cadence, or `--eval-batches N` / `--eval-batch-size N` to bound the
-validation work for smoke tests. Native AdamW accepts `--beta1`, `--beta2`,
-`--adam-eps`, and `--grad-clip-norm` in addition to learning rate and weight
-decay; plan/runtime JSON reports the effective optimizer object, and the GPT-2
-evo native delegate forwards those values to the dense CUDA Tile trainer. The
-native trainer also requires optimized CUDA Tile routes by default: missing
-many-tensor AdamW symbols, attention
-row/scalar fallbacks, or TF32/SGEMM linear fallback launches fail the run and
-are reported as `optimized_kernel_contract_*` JSON fields. The same contract
-requires real training to hit the TK SM120 attention forward/backward kernels,
-optimized TK SM120 or cuBLASLt block dInput GEMMs, fused cuBLASLt BGRADB
-dWeight+bias GEMMs, and the accepted LM-head optimized routes. Use
-`--allow-basic-kernel-fallback` only for diagnostics or rejected-candidate
-bisection, not normal training.
+Dense GPT native training defaults to periodic validation loss every 5000
+optimizer steps over 20 validation batches, sampled train loss every 250 steps,
+and periodic native checkpoints every 5000 steps. Pass `--eval-every-steps N`
+to change validation cadence, `--train-loss-every-steps N` or
+`--train-log-every-steps N` to change sampled train-loss cadence, and
+`--native-cuda-checkpoint-every N` to change checkpoint cadence. Use
+`--eval-batches N` / `--eval-batch-size N` to bound the validation work for
+smoke tests. Native AdamW accepts `--beta1`, `--beta2`, `--adam-eps`, and
+`--grad-clip-norm` in addition to learning rate and weight decay. Use
+`--lr-schedule cosine|constant` to select cosine decay after warmup or a fixed
+LR, and `--final-lr-fraction F` to set the final LR as a fraction
+of the base learning rate. Plan/runtime JSON reports the effective
+optimizer object, and the GPT-2 evo native delegate forwards those values to
+the dense CUDA Tile trainer. The
+native trainer requires optimized CUDA Tile routes by default, including the
+packed-QKV SM120 ThunderKittens BF16 attention path used by GPT-2-compatible
+dense training. Normal SM120 builds use the local llm.kittens and
+ThunderKittens checkouts for the fast attention kernels, and strict runs still
+fail on scalar attention fallback, TF32/SGEMM linear fallback, missing
+many-tensor AdamW symbols, missing optimized block GEMMs, or missing LM-head
+optimized routes.
+Runtime JSON reports the strict state through `optimized_kernel_contract_*`
+fields. Use `--allow-basic-kernel-fallback` or
+`--allow-scalar-attention-fallback` only for diagnostics.
 
 Install extras only for the workflows you need:
 
@@ -150,11 +1240,11 @@ executable by default before training; set
 `NFN_NATIVE_GPT_LM_HEAD_GRAPH_UPLOAD=0` only for bisection, or run
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_graph_upload_off bash tools/bench_native_gpt_sm120_candidate.sh`
 to compare upload against the opt-out route in the same selected-GPU window.
-The script defaults to `NFN_TILE_CUDA_ARCH=sm_120a`
-and `NFN_TILE_CUDA_USE_TK_ATTENTION=1`; set
-`NFN_TILE_CUDA_TK_EXTRA_NVCC_FLAGS` to override the diagnostic TK sidecar flags,
-or set `NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed
-artifacts somewhere other than `build/`. After rebuilding, run
+The script defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
+`NFN_TILE_CUDA_ARCH=sm_120a`, and the TK-backed packed-QKV attention kernels
+for the default trainer-facing Tile ops library. Set
+`NFN_NATIVE_REBUILD_OUT_DIR=/path/to/build` to write the refreshed artifacts
+somewhere other than `build/`. After rebuilding, run
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
 to confirm the extension executes GPU tests instead of skipping. The current
 CUDA Toolkit 13.3.33 dedicated RTX 5090 path is correctness green for the
@@ -2215,12 +3305,24 @@ argument shim. It accepts the same common wrapper flags as `nfn train` and
 the same quality schedule used by `cli/scripts/train_gpt.py`, and GPT-3's
 implicit `--train-seq-len 2048` / `--batch-size 32` when selected through
 `--base-model gpt3` or `--template-name gpt3` before execing
-`nfn_gpt_native_train`. The default dense GPT schedule is validation every 250
-optimizer steps over 20 batches, sample/checkpoint cadences, `64 x 1024 ->
-524288` token batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and
-GELU unless the template selects MOA. High-level aliases are normalized before
-the exec; for example `--native-cuda-no-checkpoint` is passed to the compiled
-trainer as the single native `--no-checkpoint` flag. This removes Python startup
+`nfn_gpt_native_train`. The default dense GPT schedule is validation every 5000
+optimizer steps over 20 batches, sampled train loss every 250 steps, checkpoint
+cadence every 5000 steps, `64 x 1024 -> 524288` token batching, AdamW defaults,
+60 warmup steps, 20,000 max steps, and GELU unless the template selects MOA.
+For `gpt2_moa`, the native loop uses one shared GPT-2 MLP backbone and probes
+GELU, ReLU, SiLU, and ReLU2 on the current training batch at step 1 and every
+`--native-cuda-moa-interval` steps (default 50). It selects the lowest-loss
+candidate before backward, disables GELU-only fused MLP paths, and persists the
+selected activation and probe counters in runtime JSON as
+`moa_selected_activation`, `moa_probe_runs`, `moa_candidate_evals`, and
+`moa_last_probe_losses`. Because MoA probes split the MLP FC and activation
+stages during training, they keep the float `fc_out`/activation scratch allocated
+even when normal dense GPT can lazily allocate that scratch only for validation.
+The no-bias BF16 GELU fallback kernels also accept null bias pointers for these
+split-probe routes.
+High-level aliases are normalized before the exec; for example
+`--native-cuda-no-checkpoint` is passed to the compiled trainer as the single
+native `--no-checkpoint` flag. This removes Python startup
 from the direct compiled frontend path; it does not by itself close the
 remaining SM120 in-loop throughput gap tracked by the parity benchmark.
 The native dense GPT selector recognizes the shipped GPT-2 geometry aliases
@@ -2776,14 +3878,11 @@ before mutating the row-chunked logits into dLogits, keeping real token data
 inside the compiled CUDA Tile/C++ loop instead of routing it through
 graph-editor nodes. The default cadence is `0` for timing-only training and
 benchmarks; use `--eval-every-steps N` separately for validation loss.
-Dense GPT training now treats scalar attention fallback as invalid by default:
-runtime JSON reports `optimized_attention_required: true` and fails the run if
-`attention_forward_scalar_launch_count` is nonzero, before final checkpoint
-export. It reports `attention_forward_scalar_launch_fallback_enabled: false`
-for the default optimized run and
-`attention_forward_scalar_launch_fallback_available: true` for the diagnostic
-path. Use `--allow-scalar-attention-fallback` only for diagnostic bisections
-where a slow fallback is intentionally being measured.
+Dense GPT training keeps optimized attention required on the default
+NeuralFn-only path: runtime JSON reports `optimized_attention_required: true`
+and `optimized_kernel_contract_required: true` unless a diagnostic fallback flag
+is explicitly passed. `--allow-scalar-attention-fallback` remains accepted only
+as an explicit compatibility spelling for fallback-allowed diagnostics.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` verifies
 that GPT, the GPT-2 compatibility script, GPT-2-evo, NanoGPT, LLaMA
 fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4,
@@ -2871,7 +3970,7 @@ NeuralFn now ships Torch-backed template presets for:
 
   GPT-2 evo native command inspection stays compiled: `nfn-native-train --base-model gpt2-evo --dry-run --print-command ...` now asks the family preflight to print the final dense GPT CUDA Tile delegate with `--train-transformer-lm --layer-evo`, and direct `nfn_gpt2_evo_native_train --native-cuda-dry-run --native-cuda-print-command ...` prints the same delegate before token-shard resolution, dataset scanning, Torch imports, or graph-editor tensor flow. The delegate preserves `--tile-cuda-activation-dtype nvfp4` as requested intent and the dense trainer reports `tile_cuda.requested_activation_dtype`, `tile_cuda.effective_activation_dtype`, `tile_cuda.native_activation_packing_active`, and `tile_cuda.activation_dtype_status` in plan/runtime JSON. The diagnostic `NFN_NATIVE_GPT_NVFP4_QKV_DWEIGHT=1` / `NFN_NATIVE_GPT2_NVFP4_QKV_DWEIGHT=1` route packs LN1 activations into an NVFP4 sidecar for the transformer-block QKV dweight update when the raw Tile ABI symbols are available; runtime JSON reports `block_backward_nvfp4_qkv_dweight_requested`, `block_backward_nvfp4_qkv_dweight_available`, `block_backward_nvfp4_qkv_dweight_pack_count`, `block_backward_nvfp4_qkv_dweight_count`, and `block_backward_qkv_dweight_strategy: "packed-ln1-nvfp4-qkv-bf16-grad-dweight-plus-bf16-bias"`. That sidecar remains opt-in because the current separate pack plus dweight kernels regress the llm.kittens SM120 parity gate; default training keeps the BF16 QKV dweight path. Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=nvfp4_qkv_dweight` to compare the opt-in sidecar against the BF16 default in the same SM120 candidate script; the profile passes `--tile-cuda-activation-dtype nvfp4`, requires the NVFP4 route counters to move, and gates QKV dWeight timing before any promotion. Full dense GPT activation storage is still not end-to-end packed FP4, so `nvfp4` requests report effective `bf16-float32-mixed` storage and `native_activation_packing_active: false` until attention forward/dinput and LM-head FP4 routes are wired. `--smoke-nvfp4-pack` now reports `packed_nvfp4_activation_arena_ready`, loads `nfn_native_tile_linear_nvfp4_input_weight_bf16_float32`, `nfn_native_tile_linear_nvfp4_input_weight_bf16_output_float32`, `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_float32_beta`, and `nfn_native_tile_linear_backward_weight_accumulate_nvfp4_input_bf16_grad_float32_beta`, and emits `projection_max_abs_error`, `projection_bf16_output_max_abs_error`, `projection_dweight_max_abs_error`, and `projection_dweight_bf16_grad_max_abs_error`, so CI can separate the verified packed-arena/QKV-storage projection prerequisite from the remaining attention and LM-head FP4 training work. Pass `--require-native-nvfp4-activation-packing` when you want this to be a hard contract: dense GPT and GPT-2-evo native runs, print-plan JSON, and dry-run JSON fail before dataset resolution or GPU training if NVFP4 is only recorded as intent. The failure JSON includes `native_activation_packing_next_required_kernels` so automation can distinguish the remaining real implementation work from command-line preflight support.
 - **`semantic_dense_jepa_evo`** -- [Experimental] dense control for the Semantic JEPA Evo stack. It keeps the chunk-level causal semantic planner, JEPA target encoder, AR CE, JEPA latent alignment, and semantic-alignment losses, but uses normal dense LLaMA FFNs instead of the shared/semantic/free expert bank and does not run route evolution.
-- **`semantic_moe_jepa_evo`** -- [Experimental] full Semantic MoE JEPA Evo template. It keeps the autoregressive decoder dense through attention, updates a causal semantic planner at chunk boundaries, routes the next chunk through 2 always-on shared experts, 86 interpretable semantic experts, and 8 free learned experts, then applies a lightweight route-evolution controller to router bias state on a configurable fraction of batches. Its root graph uses the same flat compiled contract `(tokens, targets, sem_targets)` and adds route balance, route selection, route distillation, JEPA latent alignment, semantic alignment, and AR CE losses.
+- **`semantic_moe_jepa_evo`** -- [Experimental] full Semantic MoE JEPA Evo template. It keeps the autoregressive decoder dense through attention, updates a causal semantic planner at chunk boundaries, routes the next chunk through 2 always-on shared experts, 86 interpretable semantic experts, and 8 free learned experts, then applies a lightweight route-evolution controller to router bias state on a configurable fraction of batches. Native training now preserves that 96-expert contract when `semantic-moe-jepa-evo` is selected and exposes `--num-layers`, `--semantic-vocab-dims`, `--semantic-shared-experts`, `--semantic-free-experts`, `--top-k`, `--route-chunk-size`, and `--layers-per-expert`; the expert-depth setting drives repeated optimized expert forward/backward/AdamW slices in the semantic-router train step. Its root graph uses the same flat compiled contract `(tokens, targets, sem_targets)` and adds route balance, route selection, route distillation, JEPA latent alignment, semantic alignment, and AR CE losses.
 
 ![Semantic MoE JEPA Evo architecture](docs/assets/semantic_moe_jepa_evo_architecture.png)
 
@@ -2888,7 +3987,7 @@ Backend capabilities (`TemplateSpec.backend_capabilities`) now drive runtime beh
 - **quantized_export** -- `export_quantized_pt` / `import_quantized_pt` support int8 per-channel and ternary weight quantization for smaller checkpoint files. Int8 export now leaves token/position embedding tables at full precision and quantizes only linear/projection weight tensors, matching the documented storage-optimization contract. `KVQuantPackStage` now performs real int8 quantization instead of a plain concat.
 - **megakernel** -- the `llama_megakernel` preset uses `runtime="megakernel"` which fuses the entire attention layer into a single `FusedCausalAttentionStage` module and compiles with `torch.compile(mode="max-autotune", fullgraph=True)`.
 - **PCA KV cache** -- the `kv_pca_llama` preset sets `compression="kv_pca"`, inserting `kv_pca_encode` / `kv_pca_decode` nodes around the KV path in attention graphs to compress cached keys/values to a lower dimension.
-- **CUDA Tile backend** -- `neuralfn.tile_cuda` exposes optional CUDA Tile runtime diagnostics, a coverage report for every current builtin/module/function/optimizer target, per-kernel dtype support matrices, and an opt-in source build path. The registry currently accounts for all 138 training-relevant entries: 129 Tile-covered kernels/compositions, 7 host-only interface/source nodes, and 2 delegated compiled-graph calls, with no `torch_fallback` entries. `coverage_report().to_dict()` includes `by_status`, `by_kind`, `by_kind_status`, and `by_dtype` aggregates so tooling can separate scalar NeuralFn functions, modules, optimizer/runtime helpers, host-only interfaces, and delegated compiled graph calls without scanning every spec. `nfn kernels list --status host_only --kind module --json` filters the emitted spec list to source/orchestration nodes such as dataset sources while preserving global coverage totals, making it explicit that real training tensors are materialized by the native trainer and do not pass through editor nodes. Implemented coverage includes 25 scalar function kernels plus elementwise/layout/routing/attention/cache/loss/embedding/position/norm/projection/reduction module and optimizer kernels such as `gelu`, `token_embedding`, `linear`, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, `nf4_linear`, `ttt_linear`, `lora_linear`, `randmap_adapter`, `mlp_relu2`, `swiglu`, `geglu`, `reglu`, `solu`, `mamba`, `universal_transformer`, `jepa_projector`, `jepa_predictor`, `mask_scheduler`, `random_timesteps`, `jepa_mask`, `lm_head`, `tied_lm_head`, `router_logits`, `topk_route`, `scaled_dot_product_attention`, `sliding_window_attention`, `block_sparse_attention`, `streaming_attention_sinks`, `native_sparse_attention`, `differential_attention`, `causal_self_attention`, `fused_causal_attention`, `multi_latent_attention`, `routed_attention_experts`, `expert_dispatch`, `auxfree_load_balancing`, `semantic_projector`, `semantic_chunk_projector`, `semantic_moe_router`, `semantic_hash_router`, `semantic_moe_jepa_evo_router`, `attentionless_decoder`, `value_head`, `reward_head`, `denoise_head`, `dropout`, `adamw_step`, `muon_newton_schulz`, `muon_step`, `split_optimizer_step`, `ema_update`, `gradient_accumulate`, `gradient_clip_norm`, `kv_pca_encode`, `kv_pca_decode`, `kv_quant_pack`, `kv_quant_unpack`, `act_halt_gate`, `act_weighted_sum`, `latent_pool`, `token_cross_entropy`, `masked_token_cross_entropy`, `sequence_logp`, `dpo_pairwise_loss`, `ppo_clipped_loss`, `gae_compute`, `preference_bce_loss`, `load_balance_loss`, `route_balance_loss`, `route_selection_loss`, `route_distillation_loss`, `semantic_alignment_loss`, `semantic_hasher`, `semantic_chunk_hasher`, `softmax_distillation_loss`, `rotary_embedding`, `rms_norm`, `layer_norm`, `group_norm`, `qk_norm`, `logit_softcap`, `residual_add`, `qk_gain`, `dyt`, `reshape_heads`, `repeat_kv`, `absolute_position_embedding`, `byte_patch_embed`, `kv_cache_read`, `kv_cache_write`, `broadcast_expert_routes`, `broadcast_chunk_routes`, `byte_patch_merge`, `causal_chunk_state`, and `latent_mse_loss`. Default CLI training is native CUDA Tile C++ only; legacy graph-backed PyTorch execution is a separately managed compatibility path, not a package dependency or advertised training backend.
+- **CUDA Tile backend** -- `neuralfn.tile_cuda` exposes optional CUDA Tile runtime diagnostics, a coverage report for every current builtin/module/function/optimizer target, per-kernel dtype support matrices, and an opt-in source build path. The registry currently accounts for all 138 training-relevant entries: 129 Tile-covered kernels/compositions, 7 host-only interface/source nodes, and 2 delegated compiled-graph calls, with no `torch_fallback` entries. `coverage_report().to_dict()` includes `by_status`, `by_kind`, `by_kind_status`, and `by_dtype` aggregates so tooling can separate scalar NeuralFn functions, modules, optimizer/runtime helpers, host-only interfaces, and delegated compiled graph calls without scanning every spec. `nfn kernels list --status host_only --kind module --json` filters the emitted spec list to source/orchestration nodes such as dataset sources while preserving global coverage totals, making it explicit that real training tensors are materialized by the native trainer and do not pass through editor nodes. Implemented coverage includes 25 scalar function kernels plus elementwise/layout/routing/attention/cache/loss/embedding/position/norm/projection/reduction module and optimizer kernels such as `gelu`, `token_embedding`, `linear`, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, `nf4_linear`, `ttt_linear`, `lora_linear`, `randmap_adapter`, `mlp_relu2`, `swiglu`, `geglu`, `reglu`, `solu`, `mamba`, `universal_transformer`, `jepa_projector`, `jepa_predictor`, `mask_scheduler`, `random_timesteps`, `jepa_mask`, `lm_head`, `tied_lm_head`, `router_logits`, `topk_route`, `scaled_dot_product_attention`, `sliding_window_attention`, `block_sparse_attention`, `streaming_attention_sinks`, `native_sparse_attention`, `differential_attention`, `causal_self_attention`, `fused_causal_attention`, `multi_latent_attention`, `routed_attention_experts`, `expert_dispatch`, `auxfree_load_balancing`, `semantic_projector`, `semantic_chunk_projector`, `semantic_moe_router`, `semantic_hash_router`, `semantic_moe_jepa_evo_router`, `attentionless_decoder`, `value_head`, `reward_head`, `denoise_head`, `dropout`, `adamw_step`, `muon_newton_schulz`, `muon_step`, `split_optimizer_step`, `ema_update`, `gradient_accumulate`, `gradient_clip_norm`, `kv_pca_encode`, `kv_pca_decode`, `kv_quant_pack`, `kv_quant_unpack`, `act_halt_gate`, `act_weighted_sum`, `latent_pool`, `token_cross_entropy`, `masked_token_cross_entropy`, `sequence_logp`, `dpo_pairwise_loss`, `ppo_clipped_loss`, `gae_compute`, `preference_bce_loss`, `load_balance_loss`, `route_balance_loss`, `route_selection_loss`, `route_distillation_loss`, `semantic_alignment_loss`, `semantic_hasher`, `semantic_chunk_hasher`, `softmax_distillation_loss`, `rotary_embedding`, `rms_norm`, `layer_norm`, `group_norm`, `qk_norm`, `logit_softcap`, `residual_add`, `qk_gain`, `dyt`, `reshape_heads`, `repeat_kv`, `absolute_position_embedding`, `byte_patch_embed`, `kv_cache_read`, `kv_cache_write`, `broadcast_expert_routes`, `broadcast_chunk_routes`, `byte_patch_merge`, `causal_chunk_state`, `latent_pool_backward`, and `latent_mse_loss`. Default CLI training is native CUDA Tile C++ only; legacy graph-backed PyTorch execution is a separately managed compatibility path, not a package dependency or advertised training backend.
 
 CUDA Tile source builds require CUDA Toolkit 13.3+, `cuda_tile.h`, C++20,
 `nvcc --enable-tile`, and `ninja`. Install the optional native build extra with
@@ -3165,18 +4264,15 @@ stage attribution; stage-timed parity runs default
 SM120 sidecars should not silently truncate stage totals. Set the
 cadence variables to `20000` and `200` when deliberately reproducing the full
 script sample/checkpoint cadence. `tools/build_native_train_tile_ops.sh`
-defaults to the SM120 ThunderKittens-backed bf16 attention bridge when
-`LLM_KITTENS_ROOT` and `TK_ROOT` point at the local llm.kittens and
-ThunderKittens checkouts; that build now mirrors the llm.kittens SM120 NVCC
-threading, host-compiler, data-prep, memory, LayerNorm, and cuBLASLt GEMM
-tuning flags while leaving runtime dispatch on NeuralFn's initialized cuBLASLt
-path. CUDA Toolkit 13.3 rejects several raw TK GEMM instantiations that exceed
-the default static shared-memory cap, so the trainer-facing shared-library build
-defines `LLMK_SM120_USE_CUBLASLT_GEMM` by default and normalizes inherited
+defaults to the packed-QKV SM120 TK attention path, using `LLM_KITTENS_ROOT`
+and `TK_ROOT` to include local llm.kittens and ThunderKittens headers. The
+default build uses the llm.kittens SM120 NVCC threading, host-compiler,
+data-prep, memory, LayerNorm, and cuBLASLt GEMM tuning flags, defines
+`LLMK_SM120_USE_CUBLASLT_GEMM`, and normalizes inherited
 `NFN_TILE_CUDA_ARCH=sm_120` / `compute_120` settings to `sm_120a` /
-`compute_120a` when TK attention is enabled. Set `NFN_TILE_CUDA_USE_TK_ATTENTION=0`
-for the older float32 row-scan diagnostic build, or override
-`NFN_TILE_CUDA_ARCH` explicitly.
+`compute_120a` when TK attention is enabled. Set
+`NFN_TILE_CUDA_USE_TK_ATTENTION=0` only for the older float32 row-scan
+diagnostic build, or override `NFN_TILE_CUDA_ARCH` explicitly.
 
 For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
@@ -3439,7 +4535,7 @@ gpt ...`, and compiled `nfn-native-train --base-model gpt ...` runs now expand
 the same dense GPT quality defaults as `tools/train_gpt_sm120.sh` before exec or
 dry-run command printing. Unless explicit flags or `NFN_NATIVE_GPT_*` /
 `NFN_SM120_*` overrides are supplied, the resolved command includes validation
-every 250 optimizer steps, sample and checkpoint cadence, `64 x 1024 -> 524288`
+every 5000 optimizer steps, sampled train-loss cadence 250, sample cadence, train-loss cadence, checkpoint cadence, `64 x 1024 -> 524288`
 token batching, AdamW defaults, 60 warmup steps, 20,000 max steps, and GELU/MOA
 activation defaults. Direct `python cli/scripts/train_gpt_native.py ...`
 compiled-CLI runs use the same validation and warmup defaults, so legacy native
@@ -3576,7 +4672,7 @@ only for help/native-default inspection. Full-transformer training dispatches
 to `nfn_gpt_native_train --model-family nanogpt --template-name nanogpt --train-transformer-lm`; pass
 `--train-token-lm` explicitly to use the older NanoGPT family token-LM native
 diagnostic loop. The lightweight NanoGPT defaults now mirror the shared dense
-GPT native schedule: validation every 250 optimizer steps and 60 LR warmup
+GPT native schedule: validation every 5000 optimizer steps and 60 LR warmup
 steps.
 
 Dense GPT native training now accepts `--layer-evo` /
@@ -4150,6 +5246,7 @@ GPT-2 block backward uses `nfn_native_tile_scaled_dot_product_attention_backward
 Non-dense-GPT `nfn train` commands now hand off to `nfn-native-train` first and fail in C++ with the registry status when no native trainer is implemented; they no longer fall through to TorchTrainer via an environment override. Dense GPT now defaults to the NeuralFn-owned Tile CUDA `--train-transformer-lm` loop for `gpt`, `gpt2`, `gpt3`, and `nanogpt`; NanoGPT dispatch preserves `model_family: "nanogpt"` and adds `--template-name nanogpt` so the shared dense loop uses the NanoGPT width/head/layer geometry. `python cli/scripts/train_gpt_native.py --model-family nanogpt ...` and raw `nfn_gpt_native_train --model-family nanogpt ...` are accepted directly and preserve the NanoGPT family label unless a template or graph selector is already present. Pass `--train-token-lm` explicitly to run the older tied token-embedding NanoGPT native loop over cached shards. The NanoGPT token-LM loop still uses `--eval-every-steps`, `--eval-batches`, and `--eval-batch-size` to emit validation loss from resolved validation token shards inside the compiled C++ loop, without sending validation payloads through graph-editor nodes or Torch. Direct guarded training scripts prefer the model-family C++ binary when present, using `NFN_NATIVE_<MODEL>_CLI`, `build/nfn_<model>_native_train`, or an installed `nfn_<model>_native_train`, then fall back to the generic native registry. Their pre-import guard normalizes wrapper-level `--native-cuda-*` aliases for dry-run/plan/check/smoke actions, library paths, backend/output/row-chunk selectors, checkpoint toggles, and native cadence/activation fields before execing C++, so direct script execution stays off the graph-backed Torch path even when users pass Python-wrapper flag names. NanoGPT, GPT-2-evo, LLaMA fast/megakernel, MixLLaMA, dense-JEPA, semantic-router MoE, and DeepSeek-V4 are now native-only shims on module import; importing JEPA training helpers and building their parsers also avoids Torch, and dense-JEPA now defaults to its native token-shard dataset loop.
 
 GPT template selection is explicit on native dense GPT training commands: pass `--template-name NAME`, `--template NAME`, or `--preset NAME` to select a shipped GPT template, or pass `--graph-file PATH` / `--graph PATH` to select a custom graph JSON. Python wrappers canonicalize those aliases to `--template-name` and `--graph-file` before the compiled frontend runs, and the compiled path records the selected template or graph in JSON. Top-level `nfn train --base-model gpt` direct compiled-CLI handoff also adds the normal `--train-transformer-lm` action when no plan/check/smoke action is requested, so selector-bearing training commands stay explicit while debug commands remain metadata-only. `--base-model gpt2` and `--base-model gpt3` are aliases for that same native trainer; GPT3 changes the default context to 2048 through either `--base-model gpt3` or `--template-name gpt3` when no custom graph or explicit `--train-seq-len` is supplied, and defaults implicit batch size to 32 unless `--batch-size` is supplied. `gpt2`, `gpt2_modern`, `gpt2_megakernel`, and `gpt2_moa` use the implemented CUDA Tile transformer-LM trainer today; selecting `gpt2_moa` automatically resolves the native MoA activation mode. Other template shapes and custom graphs fail fast with missing-native-trainer JSON instead of falling back to Torch. The GPT-2 evo C++ preflight accepts the same template and custom graph selector aliases, reports the shipped template catalog before any graph-backed runtime can import, and reports dense GPT-2-compatible selections including `gpt2_modern` as `native-dense-gpt-layer-evo-delegate` before execing the dense GPT CUDA Tile trainer with `--layer-evo`; incompatible selections still fail fast in C++.
+`gpt2_moa` is a real shared-backbone mixture-of-activations path: step 1 and every `--native-cuda-moa-interval` steps probe GELU, ReLU, SiLU, and ReLU2 with the same current batch, select the lowest-loss candidate, then run the normal backward/update using that activation. GELU-only fused MLP and dGELU routes are disabled for this selector, and runtime JSON records `native_moa_enabled`, `moa_interval`, `moa_selected_activation`, `moa_probe_runs`, `moa_candidate_evals`, `moa_selected_activation_changes`, and `moa_last_probe_losses`.
 
 Native GPT-2 checkpoint export stays on the raw Tile-CUDA ABI. Successful `--train-transformer-lm` runs pack all device float32 weight tensors into one contiguous bf16 payload with `nfn_native_tile_float32_to_bf16_bits_many`, copy that compact uint16 payload back to host once, and write the version-5 `.bin` plus `DONE_########` marker. The version-5 header stores public vocab 50,257 separately from padded tensor vocab 50,304, so tokenizer validation should use the public vocab while parameter-size checks use the padded vocab. Training JSON reports `checkpoint.payload_pack_strategy: "device-many-float32-to-bf16-bits-contiguous"`, `payload_pack_kernel: "nfn_native_tile_float32_to_bf16_bits_many"`, `payload_copy_strategy: "single-contiguous-device-payload-d2h"`, `payload_cpu_bf16_conversion: false`, `device_pack_kernel_launches`, `d2h_copy_count`, `d2h_bytes`, and `float32_d2h_bytes_elided`, so checkpoint export no longer materializes full float32 parameter tensors on CPU just to pack bf16 and no longer performs one D2H copy per parameter tensor.
 
@@ -4204,7 +5301,7 @@ compute processes on the selected GPU. The full 3-step train-loop wall ratio was
 expected deferred QKV/LM-head prewarm cost rather than the long-run throughput
 metric.
 
-Native dense GPT training handoff accepts `--template-name NAME` / `--preset NAME` and `--graph-file PATH` / `--graph PATH` from the Python wrapper, SDK compiled-CLI config, direct `train_gpt_native.py` wrapper, and compiled C++ frontend. The default `--template-name gpt` is a public alias for the implemented dense GPT native topology and reports `resolved_native_template_name: "gpt2"` until the internal template name is retired. Every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` can be passed through this native selection path, including GPT/NanoGPT megakernel presets and aliases such as `mixllama`; the compiled C++ plan JSON exposes the same `shipped_template_catalog`, `shipped_template_catalog_count`, and `template_known` fields so the no-Python path is visibly in sync with the SDK catalog. The implemented dense trainer currently runs `gpt`, `gpt2`, `gpt3`, `nanogpt`, their dense modern/megakernel aliases, and `gpt2_moa`; `gpt2_moa` maps to `--native-cuda-activation moa` automatically, and both `train_gpt_native.py --model-family nanogpt` and `nfn_gpt_native_train --model-family nanogpt` map to the same shared dense trainer with `--template-name nanogpt`. The no-data compiled template catalog reports `selected_graph_native_runnable: true` for every shipped GPT template. Dense GPT-compatible entries report `native-transformer-lm`; LLaMA, standard-MoE, dense-JEPA, MoE-JEPA, semantic-router-MoE, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer entries report `native-family-dataset-loop` while keeping `persistent-full-size-family-parameter-state` in `native_training_missing_requirements`. Runtime execution still keeps custom graph and unknown-template guards separate: arbitrary custom graph files report `custom-graph-native-trainer-missing`, typoed/unshipped template names report `unknown-template`, and missing custom graph paths report `custom-graph-file-missing` with `graph_file_exists: false` plus `graph_file_size_bytes: -1`. Existing custom graph files that carry native-compatible GPT `template_spec` metadata report `native-transformer-lm` and use that metadata for default model width, heads, sequence length, and layer count; migration work stays explicit and no real batches pass through graph-editor nodes. Use `nfn train --base-model gpt --list-templates`, `nfn-native-train --base-model gpt --list-templates`, `nfn-native-train --base-model gpt --native-cuda-list-templates`, `nfn_gpt_native_train --list-templates`, or wrapper alias `--native-cuda-list-templates` to print the no-data compiled support catalog before dataset or token-shard resolution; the Python and unified C++ frontends both treat this as a no-data action. SDK callers can retrieve the same compiled catalog through `native_gpt_template_catalog()` or the compatibility `native_gpt2_template_catalog()`, which prefer the C++ binding capture path and return parsed JSON. The compiled catalog also emits `native_dense_gpt_template_selectors`, and `tools/check_native_no_torch_deps.py` fails when that declared native selector set no longer matches the required `gpt`, `gpt2`, `gpt2_modern`, `gpt3`, `gpt2_megakernel`, `gpt2_moa`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel` coverage, or when dataset-loop sentinels stop reporting their expected native statuses with `selected_graph_native_runnable: true`.
+Native dense GPT training handoff accepts `--template-name NAME` / `--preset NAME` and `--graph-file PATH` / `--graph PATH` from the Python wrapper, SDK compiled-CLI config, direct `train_gpt_native.py` wrapper, and compiled C++ frontend. The default `--template-name gpt` is a public alias for the implemented dense GPT native topology and reports `resolved_native_template_name: "gpt2"` until the internal template name is retired. Every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` can be passed through this native selection path, including GPT/NanoGPT megakernel presets and aliases such as `mixllama`; the compiled C++ plan JSON exposes the same `shipped_template_catalog`, `shipped_template_catalog_count`, and `template_known` fields so the no-Python path is visibly in sync with the SDK catalog. The implemented dense trainer currently runs `gpt`, `gpt2`, `gpt3`, `nanogpt`, their dense modern/megakernel aliases, and `gpt2_moa`; `gpt2_moa` maps to `--native-cuda-activation moa` automatically, and both `train_gpt_native.py --model-family nanogpt` and `nfn_gpt_native_train --model-family nanogpt` map to the same shared dense trainer with `--template-name nanogpt`. The no-data compiled template catalog reports `selected_graph_native_runnable: true` for every shipped GPT template. Dense GPT-compatible entries report `native-transformer-lm`; LLaMA, standard-MoE, dense-JEPA, MoE-JEPA, semantic-router-MoE, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer entries report `native-family-dataset-loop` while keeping `optimizer-updated-full-architecture-parameter-persistence` in `native_training_missing_requirements`. Runtime execution still keeps custom graph and unknown-template guards separate: arbitrary custom graph files report `custom-graph-native-trainer-missing`, typoed/unshipped template names report `unknown-template`, and missing custom graph paths report `custom-graph-file-missing` with `graph_file_exists: false` plus `graph_file_size_bytes: -1`. Existing custom graph files that carry native-compatible GPT `template_spec` metadata report `native-transformer-lm` and use that metadata for default model width, heads, sequence length, and layer count; migration work stays explicit and no real batches pass through graph-editor nodes. Use `nfn train --base-model gpt --list-templates`, `nfn-native-train --base-model gpt --list-templates`, `nfn-native-train --base-model gpt --native-cuda-list-templates`, `nfn_gpt_native_train --list-templates`, or wrapper alias `--native-cuda-list-templates` to print the no-data compiled support catalog before dataset or token-shard resolution; the Python and unified C++ frontends both treat this as a no-data action. SDK callers can retrieve the same compiled catalog through `native_gpt_template_catalog()` or the compatibility `native_gpt2_template_catalog()`, which prefer the C++ binding capture path and return parsed JSON. The compiled catalog also emits `native_dense_gpt_template_selectors`, and `tools/check_native_no_torch_deps.py` fails when that declared native selector set no longer matches the required `gpt`, `gpt2`, `gpt2_modern`, `gpt3`, `gpt2_megakernel`, `gpt2_moa`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel` coverage, or when dataset-loop sentinels stop reporting their expected native statuses with `selected_graph_native_runnable: true`.
 
 The compiled template catalog and per-template `--print-plan` JSON now also
 include `native_training_coverage_class`,
@@ -4212,9 +5309,11 @@ include `native_training_coverage_class`,
 `native_training_completed_requirements`. Implemented dense GPT selectors report
 `implemented-dense-gpt-transformer-lm` with an empty missing requirement list.
 Non-dense templates are classified by their strongest native CUDA Tile boundary:
-promoted families report `native-family-dataset-loop` with
-`persistent-full-size-family-parameter-state` as the remaining production-state
-gap. The compiled covered family binaries emit covered
+family targets report `native-family-dataset-loop-diagnostic` when they only
+have sampled native dataset-loop slices. Those diagnostic targets keep
+`optimizer-updated-full-architecture-parameter-persistence` in
+`native_training_missing_requirements` and do not report production training or
+full-architecture optimizer persistence. The compiled family binaries emit
 coverage classes for LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA,
 semantic MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet byte-LM
 families. This manifest is the coverage gate for native-template
@@ -4244,10 +5343,9 @@ encoder-decoder loop in the missing list. TTT
 entries now report the inner linear/MSE/backward/AdamW smoke as completed while
 keeping the full inner-update loop in the missing list. Universal transformer entries now report recurrent
 linear/MSE/backward/AdamW and ACT halt loss/gradient smokes as completed while
-also completing family metadata. HNet entries
-now report byte-token shard resolution, byte patch embed/merge plus
-head-loss/backward/AdamW, and byte patch merge/embed-backward/AdamW smokes as
-completed along with family metadata.
+also completing family metadata. HNet entries now report byte-token shard
+resolution, the full byte-patch transformer forward/backward/AdamW path, and
+family metadata as covered when built with the full-geometry gate.
 Jamba entries now report the causal chunk-state plus head-loss/backward/AdamW
 smoke as completed while keeping full Mamba state-space forward/backward, the
 Jamba layer schedule loop in the missing list.
@@ -4262,9 +5360,9 @@ The unified native model registry and compiled covered family preflights report
 `kernel_status` separately from `trainer_loop_status`. Dense GPT entries report
 implemented loops; covered family dataset-loop entries report
 `required-tile-symbols-present` with the shipped Tile ops library and
-`native-family-dataset-loop`, while keeping
-`persistent-full-size-family-parameter-state` visible as the remaining
-production-state gap rather than a Torch fallback path.
+`native-family-dataset-loop-diagnostic` plus
+`optimizer_updated_full_architecture_parameter_persistence: false` rather than a
+Torch fallback path.
 Use `nfn_llama_native_train --smoke-llama-loop --tile-ops-lib PATH` or
 `nfn-native-train --base-model llama --native-cuda-smoke-llama-loop` to launch
 the current LLaMA loop-composition slice on CUDA. The smoke verifies RMSNorm
@@ -4368,7 +5466,7 @@ With BF16-primary block weights enabled, startup now splits nonzero constant ini
 
 Token upload buffers use combined arenas too: widened int64 tokens/targets and compact uint16 H2D staging share one aligned device token arena, while compact source staging uses one pinned uint16 host arena. Training JSON reports `token_buffer_allocation_strategy: "combined-arenas"`, `token_device_allocation_strategy: "single-device-arena"`, `token_device_arena_cuda_malloc_count`, `token_device_arena_suballocation_count`, `token_device_cuda_mallocs_elided`, and the token arena element counts.
 
-The compiled GPT-2 transformer-LM trainer keeps train-loss sampling disabled by default. Optimizer steps run the forward activations needed for backward, CE gradient generation, gradient clipping, and AdamW only; validation cadence computes validation loss from validation shards according to `--eval-every-steps` without also measuring train loss. Set `--train-loss-every-steps N` only when you want sampled native train loss. When train-loss logging is enabled, CE loss is accumulated in a device scalar across all gradient-accumulation microbatches for the optimizer step and copied to the host once for the logged step. Runtime JSON reports `train_loss_device_accumulation_strategy: "optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope: "once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`, `train_loss_host_d2h_copies_per_logged_step`, and `train_loss_microbatch_host_d2h_copies_elided_per_logged_step` alongside `train_loss_sparse: false`, `train_loss_sampling`, `train_loss_on_validation_steps: false`, `train_loss_eval_count`, and `train_loss_last_step`. With train-loss logging disabled, all three host-copy counters report `0`; with logging enabled at the default eight-microbatch accumulation, each logged optimizer step reports one D2H copy and seven elided microbatch copies. Set `--eval-batch-size N` to reduce validation rows per eval batch; runtime JSON reports the resolved value under `validation.eval_batch_size` and each record token count under `validation.losses[].tokens`. Small validation batches stay on the BF16 public-vocab LM-head loss path instead of falling back to the old float logits workspace.
+The compiled GPT-2 transformer-LM trainer now samples train loss every 250 optimizer steps by default; set `--train-loss-every-steps 0` only for timing-only runs. Non-logged optimizer steps still run only the forward activations needed for backward, CE gradient generation, gradient clipping, and AdamW; validation cadence computes validation loss from validation shards according to `--eval-every-steps` on its own schedule. When train-loss logging is due, CE loss is accumulated in a device scalar across all gradient-accumulation microbatches for the optimizer step and copied to the host once for the logged step. Runtime JSON reports `train_loss_device_accumulation_strategy: "optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope: "once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`, `train_loss_host_d2h_copies_per_logged_step`, and `train_loss_microbatch_host_d2h_copies_elided_per_logged_step` alongside `train_loss_sparse: false`, `train_loss_sampling`, `train_loss_on_validation_steps: false`, `train_loss_eval_count`, and `train_loss_last_step`. With train-loss logging disabled, all three host-copy counters report `0`; with logging enabled at the default eight-microbatch accumulation, each logged optimizer step reports one D2H copy and seven elided microbatch copies. Set `--eval-batch-size N` to reduce validation rows per eval batch; runtime JSON reports the resolved value under `validation.eval_batch_size` and each record token count under `validation.losses[].tokens`. Small validation batches stay on the BF16 public-vocab LM-head loss path instead of falling back to the old float logits workspace.
 
 Native GPT-family training wrappers now default to the 60-step LR warmup from
 the referenced SM120 llm.kittens script. Use `--warmup-steps N` or
@@ -4426,6 +5524,8 @@ LayerNorm affine-gradient backward now also has an accumulate ABI and uses a chu
 For SDK-level native dispatch, build the unified binding with `bash tools/build_native_train_binding.sh`. `neuralfn.native_train` exports `NativeTrainRunConfig`, `NativeTrainCaptureResult`, `build_native_train_run_config()`, `build_native_gpt_launcher_run_config()`, `build_native_sm120_gpt_run_config()`, `capture_native_sm120_gpt()`, `native_train_runner_status()`, `native_train_model_registry()`, `resolve_native_train_cli()`, `resolve_native_gpt_launcher_train_cli()`, `run_native_train()`, and `capture_native_train()`, so Python callers can hand off through the C++ extension without importing Torch. Dense GPT-family SDK configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) resolve directly to the canonical `nfn_gpt_native_train --model-family ...` binary unless `NFN_NATIVE_GPT_CLI` overrides it; that binary now resolves Tile ops through `RTLD_DEFAULT` by default. `NativeTrainRunConfig` plus `build_native_train_run_config()`, `build_native_gpt_launcher_run_config()`, and `build_native_sm120_gpt_run_config()` now accept `template_name=` and `graph_file=` for dense GPT families, appending `--template-name` and `--graph-file` once when raw `args` have not already supplied those flags. `capture_native_sm120_gpt(...)` builds the direct SM120 config and captures stdout/stderr through the generic native-train C++ binding when available. Use `build_native_gpt_launcher_run_config()` when a Python SDK caller should spawn the generic compiled no-Bash GPT launcher (`build/nfn_train_gpt`, `NFN_NATIVE_GPT_TRAIN_CLI`, or installed `nfn-train-gpt` / `nfn-gpt-train`) through the same strict native command and C++ binding path. The lower-level GPT launcher resolver now honors `NFN_NATIVE_GPT_LAUNCHER` first, with `NFN_NATIVE_GPT2_LAUNCHER` kept as a compatibility fallback. Use `build_native_sm120_gpt_run_config()` when a caller specifically wants the SM120-labelled launcher (`build/nfn_train_gpt_sm120`, `NFN_NATIVE_SM120_CLI`, or installed `nfn-train-gpt-sm120`). The compiled GPT launchers accept dense GPT template selectors such as `gpt2_moa`, `gpt2_modern`, `gpt2_megakernel`, `nanogpt_modern`, and `nanogpt_megakernel` through `--base-model` / `--model-family` or the matching `NFN_NATIVE_GPT_MODEL_FAMILY` env var; those selectors canonicalize the handoff to `--model-family gpt` and preserve the selected `--template-name`, so the template or custom graph drives architecture. `run_native_train()`, `capture_native_train()`, and `exec_native_train()` will still run those validated explicit config commands even if the generic global compiled-CLI status probe cannot see the launcher. `capture_native_train()` uses the rebuilt generic C++ binding's `capture_train` / `capture_native_train` methods for stdout/stderr preflight and JSON-listing calls before falling back to Python `subprocess.run`, and `native_train_model_registry()` uses the same binding capture path before static metadata fallback. Pass `require_cooperative_lm_head_backward=True` to `build_native_train_run_config()` when the SDK caller must enforce the strict `--require-cooperative-lm-head-backward` parity guard. That option is accepted only for dense GPT families and currently fails runs until the real fused LM-head classifier/dHidden/dWeight Tile kernel replaces the diagnostic CUDA Graph wrapper. `nano_gpt` and `nano-gpt` are accepted aliases and canonicalize to `nanogpt` before dispatch. Other compiled family targets also bypass the generic `nfn_native_train` dispatcher when their binary is available, including `gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and `deepseek-v4`; override them with `NFN_NATIVE_GPT2_EVO_CLI`, `NFN_NATIVE_LLAMA_CLI`, `NFN_NATIVE_MIXLLAMA_CLI`, `NFN_NATIVE_JEPA_CLI`, `NFN_NATIVE_SEMANTIC_ROUTER_MOE_CLI`, or `NFN_NATIVE_DEEPSEEK_V4_CLI`. Set `NFN_NATIVE_TRAIN_CLI` or pass `native_train_cli=` to force the unified frontend. Binding discovery invalidates Python import caches and rejects stale `neuralfn._native_train` extensions that expose `run_train` without the required command resolver, then probes the package search path for a complete rebuilt extension before falling back to the compiled CLI. The generic native-train subprocess fallback now matches GPT-specific launchers by resolving the `dedicated` device selector to a CUDA-visible ordinal, setting `CUDA_DEVICE_MAX_CONNECTIONS=1`, and setting `CUDA_MODULE_LOADING=LAZY` when those variables are unset or exported as empty strings; SM120 launchers and the canonical `cli/scripts/train_gpt.py` compiled-CLI handoff select a dedicated display-disabled NVIDIA GPU when `CUDA_VISIBLE_DEVICES` is unset, and callers can still override `NativeTrainRunConfig.cuda_visible_devices` or set a non-empty environment value when targeting a different CUDA device. Pass `cuda_visible_devices="0"` only when the old hard ordinal is intentional. For dense GPT direct compiled-CLI handoff, build `neuralfn._native_gpt` with `bash tools/build_native_gpt_binding.sh` and use `build_native_gpt_compiled_cli_run_config()` to create a config from a dataset alias/path without inspecting token shards in Python; `capture_native_gpt(config, runner="auto")` captures stdout/stderr/JSON from that same full config through the C++ binding capture path when available, then falls back to the compiled CLI or launcher only when requested or unavailable. `model_family="nanogpt"` now resolves the default template to `nanogpt` unless a graph or non-default template is supplied. The older `build_native_gpt2_compiled_cli_run_config()` compatibility helper now canonicalizes dense GPT selectors to `model_family="gpt"` and can still use the `_native_gpt2` compatibility binding; `capture_native_gpt2(config, runner="auto")` is the matching compatibility capture helper.
 
 `bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over the CUDA Tile kernels in `neuralfn/csrc/tile_cuda/kernels.cu`. This trainer-facing library exposes single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, fixed scaling, reductions, linear, forced-BF16 linear, linear input/forced-BF16 input/fused dGELU input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, BF16-linear projection bias+residual add, BF16-linear projection bias+residual add with BF16 persistent side-store, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, GELU backward, SwiGLU forward/backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, rotary embedding forward/backward, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, top-k routing, expert-route broadcast, routed expert SwiGLU forward/backward, latent MSE loss partials, route-balance density/loss reduction, softmax, float token and masked token cross-entropy partials, BF16-bits token cross-entropy partials, strided float/BF16-bits token cross-entropy partials for public-vocab softmax over padded LM-head rows, token and masked token cross-entropy logits backward, strided in-place token cross-entropy logits backward that zeroes padded dlogit columns, and scaled dot-product attention forward/backward without including `torch/extension.h` or linking the PyTorch extension binding; native model trainers should link this library instead of calling graph-backed Tile wrappers. The LM-head fused-kernel ABI also exports `nfn_native_tile_lm_head_classifier_backward_fused_kernel_implementation_class()`, which distinguishes the current diagnostic CUDA Graph wrappers from the scalar cooperative diagnostic body. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas` so the same native linear ABI routes linear forward, dInput, dWeight, and accumulate-dWeight through GPU GEMM; forced-BF16 block weight+bias accumulation uses cuBLASLt `BGRADB` when supported and falls back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback path. CE logits backward uses row-wise kernels for vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat workspace for full GPT-class vocabularies, avoiding the previous elementwise large-vocab fallback. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
+
+The trainer-facing RoPE C ABI (`nfn_native_tile_rotary_embedding_float32`) accepts a total element count, derives the batch count for the shared CUDA Tile launcher, and supports compact RoPE tensors such as DeepSeek-V3 MLA split query/key paths. The kernel guards paired half-dimension loads and stores against the provided element bound, so reduced RoPE dimensions can be rotated without over-launching into adjacent temporary buffers. Use `compute-sanitizer --tool memcheck` on a reduced native-family run when changing this ABI or the shared RoPE launcher.
 
 Dense GPT training now uses the LM-head classifier row-loss reduction ABI by
 default when the rebuilt Tile ops library exports it. The classifier kernel
@@ -4859,30 +5959,100 @@ path. Runtime JSON reports `stored_packed_attention_ln1_stats_enabled`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0` for old-vs-new paired
 benchmarking; GPT-2-prefixed names remain compatibility fallbacks.
 
-`bash tools/build_native_missing_trainers.sh` builds compiled per-family native entrypoints for GPT-2 evo, NanoGPT token-only diagnostics, LLaMA, MixLLaMA, JEPA, semantic-dense JEPA, semantic-router MoE, DeepSeek-V4, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer families. GPT-2 evo now has a C++ native binary: `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 1000 --tile-cuda-activation-dtype nvfp4` validates the dense GPT-2 shape, `adamw` profile, NVFP4 activation intent, validation cadence, the default 60-step LR warmup, and evo-layer index/cadence/population metadata, then reports that dense GPT-2-compatible templates delegate to `nfn_gpt_native_train --train-transformer-lm --layer-evo`. The delegated run stays Torch-free and reports `candidate_loss_source: "native-forward-loss-device-resident-current-batch"` plus `candidate_loss_transport: "device-to-device"` with `forward_candidate_evals` after scoring candidates through native CUDA forward loss and copying the resulting scalar loss directly between device buffers. NanoGPT normal full-transformer training now stays in the native dense GPT selector with `--template-name nanogpt`; `nfn_nanogpt_native_train` remains available for explicit token-LM diagnostics and `--train-token-lm` runs. Its `--print-plan` parses the native NanoGPT defaults with the real GPT-2 tokenizer vocabulary (`50257`), validates the shape/AdamW contract, and emits JSON without importing Python or Torch; the JSON includes the contiguous parameter, gradient, AdamW state, clip-scale buffer layout, AdamW decay/no-decay groups, and a forward/backward/optimizer `training_step_plan` with each stage marked `ready`, `requires_wiring`, or `missing_abi`. It also supports `--check-tile-ops --tile-ops-lib PATH`, smoke commands for optimizer, LM, embedding/norm, QKV layout, fused attention, transformer block, MLP, and attention stages, plus `--train-token-lm --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` for the older tied token-embedding LM loop with periodic validation loss. The unified frontend preserves `--print-command` in the printed NanoGPT token-LM delegate command, so installed `nfn-native-train --base-model nanogpt --train-token-lm --print-command ...` shows the exact second-stage command without running CUDA. Dense GPT selectors use the native transformer-LM loop; LLaMA, standard-MoE, dense-JEPA, semantic-dense-JEPA, MoE-JEPA, semantic-router MoE, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer selectors now enter native dataset loops by default and report `native-family-dataset-loop` while keeping `persistent-full-size-family-parameter-state` as the remaining production-state gap. HNet uses native raw `uint8` byte shards and reports `token_batch_source: "native_uint8_byte_shards"` plus `kernel_step_source: "sampled_byte_lm_plus_hnet_byte_lm_loop_step"`. The family binaries also support `--print-plan`, `--dry-run`, `--check-tile-ops --tile-ops-lib PATH`, and `--sample-token-batch --dataset-alias PATH_OR_ALIAS`, emitting JSON with parsed schedule fields, required raw Tile symbols, native token-shard metadata, the first token/target batch when requested, and remaining family-specific production-loop work. They also support `--smoke-family-layout-checkpoint-step --output-dir PATH`, and the unified form `nfn-native-train --base-model FAMILY --native-cuda-smoke-family-layout-checkpoint-step --native-cuda-output-dir PATH`, to emit the family parameter layout, write sparse native checkpoint metadata plus a `DONE` marker, and report the inference metadata contract without running Torch or sending tensors through graph-editor nodes. `tools/install_native_gpt2_commands.sh` installs both underscore and hyphen command names for these entrypoints. Override a per-family target with `NFN_NATIVE_<MODEL>_CLI`, for example `NFN_NATIVE_NANOGPT_CLI=/path/to/nfn_nanogpt_native_train`.
+For covered native-family transition checkpoints, `nfn infer --checkpoint ...
+--prompt-tokens ...` now validates and probes the matching sparse `.f32`
+sidecar during sampling. Current checkpoint metadata advertises
+`working_model_inference_path: token_embedding_lm_head_sidecar_forward`.
+Covered full-family checkpoints now advertise
+`native_family_architecture_sidecar_forward_v1` when checkpoint metadata records
+full trained-parameter coverage (`trained_parameter_elements ==
+parameter_elements`). `--verify --require-architecture-forward` passes only for
+that full live sidecar path and still rejects controlled diagnostic sidecars
+that use the LM-head row path.
+
+`bash tools/build_native_missing_trainers.sh` builds compiled per-family native entrypoints for GPT-2 evo, NanoGPT token-only diagnostics, LLaMA, MixLLaMA, JEPA, semantic-dense JEPA, semantic-router MoE, DeepSeek-V4, Jamba, seq2seq, diffusion, TTT, HNet, and universal-transformer families. GPT-2 evo and dense GPT selectors use real native transformer-LM loops. The non-dense family binaries remain Torch-free; every emitted family target now defaults to its full production forward/backward and shared optimizer persistence path, while exact preset deltas remain in the implementation tracker. `--print-plan` and runtime JSON report the selected status, full-geometry gate, and remaining family-specific production-loop work. The family binaries also support `--print-plan`, `--dry-run`, `--check-tile-ops --tile-ops-lib PATH`, and `--sample-token-batch --dataset-alias PATH_OR_ALIAS`, emitting JSON with parsed schedule fields, required raw Tile symbols, native token-shard metadata, the first token/target batch when requested, and remaining family-specific production-loop work. They also support `--smoke-family-layout-checkpoint-step --output-dir PATH`, and the unified form `nfn-native-train --base-model FAMILY --native-cuda-smoke-family-layout-checkpoint-step --native-cuda-output-dir PATH`, to emit the family parameter layout, write sparse native checkpoint metadata plus a `DONE` marker, and report the inference metadata contract without running Torch or sending tensors through graph-editor nodes. `tools/install_native_gpt2_commands.sh` installs both underscore and hyphen command names for these entrypoints. Override a per-family target with `NFN_NATIVE_<MODEL>_CLI`, for example `NFN_NATIVE_NANOGPT_CLI=/path/to/nfn_nanogpt_native_train`.
+
+All native-family checkpoints now use the covered full-family checkpoint
+contract by default: their native loops persist optimizer-updated architecture
+state and advertise the covered family path. Controlled diagnostic builds may
+still use `optimizer_updated_dense_float32_parameter_state` and the
+`token_embedding_lm_head_sidecar_forward` inference path when both production
+gates are explicitly disabled.
+The diagnostic `architecture_parameter_layout` and sidecar size are resolved
+from the selected native-family configuration, including `--num-layers`,
+`--experts`, `--top-k`, `--layers-per-expert`, and semantic expert dimensions,
+so smoke checkpoints reflect the requested template geometry even before the
+full production optimizer loop is complete.
+Native-family binaries also parse `--checkpoint-every-steps N` and the wrapper
+alias `--native-cuda-checkpoint-every N`, and report the resolved cadence as
+`schedule.checkpoint_every_steps` in `--print-plan` JSON. This is the shared
+configuration surface for the production checkpoint writer; current diagnostic
+family dataset loops still emit only their existing final/smoke artifacts.
+
+Full-family LLaMA-derived production steps keep LM-head chunk CE loss on device
+through the forward/backward chunk loop: each reduced chunk loss is accumulated
+with `nfn_native_tile_sum_accumulate_float32`, then packed with the other
+objective totals into one scalar-vector readback after forward/backward
+reporting totals are ready. Plan and runtime JSON report
+`full_family_lm_loss_device_accumulation_before_reporting: true` and
+`full_family_lm_loss_reporting_readback_after_lm_backward: true`; JEPA,
+semantic CE/alignment, and semantic route-distillation reporting losses follow
+the same device-scalar accumulation pattern, and
+`full_family_loss_reporting_single_scalar_vector_readback: true` and
+`full_family_loss_reporting_post_backward_scalar_vector_readback: true` report
+the packed post-backward reporting copy. When native-family CUDA graph support
+is enabled, the production wrapper now runs forward/backward Tile work, gradient
+zeroing, and clip/AdamW on a reused nonblocking production stream, and
+synchronizes that stream only before wrapper-side reporting readback; JSON
+reports `full_step_forward_backward_production_stream_plumbed: true`,
+`production_step_optimizer_same_stream_after_forward_backward: true`,
+`production_step_stream_elides_pre_optimizer_synchronization: true`, and
+`full_step_loss_reporting_stream_synchronized_before_readback: true`. Full-step
+CUDA graph capture still reports false for the full cross-family objective, but
+standard-family runtime steps can retain and replay a matching reporting-mode
+forward/backward graph after the warmed capture; the emitted
+`full_step_forward_backward_launch_sequence_capture_eligible` flag now reports
+eligible for standard families and the promoted specialty paths. Standard-family
+runtime steps plus the Jamba, seq2seq, TTT, universal, HNet, diffusion, and
+semantic-family paths with warmed temporary replay leases now
+retain and replay captured graph launches for the forward/backward body, incrementing
+`full_step_forward_backward_graph_capture_count` and
+`full_step_forward_backward_graph_replay_count`. Non-reporting native-family
+dataset-loop optimizer steps now skip the reporting copy entirely, and runtime JSON increments
+`production_step_loss_reporting_skipped_count` while
+`full_family_loss_reporting_readback_skipped_on_non_reporting_steps: true`
+documents the capture-readiness path.
 
 For the LLaMA LM-head slice, use `nfn_llama_native_train --smoke-llama-lm-head-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-lm-head-step`; it runs linear logits, token CE forward/backward, linear input/weight backward, and AdamW without Torch or graph-editor tensor flow. For the LLaMA token-LM train-step slice, use `nfn_llama_native_train --smoke-llama-token-lm-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-token-lm-train-step`; it launches token embedding, LM logits, token CE forward/backward, LM-head backward, token embedding weight backward, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow. For the LLaMA composed token/block/LM train-step slice, use `nfn_llama_native_train --smoke-llama-composed-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-composed-train-step`; it runs the token-LM path alongside RMSNorm, RoPE, and SwiGLU forward/backward as one explicit composed no-Torch coverage smoke. For the composed LLaMA native train-step slice, use `nfn_llama_native_train --train-llama-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-train-llama-loop-step`; the bare `nfn_llama_native_train ...` and `nfn-native-train --base-model llama ...` paths also enter this slice by default. It wraps the full LLaMA forward/backward loop smoke in the standard production-missing JSON payload without Torch or graph-editor tensor flow. For the shared MoE route/expert slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-route-expert-step --tile-ops-lib PATH`, `nfn_mixllama_native_train --smoke-moe-route-expert-step --tile-ops-lib PATH`, or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-route-expert-step`; it launches top-k routing, route broadcast, routed SwiGLU expert forward/backward, load-balance density/loss, and AdamW through raw CUDA Tile ABI calls without Torch or graph-editor tensor flow. For the shared standard-MoE forward block slice, use `nfn_mixllama_native_train --smoke-moe-transformer-block-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-transformer-block-step`; it composes RMSNorm, BF16 QKV projection, packed causal attention, residual add, per-token top-k routing, routed SwiGLU expert forward, and the second residual add through the same compiled boundary. For the shared standard-MoE block train-step slice, use `nfn_mixllama_native_train --smoke-moe-transformer-block-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-transformer-block-train-step`; it extends the integrated block path through routed SwiGLU expert backward and an AdamW update without Torch or graph-editor tensor flow. For the shared JEPA target-encoder slice, use `nfn_jepa_native_train --smoke-jepa-target-encoder-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-jepa-target-encoder-step`; it launches masked latent pooling and target projection through the same compiled native boundary. For the shared JEPA AR+loss slice, use `nfn_jepa_native_train --smoke-jepa-ar-loss-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-jepa-ar-loss-step`; it launches token CE partials and latent MSE, then validates the weighted AR+JEPA scalar objective without Torch or graph-editor tensor flow. For the shared JEPA projector/loss slice, use `nfn_jepa_native_train --smoke-jepa-projector-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-jepa-projector-step`; it launches projector and predictor linear stages, latent MSE partials, linear backward kernels, and AdamW through the same compiled native boundary. For the dense JEPA composed train-step slice, use `nfn_jepa_native_train --smoke-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-train-step`; it launches target latent pooling/projection, projector/predictor forward, latent MSE, AR logits, token CE forward/backward, JEPA and LM weight-gradient accumulation, and AdamW without Torch or graph-editor tensor flow. For the semantic dense JEPA planner/alignment slice, use `nfn_semantic_dense_jepa_native_train --smoke-semantic-dense-jepa-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-smoke-semantic-dense-jepa-train-step`; it launches semantic planner forward/backward, semantic hash, alignment loss items, device-side alignment loss/count reduction, and AdamW without Torch or graph-editor tensor flow. For the seq2seq cross-attention slice, use `nfn_seq2seq_native_train --smoke-seq2seq-cross-attention-step --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-smoke-seq2seq-cross-attention-step`; it launches decoder-to-encoder SDPA, LM logits, CE forward/backward, linear backward, cross-attention backward, and AdamW without Torch or graph-editor tensor flow. For the seq2seq full encoder-decoder loop slice, use `nfn_seq2seq_native_train --smoke-seq2seq-full-encoder-decoder-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-smoke-seq2seq-full-encoder-decoder-loop-step`; it reports the decoder-to-encoder attention/LM-head/CE-backward/cross-attention-backward/AdamW loop smoke without Torch or graph-editor tensor flow. For the TTT inner linear slice, use `nfn_ttt_llama_native_train --smoke-ttt-linear-inner-step --tile-ops-lib PATH` or `nfn-native-train --base-model ttt-llama --native-cuda-smoke-ttt-linear-inner-step`; it launches inner linear forward, latent MSE, linear input/weight backward, and AdamW without Torch or graph-editor tensor flow. For the TTT full-transformer-loop slice, use `nfn_ttt_llama_native_train --smoke-ttt-full-transformer-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model ttt-llama --native-cuda-smoke-ttt-full-transformer-loop-step`; it reports the composed base/down/tanh/up residual loss/backward/AdamW loop smoke without Torch or graph-editor tensor flow. For the universal recurrent slice, use `nfn_universal_llama_native_train --smoke-universal-recurrent-step --tile-ops-lib PATH` or `nfn-native-train --base-model universal-llama --native-cuda-smoke-universal-recurrent-step`; it launches recurrent linear forward, latent MSE, linear input/weight backward, and AdamW without Torch or graph-editor tensor flow. For the universal ACT halt slice, use `nfn_universal_llama_native_train --smoke-universal-act-halt-step --tile-ops-lib PATH` or `nfn-native-train --base-model universal-llama --native-cuda-smoke-universal-act-halt-step`; it launches halt-gate projection, Tile ACT halting BCE loss/gradient, ACT weighted-sum, linear backward, and AdamW without Torch or graph-editor tensor flow. For the HNet byte patch slice, use `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-step --tile-ops-lib PATH` or `nfn-native-train --base-model hnet-lm --native-cuda-smoke-hnet-byte-patch-step`; it launches byte patch embed/merge, reconstruction head, latent MSE, linear head backward, and AdamW without Torch or graph-editor tensor flow. For the HNet byte patch backward slice, use `nfn_hnet_lm_native_train --smoke-hnet-byte-patch-backward-step --tile-ops-lib PATH` or `nfn-native-train --base-model hnet-lm --native-cuda-smoke-hnet-byte-patch-backward-step`; it launches merge backward, embed/projection backward, and AdamW without Torch or graph-editor tensor flow. For the diffusion denoise slice, use `nfn_diffusion_native_train --smoke-diffusion-denoise-step --tile-ops-lib PATH` or `nfn-native-train --base-model diffusion --native-cuda-smoke-diffusion-denoise-step`; it launches denoise linear forward, latent MSE, linear input/weight backward, and AdamW without Torch or graph-editor tensor flow. For the diffusion objective slice, use `nfn_diffusion_native_train --smoke-diffusion-objective-step --tile-ops-lib PATH` or `nfn-native-train --base-model diffusion --native-cuda-smoke-diffusion-objective-step`; it launches timestep sampling, mask scheduling, masked token embedding, token CE forward/backward, linear/embedding backward, and AdamW without Torch or graph-editor tensor flow. For the diffusion full-loop slice, use `nfn_diffusion_native_train --smoke-diffusion-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model diffusion --native-cuda-smoke-diffusion-full-loop-step`; it reports the timestep/mask/token-embedding/CE-backward/AdamW loop smoke without Torch or graph-editor tensor flow. For the shared semantic hash/alignment slice, use `nfn_semantic_router_moe_native_train --smoke-semantic-alignment-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-smoke-semantic-alignment-step`; it launches semantic hash and alignment loss-item kernels without Torch or graph-editor tensor flow. For the semantic route-loss slice, use `nfn_semantic_router_moe_native_train --smoke-semantic-route-loss-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-smoke-semantic-route-loss-step`; it launches route-selection loss, softmax distillation, and route-balance loss kernels without Torch or graph-editor tensor flow.
 
 For the semantic-router MoE route/expert train-step slice, use `nfn_semantic_router_moe_native_train --smoke-semantic-router-moe-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-smoke-semantic-router-moe-train-step`; it launches top-k routing, route broadcast, routed SwiGLU expert forward/backward, load-balance density/loss, and AdamW without Torch or graph-editor tensor flow.
 
-For the semantic-router MoE native dataset loop, use `nfn_semantic_router_moe_native_train --train-semantic-router-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-train-semantic-router-moe-dataset-loop`; bare semantic-router MoE family commands also default to this loop. It resolves native uint16 token shards, derives semantic target IDs at the compiled C++ boundary, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs the composed semantic-router/expert, AR+semantic+JEPA objective, and route-evo CUDA Tile substeps without Torch or graph-editor tensor flow. Stdout is reserved for the final JSON payload; stderr prints the resolved hyperparameters immediately, then shard resolution, train/validation sample checksums, per-phase begin/end lines, metadata writes, elapsed seconds, and steps/sec. The default settings are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`, `train_batch_tokens=524288`, `eval_every_steps=250`, `progress_every_steps=1`, `learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`, `eps=1e-08`, and `weight_decay=0.02`. Pass `--progress-every-steps N` to control the stderr heartbeat; use `--progress-every-steps 0` only for quiet automation.
+For the semantic-router MoE native dataset loop, use `nfn_semantic_router_moe_native_train --train-semantic-router-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-train-semantic-router-moe-dataset-loop`; bare semantic-router MoE family commands also default to this loop. It resolves native uint16 token shards, derives semantic target IDs at the compiled C++ boundary, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs the composed semantic-router/expert, AR+semantic+JEPA objective, and route-evo CUDA Tile substeps without Torch or graph-editor tensor flow. Stdout is reserved for the final JSON payload; stderr prints the resolved hyperparameters immediately, then shard resolution, train/validation sample checksums, per-phase begin/end lines, metadata writes, elapsed seconds, and steps/sec. The default settings are `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`, `train_batch_tokens=524288`, `eval_every_steps=5000`, `progress_every_steps=1`, `learning_rate=0.0006`, and AdamW with `beta1=0.9`, `beta2=0.95`, `eps=1e-08`, and `weight_decay=0.02`. Pass `--progress-every-steps N` to control the stderr heartbeat; use `--progress-every-steps 0` only for quiet automation.
+
+Native-family production steps validate sampled uint16 token and target IDs
+against the configured `--vocab-size` before launching CUDA Tile kernels. If a
+cached shard was encoded with a larger tokenizer than the requested model
+vocabulary, the run fails with a dataset/vocab mismatch message that points to
+`--vocab-size` and `--dataset-alias` instead of surfacing as a CUDA device
+fault. HNet byte-shard loops remain on their separate uint8 path.
 
 For the standard MoE full forward/backward-loop slice, use `nfn_mixllama_native_train --smoke-moe-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-full-loop-step`; it reports the RMSNorm/packed-attention/top-k-route/routed-SwiGLU/LM-head CE/backward/AdamW loop smoke without Torch or graph-editor tensor flow.
 
 For the composed standard-MoE native train-step slice, use `nfn_mixllama_native_train --train-moe-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-loop-step`. It wraps the standard MoE full forward/backward-loop smoke in JSON without Torch or graph-editor tensor flow.
 
-For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`; the bare `nfn_mixllama_native_train ...`, `nfn_deepseek_v4_native_train ...`, and matching `nfn-native-train --base-model mixllama|deepseek-v4 ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled standard-MoE CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report standard-MoE selectors as `native-family-dataset-loop`, with `persistent-full-size-family-parameter-state` retained until sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
+For the standard-MoE native dataset loop, use `nfn_mixllama_native_train --train-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model mixllama --native-cuda-train-moe-dataset-loop`; the bare `nfn_mixllama_native_train ...`, `nfn_deepseek_v4_native_train ...`, and matching `nfn-native-train --base-model mixllama|deepseek-v4 ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled standard-MoE CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, route-balance loss, and AdamW. It writes native loop metadata and a loadable native-family transition checkpoint under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report standard-MoE selectors as `native-family-dataset-loop`, with `optimizer-updated-full-architecture-parameter-persistence` retained until full optimizer-updated dense tensor persistence lands.
 
 For the MoE-JEPA AR+JEPA+router objective slice, use `nfn_moe_jepa_evo_native_train --smoke-moe-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-smoke-moe-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, route-balance density/loss, and the combined objective check without Torch or graph-editor tensor flow.
 
 For the composed MoE-JEPA native train-step slice, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-loop-step`. It runs the standard MoE full-loop train-step and AR+JEPA+router objective substeps through compiled native C++ and reports substep JSON without Torch or graph-editor tensor flow.
 
-For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `nfn_moe_jepa_evo_native_train ...` and `nfn-native-train --base-model moe-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report MoE-JEPA selectors as `native-family-dataset-loop`, not as missing native trainers. They still keep `persistent-full-size-family-parameter-state` in the missing requirements until the sampled diagnostic parameter buffers are replaced by persistent full-size model state, checkpoint cadence, and inference metadata.
+For the MoE-JEPA native dataset loop, use `nfn_moe_jepa_evo_native_train --train-moe-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model moe-jepa-evo --native-cuda-train-moe-jepa-dataset-loop`; the bare `nfn_moe_jepa_evo_native_train ...` and `nfn-native-train --base-model moe-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs a sampled MoE-JEPA family CUDA Tile step with top-k routing, routed SwiGLU forward/backward, LM CE backward, JEPA projector/predictor latent loss, route-balance loss, and AdamW. It writes native loop metadata and a loadable native-family transition checkpoint under `--output-dir`; `--print-plan`, `--list-models`, and `--list-templates` report MoE-JEPA selectors as `native-family-dataset-loop`, not as missing native trainers. They still keep `optimizer-updated-full-architecture-parameter-persistence` in the missing requirements until full optimizer-updated dense tensor persistence lands.
+MoE-JEPA and dense JEPA plan/runtime JSON distinguish implemented device JEPA substeps from exact graph parity: `full_family_jepa_mask_device_construction`, `full_family_jepa_masked_decoder_tokens_device_materialization`, `full_family_jepa_target_original_token_embedding_device_forward`, `full_family_jepa_mask_expansion_device_backward`, and `full_family_jepa_mse_gradient_device_delta` are true. Non-semantic JEPA now materializes masked decoder token IDs with `nfn_native_tile_native_family_jepa_mask_u16_float32` before token embedding and reports `full_family_jepa_masked_decoder_tokens_exact_parity: true` for that online-decoder input path. Non-semantic JEPA parameter stores also persist the frozen `target_encoder.backbone.*` and `target_encoder.projector.*` surfaces and report `full_family_jepa_target_encoder_backbone_parameter_layout`, `full_family_jepa_target_encoder_projector_parameter_layout`, and `full_family_jepa_target_encoder_ema_frozen_parameter_layout`; MoE-JEPA target backbones use router/expert buffers in that frozen target stack. Dense JEPA, MoE-JEPA, and semantic-router JEPA now forward original tokens through the frozen target backbone and frozen target projector MLP as stop-gradient branches, reporting `full_family_jepa_target_backbone_device_forward: true`, `full_family_jepa_target_projector_mlp_device_forward: true`, `full_family_jepa_target_branch_stop_gradient: true`, and family-aware `full_family_jepa_target_backbone_exact_parity: true` for the frozen hidden-backbone surface; semantic-router JEPA keeps separate semantic projector exact-parity fields false until its broader semantic template contract is complete.
 The standard-MoE and MoE-JEPA dataset loops write live progress to stderr before token-shard resolution, before
 and after each GPU phase, and when metadata is written, while stdout remains the
 final JSON payload. The run banner prints the effective defaults:
 `max_steps=20000`, `batch_size=64`, `train_seq_len=1024`,
-`train_batch_tokens=524288`, `eval_every_steps=250`, and
+`train_batch_tokens=524288`, `eval_every_steps=5000`, and
 `learning_rate=0.0006`; `--print-plan` also reports
 `progress_every_steps=1` and the native sampled-family AdamW settings
 (`beta1=0.9`, `beta2=0.95`, `eps=1e-08`, `weight_decay=0.02`). Override them
@@ -4892,39 +6062,39 @@ stderr.
 
 For the dense JEPA full forward/backward-loop slice, use `nfn_jepa_native_train --smoke-dense-jepa-full-loop-step --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-smoke-dense-jepa-full-loop-step`; it reports the target latent pooling/projection, projector/predictor, AR logits, token CE backward, JEPA/LM gradient accumulation, and AdamW loop smoke without Torch or graph-editor tensor flow.
 
-For the dense JEPA native dataset loop, use `nfn_jepa_native_train --train-dense-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-train-dense-jepa-dataset-loop`; the bare `nfn_jepa_native_train ...` and `nfn-native-train --base-model dense-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs the composed dense-JEPA CUDA Tile train-step slice without Torch or graph-editor tensor flow. Stdout is the final JSON payload; stderr prints the resolved hyperparameters immediately, shard resolution, train/validation sample checksums, phase begin/end lines, metadata writes, elapsed seconds, and steps/sec. The payload reports `kernel_step_source: "sampled_ar_ce_plus_dense_jepa_composed_train_step"` and keeps `persistent-full-size-family-parameter-state` until full-size persistent model state, checkpoint cadence, and inference metadata are implemented.
+For the dense JEPA native dataset loop, use `nfn_jepa_native_train --train-dense-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model dense-jepa-evo --native-cuda-train-dense-jepa-dataset-loop`; the bare `nfn_jepa_native_train ...` and `nfn-native-train --base-model dense-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, samples train batches per step, samples validation batches on `--eval-every-steps`, runs sampled-token AR CE, then runs the composed dense-JEPA CUDA Tile train-step slice without Torch or graph-editor tensor flow. Stdout is the final JSON payload; stderr prints the resolved hyperparameters immediately, shard resolution, train/validation sample checksums, phase begin/end lines, metadata/model writes, elapsed seconds, and steps/sec. The payload reports `kernel_step_source: "sampled_ar_ce_plus_dense_jepa_composed_train_step"` plus `model_checkpoint_path` for the native-family transition checkpoint, and keeps `optimizer-updated-full-architecture-parameter-persistence` until full optimizer-updated dense tensor persistence lands.
 
 For the semantic JEPA AR+semantic+JEPA objective slice, use `nfn_semantic_dense_jepa_native_train --smoke-semantic-jepa-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-smoke-semantic-jepa-loss-composition-step`; it launches token CE partials, JEPA latent MSE, semantic-alignment loss items, device-side semantic loss/count reduction, and the combined objective check without Torch or graph-editor tensor flow.
 
 For the semantic target shard resolver slice, use `nfn_semantic_dense_jepa_native_train --smoke-semantic-target-shard-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-smoke-semantic-target-shard-step`; it derives semantic target IDs from the native token-shard batch at the compiled C++ boundary and validates those IDs through semantic hash/alignment CUDA Tile kernels without Torch or graph-editor tensor flow. Semantic-family `--sample-token-batch` JSON includes `semantic_target_batch`.
 
-For the semantic dense JEPA native dataset loop, use `nfn_semantic_dense_jepa_native_train --train-semantic-dense-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-train-semantic-dense-jepa-dataset-loop`; the bare `nfn_semantic_dense_jepa_native_train ...` and `nfn-native-train --base-model semantic-dense-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, derives semantic target IDs at the compiled C++ boundary, samples train/validation batches, runs sampled AR CE, and runs the semantic planner/alignment CUDA Tile substep without Torch or graph-editor tensor flow. Stdout stays reserved for the final JSON payload; stderr prints resolved hyperparameters, shard resolution, semantic target checksums, per-phase progress, validation phases, metadata writes, elapsed seconds, and steps/sec. Runtime JSON reports `semantic_target_source: "native-token-shard-derived-semantic-targets"`, `kernel_step_source: "sampled_ar_ce_plus_semantic_targets_plus_semantic_dense_jepa_composed_train_step"`, and keeps `persistent-full-size-family-parameter-state` as the remaining production-state gap.
+For the semantic dense JEPA native dataset loop, use `nfn_semantic_dense_jepa_native_train --train-semantic-dense-jepa-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-dense-jepa-evo --native-cuda-train-semantic-dense-jepa-dataset-loop`; the bare `nfn_semantic_dense_jepa_native_train ...` and `nfn-native-train --base-model semantic-dense-jepa-evo ...` paths also enter this loop by default. It resolves native uint16 token shards, derives semantic target IDs at the compiled C++ boundary, samples train/validation batches, runs sampled AR CE, and runs the semantic planner/alignment CUDA Tile substep without Torch or graph-editor tensor flow. Stdout stays reserved for the final JSON payload; stderr prints resolved hyperparameters, shard resolution, semantic target checksums, per-phase progress, validation phases, metadata writes, elapsed seconds, and steps/sec. Runtime JSON reports `semantic_target_source: "native-token-shard-derived-semantic-targets"`, `kernel_step_source: "sampled_ar_ce_plus_semantic_targets_plus_semantic_dense_jepa_composed_train_step"`, and reports `optimizer_updated_full_architecture_parameter_persistence: false`.
 
 For the semantic-router route-evo device-controller slice, use `nfn_semantic_router_moe_native_train --smoke-route-evo-device-controller-step --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-smoke-route-evo-device-controller-step`; it runs route-controller candidate mutation, best-loss selection, and best-candidate adoption through the raw CUDA Tile evo ABI without Torch or graph-editor tensor flow.
 
-For the semantic-router MoE native dataset loop, use `nfn_semantic_router_moe_native_train --train-semantic-router-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-train-semantic-router-moe-dataset-loop`; the bare `nfn_semantic_router_moe_native_train ...` and `nfn-native-train --base-model semantic-router-moe ...` paths also enter this loop by default. It resolves native uint16 token shards, derives semantic targets at the compiled C++ boundary, samples train/validation batches, runs sampled AR CE, then runs the semantic router/expert AdamW, AR+semantic+JEPA objective, and route-evo controller substeps through compiled native C++ without Torch or graph-editor tensor flow. The payload reports `kernel_step_source: "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"` and keeps `persistent-full-size-family-parameter-state` as the remaining production-state gap.
+For the semantic-router MoE native dataset loop, use `nfn_semantic_router_moe_native_train --train-semantic-router-moe-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model semantic-router-moe --native-cuda-train-semantic-router-moe-dataset-loop`; the bare `nfn_semantic_router_moe_native_train ...` and `nfn-native-train --base-model semantic-router-moe ...` paths also enter this loop by default. It resolves native uint16 token shards, derives semantic targets at the compiled C++ boundary, samples train/validation batches, runs sampled AR CE, then runs the semantic router/expert AdamW, AR+semantic+JEPA objective, and route-evo controller substeps through compiled native C++ without Torch or graph-editor tensor flow. The payload reports `kernel_step_source: "sampled_ar_ce_plus_semantic_targets_plus_semantic_router_moe_composed_train_step"` and reports `optimizer_updated_full_architecture_parameter_persistence: false`.
 
 For the seq2seq loss-composition slice, use `nfn_seq2seq_native_train --smoke-seq2seq-loss-composition-step --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-smoke-seq2seq-loss-composition-step`; it runs decoder-to-encoder attention plus CE loss/backward and LM-head AdamW as the explicit no-Torch loss-composition coverage smoke.
 
-For the seq2seq native dataset loop, use `nfn_seq2seq_native_train --train-seq2seq-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-train-seq2seq-dataset-loop`; the bare seq2seq family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed full encoder-decoder CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_seq2seq_full_encoder_decoder_loop_step"` and keep `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-seq2seq-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the seq2seq native dataset loop, use `nfn_seq2seq_native_train --train-seq2seq-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model seq2seq --native-cuda-train-seq2seq-dataset-loop`; the bare seq2seq family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs the persistent encoder self-attention, decoder causal and cross-attention, stacked FFN, and token-CE Tile path without Torch or graph-editor tensor flow. Full-buffer Seq2seq gradients, stacked encoder/cross-QKV gradients, and norm-vector gradients accumulate directly into persistent optimizer buffers on device. Runtime and plan JSON report `kernel_step_source: "persistent_tile_seq2seq_full_geometry_forward_backward"`, `optimizer_updated_full_architecture_parameter_persistence: true`, `specialty_seq2seq_device_gradient_accumulation: true`, `specialty_seq2seq_stacked_qkv_device_gradient_accumulation: true`, `specialty_hnet_seq2seq_norm_device_gradient_accumulation: true`, and `specialty_direct_gradient_sync_elision: true`. Use `--train-seq2seq-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
-For the diffusion native dataset loop, use `nfn_diffusion_native_train --train-diffusion-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model diffusion --native-cuda-train-diffusion-dataset-loop`; the bare diffusion family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed timestep/mask/objective CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_diffusion_full_loop_step"` and keep `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-diffusion-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the diffusion native dataset loop, use `nfn_diffusion_native_train --train-diffusion-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model diffusion --native-cuda-train-diffusion-dataset-loop`; the bare diffusion family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, applies deterministic timestep masking, runs the full transformer denoising objective and token CE through the persistent CUDA Tile path, and writes the covered family checkpoint contract without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "persistent_tile_diffusion_full_geometry_forward_backward"` and `optimizer_updated_full_architecture_parameter_persistence: true`. Use `--train-diffusion-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
-For the TTT native dataset loop, use `nfn_ttt_llama_native_train --train-ttt-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model ttt-llama --native-cuda-train-ttt-dataset-loop`; the bare TTT family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed base/down/tanh/up residual CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_ttt_full_transformer_loop_step"` and keep `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-ttt-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the TTT native dataset loop, use `nfn_ttt_llama_native_train --train-ttt-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model ttt-llama --native-cuda-train-ttt-dataset-loop`; the bare TTT family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs the persistent base/down/tanh/up inner update plus full transformer backbone and token CE through CUDA Tile without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "persistent_tile_ttt_full_geometry_forward_backward"`, `optimizer_updated_full_architecture_parameter_persistence: true`, `specialty_ttt_device_gradient_accumulation: true`, and `specialty_direct_gradient_sync_elision: true`. Use `--train-ttt-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
 For the LLaMA packed-QKV attention slice, use `nfn_llama_native_train --smoke-llama-packed-attention-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-packed-attention-step`; it launches packed-QKV BF16 causal attention with saved LSE and backward-to-QKV without Torch or graph-editor tensor flow. For the forward attention-block composition slice, use `nfn_llama_native_train --smoke-llama-attention-block-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-attention-block-step`. For the RoPE attention-block integration slice, use `nfn_llama_native_train --smoke-llama-rope-attention-block-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-rope-attention-block-step`; it launches RMSNorm, QKV projection, head-major QKV split, RoPE, SDPA, and residual add through raw CUDA Tile ABI calls. For the LLaMA RoPE/SwiGLU block train-step slice, use `nfn_llama_native_train --smoke-llama-rope-block-train-step --tile-ops-lib PATH` or `nfn-native-train --base-model llama --native-cuda-smoke-llama-rope-block-train-step`; it launches SDPA backward, RoPE backward, fused-QKV linear backward, RMSNorm backward, SwiGLU backward, and AdamW through raw CUDA Tile ABI calls.
 
 For the Jamba chunk-state slice, use `nfn_jamba_native_train --smoke-jamba-chunk-state-step --tile-ops-lib PATH` or `nfn-native-train --base-model jamba --native-cuda-smoke-jamba-chunk-state-step`; it launches causal chunk-state, reconstruction head, latent MSE, linear head backward, and AdamW without Torch or graph-editor tensor flow.
 
-For the Jamba native dataset loop, use `nfn_jamba_native_train --train-jamba-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model jamba --native-cuda-train-jamba-dataset-loop`; the bare Jamba family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed Jamba layer-schedule CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_jamba_layer_schedule_step"` and keep `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-jamba-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the Jamba native dataset loop, use `nfn_jamba_native_train --train-jamba-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model jamba --native-cuda-train-jamba-dataset-loop`; the bare Jamba family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed Jamba layer-schedule CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_jamba_layer_schedule_step"`, `optimizer_updated_full_architecture_parameter_persistence: true`, `specialty_jamba_device_gradient_accumulation: true`, and `specialty_direct_gradient_sync_elision: true`. Use `--train-jamba-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
-For the universal-transformer native dataset loop, use `nfn_universal_llama_native_train --train-universal-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model universal-llama --native-cuda-train-universal-dataset-loop`; the bare universal-transformer family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed recurrent/ACT CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_universal_transformer_loop_step"` and keep `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-universal-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the universal-transformer native dataset loop, use `nfn_universal_llama_native_train --train-universal-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model universal-llama --native-cuda-train-universal-dataset-loop`; the bare universal-transformer family command also defaults to this loop. It resolves native uint16 token shards, samples train and validation batches, runs sampled-token AR CE, then runs the composed recurrent/ACT CUDA Tile train-step slice without Torch or graph-editor tensor flow. Full opt-in geometry uses `--max-recurrence-steps` (default `4`) and `--halt-epsilon` (default `0.01`) to control ACT unrolling and remainder weights; plan/layout JSON records both values. The production path uploads token/target batches directly, widens targets on device, and uses `nfn_native_tile_act_pack_step_float32`, `nfn_native_tile_act_prepare_weights_float32`, and `nfn_native_tile_act_unpack_step_grad_float32` so ACT state stacking, halt-weight preparation, and ACT-gradient fanout remain on device. Runtime and plan JSON report `kernel_step_source: "sampled_ar_ce_plus_universal_transformer_loop_step"`, `optimizer_updated_full_architecture_parameter_persistence: true`, `specialty_universal_device_gradient_accumulation: true`, and `specialty_direct_gradient_sync_elision: true`. Use `--train-universal-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
-For the HNet native byte dataset loop, use `nfn_hnet_lm_native_train --train-hnet-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model hnet-lm --native-cuda-train-hnet-dataset-loop`; the bare HNet family command also defaults to this loop. It resolves native raw byte shards, samples train and validation byte batches, then runs the composed HNet byte-LM CUDA Tile train-step slice without Torch or graph-editor tensor flow. Runtime and plan JSON report `token_batch_source: "native_uint8_byte_shards"`, `kernel_step_source: "sampled_byte_lm_plus_hnet_byte_lm_loop_step"`, and `persistent-full-size-family-parameter-state` as the remaining production-state gap. Use `--train-hnet-loop-step` only when you explicitly want the older one-shot composed train-step slice.
+For the HNet native byte dataset loop, use `nfn_hnet_lm_native_train --train-hnet-dataset-loop --tile-ops-lib PATH` or `nfn-native-train --base-model hnet-lm --native-cuda-train-hnet-dataset-loop`; the bare HNet family command also defaults to this loop. It resolves native raw byte shards, samples train and validation byte batches, then runs the full byte-patch transformer CUDA Tile train-step without Torch or graph-editor tensor flow. Full-buffer HNet gradients and norm-vector gradients accumulate directly into persistent optimizer buffers on device. Runtime and plan JSON report `token_batch_source: "native_uint8_byte_shards"`, `kernel_step_source: "persistent_tile_hnet_byte_patch_full_geometry_forward_backward"`, `optimizer_updated_full_architecture_parameter_persistence: true`, `specialty_hnet_device_gradient_accumulation: true`, `specialty_hnet_seq2seq_norm_device_gradient_accumulation: true`, and `specialty_direct_gradient_sync_elision: true` when built with both production and full-geometry gates. Use `--train-hnet-loop-step` only when you explicitly want the older one-shot composed train-step slice.
 
 Dense GPT launchers route known non-dense template selectors such as `--template-name llama`, `--template-name mixllama`, `--template-name moe_jepa_evo`, and `--template-name semantic_router_moe` to the matching compiled family binary when no custom graph file is supplied. This keeps template-selected migration work on compiled native C++ boundaries instead of sending real training data through graph-editor nodes.
 
-Standard MoE-family preflights now require the raw Tile ABI for routed expert SwiGLU forward/backward as `nfn_native_tile_moe_swiglu_forward_float32`/`nfn_native_tile_moe_swiglu_backward_float32`, in addition to top-k routing, expert-route broadcast, route-balance loss, and AdamW. Semantic-router MoE preflight also requires semantic hash routing, semantic-alignment item losses, route-selection loss partials, softmax-distillation partials, chunk-route broadcast, attentionless decoding, expert bias add, latent MSE, and the same routed expert forward/backward ABI. `required-tile-symbols-present` means the loaded Tile ops library exports that MoE/semantic/JEPA kernel surface; family dataset-loop JSON keeps `persistent-full-size-family-parameter-state` visible until full-size persistent model state and native checkpoint/inference metadata land.
+Standard MoE-family preflights now require the raw Tile ABI for routed expert SwiGLU forward/backward as `nfn_native_tile_moe_swiglu_forward_float32`/`nfn_native_tile_moe_swiglu_backward_float32`, in addition to top-k routing, selected-route backward, expert-route broadcast, route-balance loss, and AdamW. Semantic-router MoE preflight also requires semantic hash routing, semantic-alignment item losses, route-selection loss partials, softmax-distillation partials, compact chunk-route selection, chunk route-gradient aggregation, semantic route-distillation backward, semantic target-topic route-distillation backward, chunk-route broadcast, attentionless decoding, expert bias add, latent MSE, and the same routed expert forward/backward ABI. `required-tile-symbols-present` means the loaded Tile ops library exports that MoE/semantic/JEPA kernel surface; family dataset-loop JSON keeps `optimizer-updated-full-architecture-parameter-persistence` visible until full optimizer-updated dense tensor persistence lands, while successful loops write native-family transition checkpoints that `nfn infer` can inspect and sample.
 
 `tools/check_native_no_torch_deps.py` verifies both wrapper-style dry-run/preflight commands and no-flag direct execution for these guarded legacy scripts under an import blocker, covers the direct `train_gpt.py` non-dry-run `execvpe` handoff against a stubbed compiled CLI, covers the direct `train_gpt_native.py` compiled-cli dry-run handoff plus the missing-alias metadata handoff to C++, covers the GPT template catalog action, imports the native-only GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, semantic-router MoE, and DeepSeek-V4 shim modules under the same blocker, dry-runs the focused native benchmark shell wrappers, checks the direct compiled `build/nfn_train_gpt` custom-graph dry-run handoff, checks the compiled top-level `build/nfn-native` train and native-checkpoint infer delegates with `--print-command`, and checks compiled GPT trainer artifacts for the runtime JSON contract markers used by same-script native gates (`graph_editor_tensor_flow`, `torch_required`, optimized-kernel contract fields, long-run deferred-prewarm timing-contract fields, and SM120 build-contract fields). A normal script invocation, template catalog lookup, shim import, native benchmark plan, direct compiled custom-graph launch, top-level compiled native delegate, or stale native GPT binary therefore cannot regress into Torch, NumPy, tokenizer, dataset-manager, `train_gpt_native`, or `nfn_impl` startup before crossing the native C++ boundary.
 The same verifier now requires the dense GPT fast-path artifacts
@@ -4986,10 +6156,10 @@ The platform foundation now adds:
 - The editor toolbar, `/api/.../templates/gpt/*` routes, and MCP `load_gpt_template` all accept the same shipped preset names.
 - Template graphs persist a serialized `template_spec` in `graph.torch_config`, so training, tracing, dataset loading, and exports can recover the original objective/backbone/tokenization contract without inferring it from node names.
 - Dataset-backed tracing and training now route by input role rather than assuming only `(tokens, targets)`. That is what enables single-input JEPA/diffusion graphs and three-input Seq2Seq graphs to use the normal `dataset_source` workflow.
-- `llm_jepa` uses an EMA target encoder and supports two masking strategies via `jepa_mask_strategy`: `"random"` (default, i.i.d. per-token) and `"block"` (contiguous span masking). Block masking is configured with `jepa_num_blocks`, `jepa_min_block_ratio`, and `jepa_max_block_ratio`. `diffusion` samples timesteps internally, and `hnet_lm` switches the dataset pipeline to raw bytes automatically.
+- `llm_jepa` uses an EMA target encoder and supports two masking strategies via `jepa_mask_strategy`: `"random"` (default, i.i.d. per-token) and `"block"` (contiguous span masking). Block masking is configured with `jepa_num_blocks`, `jepa_min_block_ratio`, and `jepa_max_block_ratio`. Native full-family JEPA builds the pooling mask and non-semantic masked decoder token IDs on device. Dense JEPA, MoE-JEPA, and semantic-router JEPA also forward original tokens through frozen target backbone/projector branches, so they report target-backbone exact parity for that frozen hidden-backbone surface; semantic-router variants also report exact parity for the consumed chunk-projector and masked-online encoder production graph surfaces. `diffusion` samples timesteps internally, and `hnet_lm` switches the dataset pipeline to raw bytes automatically.
 - `semantic_router_moe` uses the same flat compiled input contract as the hybrid preset, `(tokens, targets, sem_targets)`, but keeps the backbone purely autoregressive. It projects the embedding output into vocab-topic space, hashes that semantic vector, resolves a shared batch-level expert route, broadcasts the chosen experts across the whole sequence, and applies that route to every MoE block without any JEPA encoder/EMA path.
 - `jepa_semantic_hybrid` now expects three flat training inputs in compiled form: `(tokens, targets, sem_targets)`. Its dataset-backed root graph provides `tokens` and `targets` from `dataset_source`, materializes vocab-backed `sem_targets` from the active `vocab_86d_*.json` semantic vocabulary, hashes the pooled semantic state, routes the full hidden sequence into one expert per semantic vocabulary dimension, and trains the routed branch with AR next-token loss plus JEPA and semantic-alignment auxiliaries.
-- `semantic_dense_jepa_evo` and `semantic_moe_jepa_evo` also expect `(tokens, targets, sem_targets)`, but work at chunk granularity instead of sequence granularity. `semantic_dense_jepa_evo` is the dense FFN control with no expert dispatch or route evolution. `semantic_moe_jepa_evo` adds the shared/semantic/free expert bank; `route_chunk_size` defaults to `32`; `semantic_shared_experts`, `semantic_free_experts`, and `experts` must stay consistent (`shared + NUM_VOCAB_DIMS + free`); and `route_evo_fraction` controls how often the trainer runs the lightweight evolutionary route-bias search.
+- `semantic_dense_jepa_evo` and `semantic_moe_jepa_evo` also expect `(tokens, targets, sem_targets)`, but work at chunk granularity instead of sequence granularity. `semantic_dense_jepa_evo` is the dense FFN control with no expert dispatch or route evolution. `semantic_moe_jepa_evo` adds the shared/semantic/free expert bank; `route_chunk_size` defaults to `32`; `semantic_shared_experts`, `semantic_free_experts`, and `experts` must stay consistent (`shared + NUM_VOCAB_DIMS + free`, currently `2 + 86 + 8 = 96`); and `route_evo_fraction` controls how often the trainer runs the lightweight evolutionary route-bias search. Native `nfn train` and `nfn-native-train` expose the same semantic-MoE architecture contract with `--semantic-vocab-dims`, `--semantic-shared-experts`, `--semantic-free-experts`, `--top-k`, `--route-chunk-size`, `--num-layers`, and `--layers-per-expert`; the TUI shows those rows when `semantic-moe-jepa-evo` is selected, and non-default `layers_per_expert` values increase the routed expert train-step depth rather than only changing metadata.
 - Semantic-only preview/training paths now synthesize safe placeholder `tokens` / `targets` tensors when a graph has `semantic_data_source` but no attached text dataset. That keeps semantic research graphs previewable and trainable without accidentally feeding categorical `sem_targets` into the token embedding path.
 - The vocab-only semantic helpers keep `n_sig_buckets` on the higher-level data APIs, while the low-level hash helpers continue to use `n_buckets` and now accept `n_sig_buckets` as a compatibility alias. The sibling JEPA harness also derives semantic-row schedule estimates from the resolved `top_k`, so non-default routing runs report the right loader/epoch math before training starts.
 - The trainer's vocab-only semantic dataset path now wraps the `load_training_targets()` `int64` arrays directly, so CUDA JEPA runs reach warmup/training without requiring a module-level NumPy import inside `torch_backend.py`.
@@ -5087,6 +6257,10 @@ On the 2026-06-28 CUDA 13.3 workstation recheck, stale
 `build/libnfn_native_train_tile_ops_tk.so` artifacts were rebuilt with the
 targeted build scripts, then both `python tools/check_native_no_torch_deps.py`
 and `python tools/check_native_no_torch_deps.py --rebuild-stale` passed. The
+current retained-replay promotion verification also reran the default
+artifact-enabled no-Torch gate after shell rebuilding stale native artifacts; it
+passed with 30/30 artifacts, 69/69 Python entrypoints, 24/24 shell entrypoints,
+and 4/4 native template catalogs, with zero stale or forbidden artifacts. The
 follow-up dedicated RTX 5090 llm.kittens parity run kept the native runtime
 contract green (`graph_editor_tensor_flow=false`, `torch_required=false`,
 `optimized_kernel_contract_passed=true`, and zero train-loss host D2H copies)
@@ -5194,6 +6368,18 @@ nfn infer --checkpoint artifacts/gpt2 --prompt-tokens 50256 --max-new-tokens 64
 python cli/scripts/infer_gpt.py --checkpoint artifacts/gpt2 --native-info
 ```
 
+For dense GPT template coverage, run
+`python tools/smoke_native_gpt_template_checkpoints.py --native-bin build/nfn_gpt_native_train --output-dir /tmp/nfn-native-dense-gpt-sweep --json`.
+It writes one sparse native `model_00000001.bin` checkpoint per covered dense
+selector (`gpt`, `gpt3`, GPT-2, GPT-2 MoA/megakernel/modern, and
+NanoGPT/megakernel/modern), then inspects each checkpoint with
+`--native-info`. The metadata smoke now uses the selected template geometry, so
+NanoGPT artifacts report the 320-wide, 5-layer shape while GPT-2-family
+artifacts report the 768-wide, 12-layer shape.
+The sweep reads the literal shipped-preset declarations without importing
+optional NumPy-backed SDK modules, so it remains usable in the lean native
+environment.
+
 ### Install the SDK as a package
 
 From the repository root:
@@ -5255,8 +6441,8 @@ AdamW hyperparameters, plus the exact child command, before handing off to
 `NFN_NATIVE_GPT2_LAUNCH_PROGRESS=0`, or `NFN_TILE_CUDA_LAUNCH_PROGRESS=0` only
 when that wrapper-side launch echo should be suppressed.
 Validation loss still follows `--eval-every-steps`, and sampled training loss
-still requires `--train-loss-every-steps` so ordinary progress does not add
-extra loss-copy overhead.
+follows `--train-loss-every-steps`, which now defaults to 250 and can be set to
+0 when ordinary progress should avoid loss-copy overhead.
 The generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
 configs; alias-only GPT configs prefer `compiled_cli_argv` so dataset aliases
 stay on the compiled C++ resolver instead of raw external trainer paths. The
@@ -5796,7 +6982,9 @@ BuiltinNeurons.linear_module    # torch module — pair with runtime="torch"
 ### Torch — mixture-of-experts
 
 - **router_logits** — Linear router from hidden state to per-expert scores.
-- **topk_route** — Softmax over router, then top-k expert weights and indices.
+- **topk_route** — Configurable router scoring (`softmax` by default, with
+  `sigmoid` and DeepSeek-V4 `sqrt_softplus` supported), then normalized top-k
+  expert weights and indices.
 - **expert_dispatch** — Sparse expert MLP (SwiGLU per expert) weighted by routing.
 - **expert_combine** — Identity passthrough for graph wiring after dispatch.
 - **load_balance_loss** — Auxiliary load-balancing loss from router statistics; passes router logits through.

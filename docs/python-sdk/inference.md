@@ -9,6 +9,80 @@ table helpers, or `InferenceCache` methods still requires PyTorch to be
 installed explicitly; missing PyTorch raises an `ImportError` before the
 operation starts.
 
+Native dense GPT CUDA checkpoints use the Torch-free `neuralfn.native_gpt` and
+compatibility `neuralfn.native_gpt2` helpers. Use
+`latest_native_gpt_checkpoint(output_dir)` to resolve the latest completed
+`model_########.bin` with a matching `DONE_########` marker, or
+`read_native_gpt_checkpoint_info(path)` to inspect the native header shape,
+precision, expected size, and checkpoint step. The compiled
+`nfn_gpt_native_train --checkpoint-metadata-smoke --template-name TEMPLATE`
+writer now uses the selected dense template geometry, so NanoGPT-family metadata
+checkpoints report 5 layers, 5 heads, and 320 channels, while GPT-2-family
+selectors report 12 layers, 12 heads, and 768 channels. For automation, run
+`tools/smoke_native_gpt_template_checkpoints.py` to produce and inspect one
+checkpoint for every covered dense GPT selector without importing Torch.
+
+Native-family C++ checkpoints use the separate Torch-free
+`neuralfn.native_family` helper module. Covered family dataset loops write
+`*_native_family_model_00000000.json` artifacts in format
+`nfn-native-family-optimizer-checkpoint-v1` for current optimizer-updated
+artifacts. The loader also accepts the older
+`nfn-native-family-token-transition-v1` transition artifacts; call
+`read_native_family_checkpoint_info(path)` to inspect them or
+`sample_native_family_checkpoint(path, prompt_tokens="1,2", max_new_tokens=64)`
+to generate token IDs from their transition-table state. Use
+`list_native_family_checkpoints(output_dir)` to enumerate every native-family
+model artifact produced by a sweep, or
+`verify_native_family_checkpoint(path)` as the strict loadability gate; it
+requires the model `DONE` marker, matching sidecar byte size, nonempty
+transition state, a full-template parameter state, contiguous buffer offsets,
+trained sidecar slots, `parameter_lm_head_inference_supported`, the
+trainer-emitted `writer_verification` block, and a bounded sample that uses a
+persisted-parameter inference path. The writer verification proves the native
+checkpoint writer wrote a dense optimizer-updated `.f32` sidecar before
+reporting the model artifact as written. Sparse diagnostic native-family
+checkpoints advertise
+`working_model_inference_path: token_embedding_lm_head_sidecar_forward`. Full
+live-parameter family checkpoints advertise
+`native_family_architecture_sidecar_forward_v1` when sidecar metadata records
+full trained-parameter coverage (`trained_parameter_elements ==
+parameter_elements`). Architecture-forward verification rejects partial
+sampled-update sidecars even if they otherwise contain a full-size dense base.
+Older
+sampler-backed artifacts with
+`working_model_inference_path: token_embedding_lm_head_sidecar_forward` still
+load, but they fail the stricter architecture-forward gate. The checkpoint also
+contains `native_parameter_state` and a `parameter_data` entry so SDK callers
+can detect persisted tensor slots, trained tensor counts, dense-base metadata,
+and whether architecture-forward inference is available. The layout records per-buffer
+`offset`, `byte_offset`, and `bytes` fields for the persisted `.f32` sidecar;
+the native JSON also records a `parameter_update_checksum` for the sampled
+sidecar writes. This is the current loadable inference contract for covered
+native-family templates.
+When a compiled family binary is explicitly built with
+`NFN_NATIVE_PRODUCTION_LOOP=1` and the production bootstrap is ready, checkpoint
+metadata labels the sidecar as
+`live_family_device_parameter_store_float32_state` and records
+`optimizer_updated_full_architecture_parameter_persistence: true`, because the
+writer copies the live `FamilyDeviceParameterStore` after the shared
+`FamilyOptimizerState` step. This proves full sidecar persistence and enables
+the architecture-sidecar bounded scorer when every architecture parameter
+element is persisted as trained state.
+Use `audit_native_family_checkpoint_template_coverage(output_dir,
+required_templates={...})` when a sweep must prove template-level coverage, not
+just family-level smoke coverage. The audit runs the same strict checkpoint
+verifier over the directory and then requires a passing artifact whose
+normalized `template_name` matches each required template. This is the SDK
+equivalent of `nfn infer --checkpoint DIR --verify-all --required-templates ...`
+or `--require-covered-templates`. Pass `require_architecture_forward=True` to
+`verify_native_family_checkpoint(...)` or
+`audit_native_family_checkpoint_template_coverage(...)` when a gate must prove
+architecture-specific forward inference from the persisted parameter state.
+The stricter check requires every architecture parameter element to be trained
+and persisted, so sampled architecture-sidecar artifacts and older
+sampler-backed artifacts intentionally fail it while
+`architecture_forward_inference_supported` remains false.
+
 ---
 
 ## export_to_pt

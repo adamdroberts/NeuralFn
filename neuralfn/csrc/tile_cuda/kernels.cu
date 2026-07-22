@@ -81,7 +81,6 @@ constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
 constexpr std::int64_t kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64;
 constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 128;
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_float_hd64_dprep_launch_count{0};
@@ -97,7 +96,6 @@ std::atomic<std::int64_t> g_attention_backward_tk_chunk_batch_last{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_allocation_count{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_element_capacity{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_row_capacity{0};
-#endif
 std::atomic<std::int64_t> g_attention_forward_row_launch_count{0};
 std::atomic<std::int64_t> g_attention_forward_row_fallback_count{0};
 std::atomic<std::int64_t> g_attention_forward_scalar_launch_count{0};
@@ -136,6 +134,22 @@ struct TokenCrossEntropyWorkspace {
 };
 TokenCrossEntropyWorkspace g_token_cross_entropy_workspace;
 std::mutex g_token_cross_entropy_workspace_mutex;
+
+struct PackedAttentionFloatWorkspace {
+  float* q = nullptr;
+  float* k = nullptr;
+  float* v = nullptr;
+  float* out = nullptr;
+  float* grad_out = nullptr;
+  float* grad_q = nullptr;
+  float* grad_k = nullptr;
+  float* grad_v = nullptr;
+  float* lse = nullptr;
+  std::int64_t element_capacity = 0;
+  std::int64_t row_capacity = 0;
+};
+PackedAttentionFloatWorkspace g_packed_attention_float_workspace;
+std::mutex g_packed_attention_float_workspace_mutex;
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_gemm_fast16bf_request_count{0};
@@ -721,6 +735,116 @@ __device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
   return __uint_as_float(static_cast<unsigned int>(value) << 16);
 }
 
+__global__ void packed_qkv_bf16_to_heads_float32_kernel(
+    const std::uint16_t* __restrict__ qkv_bf16_bits,
+    float* __restrict__ q,
+    float* __restrict__ k,
+    float* __restrict__ v,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t elements = batch * seq_len * dim;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t h = (idx / head_dim) % heads;
+  const std::int64_t t = (idx / (head_dim * heads)) % seq_len;
+  const std::int64_t b = idx / (head_dim * heads * seq_len);
+  const std::int64_t packed_base = (b * seq_len + t) * (3 * dim) + h * head_dim + d;
+  const std::int64_t head_idx = ((b * heads + h) * seq_len + t) * head_dim + d;
+  q[head_idx] = bf16_bits_to_f32_device(qkv_bf16_bits[packed_base]);
+  k[head_idx] = bf16_bits_to_f32_device(qkv_bf16_bits[packed_base + dim]);
+  v[head_idx] = bf16_bits_to_f32_device(qkv_bf16_bits[packed_base + 2 * dim]);
+}
+
+__global__ void heads_float32_to_packed_bf16_kernel(
+    const float* __restrict__ src,
+    std::uint16_t* __restrict__ dst_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t elements = batch * seq_len * dim;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t h = (idx / head_dim) % heads;
+  const std::int64_t t = (idx / (head_dim * heads)) % seq_len;
+  const std::int64_t b = idx / (head_dim * heads * seq_len);
+  const std::int64_t head_idx = ((b * heads + h) * seq_len + t) * head_dim + d;
+  const std::int64_t packed_idx = (b * seq_len + t) * dim + h * head_dim + d;
+  dst_bf16_bits[packed_idx] = f32_to_bf16_bits_device(src[head_idx]);
+}
+
+__global__ void packed_grad_out_bf16_to_merged_float32_kernel(
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    float* __restrict__ grad_out,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    grad_out[idx] = bf16_bits_to_f32_device(grad_out_bf16_bits[idx]);
+  }
+}
+
+__global__ void heads_float32_to_packed_qkv_float32_kernel(
+    const float* __restrict__ grad_q,
+    const float* __restrict__ grad_k,
+    const float* __restrict__ grad_v,
+    float* __restrict__ grad_qkv,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t elements = batch * seq_len * dim;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t h = (idx / head_dim) % heads;
+  const std::int64_t t = (idx / (head_dim * heads)) % seq_len;
+  const std::int64_t b = idx / (head_dim * heads * seq_len);
+  const std::int64_t head_idx = ((b * heads + h) * seq_len + t) * head_dim + d;
+  const std::int64_t packed_base = (b * seq_len + t) * (3 * dim) + h * head_dim + d;
+  grad_qkv[packed_base] = grad_q[head_idx];
+  grad_qkv[packed_base + dim] = grad_k[head_idx];
+  grad_qkv[packed_base + 2 * dim] = grad_v[head_idx];
+}
+
+__global__ void heads_float32_to_packed_qkv_bf16_kernel(
+    const float* __restrict__ grad_q,
+    const float* __restrict__ grad_k,
+    const float* __restrict__ grad_v,
+    std::uint16_t* __restrict__ grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t elements = batch * seq_len * dim;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t h = (idx / head_dim) % heads;
+  const std::int64_t t = (idx / (head_dim * heads)) % seq_len;
+  const std::int64_t b = idx / (head_dim * heads * seq_len);
+  const std::int64_t head_idx = ((b * heads + h) * seq_len + t) * head_dim + d;
+  const std::int64_t packed_base = (b * seq_len + t) * (3 * dim) + h * head_dim + d;
+  grad_qkv_bf16_bits[packed_base] = f32_to_bf16_bits_device(grad_q[head_idx]);
+  grad_qkv_bf16_bits[packed_base + dim] = f32_to_bf16_bits_device(grad_k[head_idx]);
+  grad_qkv_bf16_bits[packed_base + 2 * dim] = f32_to_bf16_bits_device(grad_v[head_idx]);
+}
+
 __device__ __forceinline__ float nvfp4_e4m3fn_to_float_device(std::uint8_t code) {
   if (code == 0) {
     return 0.0f;
@@ -795,6 +919,240 @@ __device__ __forceinline__ std::uint8_t nvfp4_float_to_e2m1_code_device(float va
     }
   }
   return best_code;
+}
+
+__device__ __forceinline__ float quantized_weight_value_device(
+    const float* weight,
+    std::int64_t row,
+    std::int64_t col,
+    std::int64_t input_dim,
+    int kind) {
+  if (kind == 1) {
+    float row_max = 0.0f;
+    for (std::int64_t i = 0; i < input_dim; ++i) {
+      row_max = fmaxf(row_max, fabsf(weight[row * input_dim + i]));
+    }
+    if (!(row_max > 0.0f)) {
+      return 0.0f;
+    }
+    const float value = weight[row * input_dim + col];
+    return fabsf(value) >= 0.5f * row_max ? copysignf(row_max, value) : 0.0f;
+  }
+  if (kind == 2) {
+    float row_max = 0.0f;
+    for (std::int64_t i = 0; i < input_dim; ++i) {
+      row_max = fmaxf(row_max, fabsf(weight[row * input_dim + i]));
+    }
+    const float scale = row_max > 0.0f ? row_max / 448.0f : 1.0f;
+    const float value = weight[row * input_dim + col] / scale;
+    const std::uint8_t code = nvfp4_float_to_e4m3fn_device(fabsf(value));
+    return (value < 0.0f ? -1.0f : 1.0f) * nvfp4_e4m3fn_to_float_device(code) * scale;
+  }
+  if (kind == 3) {
+    const std::int64_t block = col / 32;
+    const std::int64_t begin = block * 32;
+    const std::int64_t end = min(input_dim, begin + 32);
+    float block_max = 0.0f;
+    for (std::int64_t i = begin; i < end; ++i) {
+      block_max = fmaxf(block_max, fabsf(weight[row * input_dim + i]));
+    }
+    const float scale = block_max > 0.0f ? block_max / 6.0f : 1.0f;
+    const float value = weight[row * input_dim + col] / scale;
+    return nvfp4_e2m1_code_to_float_device(nvfp4_float_to_e2m1_code_device(value)) * scale;
+  }
+  return weight[row * input_dim + col];
+}
+
+__device__ __forceinline__ float quantized_expert_weight_value_device(
+    const float* weight,
+    std::int64_t expert,
+    std::int64_t row,
+    std::int64_t col,
+    std::int64_t output_dim,
+    std::int64_t input_dim,
+    int kind) {
+  const std::int64_t base = expert * input_dim * output_dim;
+  if (kind == 1) {
+    float row_max = 0.0f;
+    for (std::int64_t i = 0; i < input_dim; ++i) {
+      row_max = fmaxf(row_max, fabsf(weight[base + i * output_dim + row]));
+    }
+    if (!(row_max > 0.0f)) {
+      return 0.0f;
+    }
+    const float value = weight[base + col * output_dim + row];
+    return fabsf(value) >= 0.5f * row_max ? copysignf(row_max, value) : 0.0f;
+  }
+  if (kind == 2) {
+    float row_max = 0.0f;
+    for (std::int64_t i = 0; i < input_dim; ++i) {
+      row_max = fmaxf(row_max, fabsf(weight[base + i * output_dim + row]));
+    }
+    const float scale = row_max > 0.0f ? row_max / 448.0f : 1.0f;
+    const float value = weight[base + col * output_dim + row] / scale;
+    const std::uint8_t code = nvfp4_float_to_e4m3fn_device(fabsf(value));
+    return (value < 0.0f ? -1.0f : 1.0f) * nvfp4_e4m3fn_to_float_device(code) * scale;
+  }
+  if (kind == 3) {
+    const std::int64_t block = col / 32;
+    const std::int64_t begin = block * 32;
+    const std::int64_t end = min(input_dim, begin + 32);
+    float block_max = 0.0f;
+    for (std::int64_t i = begin; i < end; ++i) {
+      block_max = fmaxf(block_max, fabsf(weight[base + i * output_dim + row]));
+    }
+    const float scale = block_max > 0.0f ? block_max / 6.0f : 1.0f;
+    const float value = weight[base + col * output_dim + row] / scale;
+    return nvfp4_e2m1_code_to_float_device(nvfp4_float_to_e2m1_code_device(value)) * scale;
+  }
+  return weight[base + col * output_dim + row];
+}
+
+__global__ void linear_quantized_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ weight,
+    const float* __restrict__ bias,
+    float* __restrict__ out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    int kind) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= rows * output_dim) {
+    return;
+  }
+  const std::int64_t row = idx / output_dim;
+  const std::int64_t out_col = idx % output_dim;
+  float value = has_bias ? bias[out_col] : 0.0f;
+  for (std::int64_t in_col = 0; in_col < input_dim; ++in_col) {
+    value += x[row * input_dim + in_col] *
+        quantized_weight_value_device(weight, out_col, in_col, input_dim, kind);
+  }
+  out[idx] = value;
+}
+
+__global__ void linear_backward_input_quantized_float32_kernel(
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    float* __restrict__ grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    int kind) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= rows * input_dim) {
+    return;
+  }
+  const std::int64_t row = idx / input_dim;
+  const std::int64_t in_col = idx % input_dim;
+  float value = 0.0f;
+  for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
+    value += grad_out[row * output_dim + out_col] *
+        quantized_weight_value_device(weight, out_col, in_col, input_dim, kind);
+  }
+  grad_x[idx] = value;
+}
+
+__global__ void split_last_dim_float32_kernel(
+    const float* __restrict__ input,
+    float* __restrict__ first,
+    float* __restrict__ second,
+    std::int64_t rows,
+    std::int64_t dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t half_dim = dim / 2;
+  if (idx >= rows * half_dim) {
+    return;
+  }
+  const std::int64_t row = idx / half_dim;
+  const std::int64_t col = idx % half_dim;
+  first[idx] = input[row * dim + col];
+  second[idx] = input[row * dim + half_dim + col];
+}
+
+__global__ void merge_last_dim_float32_kernel(
+    const float* __restrict__ first,
+    const float* __restrict__ second,
+    float* __restrict__ output,
+    std::int64_t rows,
+    std::int64_t half_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= rows * half_dim) {
+    return;
+  }
+  const std::int64_t row = idx / half_dim;
+  const std::int64_t col = idx % half_dim;
+  output[row * (2 * half_dim) + col] = first[idx];
+  output[row * (2 * half_dim) + half_dim + col] = second[idx];
+}
+
+__global__ void split_at_last_dim_float32_kernel(
+    const float* __restrict__ input,
+    float* __restrict__ first,
+    float* __restrict__ second,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = rows * (first_dim + second_dim);
+  if (idx >= total) {
+    return;
+  }
+  const std::int64_t row = idx / (first_dim + second_dim);
+  const std::int64_t col = idx % (first_dim + second_dim);
+  if (col < first_dim) {
+    first[row * first_dim + col] = input[idx];
+  } else {
+    second[row * second_dim + (col - first_dim)] = input[idx];
+  }
+}
+
+__global__ void concat_last_dim_float32_kernel(
+    const float* __restrict__ first,
+    const float* __restrict__ second,
+    float* __restrict__ output,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = rows * (first_dim + second_dim);
+  if (idx >= total) {
+    return;
+  }
+  const std::int64_t row = idx / (first_dim + second_dim);
+  const std::int64_t col = idx % (first_dim + second_dim);
+  output[idx] = col < first_dim
+      ? first[row * first_dim + col]
+      : second[row * second_dim + (col - first_dim)];
+}
+
+__global__ void differential_combine_float32_kernel(
+    const float* __restrict__ first,
+    const float* __restrict__ second,
+    float* __restrict__ output,
+    std::int64_t elements,
+    float lambda,
+    float output_scale) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < elements) {
+    output[idx] = (first[idx] - lambda * second[idx]) * output_scale;
+  }
+}
+
+__global__ void differential_backward_float32_kernel(
+    const float* __restrict__ grad_output,
+    float* __restrict__ grad_first,
+    float* __restrict__ grad_second,
+    std::int64_t elements,
+    float lambda,
+    float output_scale) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < elements) {
+    const float value = grad_output[idx] * output_scale;
+    grad_first[idx] = value;
+    grad_second[idx] = -lambda * value;
+  }
 }
 
 __global__ void bf16_bits_to_f32_vec4_kernel(
@@ -1315,6 +1673,71 @@ TokenCrossEntropyWorkspace* ensure_token_cross_entropy_workspace(std::int64_t ro
   g_token_cross_entropy_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
   g_token_cross_entropy_workspace_row_capacity.store(rows, std::memory_order_relaxed);
   return &g_token_cross_entropy_workspace;
+}
+
+void release_packed_attention_float_workspace(PackedAttentionFloatWorkspace& workspace) {
+  if (workspace.q != nullptr) cudaFree(workspace.q);
+  if (workspace.k != nullptr) cudaFree(workspace.k);
+  if (workspace.v != nullptr) cudaFree(workspace.v);
+  if (workspace.out != nullptr) cudaFree(workspace.out);
+  if (workspace.grad_out != nullptr) cudaFree(workspace.grad_out);
+  if (workspace.grad_q != nullptr) cudaFree(workspace.grad_q);
+  if (workspace.grad_k != nullptr) cudaFree(workspace.grad_k);
+  if (workspace.grad_v != nullptr) cudaFree(workspace.grad_v);
+  if (workspace.lse != nullptr) cudaFree(workspace.lse);
+  workspace = {};
+}
+
+bool cuda_malloc_float32(float** ptr, std::int64_t elements) {
+  return elements > 0 &&
+      cudaMalloc(
+          reinterpret_cast<void**>(ptr),
+          sizeof(float) * static_cast<std::size_t>(elements)) == cudaSuccess;
+}
+
+PackedAttentionFloatWorkspace* ensure_packed_attention_float_workspace(
+    std::int64_t elements,
+    std::int64_t rows,
+    cudaStream_t stream) {
+  if (elements <= 0 || rows <= 0) {
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(g_packed_attention_float_workspace_mutex);
+  if (g_packed_attention_float_workspace.element_capacity >= elements &&
+      g_packed_attention_float_workspace.row_capacity >= rows &&
+      g_packed_attention_float_workspace.q != nullptr &&
+      g_packed_attention_float_workspace.k != nullptr &&
+      g_packed_attention_float_workspace.v != nullptr &&
+      g_packed_attention_float_workspace.out != nullptr &&
+      g_packed_attention_float_workspace.grad_out != nullptr &&
+      g_packed_attention_float_workspace.grad_q != nullptr &&
+      g_packed_attention_float_workspace.grad_k != nullptr &&
+      g_packed_attention_float_workspace.grad_v != nullptr &&
+      g_packed_attention_float_workspace.lse != nullptr) {
+    return &g_packed_attention_float_workspace;
+  }
+  cudaStreamSynchronize(stream);
+  PackedAttentionFloatWorkspace next;
+  if (!cuda_malloc_float32(&next.q, elements) ||
+      !cuda_malloc_float32(&next.k, elements) ||
+      !cuda_malloc_float32(&next.v, elements) ||
+      !cuda_malloc_float32(&next.out, elements) ||
+      !cuda_malloc_float32(&next.grad_out, elements) ||
+      !cuda_malloc_float32(&next.grad_q, elements) ||
+      !cuda_malloc_float32(&next.grad_k, elements) ||
+      !cuda_malloc_float32(&next.grad_v, elements) ||
+      !cuda_malloc_float32(&next.lse, rows)) {
+    release_packed_attention_float_workspace(next);
+    return nullptr;
+  }
+  release_packed_attention_float_workspace(g_packed_attention_float_workspace);
+  next.element_capacity = elements;
+  next.row_capacity = rows;
+  g_packed_attention_float_workspace = next;
+  g_attention_tk_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
+  g_attention_tk_workspace_element_capacity.store(elements, std::memory_order_relaxed);
+  g_attention_tk_workspace_row_capacity.store(rows, std::memory_order_relaxed);
+  return &g_packed_attention_float_workspace;
 }
 
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
@@ -2046,6 +2469,10 @@ int launch_tk_attention_forward_float32(
   if (workspace == nullptr) {
     return 2;
   }
+  g_attention_backward_tk_chunk_batch_total.fetch_add(batch, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_last.store(batch, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_max.store(batch, std::memory_order_relaxed);
+  g_attention_backward_tk_chunk_batch_min.store(batch, std::memory_order_relaxed);
   const int threads = 256;
   const int blocks = static_cast<int>((elements + threads - 1) / threads);
   f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(q, workspace->q_bf, elements);
@@ -7184,6 +7611,155 @@ __tile_global__ void uint16_to_int64_kernel(
   ct::store_masked(dest + idx, ct::element_cast<std::int64_t>(token_tile), mask);
 }
 
+__tile_global__ void uint8_to_int64_kernel(
+    const std::uint8_t* __restrict__ source,
+    std::int64_t* __restrict__ dest,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  source = ct::assume_aligned(source, 16_ic);
+  dest = ct::assume_aligned(dest, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto token_tile = ct::load_masked(source + idx, mask);
+  ct::store_masked(dest + idx, ct::element_cast<std::int64_t>(token_tile), mask);
+}
+
+__global__ void diffusion_mask_u16_int64_kernel(
+    const std::uint16_t* __restrict__ source_tokens,
+    std::uint16_t* __restrict__ masked_tokens,
+    std::int64_t* __restrict__ targets,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t vocab) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (row >= rows || rows <= 0 || seq_len <= 0 || vocab <= 0) {
+    return;
+  }
+  std::int64_t token = static_cast<std::int64_t>(source_tokens[row]) % vocab;
+  if (token < 0) {
+    token += vocab;
+  }
+  const std::int64_t sequence = row / seq_len;
+  const std::uint32_t timestep_hash = static_cast<std::uint32_t>(
+      (sequence * 1664525LL + 1013904223LL) & 0xffffffffLL);
+  const float timestep = static_cast<float>(timestep_hash % 1000U) / 1000.0f;
+  const std::uint32_t mask_hash = static_cast<std::uint32_t>(
+      (row * 1103515245LL + 12345LL) & 0xffffffffLL);
+  const float mask_sample = static_cast<float>(mask_hash % 1000U) / 1000.0f;
+  targets[row] = token;
+  masked_tokens[row] = mask_sample < timestep
+      ? static_cast<std::uint16_t>(0)
+      : static_cast<std::uint16_t>(token);
+}
+
+__global__ void semantic_targets_from_matrix_int64_kernel(
+    const std::int64_t* __restrict__ semantic_matrix,
+    const std::int64_t* __restrict__ lm_targets,
+    std::int64_t* __restrict__ semantic_targets,
+    std::uint8_t* __restrict__ semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_vocab_dims) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (row >= rows || rows <= 0 || semantic_dims <= 0 || semantic_vocab_dims <= 0) {
+    return;
+  }
+  std::int64_t target = lm_targets[row] % semantic_vocab_dims;
+  if (target < 0) {
+    target += semantic_vocab_dims;
+  }
+  std::uint8_t valid = 0;
+  for (std::int64_t dimension = 0; dimension < semantic_dims; ++dimension) {
+    const std::int64_t value = semantic_matrix[row * semantic_dims + dimension];
+    if (value >= 0) {
+      target = (dimension + value * semantic_dims) % semantic_vocab_dims;
+      if (target < 0) {
+        target += semantic_vocab_dims;
+      }
+      valid = 1;
+      break;
+    }
+  }
+  semantic_targets[row] = target;
+  semantic_target_valid[row] = valid;
+}
+
+__global__ void semantic_targets_from_tokens_u16_int64_kernel(
+    const std::uint16_t* __restrict__ tokens,
+    const std::int64_t* __restrict__ lm_targets,
+    std::int64_t* __restrict__ semantic_targets,
+    std::uint8_t* __restrict__ semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::int64_t semantic_vocab_dims) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (row >= rows || rows <= 0 || semantic_dims <= 0 || semantic_terms <= 0 ||
+      semantic_vocab_dims <= 0) {
+    return;
+  }
+  std::int64_t target = lm_targets[row] % semantic_vocab_dims;
+  if (target < 0) {
+    target += semantic_vocab_dims;
+  }
+  const std::uint32_t token = static_cast<std::uint32_t>(tokens[row]);
+  std::uint8_t valid = 0;
+  for (std::int64_t dimension = 0; dimension < semantic_dims; ++dimension) {
+    const std::uint32_t invalid_probe =
+        token + static_cast<std::uint32_t>(dimension * 17);
+    if ((invalid_probe % 29U) == 0U) {
+      continue;
+    }
+    const std::int64_t value = static_cast<std::int64_t>(
+        (token + static_cast<std::uint32_t>(dimension * 3)) %
+        static_cast<std::uint32_t>(semantic_terms));
+    target = (dimension + value * semantic_dims) % semantic_vocab_dims;
+    if (target < 0) {
+      target += semantic_vocab_dims;
+    }
+    valid = 1;
+    break;
+  }
+  semantic_targets[row] = target;
+  semantic_target_valid[row] = valid;
+}
+
+__global__ void semantic_target_matrix_from_tokens_u16_int64_kernel(
+    const std::uint16_t* __restrict__ tokens,
+    std::int64_t* __restrict__ semantic_matrix,
+    const std::int64_t* __restrict__ term_counts,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t ignore_index) {
+  const std::int64_t item = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t n = rows * semantic_dims;
+  if (item >= n || rows <= 0 || semantic_dims <= 0) {
+    return;
+  }
+  const std::int64_t row = item / semantic_dims;
+  const std::int64_t dimension = item - row * semantic_dims;
+  const std::int64_t term_count = term_counts[dimension];
+  if (term_count <= 0) {
+    semantic_matrix[item] = ignore_index;
+    return;
+  }
+  const std::uint32_t token = static_cast<std::uint32_t>(tokens[row]);
+  const std::uint32_t invalid_probe =
+      token + static_cast<std::uint32_t>(dimension * 17);
+  if ((invalid_probe % 29U) == 0U) {
+    semantic_matrix[item] = ignore_index;
+    return;
+  }
+  semantic_matrix[item] = static_cast<std::int64_t>(
+      (token + static_cast<std::uint32_t>(dimension * 3)) %
+      static_cast<std::uint32_t>(term_count));
+}
+
 __tile_global__ void fill_float32_kernel(
     float* __restrict__ values,
     std::int64_t n,
@@ -8165,6 +8741,124 @@ __tile_global__ void adamw_step_many_with_device_scale_bf16_shadow_float32_kerne
   }
 }
 
+__tile_global__ void adamw_step_many_with_device_scale_hyper_float32_kernel(
+    float* const* __restrict__ params,
+    const float* const* __restrict__ grads,
+    const float* __restrict__ grad_scale,
+    float* const* __restrict__ exp_avgs,
+    float* const* __restrict__ exp_avg_sqs,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ weight_decays,
+    const float* __restrict__ hyper,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  float* param = ct::assume_aligned(params[tensor], 16_ic);
+  const float* grad = ct::assume_aligned(grads[tensor], 16_ic);
+  grad_scale = ct::assume_aligned(grad_scale, 16_ic);
+  float* exp_avg = ct::assume_aligned(exp_avgs[tensor], 16_ic);
+  float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
+  hyper = ct::assume_aligned(hyper, 16_ic);
+
+  const float lr = hyper[0];
+  const float beta1 = hyper[1];
+  const float beta2 = hyper[2];
+  const float eps = hyper[3];
+  const float bias_correction1 = hyper[4];
+  const float sqrt_bias_correction2 = hyper[5];
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto p = ct::load_masked(param + idx, mask);
+  auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
+  auto m = ct::load_masked(exp_avg + idx, mask);
+  auto v = ct::load_masked(exp_avg_sq + idx, mask);
+  auto one = ct::full<decltype(p)>(1.0f);
+  auto beta1_tile = ct::full<decltype(p)>(beta1);
+  auto beta2_tile = ct::full<decltype(p)>(beta2);
+  auto next_m = beta1_tile * m + (one - beta1_tile) * g;
+  auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
+  auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decays[tensor]));
+  auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
+  auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
+  auto next_p = decayed - step_size * next_m / denom;
+  ct::store_masked(param + idx, next_p, mask);
+  ct::store_masked(exp_avg + idx, next_m, mask);
+  ct::store_masked(exp_avg_sq + idx, next_v, mask);
+}
+
+__tile_global__ void adamw_step_many_with_device_scale_bf16_shadow_hyper_float32_kernel(
+    float* const* __restrict__ params,
+    const float* const* __restrict__ grads,
+    const float* __restrict__ grad_scale,
+    float* const* __restrict__ exp_avgs,
+    float* const* __restrict__ exp_avg_sqs,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ weight_decays,
+    const std::int64_t* __restrict__ bf16_shadow_offsets,
+    std::uint16_t* __restrict__ bf16_shadow_bits,
+    const float* __restrict__ hyper,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  float* param = ct::assume_aligned(params[tensor], 16_ic);
+  const float* grad = ct::assume_aligned(grads[tensor], 16_ic);
+  grad_scale = ct::assume_aligned(grad_scale, 16_ic);
+  float* exp_avg = ct::assume_aligned(exp_avgs[tensor], 16_ic);
+  float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
+  auto* shadow = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(bf16_shadow_bits), 16_ic);
+  hyper = ct::assume_aligned(hyper, 16_ic);
+
+  const float lr = hyper[0];
+  const float beta1 = hyper[1];
+  const float beta2 = hyper[2];
+  const float eps = hyper[3];
+  const float bias_correction1 = hyper[4];
+  const float sqrt_bias_correction2 = hyper[5];
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto p = ct::load_masked(param + idx, mask);
+  auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
+  auto m = ct::load_masked(exp_avg + idx, mask);
+  auto v = ct::load_masked(exp_avg_sq + idx, mask);
+  auto one = ct::full<decltype(p)>(1.0f);
+  auto beta1_tile = ct::full<decltype(p)>(beta1);
+  auto beta2_tile = ct::full<decltype(p)>(beta2);
+  auto next_m = beta1_tile * m + (one - beta1_tile) * g;
+  auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
+  auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decays[tensor]));
+  auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
+  auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
+  auto next_p = decayed - step_size * next_m / denom;
+  ct::store_masked(param + idx, next_p, mask);
+  ct::store_masked(exp_avg + idx, next_m, mask);
+  ct::store_masked(exp_avg_sq + idx, next_v, mask);
+
+  const std::int64_t shadow_offset = bf16_shadow_offsets[tensor];
+  if (shadow_offset >= 0) {
+    ct::store_masked(shadow + ct::full<IndexTile>(shadow_offset) + idx,
+                     ct::element_cast<__nv_bfloat16>(next_p),
+                     mask);
+  }
+}
+
 __tile_global__ void adamw_step_many_with_device_scale_bf16_param_float32_kernel(
     std::uint16_t* const* __restrict__ params_bf16_bits,
     const float* const* __restrict__ grads,
@@ -8344,6 +9038,38 @@ __tile_global__ void vector_binary_float32_kernel(
   ct::store_masked(out + idx, result, mask);
 }
 
+__global__ void mhc_beta_gradient_float32_kernel(
+    const float* __restrict__ beta_logit,
+    const float* __restrict__ input,
+    const float* __restrict__ attention_proj,
+    const float* __restrict__ residual1,
+    const float* __restrict__ ffn_out,
+    const float* __restrict__ grad_second,
+    const float* __restrict__ grad_first,
+    float* __restrict__ grad_beta_logit,
+    std::int64_t rows,
+    std::int64_t model_dim,
+    float scale) {
+  const std::int64_t dim = static_cast<std::int64_t>(blockIdx.x);
+  if (dim >= model_dim) {
+    return;
+  }
+  const float beta = 1.0f / (1.0f + expf(-beta_logit[dim]));
+  const float alpha = sqrtf(fmaxf(1.0f - beta * beta, 1.0e-12f));
+  const float beta_over_alpha = beta / alpha;
+  const float dbeta_dlogit = beta * (1.0f - beta);
+  float sum = 0.0f;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    const std::int64_t offset = row * model_dim + dim;
+    const float second = grad_second[offset] *
+        (ffn_out[offset] - beta_over_alpha * residual1[offset]);
+    const float first = grad_first[offset] *
+        (attention_proj[offset] - beta_over_alpha * input[offset]);
+    sum += second + first;
+  }
+  grad_beta_logit[dim] = sum * dbeta_dlogit * scale;
+}
+
 __tile_global__ void qk_gain_float32_kernel(
     const float* __restrict__ q,
     const float* __restrict__ gain,
@@ -8487,6 +9213,40 @@ __tile_global__ void repeat_kv_float32_kernel(
   ct::store_masked(out + idx, value, mask);
 }
 
+__tile_global__ void repeat_kv_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto head_dim_tile = ct::full<IndexTile>(head_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto kv_heads_tile = ct::full<IndexTile>(kv_heads);
+  auto repeats_tile = ct::full<IndexTile>(repeats);
+  auto d = idx % head_dim_tile;
+  auto s = (idx / head_dim_tile) % seq_tile;
+  auto h = (idx / (head_dim_tile * seq_tile)) % kv_heads_tile;
+  auto b = idx / (head_dim_tile * seq_tile * kv_heads_tile);
+  auto value = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t repeat = 0; repeat < repeats; ++repeat) {
+    auto out_h = h * repeats_tile + ct::full<IndexTile>(repeat);
+    auto out_idx = ((b * kv_heads_tile * repeats_tile + out_h) * seq_tile + s) * head_dim_tile + d;
+    value = value + ct::load_masked(grad_out + out_idx, mask);
+  }
+  ct::store_masked(grad_x + idx, value, mask);
+}
+
 __tile_global__ void broadcast_expert_routes_float32_kernel(
     const float* __restrict__ weights,
     const std::int64_t* __restrict__ indices,
@@ -8558,6 +9318,73 @@ __tile_global__ void broadcast_chunk_routes_float32_kernel(
   auto index = ct::load_masked(indices + src, mask);
   ct::store_masked(out_weights + idx, weight, mask);
   ct::store_masked(out_indices + idx, index, mask);
+}
+
+__tile_global__ void compact_chunk_routes_float32_int64_kernel(
+    const float* __restrict__ weights,
+    const std::int64_t* __restrict__ indices,
+    float* __restrict__ chunk_weights,
+    std::int64_t* __restrict__ chunk_indices,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t chunks,
+    std::int64_t route_width,
+    std::int64_t chunk_size) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  weights = ct::assume_aligned(weights, 16_ic);
+  indices = ct::assume_aligned(indices, 16_ic);
+  chunk_weights = ct::assume_aligned(chunk_weights, 16_ic);
+  chunk_indices = ct::assume_aligned(chunk_indices, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto width_tile = ct::full<IndexTile>(route_width);
+  auto chunks_tile = ct::full<IndexTile>(chunks);
+  auto chunk_size_tile = ct::full<IndexTile>(chunk_size);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto route = idx % width_tile;
+  auto chunk = (idx / width_tile) % chunks_tile;
+  auto batch = idx / (width_tile * chunks_tile);
+  auto position = chunk * chunk_size_tile;
+  position = ct::select(position >= seq_tile, seq_tile - ct::full<IndexTile>(1), position);
+  auto source = (batch * seq_tile + position) * width_tile + route;
+  auto weight = ct::load_masked(weights + source, mask);
+  auto index = ct::load_masked(indices + source, mask);
+  ct::store_masked(chunk_weights + idx, weight, mask);
+  ct::store_masked(chunk_indices + idx, index, mask);
+}
+
+__tile_global__ void aggregate_chunk_route_gradients_float32_kernel(
+    const float* __restrict__ grad_weights,
+    float* __restrict__ aggregated_grad_weights,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_weights = ct::assume_aligned(grad_weights, 16_ic);
+  aggregated_grad_weights = ct::assume_aligned(aggregated_grad_weights, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto width_tile = ct::full<IndexTile>(route_width);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto chunk_size_tile = ct::full<IndexTile>(chunk_size);
+  auto route = idx % width_tile;
+  auto row = idx / width_tile;
+  auto position = row % seq_tile;
+  auto anchor_row = row - (position % chunk_size_tile);
+  auto source = ct::load_masked(grad_weights + idx, mask);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(
+      aggregated_grad_weights + anchor_row * width_tile + route, source, mask);
 }
 
 __tile_global__ void moe_swiglu_forward_float32_kernel(
@@ -8636,6 +9463,7 @@ __tile_global__ void moe_swiglu_backward_float32_kernel(
     float* __restrict__ grad_w1,
     float* __restrict__ grad_w2,
     float* __restrict__ grad_w3,
+    float* __restrict__ grad_route_weights,
     std::int64_t tokens,
     std::int64_t dim,
     std::int64_t hidden_dim,
@@ -8655,6 +9483,9 @@ __tile_global__ void moe_swiglu_backward_float32_kernel(
   grad_w1 = ct::assume_aligned(grad_w1, 16_ic);
   grad_w2 = ct::assume_aligned(grad_w2, 16_ic);
   grad_w3 = ct::assume_aligned(grad_w3, 16_ic);
+  if (grad_route_weights != nullptr) {
+    grad_route_weights = ct::assume_aligned(grad_route_weights, 16_ic);
+  }
 
   const int bx = ct::bid().x;
   using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
@@ -8664,6 +9495,39 @@ __tile_global__ void moe_swiglu_backward_float32_kernel(
   auto hidden_tile = ct::full<IndexTile>(hidden_dim);
   auto top_k_tile = ct::full<IndexTile>(top_k);
   auto experts_tile = ct::full<IndexTile>(experts);
+
+  if (grad_route_weights != nullptr) {
+    for (std::int64_t k = 0; k < top_k; ++k) {
+      auto route_offset = token * top_k_tile + ct::full<IndexTile>(k);
+      auto expert = ct::load_masked(route_indices + route_offset, valid_token);
+      auto valid = valid_token && expert >= ct::full<IndexTile>(0) && expert < experts_tile;
+      auto route_weight = ct::load_masked(route_weights + route_offset, valid);
+      auto grad_route_acc = ct::full<decltype(route_weight)>(0.0f);
+      for (std::int64_t h = 0; h < hidden_dim; ++h) {
+        auto h_tile = ct::full<IndexTile>(h);
+        auto gate = ct::full<decltype(route_weight)>(0.0f);
+        auto up = ct::full<decltype(route_weight)>(0.0f);
+        for (std::int64_t d = 0; d < dim; ++d) {
+          auto d_tile = ct::full<IndexTile>(d);
+          auto xv = ct::load_masked(x + token * dim_tile + d_tile, valid);
+          auto w13_offset = (expert * dim_tile + d_tile) * hidden_tile + h_tile;
+          gate = gate + xv * ct::load_masked(w1 + w13_offset, valid);
+          up = up + xv * ct::load_masked(w3 + w13_offset, valid);
+        }
+        auto one = ct::full<decltype(gate)>(1.0f);
+        auto sigmoid = one / (one + ct::exp(-gate));
+        auto hidden = (gate * sigmoid) * up;
+        for (std::int64_t d_out = 0; d_out < dim; ++d_out) {
+          auto d_out_tile = ct::full<IndexTile>(d_out);
+          auto w2_offset = (expert * hidden_tile + h_tile) * dim_tile + d_out_tile;
+          auto expert_output = hidden * ct::load_masked(w2 + w2_offset, valid);
+          auto grad_output = ct::load_masked(grad_out + token * dim_tile + d_out_tile, valid);
+          grad_route_acc = grad_route_acc + grad_output * expert_output;
+        }
+      }
+      ct::store_masked(grad_route_weights + route_offset, grad_route_acc, valid);
+    }
+  }
 
   for (std::int64_t d_in = 0; d_in < dim; ++d_in) {
     auto grad_x_acc = ct::full<decltype(ct::load_masked(x + token * dim_tile, valid_token))>(0.0f);
@@ -8724,6 +9588,148 @@ __tile_global__ void moe_swiglu_backward_float32_kernel(
       }
     }
     ct::store_masked(grad_x + token * dim_tile + ct::full<IndexTile>(d_in), grad_x_acc, valid_token);
+  }
+}
+
+__global__ void moe_swiglu_forward_quantized_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ route_weights,
+    const std::int64_t* __restrict__ route_indices,
+    const float* __restrict__ w1,
+    const float* __restrict__ w2,
+    const float* __restrict__ w3,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t token = idx / dim;
+  const std::int64_t out_d = idx % dim;
+  float acc = 0.0f;
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    const std::int64_t route_offset = token * top_k + k;
+    const std::int64_t expert = route_indices[route_offset];
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    const float route_weight = route_weights[route_offset];
+    float expert_acc = 0.0f;
+    for (std::int64_t h = 0; h < hidden_dim; ++h) {
+      float gate = 0.0f;
+      float up = 0.0f;
+      for (std::int64_t d = 0; d < dim; ++d) {
+        const float xv = x[token * dim + d];
+        gate += xv * quantized_expert_weight_value_device(w1, expert, h, d, hidden_dim, dim, kind);
+        up += xv * quantized_expert_weight_value_device(w3, expert, h, d, hidden_dim, dim, kind);
+      }
+      const float sigmoid = 1.0f / (1.0f + expf(-gate));
+      const float hidden = (gate * sigmoid) * up;
+      expert_acc += hidden * quantized_expert_weight_value_device(w2, expert, out_d, h, dim, hidden_dim, kind);
+    }
+    acc += route_weight * expert_acc;
+  }
+  out[idx] = acc;
+}
+
+__global__ void moe_swiglu_backward_quantized_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ route_weights,
+    const std::int64_t* __restrict__ route_indices,
+    const float* __restrict__ w1,
+    const float* __restrict__ w2,
+    const float* __restrict__ w3,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    float* __restrict__ grad_w1,
+    float* __restrict__ grad_w2,
+    float* __restrict__ grad_w3,
+    float* __restrict__ grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind) {
+  const std::int64_t token = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (token >= tokens) {
+    return;
+  }
+  if (grad_route_weights != nullptr) {
+    for (std::int64_t k = 0; k < top_k; ++k) {
+      const std::int64_t route_offset = token * top_k + k;
+      const std::int64_t expert = route_indices[route_offset];
+      if (expert < 0 || expert >= experts) {
+        continue;
+      }
+      float grad_route_acc = 0.0f;
+      for (std::int64_t h = 0; h < hidden_dim; ++h) {
+        float gate = 0.0f;
+        float up = 0.0f;
+        for (std::int64_t d = 0; d < dim; ++d) {
+          const float xv = x[token * dim + d];
+          gate += xv * quantized_expert_weight_value_device(w1, expert, h, d, hidden_dim, dim, kind);
+          up += xv * quantized_expert_weight_value_device(w3, expert, h, d, hidden_dim, dim, kind);
+        }
+        const float sigmoid = 1.0f / (1.0f + expf(-gate));
+        const float hidden = (gate * sigmoid) * up;
+        for (std::int64_t d_out = 0; d_out < dim; ++d_out) {
+          const float expert_output =
+              hidden * quantized_expert_weight_value_device(w2, expert, d_out, h, dim, hidden_dim, kind);
+          grad_route_acc += grad_out[token * dim + d_out] * expert_output;
+        }
+      }
+      grad_route_weights[route_offset] = grad_route_acc;
+    }
+  }
+  for (std::int64_t d_in = 0; d_in < dim; ++d_in) {
+    float grad_x_acc = 0.0f;
+    for (std::int64_t k = 0; k < top_k; ++k) {
+      const std::int64_t route_offset = token * top_k + k;
+      const std::int64_t expert = route_indices[route_offset];
+      if (expert < 0 || expert >= experts) {
+        continue;
+      }
+      const float route_weight = route_weights[route_offset];
+      for (std::int64_t h = 0; h < hidden_dim; ++h) {
+        float gate = 0.0f;
+        float up = 0.0f;
+        for (std::int64_t d = 0; d < dim; ++d) {
+          const float xv = x[token * dim + d];
+          gate += xv * quantized_expert_weight_value_device(w1, expert, h, d, hidden_dim, dim, kind);
+          up += xv * quantized_expert_weight_value_device(w3, expert, h, d, hidden_dim, dim, kind);
+        }
+        const float sigmoid = 1.0f / (1.0f + expf(-gate));
+        const float silu = gate * sigmoid;
+        const float dsilu = sigmoid * (1.0f + gate * (1.0f - sigmoid));
+        const float hidden = silu * up;
+        float grad_hidden = 0.0f;
+        for (std::int64_t d_out = 0; d_out < dim; ++d_out) {
+          const float grad_expert_out = route_weight * grad_out[token * dim + d_out];
+          const std::int64_t w2_offset = expert * hidden_dim * dim + h * dim + d_out;
+          if (d_in == 0) {
+            atomicAdd(grad_w2 + w2_offset, hidden * grad_expert_out);
+          }
+          grad_hidden += grad_expert_out *
+              quantized_expert_weight_value_device(w2, expert, d_out, h, dim, hidden_dim, kind);
+        }
+        const float grad_up = grad_hidden * silu;
+        const float grad_gate = grad_hidden * up * dsilu;
+        const float x_in = x[token * dim + d_in];
+        const std::int64_t w13_offset = expert * dim * hidden_dim + d_in * hidden_dim + h;
+        atomicAdd(grad_w1 + w13_offset, x_in * grad_gate);
+        atomicAdd(grad_w3 + w13_offset, x_in * grad_up);
+        grad_x_acc +=
+            grad_gate * quantized_expert_weight_value_device(w1, expert, h, d_in, hidden_dim, dim, kind) +
+            grad_up * quantized_expert_weight_value_device(w3, expert, h, d_in, hidden_dim, dim, kind);
+      }
+    }
+    grad_x[token * dim + d_in] = grad_x_acc;
   }
 }
 
@@ -9141,6 +10147,56 @@ __tile_global__ void semantic_alignment_loss_items_float32_kernel(
   ct::store_masked(counts + idx, ct::select(valid, ct::full<decltype(loss)>(1.0f), ct::full<decltype(loss)>(0.0f)), mask);
 }
 
+__global__ void semantic_alignment_packed_loss_backward_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    float* __restrict__ losses,
+    float* __restrict__ counts,
+    float* __restrict__ grad_logits,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t total_terms,
+    std::int64_t ignore_index,
+    float grad_scale) {
+  const std::int64_t item = static_cast<std::int64_t>(blockIdx.x);
+  if (item >= n || dims <= 0 || total_terms <= 0) {
+    return;
+  }
+  const std::int64_t row = item / dims;
+  const std::int64_t dim = item - row * dims;
+  const std::int64_t term_count = term_counts[dim];
+  const std::int64_t term_offset = term_offsets[dim];
+  const std::int64_t target = targets[item];
+  losses[item] = 0.0f;
+  counts[item] = 0.0f;
+  if (term_count <= 0 || term_offset < 0 ||
+      term_offset + term_count > total_terms ||
+      target == ignore_index || target < 0 || target >= term_count) {
+    return;
+  }
+  const std::int64_t base = row * total_terms + term_offset;
+  float max_value = -3.4028234663852886e38f;
+  for (std::int64_t term = 0; term < term_count; ++term) {
+    max_value = fmaxf(max_value, logits[base + term]);
+  }
+  float sum_exp = 0.0f;
+  for (std::int64_t term = 0; term < term_count; ++term) {
+    sum_exp += expf(logits[base + term] - max_value);
+  }
+  if (!(sum_exp > 0.0f) || !isfinite(sum_exp)) {
+    return;
+  }
+  losses[item] = logf(sum_exp) + max_value - logits[base + target];
+  counts[item] = 1.0f;
+  for (std::int64_t term = 0; term < term_count; ++term) {
+    const float probability = expf(logits[base + term] - max_value) / sum_exp;
+    const float indicator = term == target ? 1.0f : 0.0f;
+    grad_logits[base + term] = (probability - indicator) * grad_scale;
+  }
+}
+
 __tile_global__ void sum_partials_float32_kernel(
     const float* __restrict__ values,
     float* __restrict__ partials,
@@ -9187,6 +10243,16 @@ __global__ void sum_accumulate_float32_kernel(
   }
   if (tid == 0) {
     atomicAdd(total, scratch[0]);
+  }
+}
+
+__global__ void extract_diagonal_float32_kernel(
+    const float* __restrict__ matrix,
+    float* __restrict__ diagonal,
+    std::int64_t dim) {
+  const std::int64_t index = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index < dim) {
+    diagonal[index] = matrix[index * dim + index];
   }
 }
 
@@ -9553,57 +10619,38 @@ __tile_global__ void token_position_embedding_residual_u16_bf16_weight_float32_k
   ct::store_masked(out + idx, token_value + scale_tile * position_value, mask);
 }
 
-__tile_global__ void token_embedding_backward_weight_float32_kernel(
+__global__ void token_embedding_backward_weight_deterministic_float32_kernel(
     const std::int64_t* __restrict__ token_ids,
     const float* __restrict__ grad_out,
     float* __restrict__ grad_weight,
-    std::int64_t n,
+    std::int64_t tokens,
     std::int64_t model_dim) {
-  namespace ct = cuda::tiles;
-  using namespace ct::literals;
-
-  token_ids = ct::assume_aligned(token_ids, 16_ic);
-  grad_out = ct::assume_aligned(grad_out, 16_ic);
-  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
-
-  const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
-  auto mask = idx < ct::full<IndexTile>(n);
-  auto dim_tile = ct::full<IndexTile>(model_dim);
-  auto d = idx % dim_tile;
-  auto token_offset = idx / dim_tile;
-  auto token = ct::load_masked(token_ids + token_offset, mask);
-  auto dst = token * dim_tile + d;
-  auto grad = ct::load_masked(grad_out + idx, mask);
-  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + dst, grad, mask);
+  const std::int64_t dimension =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (dimension >= model_dim) {
+    return;
+  }
+  for (std::int64_t row = 0; row < tokens; ++row) {
+    const std::int64_t token = token_ids[row];
+    grad_weight[token * model_dim + dimension] += grad_out[row * model_dim + dimension];
+  }
 }
 
-__tile_global__ void token_embedding_backward_weight_u16_float32_kernel(
+__global__ void token_embedding_backward_weight_u16_deterministic_float32_kernel(
     const std::uint16_t* __restrict__ token_ids,
     const float* __restrict__ grad_out,
     float* __restrict__ grad_weight,
-    std::int64_t n,
+    std::int64_t tokens,
     std::int64_t model_dim) {
-  namespace ct = cuda::tiles;
-  using namespace ct::literals;
-
-  token_ids = ct::assume_aligned(token_ids, 16_ic);
-  grad_out = ct::assume_aligned(grad_out, 16_ic);
-  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
-
-  const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
-  auto mask = idx < ct::full<IndexTile>(n);
-  auto dim_tile = ct::full<IndexTile>(model_dim);
-  auto d = idx % dim_tile;
-  auto token_offset = idx / dim_tile;
-  auto token_u16 = ct::load_masked(token_ids + token_offset, mask);
-  auto token = ct::element_cast<std::int64_t>(token_u16);
-  auto dst = token * dim_tile + d;
-  auto grad = ct::load_masked(grad_out + idx, mask);
-  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + dst, grad, mask);
+  const std::int64_t dimension =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (dimension >= model_dim) {
+    return;
+  }
+  for (std::int64_t row = 0; row < tokens; ++row) {
+    const std::int64_t token = static_cast<std::int64_t>(token_ids[row]);
+    grad_weight[token * model_dim + dimension] += grad_out[row * model_dim + dimension];
+  }
 }
 
 __tile_global__ void rotary_embedding_float32_kernel(
@@ -9625,6 +10672,7 @@ __tile_global__ void rotary_embedding_float32_kernel(
   using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
   auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
+  auto n_tile = ct::full<IndexTile>(n);
   auto head_dim_tile = ct::full<IndexTile>(head_dim);
   auto half_tile = ct::full<IndexTile>(head_dim / 2);
   auto seq_tile = ct::full<IndexTile>(seq_len);
@@ -9633,16 +10681,17 @@ __tile_global__ void rotary_embedding_float32_kernel(
   auto pair_d = d % half_tile;
   auto first_half = d < half_tile;
   auto base = idx - d;
-  auto x1 = ct::load_masked(x + base + pair_d, mask);
-  auto x2 = ct::load_masked(x + base + pair_d + half_tile, mask);
-  auto inv = ct::load_masked(inv_freq + pair_d, mask);
+  auto pair_mask = mask && ((base + pair_d + half_tile) < n_tile);
+  auto x1 = ct::load_masked(x + base + pair_d, pair_mask);
+  auto x2 = ct::load_masked(x + base + pair_d + half_tile, pair_mask);
+  auto inv = ct::load_masked(inv_freq + pair_d, pair_mask);
   auto angle = ct::tile<float, decltype(ct::shape{1024_ic})>(s) * inv;
   auto c = ct::cos(angle);
   auto sn = ct::sin(angle);
   auto first = x1 * c + x2 * sn;
   auto second = -x1 * sn + x2 * c;
   auto value = ct::select(first_half, first, second);
-  ct::store_masked(out + idx, value, mask);
+  ct::store_masked(out + idx, value, pair_mask);
 }
 
 __tile_global__ void rotary_embedding_backward_float32_kernel(
@@ -9664,6 +10713,7 @@ __tile_global__ void rotary_embedding_backward_float32_kernel(
   using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
   auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
+  auto n_tile = ct::full<IndexTile>(n);
   auto head_dim_tile = ct::full<IndexTile>(head_dim);
   auto half_tile = ct::full<IndexTile>(head_dim / 2);
   auto seq_tile = ct::full<IndexTile>(seq_len);
@@ -9672,16 +10722,17 @@ __tile_global__ void rotary_embedding_backward_float32_kernel(
   auto pair_d = d % half_tile;
   auto first_half = d < half_tile;
   auto base = idx - d;
-  auto gy1 = ct::load_masked(grad_out + base + pair_d, mask);
-  auto gy2 = ct::load_masked(grad_out + base + pair_d + half_tile, mask);
-  auto inv = ct::load_masked(inv_freq + pair_d, mask);
+  auto pair_mask = mask && ((base + pair_d + half_tile) < n_tile);
+  auto gy1 = ct::load_masked(grad_out + base + pair_d, pair_mask);
+  auto gy2 = ct::load_masked(grad_out + base + pair_d + half_tile, pair_mask);
+  auto inv = ct::load_masked(inv_freq + pair_d, pair_mask);
   auto angle = ct::tile<float, decltype(ct::shape{1024_ic})>(s) * inv;
   auto c = ct::cos(angle);
   auto sn = ct::sin(angle);
   auto dx1 = gy1 * c - gy2 * sn;
   auto dx2 = gy1 * sn + gy2 * c;
   auto value = ct::select(first_half, dx1, dx2);
-  ct::store_masked(grad_x + idx, value, mask);
+  ct::store_masked(grad_x + idx, value, pair_mask);
 }
 
 __tile_global__ void rms_norm_float32_kernel(
@@ -10620,6 +11671,1349 @@ __global__ void topk_route_float32_kernel(
   }
 }
 
+__global__ void topk_route_backward_float32_kernel(
+    const float* __restrict__ weights,
+    const std::int64_t* __restrict__ indices,
+    const float* __restrict__ grad_weights,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t route_base = row * top_k;
+  float weighted_gradient = 0.0f;
+  for (std::int64_t route = 0; route < top_k; ++route) {
+    const std::int64_t route_index = route_base + route;
+    weighted_gradient += weights[route_index] * grad_weights[route_index];
+  }
+  const float uniform_route = 1.0f / static_cast<float>(top_k);
+  const std::int64_t logit_base = row * experts;
+  for (std::int64_t route = 0; route < top_k; ++route) {
+    const std::int64_t route_index = route_base + route;
+    const std::int64_t expert = indices[route_index];
+    if (expert >= 0 && expert < experts) {
+      const float route_weight = weights[route_index];
+      const float route_weight_gradient = grad_weights[route_index];
+      grad_logits[logit_base + expert] +=
+          route_weight * (route_weight_gradient - weighted_gradient) +
+          (route_weight - uniform_route) * route_scale;
+    }
+  }
+}
+
+__global__ void semantic_shared_topk_route_float32_kernel(
+    const float* __restrict__ logits,
+    float* __restrict__ weights,
+    std::int64_t* __restrict__ indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  float top_vals[64];
+  std::int64_t top_idx[64];
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    top_vals[k] = -3.4028234663852886e38f;
+    top_idx[k] = shared_experts;
+  }
+  const std::int64_t base = row * experts;
+  for (std::int64_t expert = shared_experts; expert < experts; ++expert) {
+    const float value = logits[base + expert];
+    for (std::int64_t slot = 0; slot < top_k; ++slot) {
+      if (value > top_vals[slot]) {
+        for (std::int64_t move = top_k - 1; move > slot; --move) {
+          top_vals[move] = top_vals[move - 1];
+          top_idx[move] = top_idx[move - 1];
+        }
+        top_vals[slot] = value;
+        top_idx[slot] = expert;
+        break;
+      }
+    }
+  }
+
+  const std::int64_t route_width = shared_experts + top_k;
+  const std::int64_t out_base = row * route_width;
+  float max_val = -3.4028234663852886e38f;
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    max_val = fmaxf(max_val, logits[base + shared]);
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    max_val = fmaxf(max_val, top_vals[k]);
+  }
+  float denom = 0.0f;
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    denom += expf(logits[base + shared] - max_val);
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    denom += expf(top_vals[k] - max_val);
+  }
+  denom = fmaxf(denom, 1.0e-12f);
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    weights[out_base + shared] = expf(logits[base + shared] - max_val) / denom;
+    indices[out_base + shared] = shared;
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    const std::int64_t route = shared_experts + k;
+    weights[out_base + route] = expf(top_vals[k] - max_val) / denom;
+    indices[out_base + route] = top_idx[k];
+  }
+}
+
+__global__ void semantic_shared_forced_topk_route_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ semantic_target_matrix,
+    float* __restrict__ weights,
+    std::int64_t* __restrict__ indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    std::int64_t ignore_index) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  bool has_forced = false;
+  const std::int64_t target_base = row * semantic_vocab_dims;
+  for (std::int64_t dim = 0; dim < semantic_vocab_dims; ++dim) {
+    if (semantic_target_matrix[target_base + dim] != ignore_index) {
+      has_forced = true;
+      break;
+    }
+  }
+
+  float top_vals[64];
+  std::int64_t top_idx[64];
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    top_vals[k] = -3.4028234663852886e38f;
+    top_idx[k] = shared_experts;
+  }
+  const std::int64_t base = row * experts;
+  const std::int64_t candidate_begin = shared_experts;
+  const std::int64_t semantic_candidate_end = shared_experts + semantic_vocab_dims;
+  const std::int64_t candidate_end = has_forced
+      ? (semantic_candidate_end < experts ? semantic_candidate_end : experts)
+      : experts;
+  for (std::int64_t expert = candidate_begin; expert < candidate_end; ++expert) {
+    if (has_forced) {
+      const std::int64_t dim = expert - shared_experts;
+      if (dim < 0 || dim >= semantic_vocab_dims ||
+          semantic_target_matrix[target_base + dim] == ignore_index) {
+        continue;
+      }
+    }
+    const float value = logits[base + expert];
+    for (std::int64_t slot = 0; slot < top_k; ++slot) {
+      if (value > top_vals[slot]) {
+        for (std::int64_t move = top_k - 1; move > slot; --move) {
+          top_vals[move] = top_vals[move - 1];
+          top_idx[move] = top_idx[move - 1];
+        }
+        top_vals[slot] = value;
+        top_idx[slot] = expert;
+        break;
+      }
+    }
+  }
+
+  const std::int64_t route_width = shared_experts + top_k;
+  const std::int64_t out_base = row * route_width;
+  float max_val = -3.4028234663852886e38f;
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    max_val = fmaxf(max_val, logits[base + shared]);
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    max_val = fmaxf(max_val, top_vals[k]);
+  }
+  float denom = 0.0f;
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    denom += expf(logits[base + shared] - max_val);
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    denom += expf(top_vals[k] - max_val);
+  }
+  denom = fmaxf(denom, 1.0e-12f);
+  for (std::int64_t shared = 0; shared < shared_experts; ++shared) {
+    weights[out_base + shared] = expf(logits[base + shared] - max_val) / denom;
+    indices[out_base + shared] = shared;
+  }
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    const std::int64_t route = shared_experts + k;
+    weights[out_base + route] = expf(top_vals[k] - max_val) / denom;
+    indices[out_base + route] = top_idx[k];
+  }
+}
+
+__global__ void semantic_shared_topk_route_backward_float32_kernel(
+    const float* __restrict__ weights,
+    const std::int64_t* __restrict__ indices,
+    const float* __restrict__ grad_weights,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    float route_scale) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t route_width = shared_experts + top_k;
+  const std::int64_t route_base = row * route_width;
+  const std::int64_t logit_base = row * experts;
+  float weighted_gradient = 0.0f;
+  for (std::int64_t route = 0; route < route_width; ++route) {
+    const std::int64_t route_index = route_base + route;
+    weighted_gradient += weights[route_index] * grad_weights[route_index];
+  }
+  const float uniform_route = 1.0f / static_cast<float>(route_width);
+  for (std::int64_t route = 0; route < route_width; ++route) {
+    const std::int64_t route_index = route_base + route;
+    const std::int64_t expert = indices[route_index];
+    if (expert >= 0 && expert < experts) {
+      const float route_weight = weights[route_index];
+      const float route_weight_gradient = grad_weights[route_index];
+      grad_logits[logit_base + expert] +=
+          route_weight * (route_weight_gradient - weighted_gradient) +
+          (route_weight - uniform_route) * route_scale;
+    }
+  }
+}
+
+__global__ void topk_route_sqrt_softplus_float32_kernel(
+    const float* __restrict__ logits,
+    float* __restrict__ weights,
+    std::int64_t* __restrict__ indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  float top_vals[64];
+  float top_scores[64];
+  std::int64_t top_idx[64];
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    top_vals[k] = -3.4028234663852886e38f;
+    top_scores[k] = 0.0f;
+    top_idx[k] = 0;
+  }
+  const std::int64_t base = row * experts;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float value = logits[base + expert];
+    for (std::int64_t slot = 0; slot < top_k; ++slot) {
+      if (value > top_vals[slot]) {
+        for (std::int64_t move = top_k - 1; move > slot; --move) {
+          top_vals[move] = top_vals[move - 1];
+          top_scores[move] = top_scores[move - 1];
+          top_idx[move] = top_idx[move - 1];
+        }
+        const float softplus_value = log1pf(expf(-fabsf(value))) + fmaxf(value, 0.0f);
+        top_vals[slot] = value;
+        top_scores[slot] = sqrtf(fmaxf(softplus_value, 1.0e-12f));
+        top_idx[slot] = expert;
+        break;
+      }
+    }
+  }
+  float denom = 0.0f;
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    denom += top_scores[k];
+  }
+  denom = fmaxf(denom, 1.0e-12f);
+  const std::int64_t out_base = row * top_k;
+  for (std::int64_t k = 0; k < top_k; ++k) {
+    weights[out_base + k] = top_scores[k] / denom;
+    indices[out_base + k] = top_idx[k];
+  }
+}
+
+__global__ void topk_route_sqrt_softplus_backward_float32_kernel(
+    const float* __restrict__ logits,
+    const float* __restrict__ weights,
+    const std::int64_t* __restrict__ indices,
+    const float* __restrict__ grad_weights,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t route_base = row * top_k;
+  const std::int64_t logit_base = row * experts;
+  float score_sum = 0.0f;
+  float grad_score_dot = 0.0f;
+  float scores[64];
+  for (std::int64_t route = 0; route < top_k; ++route) {
+    const std::int64_t expert = indices[route_base + route];
+    float score = 0.0f;
+    if (expert >= 0 && expert < experts) {
+      const float value = logits[logit_base + expert];
+      const float softplus_value = log1pf(expf(-fabsf(value))) + fmaxf(value, 0.0f);
+      score = sqrtf(fmaxf(softplus_value, 1.0e-12f));
+    }
+    scores[route] = score;
+    score_sum += score;
+    grad_score_dot += grad_weights[route_base + route] * score;
+  }
+  score_sum = fmaxf(score_sum, 1.0e-12f);
+  const float uniform_route = 1.0f / static_cast<float>(top_k);
+  for (std::int64_t route = 0; route < top_k; ++route) {
+    const std::int64_t expert = indices[route_base + route];
+    if (expert >= 0 && expert < experts) {
+      const float value = logits[logit_base + expert];
+      const float sigmoid_value = 1.0f / (1.0f + expf(-value));
+      const float score = fmaxf(scores[route], 1.0e-12f);
+      const float dscore = 0.5f * sigmoid_value / score;
+      const float grad_score =
+          (grad_weights[route_base + route] * score_sum - grad_score_dot) /
+          (score_sum * score_sum);
+      const float route_weight = weights[route_base + route];
+      grad_logits[logit_base + expert] +=
+          grad_score * dscore + (route_weight - uniform_route) * route_scale;
+    }
+  }
+}
+
+__global__ void semantic_route_distillation_backward_float32_kernel(
+    const float* __restrict__ route_logits,
+    const std::int64_t* __restrict__ semantic_targets,
+    const std::uint8_t* __restrict__ semantic_target_valid,
+    float* __restrict__ grad_route_logits,
+    float* __restrict__ loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    float teacher_target) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  loss_items[row] = 0.0f;
+  if (semantic_target_valid[row] == 0 || experts <= 1) {
+    return;
+  }
+  const std::int64_t position = seq_len > 0 ? row % seq_len : row;
+  if (route_chunk_size > 1 && position % route_chunk_size != 0) {
+    return;
+  }
+  const std::int64_t semantic_expert = shared_experts +
+      (semantic_targets[row] % semantic_vocab_dims);
+  if (semantic_expert < 0 || semantic_expert >= experts) {
+    return;
+  }
+  const std::int64_t other_count = experts - 1 > 1 ? experts - 1 : 1;
+  const float teacher_other = (1.0f - teacher_target) /
+      static_cast<float>(other_count);
+  const std::int64_t base = row * experts;
+  float max_logit = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    max_logit = fmaxf(max_logit, route_logits[base + expert]);
+  }
+  float normalizer = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    normalizer += expf(route_logits[base + expert] - max_logit);
+  }
+  if (!(normalizer > 0.0f) || !isfinite(normalizer)) {
+    return;
+  }
+  float row_loss = 0.0f;
+  const float rows_scale = 1.0f / static_cast<float>(rows > 1 ? rows : 1);
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float probability = expf(route_logits[base + expert] - max_logit) / normalizer;
+    const float teacher = expert == semantic_expert ? teacher_target : teacher_other;
+    grad_route_logits[base + expert] += distill_weight * (probability - teacher) * rows_scale;
+    row_loss += distill_weight * teacher *
+        (logf(fmaxf(teacher, 1.0e-20f)) - logf(fmaxf(probability, 1.0e-20f))) *
+        rows_scale;
+  }
+  loss_items[row] = row_loss;
+}
+
+__global__ void semantic_target_topic_distillation_backward_float32_kernel(
+    const float* __restrict__ route_logits,
+    const float* __restrict__ target_topic_logits,
+    float* __restrict__ grad_route_logits,
+    float* __restrict__ loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  loss_items[row] = 0.0f;
+  if (experts <= 1 || semantic_vocab_dims <= 0) {
+    return;
+  }
+  const std::int64_t position = seq_len > 0 ? row % seq_len : row;
+  if (route_chunk_size > 1 && position % route_chunk_size != 0) {
+    return;
+  }
+  const std::int64_t base = row * experts;
+  const std::int64_t chunk_count = route_chunk_size > 1
+      ? (seq_len + route_chunk_size - 1) / route_chunk_size
+      : seq_len;
+  const std::int64_t topic_row = route_chunk_size > 1
+      ? (row / seq_len) * chunk_count + (position / route_chunk_size)
+      : row;
+  const std::int64_t topic_base = topic_row * semantic_vocab_dims;
+  float student_max = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    student_max = fmaxf(student_max, route_logits[base + expert]);
+  }
+  float student_normalizer = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    student_normalizer += expf(route_logits[base + expert] - student_max);
+  }
+  if (!(student_normalizer > 0.0f) || !isfinite(student_normalizer)) {
+    return;
+  }
+  float teacher_max = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        teacher_logit = target_topic_logits[topic_base + dimension];
+      }
+    }
+    teacher_max = fmaxf(teacher_max, teacher_logit);
+  }
+  float teacher_normalizer = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        teacher_logit = target_topic_logits[topic_base + dimension];
+      }
+    }
+    teacher_normalizer += expf(teacher_logit - teacher_max);
+  }
+  if (!(teacher_normalizer > 0.0f) || !isfinite(teacher_normalizer)) {
+    return;
+  }
+  float row_loss = 0.0f;
+  const float rows_scale = 1.0f / static_cast<float>(rows > 1 ? rows : 1);
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        teacher_logit = target_topic_logits[topic_base + dimension];
+      }
+    }
+    const float student_probability =
+        expf(route_logits[base + expert] - student_max) / student_normalizer;
+    const float teacher_probability =
+        expf(teacher_logit - teacher_max) / teacher_normalizer;
+    grad_route_logits[base + expert] +=
+        distill_weight * (student_probability - teacher_probability) * rows_scale;
+    row_loss += distill_weight * teacher_probability *
+        (logf(fmaxf(teacher_probability, 1.0e-20f)) -
+         logf(fmaxf(student_probability, 1.0e-20f))) * rows_scale;
+  }
+  loss_items[row] = row_loss;
+}
+
+__global__ void semantic_target_topic_packed_distillation_backward_float32_kernel(
+    const float* __restrict__ route_logits,
+    const float* __restrict__ target_topic_logits,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    float* __restrict__ grad_route_logits,
+    float* __restrict__ loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  loss_items[row] = 0.0f;
+  if (experts <= 1 || semantic_vocab_dims <= 0 || total_terms <= 0) {
+    return;
+  }
+  const std::int64_t position = seq_len > 0 ? row % seq_len : row;
+  if (route_chunk_size > 1 && position % route_chunk_size != 0) {
+    return;
+  }
+  const std::int64_t base = row * experts;
+  const std::int64_t chunk_count = route_chunk_size > 1
+      ? (seq_len + route_chunk_size - 1) / route_chunk_size
+      : seq_len;
+  const std::int64_t topic_row = route_chunk_size > 1
+      ? (row / seq_len) * chunk_count + (position / route_chunk_size)
+      : row;
+  const std::int64_t topic_base = topic_row * total_terms;
+  float student_max = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    student_max = fmaxf(student_max, route_logits[base + expert]);
+  }
+  float student_normalizer = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    student_normalizer += expf(route_logits[base + expert] - student_max);
+  }
+  if (!(student_normalizer > 0.0f) || !isfinite(student_normalizer)) {
+    return;
+  }
+  float teacher_max = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        const std::int64_t term_count = term_counts[dimension];
+        const std::int64_t term_offset = term_offsets[dimension];
+        if (term_count > 0 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+          float dim_max = -3.4028234663852886e38f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            dim_max = fmaxf(dim_max, target_topic_logits[topic_base + term_offset + term]);
+          }
+          float dim_sum = 0.0f;
+          float dim_best = 0.0f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            const float value = expf(target_topic_logits[topic_base + term_offset + term] - dim_max);
+            dim_sum += value;
+            dim_best = fmaxf(dim_best, value);
+          }
+          if (dim_sum > 0.0f && isfinite(dim_sum)) {
+            teacher_logit = dim_best / dim_sum;
+          }
+        }
+      }
+    }
+    teacher_max = fmaxf(teacher_max, teacher_logit);
+  }
+  float teacher_normalizer = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        const std::int64_t term_count = term_counts[dimension];
+        const std::int64_t term_offset = term_offsets[dimension];
+        if (term_count > 0 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+          float dim_max = -3.4028234663852886e38f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            dim_max = fmaxf(dim_max, target_topic_logits[topic_base + term_offset + term]);
+          }
+          float dim_sum = 0.0f;
+          float dim_best = 0.0f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            const float value = expf(target_topic_logits[topic_base + term_offset + term] - dim_max);
+            dim_sum += value;
+            dim_best = fmaxf(dim_best, value);
+          }
+          if (dim_sum > 0.0f && isfinite(dim_sum)) {
+            teacher_logit = dim_best / dim_sum;
+          }
+        }
+      }
+    }
+    teacher_normalizer += expf(teacher_logit - teacher_max);
+  }
+  if (!(teacher_normalizer > 0.0f) || !isfinite(teacher_normalizer)) {
+    return;
+  }
+  float row_loss = 0.0f;
+  const float rows_scale = 1.0f / static_cast<float>(rows > 1 ? rows : 1);
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    float teacher_logit = -10.0f;
+    if (expert < shared_experts) {
+      teacher_logit = 0.0f;
+    } else {
+      const std::int64_t dimension = expert - shared_experts;
+      if (dimension >= 0 && dimension < semantic_vocab_dims) {
+        const std::int64_t term_count = term_counts[dimension];
+        const std::int64_t term_offset = term_offsets[dimension];
+        if (term_count > 0 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+          float dim_max = -3.4028234663852886e38f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            dim_max = fmaxf(dim_max, target_topic_logits[topic_base + term_offset + term]);
+          }
+          float dim_sum = 0.0f;
+          float dim_best = 0.0f;
+          for (std::int64_t term = 0; term < term_count; ++term) {
+            const float value = expf(target_topic_logits[topic_base + term_offset + term] - dim_max);
+            dim_sum += value;
+            dim_best = fmaxf(dim_best, value);
+          }
+          if (dim_sum > 0.0f && isfinite(dim_sum)) {
+            teacher_logit = dim_best / dim_sum;
+          }
+        }
+      }
+    }
+    const float student_probability =
+        expf(route_logits[base + expert] - student_max) / student_normalizer;
+    const float teacher_probability =
+        expf(teacher_logit - teacher_max) / teacher_normalizer;
+    grad_route_logits[base + expert] +=
+        distill_weight * (student_probability - teacher_probability) * rows_scale;
+    row_loss += distill_weight * teacher_probability *
+        (logf(fmaxf(teacher_probability, 1.0e-20f)) -
+         logf(fmaxf(student_probability, 1.0e-20f))) * rows_scale;
+  }
+  loss_items[row] = row_loss;
+}
+
+__global__ void semantic_hash_table_backward_float32_kernel(
+    const std::int64_t* __restrict__ hash_indices,
+    const float* __restrict__ hash_embedding,
+    const float* __restrict__ table_gate_logits,
+    const float* __restrict__ grad_route_logits,
+    float* __restrict__ grad_hash_embedding,
+    float* __restrict__ grad_table_gate,
+    float* __restrict__ grad_dimension_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || tables <= 0 || tables > 32 || semantic_vocab_dims <= 0 || buckets <= 0) {
+    return;
+  }
+  float gate_max = -3.4028234663852886e38f;
+  for (std::int64_t table = 0; table < tables; ++table) {
+    gate_max = fmaxf(gate_max, table_gate_logits[table]);
+  }
+  float gate_sum = 0.0f;
+  float table_gate[32];
+  float gate_score_gradient[32];
+  for (std::int64_t table = 0; table < tables; ++table) {
+    const float value = expf(table_gate_logits[table] - gate_max);
+    table_gate[table] = value;
+    gate_score_gradient[table] = 0.0f;
+    gate_sum += value;
+  }
+  if (!(gate_sum > 0.0f) || !isfinite(gate_sum)) {
+    return;
+  }
+  for (std::int64_t table = 0; table < tables; ++table) {
+    table_gate[table] /= gate_sum;
+  }
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t expert = shared_experts + dimension;
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    const float route_gradient = grad_route_logits[row * experts + expert];
+    atomicAdd(grad_dimension_bias + dimension, route_gradient);
+    for (std::int64_t table = 0; table < tables; ++table) {
+      const std::int64_t raw_bucket = hash_indices[row * tables + table];
+      const std::int64_t bucket = raw_bucket % buckets;
+      if (bucket >= 0) {
+        const std::int64_t hash_offset = bucket * semantic_vocab_dims + dimension;
+        atomicAdd(grad_hash_embedding + hash_offset, table_gate[table] * route_gradient);
+        gate_score_gradient[table] += hash_embedding[hash_offset] * route_gradient;
+      }
+    }
+  }
+  float weighted_gate_score = 0.0f;
+  for (std::int64_t table = 0; table < tables; ++table) {
+    weighted_gate_score += table_gate[table] * gate_score_gradient[table];
+  }
+  for (std::int64_t table = 0; table < tables; ++table) {
+    atomicAdd(grad_table_gate + table,
+              table_gate[table] * (gate_score_gradient[table] - weighted_gate_score));
+  }
+}
+
+__global__ void semantic_route_policy_float32_kernel(
+    float* __restrict__ route_logits,
+    const std::int64_t* __restrict__ hash_indices,
+    const float* __restrict__ hash_embedding,
+    const float* __restrict__ table_gate_logits,
+    const float* __restrict__ dimension_bias,
+    const std::int64_t* __restrict__ semantic_targets,
+    const std::uint8_t* __restrict__ semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || tables <= 0 || tables > 32 || semantic_vocab_dims <= 0 ||
+      experts <= 0 || buckets <= 0 || top_k <= 0) {
+    return;
+  }
+  float gate_max = -3.4028234663852886e38f;
+  for (std::int64_t table = 0; table < tables; ++table) {
+    gate_max = fmaxf(gate_max, table_gate_logits[table]);
+  }
+  float gate_sum = 0.0f;
+  float table_gate[32];
+  for (std::int64_t table = 0; table < tables; ++table) {
+    const float value = expf(table_gate_logits[table] - gate_max);
+    table_gate[table] = value;
+    gate_sum += value;
+  }
+  if (!(gate_sum > 0.0f) || !isfinite(gate_sum)) {
+    return;
+  }
+  for (std::int64_t table = 0; table < tables; ++table) {
+    table_gate[table] /= gate_sum;
+  }
+  const std::int64_t logit_base = row * experts;
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t expert = shared_experts + dimension;
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    float hash_bias = dimension_bias[dimension];
+    for (std::int64_t table = 0; table < tables; ++table) {
+      const std::int64_t raw_bucket = hash_indices[row * tables + table];
+      const std::int64_t bucket = raw_bucket % buckets;
+      if (bucket >= 0) {
+        hash_bias += table_gate[table] * hash_embedding[bucket * semantic_vocab_dims + dimension];
+      }
+    }
+    route_logits[logit_base + expert] += hash_bias;
+  }
+  if (semantic_target_valid[row] == 0) {
+    return;
+  }
+  const std::int64_t semantic_expert = shared_experts + (semantic_targets[row] % semantic_vocab_dims);
+  if (semantic_expert < 0 || semantic_expert >= experts) {
+    return;
+  }
+  route_logits[logit_base + semantic_expert] += target_boost;
+  const float semantic_logit = route_logits[logit_base + semantic_expert];
+  float max_logit = -3.4028234663852886e38f;
+  std::int64_t rank_before = 0;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float value = route_logits[logit_base + expert];
+    max_logit = fmaxf(max_logit, value);
+    if (expert == semantic_expert) {
+      continue;
+    }
+    if (value > semantic_logit || (value == semantic_logit && expert < semantic_expert)) {
+      rank_before += 1;
+    }
+  }
+  if (rank_before >= top_k) {
+    route_logits[logit_base + semantic_expert] = max_logit + 1.0f;
+  }
+}
+
+__global__ void semantic_route_policy_packed_topic_float32_kernel(
+    float* __restrict__ route_logits,
+    const std::int64_t* __restrict__ hash_indices,
+    const float* __restrict__ hash_embedding,
+    const float* __restrict__ table_gate_logits,
+    const float* __restrict__ dimension_bias,
+    const float* __restrict__ topic_logits,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    const std::int64_t* __restrict__ semantic_targets,
+    const std::uint8_t* __restrict__ semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || tables <= 0 || tables > 32 || semantic_vocab_dims <= 0 ||
+      total_terms <= 0 || experts <= 0 || buckets <= 0 || top_k <= 0) {
+    return;
+  }
+  float gate_max = -3.4028234663852886e38f;
+  for (std::int64_t table = 0; table < tables; ++table) {
+    gate_max = fmaxf(gate_max, table_gate_logits[table]);
+  }
+  float gate_sum = 0.0f;
+  float table_gate[32];
+  for (std::int64_t table = 0; table < tables; ++table) {
+    const float value = expf(table_gate_logits[table] - gate_max);
+    table_gate[table] = value;
+    gate_sum += value;
+  }
+  if (!(gate_sum > 0.0f) || !isfinite(gate_sum)) {
+    return;
+  }
+  for (std::int64_t table = 0; table < tables; ++table) {
+    table_gate[table] /= gate_sum;
+  }
+  const std::int64_t logit_base = row * experts;
+  const std::int64_t topic_base = row * total_terms;
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t expert = shared_experts + dimension;
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    float hash_bias = dimension_bias[dimension];
+    for (std::int64_t table = 0; table < tables; ++table) {
+      const std::int64_t raw_bucket = hash_indices[row * tables + table];
+      const std::int64_t bucket = raw_bucket % buckets;
+      if (bucket >= 0) {
+        hash_bias += table_gate[table] * hash_embedding[bucket * semantic_vocab_dims + dimension];
+      }
+    }
+    float topic_score = 0.0f;
+    const std::int64_t term_count = term_counts[dimension];
+    const std::int64_t term_offset = term_offsets[dimension];
+    if (term_count > 0 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+      float dim_max = -3.4028234663852886e38f;
+      for (std::int64_t term = 0; term < term_count; ++term) {
+        dim_max = fmaxf(dim_max, topic_logits[topic_base + term_offset + term]);
+      }
+      float dim_sum = 0.0f;
+      float dim_best = 0.0f;
+      for (std::int64_t term = 0; term < term_count; ++term) {
+        const float value = expf(topic_logits[topic_base + term_offset + term] - dim_max);
+        dim_sum += value;
+        dim_best = fmaxf(dim_best, value);
+      }
+      if (dim_sum > 0.0f && isfinite(dim_sum)) {
+        topic_score = dim_best / dim_sum;
+      }
+    }
+    route_logits[logit_base + expert] += topic_score + hash_bias;
+  }
+  if (semantic_target_valid[row] == 0) {
+    return;
+  }
+  const std::int64_t semantic_expert = shared_experts + (semantic_targets[row] % semantic_vocab_dims);
+  if (semantic_expert < 0 || semantic_expert >= experts) {
+    return;
+  }
+  route_logits[logit_base + semantic_expert] += target_boost;
+  const float semantic_logit = route_logits[logit_base + semantic_expert];
+  float max_logit = -3.4028234663852886e38f;
+  std::int64_t rank_before = 0;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float value = route_logits[logit_base + expert];
+    max_logit = fmaxf(max_logit, value);
+    if (expert == semantic_expert) {
+      continue;
+    }
+    if (value > semantic_logit || (value == semantic_logit && expert < semantic_expert)) {
+      rank_before += 1;
+    }
+  }
+  if (rank_before >= top_k) {
+    route_logits[logit_base + semantic_expert] = max_logit + 1.0f;
+  }
+}
+
+__global__ void semantic_vec_from_packed_topic_float32_kernel(
+    const float* __restrict__ topic_logits,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    float* __restrict__ semantic_vec,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || semantic_vocab_dims <= 0 || total_terms <= 0) {
+    return;
+  }
+  const std::int64_t topic_base = row * total_terms;
+  const std::int64_t output_base = row * semantic_vocab_dims;
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t term_count = term_counts[dimension];
+    const std::int64_t term_offset = term_offsets[dimension];
+    float value = 0.0f;
+    if (term_count > 1 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+      std::int64_t best_term = 0;
+      float best_logit = topic_logits[topic_base + term_offset];
+      for (std::int64_t term = 1; term < term_count; ++term) {
+        const float candidate = topic_logits[topic_base + term_offset + term];
+        if (candidate > best_logit) {
+          best_logit = candidate;
+          best_term = term;
+        }
+      }
+      value = 2.0f * static_cast<float>(best_term) /
+              static_cast<float>(term_count - 1) -
+              1.0f;
+    }
+    semantic_vec[output_base + dimension] = value;
+  }
+}
+
+__global__ void semantic_packed_topic_to_padded_float32_kernel(
+    const float* __restrict__ packed_logits,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    float* __restrict__ padded_logits,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t max_terms) {
+  const std::int64_t idx =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t n = rows * semantic_vocab_dims * max_terms;
+  if (idx >= n || rows <= 0 || semantic_vocab_dims <= 0 ||
+      total_terms <= 0 || max_terms <= 0) {
+    return;
+  }
+  const std::int64_t term = idx % max_terms;
+  const std::int64_t dim = (idx / max_terms) % semantic_vocab_dims;
+  const std::int64_t row = idx / (semantic_vocab_dims * max_terms);
+  const std::int64_t term_count = term_counts[dim];
+  const std::int64_t term_offset = term_offsets[dim];
+  float value = 0.0f;
+  if (term < term_count && term_offset >= 0) {
+    const std::int64_t packed_col = term_offset + term;
+    if (packed_col >= 0 && packed_col < total_terms) {
+      value = packed_logits[row * total_terms + packed_col];
+    }
+  }
+  padded_logits[idx] = value;
+}
+
+__global__ void semantic_signature_scalar_float32_kernel(
+    const float* __restrict__ sig_logits,
+    float* __restrict__ signature_scalar,
+    std::int64_t rows,
+    std::int64_t buckets) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || buckets <= 0) {
+    return;
+  }
+  const std::int64_t base = row * buckets;
+  float max_logit = sig_logits[base];
+  for (std::int64_t bucket = 1; bucket < buckets; ++bucket) {
+    max_logit = fmaxf(max_logit, sig_logits[base + bucket]);
+  }
+  float denom = 0.0f;
+  float weighted = 0.0f;
+  const float scale = buckets > 1 ? 1.0f / static_cast<float>(buckets - 1) : 0.0f;
+  for (std::int64_t bucket = 0; bucket < buckets; ++bucket) {
+    const float probability_weight = expf(sig_logits[base + bucket] - max_logit);
+    denom += probability_weight;
+    weighted += probability_weight * static_cast<float>(bucket) * scale;
+  }
+  signature_scalar[row] = denom > 0.0f ? weighted / denom : 0.0f;
+}
+
+__global__ void semantic_vec_append_signature_float32_kernel(
+    const float* __restrict__ topic_vec,
+    const float* __restrict__ signature_scalar,
+    float* __restrict__ semantic_vec,
+    std::int64_t rows,
+    std::int64_t topic_dims) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || topic_dims <= 0) {
+    return;
+  }
+  const std::int64_t topic_base = row * topic_dims;
+  const std::int64_t semantic_base = row * (topic_dims + 1);
+  for (std::int64_t dim = 0; dim < topic_dims; ++dim) {
+    semantic_vec[semantic_base + dim] = topic_vec[topic_base + dim];
+  }
+  semantic_vec[semantic_base + topic_dims] = signature_scalar[row];
+}
+
+__global__ void semantic_vec_split_signature_grad_float32_kernel(
+    const float* __restrict__ grad_semantic_vec,
+    float* __restrict__ grad_topic_vec,
+    float* __restrict__ grad_signature_scalar,
+    std::int64_t rows,
+    std::int64_t topic_dims) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || topic_dims <= 0) {
+    return;
+  }
+  const std::int64_t topic_base = row * topic_dims;
+  const std::int64_t semantic_base = row * (topic_dims + 1);
+  for (std::int64_t dim = 0; dim < topic_dims; ++dim) {
+    grad_topic_vec[topic_base + dim] = grad_semantic_vec[semantic_base + dim];
+  }
+  grad_signature_scalar[row] = grad_semantic_vec[semantic_base + topic_dims];
+}
+
+__global__ void semantic_signature_scalar_backward_float32_kernel(
+    const float* __restrict__ sig_logits,
+    const float* __restrict__ signature_scalar,
+    const float* __restrict__ grad_signature_scalar,
+    float* __restrict__ grad_sig_logits,
+    std::int64_t rows,
+    std::int64_t buckets) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || buckets <= 0) {
+    return;
+  }
+  const std::int64_t base = row * buckets;
+  float max_logit = sig_logits[base];
+  for (std::int64_t bucket = 1; bucket < buckets; ++bucket) {
+    max_logit = fmaxf(max_logit, sig_logits[base + bucket]);
+  }
+  float denom = 0.0f;
+  for (std::int64_t bucket = 0; bucket < buckets; ++bucket) {
+    denom += expf(sig_logits[base + bucket] - max_logit);
+  }
+  const float scale = buckets > 1 ? 1.0f / static_cast<float>(buckets - 1) : 0.0f;
+  const float scalar = signature_scalar[row];
+  const float grad_scalar = grad_signature_scalar[row];
+  for (std::int64_t bucket = 0; bucket < buckets; ++bucket) {
+    const float probability = denom > 0.0f ? expf(sig_logits[base + bucket] - max_logit) / denom : 0.0f;
+    const float axis = static_cast<float>(bucket) * scale;
+    grad_sig_logits[base + bucket] = grad_scalar * probability * (axis - scalar);
+  }
+}
+
+__global__ void semantic_route_policy_packed_topic_matrix_float32_kernel(
+    float* __restrict__ route_logits,
+    const std::int64_t* __restrict__ hash_indices,
+    const float* __restrict__ hash_embedding,
+    const float* __restrict__ table_gate_logits,
+    const float* __restrict__ dimension_bias,
+    const float* __restrict__ topic_logits,
+    const std::int64_t* __restrict__ term_counts,
+    const std::int64_t* __restrict__ term_offsets,
+    const std::int64_t* __restrict__ semantic_target_matrix,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    std::int64_t ignore_index) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows || tables <= 0 || tables > 32 || semantic_vocab_dims <= 0 ||
+      total_terms <= 0 || experts <= 0 || buckets <= 0 || top_k <= 0) {
+    return;
+  }
+  float gate_max = -3.4028234663852886e38f;
+  for (std::int64_t table = 0; table < tables; ++table) {
+    gate_max = fmaxf(gate_max, table_gate_logits[table]);
+  }
+  float gate_sum = 0.0f;
+  float table_gate[32];
+  for (std::int64_t table = 0; table < tables; ++table) {
+    const float value = expf(table_gate_logits[table] - gate_max);
+    table_gate[table] = value;
+    gate_sum += value;
+  }
+  if (!(gate_sum > 0.0f) || !isfinite(gate_sum)) {
+    return;
+  }
+  for (std::int64_t table = 0; table < tables; ++table) {
+    table_gate[table] /= gate_sum;
+  }
+  const std::int64_t logit_base = row * experts;
+  const std::int64_t topic_base = row * total_terms;
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t expert = shared_experts + dimension;
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    float hash_bias = dimension_bias[dimension];
+    for (std::int64_t table = 0; table < tables; ++table) {
+      const std::int64_t raw_bucket = hash_indices[row * tables + table];
+      const std::int64_t bucket = raw_bucket % buckets;
+      if (bucket >= 0) {
+        hash_bias += table_gate[table] * hash_embedding[bucket * semantic_vocab_dims + dimension];
+      }
+    }
+    float topic_score = 0.0f;
+    const std::int64_t term_count = term_counts[dimension];
+    const std::int64_t term_offset = term_offsets[dimension];
+    if (term_count > 0 && term_offset >= 0 && term_offset + term_count <= total_terms) {
+      float dim_max = -3.4028234663852886e38f;
+      for (std::int64_t term = 0; term < term_count; ++term) {
+        dim_max = fmaxf(dim_max, topic_logits[topic_base + term_offset + term]);
+      }
+      float dim_sum = 0.0f;
+      float dim_best = 0.0f;
+      for (std::int64_t term = 0; term < term_count; ++term) {
+        const float value = expf(topic_logits[topic_base + term_offset + term] - dim_max);
+        dim_sum += value;
+        dim_best = fmaxf(dim_best, value);
+      }
+      if (dim_sum > 0.0f && isfinite(dim_sum)) {
+        topic_score = dim_best / dim_sum;
+      }
+    }
+    route_logits[logit_base + expert] += topic_score + hash_bias;
+  }
+  float max_logit = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    max_logit = fmaxf(max_logit, route_logits[logit_base + expert]);
+  }
+  const std::int64_t target_base = row * semantic_vocab_dims;
+  for (std::int64_t dimension = 0; dimension < semantic_vocab_dims; ++dimension) {
+    const std::int64_t target = semantic_target_matrix[target_base + dimension];
+    if (target == ignore_index || target < 0) {
+      continue;
+    }
+    const std::int64_t expert = shared_experts + dimension;
+    if (expert < 0 || expert >= experts) {
+      continue;
+    }
+    route_logits[logit_base + expert] += target_boost;
+    const float semantic_logit = route_logits[logit_base + expert];
+    std::int64_t rank_before = 0;
+    for (std::int64_t other = 0; other < experts; ++other) {
+      if (other == expert) {
+        continue;
+      }
+      const float value = route_logits[logit_base + other];
+      if (value > semantic_logit || (value == semantic_logit && other < expert)) {
+        rank_before += 1;
+      }
+    }
+    if (rank_before >= top_k) {
+      route_logits[logit_base + expert] = max_logit + 1.0f;
+      max_logit = route_logits[logit_base + expert];
+    }
+  }
+}
+
+__global__ void semantic_free_expert_projection_float32_kernel(
+    const float* __restrict__ semantic_vec,
+    const float* __restrict__ free_weight,
+    float* __restrict__ route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t free_expert = static_cast<std::int64_t>(blockIdx.y);
+  if (row >= rows || free_expert >= semantic_free_experts ||
+      semantic_vocab_dims <= 0 || semantic_vec_dims <= 0 || weight_stride <= 0) {
+    return;
+  }
+  const std::int64_t route_expert =
+      semantic_shared_experts + semantic_vocab_dims + free_expert;
+  if (route_expert < 0 || route_expert >= experts) {
+    return;
+  }
+  float acc = 0.0f;
+  const std::int64_t active_dims = semantic_vec_dims < weight_stride ? semantic_vec_dims : weight_stride;
+  const std::int64_t vec_base = row * semantic_vec_dims;
+  const std::int64_t weight_base = free_expert * weight_stride;
+  for (std::int64_t dim = 0; dim < active_dims; ++dim) {
+    acc += semantic_vec[vec_base + dim] * free_weight[weight_base + dim];
+  }
+  route_logits[row * experts + route_expert] += acc;
+}
+
+__global__ void semantic_shared_expert_projection_float32_kernel(
+    const float* __restrict__ semantic_vec,
+    const float* __restrict__ shared_weight,
+    float* __restrict__ route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t shared_expert = static_cast<std::int64_t>(blockIdx.y);
+  if (row >= rows || shared_expert >= semantic_shared_experts ||
+      semantic_vocab_dims <= 0 || weight_stride <= 0 || shared_expert >= experts) {
+    return;
+  }
+  float acc = 0.0f;
+  const std::int64_t active_dims = semantic_vocab_dims < weight_stride ? semantic_vocab_dims : weight_stride;
+  const std::int64_t vec_base = row * semantic_vocab_dims;
+  const std::int64_t weight_base = shared_expert * weight_stride;
+  for (std::int64_t dim = 0; dim < active_dims; ++dim) {
+    acc += semantic_vec[vec_base + dim] * shared_weight[weight_base + dim];
+  }
+  route_logits[row * experts + shared_expert] += acc;
+}
+
+__global__ void semantic_free_expert_projection_backward_float32_kernel(
+    const float* __restrict__ semantic_vec,
+    const float* __restrict__ free_weight,
+    const float* __restrict__ grad_route_logits,
+    float* __restrict__ grad_semantic_vec,
+    float* __restrict__ grad_free_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t dim = static_cast<std::int64_t>(blockIdx.y);
+  if (row >= rows || dim >= semantic_vec_dims ||
+      semantic_vocab_dims <= 0 || semantic_vec_dims <= 0 || weight_stride <= 0) {
+    return;
+  }
+  if (dim >= weight_stride) {
+    return;
+  }
+  const std::int64_t route_base = row * experts + semantic_shared_experts + semantic_vocab_dims;
+  const std::int64_t vec_offset = row * semantic_vec_dims + dim;
+  float grad_vec = 0.0f;
+  const float semantic_value = semantic_vec[vec_offset];
+  for (std::int64_t free_expert = 0; free_expert < semantic_free_experts; ++free_expert) {
+    const std::int64_t route_expert = semantic_shared_experts + semantic_vocab_dims + free_expert;
+    if (route_expert < 0 || route_expert >= experts) {
+      continue;
+    }
+    const float grad = grad_route_logits[route_base + free_expert];
+    const std::int64_t weight_offset = free_expert * weight_stride + dim;
+    grad_vec += grad * free_weight[weight_offset];
+    atomicAdd(grad_free_weight + weight_offset, semantic_value * grad);
+  }
+  grad_semantic_vec[vec_offset] += grad_vec;
+}
+
+__global__ void semantic_shared_expert_projection_backward_float32_kernel(
+    const float* __restrict__ semantic_vec,
+    const float* __restrict__ shared_weight,
+    const float* __restrict__ grad_route_logits,
+    float* __restrict__ grad_semantic_vec,
+    float* __restrict__ grad_shared_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t dim = static_cast<std::int64_t>(blockIdx.y);
+  if (row >= rows || dim >= semantic_vocab_dims ||
+      semantic_vocab_dims <= 0 || weight_stride <= 0) {
+    return;
+  }
+  if (dim >= weight_stride) {
+    return;
+  }
+  const std::int64_t vec_offset = row * semantic_vocab_dims + dim;
+  float grad_vec = 0.0f;
+  const float semantic_value = semantic_vec[vec_offset];
+  for (std::int64_t shared_expert = 0; shared_expert < semantic_shared_experts; ++shared_expert) {
+    if (shared_expert < 0 || shared_expert >= experts) {
+      continue;
+    }
+    const float grad = grad_route_logits[row * experts + shared_expert];
+    const std::int64_t weight_offset = shared_expert * weight_stride + dim;
+    grad_vec += grad * shared_weight[weight_offset];
+    atomicAdd(grad_shared_weight + weight_offset, semantic_value * grad);
+  }
+  grad_semantic_vec[vec_offset] += grad_vec;
+}
+
+__global__ void semantic_router_bias_add_float32_kernel(
+    float* __restrict__ route_logits,
+    const float* __restrict__ shared_logits,
+    const float* __restrict__ free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t slot = static_cast<std::int64_t>(blockIdx.y);
+  if (row >= rows || experts <= 0 || semantic_vocab_dims <= 0 ||
+      semantic_shared_experts < 0 || semantic_free_experts < 0) {
+    return;
+  }
+  if (slot < semantic_shared_experts) {
+    if (shared_logits != nullptr && slot < experts) {
+      route_logits[row * experts + slot] += shared_logits[slot];
+    }
+    return;
+  }
+  const std::int64_t free_expert = slot - semantic_shared_experts;
+  if (free_bias == nullptr || free_expert < 0 || free_expert >= semantic_free_experts) {
+    return;
+  }
+  const std::int64_t route_expert = semantic_shared_experts + semantic_vocab_dims + free_expert;
+  if (route_expert >= 0 && route_expert < experts) {
+    route_logits[row * experts + route_expert] += free_bias[free_expert];
+  }
+}
+
+__global__ void semantic_router_bias_backward_float32_kernel(
+    const float* __restrict__ grad_route_logits,
+    float* __restrict__ grad_shared_logits,
+    float* __restrict__ grad_free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts) {
+  const std::int64_t slot = static_cast<std::int64_t>(blockIdx.x);
+  if (grad_route_logits == nullptr || rows <= 0 || experts <= 0 || semantic_vocab_dims <= 0 ||
+      semantic_shared_experts < 0 || semantic_free_experts < 0) {
+    return;
+  }
+  if (slot < semantic_shared_experts) {
+    if (grad_shared_logits == nullptr || slot >= experts) {
+      return;
+    }
+    float acc = 0.0f;
+    for (std::int64_t row = 0; row < rows; ++row) {
+      acc += grad_route_logits[row * experts + slot];
+    }
+    grad_shared_logits[slot] += acc;
+    return;
+  }
+  const std::int64_t free_expert = slot - semantic_shared_experts;
+  if (grad_free_bias == nullptr || free_expert < 0 || free_expert >= semantic_free_experts) {
+    return;
+  }
+  const std::int64_t route_expert = semantic_shared_experts + semantic_vocab_dims + free_expert;
+  if (route_expert < 0 || route_expert >= experts) {
+    return;
+  }
+  float acc = 0.0f;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    acc += grad_route_logits[row * experts + route_expert];
+  }
+  grad_free_bias[free_expert] += acc;
+}
+
 __tile_global__ void attentionless_decoder_float32_kernel(
     const std::int64_t* __restrict__ bucket_indices,
     const float* __restrict__ expert_output,
@@ -11528,7 +13922,7 @@ __global__ void linear_bf16_gelu_bf16_float32_kernel(
   const std::int64_t col = idx % output_dim;
   const float* x_row = x + row * input_dim;
   const float* w_row = weight + col * input_dim;
-  float acc = bias[col];
+  float acc = bias != nullptr ? bias[col] : 0.0f;
   for (std::int64_t i = 0; i < input_dim; ++i) {
     acc += x_row[i] * w_row[i];
   }
@@ -11556,7 +13950,7 @@ __global__ void linear_weight_bf16_gelu_bf16_float32_kernel(
   const std::int64_t col = idx % output_dim;
   const float* x_row = x + row * input_dim;
   const std::uint16_t* w_row = weight_bf16_bits + col * input_dim;
-  float acc = bias[col];
+  float acc = bias != nullptr ? bias[col] : 0.0f;
   for (std::int64_t i = 0; i < input_dim; ++i) {
     acc += x_row[i] * bf16_bits_to_f32_device(w_row[i]);
   }
@@ -11584,7 +13978,7 @@ __global__ void linear_bf16_input_weight_bf16_gelu_bf16_float32_kernel(
   const std::int64_t col = idx % output_dim;
   const std::uint16_t* x_row = x_bf16_bits + row * input_dim;
   const std::uint16_t* w_row = weight_bf16_bits + col * input_dim;
-  float acc = bias[col];
+  float acc = bias != nullptr ? bias[col] : 0.0f;
   for (std::int64_t i = 0; i < input_dim; ++i) {
     acc += bf16_bits_to_f32_device(x_row[i]) * bf16_bits_to_f32_device(w_row[i]);
   }
@@ -12026,6 +14420,100 @@ __tile_global__ void gelu_add_bias_bf16_act_float32_kernel(
   ct::store_masked(gelu_bf16 + idx, ct::element_cast<__nv_bfloat16>(result), mask);
 }
 
+__tile_global__ void moa_add_bias_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ bias,
+    float* __restrict__ biased_out,
+    float* __restrict__ activation_out,
+    std::int64_t n,
+    std::int64_t output_dim,
+    int activation_kind) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  biased_out = ct::assume_aligned(biased_out, 16_ic);
+  activation_out = ct::assume_aligned(activation_out, 16_ic);
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto biased = ct::load_masked(x + idx, mask) + ct::load_masked(bias + out_col, mask);
+  auto one = ct::full<decltype(biased)>(1.0f);
+  auto zero = ct::full<decltype(biased)>(0.0f);
+  auto activation = biased;
+  if (activation_kind == 1) {
+    activation = ct::select(biased > zero, biased, zero);
+  } else if (activation_kind == 2) {
+    auto sigmoid = one / (one + ct::exp(-biased));
+    activation = biased * sigmoid;
+  } else if (activation_kind == 3) {
+    auto positive = ct::select(biased > zero, biased, zero);
+    activation = positive * positive;
+  } else {
+    auto half = ct::full<decltype(biased)>(0.5f);
+    auto gelu_scale = ct::full<decltype(biased)>(0.7978845608028654f);
+    auto gelu_cubic = ct::full<decltype(biased)>(0.044715f);
+    auto value2 = biased * biased;
+    activation = half * biased *
+        (one + ct::tanh(gelu_scale * (biased + gelu_cubic * biased * value2)));
+  }
+  ct::store_masked(biased_out + idx, biased, mask);
+  ct::store_masked(activation_out + idx, activation, mask);
+}
+
+__tile_global__ void moa_add_bias_bf16_act_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ bias,
+    float* __restrict__ biased_out,
+    float* __restrict__ activation_out,
+    std::uint16_t* __restrict__ activation_bf16_bits,
+    std::int64_t n,
+    std::int64_t output_dim,
+    int activation_kind) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  biased_out = ct::assume_aligned(biased_out, 16_ic);
+  activation_out = ct::assume_aligned(activation_out, 16_ic);
+  auto* activation_bf16 = ct::assume_aligned(
+      reinterpret_cast<__nv_bfloat16*>(activation_bf16_bits), 16_ic);
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto biased = ct::load_masked(x + idx, mask) + ct::load_masked(bias + out_col, mask);
+  auto one = ct::full<decltype(biased)>(1.0f);
+  auto zero = ct::full<decltype(biased)>(0.0f);
+  auto activation = biased;
+  if (activation_kind == 1) {
+    activation = ct::select(biased > zero, biased, zero);
+  } else if (activation_kind == 2) {
+    auto sigmoid = one / (one + ct::exp(-biased));
+    activation = biased * sigmoid;
+  } else if (activation_kind == 3) {
+    auto positive = ct::select(biased > zero, biased, zero);
+    activation = positive * positive;
+  } else {
+    auto half = ct::full<decltype(biased)>(0.5f);
+    auto gelu_scale = ct::full<decltype(biased)>(0.7978845608028654f);
+    auto gelu_cubic = ct::full<decltype(biased)>(0.044715f);
+    auto value2 = biased * biased;
+    activation = half * biased *
+        (one + ct::tanh(gelu_scale * (biased + gelu_cubic * biased * value2)));
+  }
+  ct::store_masked(biased_out + idx, biased, mask);
+  ct::store_masked(activation_out + idx, activation, mask);
+  ct::store_masked(activation_bf16 + idx, ct::element_cast<__nv_bfloat16>(activation), mask);
+}
+
 __tile_global__ void swiglu_float32_kernel(
     const float* __restrict__ gate,
     const float* __restrict__ up,
@@ -12431,6 +14919,81 @@ __tile_global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
   ct::store_masked(grad + idx, grad_tile * grad_local, mask);
 }
 
+__tile_global__ void moa_backward_inplace_float32_kernel(
+    const float* __restrict__ x,
+    float* __restrict__ grad,
+    std::int64_t n,
+    int activation_kind) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+  x = ct::assume_aligned(x, 16_ic);
+  grad = ct::assume_aligned(grad, 16_ic);
+  const int bx = ct::bid().x;
+  auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto grad_tile = ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto one = ct::full<decltype(x_tile)>(1.0f);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto derivative = zero;
+  if (activation_kind == 1) {
+    derivative = ct::select(x_tile > zero, one, zero);
+  } else if (activation_kind == 2) {
+    auto sigmoid = one / (one + ct::exp(-x_tile));
+    derivative = sigmoid * (one + x_tile * (one - sigmoid));
+  } else if (activation_kind == 3) {
+    derivative = ct::select(x_tile > zero, ct::full<decltype(x_tile)>(2.0f) * x_tile, zero);
+  } else {
+    auto half = ct::full<decltype(x_tile)>(0.5f);
+    auto gelu_scale = ct::full<decltype(x_tile)>(0.7978845608028654f);
+    auto gelu_cubic = ct::full<decltype(x_tile)>(0.044715f);
+    auto value2 = x_tile * x_tile;
+    auto tanh_out = ct::tanh(gelu_scale * (x_tile + gelu_cubic * x_tile * value2));
+    auto sech_out = one - tanh_out * tanh_out;
+    derivative = half * (one + tanh_out) + half * x_tile * sech_out * gelu_scale *
+        (one + ct::full<decltype(x_tile)>(3.0f) * gelu_cubic * value2);
+  }
+  ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(
+      grad_tile * derivative, bx);
+}
+
+__tile_global__ void moa_backward_inplace_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    float* __restrict__ grad,
+    std::int64_t n,
+    int activation_kind) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+  const auto* x_bf16 = ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits), 16_ic);
+  grad = ct::assume_aligned(grad, 16_ic);
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto x = ct::element_cast<float>(ct::load_masked(x_bf16 + idx, mask));
+  auto grad_tile = ct::load_masked(grad + idx, mask);
+  auto one = ct::full<decltype(x)>(1.0f);
+  auto zero = ct::full<decltype(x)>(0.0f);
+  auto derivative = zero;
+  if (activation_kind == 1) {
+    derivative = ct::select(x > zero, one, zero);
+  } else if (activation_kind == 2) {
+    auto sigmoid = one / (one + ct::exp(-x));
+    derivative = sigmoid * (one + x * (one - sigmoid));
+  } else if (activation_kind == 3) {
+    derivative = ct::select(x > zero, ct::full<decltype(x)>(2.0f) * x, zero);
+  } else {
+    auto half = ct::full<decltype(x)>(0.5f);
+    auto gelu_scale = ct::full<decltype(x)>(0.7978845608028654f);
+    auto gelu_cubic = ct::full<decltype(x)>(0.044715f);
+    auto value2 = x * x;
+    auto tanh_out = ct::tanh(gelu_scale * (x + gelu_cubic * x * value2));
+    auto sech_out = one - tanh_out * tanh_out;
+    derivative = half * (one + tanh_out) + half * x * sech_out * gelu_scale *
+        (one + ct::full<decltype(x)>(3.0f) * gelu_cubic * value2);
+  }
+  ct::store_masked(grad + idx, grad_tile * derivative, mask);
+}
+
 __global__ void gelu_backward_inplace_bf16_bits_to_bf16_bits_float32_kernel(
     const std::uint16_t* __restrict__ x_bf16_bits,
     std::uint16_t* __restrict__ grad_bf16_bits,
@@ -12536,6 +15099,78 @@ __tile_global__ void act_weighted_sum_float32_kernel(
   ct::store_masked(out + idx, acc, mask);
 }
 
+__global__ void act_pack_step_float32_kernel(
+    const float* __restrict__ state_step,
+    const float* __restrict__ halt_logits_step,
+    float* __restrict__ state_stack,
+    float* __restrict__ halt_logits_stack,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t state_elements = rows * inner;
+  if (idx < state_elements) {
+    const std::int64_t row = idx / inner;
+    const std::int64_t dim = idx % inner;
+    state_stack[(row * steps + step) * inner + dim] = state_step[idx];
+  }
+  if (idx < rows) {
+    halt_logits_stack[idx * steps + step] = halt_logits_step[idx];
+  }
+}
+
+__global__ void act_prepare_weights_float32_kernel(
+    const float* __restrict__ halt_logits_stack,
+    const std::int64_t* __restrict__ targets,
+    float* __restrict__ halt_targets,
+    float* __restrict__ halt_weights,
+    std::int64_t rows,
+    std::int64_t steps,
+    float halt_epsilon) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (row >= rows || rows <= 0 || steps <= 0) {
+    return;
+  }
+  float remaining = 1.0f;
+  const float target = (targets[row] % 2) == 0 ? 1.0f : 0.0f;
+  for (std::int64_t step = 0; step < steps; ++step) {
+    const std::int64_t offset = row * steps + step;
+    const float logit = halt_logits_stack[offset];
+    const float raw_probability = 1.0f / (1.0f + expf(-logit));
+    float step_probability = fminf(raw_probability, remaining);
+    if (step == steps - 1 || remaining <= halt_epsilon) {
+      step_probability = remaining;
+    }
+    step_probability = fminf(fmaxf(step_probability, 0.0f), 1.0f);
+    halt_targets[offset] = target;
+    halt_weights[offset] = step_probability;
+    remaining = fmaxf(0.0f, remaining - step_probability);
+  }
+}
+
+__global__ void act_unpack_step_grad_float32_kernel(
+    const float* __restrict__ grad_act,
+    const float* __restrict__ halt_weights,
+    const float* __restrict__ grad_halt_stack,
+    float* __restrict__ grad_state_step,
+    float* __restrict__ grad_halt_step,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t state_elements = rows * inner;
+  if (idx < state_elements) {
+    const std::int64_t row = idx / inner;
+    const float weight = halt_weights[row * steps + step];
+    grad_state_step[idx] = grad_act[idx] * weight;
+  }
+  if (idx < rows) {
+    grad_halt_step[idx] = grad_halt_stack[idx * steps + step];
+  }
+}
+
 __tile_global__ void latent_pool_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ mask_values,
@@ -12573,6 +15208,32 @@ __tile_global__ void latent_pool_float32_kernel(
   auto mean = fallback / ct::full<decltype(acc)>(static_cast<float>(seq_len));
   auto result = ct::select(denom > zero, pooled, mean);
   ct::store_masked(out + idx, result, active);
+}
+
+__global__ void latent_pool_backward_float32_kernel(
+    const float* __restrict__ grad_pooled,
+    const float* __restrict__ mask_values,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t inner = seq_len * dim;
+  const std::int64_t batch = idx / inner;
+  const std::int64_t offset = idx - batch * inner;
+  const std::int64_t position = offset / dim;
+  const std::int64_t d = offset - position * dim;
+  float denom = 0.0f;
+  for (std::int64_t step = 0; step < seq_len; ++step) {
+    denom += mask_values[batch * seq_len + step];
+  }
+  const float weight = denom > 0.0f
+      ? mask_values[batch * seq_len + position] / denom
+      : 1.0f / static_cast<float>(seq_len);
+  grad_x[idx] = grad_pooled[batch * dim + d] * weight;
 }
 
 __tile_global__ void token_cross_entropy_partials_float32_kernel(
@@ -16474,6 +19135,73 @@ __global__ void jepa_mask_int64_kernel(
   }
 }
 
+__global__ void native_family_jepa_mask_float32_kernel(
+    float* __restrict__ mask_values,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy) {
+  const std::int64_t base = static_cast<std::int64_t>(blockIdx.x) * kTileSize;
+  for (std::int64_t offset = 0; offset < kTileSize; ++offset) {
+    const std::int64_t idx = base + offset;
+    if (idx < n) {
+      const std::int64_t batch = idx / seq_len;
+      const std::int64_t position = idx - batch * seq_len;
+      bool is_masked = false;
+      if (strategy == 1) {
+        const std::int64_t max_start = seq_len - masked_span + 1 > 1
+            ? seq_len - masked_span + 1
+            : 1;
+        const std::int64_t block_start = masked_span > 0
+            ? (batch * 1103515245LL + 12345LL) % max_start
+            : 0;
+        is_masked = masked_span > 0 && position >= block_start && position < block_start + masked_span;
+      } else {
+        const std::uint64_t noise =
+            (static_cast<std::uint64_t>(idx) * 1103515245ULL + 12345ULL) & 0x00ffffffULL;
+        is_masked = static_cast<float>(noise) / 16777216.0f < mask_ratio;
+      }
+      mask_values[idx] = is_masked ? 1.0f : 0.0f;
+    }
+  }
+}
+
+__global__ void native_family_jepa_mask_u16_float32_kernel(
+    const std::uint16_t* __restrict__ tokens,
+    std::uint16_t* __restrict__ masked_tokens,
+    float* __restrict__ mask_values,
+    std::int64_t n,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy) {
+  const std::int64_t base = static_cast<std::int64_t>(blockIdx.x) * kTileSize;
+  for (std::int64_t offset = 0; offset < kTileSize; ++offset) {
+    const std::int64_t idx = base + offset;
+    if (idx < n) {
+      const std::int64_t batch = idx / seq_len;
+      const std::int64_t position = idx - batch * seq_len;
+      bool is_masked = false;
+      if (strategy == 1) {
+        const std::int64_t max_start = seq_len - masked_span + 1 > 1
+            ? seq_len - masked_span + 1
+            : 1;
+        const std::int64_t block_start = masked_span > 0
+            ? (batch * 1103515245LL + 12345LL) % max_start
+            : 0;
+        is_masked = masked_span > 0 && position >= block_start && position < block_start + masked_span;
+      } else {
+        const std::uint64_t noise =
+            (static_cast<std::uint64_t>(idx) * 1103515245ULL + 12345ULL) & 0x00ffffffULL;
+        is_masked = static_cast<float>(noise) / 16777216.0f < mask_ratio;
+      }
+      masked_tokens[idx] = is_masked ? static_cast<std::uint16_t>(0) : tokens[idx];
+      mask_values[idx] = is_masked ? 1.0f : 0.0f;
+    }
+  }
+}
+
 }  // namespace
 
 int linear_backward_bias_threads_per_block() {
@@ -16754,6 +19482,89 @@ void launch_uint16_to_int64(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   uint16_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_uint8_to_int64(
+    const std::uint8_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  uint8_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_diffusion_mask_u16_int64(
+    const std::uint16_t* source_tokens,
+    std::uint16_t* masked_tokens,
+    std::int64_t* targets,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t vocab,
+    cudaStream_t stream) {
+  if (rows <= 0 || seq_len <= 0 || vocab <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((rows + threads - 1) / threads);
+  diffusion_mask_u16_int64_kernel<<<blocks, threads, 0, stream>>>(
+      source_tokens, masked_tokens, targets, rows, seq_len, vocab);
+}
+
+void launch_semantic_targets_from_matrix_int64(
+    const std::int64_t* semantic_matrix,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_vocab_dims,
+    cudaStream_t stream) {
+  if (rows <= 0 || semantic_dims <= 0 || semantic_vocab_dims <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((rows + threads - 1) / threads);
+  semantic_targets_from_matrix_int64_kernel<<<blocks, threads, 0, stream>>>(
+      semantic_matrix, lm_targets, semantic_targets, semantic_target_valid,
+      rows, semantic_dims, semantic_vocab_dims);
+}
+
+void launch_semantic_targets_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    const std::int64_t* lm_targets,
+    std::int64_t* semantic_targets,
+    std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t semantic_terms,
+    std::int64_t semantic_vocab_dims,
+    cudaStream_t stream) {
+  if (rows <= 0 || semantic_dims <= 0 || semantic_terms <= 0 || semantic_vocab_dims <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((rows + threads - 1) / threads);
+  semantic_targets_from_tokens_u16_int64_kernel<<<blocks, threads, 0, stream>>>(
+      tokens, lm_targets, semantic_targets, semantic_target_valid,
+      rows, semantic_dims, semantic_terms, semantic_vocab_dims);
+}
+
+void launch_semantic_target_matrix_from_tokens_u16_int64(
+    const std::uint16_t* tokens,
+    std::int64_t* semantic_matrix,
+    const std::int64_t* term_counts,
+    std::int64_t rows,
+    std::int64_t semantic_dims,
+    std::int64_t ignore_index,
+    cudaStream_t stream) {
+  if (rows <= 0 || semantic_dims <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const std::int64_t n = rows * semantic_dims;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  semantic_target_matrix_from_tokens_u16_int64_kernel<<<blocks, threads, 0, stream>>>(
+      tokens, semantic_matrix, term_counts, rows, semantic_dims, ignore_index);
 }
 
 void launch_float32_to_bf16_bits(
@@ -17581,6 +20392,35 @@ void launch_adamw_step_many_with_device_scale_float32(
       sqrt_bias_correction2);
 }
 
+void launch_adamw_step_many_with_device_scale_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
+  adamw_step_many_with_device_scale_hyper_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      params,
+      grads,
+      grad_scale,
+      exp_avgs,
+      exp_avg_sqs,
+      elements,
+      weight_decays,
+      hyper,
+      buffer_count);
+}
+
 void launch_adamw_step_many_with_device_scale_bf16_shadow_float32(
     float* const* params,
     const float* const* grads,
@@ -17622,6 +20462,39 @@ void launch_adamw_step_many_with_device_scale_bf16_shadow_float32(
       eps,
       bias_correction1,
       sqrt_bias_correction2);
+}
+
+void launch_adamw_step_many_with_device_scale_bf16_shadow_hyper_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const std::int64_t* bf16_shadow_offsets,
+    std::uint16_t* bf16_shadow_bits,
+    const float* hyper,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
+  adamw_step_many_with_device_scale_bf16_shadow_hyper_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      params,
+      grads,
+      grad_scale,
+      exp_avgs,
+      exp_avg_sqs,
+      elements,
+      weight_decays,
+      bf16_shadow_offsets,
+      bf16_shadow_bits,
+      hyper,
+      buffer_count);
 }
 
 void launch_adamw_step_many_with_device_scale_bf16_param_float32(
@@ -17729,6 +20602,24 @@ void launch_vector_binary_float32(
   vector_binary_float32_kernel<<<blocks, 1, 0, stream>>>(lhs, rhs, scale0, scale1, out, n, dim, op);
 }
 
+void launch_mhc_beta_gradient_float32(
+    const float* beta_logit,
+    const float* input,
+    const float* attention_proj,
+    const float* residual1,
+    const float* ffn_out,
+    const float* grad_second,
+    const float* grad_first,
+    float* grad_beta_logit,
+    std::int64_t rows,
+    std::int64_t model_dim,
+    float scale,
+    cudaStream_t stream) {
+  mhc_beta_gradient_float32_kernel<<<static_cast<int>(model_dim), 1, 0, stream>>>(
+      beta_logit, input, attention_proj, residual1, ffn_out, grad_second, grad_first,
+      grad_beta_logit, rows, model_dim, scale);
+}
+
 void launch_qk_gain_float32(
     const float* q,
     const float* gain,
@@ -17794,6 +20685,21 @@ void launch_repeat_kv_float32(
   repeat_kv_float32_kernel<<<blocks, 1, 0, stream>>>(x, out, n, kv_heads, seq_len, head_dim, repeats);
 }
 
+void launch_repeat_kv_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t kv_heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    std::int64_t repeats,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * kv_heads * seq_len * head_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  repeat_kv_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_x, n, kv_heads, seq_len, head_dim, repeats);
+}
+
 void launch_broadcast_expert_routes_float32(
     const float* weights,
     const std::int64_t* indices,
@@ -17825,6 +20731,37 @@ void launch_broadcast_chunk_routes_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   broadcast_chunk_routes_float32_kernel<<<blocks, 1, 0, stream>>>(
       weights, indices, out_weights, out_indices, n, chunks, seq_len, route_width, chunk_size);
+}
+
+void launch_compact_chunk_routes_float32_int64(
+    const float* weights,
+    const std::int64_t* indices,
+    float* chunk_weights,
+    std::int64_t* chunk_indices,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t chunks,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * chunks * route_width;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  compact_chunk_routes_float32_int64_kernel<<<blocks, 1, 0, stream>>>(
+      weights, indices, chunk_weights, chunk_indices, n, seq_len, chunks, route_width, chunk_size);
+}
+
+void launch_aggregate_chunk_route_gradients_float32(
+    const float* grad_weights,
+    float* aggregated_grad_weights,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t route_width,
+    std::int64_t chunk_size,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * route_width;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  aggregate_chunk_route_gradients_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_weights, aggregated_grad_weights, n, seq_len, route_width, chunk_size);
 }
 
 void launch_moe_swiglu_forward_float32(
@@ -17859,6 +20796,7 @@ void launch_moe_swiglu_backward_float32(
     float* grad_w1,
     float* grad_w2,
     float* grad_w3,
+    float* grad_route_weights,
     std::int64_t tokens,
     std::int64_t dim,
     std::int64_t hidden_dim,
@@ -17878,11 +20816,75 @@ void launch_moe_swiglu_backward_float32(
       grad_w1,
       grad_w2,
       grad_w3,
+      grad_route_weights,
       tokens,
       dim,
       hidden_dim,
       experts,
       top_k);
+}
+
+void launch_moe_swiglu_forward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind,
+    cudaStream_t stream) {
+  const std::int64_t n = tokens * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moe_swiglu_forward_quantized_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      x, route_weights, route_indices, w1, w2, w3, out, n, dim, hidden_dim, experts, top_k, kind);
+}
+
+void launch_moe_swiglu_backward_quantized_float32(
+    const float* x,
+    const float* route_weights,
+    const std::int64_t* route_indices,
+    const float* w1,
+    const float* w2,
+    const float* w3,
+    const float* grad_out,
+    float* grad_x,
+    float* grad_w1,
+    float* grad_w2,
+    float* grad_w3,
+    float* grad_route_weights,
+    std::int64_t tokens,
+    std::int64_t dim,
+    std::int64_t hidden_dim,
+    std::int64_t experts,
+    std::int64_t top_k,
+    int kind,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((tokens + kTileSize - 1) / kTileSize);
+  moe_swiglu_backward_quantized_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      x,
+      route_weights,
+      route_indices,
+      w1,
+      w2,
+      w3,
+      grad_out,
+      grad_x,
+      grad_w1,
+      grad_w2,
+      grad_w3,
+      grad_route_weights,
+      tokens,
+      dim,
+      hidden_dim,
+      experts,
+      top_k,
+      kind);
 }
 
 void launch_byte_patch_merge_float32(
@@ -18035,6 +21037,25 @@ void launch_semantic_alignment_loss_items_float32(
       logits, targets, term_counts, losses, counts, n, dims, terms, ignore_index);
 }
 
+void launch_semantic_alignment_packed_loss_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* losses,
+    float* counts,
+    float* grad_logits,
+    std::int64_t n,
+    std::int64_t dims,
+    std::int64_t total_terms,
+    std::int64_t ignore_index,
+    float grad_scale,
+    cudaStream_t stream) {
+  semantic_alignment_packed_loss_backward_float32_kernel<<<static_cast<int>(n), 1, 0, stream>>>(
+      logits, targets, term_counts, term_offsets, losses, counts, grad_logits,
+      n, dims, total_terms, ignore_index, grad_scale);
+}
+
 void launch_sum_partials_float32(
     const float* values,
     float* partials,
@@ -18055,6 +21076,19 @@ void launch_sum_accumulate_float32(
   constexpr int kThreads = 256;
   const int blocks = static_cast<int>((n + (kThreads * 2 - 1)) / (kThreads * 2));
   sum_accumulate_float32_kernel<<<blocks, kThreads, 0, stream>>>(values, total, n);
+}
+
+void launch_extract_diagonal_float32(
+    const float* matrix,
+    float* diagonal,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  if (dim <= 0) {
+    return;
+  }
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((dim + kThreads - 1) / kThreads);
+  extract_diagonal_float32_kernel<<<blocks, kThreads, 0, stream>>>(matrix, diagonal, dim);
 }
 
 void launch_scale_float32(const float* x, float* out, std::int64_t n, float value, cudaStream_t stream) {
@@ -18220,10 +21254,10 @@ void launch_token_embedding_backward_weight_float32(
     std::int64_t tokens,
     std::int64_t model_dim,
     cudaStream_t stream) {
-  const std::int64_t n = tokens * model_dim;
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
-  token_embedding_backward_weight_float32_kernel<<<blocks, 1, 0, stream>>>(
-      token_ids, grad_out, grad_weight, n, model_dim);
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((model_dim + kThreads - 1) / kThreads);
+  token_embedding_backward_weight_deterministic_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      token_ids, grad_out, grad_weight, tokens, model_dim);
 }
 
 void launch_token_embedding_backward_weight_u16_float32(
@@ -18233,10 +21267,10 @@ void launch_token_embedding_backward_weight_u16_float32(
     std::int64_t tokens,
     std::int64_t model_dim,
     cudaStream_t stream) {
-  const std::int64_t n = tokens * model_dim;
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
-  token_embedding_backward_weight_u16_float32_kernel<<<blocks, 1, 0, stream>>>(
-      token_ids, grad_out, grad_weight, n, model_dim);
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((model_dim + kThreads - 1) / kThreads);
+  token_embedding_backward_weight_u16_deterministic_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      token_ids, grad_out, grad_weight, tokens, model_dim);
 }
 
 void launch_rotary_embedding_float32(
@@ -18623,6 +21657,442 @@ void launch_topk_route_float32(
       logits, weights, indices, rows, experts, top_k);
 }
 
+void launch_topk_route_sqrt_softplus_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    cudaStream_t stream) {
+  topk_route_sqrt_softplus_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, weights, indices, rows, experts, top_k);
+}
+
+void launch_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    cudaStream_t stream) {
+  topk_route_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      weights, indices, grad_weights, grad_logits, rows, experts, top_k, route_scale);
+}
+
+void launch_semantic_shared_topk_route_float32(
+    const float* logits,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    cudaStream_t stream) {
+  semantic_shared_topk_route_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, weights, indices, rows, experts, shared_experts, top_k);
+}
+
+void launch_semantic_shared_forced_topk_route_float32(
+    const float* logits,
+    const std::int64_t* semantic_target_matrix,
+    float* weights,
+    std::int64_t* indices,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    std::int64_t ignore_index,
+    cudaStream_t stream) {
+  semantic_shared_forced_topk_route_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, semantic_target_matrix, weights, indices, rows, experts, semantic_vocab_dims,
+      shared_experts, top_k, ignore_index);
+}
+
+void launch_semantic_shared_topk_route_backward_float32(
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t shared_experts,
+    std::int64_t top_k,
+    float route_scale,
+    cudaStream_t stream) {
+  semantic_shared_topk_route_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      weights, indices, grad_weights, grad_logits, rows, experts, shared_experts, top_k, route_scale);
+}
+
+void launch_topk_route_sqrt_softplus_backward_float32(
+    const float* logits,
+    const float* weights,
+    const std::int64_t* indices,
+    const float* grad_weights,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t top_k,
+    float route_scale,
+    cudaStream_t stream) {
+  topk_route_sqrt_softplus_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, weights, indices, grad_weights, grad_logits, rows, experts, top_k, route_scale);
+}
+
+void launch_semantic_route_distillation_backward_float32(
+    const float* route_logits,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    float teacher_target,
+    cudaStream_t stream) {
+  semantic_route_distillation_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, semantic_targets, semantic_target_valid, grad_route_logits, loss_items,
+      rows, seq_len, experts, semantic_vocab_dims, shared_experts, route_chunk_size,
+      distill_weight, teacher_target);
+}
+
+void launch_semantic_target_topic_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    cudaStream_t stream) {
+  semantic_target_topic_distillation_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, target_topic_logits, grad_route_logits, loss_items,
+      rows, seq_len, experts, semantic_vocab_dims, shared_experts, route_chunk_size,
+      distill_weight);
+}
+
+void launch_semantic_target_topic_packed_distillation_backward_float32(
+    const float* route_logits,
+    const float* target_topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* grad_route_logits,
+    float* loss_items,
+    std::int64_t rows,
+    std::int64_t seq_len,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t route_chunk_size,
+    float distill_weight,
+    cudaStream_t stream) {
+  semantic_target_topic_packed_distillation_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, target_topic_logits, term_counts, term_offsets, grad_route_logits,
+      loss_items, rows, seq_len, experts, semantic_vocab_dims, total_terms,
+      shared_experts, route_chunk_size, distill_weight);
+}
+
+void launch_semantic_hash_table_backward_float32(
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* grad_route_logits,
+    float* grad_hash_embedding,
+    float* grad_table_gate,
+    float* grad_dimension_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    cudaStream_t stream) {
+  semantic_hash_table_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      hash_indices, hash_embedding, table_gate_logits, grad_route_logits,
+      grad_hash_embedding, grad_table_gate, grad_dimension_bias, rows, experts,
+      semantic_vocab_dims, shared_experts, tables, buckets);
+}
+
+void launch_semantic_route_policy_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    cudaStream_t stream) {
+  semantic_route_policy_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+      semantic_targets, semantic_target_valid, rows, experts, semantic_vocab_dims,
+      shared_experts, tables, buckets, top_k, target_boost);
+}
+
+void launch_semantic_route_policy_packed_topic_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_targets,
+    const std::uint8_t* semantic_target_valid,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    cudaStream_t stream) {
+  semantic_route_policy_packed_topic_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+      topic_logits, term_counts, term_offsets, semantic_targets, semantic_target_valid,
+      rows, experts, semantic_vocab_dims, total_terms, shared_experts, tables, buckets,
+      top_k, target_boost);
+}
+
+void launch_semantic_vec_from_packed_topic_float32(
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    cudaStream_t stream) {
+  semantic_vec_from_packed_topic_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      topic_logits, term_counts, term_offsets, semantic_vec, rows,
+      semantic_vocab_dims, total_terms);
+}
+
+void launch_semantic_packed_topic_to_padded_float32(
+    const float* packed_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    float* padded_logits,
+    std::int64_t rows,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t max_terms,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const std::int64_t n = rows * semantic_vocab_dims * max_terms;
+  const int blocks = static_cast<int>((n + kThreads - 1) / kThreads);
+  semantic_packed_topic_to_padded_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      packed_logits, term_counts, term_offsets, padded_logits, rows,
+      semantic_vocab_dims, total_terms, max_terms);
+}
+
+void launch_semantic_signature_scalar_float32(
+    const float* sig_logits,
+    float* signature_scalar,
+    std::int64_t rows,
+    std::int64_t buckets,
+    cudaStream_t stream) {
+  semantic_signature_scalar_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      sig_logits, signature_scalar, rows, buckets);
+}
+
+void launch_semantic_vec_append_signature_float32(
+    const float* topic_vec,
+    const float* signature_scalar,
+    float* semantic_vec,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    cudaStream_t stream) {
+  semantic_vec_append_signature_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      topic_vec, signature_scalar, semantic_vec, rows, topic_dims);
+}
+
+void launch_semantic_vec_split_signature_grad_float32(
+    const float* grad_semantic_vec,
+    float* grad_topic_vec,
+    float* grad_signature_scalar,
+    std::int64_t rows,
+    std::int64_t topic_dims,
+    cudaStream_t stream) {
+  semantic_vec_split_signature_grad_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      grad_semantic_vec, grad_topic_vec, grad_signature_scalar, rows, topic_dims);
+}
+
+void launch_semantic_signature_scalar_backward_float32(
+    const float* sig_logits,
+    const float* signature_scalar,
+    const float* grad_signature_scalar,
+    float* grad_sig_logits,
+    std::int64_t rows,
+    std::int64_t buckets,
+    cudaStream_t stream) {
+  semantic_signature_scalar_backward_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      sig_logits, signature_scalar, grad_signature_scalar, grad_sig_logits, rows, buckets);
+}
+
+void launch_semantic_route_policy_packed_topic_matrix_float32(
+    float* route_logits,
+    const std::int64_t* hash_indices,
+    const float* hash_embedding,
+    const float* table_gate_logits,
+    const float* dimension_bias,
+    const float* topic_logits,
+    const std::int64_t* term_counts,
+    const std::int64_t* term_offsets,
+    const std::int64_t* semantic_target_matrix,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t total_terms,
+    std::int64_t shared_experts,
+    std::int64_t tables,
+    std::int64_t buckets,
+    std::int64_t top_k,
+    float target_boost,
+    std::int64_t ignore_index,
+    cudaStream_t stream) {
+  semantic_route_policy_packed_topic_matrix_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      route_logits, hash_indices, hash_embedding, table_gate_logits, dimension_bias,
+      topic_logits, term_counts, term_offsets, semantic_target_matrix, rows, experts,
+      semantic_vocab_dims, total_terms, shared_experts, tables, buckets, top_k,
+      target_boost, ignore_index);
+}
+
+void launch_semantic_free_expert_projection_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream) {
+  dim3 grid(static_cast<unsigned int>(rows), static_cast<unsigned int>(semantic_free_experts), 1);
+  semantic_free_expert_projection_float32_kernel<<<grid, 1, 0, stream>>>(
+      semantic_vec, free_weight, route_logits, rows, experts, semantic_vocab_dims, semantic_vec_dims,
+      semantic_shared_experts, semantic_free_experts, weight_stride);
+}
+
+void launch_semantic_shared_expert_projection_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    float* route_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream) {
+  dim3 grid(static_cast<unsigned int>(rows), static_cast<unsigned int>(semantic_shared_experts), 1);
+  semantic_shared_expert_projection_float32_kernel<<<grid, 1, 0, stream>>>(
+      semantic_vec, shared_weight, route_logits, rows, experts, semantic_vocab_dims,
+      semantic_shared_experts, weight_stride);
+}
+
+void launch_semantic_free_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* free_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_free_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_vec_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream) {
+  dim3 grid(static_cast<unsigned int>(rows), static_cast<unsigned int>(semantic_vec_dims), 1);
+  semantic_free_expert_projection_backward_float32_kernel<<<grid, 1, 0, stream>>>(
+      semantic_vec, free_weight, grad_route_logits, grad_semantic_vec, grad_free_weight,
+      rows, experts, semantic_vocab_dims, semantic_vec_dims, semantic_shared_experts, semantic_free_experts,
+      weight_stride);
+}
+
+void launch_semantic_shared_expert_projection_backward_float32(
+    const float* semantic_vec,
+    const float* shared_weight,
+    const float* grad_route_logits,
+    float* grad_semantic_vec,
+    float* grad_shared_weight,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t weight_stride,
+    cudaStream_t stream) {
+  dim3 grid(static_cast<unsigned int>(rows), static_cast<unsigned int>(semantic_vocab_dims), 1);
+  semantic_shared_expert_projection_backward_float32_kernel<<<grid, 1, 0, stream>>>(
+      semantic_vec, shared_weight, grad_route_logits, grad_semantic_vec, grad_shared_weight,
+      rows, experts, semantic_vocab_dims, semantic_shared_experts, weight_stride);
+}
+
+void launch_semantic_router_bias_add_float32(
+    float* route_logits,
+    const float* shared_logits,
+    const float* free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    cudaStream_t stream) {
+  const std::int64_t slots = semantic_shared_experts + semantic_free_experts;
+  if (slots <= 0) {
+    return;
+  }
+  dim3 grid(static_cast<unsigned int>(rows), static_cast<unsigned int>(slots), 1);
+  semantic_router_bias_add_float32_kernel<<<grid, 1, 0, stream>>>(
+      route_logits, shared_logits, free_bias, rows, experts, semantic_vocab_dims,
+      semantic_shared_experts, semantic_free_experts);
+}
+
+void launch_semantic_router_bias_backward_float32(
+    const float* grad_route_logits,
+    float* grad_shared_logits,
+    float* grad_free_bias,
+    std::int64_t rows,
+    std::int64_t experts,
+    std::int64_t semantic_vocab_dims,
+    std::int64_t semantic_shared_experts,
+    std::int64_t semantic_free_experts,
+    cudaStream_t stream) {
+  const std::int64_t slots = semantic_shared_experts + semantic_free_experts;
+  if (slots <= 0) {
+    return;
+  }
+  semantic_router_bias_backward_float32_kernel<<<static_cast<unsigned int>(slots), 1, 0, stream>>>(
+      grad_route_logits, grad_shared_logits, grad_free_bias, rows, experts, semantic_vocab_dims,
+      semantic_shared_experts, semantic_free_experts);
+}
+
 void launch_attentionless_decoder_float32(
     const std::int64_t* bucket_indices,
     const float* expert_output,
@@ -18773,6 +22243,117 @@ void launch_linear_float32(
   }
 #endif
   linear_float32_kernel<<<blocks, 1, 0, stream>>>(x, weight, bias, out, n, input_dim, output_dim, has_bias);
+}
+
+void launch_linear_quantized_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    int kind,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  linear_quantized_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      x, weight, bias, out, rows, input_dim, output_dim, has_bias, kind);
+}
+
+void launch_linear_backward_input_quantized_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    int kind,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * input_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  linear_backward_input_quantized_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      grad_out, weight, grad_x, rows, input_dim, output_dim, kind);
+}
+
+void launch_split_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  const std::int64_t half_dim = dim / 2;
+  const std::int64_t n = rows * half_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  split_last_dim_float32_kernel<<<blocks, kTileSize, 0, stream>>>(input, first, second, rows, dim);
+}
+
+void launch_merge_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t half_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * half_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  merge_last_dim_float32_kernel<<<blocks, kTileSize, 0, stream>>>(first, second, output, rows, half_dim);
+}
+
+void launch_split_at_last_dim_float32(
+    const float* input,
+    float* first,
+    float* second,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * (first_dim + second_dim);
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  split_at_last_dim_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      input, first, second, rows, first_dim, second_dim);
+}
+
+void launch_concat_last_dim_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t rows,
+    std::int64_t first_dim,
+    std::int64_t second_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * (first_dim + second_dim);
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  concat_last_dim_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      first, second, output, rows, first_dim, second_dim);
+}
+
+void launch_differential_combine_float32(
+    const float* first,
+    const float* second,
+    float* output,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((elements + kTileSize - 1) / kTileSize);
+  differential_combine_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      first, second, output, elements, lambda, output_scale);
+}
+
+void launch_differential_backward_float32(
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    std::int64_t elements,
+    float lambda,
+    float output_scale,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((elements + kTileSize - 1) / kTileSize);
+  differential_backward_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      grad_output, grad_first, grad_second, elements, lambda, output_scale);
 }
 
 void launch_linear_bf16_float32(
@@ -20627,6 +24208,37 @@ void launch_gelu_add_bias_bf16_act_float32(
       x, bias, biased_out, gelu_out, gelu_bf16_bits, n, output_dim);
 }
 
+void launch_moa_add_bias_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moa_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x, bias, biased_out, activation_out, n, output_dim, activation_kind);
+}
+
+void launch_moa_add_bias_bf16_act_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* activation_out,
+    std::uint16_t* activation_bf16_bits,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    int activation_kind,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moa_add_bias_bf16_act_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x, bias, biased_out, activation_out, activation_bf16_bits, n, output_dim, activation_kind);
+}
+
 void launch_swiglu_float32(
     const float* gate,
     const float* up,
@@ -20968,6 +24580,27 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
       x_bf16_bits, grad, n);
 }
 
+void launch_moa_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moa_backward_inplace_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad, n, activation_kind);
+}
+
+void launch_moa_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad,
+    std::int64_t n,
+    int activation_kind,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  moa_backward_inplace_bf16_bits_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x_bf16_bits, grad, n, activation_kind);
+}
+
 void launch_gelu_backward_inplace_bf16_bits_to_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     std::uint16_t* grad_bf16_bits,
@@ -21015,6 +24648,66 @@ void launch_act_weighted_sum_float32(
   act_weighted_sum_float32_kernel<<<blocks, 1, 0, stream>>>(states, weights, out, n, steps, inner);
 }
 
+void launch_act_pack_step_float32(
+    const float* state_step,
+    const float* halt_logits_step,
+    float* state_stack,
+    float* halt_logits_stack,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    cudaStream_t stream) {
+  if (rows <= 0 || steps <= 0 || inner <= 0 || step < 0 || step >= steps) {
+    return;
+  }
+  constexpr int threads = 256;
+  const std::int64_t n = std::max(rows * inner, rows);
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  act_pack_step_float32_kernel<<<blocks, threads, 0, stream>>>(
+      state_step, halt_logits_step, state_stack, halt_logits_stack, rows, steps, inner, step);
+}
+
+void launch_act_prepare_weights_float32(
+    const float* halt_logits_stack,
+    const std::int64_t* targets,
+    float* halt_targets,
+    float* halt_weights,
+    std::int64_t rows,
+    std::int64_t steps,
+    float halt_epsilon,
+    cudaStream_t stream) {
+  if (rows <= 0 || steps <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((rows + threads - 1) / threads);
+  act_prepare_weights_float32_kernel<<<blocks, threads, 0, stream>>>(
+      halt_logits_stack, targets, halt_targets, halt_weights, rows, steps, halt_epsilon);
+}
+
+void launch_act_unpack_step_grad_float32(
+    const float* grad_act,
+    const float* halt_weights,
+    const float* grad_halt_stack,
+    float* grad_state_step,
+    float* grad_halt_step,
+    std::int64_t rows,
+    std::int64_t steps,
+    std::int64_t inner,
+    std::int64_t step,
+    cudaStream_t stream) {
+  if (rows <= 0 || steps <= 0 || inner <= 0 || step < 0 || step >= steps) {
+    return;
+  }
+  constexpr int threads = 256;
+  const std::int64_t n = std::max(rows * inner, rows);
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  act_unpack_step_grad_float32_kernel<<<blocks, threads, 0, stream>>>(
+      grad_act, halt_weights, grad_halt_stack, grad_state_step, grad_halt_step,
+      rows, steps, inner, step);
+}
+
 void launch_latent_pool_float32(
     const float* x,
     const float* mask_values,
@@ -21026,6 +24719,21 @@ void launch_latent_pool_float32(
   const std::int64_t n = batch * dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   latent_pool_float32_kernel<<<blocks, 1, 0, stream>>>(x, mask_values, out, n, seq_len, dim);
+}
+
+void launch_latent_pool_backward_float32(
+    const float* grad_pooled,
+    const float* mask_values,
+    float* grad_x,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * dim;
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((n + kThreads - 1) / kThreads);
+  latent_pool_backward_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      grad_pooled, mask_values, grad_x, n, seq_len, dim);
 }
 
 void launch_token_cross_entropy_partials_float32(
@@ -22088,7 +25796,6 @@ void launch_scaled_dot_product_attention_float32(
 }
 
 void reset_attention_forward_launch_stats() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   g_attention_forward_tk_launch_count.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_launch_count.store(0, std::memory_order_relaxed);
   g_attention_backward_float_hd64_dprep_launch_count.store(0, std::memory_order_relaxed);
@@ -22102,7 +25809,8 @@ void reset_attention_forward_launch_stats() {
       std::numeric_limits<std::int64_t>::max(), std::memory_order_relaxed);
   g_attention_backward_tk_chunk_batch_last.store(0, std::memory_order_relaxed);
   g_attention_tk_workspace_allocation_count.store(0, std::memory_order_relaxed);
-#endif
+  g_attention_tk_workspace_element_capacity.store(0, std::memory_order_relaxed);
+  g_attention_tk_workspace_row_capacity.store(0, std::memory_order_relaxed);
   g_attention_forward_row_launch_count.store(0, std::memory_order_relaxed);
   g_attention_forward_row_fallback_count.store(0, std::memory_order_relaxed);
   g_attention_forward_scalar_launch_count.store(0, std::memory_order_relaxed);
@@ -23203,61 +26911,37 @@ std::int64_t attention_forward_row_launch_count() {
 }
 
 std::int64_t attention_forward_tk_launch_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_forward_tk_launch_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_launch_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_launch_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_batch_cap() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return std::max<std::int64_t>(1, tk_packed_attention_backward_max_batch_per_launch());
 #else
-  return 0;
+  return kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch;
 #endif
 }
 
 std::int64_t attention_backward_tk_chunk_batch_total() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_chunk_batch_total.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_chunk_batch_max() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_chunk_batch_max.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_chunk_batch_min() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   const std::int64_t value =
       g_attention_backward_tk_chunk_batch_min.load(std::memory_order_relaxed);
   return value == std::numeric_limits<std::int64_t>::max() ? 0 : value;
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_chunk_batch_last() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_chunk_batch_last.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 int attention_backward_tk_block_size() {
@@ -23271,67 +26955,35 @@ int attention_backward_tk_block_size() {
 }
 
 std::int64_t attention_backward_float_hd64_dprep_launch_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_float_hd64_dprep_launch_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_dprep_timing_us() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_dprep_timing_us.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_dprep_timing_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_dprep_timing_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_timing_us() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_timing_us.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_backward_tk_timing_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_timing_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_tk_workspace_allocation_count() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_tk_workspace_allocation_count.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_tk_workspace_element_capacity() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_tk_workspace_element_capacity.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t attention_tk_workspace_row_capacity() {
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_tk_workspace_row_capacity.load(std::memory_order_relaxed);
-#else
-  return 0;
-#endif
 }
 
 std::int64_t token_cross_entropy_workspace_allocation_count() {
@@ -23870,6 +27522,216 @@ void launch_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merg
 #endif
 }
 
+bool use_in_repo_packed_qkv_attention(
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride) {
+  return query_heads == key_heads &&
+      query_heads > 0 &&
+      seq_q == seq_k &&
+      seq_q > 0 &&
+      seq_q <= 1024 &&
+      qk_dim == value_dim &&
+      qk_dim > 0 &&
+      qk_dim <= kGpt2AttentionHeadDim &&
+      is_causal &&
+      !right_align_causal &&
+      !use_sparse_rules &&
+      window <= 0 &&
+      num_sinks <= 0 &&
+      block_size <= 0 &&
+      compress_stride <= 1;
+}
+
+int launch_in_repo_packed_qkv_attention_forward_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float scale,
+    cudaStream_t stream) {
+  if (qkv_bf16_bits == nullptr ||
+      out_bf16_bits == nullptr ||
+      batch <= 0 ||
+      heads <= 0 ||
+      seq_len <= 0 ||
+      head_dim <= 0) {
+    return 2;
+  }
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t rows = batch * heads * seq_len;
+  PackedAttentionFloatWorkspace* workspace =
+      ensure_packed_attention_float_workspace(elements, rows, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  const int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  packed_qkv_bf16_to_heads_float32_kernel<<<blocks, threads, 0, stream>>>(
+      qkv_bf16_bits,
+      workspace->q,
+      workspace->k,
+      workspace->v,
+      batch,
+      heads,
+      seq_len,
+      head_dim);
+  launch_scaled_dot_product_attention_float32(
+      workspace->q,
+      workspace->k,
+      workspace->v,
+      workspace->out,
+      elements,
+      heads,
+      heads,
+      seq_len,
+      seq_len,
+      head_dim,
+      head_dim,
+      scale,
+      true,
+      false,
+      false,
+      0,
+      0,
+      0,
+      0,
+      stream);
+  heads_float32_to_packed_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      workspace->out,
+      out_bf16_bits,
+      batch,
+      heads,
+      seq_len,
+      head_dim);
+  if (saved_lse != nullptr) {
+    cudaMemsetAsync(
+        saved_lse,
+        0,
+        sizeof(float) * static_cast<std::size_t>(rows),
+        stream);
+  }
+  const int status = static_cast<int>(cudaPeekAtLastError());
+  if (status == 0) {
+    g_attention_forward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  return status;
+}
+
+int launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    const float* grad_out,
+    float* grad_qkv,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float scale,
+    cudaStream_t stream) {
+  if (qkv_bf16_bits == nullptr ||
+      (grad_out == nullptr && grad_out_bf16_bits == nullptr) ||
+      (grad_qkv == nullptr && grad_qkv_bf16_bits == nullptr) ||
+      batch <= 0 ||
+      heads <= 0 ||
+      seq_len <= 0 ||
+      head_dim <= 0) {
+    return 2;
+  }
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t rows = batch * heads * seq_len;
+  PackedAttentionFloatWorkspace* workspace =
+      ensure_packed_attention_float_workspace(elements, rows, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  const int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  packed_qkv_bf16_to_heads_float32_kernel<<<blocks, threads, 0, stream>>>(
+      qkv_bf16_bits,
+      workspace->q,
+      workspace->k,
+      workspace->v,
+      batch,
+      heads,
+      seq_len,
+      head_dim);
+  const float* active_grad_out = grad_out;
+  if (grad_out_bf16_bits != nullptr) {
+    packed_grad_out_bf16_to_merged_float32_kernel<<<blocks, threads, 0, stream>>>(
+        grad_out_bf16_bits,
+        workspace->grad_out,
+        elements);
+    active_grad_out = workspace->grad_out;
+  }
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      workspace->q,
+      workspace->k,
+      workspace->v,
+      active_grad_out,
+      workspace->grad_q,
+      workspace->grad_k,
+      workspace->grad_v,
+      batch,
+      heads,
+      heads,
+      seq_len,
+      seq_len,
+      head_dim,
+      head_dim,
+      scale,
+      true,
+      false,
+      false,
+      0,
+      0,
+      0,
+      0,
+      true,
+      stream);
+  if (grad_qkv != nullptr) {
+    heads_float32_to_packed_qkv_float32_kernel<<<blocks, threads, 0, stream>>>(
+        workspace->grad_q,
+        workspace->grad_k,
+        workspace->grad_v,
+        grad_qkv,
+        batch,
+        heads,
+        seq_len,
+        head_dim);
+  }
+  if (grad_qkv_bf16_bits != nullptr) {
+    heads_float32_to_packed_qkv_bf16_kernel<<<blocks, threads, 0, stream>>>(
+        workspace->grad_q,
+        workspace->grad_k,
+        workspace->grad_v,
+        grad_qkv_bf16_bits,
+        batch,
+        heads,
+        seq_len,
+        head_dim);
+  }
+  const int status = static_cast<int>(cudaPeekAtLastError());
+  if (status == 0) {
+    g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  return status;
+}
+
 int launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
     const std::uint16_t* qkv_bf16_bits,
     std::uint16_t* out_bf16_bits,
@@ -23916,24 +27778,32 @@ int launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
       qk_dim,
       stream);
 #else
-  (void)qkv_bf16_bits;
-  (void)out_bf16_bits;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_forward_bf16_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      nullptr,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -23985,25 +27855,32 @@ int launch_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32(
       qk_dim,
       stream);
 #else
-  (void)qkv_bf16_bits;
-  (void)out_bf16_bits;
-  (void)saved_lse;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_forward_bf16_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      saved_lse,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24059,26 +27936,35 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_g
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
-  (void)grad_out;
-  (void)grad_qkv;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      nullptr,
+      grad_out,
+      grad_qkv,
+      nullptr,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24135,27 +28021,36 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_ls
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
   (void)saved_lse;
-  (void)grad_out;
-  (void)grad_qkv;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      nullptr,
+      grad_out,
+      grad_qkv,
+      nullptr,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24211,26 +28106,35 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_fro
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
-  (void)grad_out;
-  (void)grad_qkv_bf16_bits;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      nullptr,
+      grad_out,
+      nullptr,
+      grad_qkv_bf16_bits,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24287,27 +28191,36 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_fro
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
   (void)saved_lse;
-  (void)grad_out;
-  (void)grad_qkv_bf16_bits;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      nullptr,
+      grad_out,
+      nullptr,
+      grad_qkv_bf16_bits,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24363,26 +28276,35 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_fro
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
-  (void)grad_out_bf16_bits;
-  (void)grad_qkv_bf16_bits;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      grad_out_bf16_bits,
+      nullptr,
+      nullptr,
+      grad_qkv_bf16_bits,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24439,27 +28361,36 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_fro
       true,
       stream);
 #else
-  (void)qkv_bf16_bits;
   (void)out_bf16_bits;
   (void)saved_lse;
-  (void)grad_out_bf16_bits;
-  (void)grad_qkv_bf16_bits;
-  (void)batch;
-  (void)query_heads;
-  (void)key_heads;
-  (void)seq_q;
-  (void)seq_k;
-  (void)qk_dim;
-  (void)value_dim;
-  (void)is_causal;
-  (void)right_align_causal;
-  (void)use_sparse_rules;
-  (void)window;
-  (void)num_sinks;
-  (void)block_size;
-  (void)compress_stride;
-  (void)stream;
-  return 2;
+  if (!use_in_repo_packed_qkv_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_in_repo_packed_qkv_attention_backward_to_qkv_impl(
+      qkv_bf16_bits,
+      grad_out_bf16_bits,
+      nullptr,
+      nullptr,
+      grad_qkv_bf16_bits,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      scale,
+      stream);
 #endif
 }
 
@@ -24706,6 +28637,36 @@ void launch_jepa_mask_int64(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   jepa_mask_int64_kernel<<<blocks, 1, 0, stream>>>(
       tokens, masked_tokens, mask_values, n, seq_len, mask_ratio, mask_token_id, strategy, num_blocks, min_block_ratio, max_block_ratio, counter);
+}
+
+void launch_native_family_jepa_mask_float32(
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  native_family_jepa_mask_float32_kernel<<<blocks, 1, 0, stream>>>(
+      mask_values, n, seq_len, masked_span, mask_ratio, strategy);
+}
+
+void launch_native_family_jepa_mask_u16_float32(
+    const std::uint16_t* tokens,
+    std::uint16_t* masked_tokens,
+    float* mask_values,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t masked_span,
+    float mask_ratio,
+    int strategy,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  native_family_jepa_mask_u16_float32_kernel<<<blocks, 1, 0, stream>>>(
+      tokens, masked_tokens, mask_values, n, seq_len, masked_span, mask_ratio, strategy);
 }
 
 }  // namespace neuralfn::tile_cuda

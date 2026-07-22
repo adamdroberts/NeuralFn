@@ -306,6 +306,319 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--grad-clip-norm 0.75", proc.stdout)
         self.assertIn(" --backend tile-cuda", proc.stdout)
 
+    def test_nfn_programmatic_family_train_print_command_does_not_execute_target(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            from nfn import main
+
+            exit_code = int(main(
+                [
+                    "train",
+                    "--base-model",
+                    "jepa",
+                    "--template",
+                    "dense-jepa-evo-modern",
+                    "--dataset",
+                    "tinystories",
+                    "--native-cuda-output-dir",
+                    "/tmp/native-family-print",
+                    "--native-cuda-print-command",
+                ],
+                stdin_isatty=False,
+                stdout_isatty=False,
+            ) or 0)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_JEPA_CLI"] = "/bin/false"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("/bin/false", proc.stdout)
+        self.assertIn("--template-name dense-jepa-evo-modern", proc.stdout)
+        self.assertIn("--tinystories", proc.stdout)
+        self.assertIn("--output-dir /tmp/native-family-print", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
+    def test_nfn_train_tui_state_threads_gpt2_evo_hyperparameters(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            import nfn
+
+            state = nfn._native_train_default_state()
+            state.update(
+                {{
+                    "model": "gpt2-evo",
+                    "template": "gpt2-evo",
+                    "dataset": "tinystories",
+                    "output_dir": "/tmp/gpt2-evo-tui",
+                    "evo_layer_index": "4",
+                    "evo_layer_interval": "12",
+                    "evo_layer_population": "16",
+                    "evo_layer_mutation_scale": "0.07",
+                    "evo_tournament_size": "5",
+                    "evo_elite_count": "2",
+                    "train_log_file": "",
+                    "eval_log_file": "",
+                    "launch_mode": "dry-run",
+                }}
+            )
+            fields = nfn._native_train_tui_fields(state)
+            command = nfn._native_train_command_tokens_from_state(state)
+            print("FIELDS", " ".join(key for key, _label, _group in fields))
+            print("COMMAND", " ".join(command))
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("evo_layer_index", proc.stdout)
+        self.assertIn("evo_layer_interval", proc.stdout)
+        self.assertIn("evo_layer_population", proc.stdout)
+        self.assertIn("evo_layer_mutation_scale", proc.stdout)
+        self.assertIn("evo_tournament_size", proc.stdout)
+        self.assertIn("evo_elite_count", proc.stdout)
+        self.assertIn("--evo-layer-index 4", proc.stdout)
+        self.assertIn("--evo-layer-interval 12", proc.stdout)
+        self.assertIn("--evo-layer-population 16", proc.stdout)
+        self.assertIn("--evo-layer-mutation-scale 0.07", proc.stdout)
+        self.assertIn("--evo-tournament-size 5", proc.stdout)
+        self.assertIn("--evo-elite-count 2", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
+    def test_nfn_train_tui_state_threads_dense_jepa_evo_template_hyperparameters(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            import nfn
+
+            state = nfn._native_train_default_state()
+            state.update(
+                {{
+                    "model": "jepa",
+                    "template": "dense-jepa-evo-modern",
+                    "dataset": "tinystories",
+                    "output_dir": "/tmp/dense-jepa-evo-modern-tui",
+                    "evo_layer_index": "3",
+                    "evo_layer_interval": "25",
+                    "evo_layer_population": "12",
+                    "evo_layer_mutation_scale": "0.05",
+                    "evo_tournament_size": "4",
+                    "evo_elite_count": "2",
+                    "train_log_file": "",
+                    "eval_log_file": "",
+                    "launch_mode": "dry-run",
+                }}
+            )
+            fields = nfn._native_train_tui_fields(state)
+            command = nfn._native_train_command_tokens_from_state(state)
+            print("FIELDS", " ".join(key for key, _label, _group in fields))
+            print("COMMAND", " ".join(command))
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("evo_layer_index", proc.stdout)
+        self.assertIn("evo_layer_interval", proc.stdout)
+        self.assertIn("evo_layer_population", proc.stdout)
+        self.assertIn("evo_layer_mutation_scale", proc.stdout)
+        self.assertIn("evo_tournament_size", proc.stdout)
+        self.assertIn("evo_elite_count", proc.stdout)
+        self.assertIn("--template-name dense-jepa-evo-modern", proc.stdout)
+        self.assertIn("--evo-layer-index 3", proc.stdout)
+        self.assertIn("--evo-layer-interval 25", proc.stdout)
+        self.assertIn("--evo-layer-population 12", proc.stdout)
+        self.assertIn("--evo-layer-mutation-scale 0.05", proc.stdout)
+        self.assertIn("--evo-tournament-size 4", proc.stdout)
+        self.assertIn("--evo-elite-count 2", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
+    def test_nfn_train_tui_state_threads_semantic_moe_architecture_hyperparameters(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            import nfn
+
+            state = nfn._native_train_default_state()
+            state.update(
+                {{
+                    "model": "semantic-moe-jepa-evo",
+                    "template": "semantic-moe-jepa-evo",
+                    "dataset": "tinystories",
+                    "output_dir": "/tmp/semantic-moe-tui",
+                    "num_layers": "3",
+                    "semantic_vocab_dims": "86",
+                    "semantic_shared_experts": "2",
+                    "semantic_free_experts": "8",
+                    "layers_per_expert": "2",
+                    "top_k": "4",
+                    "route_chunk_size": "16",
+                    "train_log_file": "",
+                    "eval_log_file": "",
+                    "launch_mode": "dry-run",
+                }}
+            )
+            fields = nfn._native_train_tui_fields(state)
+            command = nfn._native_train_command_tokens_from_state(state)
+            print("FIELDS", " ".join(key for key, _label, _group in fields))
+            print("COMMAND", " ".join(command))
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("num_layers", proc.stdout)
+        self.assertIn("semantic_vocab_dims", proc.stdout)
+        self.assertIn("semantic_shared_experts", proc.stdout)
+        self.assertIn("semantic_free_experts", proc.stdout)
+        self.assertIn("layers_per_expert", proc.stdout)
+        self.assertIn("--num-layers 3", proc.stdout)
+        self.assertIn("--semantic-vocab-dims 86", proc.stdout)
+        self.assertIn("--semantic-shared-experts 2", proc.stdout)
+        self.assertIn("--semantic-free-experts 8", proc.stdout)
+        self.assertIn("--layers-per-expert 2", proc.stdout)
+        self.assertIn("--top-k 4", proc.stdout)
+        self.assertIn("--route-chunk-size 16", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
+    def test_nfn_train_semantic_moe_defaults_match_template_expert_contract(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.argv = [
+                str(root / "cli" / "nfn.py"),
+                "train",
+                "--base-model",
+                "semantic-moe-jepa-evo",
+                "--dataset-alias",
+                "/tmp/native-cache",
+                "--native-cuda-dry-run",
+                "--native-cuda-print-command",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_SEMANTIC_MOE_JEPA_EVO_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--template-name semantic-moe-jepa-evo", proc.stdout)
+        self.assertIn("--semantic-vocab-dims 86", proc.stdout)
+        self.assertIn("--semantic-shared-experts 2", proc.stdout)
+        self.assertIn("--semantic-free-experts 8", proc.stdout)
+        self.assertIn("--layers-per-expert 1", proc.stdout)
+        self.assertIn("--top-k 2", proc.stdout)
+        self.assertIn("--route-chunk-size 32", proc.stdout)
+        self.assertNotIn("--train-transformer-lm", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
     def test_train_gpt2_evo_module_import_is_native_only(self) -> None:
         code = textwrap.dedent(
             f"""
@@ -350,7 +663,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("MODE_NAME gpt2_evo", proc.stdout)
-        self.assertIn("EVAL_EVERY_STEPS 1000", proc.stdout)
+        self.assertIn("EVAL_EVERY_STEPS 5000", proc.stdout)
         self.assertIn("WARMUP_STEPS 60", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
@@ -838,7 +1151,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
-    def test_train_gpt_native_direct_dry_run_prefers_linked_cli(self) -> None:
+    def test_train_gpt_native_direct_dry_run_prefers_dynamic_cli(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -900,10 +1213,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("nfn_gpt_native_train_linked", proc.stdout)
-        self.assertIn("--tile-ops-lib linked", proc.stdout)
-        self.assertIn("--eval-every-steps 250", proc.stdout)
+        self.assertIn("nfn_gpt_native_train", proc.stdout)
+        self.assertNotIn("nfn_gpt_native_train_linked", proc.stdout)
+        self.assertNotIn("--tile-ops-lib linked", proc.stdout)
+        self.assertIn("--eval-every-steps 5000", proc.stdout)
         self.assertIn("--warmup-steps 60", proc.stdout)
+        self.assertIn("--lr-schedule cosine", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("--no-checkpoint", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -1033,7 +1348,157 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--dry-run", proc.stdout)
         self.assertIn("--print-command", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
-        self.assertEqual("", proc.stderr)
+
+    def test_nfn_train_tui_builds_native_command_without_torch_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            native_cli = Path(tmp) / "nfn_gpt_native_train"
+            native_cli.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+            native_cli.chmod(0o755)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+            answers = "\n".join(
+                [
+                    "",  # model: gpt
+                    "3",  # template: gpt2_moa
+                    "",  # dataset: tinystories
+                    "2",  # custom output directory
+                    str(Path(tmp) / "out"),
+                    "2",  # custom max steps
+                    "2",  # max steps
+                    "",  # seq len
+                    "",  # batch size
+                    "",  # train batch tokens
+                    "",  # learning rate
+                    "",  # LR schedule
+                    "",  # final LR fraction
+                    "",  # weight decay
+                    "",  # warmup
+                    "2",  # custom eval cadence
+                    "1",  # eval cadence
+                    "",  # eval batches
+                    "",  # train loss cadence
+                    "",  # checkpoint cadence
+                    "",  # progress cadence
+                    "2",  # train log off
+                    "2",  # eval log off
+                    "2",  # dry-run command
+                    "",
+                ]
+            )
+            proc = subprocess.run(
+                [sys.executable, str(NEURALFN_ROOT / "cli" / "nfn.py"), "train", "--tui"],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                input=answers,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("nfn train", proc.stdout)
+        self.assertIn("semantic_moe_jepa_evo_modern", proc.stdout)
+        self.assertIn("--template-name gpt2_moa", proc.stdout)
+        self.assertIn("--tinystories", proc.stdout)
+        self.assertIn("--max-steps 2", proc.stdout)
+        self.assertIn("--eval-every-steps 1", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertNotIn("torch", proc.stderr.lower())
+
+    def test_nfn_train_log_files_capture_native_progress_and_eval_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            native_cli = Path(tmp) / "nfn_llama_native_train"
+            native_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '[nfn-native-train] step 1/2 tokens=1024\\n' >&2\n"
+                "printf '[nfn-native-train] validation step 1 loss=4.2\\n' >&2\n"
+                "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\",\"passed\":true,\"steps_completed\":2,\"timing\":{\"train_tokens_per_second\":12345},\"checkpoint\":{\"checkpoint_path\":\"/tmp/native-cache/model_00000002.bin\",\"done_marker\":\"/tmp/native-cache/DONE_00000002\",\"actual_file_size\":4096},\"validation\":{\"eval_count\":1,\"losses\":[{\"step\":2,\"loss_mean\":4.2}]}}'\n",
+                encoding="utf-8",
+            )
+            native_cli.chmod(0o755)
+            train_log = Path(tmp) / "train.log"
+            eval_log = Path(tmp) / "eval.log"
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["NFN_NATIVE_LLAMA_CLI"] = str(native_cli)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "nfn.py"),
+                    "train",
+                    "--base-model",
+                    "llama",
+                    "--dataset-alias",
+                    "/tmp/native-cache",
+                    "--max-steps",
+                    "2",
+                    "--train-log-file",
+                    str(train_log),
+                    "--eval-log-file",
+                    str(eval_log),
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            self.assertIn("NeuralFn Training Result", proc.stdout)
+            self.assertIn("model: /tmp/native-cache/model_00000002.bin", proc.stdout)
+            self.assertIn("validation: 4.2 at step 2", proc.stdout)
+            self.assertIn("eval log:", proc.stdout)
+            self.assertNotIn('"eval_count":1', proc.stdout)
+            self.assertIn("step 1/2", train_log.read_text(encoding="utf-8"))
+            eval_text = eval_log.read_text(encoding="utf-8")
+            self.assertIn("validation step 1", eval_text)
+            self.assertIn('"eval_count":1', eval_text)
+            self.assertIn('"checkpoint_path":"/tmp/native-cache/model_00000002.bin"', eval_text)
+
+    def test_nfn_train_plain_cli_summarizes_final_native_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            native_cli = Path(tmp) / "nfn_llama_native_train"
+            native_cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '[nfn-native-train] step 2/2 tokens=2048\\n' >&2\n"
+                "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\",\"passed\":true,\"steps_completed\":2,\"checkpoint\":{\"checkpoint_path\":\"/tmp/native-cache/model_00000002.bin\"},\"validation\":{\"losses\":[{\"step\":2,\"loss_mean\":3.5}]}}'\n",
+                encoding="utf-8",
+            )
+            native_cli.chmod(0o755)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["NFN_NATIVE_LLAMA_CLI"] = str(native_cli)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "nfn.py"),
+                    "train",
+                    "--base-model",
+                    "llama",
+                    "--dataset-alias",
+                    "/tmp/native-cache",
+                    "--max-steps",
+                    "2",
+                    "--no-tui",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("NeuralFn Training Result", proc.stdout)
+        self.assertIn("model: /tmp/native-cache/model_00000002.bin", proc.stdout)
+        self.assertIn("validation: 3.5 at step 2", proc.stdout)
+        self.assertNotIn('"checkpoint_path"', proc.stdout)
 
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
         code = textwrap.dedent(
@@ -1256,7 +1721,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
                 self.assertEqual(0, proc.returncode, proc.stderr)
                 self.assertIn(f"--template-name {preset}", proc.stdout)
-                self.assertIn("--train-transformer-lm", proc.stdout)
+                if "--train-transformer-lm" not in proc.stdout:
+                    self.assertRegex(proc.stdout, r"nfn_.*_native_train")
+                else:
+                    self.assertIn("--train-transformer-lm", proc.stdout)
                 self.assertNotIn("--base-model", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
@@ -1624,6 +2092,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             ("llama", ()),
             ("mixllama", ()),
             ("jepa", ()),
+            ("semantic-dense-jepa", ()),
+            ("moe-jepa-evo", ()),
             ("semantic-router-moe", ()),
             ("deepseek-v4", ()),
             ("nanogpt", ("--train-token-lm",)),
@@ -1697,6 +2167,85 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
                 self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
+
+    def test_nfn_train_prefers_family_native_cli_for_jepa_evo_alias_base_models(self) -> None:
+        cases = (
+            ("dense-jepa-evo", "jepa"),
+            ("dense-jepa-evo-modern", "jepa"),
+            ("semantic-dense-jepa-evo", "semantic-dense-jepa"),
+            ("semantic-dense-jepa-evo-modern", "semantic-dense-jepa"),
+            ("dyt-geglu-semantic-dense-jepa-evo", "semantic-dense-jepa"),
+            ("moe-jepa-evo-modern", "moe-jepa-evo"),
+            ("auxfree-moe-jepa-evo", "moe-jepa-evo"),
+            ("semantic-moe-jepa-evo", "semantic-router-moe"),
+            ("semantic-moe-jepa-evo-modern", "semantic-router-moe"),
+            ("diff-semantic-moe-jepa-evo", "semantic-router-moe"),
+        )
+        for model_alias, family in cases:
+            with self.subTest(model_alias=model_alias):
+                code = textwrap.dedent(
+                    f"""
+                    from pathlib import Path
+                    import os
+                    import runpy
+                    import sys
+                    import tempfile
+
+                    root = Path({str(NEURALFN_ROOT)!r})
+                    model_alias = {model_alias!r}
+                    family = {family!r}
+                    family_env = "NFN_NATIVE_" + "".join(ch if ch.isalnum() else "_" for ch in family.upper()).strip("_") + "_CLI"
+                    family_cli = Path(tempfile.mkdtemp()) / ("nfn_" + "".join(ch if ch.isalnum() else "_" for ch in family.lower()).strip("_") + "_native_train")
+                    family_cli.write_text(
+                        "#!/usr/bin/env bash\\n"
+                        "printf 'NFN_JEPA_ALIAS_FAMILY_NATIVE_DIRECT\\\\n'\\n"
+                        "printf '%s\\\\n' \\"$@\\"\\n"
+                        "exit 22\\n",
+                        encoding="utf-8",
+                    )
+                    family_cli.chmod(0o755)
+                    os.environ[family_env] = str(family_cli)
+                    sys.argv = [
+                        str(root / "cli" / "nfn.py"),
+                        "train",
+                        "--base-model",
+                        model_alias,
+                        "--tinystories",
+                        "--native-cuda-dry-run",
+                    ]
+                    try:
+                        runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+                    except SystemExit as exc:
+                        exit_code = int(exc.code or 0)
+                    else:
+                        exit_code = 0
+                    print("TORCH_LOADED", "torch" in sys.modules)
+                    print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+                    raise SystemExit(exit_code)
+                    """
+                )
+                env = os.environ.copy()
+                env.pop("PYTHONPATH", None)
+                env.pop("NFN_NATIVE_TRAIN_CLI", None)
+                proc = subprocess.run(
+                    [sys.executable, "-c", code],
+                    cwd=NEURALFN_ROOT,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                self.assertEqual(22, proc.returncode)
+                self.assertIn("NFN_JEPA_ALIAS_FAMILY_NATIVE_DIRECT", proc.stdout)
+                self.assertIn("--tinystories", proc.stdout)
+                self.assertIn("--dry-run", proc.stdout)
+                self.assertNotIn("--base-model", proc.stdout)
+                self.assertIn("--template-name", proc.stdout)
+                self.assertIn(model_alias, proc.stdout)
+                self.assertIn("TORCH_LOADED False", proc.stdout)
+                self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
     def test_legacy_training_scripts_reject_before_torch_import(self) -> None:
         scripts = (
@@ -2335,9 +2884,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("RUNTIME native-cuda", proc.stdout)
         self.assertIn("MODEL_FAMILY gpt", proc.stdout)
         self.assertIn("TEMPLATE nanogpt", proc.stdout)
-        self.assertIn("PARSER_EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("PARSER_EVAL_EVERY_STEPS 5000", proc.stdout)
         self.assertIn("PARSER_WARMUP_STEPS 60", proc.stdout)
-        self.assertIn("DEFAULT_EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("DEFAULT_EVAL_EVERY_STEPS 5000", proc.stdout)
         self.assertIn("DEFAULT_WARMUP_STEPS 60", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
@@ -2673,7 +3222,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_HF_PATH roneneldan/TinyStories", proc.stdout)
         self.assertIn("DATASET_TRAIN_FILE TinyStoriesV2-GPT4-train.txt", proc.stdout)
         self.assertIn("DATASET_VAL_FILE TinyStoriesV2-GPT4-valid.txt", proc.stdout)
-        self.assertIn("EVAL_EVERY_STEPS 250", proc.stdout)
+        self.assertIn("EVAL_EVERY_STEPS 5000", proc.stdout)
         self.assertIn("WARMUP_STEPS 60", proc.stdout)
         self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 28672", proc.stdout)
         self.assertNotIn("parameter-golf", proc.stdout)
@@ -2720,9 +3269,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_SM120_ADAM_EPS 1e-8)", content)
         self.assertIn("GRAD_CLIP_NORM=\"$(env_or_alias3 NFN_NATIVE_GPT_GRAD_CLIP_NORM", content)
         self.assertIn("NFN_SM120_GRAD_CLIP_NORM 1.0)", content)
+        self.assertIn("LR_SCHEDULE=\"$(env_or_alias3 NFN_NATIVE_GPT_LR_SCHEDULE", content)
+        self.assertIn("NFN_SM120_LR_SCHEDULE cosine)", content)
         self.assertIn("WARMUP_STEPS=\"$(env_or_alias3 NFN_NATIVE_GPT_WARMUP_STEPS", content)
-        self.assertIn("NFN_SM120_WARMUP_STEPS 1000)", content)
+        self.assertIn("NFN_SM120_WARMUP_STEPS 60)", content)
         self.assertIn('--learning-rate "${LEARNING_RATE}"', content)
+        self.assertIn('--lr-schedule "${LR_SCHEDULE}"', content)
         self.assertIn('--weight-decay "${WEIGHT_DECAY}"', content)
         self.assertIn('--beta1 "${BETA1}"', content)
         self.assertIn('--beta2 "${BETA2}"', content)
@@ -2733,12 +3285,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_SM120_MAX_STEPS 20000)", content)
         self.assertIn('--max-steps "${MAX_STEPS}"', content)
         self.assertIn("EVAL_EVERY_STEPS=\"$(env_or_alias3 NFN_NATIVE_GPT_EVAL_EVERY_STEPS", content)
-        self.assertIn("NFN_SM120_EVAL_EVERY_STEPS 1000)", content)
+        self.assertIn("NFN_SM120_EVAL_EVERY_STEPS 5000)", content)
         self.assertIn('--eval-every-steps "${EVAL_EVERY_STEPS}"', content)
         self.assertIn("GENERATE_TOKENS=\"$(env_or_alias3 NFN_NATIVE_GPT_GENERATE_TOKENS", content)
         self.assertIn("NFN_SM120_GENERATE_TOKENS 144)", content)
         self.assertIn("CHECKPOINT_EVERY=\"$(env_or_alias3 NFN_NATIVE_GPT_CHECKPOINT_EVERY", content)
-        self.assertIn("NFN_SM120_CHECKPOINT_EVERY 200)", content)
+        self.assertIn("NFN_SM120_CHECKPOINT_EVERY 5000)", content)
         self.assertIn('--native-cuda-generate-tokens "${GENERATE_TOKENS}"', content)
         self.assertIn('--native-cuda-checkpoint-every "${CHECKPOINT_EVERY}"', content)
         self.assertIn("--train-transformer-lm", content)

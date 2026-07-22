@@ -27,13 +27,19 @@ NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_EVAL_EVERY_STEPS",
         "NFN_SM120_NATIVE_EVAL_EVERY_STEPS",
         "NFN_SM120_EVAL_EVERY_STEPS",
-        "250",
+        "5000",
     ),
     "--eval-batches": (
         "NFN_NATIVE_GPT_EVAL_BATCHES",
         "NFN_SM120_NATIVE_EVAL_BATCHES",
         "NFN_SM120_EVAL_BATCHES",
         "20",
+    ),
+    "--train-loss-every-steps": (
+        "NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS",
+        "NFN_SM120_TRAIN_LOSS_EVERY_STEPS",
+        "250",
     ),
     "--native-cuda-sample-every": (
         "NFN_NATIVE_GPT_SAMPLE_EVERY",
@@ -51,7 +57,7 @@ NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_NATIVE_GPT_CHECKPOINT_EVERY",
         "NFN_SM120_NATIVE_CHECKPOINT_EVERY",
         "NFN_SM120_CHECKPOINT_EVERY",
-        "200",
+        "5000",
     ),
     "--batch-size": (
         "NFN_NATIVE_GPT_BATCH_SIZE",
@@ -76,6 +82,12 @@ NATIVE_GPT_QUALITY_DEFAULTS = {
         "NFN_SM120_NATIVE_LEARNING_RATE",
         "NFN_SM120_LEARNING_RATE",
         "0.0006",
+    ),
+    "--lr-schedule": (
+        "NFN_NATIVE_GPT_LR_SCHEDULE",
+        "NFN_SM120_NATIVE_LR_SCHEDULE",
+        "NFN_SM120_LR_SCHEDULE",
+        "cosine",
     ),
     "--final-lr-fraction": (
         "NFN_NATIVE_GPT_FINAL_LR_FRACTION",
@@ -301,207 +313,233 @@ _NATIVE_TRAIN_MODEL_REGISTRY = (
     },
     {
         "name": "llama",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_llama_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-llama-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "LLaMA/RoPE/SwiGLU variants run the native token-shard dataset loop "
             "with sampled AR CE plus the composed LLaMA CUDA Tile train-step slice; "
-            "persistent full-size family parameter state remains before production training."
+            "architecture-specific forward inference from persistent family parameter state remains before production inference."
         ),
     },
     {
         "name": "mixllama",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_mixllama_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-standard-moe-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Standard MoE variants run the native token-shard dataset loop with "
             "sampled AR CE plus sampled route/expert CUDA Tile step; persistent "
-            "full-size family parameter state remains required for production training."
+            "architecture-specific forward inference from persistent family parameter state remains required for production inference."
         ),
     },
     {
         "name": "jepa",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_jepa_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-dense-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Dense JEPA variants run the native token-shard dataset loop with "
             "sampled AR CE plus the composed dense-JEPA CUDA Tile train-step "
-            "slice; persistent full-size family parameter state remains before "
-            "production training."
+            "slice; architecture-specific forward inference from persistent "
+            "family parameter state remains before production inference."
         ),
     },
     {
         "name": "semantic-dense-jepa",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_semantic_dense_jepa_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-semantic-dense-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Semantic dense JEPA variants run the native token-shard dataset loop "
             "with sampled AR CE, native semantic target derivation, and the "
-            "semantic planner/alignment CUDA Tile train-step slice; persistent "
-            "full-size family parameter state remains before production training."
+            "semantic planner/alignment CUDA Tile train-step slice; "
+            "architecture-specific forward inference from persistent family "
+            "parameter state remains before production inference."
         ),
     },
     {
         "name": "moe-jepa-evo",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "MoE JEPA Evo runs the native token-shard dataset loop with sampled "
-            "AR CE plus sampled MoE-JEPA family CUDA Tile step; persistent "
-            "full-size family parameter state remains required for production training."
+            "AR CE plus sampled MoE-JEPA family CUDA Tile step; "
+            "architecture-specific forward inference from persistent family "
+            "parameter state remains required for production inference."
         ),
     },
     {
         "name": "auxfree-moe-jepa-evo",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Aux-free MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; "
-            "persistent full-size aux-free family state remains required for production training."
+            "architecture-specific aux-free forward inference from persistent family parameter state remains required for production inference."
         ),
     },
     {
         "name": "moe-jepa-evo-modern",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_moe_jepa_evo_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-moe-jepa-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Modern MoE JEPA Evo shares the MoE+JEPA native dataset-loop target; "
-            "persistent full-size modern-profile family state remains required for production training."
+            "architecture-specific modern-profile forward inference from persistent family parameter state remains required for production inference."
         ),
     },
     {
         "name": "semantic-router-moe",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_semantic_router_moe_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-semantic-router-moe-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "Semantic router MoE variants run the native token-shard dataset loop "
             "with derived semantic targets plus the composed semantic-router CUDA Tile "
-            "train-step slice; persistent full-size family parameter state remains "
-            "required for production training."
+            "train-step slice; architecture-specific forward inference from "
+            "persistent family parameter state remains required for production inference."
         ),
     },
     {
         "name": "deepseek-v4",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-family-dataset-loop-diagnostic",
         "native_target": "nfn_deepseek_v4_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-family-dataset-loop-diagnostic",
         "token_lm_status": "not-applicable",
         "geometry_status": "sampled-standard-moe-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
+        "trainer_loop_status": "native-family-dataset-loop-diagnostic",
         "notes": (
             "DeepSeek-style sparse/MoE variants share the standard-MoE native "
-            "token-shard dataset loop; persistent full-size family parameter "
-            "state remains required for production training."
+            "token-shard dataset loop; architecture-specific forward inference "
+            "from persistent family parameter state remains required for production inference."
         ),
     },
     {
         "name": "jamba",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_jamba_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-jamba-dataset-loop",
+        "geometry_status": "full-jamba-hybrid-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "Jamba variants run the native token-shard dataset loop with sampled AR CE plus the composed Jamba layer-schedule CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "Jamba variants run the persistent native token-shard loop with Mamba state, the full attention/MoE backbone, token CE, and optimizer-updated family parameter state.",
     },
     {
         "name": "seq2seq",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_seq2seq_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-seq2seq-dataset-loop",
+        "geometry_status": "full-seq2seq-encoder-decoder-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "Seq2seq variants run the native token-shard dataset loop with sampled AR CE plus the composed encoder-decoder CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "Seq2seq variants run the persistent native token-shard loop with encoder self-attention, decoder causal and cross-attention, stacked FFNs, token CE, and optimizer-updated family parameter state.",
     },
     {
         "name": "diffusion",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_diffusion_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-diffusion-dataset-loop",
+        "geometry_status": "full-diffusion-transformer-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "Diffusion variants run the native token-shard dataset loop with sampled AR CE plus the composed timestep/mask/objective CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "Diffusion variants run the persistent native token-shard loop with deterministic timestep masking, the full LLaMA-style backbone, denoise-head CE, and optimizer-updated family parameter state.",
     },
     {
         "name": "ttt-llama",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_ttt_llama_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-ttt-dataset-loop",
+        "geometry_status": "full-ttt-transformer-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "TTT transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed TTT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "TTT transformer variants run the persistent native token-shard loop with the live inner update, full transformer backbone, token CE, and optimizer-updated family parameter state.",
     },
     {
         "name": "hnet-lm",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_hnet_lm_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-hnet-byte-dataset-loop",
+        "geometry_status": "full-hnet-byte-patch-transformer-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "HNet byte-LM variants run the native byte-shard dataset loop with sampled byte batches plus the composed HNet byte-LM CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "HNet byte-LM variants run the persistent native byte-shard loop with byte-patch embedding/merge, the full hidden transformer, byte CE, and optimizer-updated family parameter state.",
     },
     {
         "name": "universal-llama",
-        "status": "native-family-dataset-loop-covered",
+        "status": "native-trainer-covered",
         "native_target": "nfn_universal_llama_native_train",
-        "transformer_lm_status": "native-family-dataset-loop-covered",
+        "transformer_lm_status": "native-loop-covered",
         "token_lm_status": "not-applicable",
-        "geometry_status": "sampled-universal-transformer-dataset-loop",
+        "geometry_status": "full-universal-transformer-dataset-loop",
         "kernel_status": "required-tile-symbols-present",
-        "trainer_loop_status": "native-family-dataset-loop",
-        "notes": "Universal transformer variants run the native token-shard dataset loop with sampled AR CE plus the composed recurrent/ACT CUDA Tile train-step slice; persistent full-size family parameter state remains required for production training.",
+        "trainer_loop_status": "native-loop-covered",
+        "notes": "Universal transformer variants run the persistent native token-shard loop with tied recurrence, ACT halting, full transformer backbone, token CE, and optimizer-updated family parameter state.",
     },
 )
+
+_NATIVE_FULL_FAMILY_REGISTRY_NAMES = {
+    entry["name"]
+    for entry in _NATIVE_TRAIN_MODEL_REGISTRY
+    if entry["name"] not in {"gpt", "gpt2", "gpt3", "gpt2-evo", "nanogpt"}
+}
+
+
+def _native_train_registry_snapshot() -> list[dict[str, Any]]:
+    """Return the SDK fallback registry with the default full-family contract."""
+
+    models: list[dict[str, Any]] = []
+    for entry in _NATIVE_TRAIN_MODEL_REGISTRY:
+        model = dict(entry)
+        if model["name"] in _NATIVE_FULL_FAMILY_REGISTRY_NAMES:
+            model["status"] = "native-trainer-covered"
+            model["transformer_lm_status"] = "native-loop-covered"
+            model["trainer_loop_status"] = "native-loop-covered"
+            geometry = str(model["geometry_status"])
+            if geometry.startswith("sampled-"):
+                model["geometry_status"] = "full-" + geometry[len("sampled-"):]
+            model["notes"] = f'{model["notes"]} Default build enables the production/full-geometry family loop.'
+        models.append(model)
+    return models
 
 
 @dataclass(frozen=True)
@@ -1236,7 +1274,7 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
         "--json",
     ]
     if not str(native_train_cli or "").strip() and not _native_train_command_available(command[:1]):
-        return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
+        return {"models": _native_train_registry_snapshot()}
     try:
         _module_name, capture = _load_native_train_capture_binding()
     except ImportError:
@@ -1252,7 +1290,7 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
         if returncode == 0:
             return json.loads(str(payload.get("stdout", "")))
         if not str(native_train_cli or "").strip():
-            return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
+            return {"models": _native_train_registry_snapshot()}
         raise RuntimeError(
             "native train registry command failed with exit "
             f"{returncode}: {str(payload.get('stderr', '')).strip()}"
@@ -1266,6 +1304,6 @@ def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[
     )
     if proc.returncode != 0:
         if not str(native_train_cli or "").strip():
-            return {"models": [dict(entry) for entry in _NATIVE_TRAIN_MODEL_REGISTRY]}
+            return {"models": _native_train_registry_snapshot()}
         raise RuntimeError(f"native train registry command failed with exit {proc.returncode}: {proc.stderr.strip()}")
     return json.loads(proc.stdout)

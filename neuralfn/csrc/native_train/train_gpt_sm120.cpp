@@ -340,7 +340,7 @@ int main(int argc, char** argv) {
     std::string batch_size =
         env_first({"NFN_NATIVE_GPT_BATCH_SIZE", "NFN_SM120_NATIVE_BATCH_SIZE", "NFN_SM120_BATCH_SIZE"}, "64");
     std::string eval_every_steps =
-        env_first({"NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "250");
+        env_first({"NFN_NATIVE_GPT_EVAL_EVERY_STEPS", "NFN_SM120_NATIVE_EVAL_EVERY_STEPS", "NFN_SM120_EVAL_EVERY_STEPS"}, "5000");
     std::string eval_batches =
         env_first({"NFN_NATIVE_GPT_EVAL_BATCHES", "NFN_SM120_NATIVE_EVAL_BATCHES", "NFN_SM120_EVAL_BATCHES"}, "20");
     std::string sample_every =
@@ -348,11 +348,13 @@ int main(int argc, char** argv) {
     std::string generate_tokens =
         env_first({"NFN_NATIVE_GPT_GENERATE_TOKENS", "NFN_SM120_NATIVE_GENERATE_TOKENS", "NFN_SM120_GENERATE_TOKENS"}, "144");
     std::string checkpoint_every =
-        env_first({"NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY"}, "200");
+        env_first({"NFN_NATIVE_GPT_CHECKPOINT_EVERY", "NFN_SM120_NATIVE_CHECKPOINT_EVERY", "NFN_SM120_CHECKPOINT_EVERY"}, "5000");
     std::string train_batch_tokens =
         env_first({"NFN_NATIVE_GPT_TRAIN_BATCH_TOKENS", "NFN_SM120_NATIVE_TRAIN_BATCH_TOKENS", "NFN_SM120_TRAIN_BATCH_TOKENS"}, "524288");
     std::string learning_rate =
         env_first({"NFN_NATIVE_GPT_LEARNING_RATE", "NFN_SM120_NATIVE_LEARNING_RATE", "NFN_SM120_LEARNING_RATE"}, "0.0006");
+    std::string lr_schedule =
+        env_first({"NFN_NATIVE_GPT_LR_SCHEDULE", "NFN_SM120_NATIVE_LR_SCHEDULE", "NFN_SM120_LR_SCHEDULE"}, "cosine");
     std::string final_lr_fraction =
         env_first({"NFN_NATIVE_GPT_FINAL_LR_FRACTION", "NFN_SM120_NATIVE_FINAL_LR_FRACTION", "NFN_SM120_FINAL_LR_FRACTION"}, "0.0");
     std::string weight_decay =
@@ -370,7 +372,7 @@ int main(int argc, char** argv) {
     std::string max_steps =
         env_first({"NFN_NATIVE_GPT_MAX_STEPS", "NFN_SM120_NATIVE_MAX_STEPS", "NFN_SM120_MAX_STEPS"}, "20000");
     std::string train_loss_every_steps =
-        env_first({"NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS"});
+        env_first({"NFN_NATIVE_GPT_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_NATIVE_TRAIN_LOSS_EVERY_STEPS", "NFN_SM120_TRAIN_LOSS_EVERY_STEPS"}, "250");
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
     bool template_explicit = false;
@@ -566,6 +568,7 @@ int main(int argc, char** argv) {
     append_pair(out, "--train-seq-len", train_seq_len);
     append_pair(out, "--train-batch-tokens", train_batch_tokens);
     append_pair(out, "--learning-rate", learning_rate);
+    append_pair(out, "--lr-schedule", lr_schedule);
     append_pair(out, "--final-lr-fraction", final_lr_fraction);
     append_pair(out, "--weight-decay", weight_decay);
     append_pair(out, "--beta1", beta1);
@@ -610,6 +613,7 @@ int main(int argc, char** argv) {
                   << " train_batch_tokens=" << train_batch_tokens
                   << " optimizer=adamw"
                   << " learning_rate=" << learning_rate
+                  << " lr_schedule=" << lr_schedule
                   << " final_lr_fraction=" << final_lr_fraction
                   << " weight_decay=" << weight_decay
                   << " beta1=" << beta1

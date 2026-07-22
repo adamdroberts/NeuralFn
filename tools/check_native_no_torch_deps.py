@@ -123,50 +123,62 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
     ),
     Path("build/nfn_llama_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_mixllama_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_moe_jepa_evo_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_jepa_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_semantic_router_moe_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_deepseek_v4_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_jamba_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_seq2seq_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_diffusion_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_ttt_llama_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_hnet_lm_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/nfn_universal_llama_native_train"): (
         Path("neuralfn/csrc/native_train/missing_native_train.cpp"),
+        Path("neuralfn/csrc/native_train/family_production_train.h"),
         Path("tools/build_native_missing_trainers.sh"),
     ),
     Path("build/libnfn_native_train_tile_ops.so"): (
@@ -2274,10 +2286,8 @@ def _validate_native_template_catalog(
                 )
             if template.get("selected_graph_native_runnable") is not True:
                 template_errors.append("selected_graph_native_runnable was not true")
-            if template.get("native_training_missing_requirements") != [
-                "persistent-full-size-family-parameter-state"
-            ]:
-                template_errors.append("persistent full-size family state missing requirement was not retained")
+            if template.get("native_training_missing_requirements") != []:
+                template_errors.append("production family missing-requirements list was not empty")
         template_report["passed"] = not template_errors
         if template_errors:
             errors.append(f"{template_name}: {'; '.join(template_errors)}")
