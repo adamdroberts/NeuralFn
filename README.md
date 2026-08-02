@@ -1,8 +1,57 @@
 # NeuralFn
 
+> Native GPT-2 phase-1 benchmarks: the compiled dense trainer implements
+> `gpt2_zloss`, `gpt2_softcap`, `gpt2_qknorm`, `gpt2_diff`, and
+> `gpt2_stable` without loading Torch. For reproducible comparisons, use
+> `--train-seed N --init-mode gpt2-normal --fixed-validation-slice`; runtime
+> JSON includes validation-excluded `train_compute_tokens_per_second`,
+> `train_losses`, and fixed-slice `validation.losses`.
+
 NeuralFn is a graph-native neural network framework where each neuron can be a built-in primitive or a user-defined Python function with typed I/O ports, connected in arbitrary directed graphs. This repository now combines that core library with an authenticated web platform for multi-project, multi-session editing, training, analytics, and MCP-driven automation.
 
 NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph-backed Torch modules remain in the source tree for old experiments, but Torch is no longer an installable NeuralFn dependency extra. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`. The public `neuralfn.trainer`, `neuralfn.evolutionary`, `neuralfn.hybrid`, and `neuralfn.inference` modules are also lean at import time: importing training configs, constructing scalar trainers, or importing checkpoint/cache helper names does not import Torch or NumPy. Calling scalar training methods still enters the legacy NumPy/PyTorch training stack as needed, and calling legacy `.pt` checkpoint or `InferenceCache` operations still enters the Torch inference stack, so install NumPy and/or PyTorch explicitly for those workflows.
+
+## Native text embedding training
+
+`nfn train --base-model embedding` is a separate sentence/document embedding
+route; it does not use the legacy `--train-embedding-lm` next-token diagnostic.
+It can pretrain the compact native token/position bi-encoder from raw text,
+post-train it on retrieval, scored-similarity, or labeled examples, warm-start
+or resume native embedding checkpoints, and fine-tune the projection with LoRA
+or NF4-grouped QLoRA. The interactive `nfn train` dashboard
+switches from LM token-batch controls to embedding dimensions, record batches,
+pooling, masking/contrastive weights, margins, and adapter settings.
+
+Create a JSON manifest whose `datasets` value is an array, so one run can mix
+topics and objectives deterministically:
+
+```json
+{
+  "datasets": [
+    {"name": "catalog", "source": "catalog.txt", "objective": "raw", "weight": 2},
+    {"name": "search", "source": "search.jsonl", "objective": "retrieval", "weight": 1}
+  ]
+}
+```
+
+```bash
+bash tools/build_native_embedding_cli.sh
+nfn train --base-model embedding \
+  --embedding-stage pretrain \
+  --embedding-datasets-manifest embedding-datasets.json \
+  --output-dir artifacts/my-embedding
+nfn embed --checkpoint artifacts/my-embedding/embedding_model.bin \
+  --text "mid-century walnut table"
+```
+
+Raw pretraining accepts TXT (one record per non-empty line) or a `text` field.
+Retrieval records use `query`, `positive`, and optional `negatives`; similarity
+records use `sentence1`, `sentence2`, and numeric `score`; labeled records use
+`text` and `label`. JSONL, JSON, CSV, Parquet, and Hugging Face dataset IDs are
+accepted, and a `columns` object can remap those logical names. Parquet and Hub
+sources require `pip install 'neuralfn[embeddings]'`. The preparation boundary
+compiles all sources into a hashed uint32 token stream; the training and
+inference loops themselves are standalone C++ and do not load Torch.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` is the
 fast native CLI/SDK guard for that contract. It now treats native inference as
 valid only when checkpoint metadata detection and compiled
@@ -12,9 +61,22 @@ The guard also validates that promoted family binaries report an empty
 with `bash tools/build_native_gpt_cli.sh` before running it.
 
 Native training entrypoints prefer direct compiled C++ binaries on the
-workstation path. Dense GPT aliases use the canonical
-`nfn_gpt_native_train --model-family ...` binary, which now self-selects the
-linked Tile-ops path. The compiled `nfn-native train` command now
+workstation path. Dense GPT `nfn train` resolves only fresh in-tree artifacts,
+and its only automatic target is `build/nfn_gpt_native_train_linked`. It never
+falls back to `build/nfn_gpt_native_train` or the dynamic
+`build/nfn_gpt2_native_train` compatibility binary. The linked build writes a
+SHA-256 input manifest covering the executable, trainer, preset and Tile
+sources, Tile library, and build scripts. A missing manifest/input or any hash
+mismatch marks it stale; interactive runs then warn and offer to
+force-recompile it before continuing.
+Non-interactive runs fail with the exact linked rebuild command. Set
+`NFN_NATIVE_GPT_AUTO_REBUILD=1` to accept that rebuild automatically.
+Dense-GPT `nfn train` ignores `NFN_NATIVE_TRAIN_CLI`,
+`NFN_NATIVE_GPT_CLI`, and `NFN_NATIVE_GPT2_CLI`; those variables remain
+available to lower-level SDK and compatibility entrypoints.
+The TUI run panel and train log record the
+selected executable, Tile library, and SHA-256 hashes. The compiled
+`nfn-native train` command
 uses that same direct dense-GPT route for `gpt`, `gpt2`, `gpt3`, and `nanogpt`
 before falling back to the unified `nfn_native_train` dispatcher. Other
 compiled families such as `gpt2-evo`, `llama`, `mixllama`, `jepa`,
@@ -22,10 +84,16 @@ compiled families such as `gpt2-evo`, `llama`, `mixllama`, `jepa`,
 `nfn_<family>_native_train` binary when present or when
 `NFN_NATIVE_<FAMILY>_CLI` is set. Set `NFN_NATIVE_TRAIN_CLI` only when you
 intentionally want to force the unified `nfn_native_train --base-model ...`
-frontend. For direct family binaries, `nfn train --base-model ... --dry-run
+frontend for a non-dense family. For direct family binaries, `nfn train --base-model ... --dry-run
 --print-command` runs the family frontend so GPT-2-evo and similar targets can
 print their final compiled delegate command instead of the Python wrapper's
 intermediate argv.
+During execution, the `nfn train` TUI preserves every field emitted by native
+progress, microbatch, setup, and validation lines and renders key/value metrics
+as labeled segments instead of replacing the line with a shorter step counter.
+After training, it presents every leaf in the native result payload as readable
+dotted metric paths rather than dumping JSON or limiting output to the summary
+panel. The concise summary remains first, followed by the complete metric view.
 Native family dataset loops write live progress to stderr and reserve stdout
 for the final JSON payload. Use `--print-plan` to inspect the resolved schedule
 without training, `--progress-every-steps 1` for per-step begin/end markers, or

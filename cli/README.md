@@ -799,3 +799,18 @@ Interrupted runs write:
 
 Press `Ctrl+C` once to request a clean stop after the current safe boundary.
 Press `Ctrl+C` again to force an immediate abort.
+
+## Text embedding model type
+
+Choose `embedding` in `nfn train` to pretrain or post-train the native text
+bi-encoder. The dashboard's Datasets row accepts either a JSON manifest path or
+a comma-separated array of source paths; manifest entries are preferred when
+objectives, column mappings, topic weights, hard negatives, labels, or scores
+differ. Use `--embedding-dataset PATH` repeatedly for raw-text shorthand.
+
+The output directory contains `embedding_model.bin` (merged standalone model),
+`embedding_model.json`, `embedding_optimizer.bin`, and `DONE`. Adapter runs also
+write the resumable `embedding_adapter.bin`. `--base-checkpoint` starts a new optimizer run;
+`--embedding-stage resume --resume-from-checkpoint DIR` restores model,
+optimizer moments, dataset cursors, and mixer state. Run `nfn embed --checkpoint
+DIR/embedding_model.bin --text TEXT` to verify the saved model.

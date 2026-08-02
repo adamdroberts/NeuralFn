@@ -245,6 +245,15 @@ int nfn_native_tile_init_gpt2_token_weight_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_seeded_normal_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    std::uint64_t seed,
+    std::uint64_t offset,
+    float stddev,
+    void* cuda_stream);
+
 int nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
@@ -2712,6 +2721,74 @@ int nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
     std::int64_t rows,
     std::int64_t vocab,
     std::int64_t row_stride,
+    void* cuda_stream);
+
+// H0302 / MK-C: cross-entropy partials plus, when z_partials != nullptr, the
+// per-block sum of squared log-partitions for the z-loss term.
+int nfn_native_tile_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets(
+    const std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* partials,
+    float* z_partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_token_cross_entropy_variant_bf16_u16(
+    std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float z_loss_coef,
+    float logit_softcap,
+    bool write_gradient,
+    void* cuda_stream);
+
+int nfn_native_tile_qk_rms_norm_packed_bf16_forward(
+    std::uint16_t* packed_qkv_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float eps,
+    void* cuda_stream);
+
+int nfn_native_tile_qk_rms_norm_packed_bf16_backward(
+    const std::uint16_t* normalized_qkv_bits,
+    const float* rstd,
+    float* grad_qkv_float,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_differential_packed_attention_forward_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    float eps,
+    void* cuda_stream);
+
+int nfn_native_tile_differential_packed_attention_backward_bf16(
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
     void* cuda_stream);
 
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(

@@ -2,6 +2,220 @@
 
 ## Unreleased
 
+- Added first-class native text embedding training and inference. `nfn train`
+  now offers an `embedding` model type whose TUI replaces LM sequence/token
+  controls with embedding stage, encoder profile, pooling, vector width,
+  record-batch, MLM/contrastive, triplet, and LoRA/QLoRA adapter controls. It
+  routes to the dedicated Torch-free `nfn_embedding_native_train` executable;
+  `nfn embed` loads the resulting standalone checkpoint and emits normalized
+  JSON vectors.
+- Added multi-dataset embedding manifests and the `embedding_indexed_v1`
+  preparation contract. A run accepts a weighted array of raw-text, retrieval
+  (`query`/`positive`/optional `negatives`), scored-similarity, and labeled
+  datasets from TXT, JSONL, JSON, CSV, Parquet, or Hugging Face Dataset sources.
+  Preparation validates/remaps columns and writes variable-length uint32 token
+  IDs, avoiding the legacy LM shard format's uint16 vocabulary ceiling. The
+  native loop uses deterministic weighted round-robin dataset selection and
+  objective-homogeneous microbatches.
+- Added real from-scratch raw-text embedding pretraining with masked-token
+  reconstruction plus contrastive margin learning, supervised retrieval,
+  cosine-score regression, and labeled batch triplet updates. Native artifacts
+  include merged model metadata, periodic checkpoints, resumable adapter state for
+  LoRA/QLoRA runs, optimizer moments, dataset mixer cursors, and a `DONE`
+  marker. Weight-only warm starts reset optimizer state; exact resume restores
+  optimizer and mixer state.
+- Kept `--train-embedding-lm` for compatibility and documented it as a legacy
+  token-embedding/tied-LM-head diagnostic rather than a sentence embedding
+  model. This is additive and does not rename or remove the old flag.
+- Verified manifest compilation and schema validation, uint32-safe stable
+  tokenization, native build, pretraining, unit-normalized inference, exact
+  resume, merged plus adapter artifact output, TUI model-aware fields, compiled
+  parser routing, and lightweight `nfn embed --help` with
+  `tests/test_native_embedding.py` and focused CLI tests.
+
+- Made `nfn train` metric-transparent. The TUI no longer replaces full native
+  step and microbatch records with a reduced `step/elapsed` line, so live
+  tokens, tokens/second, native elapsed time, train loss, accumulation,
+  microbatch, effective-batch, and due-state fields remain visible. The final
+  concise result card is now followed by a human-readable recursive metric
+  view using dotted paths, exposing every nested result value—including loss
+  histories, timing, kernel/fallback counters, memory diagnostics, and
+  checkpoint metadata—without dumping raw JSON. Original trainer streams
+  remain unchanged in train/eval logs. Verified with the formatter, nested
+  metric, live progress, final result, and log-preservation coverage in
+  `cli/tests/test_train_gpt2_native.py` (75 tests and 122 preset subtests),
+  plus the required template-preset integrity suite (31 tests).
+
+- Fixed dense-GPT `nfn train`/TUI artifact routing so its only automatic target
+  is `build/nfn_gpt_native_train_linked`; it no longer falls back to the generic
+  or dynamic GPT-2 compatibility binaries. If the linked artifact is stale or
+  missing, interactive runs list the stale dependencies and offer to force
+  recompile it before continuing. Freshness is content-based: the linked build
+  writes a SHA-256 manifest covering its executable, trainer/token/preset/Tile
+  sources, Tile library, and build scripts; a missing or mismatched entry is
+  stale regardless of timestamps. Non-interactive runs fail with the exact
+  linked rebuild command, and `NFN_NATIVE_GPT_AUTO_REBUILD=1` accepts that
+  repair automatically. The TUI banner and train log include the executable and
+  Tile-library paths plus SHA-256 hashes. Verified with linked-only rejection,
+  prompted rebuild, direct CLI, no-Torch artifact, and dual-lane benchmark
+  tests.
+
+  **Breaking changes:** dense-GPT `nfn train` no longer honors
+  `NFN_NATIVE_TRAIN_CLI`, `NFN_NATIVE_GPT_CLI`, or `NFN_NATIVE_GPT2_CLI`.
+  Use a lower-level SDK or compatibility entrypoint for intentional alternate
+  executable testing; the top-level dense-GPT route is linked-only.
+
+- Completed the GPT-2 phase-1 native benchmark path for `gpt2_zloss`,
+  `gpt2_softcap`, `gpt2_qknorm`, `gpt2_diff`, and `gpt2_stable`. The compiled
+  trainer recognizes all five as native dense-GPT selectors. Z-loss and
+  softcap use fused BF16/u16 cross-entropy forward/backward, QKNorm uses
+  packed-QKV per-head RMSNorm with its native backward, and differential
+  attention uses two half-QK native causal-attention passes plus native
+  combine/RMSNorm forward/backward. Candidate binaries do not import or link
+  Torch.
+
+- Added reproducible compiled-GPT benchmark controls: `--train-seed`,
+  `--init-mode gpt2-normal`, and `--fixed-validation-slice`. Runtime JSON now
+  records the non-wrapping train-shard offset, variant parameters, every
+  captured train and validation loss, validation time, compute-only training
+  time, and compute-only training tokens/second. Defaults preserve existing
+  initialization and validation behavior.
+
+- Dense GPT-2 pretraining phase from the ai-autoresearch hypothesis corpus
+  (`../ai-autoresearch/gpt2-ai-research-implementation-phase-todo.md`).
+
+  **New native kernels** (`neuralfn/csrc/tile_cuda/kernels.cu`):
+
+  - *Two-stage atomic-free LayerNorm affine-gradient reduction* (hypothesis
+    H0208), fused with the existing dInput + residual-add pass at `dim == 768`.
+    The shipped `layer_norm_backward_affine_residual_add_chunked_atomic_with_stats_*`
+    kernels run one CTA per (dim_block, 128-row chunk), which at GPT-2's
+    rows=4096 / dim=768 geometry launches 32 CTAs on a 170-SM device and walks
+    128 rows serially per CTA. Stage 1 now uses a much finer chunking (256 CTAs
+    by default) and writes dgamma/dbeta partials into a `[chunks, dim]`
+    workspace; stage 2 reduces them in a fixed chunk order. Measured on an
+    RTX 5090 at rows=4096, dim=768, median of 200 CUDA-event launches:
+    **0.094080 ms -> 0.033344 ms (-64.6%)**, run-to-run bit patterns for
+    `grad_weight` **20/20 distinct -> 1/20 distinct**, and max error versus an
+    FP64 reference improved from 2.94e-6 to 2.66e-6. In situ the fused LN1/LN2
+    backward stages fell from 85.45/67.15 ms to 21.99/20.75 ms (-72.0%
+    combined) and `block_backward` from 613.74 ms to 513.02 ms (-16.4%).
+    Workspace is 1.57 MiB and is keyed by `cudaStream_t`, because the native
+    GPT-2 trainer runs block-backward dInput and dWeight on concurrent streams.
+    Gated by `NFN_TILE_CUDA_LAYERNORM_AFFINE_TWO_STAGE` (default on) and sized
+    by `NFN_TILE_CUDA_LAYERNORM_AFFINE_TARGET_CHUNKS` (default 256, swept).
+
+  - *Fused cross-entropy + z-loss partials* (H0302):
+    `token_cross_entropy_z_partials_strided_bf16_bits_u16_targets_kernel` and
+    the exported ABI
+    `nfn_native_tile_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets`.
+    The cross-entropy kernel already materializes `logsumexp` per row, so
+    emitting `sum(logsumexp^2)` as a second partial costs nothing: measured
+    **+0.00%** at rows=4096, vocab=50257 (58.9166 ms -> 58.9168 ms), with the
+    cross-entropy output bit-identical to the shipped kernel and the z term
+    within 6.9e-6 relative of an FP64 reference. Passing
+    `z_partials == nullptr` reproduces the plain kernel exactly. The phase-1
+    trainer now uses the fused variant CE kernel for the z-loss backward
+    correction and selector routing.
+
+  - *Width-768 fused residual+LayerNorm specialization* (H0396):
+    `linear_bias_residual_layer_norm_dim768_float32_kernel`, one row per
+    256-thread CTA with warp-cooperative FP32 reductions, dispatched from all
+    six fused-LN launchers. **Hypothesis refuted**: the region is
+    bandwidth-bound, so dropping the 25% masked-off lanes of the generic
+    `shape{1024}` tile is worth only 2.5% (f32 linear) / 0.6% (bf16 linear)
+    against a 10% falsifier. The kernel is correct (max error versus FP64
+    identical to the generic path) and retained behind
+    `NFN_TILE_CUDA_DIM768_FUSED_LAYER_NORM`, **defaulted off** so shipped bf16
+    activation rounding stays bit-identical to the tile path.
+
+  **New dense GPT-2 template presets** — `gpt2_zloss`, `gpt2_softcap`,
+  `gpt2_qknorm`, `gpt2_diff`, `gpt2_stable`. All stay dense (no router, no
+  experts) and keep GPT-2's LayerNorm / GELU / learned-absolute-position
+  backbone. `gpt2_zloss` and `gpt2_stable` set `z_loss_coef=1e-4`;
+  `gpt2_softcap` sets `logit_softcap=30.0`; `gpt2_qknorm` and `gpt2_stable` set
+  `use_qk_norm=True`; `gpt2_diff` selects `attention_variant="differential"`.
+
+  **Per-variant benchmarks** (Torch path, 12L/d=768/12 heads/vocab 50257,
+  124,439,808 params, batch 4 x seq 512, 20 AdamW steps at lr 3e-5, median over
+  3 seeds; harness `scratchpad/bench_presets.py`):
+
+  | preset | ms/step | vs `gpt2` | peak mem | loss@20 (mean of 3 seeds) |
+  |--------|--------:|----------:|---------:|--------------------------:|
+  | `gpt2` | 45.66 | — | 4.08 GiB | 8.8456 |
+  | `gpt2_qknorm` | 47.25 | +3.5% | 4.23 GiB | 8.7855 |
+  | `gpt2_zloss` | 48.22 | +5.6% | 4.47 GiB | 8.8574 |
+  | `gpt2_softcap` | 49.25 | +7.8% | 4.48 GiB | 8.8730 |
+  | `gpt2_stable` | 49.70 | +8.8% | 4.61 GiB | 8.7974 |
+  | `gpt2_diff` | 52.22 | +14.4% | 4.30 GiB | 8.7108 |
+
+  The loss column is a sanity check, not a quality result: the baseline's own
+  seed-to-seed spread is 0.0425, so only `gpt2_diff` (-0.1348) separates from
+  noise. Twenty steps is ~40M tokens. `gpt2_diff` adds +12 parameters (one
+  lambda per head); `gpt2_qknorm` adds none because NeuralFn's `QKNormStage` is
+  a deliberately parameter-free RMSNorm.
+
+  H0302's own metric — the fraction of rows with a top-1/top-2 logit gap above
+  16 — is **exactly 0.0 for every preset at every seed** at this horizon, so the
+  z-loss quality claim is untested rather than supported; it needs the 20,000
+  steps the hypothesis specifies. The quantity z-loss anchors does move as
+  expected in direction: at step 20 `gpt2_softcap` cuts max |logsumexp| by
+  0.418, `gpt2_zloss` by only 0.0006 (the 1e-4 coefficient has barely engaged),
+  while `gpt2_qknorm` and `gpt2_diff` *raise* it by 0.83 and 1.12 — they bound
+  the pre-softmax attention scale, not the output scale, and are complementary
+  to z-loss/softcap rather than substitutes.
+
+  **Z-loss cost is path-dependent.** The native Tile kernel reuses the
+  `logsumexp` the cross-entropy already computes, so the z term measured
+  +0.00%. On the Torch path it costs +5.6% and +0.39 GiB, because
+  `F.cross_entropy` dispatches to a fused CUDA kernel that never materializes
+  `log_softmax` while an explicit `logsumexp` + `gather` retains intermediates
+  for autograd. `TokenCrossEntropyStage` now uses the single-pass
+  `logsumexp`-derived form; the initial
+  `F.cross_entropy(...) + coef * logsumexp(...)**2` implementation walked the
+  logit matrix twice and cost +8.4%.
+
+  **API additions** (non-breaking, all defaults preserve existing behaviour):
+
+  - `ModelSpec.z_loss_coef: float = 0.0` — adds
+    `z_loss_coef * mean(logsumexp(logits, -1) ** 2)` to the token cross-entropy.
+  - `TokenCrossEntropyStage.__init__(z_loss_coef: float = 0.0)` — previously
+    took no arguments; constructing it with no argument is unchanged.
+  - `token_cross_entropy` builtin gains `module_config={"z_loss_coef": 0.0}`.
+    This is a config-only change; the neuron's input/output ports are unchanged,
+    so the variant-library port contract is unaffected.
+  - `_build_gpt2_runtime_spec` now forwards `use_qk_norm`, `attention_variant`,
+    and `diff_lambda_init` from kwargs onto the `BlockSpec`.
+
+  **End-to-end verification** — 20 optimizer steps of dense GPT-2 (12 layers,
+  d=768, 12 heads, vocab 50257) over real gpt2-BPE shards (`dict_gpt2`),
+  batch 8 x seq 512, `--learning-rate 3e-5 --lr-schedule constant
+  --warmup-steps 0`, three paired repetitions:
+
+  | build | tokens/s | train_loss @ step 20 |
+  |-------|---------:|---------------------:|
+  | prior | 162224 / 161694 / 161688 | 10.0945 / 10.0953 / 10.0948 |
+  | new   | 181725 / 181713 / 181693 | 10.0946 / 10.0943 / 10.0946 |
+
+  **+12.4% throughput with the loss trajectory unchanged** — the cross-build
+  loss delta is at most 1e-3, smaller than each build's own run-to-run spread.
+
+  Note on methodology: at the shipped SM120 defaults (lr 6e-4 with warmup) the
+  20-step loss is chaotic — the baseline's own curve bounces
+  10.63 -> 10.62 -> 10.86 -> 11.50 -> 10.65 over six steps, and a single-ULP
+  bf16 activation difference moved the step-20 loss from 7.82 to 7.48. A/B loss
+  comparisons in that regime measure chaos, not the change, so kernel
+  correctness is established against FP64 references and loss comparisons are
+  run at a stable learning rate.
+
+  Verification: `bash tools/build_native_train_tile_ops.sh` clean;
+  `python -m pytest tests/test_template_presets.py -x -q` 31 passed;
+  `python -m pytest tests/test_builtin_neurons.py tests/test_advanced_templates.py -q`
+  9 passed; `python tools/generate_native_gpt_template_catalog.py` regenerated
+  `neuralfn/csrc/native_train/shipped_gpt_template_presets.h`; per-kernel
+  correctness and timing captured with standalone ctypes harnesses against FP64
+  references.
+
 - Completed the native-family production-step CUDA graph readiness contract.
   Plan/runtime JSON now reports
   `cuda_graph_capture_scope: "retained_forward_backward_optimizer_step"`,

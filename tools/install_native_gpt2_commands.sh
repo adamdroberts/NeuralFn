@@ -20,6 +20,7 @@ LAUNCHER="${NFN_NATIVE_GPT2_LAUNCHER:-${ROOT_DIR}/build/nfn_gpt2_tile_train}"
 GPT_TRAIN_LAUNCHER="${NFN_NATIVE_GPT_TRAIN_CLI:-${ROOT_DIR}/build/nfn_train_gpt}"
 SM120_LAUNCHER="${NFN_NATIVE_SM120_CLI:-${ROOT_DIR}/build/nfn_train_gpt_sm120}"
 MISSING_TRAINERS_DIR="${NFN_NATIVE_MISSING_TRAINERS_DIR:-${ROOT_DIR}/build}"
+EMBEDDING_CLI="${NFN_NATIVE_EMBEDDING_CLI:-${ROOT_DIR}/build/nfn_embedding_native_train}"
 MISSING_TARGETS=(
   nfn_gpt2_evo_native_train
   nfn_nanogpt_native_train
@@ -82,6 +83,10 @@ ln -sfn "${GPT_TRAIN_LAUNCHER}" "${BIN_DIR}/nfn-train-gpt"
 ln -sfn "${GPT_TRAIN_LAUNCHER}" "${BIN_DIR}/nfn-gpt-train"
 ln -sfn "${SM120_LAUNCHER}" "${BIN_DIR}/nfn-train-gpt-sm120"
 ln -sfn "${SM120_LAUNCHER}" "${BIN_DIR}/nfn-gpt-sm120-train"
+if [[ -x "${EMBEDDING_CLI}" ]]; then
+  ln -sfn "${EMBEDDING_CLI}" "${BIN_DIR}/nfn-embedding-native-train"
+  ln -sfn "${EMBEDDING_CLI}" "${BIN_DIR}/nfn_embedding_native_train"
+fi
 for target in "${MISSING_TARGETS[@]}"; do
   if [[ -x "${MISSING_TRAINERS_DIR}/${target}" ]]; then
     ln -sfn "${MISSING_TRAINERS_DIR}/${target}" "${BIN_DIR}/${target}"
@@ -103,6 +108,10 @@ printf '%s\n' "${BIN_DIR}/nfn-train-gpt"
 printf '%s\n' "${BIN_DIR}/nfn-gpt-train"
 printf '%s\n' "${BIN_DIR}/nfn-train-gpt-sm120"
 printf '%s\n' "${BIN_DIR}/nfn-gpt-sm120-train"
+if [[ -L "${BIN_DIR}/nfn-embedding-native-train" ]]; then
+  printf '%s\n' "${BIN_DIR}/nfn-embedding-native-train"
+  printf '%s\n' "${BIN_DIR}/nfn_embedding_native_train"
+fi
 for target in "${MISSING_TARGETS[@]}"; do
   if [[ -L "${BIN_DIR}/${target}" ]]; then
     printf '%s\n' "${BIN_DIR}/${target}"

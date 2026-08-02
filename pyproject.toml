@@ -21,9 +21,16 @@ datasets = [
   "numpy>=1.24",
   "tiktoken>=0.5",
 ]
+embeddings = [
+  "datasets>=2.14",
+  "huggingface-hub>=0.24",
+  "safetensors>=0.4",
+  "tokenizers>=0.19",
+]
 server = [
   "alembic>=1.13",
   "fastapi>=0.100",
+  "huggingface-hub>=0.24",
   "mcp>=1.0.0",
   "networkx>=3.0",
   "numpy>=1.24",
@@ -32,6 +39,8 @@ server = [
   "python-multipart>=0.0.6",
   "redis>=5.0",
   "sqlalchemy>=2.0",
+  "safetensors>=0.4",
+  "tokenizers>=0.19",
   "tiktoken>=0.5",
   "uvicorn>=0.23",
 ]
@@ -61,6 +70,7 @@ include = ["neuralfn*", "server*"]
 [tool.setuptools.package-data]
 neuralfn = [
   "csrc/native_gpt2/*.cpp",
+  "csrc/native_embedding/*.cpp",
   "csrc/native_train/*.cpp",
   "csrc/native_train/*.cu",
   "csrc/native_train/*.h",

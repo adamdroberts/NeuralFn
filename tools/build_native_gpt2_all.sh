@@ -15,6 +15,7 @@ NATIVE_TRAIN_OUT="${NFN_NATIVE_TRAIN_CLI_OUT:-}"
 NATIVE_NFN_OUT="${NFN_NATIVE_NFN_CLI_OUT:-}"
 MISSING_TRAINERS_OUT_DIR="${NFN_NATIVE_MISSING_TRAINERS_OUT_DIR:-}"
 NATIVE_TILE_OPS_OUT="${NFN_NATIVE_TRAIN_TILE_OPS_OUT:-}"
+EMBEDDING_CLI_OUT="${NFN_NATIVE_EMBEDDING_CLI_OUT:-}"
 
 if [[ -n "${GPT_BINDING_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_gpt_binding.sh" "${GPT_BINDING_OUT}"
@@ -92,4 +93,10 @@ if [[ -n "${MISSING_TRAINERS_OUT_DIR}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_missing_trainers.sh" "${MISSING_TRAINERS_OUT_DIR}"
 else
   bash "${ROOT_DIR}/tools/build_native_missing_trainers.sh" "${ROOT_DIR}/build"
+fi
+
+if [[ -n "${EMBEDDING_CLI_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_embedding_cli.sh" "${EMBEDDING_CLI_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_native_embedding_cli.sh"
 fi

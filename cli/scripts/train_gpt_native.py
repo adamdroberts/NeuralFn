@@ -636,7 +636,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--native-cuda-smoke-transformer-block-step", "--smoke-transformer-block-step", action="store_true")
     parser.add_argument("--native-cuda-smoke-transformer-lm-step", "--smoke-transformer-lm-step", action="store_true")
     parser.add_argument("--native-cuda-smoke-embedding-lm-step", "--smoke-embedding-lm-step", action="store_true")
-    parser.add_argument("--train-embedding-lm", action="store_true")
+    parser.add_argument(
+        "--train-embedding-lm",
+        action="store_true",
+        help=(
+            "Legacy dense-GPT token/position-embedding plus tied-LM-head next-token diagnostic; "
+            "use `nfn train --base-model embedding` for sentence/document embedding training."
+        ),
+    )
     parser.add_argument("--train-transformer-lm", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--require-cooperative-lm-head-backward",

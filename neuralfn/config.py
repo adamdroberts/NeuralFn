@@ -179,6 +179,9 @@ class ModelSpec:
     vocab_size: int = 256
     tie_embeddings: bool = True
     logit_softcap: float = 0.0  # 0.0 = disabled; >0.0 = tanh softcap (Gemma, PaLM)
+    # H0302: coefficient on mean(logsumexp(logits)^2). 0.0 = plain cross-entropy;
+    # 1e-4 is the value used by the gpt2_zloss / gpt2_stable presets.
+    z_loss_coef: float = 0.0
     block_spec: BlockSpec = field(default_factory=lambda: BlockSpec(family="gpt2"))
     template: TemplateSpec = field(default_factory=TemplateSpec)
     jepa_latent_dim: int = 128
@@ -236,6 +239,7 @@ def _base_model_spec(
         vocab_size=int(kwargs.get("vocab_size", 256)),
         tie_embeddings=bool(kwargs.get("tie_embeddings", default_tie_embeddings)),
         logit_softcap=float(kwargs.get("logit_softcap", 0.0)),
+        z_loss_coef=float(kwargs.get("z_loss_coef", 0.0)),
         block_spec=block_spec,
         template=template,
         jepa_latent_dim=int(kwargs.get("jepa_latent_dim", model_dim)),
@@ -304,6 +308,11 @@ SHIPPED_GPT_TEMPLATE_BASE_PRESETS: tuple[str, ...] = (
     "gpt2",
     "gpt2_megakernel",
     "gpt2_moa",
+    "gpt2_zloss",
+    "gpt2_softcap",
+    "gpt2_qknorm",
+    "gpt2_diff",
+    "gpt2_stable",
     "llama",
     "modern_norms_llama",
     "mixllama",
@@ -578,6 +587,9 @@ def _build_gpt2_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
             pos_encoding="absolute",
             linear_bias=True,
             num_heads=kwargs.get("num_heads", 4),
+            use_qk_norm=bool(kwargs.get("use_qk_norm", False)),
+            attention_variant=str(kwargs.get("attention_variant", "dense")),
+            diff_lambda_init=float(kwargs.get("diff_lambda_init", 0.8)),
         ),
         default_tie_embeddings=True,
     )
@@ -585,6 +597,76 @@ def _build_gpt2_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
 
 def build_gpt2_spec(**kwargs: Any) -> ModelSpec:
     return _build_gpt2_runtime_spec(runtime="eager", **kwargs)
+
+
+# --- Dense GPT-2 pretraining-stability variants (ai-autoresearch phase) --------
+# All five stay dense (no router, no experts), keep GPT-2's LayerNorm / GELU /
+# learned-absolute-position backbone, and change only what the corresponding
+# hypothesis targets. See gpt2-ai-research-implementation-phase-todo.md.
+
+
+def build_gpt2_zloss_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 with a z-loss anchored log-partition (H0302).
+
+    Adds ``z_loss_coef * mean(logsumexp(logits, -1) ** 2)`` to the token
+    cross-entropy. The term pins the softmax normalizer near zero so the logit
+    scale cannot drift upward over a long pretraining run; H0302 predicts a
+    50-80% reduction in the fraction of training rows whose top-1 logit gap
+    exceeds 16, at validation NLL within 0.01 nats of plain cross-entropy.
+    ``logsumexp`` is already the dominant term of the cross-entropy, so the
+    forward cost is a squared scalar per row.
+    """
+    kwargs.setdefault("z_loss_coef", 1e-4)
+    return _build_gpt2_runtime_spec(runtime=str(kwargs.pop("runtime", "eager")), **kwargs)
+
+
+def build_gpt2_softcap_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 with a tanh logit softcap (H0058, transferred from Gemma-3).
+
+    Bounds the logits with ``softcap * tanh(logits / softcap)`` instead of
+    penalizing the log-partition. This is the hard-bound counterpart to
+    ``gpt2_zloss``: it caps the tail outright rather than regularizing toward
+    zero, at the cost of a saturating gradient on the capped entries.
+    """
+    kwargs.setdefault("logit_softcap", 30.0)
+    return _build_gpt2_runtime_spec(runtime=str(kwargs.pop("runtime", "eager")), **kwargs)
+
+
+def build_gpt2_qknorm_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 with QK-norm on the attention query/key projections.
+
+    A fused RMSNorm on Q and K before SDPA (DeepSeek-V3 / Gemma-3 practice).
+    ``use_qk_norm`` already existed on ``BlockSpec`` but no dense GPT-2 preset
+    exercised it; it bounds the pre-softmax logit scale, which is the other
+    place GPT-2 pretraining goes unstable at higher learning rates.
+    """
+    kwargs.setdefault("use_qk_norm", True)
+    return _build_gpt2_runtime_spec(runtime=str(kwargs.pop("runtime", "eager")), **kwargs)
+
+
+def build_gpt2_diff_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 with Differential Transformer attention (H0067).
+
+    Replaces the single softmax attention map with the difference of two maps
+    scaled by a learnable per-head lambda, which cancels common-mode attention
+    noise. Dense throughout; only the SDPA node changes.
+    """
+    kwargs.setdefault("attention_variant", "differential")
+    kwargs.setdefault("diff_lambda_init", 0.8)
+    return _build_gpt2_runtime_spec(runtime=str(kwargs.pop("runtime", "eager")), **kwargs)
+
+
+def build_gpt2_stable_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 stacking every stability change that costs ~no throughput.
+
+    z-loss (H0302) + QK-norm bound both ends of the attention/softmax logit
+    scale. Paired on the trainer side with tanh-approximate GELU (H0534, so the
+    Torch and native backends agree) and no weight decay on 1-D parameters
+    (H0532). This is the preset carried into the 20-step native A/B.
+    """
+    kwargs.setdefault("z_loss_coef", 1e-4)
+    kwargs.setdefault("use_qk_norm", True)
+    return _build_gpt2_runtime_spec(runtime=str(kwargs.pop("runtime", "eager")), **kwargs)
 
 
 def build_gpt2_megakernel_spec(**kwargs: Any) -> ModelSpec:

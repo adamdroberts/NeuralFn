@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -134,6 +135,59 @@ struct TokenCrossEntropyWorkspace {
 };
 TokenCrossEntropyWorkspace g_token_cross_entropy_workspace;
 std::mutex g_token_cross_entropy_workspace_mutex;
+
+struct DifferentialPackedAttentionWorkspace {
+  std::uint16_t* qkv_first = nullptr;
+  std::uint16_t* qkv_second = nullptr;
+  std::uint16_t* out_first = nullptr;
+  std::uint16_t* out_second = nullptr;
+  std::uint16_t* grad_qkv_first = nullptr;
+  std::uint16_t* grad_qkv_second = nullptr;
+  float* grad_out_first = nullptr;
+  float* grad_out_second = nullptr;
+  float* lse_first = nullptr;
+  float* lse_second = nullptr;
+  float* combine_rstd = nullptr;
+  float* q_first = nullptr;
+  float* k_first = nullptr;
+  float* q_second = nullptr;
+  float* k_second = nullptr;
+  float* v = nullptr;
+  float* head_out_first = nullptr;
+  float* head_out_second = nullptr;
+  float* grad_q_first = nullptr;
+  float* grad_k_first = nullptr;
+  float* grad_v_first = nullptr;
+  float* grad_q_second = nullptr;
+  float* grad_k_second = nullptr;
+  float* grad_v_second = nullptr;
+  std::int64_t qkv_capacity = 0;
+  std::int64_t output_capacity = 0;
+  std::int64_t lse_capacity = 0;
+};
+DifferentialPackedAttentionWorkspace g_differential_packed_attention_workspace;
+std::mutex g_differential_packed_attention_workspace_mutex;
+
+// H0208 / MK-A: [chunks, dim] dgamma/dbeta partials for the atomic-free
+// two-stage LayerNorm affine reduction.
+//
+// The workspace is keyed by stream. The native GPT-2 trainer runs block-backward
+// dInput and dWeight on separate concurrent streams (see the
+// `block_backward_dinput` / `block_backward_dweight` streams it creates), so a
+// single global scratch buffer would be raced between two in-flight fused
+// LayerNorm backwards and silently corrupt dgamma/dbeta. Work enqueued on one
+// stream is serialized, so one workspace per stream is both necessary and
+// sufficient.
+struct LayerNormAffinePartialsWorkspace {
+  float* grad_weight = nullptr;
+  float* grad_bias = nullptr;
+  std::int64_t element_capacity = 0;
+};
+std::map<cudaStream_t, LayerNormAffinePartialsWorkspace>
+    g_layer_norm_affine_partials_workspaces;
+std::mutex g_layer_norm_affine_partials_workspace_mutex;
+std::atomic<std::int64_t> g_layer_norm_affine_partials_allocation_count{0};
+std::atomic<std::int64_t> g_layer_norm_affine_partials_launch_count{0};
 
 struct PackedAttentionFloatWorkspace {
   float* q = nullptr;
@@ -471,6 +525,104 @@ bool dim768_bf16_residual_add_enabled() {
         std::strcmp(value, "ON") == 0;
   }();
   return enabled;
+}
+
+// H0396: width-768 specialization of the fused residual + LayerNorm forward.
+// The generic tile path runs on a fixed shape{1024} tile with a runtime `d < dim`
+// mask, so at GPT-2's dim=768 a quarter of the lanes are permanently masked off and
+// every load/store/reduce pays for the mask.
+//
+// MEASURED (RTX 5090, rows=4096, dim=768, median of 200 CUDA-event launches):
+//   f32-linear variant   generic 0.019456 ms -> specialized 0.018976 ms  (-2.5%)
+//   bf16-linear variant  generic 0.021760 ms -> specialized 0.021632 ms  (-0.6%)
+// Both are below H0396's 10% falsifier: the region is bandwidth-bound, so
+// removing the 25% masked-off lanes buys almost nothing. H0396 is refuted.
+// The kernel is retained and correct (max |out - fp64 reference| = 1.3e-6,
+// identical to the generic path); it is gated OFF by default so the shipped
+// numerics stay bit-identical to the tile path. Set the env var to 1 to enable.
+bool dim768_fused_layer_norm_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_DIM768_FUSED_LAYER_NORM");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_DIM768_FUSED_LAYER_NORM");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_DIM768_FUSED_LAYER_NORM");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+// H0208 / MK-A gate. Default ON.
+//
+// MEASURED (RTX 5090, rows=4096, dim=768, median of 200 CUDA-event launches):
+//   chunked-atomic baseline  0.094080 ms, 20 distinct grad_weight bit patterns / 20 launches
+//   two-stage (256 chunks)   0.033344 ms,  1 distinct bit pattern / 20 launches  (-64.6%)
+//   max |grad_weight - fp64 reference|: 2.94e-6 baseline -> 2.66e-6 candidate
+// H0208 predicted 10-20%; the measured 64.6% exceeds it, because the dominant
+// cost was the 32-CTA occupancy of the old grid rather than the atomics.
+// Set the env var to 0 to fall back to the chunked-atomic kernel.
+bool layer_norm_affine_two_stage_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LAYERNORM_AFFINE_TWO_STAGE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_LAYERNORM_AFFINE_TWO_STAGE");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_LAYERNORM_AFFINE_TWO_STAGE");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return true;
+  }();
+  return enabled;
+}
+
+// Target chunk count for the H0208 stage-1 grid. Swept at rows=4096, dim=768 on
+// an RTX 5090 (170 SMs), median of 200 CUDA-event launches:
+//   chunks   128      170      256      340      512      1024     2048
+//   ms       0.0358   0.0332   0.0333   0.0345   0.0385   0.0558   0.0908
+// 256 sits at the flat optimum (~1.5 waves) and costs only
+// 256 * 768 * 4 B * 2 = 1.57 MiB of workspace, well inside H0208's 8 MiB budget.
+// Larger chunk counts both slow the stage-2 reduction and lengthen its FP32
+// summation chain, so accuracy degrades with them too.
+std::int64_t layer_norm_affine_two_stage_target_chunks() {
+  static const std::int64_t value = []() -> std::int64_t {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LAYERNORM_AFFINE_TARGET_CHUNKS");
+    if (raw == nullptr || raw[0] == '\0') {
+      return 256;
+    }
+    char* end = nullptr;
+    const long long parsed = std::strtoll(raw, &end, 10);
+    if (end == raw || parsed <= 0) {
+      return 256;
+    }
+    return static_cast<std::int64_t>(parsed);
+  }();
+  return value;
 }
 
 bool cross_entropy_bf16_exp2_enabled() {
@@ -1673,6 +1825,46 @@ TokenCrossEntropyWorkspace* ensure_token_cross_entropy_workspace(std::int64_t ro
   g_token_cross_entropy_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
   g_token_cross_entropy_workspace_row_capacity.store(rows, std::memory_order_relaxed);
   return &g_token_cross_entropy_workspace;
+}
+
+void release_layer_norm_affine_partials_workspace(LayerNormAffinePartialsWorkspace& workspace) {
+  if (workspace.grad_weight != nullptr) cudaFree(workspace.grad_weight);
+  if (workspace.grad_bias != nullptr) cudaFree(workspace.grad_bias);
+  workspace = {};
+}
+
+LayerNormAffinePartialsWorkspace* ensure_layer_norm_affine_partials_workspace(
+    std::int64_t elements,
+    cudaStream_t stream) {
+  if (elements <= 0) {
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(g_layer_norm_affine_partials_workspace_mutex);
+  LayerNormAffinePartialsWorkspace& slot =
+      g_layer_norm_affine_partials_workspaces[stream];
+  if (slot.element_capacity >= elements && slot.grad_weight != nullptr &&
+      slot.grad_bias != nullptr) {
+    return &slot;
+  }
+  LayerNormAffinePartialsWorkspace next;
+  next.element_capacity = elements;
+  const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(elements);
+  if (cudaMalloc(&next.grad_weight, bytes) != cudaSuccess) {
+    return nullptr;
+  }
+  if (cudaMalloc(&next.grad_bias, bytes) != cudaSuccess) {
+    release_layer_norm_affine_partials_workspace(next);
+    return nullptr;
+  }
+  // The old buffer may still be referenced by work already queued on this
+  // stream, so drain the stream before freeing it.
+  if (slot.grad_weight != nullptr || slot.grad_bias != nullptr) {
+    cudaStreamSynchronize(stream);
+    release_layer_norm_affine_partials_workspace(slot);
+  }
+  slot = next;
+  g_layer_norm_affine_partials_allocation_count.fetch_add(1, std::memory_order_relaxed);
+  return &slot;
 }
 
 void release_packed_attention_float_workspace(PackedAttentionFloatWorkspace& workspace) {
@@ -8045,6 +8237,43 @@ __global__ void init_gpt2_token_weight_threaded_float32_kernel(
   }
 }
 
+__device__ __forceinline__ std::uint64_t seeded_normal_mix64(std::uint64_t value) {
+  value += 0x9e3779b97f4a7c15ULL;
+  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+  return value ^ (value >> 31);
+}
+
+__global__ void seeded_normal_float32_kernel(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    std::uint64_t seed,
+    std::uint64_t offset,
+    float stddev) {
+  const std::int64_t idx =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::uint64_t counter = offset + static_cast<std::uint64_t>(idx);
+  const std::uint64_t bits_a = seeded_normal_mix64(seed ^ (counter * 2ULL));
+  const std::uint64_t bits_b = seeded_normal_mix64(seed ^ (counter * 2ULL + 1ULL));
+  const float u1 =
+      (static_cast<float>((bits_a >> 40) + 1ULL)) * (1.0f / 16777217.0f);
+  const float u2 =
+      (static_cast<float>((bits_b >> 40) + 1ULL)) * (1.0f / 16777217.0f);
+  const float sample =
+      stddev * sqrtf(-2.0f * logf(u1)) * cosf(6.2831853071795864769f * u2);
+  if (values != nullptr) {
+    values[idx] = sample;
+  }
+  if (shadow_bf16_bits != nullptr) {
+    reinterpret_cast<__nv_bfloat16*>(shadow_bf16_bits)[idx] =
+        __float2bfloat16(sample);
+  }
+}
+
 __global__ void init_gpt2_token_weight_threaded_with_bf16_shadow_float32_kernel(
     float* __restrict__ values,
     std::uint16_t* __restrict__ shadow_bf16_bits,
@@ -11569,6 +11798,182 @@ __tile_global__ void layer_norm_backward_affine_residual_add_chunked_atomic_with
   ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + d, grad_bias_acc, active);
 }
 
+// ---------------------------------------------------------------------------
+// H0208 / MK-A: two-stage atomic-free LayerNorm affine-gradient reduction fused
+// with the dInput + residual-add pass, specialized at dim == 768.
+//
+// The shipped chunked-atomic kernel runs one CTA per (dim_block, row_chunk) with
+// a 128-row chunk, so at GPT-2's rows=4096, dim=768 geometry it launches
+// 1 x 32 = 32 CTAs on a 170-SM device and each CTA walks 128 rows serially. The
+// dgamma/dbeta atomics are the smaller problem; the occupancy is the big one.
+//
+// Stage 1 keeps one CTA per small row chunk (chunk count targeted at ~1024 so the
+// device is saturated), computes the fully parallel dInput + residual add, and
+// writes its dgamma/dbeta partials into a preallocated [chunks, dim] workspace.
+// Stage 2 reduces the workspace into grad_weight/grad_bias in a fixed chunk order,
+// so the result is run-to-run bit-reproducible instead of atomic-order dependent.
+// ---------------------------------------------------------------------------
+
+template <bool kBf16X>
+__global__ void layer_norm_backward_affine_residual_add_partials_dim768_kernel(
+    const float* __restrict__ x_f32,
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    const float* __restrict__ mean,
+    const float* __restrict__ rstd,
+    const float* __restrict__ residual_grad,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    float* __restrict__ grad_weight_partials,
+    float* __restrict__ grad_bias_partials,
+    std::int64_t rows,
+    std::int64_t rows_per_chunk) {
+  constexpr int kDim = 768;
+  constexpr int kThreads = 256;
+  constexpr int kPerThread = kDim / kThreads;  // 3
+  constexpr int kWarps = kThreads / 32;        // 8
+  constexpr float kDimF = static_cast<float>(kDim);
+
+  const std::int64_t chunk = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t row_start = chunk * rows_per_chunk;
+  if (row_start >= rows) {
+    return;
+  }
+  std::int64_t row_end = row_start + rows_per_chunk;
+  if (row_end > rows) {
+    row_end = rows;
+  }
+
+  const float scale = *residual_scale;
+  const __nv_bfloat16* x_bf16 = reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits);
+
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+  __shared__ float warp_sum_grad[kWarps];
+  __shared__ float warp_sum_grad_xhat[kWarps];
+  __shared__ float row_sum_grad;
+  __shared__ float row_sum_grad_xhat;
+
+  int cols[kPerThread];
+  float weight_reg[kPerThread];
+  float dgamma[kPerThread];
+  float dbeta[kPerThread];
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    cols[i] = static_cast<int>(threadIdx.x) + i * kThreads;
+    weight_reg[i] = weight[cols[i]];
+    dgamma[i] = 0.0f;
+    dbeta[i] = 0.0f;
+  }
+
+  for (std::int64_t row = row_start; row < row_end; ++row) {
+    const std::int64_t base = row * kDim;
+    const float row_mean = mean[row];
+    const float inv_std = rstd[row];
+
+    float xhat[kPerThread];
+    float grad_norm[kPerThread];
+    float local_sum_grad = 0.0f;
+    float local_sum_grad_xhat = 0.0f;
+#pragma unroll
+    for (int i = 0; i < kPerThread; ++i) {
+      const std::int64_t idx = base + cols[i];
+      const float x_value =
+          kBf16X ? __bfloat162float(x_bf16[idx]) : x_f32[idx];
+      const float g = grad_out[idx];
+      const float xh = (x_value - row_mean) * inv_std;
+      const float gn = g * weight_reg[i];
+      xhat[i] = xh;
+      grad_norm[i] = gn;
+      dgamma[i] += g * xh;
+      dbeta[i] += g;
+      local_sum_grad += gn;
+      local_sum_grad_xhat += gn * xh;
+    }
+
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      local_sum_grad += __shfl_down_sync(0xffffffffu, local_sum_grad, offset);
+      local_sum_grad_xhat += __shfl_down_sync(0xffffffffu, local_sum_grad_xhat, offset);
+    }
+    if (lane == 0) {
+      warp_sum_grad[warp] = local_sum_grad;
+      warp_sum_grad_xhat[warp] = local_sum_grad_xhat;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+      float total_grad = 0.0f;
+      float total_grad_xhat = 0.0f;
+#pragma unroll
+      for (int w = 0; w < kWarps; ++w) {
+        total_grad += warp_sum_grad[w];
+        total_grad_xhat += warp_sum_grad_xhat[w];
+      }
+      row_sum_grad = total_grad;
+      row_sum_grad_xhat = total_grad_xhat;
+    }
+    __syncthreads();
+    const float sum_grad = row_sum_grad;
+    const float sum_grad_xhat = row_sum_grad_xhat;
+    const float grad_scale = inv_std / kDimF;
+
+#pragma unroll
+    for (int i = 0; i < kPerThread; ++i) {
+      const std::int64_t idx = base + cols[i];
+      const float grad_x =
+          (grad_norm[i] * kDimF - sum_grad - xhat[i] * sum_grad_xhat) * grad_scale;
+      out[idx] = residual_grad[idx] + scale * grad_x;
+    }
+    __syncthreads();
+  }
+
+  const std::int64_t partial_base = chunk * kDim;
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    grad_weight_partials[partial_base + cols[i]] = dgamma[i];
+    grad_bias_partials[partial_base + cols[i]] = dbeta[i];
+  }
+}
+
+// Stage 2: deterministic fixed-order reduction of the [chunks, dim] partials into
+// the caller's accumulating grad_weight / grad_bias vectors.
+__global__ void layer_norm_affine_partials_reduce_float32_kernel(
+    const float* __restrict__ grad_weight_partials,
+    const float* __restrict__ grad_bias_partials,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t chunks,
+    std::int64_t dim) {
+  const std::int64_t col =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (col >= dim) {
+    return;
+  }
+  // Four interleaved accumulators shorten the serial FP32 dependency chain 4x
+  // (and cut rounding error correspondingly) while keeping the summation order
+  // fixed, so the result stays bit-reproducible.
+  constexpr int kLanes = 4;
+  float weight_sum[kLanes] = {0.0f, 0.0f, 0.0f, 0.0f};
+  float bias_sum[kLanes] = {0.0f, 0.0f, 0.0f, 0.0f};
+  std::int64_t chunk = 0;
+  for (; chunk + kLanes <= chunks; chunk += kLanes) {
+#pragma unroll
+    for (int l = 0; l < kLanes; ++l) {
+      const std::int64_t idx = (chunk + l) * dim + col;
+      weight_sum[l] += grad_weight_partials[idx];
+      bias_sum[l] += grad_bias_partials[idx];
+    }
+  }
+  for (; chunk < chunks; ++chunk) {
+    const std::int64_t idx = chunk * dim + col;
+    weight_sum[0] += grad_weight_partials[idx];
+    bias_sum[0] += grad_bias_partials[idx];
+  }
+  grad_weight[col] += (weight_sum[0] + weight_sum[1]) + (weight_sum[2] + weight_sum[3]);
+  grad_bias[col] += (bias_sum[0] + bias_sum[1]) + (bias_sum[2] + bias_sum[3]);
+}
+
 __tile_global__ void softmax_lastdim_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -14657,6 +15062,136 @@ __global__ void linear_bias_residual_add_bf16_linear_dim768_float32_kernel(
   }
 }
 
+// H0396: one row per 256-thread CTA, three values per thread held in registers,
+// warp-cooperative FP32 reductions. Mirrors the semantics of
+// linear_bias_residual_layer_norm{,_bf16_linear}_float32_kernel exactly (same
+// two-pass mean/centered-variance order) but drops the shape{1024} mask.
+template <bool kBf16Linear>
+__global__ void linear_bias_residual_layer_norm_dim768_float32_kernel(
+    const float* __restrict__ residual,
+    const float* __restrict__ linear_out_f32,
+    const std::uint16_t* __restrict__ linear_out_bf16_bits,
+    const float* __restrict__ linear_bias,
+    const float* __restrict__ residual_scale,
+    const float* __restrict__ norm_weight,
+    const float* __restrict__ norm_bias,
+    float* __restrict__ residual_out,
+    float* __restrict__ norm_out,
+    float* __restrict__ mean_out,
+    float* __restrict__ rstd_out,
+    std::uint16_t* __restrict__ residual_bf16_out,
+    std::uint16_t* __restrict__ norm_bf16_out,
+    std::int64_t rows,
+    float eps) {
+  constexpr int kDim = 768;
+  constexpr int kThreads = 256;
+  constexpr int kPerThread = kDim / kThreads;  // 3
+  constexpr int kWarps = kThreads / 32;        // 8
+
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t base = row * kDim;
+  const float scale = *residual_scale;
+  const __nv_bfloat16* linear_out_bf16 =
+      reinterpret_cast<const __nv_bfloat16*>(linear_out_bf16_bits);
+
+  __shared__ float warp_partials[kWarps];
+  __shared__ float row_stat;
+
+  const int lane = static_cast<int>(threadIdx.x) & 31;
+  const int warp = static_cast<int>(threadIdx.x) >> 5;
+
+  // Pass 1: fuse bias + scaled residual add, publish the residual outputs, and
+  // accumulate the row sum without ever re-reading the combined values.
+  float values[kPerThread];
+  float local_sum = 0.0f;
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const int col = static_cast<int>(threadIdx.x) + i * kThreads;
+    const std::int64_t idx = base + col;
+    const float projected =
+        (kBf16Linear ? __bfloat162float(linear_out_bf16[idx]) : linear_out_f32[idx]) +
+        linear_bias[col];
+    const float combined = residual[idx] + projected * scale;
+    values[i] = combined;
+    local_sum += combined;
+    residual_out[idx] = combined;
+    if (residual_bf16_out != nullptr) {
+      reinterpret_cast<__nv_bfloat16*>(residual_bf16_out)[idx] = __float2bfloat16(combined);
+    }
+  }
+
+#pragma unroll
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    local_sum += __shfl_down_sync(0xffffffffu, local_sum, offset);
+  }
+  if (lane == 0) {
+    warp_partials[warp] = local_sum;
+  }
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    float total = 0.0f;
+#pragma unroll
+    for (int w = 0; w < kWarps; ++w) {
+      total += warp_partials[w];
+    }
+    row_stat = total / static_cast<float>(kDim);
+  }
+  __syncthreads();
+  const float mean = row_stat;
+
+  // Pass 2: centered variance from the registers already holding the row.
+  float local_sq = 0.0f;
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const float centered = values[i] - mean;
+    values[i] = centered;
+    local_sq += centered * centered;
+  }
+#pragma unroll
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    local_sq += __shfl_down_sync(0xffffffffu, local_sq, offset);
+  }
+  if (lane == 0) {
+    warp_partials[warp] = local_sq;
+  }
+  __syncthreads();
+  if (threadIdx.x == 0) {
+    float total = 0.0f;
+#pragma unroll
+    for (int w = 0; w < kWarps; ++w) {
+      total += warp_partials[w];
+    }
+    row_stat = rsqrtf(total / static_cast<float>(kDim) + eps);
+  }
+  __syncthreads();
+  const float norm_scale = row_stat;
+
+  if (threadIdx.x == 0) {
+    if (mean_out != nullptr) {
+      mean_out[row] = mean;
+    }
+    if (rstd_out != nullptr) {
+      rstd_out[row] = norm_scale;
+    }
+  }
+
+#pragma unroll
+  for (int i = 0; i < kPerThread; ++i) {
+    const int col = static_cast<int>(threadIdx.x) + i * kThreads;
+    const std::int64_t idx = base + col;
+    const float norm_value = values[i] * norm_scale * norm_weight[col] + norm_bias[col];
+    if (norm_out != nullptr) {
+      norm_out[idx] = norm_value;
+    }
+    if (norm_bf16_out != nullptr) {
+      reinterpret_cast<__nv_bfloat16*>(norm_bf16_out)[idx] = __float2bfloat16(norm_value);
+    }
+  }
+}
+
 __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     const float* __restrict__ residual,
     const float* __restrict__ linear_out,
@@ -15429,6 +15964,507 @@ __tile_global__ void token_cross_entropy_partials_strided_bf16_bits_u16_targets_
   using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
   auto out_idx = ct::full<OneIndexTile>(static_cast<std::int64_t>(bx));
   ct::store(partials + out_idx, ct::sum(loss, 0_ic));
+}
+
+// H0302 / MK-C: fused cross-entropy + z-loss partials.
+//
+// The plain CE kernel already materializes `lse = log(denom) + maxv` per row and
+// throws it away after subtracting the target logit. This variant emits a second
+// partial accumulator holding `sum(lse^2)` over the block's rows, so the z-loss
+// term `z_loss_coef * mean(lse^2)` costs one extra multiply and one extra scalar
+// store per block -- no additional pass over the [rows, vocab] logit matrix,
+// which is what dominates this kernel. `z_partials` may be null, in which case
+// the result is bit-identical to the plain CE kernel.
+__tile_global__ void token_cross_entropy_z_partials_strided_bf16_bits_u16_targets_kernel(
+    const std::uint16_t* __restrict__ logits_bf16_bits,
+    const std::uint16_t* __restrict__ targets,
+    float* __restrict__ partials,
+    float* __restrict__ z_partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const auto* logits = ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(logits_bf16_bits), 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  partials = ct::assume_aligned(partials, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto row = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto active = row < ct::full<IndexTile>(rows);
+  auto stride_tile = ct::full<IndexTile>(row_stride);
+  auto maxv = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(-3.4028234663852886e38f);
+  for (std::int64_t col = 0; col < vocab; ++col) {
+    auto value = ct::element_cast<float>(
+        ct::load_masked(logits + row * stride_tile + ct::full<IndexTile>(col), active));
+    maxv = ct::select(value > maxv, value, maxv);
+  }
+  auto denom = ct::full<decltype(maxv)>(0.0f);
+  for (std::int64_t col = 0; col < vocab; ++col) {
+    auto value = ct::element_cast<float>(
+        ct::load_masked(logits + row * stride_tile + ct::full<IndexTile>(col), active));
+    denom = denom + ct::exp(value - maxv);
+  }
+  auto target_u16 = ct::load_masked(targets + row, active);
+  auto target = ct::element_cast<std::int64_t>(target_u16);
+  auto target_value = ct::element_cast<float>(ct::load_masked(logits + row * stride_tile + target, active));
+  auto log_z = ct::log(denom) + maxv;
+  auto loss = log_z - target_value;
+  loss = ct::select(active, loss, ct::full<decltype(loss)>(0.0f));
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(static_cast<std::int64_t>(bx));
+  ct::store(partials + out_idx, ct::sum(loss, 0_ic));
+  if (z_partials != nullptr) {
+    auto z_term = ct::select(active, log_z * log_z, ct::full<decltype(log_z)>(0.0f));
+    ct::store(z_partials + out_idx, ct::sum(z_term, 0_ic));
+  }
+}
+
+__global__ void token_cross_entropy_variant_bf16_u16_kernel(
+    std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float z_loss_coef,
+    float logit_softcap,
+    bool write_gradient) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  auto* logits = reinterpret_cast<__nv_bfloat16*>(logits_bf16_bits);
+  __shared__ float scratch[256];
+  __shared__ float row_maximum;
+  __shared__ float row_sum;
+  __shared__ float row_log_z;
+  float local_max = -3.4028234663852886e38f;
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    const float raw = __bfloat162float(logits[row * row_stride + col]);
+    const float value =
+        logit_softcap > 0.0f ? logit_softcap * tanhf(raw / logit_softcap) : raw;
+    local_max = fmaxf(local_max, value);
+  }
+  scratch[threadIdx.x] = local_max;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] = fmaxf(scratch[threadIdx.x], scratch[threadIdx.x + stride]);
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    row_maximum = scratch[0];
+  }
+  __syncthreads();
+  float local_sum = 0.0f;
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    const float raw = __bfloat162float(logits[row * row_stride + col]);
+    const float value =
+        logit_softcap > 0.0f ? logit_softcap * tanhf(raw / logit_softcap) : raw;
+    local_sum += expf(value - row_maximum);
+  }
+  scratch[threadIdx.x] = local_sum;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    row_sum = scratch[0];
+    row_log_z = logf(scratch[0]) + row_maximum;
+    const std::int64_t target = static_cast<std::int64_t>(targets[row]);
+    const float target_raw = __bfloat162float(logits[row * row_stride + target]);
+    const float target_value =
+        logit_softcap > 0.0f
+            ? logit_softcap * tanhf(target_raw / logit_softcap)
+            : target_raw;
+    if (row_losses != nullptr) {
+      row_losses[row] =
+          row_log_z - target_value + z_loss_coef * row_log_z * row_log_z;
+    }
+  }
+  __syncthreads();
+  if (!write_gradient) {
+    return;
+  }
+  const std::int64_t target = static_cast<std::int64_t>(targets[row]);
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    const std::int64_t index = row * row_stride + col;
+    const float raw = __bfloat162float(logits[index]);
+    const float value =
+        logit_softcap > 0.0f ? logit_softcap * tanhf(raw / logit_softcap) : raw;
+    const float probability = expf(value - row_maximum) / row_sum;
+    float grad =
+        probability - (col == target ? 1.0f : 0.0f) +
+        2.0f * z_loss_coef * row_log_z * probability;
+    if (logit_softcap > 0.0f) {
+      const float normalized = value / logit_softcap;
+      grad *= 1.0f - normalized * normalized;
+    }
+    logits[index] = __float2bfloat16(grad * loss_scale);
+  }
+  for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
+    logits[row * row_stride + col] = __float2bfloat16(0.0f);
+  }
+}
+
+__global__ void qk_rms_norm_packed_bf16_forward_kernel(
+    std::uint16_t* packed_qkv_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float eps) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t segments_per_row = heads * 2;
+  const std::int64_t row = segment / segments_per_row;
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t q_or_k_head = segment % segments_per_row;
+  const std::int64_t q_or_k = q_or_k_head / heads;
+  const std::int64_t head = q_or_k_head % heads;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t base =
+      row * model_dim * 3 + q_or_k * model_dim + head * head_dim;
+  auto* values = reinterpret_cast<__nv_bfloat16*>(packed_qkv_bits);
+  __shared__ float scratch[64];
+  float sumsq = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float value = __bfloat162float(values[base + d]);
+    sumsq += value * value;
+  }
+  scratch[threadIdx.x] = sumsq;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    rstd[segment] = rsqrtf(scratch[0] / static_cast<float>(head_dim) + eps);
+  }
+  __syncthreads();
+  const float inv_rms = rstd[segment];
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    values[base + d] = __float2bfloat16(__bfloat162float(values[base + d]) * inv_rms);
+  }
+}
+
+__global__ void qk_rms_norm_packed_bf16_backward_kernel(
+    const std::uint16_t* normalized_qkv_bits,
+    const float* rstd,
+    float* grad_qkv_float,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t segments_per_row = heads * 2;
+  const std::int64_t row = segment / segments_per_row;
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t q_or_k_head = segment % segments_per_row;
+  const std::int64_t q_or_k = q_or_k_head / heads;
+  const std::int64_t head = q_or_k_head % heads;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t base =
+      row * model_dim * 3 + q_or_k * model_dim + head * head_dim;
+  const auto* normalized = reinterpret_cast<const __nv_bfloat16*>(normalized_qkv_bits);
+  auto* grad_bf16 = reinterpret_cast<__nv_bfloat16*>(grad_qkv_bf16_bits);
+  __shared__ float scratch[64];
+  float dot = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float y = __bfloat162float(normalized[base + d]);
+    const float grad = grad_qkv_bf16_bits != nullptr
+        ? __bfloat162float(grad_bf16[base + d])
+        : grad_qkv_float[base + d];
+    dot += grad * y;
+  }
+  scratch[threadIdx.x] = dot;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  const float mean_dot = scratch[0] / static_cast<float>(head_dim);
+  const float inv_rms = rstd[segment];
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float y = __bfloat162float(normalized[base + d]);
+    const float grad = grad_qkv_bf16_bits != nullptr
+        ? __bfloat162float(grad_bf16[base + d])
+        : grad_qkv_float[base + d];
+    const float output = (grad - y * mean_dot) * inv_rms;
+    if (grad_qkv_bf16_bits != nullptr) {
+      grad_bf16[base + d] = __float2bfloat16(output);
+    } else {
+      grad_qkv_float[base + d] = output;
+    }
+  }
+}
+
+__global__ void differential_pack_qkv_bf16_kernel(
+    const std::uint16_t* input_bits,
+    std::uint16_t* first_bits,
+    std::uint16_t* second_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t half_dim = head_dim / 2;
+  const std::int64_t packed_qk_dim = heads * half_dim;
+  const std::int64_t output_stride = packed_qk_dim * 2 + model_dim;
+  const std::int64_t total = rows * output_stride;
+  for (std::int64_t index =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t row = index / output_stride;
+    const std::int64_t col = index % output_stride;
+    std::int64_t source_first = 0;
+    std::int64_t source_second = 0;
+    if (col < packed_qk_dim * 2) {
+      const std::int64_t q_or_k = col / packed_qk_dim;
+      const std::int64_t qk_col = col % packed_qk_dim;
+      const std::int64_t head = qk_col / half_dim;
+      const std::int64_t d = qk_col % half_dim;
+      const std::int64_t source_base =
+          row * model_dim * 3 + q_or_k * model_dim + head * head_dim;
+      source_first = source_base + d;
+      source_second = source_base + half_dim + d;
+    } else {
+      const std::int64_t v_col = col - packed_qk_dim * 2;
+      source_first = row * model_dim * 3 + model_dim * 2 + v_col;
+      source_second = source_first;
+    }
+    first_bits[index] = input_bits[source_first];
+    second_bits[index] = input_bits[source_second];
+  }
+}
+
+__global__ void differential_combine_rms_bf16_kernel(
+    const std::uint16_t* first_bits,
+    const std::uint16_t* second_bits,
+    std::uint16_t* output_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    float eps) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  if (segment >= rows * heads) {
+    return;
+  }
+  const std::int64_t base = segment * head_dim;
+  const auto* first = reinterpret_cast<const __nv_bfloat16*>(first_bits);
+  const auto* second = reinterpret_cast<const __nv_bfloat16*>(second_bits);
+  auto* output = reinterpret_cast<__nv_bfloat16*>(output_bits);
+  __shared__ float scratch[64];
+  float sumsq = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float value =
+        __bfloat162float(first[base + d]) - lambda * __bfloat162float(second[base + d]);
+    sumsq += value * value;
+  }
+  scratch[threadIdx.x] = sumsq;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    rstd[segment] = rsqrtf(scratch[0] / static_cast<float>(head_dim) + eps);
+  }
+  __syncthreads();
+  const float inv_rms = rstd[segment];
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float value =
+        __bfloat162float(first[base + d]) - lambda * __bfloat162float(second[base + d]);
+    output[base + d] = __float2bfloat16(value * inv_rms * output_scale);
+  }
+}
+
+__global__ void differential_combine_rms_backward_kernel(
+    const std::uint16_t* output_bits,
+    const float* rstd,
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  if (segment >= rows * heads) {
+    return;
+  }
+  const std::int64_t base = segment * head_dim;
+  const auto* output = reinterpret_cast<const __nv_bfloat16*>(output_bits);
+  __shared__ float scratch[64];
+  float dot = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float norm_value = __bfloat162float(output[base + d]) / output_scale;
+    dot += grad_output[base + d] * norm_value;
+  }
+  scratch[threadIdx.x] = dot;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  const float mean_dot = scratch[0] / static_cast<float>(head_dim);
+  const float scale = output_scale * rstd[segment];
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float norm_value = __bfloat162float(output[base + d]) / output_scale;
+    const float grad = scale * (grad_output[base + d] - norm_value * mean_dot);
+    grad_first[base + d] = grad;
+    grad_second[base + d] = -lambda * grad;
+  }
+}
+
+__global__ void differential_merge_qkv_grad_bf16_kernel(
+    const std::uint16_t* first_bits,
+    const std::uint16_t* second_bits,
+    std::uint16_t* output_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t half_dim = head_dim / 2;
+  const std::int64_t packed_qk_dim = heads * half_dim;
+  const std::int64_t input_stride = packed_qk_dim * 2 + model_dim;
+  const std::int64_t total = rows * model_dim * 3;
+  const auto* first = reinterpret_cast<const __nv_bfloat16*>(first_bits);
+  const auto* second = reinterpret_cast<const __nv_bfloat16*>(second_bits);
+  auto* output = reinterpret_cast<__nv_bfloat16*>(output_bits);
+  for (std::int64_t index =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t row = index / (model_dim * 3);
+    const std::int64_t col = index % (model_dim * 3);
+    float value = 0.0f;
+    if (col < model_dim * 2) {
+      const std::int64_t q_or_k = col / model_dim;
+      const std::int64_t qk_col = col % model_dim;
+      const std::int64_t head = qk_col / head_dim;
+      const std::int64_t d = qk_col % head_dim;
+      const std::int64_t packed_col =
+          q_or_k * packed_qk_dim + head * half_dim + (d % half_dim);
+      const std::int64_t packed_index = row * input_stride + packed_col;
+      value = d < half_dim
+          ? __bfloat162float(first[packed_index])
+          : __bfloat162float(second[packed_index]);
+    } else {
+      const std::int64_t v_col = col - model_dim * 2;
+      const std::int64_t packed_index =
+          row * input_stride + packed_qk_dim * 2 + v_col;
+      value = __bfloat162float(first[packed_index]) +
+              __bfloat162float(second[packed_index]);
+    }
+    output[index] = __float2bfloat16(value);
+  }
+}
+
+__global__ void differential_unpack_qkv_heads_float32_kernel(
+    const std::uint16_t* input_bits,
+    float* q_first,
+    float* k_first,
+    float* q_second,
+    float* k_second,
+    float* v,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t rows = batch * seq_len;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t total = rows * model_dim;
+  const auto* input = reinterpret_cast<const __nv_bfloat16*>(input_bits);
+  for (std::int64_t index =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t row = index / model_dim;
+    const std::int64_t model_col = index % model_dim;
+    const std::int64_t head = model_col / head_dim;
+    const std::int64_t d = model_col % head_dim;
+    const std::int64_t b = row / seq_len;
+    const std::int64_t s = row % seq_len;
+    const std::int64_t head_base =
+        ((b * heads + head) * seq_len + s);
+    v[head_base * head_dim + d] =
+        __bfloat162float(input[row * model_dim * 3 + model_dim * 2 + model_col]);
+    if (d < head_dim / 2) {
+      const std::int64_t half_index = head_base * (head_dim / 2) + d;
+      const std::int64_t source = row * model_dim * 3 + head * head_dim + d;
+      q_first[half_index] = __bfloat162float(input[source]);
+      q_second[half_index] = __bfloat162float(input[source + head_dim / 2]);
+      k_first[half_index] = __bfloat162float(input[source + model_dim]);
+      k_second[half_index] =
+          __bfloat162float(input[source + model_dim + head_dim / 2]);
+    }
+  }
+}
+
+__global__ void differential_merge_float_head_grads_bf16_kernel(
+    const float* grad_q_first,
+    const float* grad_k_first,
+    const float* grad_v_first,
+    const float* grad_q_second,
+    const float* grad_k_second,
+    const float* grad_v_second,
+    std::uint16_t* output_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t rows = batch * seq_len;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t total = rows * model_dim;
+  auto* output = reinterpret_cast<__nv_bfloat16*>(output_bits);
+  for (std::int64_t index =
+           static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < total;
+       index += static_cast<std::int64_t>(blockDim.x) * gridDim.x) {
+    const std::int64_t row = index / model_dim;
+    const std::int64_t model_col = index % model_dim;
+    const std::int64_t head = model_col / head_dim;
+    const std::int64_t d = model_col % head_dim;
+    const std::int64_t b = row / seq_len;
+    const std::int64_t s = row % seq_len;
+    const std::int64_t head_base = (b * heads + head) * seq_len + s;
+    const std::int64_t half_index =
+        head_base * (head_dim / 2) + (d % (head_dim / 2));
+    const float q_grad =
+        d < head_dim / 2 ? grad_q_first[half_index] : grad_q_second[half_index];
+    const float k_grad =
+        d < head_dim / 2 ? grad_k_first[half_index] : grad_k_second[half_index];
+    const float v_grad =
+        grad_v_first[head_base * head_dim + d] +
+        grad_v_second[head_base * head_dim + d];
+    output[row * model_dim * 3 + model_col] = __float2bfloat16(q_grad);
+    output[row * model_dim * 3 + model_dim + model_col] = __float2bfloat16(k_grad);
+    output[row * model_dim * 3 + model_dim * 2 + model_col] = __float2bfloat16(v_grad);
+  }
 }
 
 __tile_global__ void masked_token_cross_entropy_partials_float32_kernel(
@@ -20064,6 +21100,20 @@ void launch_init_gpt2_token_weight_float32(
   init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
 }
 
+void launch_seeded_normal_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    std::uint64_t seed,
+    std::uint64_t offset,
+    float stddev,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((n + kThreads - 1) / kThreads);
+  seeded_normal_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      values, shadow_bf16_bits, n, seed, offset, stddev);
+}
+
 void launch_init_gpt2_token_weight_fast_float32(
     float* values,
     std::int64_t n,
@@ -21539,6 +22589,61 @@ void launch_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32(
       x_bf16_bits, grad_out, mean, rstd, grad_weight, grad_bias, rows, dim);
 }
 
+// H0208 / MK-A: two-stage atomic-free dispatch shared by the f32 and bf16-x
+// fused affine + dInput + residual-add launchers. Returns false when the
+// geometry, the gate, or the workspace allocation does not select it.
+static bool try_launch_layer_norm_affine_two_stage_dim768(
+    const float* x_f32,
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  if (dim != 768 || rows <= 0 || !layer_norm_affine_two_stage_enabled()) {
+    return false;
+  }
+  const std::int64_t target_chunks = layer_norm_affine_two_stage_target_chunks();
+  std::int64_t rows_per_chunk = (rows + target_chunks - 1) / target_chunks;
+  if (rows_per_chunk < 1) {
+    rows_per_chunk = 1;
+  }
+  const std::int64_t chunks = (rows + rows_per_chunk - 1) / rows_per_chunk;
+  LayerNormAffinePartialsWorkspace* workspace =
+      ensure_layer_norm_affine_partials_workspace(chunks * dim, stream);
+  if (workspace == nullptr) {
+    return false;
+  }
+
+  constexpr int kThreads = 256;
+  if (x_bf16_bits != nullptr) {
+    layer_norm_backward_affine_residual_add_partials_dim768_kernel<true>
+        <<<static_cast<int>(chunks), kThreads, 0, stream>>>(
+            nullptr, x_bf16_bits, grad_out, weight, mean, rstd, residual_grad,
+            residual_scale, out, workspace->grad_weight, workspace->grad_bias,
+            rows, rows_per_chunk);
+  } else {
+    layer_norm_backward_affine_residual_add_partials_dim768_kernel<false>
+        <<<static_cast<int>(chunks), kThreads, 0, stream>>>(
+            x_f32, nullptr, grad_out, weight, mean, rstd, residual_grad,
+            residual_scale, out, workspace->grad_weight, workspace->grad_bias,
+            rows, rows_per_chunk);
+  }
+
+  const int reduce_blocks = static_cast<int>((dim + kThreads - 1) / kThreads);
+  layer_norm_affine_partials_reduce_float32_kernel<<<reduce_blocks, kThreads, 0, stream>>>(
+      workspace->grad_weight, workspace->grad_bias, grad_weight, grad_bias, chunks, dim);
+  g_layer_norm_affine_partials_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
 bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32(
     const float* x,
     const float* grad_out,
@@ -21555,6 +22660,11 @@ bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_float3
     cudaStream_t stream) {
   if (dim > kTileSize) {
     return false;
+  }
+  if (try_launch_layer_norm_affine_two_stage_dim768(
+          x, nullptr, grad_out, weight, mean, rstd, residual_grad, residual_scale,
+          out, grad_weight, grad_bias, rows, dim, stream)) {
+    return true;
   }
   const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
   const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
@@ -21597,6 +22707,11 @@ bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_b
     cudaStream_t stream) {
   if (dim > kTileSize) {
     return false;
+  }
+  if (try_launch_layer_norm_affine_two_stage_dim768(
+          nullptr, x_bf16_bits, grad_out, weight, mean, rstd, residual_grad,
+          residual_scale, out, grad_weight, grad_bias, rows, dim, stream)) {
+    return true;
   }
   const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
   const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
@@ -24334,6 +25449,72 @@ void launch_linear_bias_residual_layer_norm_float32(
       eps);
 }
 
+// H0396: shared dispatch for the width-768 fused residual+LayerNorm specialization.
+// Returns false when the geometry or the env gate does not select it, so callers
+// fall through to the generic tile kernel unchanged.
+static bool try_launch_fused_layer_norm_dim768(
+    const float* residual,
+    const float* linear_out_f32,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::uint16_t* norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  if (output_dim != 768 || rows <= 0 || !dim768_fused_layer_norm_enabled()) {
+    return false;
+  }
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>(rows);
+  if (linear_out_bf16_bits != nullptr) {
+    linear_bias_residual_layer_norm_dim768_float32_kernel<true>
+        <<<blocks, kThreads, 0, stream>>>(
+            residual,
+            nullptr,
+            linear_out_bf16_bits,
+            linear_bias,
+            residual_scale,
+            norm_weight,
+            norm_bias,
+            residual_out,
+            norm_out,
+            mean_out,
+            rstd_out,
+            residual_bf16_out,
+            norm_bf16_out,
+            rows,
+            eps);
+  } else {
+    linear_bias_residual_layer_norm_dim768_float32_kernel<false>
+        <<<blocks, kThreads, 0, stream>>>(
+            residual,
+            linear_out_f32,
+            nullptr,
+            linear_bias,
+            residual_scale,
+            norm_weight,
+            norm_bias,
+            residual_out,
+            norm_out,
+            mean_out,
+            rstd_out,
+            residual_bf16_out,
+            norm_bf16_out,
+            rows,
+            eps);
+  }
+  return true;
+}
+
 void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
     const float* residual,
     const std::uint16_t* linear_out_bf16_bits,
@@ -24349,6 +25530,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          nullptr,
+          linear_out_bf16_bits,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          nullptr,
+          nullptr,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out_bf16_bits,
@@ -24383,6 +25584,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          nullptr,
+          linear_out_bf16_bits,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          residual_bf16_out,
+          nullptr,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out_bf16_bits,
@@ -24418,6 +25639,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          nullptr,
+          linear_out_bf16_bits,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          residual_bf16_out,
+          norm_bf16_out,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out_bf16_bits,
@@ -24451,6 +25692,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_float32(
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          linear_out,
+          nullptr,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          nullptr,
+          nullptr,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out,
@@ -24485,6 +25746,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          linear_out,
+          nullptr,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          residual_bf16_out,
+          nullptr,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out,
@@ -24520,6 +25801,26 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_f
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream) {
+  if (try_launch_fused_layer_norm_dim768(
+          residual,
+          linear_out,
+          nullptr,
+          linear_bias,
+          residual_scale,
+          norm_weight,
+          norm_bias,
+          residual_out,
+          norm_out,
+          mean_out,
+          rstd_out,
+          residual_bf16_out,
+          norm_bf16_out,
+          rows,
+          output_dim,
+          eps,
+          stream)) {
+    return;
+  }
   linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       residual,
       linear_out,
@@ -24804,6 +26105,68 @@ void launch_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
   const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
   token_cross_entropy_partials_strided_bf16_bits_u16_targets_kernel<<<blocks, 1, 0, stream>>>(
       logits_bf16_bits, targets, partials, rows, vocab, row_stride);
+}
+
+// H0302 / MK-C. Pass z_partials == nullptr for plain cross-entropy.
+void launch_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets(
+    const std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* partials,
+    float* z_partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
+  token_cross_entropy_z_partials_strided_bf16_bits_u16_targets_kernel<<<blocks, 1, 0, stream>>>(
+      logits_bf16_bits, targets, partials, z_partials, rows, vocab, row_stride);
+}
+
+void launch_token_cross_entropy_variant_bf16_u16(
+    std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float z_loss_coef,
+    float logit_softcap,
+    bool write_gradient,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  token_cross_entropy_variant_bf16_u16_kernel<<<static_cast<int>(rows), kThreads, 0, stream>>>(
+      logits_bf16_bits, targets, row_losses, rows, vocab, row_stride, loss_scale,
+      z_loss_coef, logit_softcap, write_gradient);
+}
+
+void launch_qk_rms_norm_packed_bf16_forward(
+    std::uint16_t* packed_qkv_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float eps,
+    cudaStream_t stream) {
+  constexpr int kThreads = 64;
+  const std::int64_t blocks = rows * heads * 2;
+  qk_rms_norm_packed_bf16_forward_kernel<<<static_cast<int>(blocks), kThreads, 0, stream>>>(
+      packed_qkv_bits, rstd, rows, heads, head_dim, eps);
+}
+
+void launch_qk_rms_norm_packed_bf16_backward(
+    const std::uint16_t* normalized_qkv_bits,
+    const float* rstd,
+    float* grad_qkv_float,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  constexpr int kThreads = 64;
+  const std::int64_t blocks = rows * heads * 2;
+  qk_rms_norm_packed_bf16_backward_kernel<<<static_cast<int>(blocks), kThreads, 0, stream>>>(
+      normalized_qkv_bits, rstd, grad_qkv_float, grad_qkv_bf16_bits, rows, heads, head_dim);
 }
 
 void launch_masked_token_cross_entropy_partials_float32(
@@ -28667,6 +30030,219 @@ void launch_native_family_jepa_mask_u16_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   native_family_jepa_mask_u16_float32_kernel<<<blocks, 1, 0, stream>>>(
       tokens, masked_tokens, mask_values, n, seq_len, masked_span, mask_ratio, strategy);
+}
+
+static void release_differential_packed_attention_workspace(
+    DifferentialPackedAttentionWorkspace& workspace) {
+  if (workspace.qkv_first != nullptr) cudaFree(workspace.qkv_first);
+  if (workspace.qkv_second != nullptr) cudaFree(workspace.qkv_second);
+  if (workspace.out_first != nullptr) cudaFree(workspace.out_first);
+  if (workspace.out_second != nullptr) cudaFree(workspace.out_second);
+  if (workspace.grad_qkv_first != nullptr) cudaFree(workspace.grad_qkv_first);
+  if (workspace.grad_qkv_second != nullptr) cudaFree(workspace.grad_qkv_second);
+  if (workspace.grad_out_first != nullptr) cudaFree(workspace.grad_out_first);
+  if (workspace.grad_out_second != nullptr) cudaFree(workspace.grad_out_second);
+  if (workspace.lse_first != nullptr) cudaFree(workspace.lse_first);
+  if (workspace.lse_second != nullptr) cudaFree(workspace.lse_second);
+  if (workspace.combine_rstd != nullptr) cudaFree(workspace.combine_rstd);
+  if (workspace.q_first != nullptr) cudaFree(workspace.q_first);
+  if (workspace.k_first != nullptr) cudaFree(workspace.k_first);
+  if (workspace.q_second != nullptr) cudaFree(workspace.q_second);
+  if (workspace.k_second != nullptr) cudaFree(workspace.k_second);
+  if (workspace.v != nullptr) cudaFree(workspace.v);
+  if (workspace.head_out_first != nullptr) cudaFree(workspace.head_out_first);
+  if (workspace.head_out_second != nullptr) cudaFree(workspace.head_out_second);
+  if (workspace.grad_q_first != nullptr) cudaFree(workspace.grad_q_first);
+  if (workspace.grad_k_first != nullptr) cudaFree(workspace.grad_k_first);
+  if (workspace.grad_v_first != nullptr) cudaFree(workspace.grad_v_first);
+  if (workspace.grad_q_second != nullptr) cudaFree(workspace.grad_q_second);
+  if (workspace.grad_k_second != nullptr) cudaFree(workspace.grad_k_second);
+  if (workspace.grad_v_second != nullptr) cudaFree(workspace.grad_v_second);
+  workspace = {};
+}
+
+static DifferentialPackedAttentionWorkspace* ensure_differential_packed_attention_workspace(
+    std::int64_t qkv_elements,
+    std::int64_t output_elements,
+    std::int64_t lse_elements,
+    cudaStream_t stream) {
+  std::lock_guard<std::mutex> lock(g_differential_packed_attention_workspace_mutex);
+  DifferentialPackedAttentionWorkspace& current =
+      g_differential_packed_attention_workspace;
+  if (current.qkv_capacity >= qkv_elements &&
+      current.output_capacity >= output_elements &&
+      current.lse_capacity >= lse_elements &&
+      current.qkv_first != nullptr && current.qkv_second != nullptr &&
+      current.out_first != nullptr && current.out_second != nullptr &&
+      current.grad_qkv_first != nullptr && current.grad_qkv_second != nullptr &&
+      current.grad_out_first != nullptr && current.grad_out_second != nullptr &&
+      current.lse_first != nullptr && current.lse_second != nullptr &&
+      current.combine_rstd != nullptr &&
+      current.q_first != nullptr && current.k_first != nullptr &&
+      current.q_second != nullptr && current.k_second != nullptr &&
+      current.v != nullptr && current.head_out_first != nullptr &&
+      current.head_out_second != nullptr && current.grad_q_first != nullptr &&
+      current.grad_k_first != nullptr && current.grad_v_first != nullptr &&
+      current.grad_q_second != nullptr && current.grad_k_second != nullptr &&
+      current.grad_v_second != nullptr) {
+    return &current;
+  }
+  DifferentialPackedAttentionWorkspace next;
+  next.qkv_capacity = qkv_elements;
+  next.output_capacity = output_elements;
+  next.lse_capacity = lse_elements;
+  const std::size_t qkv_bytes =
+      sizeof(std::uint16_t) * static_cast<std::size_t>(qkv_elements);
+  const std::size_t output_bf16_bytes =
+      sizeof(std::uint16_t) * static_cast<std::size_t>(output_elements);
+  const std::size_t output_float_bytes =
+      sizeof(float) * static_cast<std::size_t>(output_elements);
+  const std::size_t lse_bytes =
+      sizeof(float) * static_cast<std::size_t>(lse_elements);
+  const std::size_t qk_float_bytes =
+      sizeof(float) * static_cast<std::size_t>(output_elements / 2);
+  const std::size_t value_float_bytes =
+      sizeof(float) * static_cast<std::size_t>(output_elements);
+  bool ok =
+      cudaMalloc(&next.qkv_first, qkv_bytes) == cudaSuccess &&
+      cudaMalloc(&next.qkv_second, qkv_bytes) == cudaSuccess &&
+      cudaMalloc(&next.out_first, output_bf16_bytes) == cudaSuccess &&
+      cudaMalloc(&next.out_second, output_bf16_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_qkv_first, qkv_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_qkv_second, qkv_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_out_first, output_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_out_second, output_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.lse_first, lse_bytes) == cudaSuccess &&
+      cudaMalloc(&next.lse_second, lse_bytes) == cudaSuccess &&
+      cudaMalloc(&next.combine_rstd, lse_bytes) == cudaSuccess &&
+      cudaMalloc(&next.q_first, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.k_first, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.q_second, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.k_second, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.v, value_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.head_out_first, value_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.head_out_second, value_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_q_first, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_k_first, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_v_first, value_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_q_second, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_k_second, qk_float_bytes) == cudaSuccess &&
+      cudaMalloc(&next.grad_v_second, value_float_bytes) == cudaSuccess;
+  if (!ok) {
+    release_differential_packed_attention_workspace(next);
+    return nullptr;
+  }
+  if (current.qkv_first != nullptr) {
+    cudaStreamSynchronize(stream);
+    release_differential_packed_attention_workspace(current);
+  }
+  current = next;
+  return &current;
+}
+
+int launch_differential_packed_attention_forward_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    float eps,
+    cudaStream_t stream) {
+  if (head_dim <= 1 || (head_dim % 2) != 0) {
+    return 2;
+  }
+  const std::int64_t rows = batch * seq_len;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t qkv_elements = rows * model_dim * 2;
+  const std::int64_t output_elements = rows * model_dim;
+  const std::int64_t lse_elements = batch * heads * seq_len;
+  DifferentialPackedAttentionWorkspace* workspace =
+      ensure_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  constexpr int kThreads = 256;
+  const int blocks =
+      static_cast<int>((output_elements + kThreads - 1) / kThreads);
+  differential_unpack_qkv_heads_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      qkv_bf16_bits, workspace->q_first, workspace->k_first,
+      workspace->q_second, workspace->k_second, workspace->v,
+      batch, heads, seq_len, head_dim);
+  const float attention_scale = rsqrtf(static_cast<float>(head_dim / 2));
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_first, workspace->k_first, workspace->v,
+      workspace->head_out_first, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_second, workspace->k_second, workspace->v,
+      workspace->head_out_second, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  heads_float32_to_packed_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->head_out_first, workspace->out_first,
+      batch, heads, seq_len, head_dim);
+  heads_float32_to_packed_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->head_out_second, workspace->out_second,
+      batch, heads, seq_len, head_dim);
+  differential_combine_rms_bf16_kernel<<<static_cast<int>(rows * heads), 64, 0, stream>>>(
+      workspace->out_first, workspace->out_second, out_bf16_bits,
+      workspace->combine_rstd, rows, heads, head_dim, lambda, output_scale, eps);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_differential_packed_attention_backward_bf16(
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    cudaStream_t stream) {
+  const std::int64_t rows = batch * seq_len;
+  const std::int64_t model_dim = heads * head_dim;
+  const std::int64_t qkv_elements = rows * model_dim * 2;
+  const std::int64_t output_elements = rows * model_dim;
+  const std::int64_t lse_elements = batch * heads * seq_len;
+  DifferentialPackedAttentionWorkspace* workspace =
+      ensure_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  differential_combine_rms_backward_kernel<<<static_cast<int>(rows * heads), 64, 0, stream>>>(
+      out_bf16_bits, workspace->combine_rstd, grad_out,
+      workspace->grad_out_first, workspace->grad_out_second,
+      rows, heads, head_dim, lambda, output_scale);
+  const float attention_scale = rsqrtf(static_cast<float>(head_dim / 2));
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      workspace->q_first, workspace->k_first, workspace->v,
+      workspace->grad_out_first,
+      workspace->grad_q_first, workspace->grad_k_first, workspace->grad_v_first,
+      batch, heads, heads, seq_len, seq_len, head_dim / 2, head_dim,
+      attention_scale, true, false, false, 0, 0, 0, 0, false, stream);
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      workspace->q_second, workspace->k_second, workspace->v,
+      workspace->grad_out_second,
+      workspace->grad_q_second, workspace->grad_k_second, workspace->grad_v_second,
+      batch, heads, heads, seq_len, seq_len, head_dim / 2, head_dim,
+      attention_scale, true, false, false, 0, 0, 0, 0, false, stream);
+  constexpr int kThreads = 256;
+  const std::int64_t output_qkv_elements = rows * model_dim * 3;
+  const int blocks =
+      static_cast<int>((output_qkv_elements + kThreads - 1) / kThreads);
+  differential_merge_float_head_grads_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->grad_q_first, workspace->grad_k_first, workspace->grad_v_first,
+      workspace->grad_q_second, workspace->grad_k_second, workspace->grad_v_second,
+      grad_qkv_bf16_bits, batch, heads, seq_len, head_dim);
+  return static_cast<int>(cudaPeekAtLastError());
 }
 
 }  // namespace neuralfn::tile_cuda

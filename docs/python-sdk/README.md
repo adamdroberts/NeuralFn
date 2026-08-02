@@ -15,6 +15,7 @@ server/MCP dependencies. Install workflow extras explicitly when needed:
 ```bash
 pip install -e ".[tile-cuda]"   # local CUDA Tile builds
 pip install -e ".[datasets]"    # raw-text tokenization and HF dataset caches
+pip install -e ".[embeddings]"  # Parquet/HF embedding dataset preparation
 pip install -e ".[graph]"       # Python graph runtime/analysis helpers
 pip install -e ".[server]"      # FastAPI editor backend and MCP server
 pip install -e ".[all]"         # native/server/dataset workstation, without Torch
@@ -33,6 +34,10 @@ pip install -e ../NeuralFn
 This editable install now packages the shipped semantic vocabulary files under
 `neuralfn/data/semantic/`, so SDK code that imports `neuralfn.semantic` can
 load the `vocab_86d_*.json` semantic vocabularies without extra setup.
+
+See [native-embedding.md](native-embedding.md) for the lightweight embedding
+manifest compiler, tokenizer compatibility helper, executable resolver, and
+checkpoint-header inspector used by the native embedding CLI.
 
 ## Package Exports
 

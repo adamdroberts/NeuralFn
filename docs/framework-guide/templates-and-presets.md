@@ -52,6 +52,11 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `gpt2` | `build_gpt2_spec` | gpt2 | ar | dense | LayerNorm, GELU MLP, absolute position embeddings, bias |
 | `gpt2_megakernel` | `build_gpt2_megakernel_spec` | gpt2 | ar | dense | GPT-2 with `runtime="megakernel"`; native CUDA Tile trainer-compatible |
 | `gpt2_moa` | `build_gpt2_moa_spec` | gpt2 | ar | dense | GPT-2 with shared-backbone GELU/ReLU/SiLU/ReLU2 loss probing every `moa_interval` steps |
+| `gpt2_zloss` | `build_gpt2_zloss_spec` | gpt2 | ar | dense | GPT-2 + z-loss anchored log-partition (`z_loss_coef=1e-4`); adds `z_loss_coef * mean(logsumexp(logits, -1) ** 2)` to the cross-entropy so the softmax normalizer cannot drift |
+| `gpt2_softcap` | `build_gpt2_softcap_spec` | gpt2 | ar | dense | GPT-2 + tanh logit softcap (`logit_softcap=30.0`); hard-bounds the logit tail instead of regularizing it |
+| `gpt2_qknorm` | `build_gpt2_qknorm_spec` | gpt2 | ar | dense | GPT-2 + fused RMSNorm on Q/K before SDPA (`use_qk_norm=True`); bounds the pre-softmax logit scale |
+| `gpt2_diff` | `build_gpt2_diff_spec` | gpt2 | ar | dense | GPT-2 + Differential Transformer attention (`attention_variant="differential"`, `diff_lambda_init=0.8`) |
+| `gpt2_stable` | `build_gpt2_stable_spec` | gpt2 | ar | dense | GPT-2 + z-loss **and** QK-norm; the stacked pretraining-stability recipe, ~no throughput cost |
 | `llama` | `build_llama_spec` | llama | ar | dense | RMSNorm, SwiGLU, RoPE, GQA |
 | `moe` / `mixllama` | `build_mixllama_spec` | mixllama | ar | moe | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | `build_llama_fast_spec` | llama | ar | dense | Like llama + `torch.compile` |
@@ -336,3 +341,16 @@ print(f"Forward pass loss: {loss[0].item():.4f}")
 ---
 
 Next: [Training Workflows](training-workflows.md)
+
+### Native coverage of the dense GPT-2 pretraining variants
+
+`gpt2_zloss`, `gpt2_softcap`, `gpt2_qknorm`, `gpt2_diff`, and `gpt2_stable` are
+compiled dense-GPT presets. `nfn_gpt2_native_train --list-templates` reports
+each with `selected_graph_native_runnable: true` and
+`native_training_coverage_class: "implemented-dense-gpt-transformer-lm"`.
+The native trainer applies z-loss and softcap in fused cross-entropy
+forward/backward kernels, QK-norm in packed-QKV RMSNorm forward/backward
+kernels, and differential attention through two native half-QK causal-attention
+passes plus native combine/RMSNorm forward/backward. The compiled
+`gpt2_diff` benchmark holds lambda at `diff_lambda_init=0.8`; it does not update
+the graph runtime's learnable lambda parameter.

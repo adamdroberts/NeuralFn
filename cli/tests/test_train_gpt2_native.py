@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import importlib.util
 import json
 import subprocess
 import sys
@@ -16,7 +17,158 @@ ROOT = Path(__file__).resolve().parents[1]
 NEURALFN_ROOT = ROOT.parent
 
 
+def _load_nfn_cli_module():
+    spec = importlib.util.spec_from_file_location(
+        "nfn_cli_metrics_test",
+        NEURALFN_ROOT / "cli" / "nfn.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class TrainGpt2NativeStartupTest(unittest.TestCase):
+    def test_nfn_train_tui_embedding_state_uses_embedding_fields_and_dataset_array(self) -> None:
+        nfn = _load_nfn_cli_module()
+        state = nfn._native_train_default_state()
+        state.update(
+            {
+                "model": "embedding",
+                "template": "default",
+                "embedding_datasets": ["/tmp/topic-a.txt", "/tmp/topic-b.jsonl"],
+                "embedding_stage": "pretrain",
+                "embedding_architecture": "bert",
+                "output_dir": "/tmp/embedding-model",
+            }
+        )
+        nfn._ensure_train_tui_hyperparam_defaults(state)
+
+        command = nfn._native_train_command_tokens_from_state(state)
+        fields = nfn._native_train_tui_fields(state)
+        field_keys = {item[0] for item in fields}
+
+        self.assertEqual("embedding", command[command.index("--base-model") + 1])
+        self.assertEqual(2, command.count("--embedding-dataset"))
+        self.assertIn("--embedding-stage", command)
+        self.assertIn("--embedding-architecture", command)
+        self.assertIn("--embedding-dim", command)
+        self.assertNotIn("--train-seq-len", command)
+        self.assertNotIn("--train-batch-tokens", command)
+        self.assertIn("embedding_stage", field_keys)
+        self.assertIn("embedding_dim", field_keys)
+        self.assertNotIn("train_seq_len", field_keys)
+        self.assertNotIn("template", field_keys)
+
+    def test_nfn_embedding_command_routes_to_dedicated_native_parser(self) -> None:
+        nfn = _load_nfn_cli_module()
+        command = nfn._direct_native_train_cli_argv(
+            [
+                "train",
+                "--base-model",
+                "embedding",
+                "--embedding-datasets-manifest",
+                "/tmp/embedding-manifest.json",
+                "--embedding-stage",
+                "posttrain",
+                "--embedding-architecture",
+                "gpt-derived",
+                "--adapter-type",
+                "lora",
+                "--embedding-dim",
+                "384",
+                "--native-cuda-dry-run",
+            ]
+        )
+
+        self.assertEqual("nfn_embedding_native_train", Path(command[0]).name)
+        self.assertIn("--embedding-datasets-manifest", command)
+        self.assertIn("--embedding-stage", command)
+        self.assertIn("--embedding-architecture", command)
+        self.assertIn("--adapter-type", command)
+        self.assertIn("--embedding-dim", command)
+        self.assertIn("--dry-run", command)
+        self.assertNotIn("--train-transformer-lm", command)
+
+    def test_nfn_embed_help_is_lightweight(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(NEURALFN_ROOT / "cli" / "nfn.py"), "embed", "--help"],
+            cwd=NEURALFN_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("nfn embed --checkpoint", proc.stdout)
+
+    def test_nfn_embedding_end_to_end_routes_preparation_training_and_embed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "topic.txt"
+            source.write_text("alpha auction\nbeta invoice\n", encoding="utf-8")
+            output = root / "model"
+            env = os.environ.copy()
+            env["NFN_NATIVE_EMBEDDING_CLI"] = str(NEURALFN_ROOT / "build" / "nfn_embedding_native_train")
+            trained = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "nfn.py"),
+                    "train",
+                    "--base-model",
+                    "embedding",
+                    "--embedding-dataset",
+                    str(source),
+                    "--output-dir",
+                    str(output),
+                    "--embedding-vocab-size",
+                    "67",
+                    "--hidden-dim",
+                    "8",
+                    "--embedding-dim",
+                    "4",
+                    "--max-seq-len",
+                    "4",
+                    "--batch-size",
+                    "2",
+                    "--effective-batch-size",
+                    "2",
+                    "--max-steps",
+                    "1",
+                    "--progress-every-steps",
+                    "0",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(0, trained.returncode, trained.stderr)
+            self.assertTrue((output / "embedding_data.tsv").is_file())
+            self.assertTrue((output / "embedding_model.bin").is_file())
+
+            embedded = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "nfn.py"),
+                    "embed",
+                    "--checkpoint",
+                    str(output / "embedding_model.bin"),
+                    "--text",
+                    "alpha auction",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(0, embedded.returncode, embedded.stderr)
+            self.assertEqual(4, json.loads(embedded.stdout)["dimension"])
+
     def test_native_gpt_dataset_download_is_explicit_opt_in(self) -> None:
         code = textwrap.dedent(
             f"""
@@ -92,7 +244,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 )
 
                 self.assertEqual(0, proc.returncode, proc.stderr)
-                self.assertIn("Master NeuralFn CLI for train, infer, and eval.", proc.stdout)
+                self.assertIn("Master NeuralFn CLI for train, embed, infer, and eval.", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
@@ -129,7 +281,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Master NeuralFn CLI for train, infer, and eval.", proc.stdout)
+        self.assertIn("Master NeuralFn CLI for train, embed, infer, and eval.", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
@@ -150,6 +302,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "gpt",
                 "--dataset-alias=/tmp/native-cache",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
                 "--eval-every-steps=1000",
             ]
 
@@ -176,6 +329,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
@@ -1413,9 +1569,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             native_cli = Path(tmp) / "nfn_llama_native_train"
             native_cli.write_text(
                 "#!/usr/bin/env bash\n"
-                "printf '[nfn-native-train] step 1/2 tokens=1024\\n' >&2\n"
+                "printf '[nfn-native-train] step 1/2 tokens=1024 elapsed_s=1.25 tokens_per_s=819.2 train_loss=4.5\\n' >&2\n"
+                "printf '[nfn-native-train] step 1/2 microbatch 1/2 complete train_microbatches_completed=1\\n' >&2\n"
                 "printf '[nfn-native-train] validation step 1 loss=4.2\\n' >&2\n"
-                "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\",\"passed\":true,\"steps_completed\":2,\"timing\":{\"train_tokens_per_second\":12345},\"checkpoint\":{\"checkpoint_path\":\"/tmp/native-cache/model_00000002.bin\",\"done_marker\":\"/tmp/native-cache/DONE_00000002\",\"actual_file_size\":4096},\"validation\":{\"eval_count\":1,\"losses\":[{\"step\":2,\"loss_mean\":4.2}]}}'\n",
+                "printf '%s\\n' '{\"status\":\"native-transformer-lm-trained\",\"passed\":true,\"steps_completed\":2,\"timing\":{\"train_tokens_per_second\":12345},\"train_losses\":[{\"step\":1,\"loss_mean\":4.5}],\"kernel_routes\":{\"packed_qkv_attention_enabled\":true,\"attention_forward_scalar_launch_count\":0},\"checkpoint\":{\"checkpoint_path\":\"/tmp/native-cache/model_00000002.bin\",\"done_marker\":\"/tmp/native-cache/DONE_00000002\",\"actual_file_size\":4096},\"validation\":{\"eval_count\":1,\"losses\":[{\"step\":2,\"loss_mean\":4.2}]}}'\n",
                 encoding="utf-8",
             )
             native_cli.chmod(0o755)
@@ -1453,12 +1610,55 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             self.assertIn("model: /tmp/native-cache/model_00000002.bin", proc.stdout)
             self.assertIn("validation: 4.2 at step 2", proc.stdout)
             self.assertIn("eval log:", proc.stdout)
-            self.assertNotIn('"eval_count":1', proc.stdout)
-            self.assertIn("step 1/2", train_log.read_text(encoding="utf-8"))
+            self.assertIn("NeuralFn Training Metrics", proc.stdout)
+            self.assertIn("timing.train_tokens_per_second", proc.stdout)
+            self.assertIn("train_losses[0].loss_mean", proc.stdout)
+            self.assertIn("kernel_routes.packed_qkv_attention_enabled", proc.stdout)
+            self.assertIn("kernel_routes.attention_forward_scalar_launch_count", proc.stdout)
+            self.assertIn("validation.eval_count", proc.stdout)
+            self.assertIn("tokens=1024", proc.stderr)
+            self.assertIn("elapsed_s=1.25", proc.stderr)
+            self.assertIn("tokens_per_s=819.2", proc.stderr)
+            self.assertIn("train_loss=4.5", proc.stderr)
+            self.assertIn("train_microbatches_completed=1", proc.stderr)
+            train_text = train_log.read_text(encoding="utf-8")
+            self.assertIn("[nfn-train-provenance] executable=", train_text)
+            self.assertIn("sha256=", train_text)
+            self.assertIn("step 1/2", train_text)
             eval_text = eval_log.read_text(encoding="utf-8")
             self.assertIn("validation step 1", eval_text)
             self.assertIn('"eval_count":1', eval_text)
             self.assertIn('"checkpoint_path":"/tmp/native-cache/model_00000002.bin"', eval_text)
+
+    def test_nfn_train_tui_formats_every_live_and_final_metric_without_dropping_fields(self) -> None:
+        module = _load_nfn_cli_module()
+        rendered = module._format_native_train_line(
+            "[nfn-native-train] step 10/50 tokens=5242880 elapsed_s=27.0093 "
+            "tokens_per_s=194114 train_loss=4.25\n"
+        )
+
+        self.assertIn("step 10/50", rendered)
+        self.assertIn("tokens: 5,242,880", rendered)
+        self.assertIn("elapsed: 27.01s", rendered)
+        self.assertIn("tokens/s: 194,114", rendered)
+        self.assertIn("train loss: 4.25", rendered)
+
+        rows = dict(
+            module._native_train_metric_rows(
+                {
+                    "timing": {"train_tokens_per_second": 194114},
+                    "train_losses": [{"step": 10, "loss_mean": 4.25}],
+                    "kernel_routes": {
+                        "packed_qkv_attention_enabled": True,
+                        "attention_forward_scalar_launch_count": 0,
+                    },
+                }
+            )
+        )
+        self.assertEqual("194114", rows["timing.train_tokens_per_second"])
+        self.assertEqual("4.25", rows["train_losses[0].loss_mean"])
+        self.assertEqual("true", rows["kernel_routes.packed_qkv_attention_enabled"])
+        self.assertEqual("0", rows["kernel_routes.attention_forward_scalar_launch_count"])
 
     def test_nfn_train_plain_cli_summarizes_final_native_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1496,9 +1696,11 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("NeuralFn Training Result", proc.stdout)
+        self.assertIn("NeuralFn Training Metrics", proc.stdout)
         self.assertIn("model: /tmp/native-cache/model_00000002.bin", proc.stdout)
         self.assertIn("validation: 3.5 at step 2", proc.stdout)
-        self.assertNotIn('"checkpoint_path"', proc.stdout)
+        self.assertIn("checkpoint.checkpoint_path", proc.stdout)
+        self.assertIn("validation.losses[0].loss_mean", proc.stdout)
 
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
         code = textwrap.dedent(
@@ -1638,7 +1840,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     str(root / "cli" / "nfn.py"),
                     "train",
                     "--base-model",
-                    "gpt",
+                    "llama",
                     "--dataset-alias=/tmp/native-cache",
                     "--native-cuda-dry-run",
                 ]
@@ -1730,7 +1932,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
                 self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
-    def test_nfn_train_gpt2_can_dispatch_to_unified_native_train_cli(self) -> None:
+    def test_nfn_train_gpt2_ignores_unified_override_and_uses_linked_cli(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -1745,6 +1947,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "gpt2",
                 "--dataset-alias=/tmp/native-cache",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
                 "--eval-every-steps=1000",
             ]
             try:
@@ -1773,6 +1976,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
@@ -1797,6 +2003,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "gpt3",
                 "--dataset-alias=/tmp/native-cache",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
             ]
             try:
                 runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
@@ -1823,6 +2030,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -1846,6 +2055,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--graph-file=/tmp/custom-graph.json",
                 "--train-seq-len=4096",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
             ]
             try:
                 runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
@@ -1870,6 +2080,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
         self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
@@ -1893,16 +2105,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--kernel-backend=tile-cuda",
                 "--preset=gpt2_moa",
                 "--graph=/tmp/custom-graph.json",
-                "--native-cuda-print-plan",
-                "--native-cuda-smoke-tile-ops",
-                "--native-cuda-smoke-optimizer-step",
-                "--native-cuda-smoke-lm-step",
-                "--native-cuda-smoke-attention-step",
-                "--native-cuda-smoke-mlp-step",
-                "--native-cuda-smoke-norm-residual-step",
-                "--native-cuda-smoke-transformer-block-step",
-                "--native-cuda-smoke-transformer-lm-step",
-                "--native-cuda-smoke-embedding-lm-step",
                 "--train-embedding-lm",
                 "--train-transformer-lm",
                 "--native-cuda-no-checkpoint",
@@ -1911,6 +2113,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--native-cuda-lm-head-row-chunk-size=2048",
                 "--native-cuda-cuda-runtime-lib=/opt/cuda/libcudart.so",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
             ]
             try:
                 runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
@@ -1937,20 +2140,13 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--backend tile-cuda", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
         self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
         self.assertIn("--native-cuda-activation moa", proc.stdout)
-        self.assertIn("--print-plan", proc.stdout)
-        self.assertIn("--smoke-tile-ops", proc.stdout)
-        self.assertIn("--smoke-optimizer-step", proc.stdout)
-        self.assertIn("--smoke-lm-step", proc.stdout)
-        self.assertIn("--smoke-attention-step", proc.stdout)
-        self.assertIn("--smoke-mlp-step", proc.stdout)
-        self.assertIn("--smoke-norm-residual-step", proc.stdout)
-        self.assertIn("--smoke-transformer-block-step", proc.stdout)
-        self.assertIn("--smoke-transformer-lm-step", proc.stdout)
-        self.assertIn("--smoke-embedding-lm-step", proc.stdout)
         self.assertIn("--train-embedding-lm", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("--no-checkpoint", proc.stdout)
@@ -2618,18 +2814,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             import os
             import runpy
             import sys
-            import tempfile
 
             root = Path({str(NEURALFN_ROOT)!r})
-            native_train = Path(tempfile.mkdtemp()) / "nfn_native_train"
-            native_train.write_text(
-                "#!/usr/bin/env bash\\n"
-                "printf '%s\\\\n' \\"$@\\"\\n"
-                "exit 23\\n",
-                encoding="utf-8",
-            )
-            native_train.chmod(0o755)
-            os.environ["NFN_NATIVE_TRAIN_CLI"] = str(native_train)
+            os.environ["NFN_NATIVE_TRAIN_CLI"] = "/bin/echo"
             sys.argv = [
                 str(root / "cli" / "nfn.py"),
                 "train",
@@ -2639,8 +2826,15 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--max-steps",
                 "2",
                 "--native-cuda-dry-run",
+                "--native-cuda-print-command",
             ]
-            runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            try:
+                runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            raise SystemExit(exit_code)
             """
         )
         env = os.environ.copy()
@@ -2656,7 +2850,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(23, proc.returncode)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
+        self.assertIn("--tile-ops-lib linked", proc.stdout)
+        self.assertNotIn("/bin/echo", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("--model-family", proc.stdout)
         self.assertIn("nanogpt", proc.stdout)

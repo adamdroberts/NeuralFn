@@ -28,6 +28,24 @@ Torch import, and the old `NFN_ALLOW_TORCH_TRAINING` CLI bypass is ignored.
 Legacy graph-backed experiments should call the Python SDK trainer APIs
 directly while native trainers are being added.
 
+The `nfn train` dense-GPT workflow checks build freshness before launching. It
+uses only `build/nfn_gpt_native_train_linked` and never automatically falls
+back to the generic or compatibility frontends. Its build writes a SHA-256
+manifest for the executable, trainer, preset and Tile inputs, Tile library, and
+build scripts. Missing or changed hashed inputs mark it stale without relying
+on mtimes. An interactive run then warns and offers a forced linked rebuild.
+Non-interactive runs stop with the rebuild command. Set
+`NFN_NATIVE_GPT_AUTO_REBUILD=1` for opt-in automatic repair. Dense-GPT
+`nfn train` ignores native CLI environment overrides; use a lower-level SDK or
+compatibility entrypoint when intentionally testing a separate artifact.
+
+The `nfn train` TUI does not collapse native metric lines. It preserves every
+live key/value field and formats it into labeled segments. Once the native
+trainer returns, the TUI keeps its concise outcome card but follows it with a
+recursive dotted-path view of every result field, including loss histories,
+timing, geometry, kernel/fallback counters, memory diagnostics, and checkpoint
+metadata. The output is human-readable rather than a raw JSON dump.
+
 GPT template selection is explicit on the native path. The default public
 template alias is `gpt`, which currently resolves to the implemented dense GPT
 native topology and is reported separately as `resolved_native_template_name` in
