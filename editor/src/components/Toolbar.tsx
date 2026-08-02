@@ -244,6 +244,13 @@ export default function Toolbar() {
             <option value="semantic_router_moe">Semantic Router MoE</option>
             <option value="semantic_dense_jepa_evo">Semantic Dense JEPA Evo</option>
             <option value="semantic_moe_jepa_evo">Semantic MoE JEPA Evo</option>
+            <optgroup label="Dense GPT-2 pretraining variants">
+              <option value="gpt2_zloss">GPT-2 + z-loss</option>
+              <option value="gpt2_softcap">GPT-2 + logit softcap</option>
+              <option value="gpt2_qknorm">GPT-2 + QK-norm</option>
+              <option value="gpt2_diff">GPT-2 + differential attention</option>
+              <option value="gpt2_stable">GPT-2 Stable (z-loss + QK-norm)</option>
+            </optgroup>
             <optgroup label="Frontier (recognizable SOTA)">
               <option value="deepseek_v3">DeepSeek-V3 (MLA + auxfree MoE)</option>
               <option value="deepseek_v4">DeepSeek-V4 (CSA/NSA + mHC + FP8)</option>

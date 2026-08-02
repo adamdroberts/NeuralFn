@@ -1024,7 +1024,7 @@ def build_seq2seq_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
     graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.lm_head_module, config={"model_dim": model_spec.model_dim, "vocab_size": model_spec.vocab_size}), instance_id="lm_head", position=(920 + model_spec.num_layers*220, 300)))
     graph.add_edge(Edge(src_node="final_norm", src_port=0, dst_node="lm_head", dst_port=0))
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(1140 + model_spec.num_layers*220, 300)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ce", position=(1140 + model_spec.num_layers*220, 300)))
     graph.add_edge(Edge(src_node="lm_head", src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(src_node="targets_in", src_port=0, dst_node="ce", dst_port=1))
 
@@ -1081,7 +1081,7 @@ def build_diffusion_model_stage_graph(name: str, model_spec: ModelSpec) -> Neuro
     graph.add_edge(Edge(src_node="final_norm", src_port=0, dst_node="denoise_head", dst_port=0))
 
     # Cross Entropy (Diffusion uses categorical XE over vocab)
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(1580 + model_spec.num_layers*220, 140)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ce", position=(1580 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(src_node="denoise_head", src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(src_node="tokens_in", src_port=0, dst_node="ce", dst_port=1))
 
@@ -1351,7 +1351,7 @@ def build_ar_jepa_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2060 + model_spec.num_layers * 220, 140)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(2060 + model_spec.num_layers * 220, 140)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -1653,7 +1653,7 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
         graph.add_edge(Edge(id="e_lm_head_softcap", src_node="lm_head", src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2360, 220)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(2360, 220)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -1930,7 +1930,7 @@ def build_semantic_router_model_stage_graph(name: str, model_spec: ModelSpec) ->
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(1820 + model_spec.num_layers * 220, 220)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(1820 + model_spec.num_layers * 220, 220)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -2227,7 +2227,7 @@ def build_semantic_router_jepa_model_stage_graph(name: str, model_spec: ModelSpe
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2060 + model_spec.num_layers * 220, 160)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(2060 + model_spec.num_layers * 220, 160)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -2445,7 +2445,7 @@ def build_semantic_dense_jepa_evo_model_stage_graph(name: str, model_spec: Model
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2100 + model_spec.num_layers * 220, 160)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(2100 + model_spec.num_layers * 220, 160)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -2674,7 +2674,7 @@ def build_semantic_moe_jepa_evo_model_stage_graph(name: str, model_spec: ModelSp
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2760 + model_spec.num_layers * 220, 160)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ar_loss", position=(2760 + model_spec.num_layers * 220, 160)))
     graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
 
@@ -2757,7 +2757,7 @@ def build_hnet_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGrap
     )
     graph.add_edge(Edge(id="e_merge_head", src_node="patch_merge", src_port=0, dst_node="lm_head", dst_port=0))
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(980, 140)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ce", position=(980, 140)))
     graph.add_edge(Edge(id="e_hnet_logits", src_node="lm_head", src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(id="e_hnet_targets", src_node="targets_in", src_port=0, dst_node="ce", dst_port=1))
 
@@ -2812,7 +2812,7 @@ def build_universal_model_stage_graph(name: str, model_spec: ModelSpec) -> Neuro
     if model_spec.tie_embeddings:
         graph.add_edge(Edge(id="e_universal_tie", src_node="token_embed", src_port=1, dst_node=head_id, dst_port=1))
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(1200, 140)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ce", position=(1200, 140)))
     graph.add_edge(Edge(id="e_universal_logits", src_node=head_id, src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(id="e_universal_targets", src_node="targets_in", src_port=0, dst_node="ce", dst_port=1))
 
@@ -2850,6 +2850,11 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         build_gemma3_spec,
         build_gpt2_megakernel_spec,
         build_gpt2_moa_spec,
+        build_gpt2_diff_spec,
+        build_gpt2_qknorm_spec,
+        build_gpt2_softcap_spec,
+        build_gpt2_stable_spec,
+        build_gpt2_zloss_spec,
         build_gpt2_spec,
         build_longctx_sparse_llama_spec,
         build_mxfp4_llama_spec,
@@ -2926,6 +2931,16 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_gpt2_megakernel_spec(**normalized)
     if preset == "gpt2_moa":
         return build_gpt2_moa_spec(**normalized)
+    if preset == "gpt2_zloss":
+        return build_gpt2_zloss_spec(**normalized)
+    if preset == "gpt2_softcap":
+        return build_gpt2_softcap_spec(**normalized)
+    if preset == "gpt2_qknorm":
+        return build_gpt2_qknorm_spec(**normalized)
+    if preset == "gpt2_diff":
+        return build_gpt2_diff_spec(**normalized)
+    if preset == "gpt2_stable":
+        return build_gpt2_stable_spec(**normalized)
     if preset == "gpt2":
         return build_gpt2_spec(**normalized)
     if preset == "nanogpt_megakernel":
@@ -3094,7 +3109,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
         ce_input = "softcap"
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(1800 + model_spec.num_layers*220, 260)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module, config={"z_loss_coef": model_spec.z_loss_coef}), instance_id="ce", position=(1800 + model_spec.num_layers*220, 260)))
     graph.add_edge(Edge(id="e_logits_ce", src_node=ce_input, src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ce", src_node="targets_in", src_port=0, dst_node="ce", dst_port=1))
 

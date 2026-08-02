@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import os
@@ -189,6 +190,7 @@ _NATIVE_GPT_METADATA_ACTION_FLAGS = {
     "--smoke-embedding-lm-step",
 }
 _NATIVE_TRAIN_FAMILY_TARGETS = {
+    "embedding": "nfn_embedding_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
@@ -318,7 +320,7 @@ def _print_lightweight_root_help() -> None:
     print(
         """usage: nfn [-h] [--help-style {short,long,verbose}]
 
-Master NeuralFn CLI for train, infer, and eval.
+Master NeuralFn CLI for train, embed, infer, and eval.
 
 options:
   -h, --help            Show help for the master CLI. (default: False)
@@ -344,7 +346,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --tui, --interactive
           --no-tui
           --help-style {short,long,verbose}
-          --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama}
+          --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama,embedding}
           --topology {dense,moe,semantic_router}
           --router-mode {standard,semantic,hash}
           --dataset-alias NAME_OR_PATH
@@ -363,6 +365,10 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --native-cuda-fast-startup, --fast-startup
           --native-cuda-runner {auto,binding,compiled-cli,launcher}
           --native-cuda-dry-run
+          --embedding-datasets-manifest PATH
+          --embedding-dataset PATH (repeatable)
+          --embedding-stage {pretrain,posttrain,finetune,resume}
+          --embedding-architecture {bert,gpt-derived}
 
         examples:
           nfn train
@@ -372,6 +378,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn train --base-model gpt3 --dataset-alias /data/tokens --graph-file graph.json
           nfn train --base-model gpt --tinystories --eval-every-steps 1000
           nfn train --base-model gpt --native-cuda-runner compiled-cli
+          nfn train --base-model embedding --embedding-dataset corpus.txt
 
         Explicit dense GPT runs dispatch before importing the graph-backed runtime.
         The compiled frontend records the selected template or custom graph and
@@ -414,6 +421,20 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 50256
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
+        """,
+    "embed": """\
+        usage: nfn embed --checkpoint PATH (--text TEXT | --input PATH)
+
+        Produce normalized text vectors with a native NeuralFn embedding checkpoint.
+
+        options:
+          -h, --help
+          --checkpoint PATH
+          --text TEXT
+          --input PATH        One text per line; emits one JSON object per line.
+
+        example:
+          nfn embed --checkpoint artifacts/embedding/embedding_model.bin --text "hello world"
         """,
     "eval": """\
         usage: nfn eval [options]
@@ -495,6 +516,50 @@ def _is_lightweight_command_help(argv: list[str]) -> bool:
             continue
         return False
     return True
+
+
+def _is_native_embedding_infer(argv: list[str]) -> bool:
+    return bool(argv and argv[0] == "embed" and not _has_any(argv, "-h", "--help"))
+
+
+def _native_embedding_infer_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    checkpoint = _arg_value(tokens, "--checkpoint")
+    text_value = _arg_value(tokens, "--text")
+    input_path = _arg_value(tokens, "--input")
+    if not checkpoint or (text_value is None and input_path is None) or (text_value is not None and input_path is not None):
+        print("nfn embed requires --checkpoint and exactly one of --text or --input", file=sys.stderr)
+        return 2
+    from neuralfn.native_embedding import resolve_native_embedding_cli
+
+    executable = resolve_native_embedding_cli(ROOT.parent)
+    texts: list[str]
+    if input_path is not None:
+        texts = [line for line in Path(input_path).expanduser().read_text(encoding="utf-8").splitlines() if line.strip()]
+    else:
+        texts = [str(text_value)]
+    for item in texts:
+        try:
+            proc = subprocess.run(
+                [executable, "--checkpoint", checkpoint, "--embed-text", item],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as exc:
+            print(
+                f"Unable to launch native embedding inference ({exc}). "
+                "Build it with `bash tools/build_native_embedding_cli.sh` or set NFN_NATIVE_EMBEDDING_CLI.",
+                file=sys.stderr,
+            )
+            return 2
+        if proc.returncode != 0:
+            if proc.stderr:
+                sys.stderr.write(proc.stderr)
+            return int(proc.returncode)
+        sys.stdout.write(proc.stdout)
+    return 0
 
 
 def _lightweight_command_help_main(argv: list[str] | None = None) -> int:
@@ -1063,17 +1128,17 @@ def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
 
 
 def _resolve_direct_native_train_cli(model: str) -> str:
+    if _is_dense_gpt_native_model(model):
+        from neuralfn.native_gpt2 import resolve_fresh_native_gpt2_cli
+
+        return resolve_fresh_native_gpt2_cli(repo_root=ROOT.parent)
+    if model.strip().lower().replace("_", "-") == "embedding":
+        from neuralfn.native_embedding import resolve_native_embedding_cli
+
+        return resolve_native_embedding_cli(ROOT.parent)
     requested_train_cli = os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip()
     if requested_train_cli:
         return requested_train_cli
-    if _is_dense_gpt_native_model(model):
-        requested = os.environ.get("NFN_NATIVE_GPT_CLI", "").strip()
-        if requested:
-            return requested
-        requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
-        if requested:
-            return requested
-        return str(ROOT.parent / "build" / "nfn_gpt_native_train")
     family_cli = _resolve_direct_native_train_family_cli(model)
     if family_cli:
         return family_cli
@@ -1089,9 +1154,9 @@ def _native_train_family_cli_env(model: str) -> str:
 
 
 def _resolve_direct_native_train_family_cli(model: str) -> str | None:
-    if os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip():
-        return None
     normalized = model.strip().lower().replace("_", "-")
+    if normalized != "embedding" and os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip():
+        return None
     normalized = _NATIVE_TEMPLATE_FAMILY_ALIASES.get(normalized, normalized)
     target = _NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
     if target is None:
@@ -1166,6 +1231,7 @@ _NATIVE_TRAIN_ACTION_FLAGS = {
 
 _TRAIN_TUI_MODELS = (
     ("gpt", "Dense GPT native trainer"),
+    ("embedding", "Native text bi-encoder pretraining and post-training"),
     ("gpt2", "Dense GPT-2 shape on the GPT trainer"),
     ("gpt3", "Dense GPT-3-like long-context run"),
     ("nanogpt", "NanoGPT template on the dense GPT trainer"),
@@ -1178,6 +1244,7 @@ _TRAIN_TUI_MODELS = (
 )
 
 _TRAIN_TUI_TEMPLATES = {
+    "embedding": ("default",),
     "gpt": ("gpt", "gpt2", "gpt2_moa", "gpt2_modern", "gpt3", "nanogpt"),
     "gpt2": ("gpt2", "gpt", "gpt2_moa", "gpt2_modern"),
     "gpt3": ("gpt3", "gpt", "gpt2_moa"),
@@ -1209,6 +1276,35 @@ _TRAIN_TUI_HYPERPARAMS = (
     ("--progress-every-steps", "progress_every_steps", "Progress cadence", "1", "int", "Native progress print cadence."),
 )
 
+_TRAIN_TUI_EMBEDDING_HYPERPARAMS = (
+    ("--embedding-stage", "embedding_stage", "Training stage", "pretrain", "embedding-stage", "From-scratch pretraining, supervised post-training, fine-tuning, or exact resume."),
+    ("--embedding-architecture", "embedding_architecture", "Architecture", "bert", "embedding-architecture", "Bidirectional BERT-style or GPT-derived encoder profile."),
+    ("--base-checkpoint", "base_checkpoint", "Base checkpoint", "", "text", "Native embedding checkpoint used as a weight-only warm start."),
+    ("--resume-from-checkpoint", "resume_from_checkpoint", "Resume checkpoint", "", "text", "Native embedding checkpoint used to continue a prior run."),
+    ("--pooling", "pooling", "Pooling", "mean", "pooling", "Sequence pooling: mean, cls, or last."),
+    ("--embedding-vocab-size", "embedding_vocab_size", "Vocabulary buckets", "32768", "int", "Stable native tokenizer hash buckets; IDs are uint32."),
+    ("--hidden-dim", "hidden_dim", "Encoder width", "128", "int", "Native token/position encoder width."),
+    ("--embedding-dim", "embedding_dim", "Embedding width", "128", "int", "Vector dimension returned by nfn embed."),
+    ("--max-seq-len", "max_seq_len", "Text tokens", "128", "int", "Maximum tokens per text record."),
+    ("--batch-size", "batch_size", "Microbatch records", "32", "int", "Records from one dataset/objective per native microbatch."),
+    ("--effective-batch-size", "effective_batch_size", "Effective records", "256", "int", "Requested effective record batch size."),
+    ("--learning-rate", "learning_rate", "Learning rate", "0.001", "float", "AdamW learning rate."),
+    ("--weight-decay", "weight_decay", "Weight decay", "0.01", "float", "AdamW decoupled weight decay."),
+    ("--warmup-steps", "warmup_steps", "Warmup steps", "50", "int", "Linear learning-rate warmup."),
+    ("--max-steps", "max_steps", "Steps", "1000", "int", "Optimizer steps for this invocation."),
+    ("--mlm-probability", "mlm_probability", "MLM probability", "0.15", "probability", "Masking probability used by raw-text pretraining."),
+    ("--mlm-loss-weight", "mlm_loss_weight", "MLM weight", "1.0", "float", "Masked-token reconstruction loss weight."),
+    ("--contrastive-loss-weight", "contrastive_loss_weight", "Contrastive weight", "1.0", "float", "Two-view/retrieval contrastive loss weight."),
+    ("--temperature", "temperature", "Temperature", "0.05", "positive-float", "Contrastive softmax temperature."),
+    ("--triplet-margin", "triplet_margin", "Triplet margin", "0.2", "float", "Cosine margin for retrieval and labeled batches."),
+    ("--adapter-type", "adapter_type", "Fine-tuning mode", "none", "adapter", "Full-parameter, LoRA, or QLoRA training."),
+    ("--lora-rank", "lora_rank", "LoRA rank", "16", "int", "Low-rank adapter rank."),
+    ("--lora-alpha", "lora_alpha", "LoRA alpha", "32", "positive-float", "Low-rank adapter scale."),
+    ("--lora-dropout", "lora_dropout", "LoRA dropout", "0.05", "probability", "Adapter input dropout."),
+    ("--native-cuda-checkpoint-every", "native_cuda_checkpoint_every", "Checkpoint cadence", "250", "int", "Periodic native embedding checkpoints; 0 disables periodic writes."),
+    ("--progress-every-steps", "progress_every_steps", "Progress cadence", "10", "int", "Native progress print cadence."),
+)
+
 _TRAIN_TUI_ARCH_HYPERPARAMS = (
     ("--num-layers", "num_layers", "Layers", "1", "int", "Transformer blocks in the semantic route stack."),
 )
@@ -1234,6 +1330,7 @@ _TRAIN_TUI_GPT2_EVO_HYPERPARAMS = _TRAIN_TUI_EVO_HYPERPARAMS
 
 _TRAIN_TUI_ALL_HYPERPARAMS = (
     *_TRAIN_TUI_HYPERPARAMS,
+    *_TRAIN_TUI_EMBEDDING_HYPERPARAMS,
     *_TRAIN_TUI_ARCH_HYPERPARAMS,
     *_TRAIN_TUI_SEMANTIC_MOE_HYPERPARAMS,
     *_TRAIN_TUI_EVO_HYPERPARAMS,
@@ -1260,6 +1357,8 @@ def _train_tui_is_semantic_moe_selection(model: str, template: str = "") -> bool
 def _train_tui_hyperparams_for_model(model: str, template: str = ""):
     normalized_model = str(model or "").strip().lower().replace("_", "-")
     normalized_template = str(template or "").strip().lower().replace("_", "-")
+    if normalized_model == "embedding":
+        return _TRAIN_TUI_EMBEDDING_HYPERPARAMS
     params = list(_TRAIN_TUI_HYPERPARAMS)
     if normalized_model.startswith("semantic") or normalized_template.startswith("semantic"):
         params.extend(_TRAIN_TUI_ARCH_HYPERPARAMS)
@@ -1427,6 +1526,8 @@ def _native_train_default_state() -> dict[str, object]:
         "model": model,
         "template": _train_tui_template_choices(model)[0][0],
         "dataset": "tinystories",
+        "embedding_datasets": [],
+        "embedding_datasets_manifest": "",
         "output_dir": output_dir,
         "train_log_file": _tui_log_default(output_dir, "train"),
         "eval_log_file": _tui_log_default(output_dir, "eval"),
@@ -1443,9 +1544,25 @@ def _native_train_command_tokens_from_state(state: dict[str, object]) -> list[st
     dataset = str(state.get("dataset") or "tinystories")
     output_dir = str(state.get("output_dir") or Path.home() / "NeuralFn" / "artifacts" / f"{model}_tui")
     command_tokens = ["train", "--base-model", model]
-    if template and template != "default":
+    if model == "embedding":
+        manifest = str(state.get("embedding_datasets_manifest") or "").strip()
+        datasets = state.get("embedding_datasets") or []
+        if manifest:
+            command_tokens.extend(["--embedding-datasets-manifest", manifest])
+        elif isinstance(datasets, list):
+            for item in datasets:
+                source = str(item).strip()
+                if source:
+                    command_tokens.extend(["--embedding-dataset", source])
+        if not manifest and not any(token == "--embedding-dataset" for token in command_tokens):
+            fallback_dataset = str(state.get("dataset") or "").strip()
+            if fallback_dataset and fallback_dataset != "tinystories":
+                command_tokens.extend(["--embedding-dataset", fallback_dataset])
+    elif template and template != "default":
         command_tokens.extend(["--template-name", template])
-    if dataset == "tinystories":
+    if model == "embedding":
+        pass
+    elif dataset == "tinystories":
         command_tokens.append("--tinystories")
     elif dataset in {"golf1", "golf10"}:
         command_tokens.extend(["--dataset", dataset])
@@ -1468,13 +1585,13 @@ def _native_train_command_tokens_from_state(state: dict[str, object]) -> list[st
 
 
 def _native_train_tui_fields(state: dict[str, object] | None = None) -> list[tuple[str, str, str]]:
-    fields = [
-        ("model", "Model", "run"),
-        ("template", "Template", "run"),
-        ("dataset", "Dataset", "run"),
-        ("output_dir", "Output", "run"),
-        ("logs", "Logs", "run"),
-    ]
+    embedding = str((state or {}).get("model") or "") == "embedding"
+    fields = [("model", "Model", "run")]
+    if embedding:
+        fields.append(("dataset", "Datasets", "run"))
+    else:
+        fields.extend((("template", "Template", "run"), ("dataset", "Dataset", "run")))
+    fields.extend((("output_dir", "Output", "run"), ("logs", "Logs", "run")))
     hyperparams = _train_tui_hyperparams_for_state(state or {}) if state is not None else _TRAIN_TUI_HYPERPARAMS
     fields.extend((key, label, "hyper") for _flag, key, label, _default, _kind, _description in hyperparams)
     return fields
@@ -1499,6 +1616,38 @@ def _native_train_validate_tui_value(key: str, value: str) -> str:
         if parsed < 0:
             raise ValueError("value must be non-negative")
         return f"{parsed:g}"
+    if kind == "positive-float":
+        parsed = float(value)
+        if parsed <= 0:
+            raise ValueError("value must be greater than zero")
+        return f"{parsed:g}"
+    if kind == "probability":
+        parsed = float(value)
+        if parsed < 0 or parsed > 1:
+            raise ValueError("value must be between 0 and 1")
+        return f"{parsed:g}"
+    if kind == "embedding-stage":
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized not in {"pretrain", "posttrain", "finetune", "resume"}:
+            raise ValueError("value must be pretrain, posttrain, finetune, or resume")
+        return normalized
+    if kind == "embedding-architecture":
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized in {"gpt", "gpt-derived"}:
+            return "gpt-derived"
+        if normalized != "bert":
+            raise ValueError("value must be bert or gpt-derived")
+        return normalized
+    if kind == "pooling":
+        normalized = value.strip().lower()
+        if normalized not in {"mean", "cls", "last"}:
+            raise ValueError("value must be mean, cls, or last")
+        return normalized
+    if kind == "adapter":
+        normalized = value.strip().lower()
+        if normalized not in {"none", "lora", "qlora"}:
+            raise ValueError("value must be none, lora, or qlora")
+        return normalized
     if kind == "choice":
         normalized = value.strip().lower().replace("_", "-")
         if normalized in {"fixed", "constant"}:
@@ -1580,7 +1729,13 @@ def _render_native_train_dashboard(console, state: dict[str, object], selected: 
     selected_key = fields[selected][0]
     model = rich_escape(str(state.get("model") or "gpt"))
     template = rich_escape(str(state.get("template") or "default"))
-    dataset = rich_escape(str(state.get("dataset") or "tinystories"))
+    if str(state.get("model") or "") == "embedding":
+        manifest = str(state.get("embedding_datasets_manifest") or "").strip()
+        sources = state.get("embedding_datasets") or []
+        dataset_text = manifest or f"{len(sources) if isinstance(sources, list) else 0} sources"
+    else:
+        dataset_text = str(state.get("dataset") or "tinystories")
+    dataset = rich_escape(dataset_text)
     steps = rich_escape(str(state.get("max_steps") or "20000"))
     console.print(f"[infer.banner] NeuralFn Native Train [/] [infer.accent]{model}[/] template={template} dataset={dataset} steps={steps}")
     console.print("[infer.status]Up/Down move  Enter edit  r run  p print command  q quit[/]")
@@ -1604,7 +1759,13 @@ def _render_native_train_dashboard(console, state: dict[str, object], selected: 
             elif key == "template":
                 default = _train_tui_template_choices(str(state.get("model") or "gpt"))[0][0]
             elif key == "dataset":
-                default = "tinystories"
+                if str(state.get("model") or "") == "embedding":
+                    manifest = str(state.get("embedding_datasets_manifest") or "").strip()
+                    sources = state.get("embedding_datasets") or []
+                    current = manifest or ", ".join(str(item) for item in sources) or "not configured"
+                    default = "one or more sources"
+                else:
+                    default = "tinystories"
             elif key == "output_dir":
                 default = str(Path.home() / "NeuralFn" / "artifacts" / f"{state.get('model') or 'gpt'}_tui")
             elif key == "logs":
@@ -1677,6 +1838,21 @@ def _edit_native_train_tui_field(console, state: dict[str, object], key: str, ol
         _ensure_train_tui_hyperparam_defaults(state)
         return f"Template set to {selected}."
     if key == "dataset":
+        if str(state.get("model") or "") == "embedding":
+            raw = prompt("Dataset manifest path, or comma-separated dataset paths (blank keeps current)").strip()
+            if not raw:
+                return "Embedding datasets unchanged."
+            candidate = Path(raw).expanduser()
+            if "," not in raw and candidate.suffix.lower() == ".json":
+                state["embedding_datasets_manifest"] = raw
+                state["embedding_datasets"] = []
+                return f"Embedding dataset manifest set to {raw}."
+            sources = [item.strip() for item in raw.split(",") if item.strip()]
+            if not sources:
+                return "Embedding datasets unchanged."
+            state["embedding_datasets_manifest"] = ""
+            state["embedding_datasets"] = sources
+            return f"Embedding dataset array set to {len(sources)} source(s)."
         selected = _native_train_choice_value(
             prompt_fn=prompt,
             title="Choose dataset",
@@ -1789,19 +1965,22 @@ def _native_train_dashboard_tui_main(tokens: list[str]) -> int:
                 fields = _native_train_tui_fields(state)
                 selected = min(selected, len(fields) - 1)
             elif key == "m":
-                selected = 0
+                selected = next((index for index, field in enumerate(fields) if field[0] == "model"), 0)
                 status = _edit_native_train_tui_field(console, state, "model", old_term_attrs)
                 fields = _native_train_tui_fields(state)
             elif key == "t":
-                selected = 1
-                status = _edit_native_train_tui_field(console, state, "template", old_term_attrs)
+                if str(state.get("model") or "") == "embedding":
+                    status = "Embedding models use Architecture instead of an LM template."
+                else:
+                    selected = next((index for index, field in enumerate(fields) if field[0] == "template"), 0)
+                    status = _edit_native_train_tui_field(console, state, "template", old_term_attrs)
                 fields = _native_train_tui_fields(state)
             elif key == "d":
-                selected = 2
+                selected = next((index for index, field in enumerate(fields) if field[0] == "dataset"), 0)
                 status = _edit_native_train_tui_field(console, state, "dataset", old_term_attrs)
                 fields = _native_train_tui_fields(state)
             elif key == "o":
-                selected = 3
+                selected = next((index for index, field in enumerate(fields) if field[0] == "output_dir"), 0)
                 status = _edit_native_train_tui_field(console, state, "output_dir", old_term_attrs)
                 fields = _native_train_tui_fields(state)
             elif key == "r":
@@ -1834,6 +2013,8 @@ def _native_train_tui_questions():
     from nfn_impl import Question
 
     always = lambda _state, _explicit: True
+    embedding_only = lambda state, _explicit: str(state.get("model") or "") == "embedding"
+    non_embedding = lambda state, _explicit: str(state.get("model") or "") != "embedding"
 
     def model_options(_state):
         return [
@@ -1850,7 +2031,15 @@ def _native_train_tui_questions():
             for idx, (value, description) in enumerate(choices)
         ]
 
-    def dataset_options(_state):
+    def dataset_options(state):
+        if str(state.get("model") or "") == "embedding":
+            return [
+                _train_tui_custom(
+                    "Dataset path...",
+                    "Enter a TXT, JSONL, JSON, CSV, or Parquet source; use the dashboard for an array/manifest.",
+                    "Embedding dataset path",
+                )
+            ]
         options = []
         for idx, (value, description) in enumerate(_discover_train_tui_datasets()):
             if value == "path":
@@ -1898,19 +2087,23 @@ def _native_train_tui_questions():
 
     questions = [
         Question("model", "Choose a model family.", model_options, always),
-        Question("template", "Choose a model template.", template_options, always),
+        Question("template", "Choose a model template.", template_options, non_embedding),
         Question("dataset", "Choose a dataset alias or path.", dataset_options, always),
         Question("output_dir", "Choose an output directory.", output_options, always),
     ]
-    for _flag, key, label, default, _kind, _description in _TRAIN_TUI_HYPERPARAMS:
-        questions.append(
-            Question(
-                key,
-                f"Set {label.lower()}.",
-                lambda _state, d=default, l=label: _train_tui_value_choices(d, l, "Use the recommended native-training value.", l),
-                always,
+    for params, visible in (
+        (_TRAIN_TUI_HYPERPARAMS, non_embedding),
+        (_TRAIN_TUI_EMBEDDING_HYPERPARAMS, embedding_only),
+    ):
+        for _flag, key, label, default, _kind, _description in params:
+            questions.append(
+                Question(
+                    key,
+                    f"Set {label.lower()}.",
+                    lambda _state, d=default, l=label: _train_tui_value_choices(d, l, "Use the recommended native-training value.", l),
+                    visible,
+                )
             )
-        )
     questions.extend(
         [
             Question("train_log_file", "Choose a train progress log.", train_log_options, always),
@@ -2298,8 +2491,139 @@ def _write_log(handle, text: str) -> None:
         handle.flush()
 
 
+def _native_train_artifact_rows(command: list[str]) -> list[tuple[str, str]]:
+    def describe(label: str, raw_path: str | None) -> tuple[str, str] | None:
+        if not raw_path:
+            return None
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            path = (ROOT.parent / path).resolve()
+        if not path.is_file():
+            return (label, f"{path} (missing)")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return (label, f"{path} sha256={digest}")
+
+    rows: list[tuple[str, str]] = []
+    executable = describe("executable", command[0] if command else None)
+    if executable is not None:
+        rows.append(executable)
+    tile_value = _arg_value(command, "--tile-ops-lib")
+    if tile_value == "linked" or (
+        tile_value is None
+        and command
+        and Path(command[0]).name in {"nfn_gpt_native_train", "nfn_gpt_native_train_linked"}
+    ):
+        tile_value = str(ROOT.parent / "build" / "libnfn_native_train_tile_ops.so")
+    tile_ops = describe("tile ops", tile_value)
+    if tile_ops is not None:
+        rows.append(tile_ops)
+    return rows
+
+
 _NATIVE_PROGRESS_STEP_RE = re.compile(r"\bstep\s+(\d+)(?:/(\d+))?")
 _NATIVE_VALIDATION_RE = re.compile(r"\bvalidation\b|\beval\b", re.IGNORECASE)
+_NATIVE_METRIC_FIELD_RE = re.compile(r"\b([A-Za-z][A-Za-z0-9_]*)=([^\s]+)")
+_NATIVE_METRIC_LABELS = {
+    "tokens_per_s": "tokens/s",
+    "elapsed_s": "elapsed",
+    "train_loss": "train loss",
+    "microbatch_tokens": "microbatch tokens",
+    "tokens_per_microbatch": "tokens/microbatch",
+    "grad_accum_steps": "gradient accumulation",
+    "effective_train_batch_tokens": "effective batch tokens",
+    "train_microbatches_completed": "microbatches completed",
+    "optimizer_step": "optimizer step",
+    "eval_due": "evaluation due",
+    "train_loss_due": "train-loss sample due",
+}
+
+
+def _format_native_metric_value(key: str, value: str) -> str:
+    if key in {
+        "tokens",
+        "rows",
+        "tokens_per_microbatch",
+        "microbatch_tokens",
+        "effective_train_batch_tokens",
+        "train_microbatches_completed",
+    }:
+        try:
+            return f"{int(value):,}"
+        except ValueError:
+            return value
+    if key == "tokens_per_s":
+        try:
+            return f"{float(value):,.0f}"
+        except ValueError:
+            return value
+    if key == "elapsed_s":
+        try:
+            return f"{float(value):,.2f}s"
+        except ValueError:
+            return value
+    return value
+
+
+def _format_native_train_line(line: str) -> str:
+    text = line.rstrip("\n")
+    native_prefix = "[nfn-native-train] "
+    if text.startswith(native_prefix):
+        text = text[len(native_prefix):]
+    fields = list(_NATIVE_METRIC_FIELD_RE.finditer(text))
+    if not fields:
+        return text
+    prefix = text[:fields[0].start()].strip()
+    rendered = [prefix] if prefix else []
+    cursor = fields[0].start()
+    for match in fields:
+        interstitial = text[cursor:match.start()].strip()
+        if interstitial:
+            rendered.append(interstitial)
+        rendered.append(
+            f"{_NATIVE_METRIC_LABELS.get(match.group(1), match.group(1).replace('_', ' '))}: "
+            f"{_format_native_metric_value(match.group(1), match.group(2))}"
+        )
+        cursor = match.end()
+    tail = text[cursor:].strip()
+    if tail:
+        rendered.append(tail)
+    return " | ".join(rendered)
+
+
+def _native_train_metric_rows(
+    value: object,
+    *,
+    prefix: str = "",
+) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    if isinstance(value, dict):
+        if not value:
+            rows.append((prefix or "value", "{}"))
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            rows.extend(_native_train_metric_rows(child, prefix=child_prefix))
+        return rows
+    if isinstance(value, list):
+        if not value:
+            rows.append((prefix or "value", "[]"))
+        for index, child in enumerate(value):
+            rows.extend(_native_train_metric_rows(child, prefix=f"{prefix}[{index}]"))
+        return rows
+    if value is None:
+        rendered = "null"
+    elif isinstance(value, bool):
+        rendered = str(value).lower()
+    else:
+        rendered = str(value)
+    rows.append((prefix or "value", rendered))
+    return rows
+
+
+def _print_native_train_metrics(payload: dict[str, object], *, stream=None) -> None:
+    target = stream or sys.stdout
+    print("\n\033[1;36mNeuralFn Training Metrics\033[0m", file=target)
+    for key, value in _native_train_metric_rows(payload):
+        print(f"  \033[1m{key}\033[0m: {value}", file=target)
 
 
 def _native_train_parse_stdout_json(stdout_text: str) -> dict[str, object] | None:
@@ -2425,11 +2749,15 @@ def _run_native_train_with_progress(
     eval_log = _open_optional_log(eval_log_file)
     started = time.monotonic()
     last_status = ""
+    artifact_rows = _native_train_artifact_rows(command)
+    for label, value in artifact_rows:
+        _write_log(train_log, f"[nfn-train-provenance] {label}={value}\n")
     if progress_tui:
         _print_train_tui_panel(
             "NeuralFn Training Run",
             [
                 ("command", shlex.join(command)),
+                *artifact_rows,
                 ("train log", train_log_file or "off"),
                 ("eval log", eval_log_file or "off"),
             ],
@@ -2464,16 +2792,13 @@ def _run_native_train_with_progress(
                     if is_validation_line:
                         _write_log(eval_log, line)
                     match = _NATIVE_PROGRESS_STEP_RE.search(line)
-                    if progress_tui and match and not is_validation_line:
-                        step = match.group(1)
-                        total = match.group(2) or "?"
-                        elapsed = time.monotonic() - started
-                        last_status = f"step {step}/{total} elapsed {elapsed:0.1f}s"
-                        print(f"\033[1;32m[train] {last_status}\033[0m", file=sys.stderr)
-                    elif progress_tui and is_validation_line:
-                        print(f"\033[1;35m[eval] {line.rstrip()}\033[0m", file=sys.stderr)
-                    elif progress_tui:
-                        print(f"\033[2m[setup] {line.rstrip()}\033[0m", file=sys.stderr)
+                    if match and not is_validation_line:
+                        last_status = f"step {match.group(1)}/{match.group(2) or '?'}"
+                    if progress_tui:
+                        category = "eval" if is_validation_line else "train" if match else "native"
+                        color = "1;35" if is_validation_line else "1;32" if match else "2"
+                        rendered = _format_native_train_line(line)
+                        print(f"\033[{color}m[{category}] {rendered}\033[0m", file=sys.stderr)
                     else:
                         sys.stderr.write(line)
                         sys.stderr.flush()
@@ -2497,6 +2822,7 @@ def _run_native_train_with_progress(
                 ),
                 stream=sys.stdout,
             )
+            _print_native_train_metrics(payload, stream=sys.stdout)
         if progress_tui:
             status = last_status or f"finished in {time.monotonic() - started:0.1f}s"
             _print_train_tui_panel(
@@ -2555,6 +2881,14 @@ def _direct_native_train_cli_main(
     ):
         print(shlex.join(command))
         return 0
+    if model == "embedding":
+        try:
+            from neuralfn.native_embedding import prepare_embedding_training_command
+
+            command, _embedding_data = prepare_embedding_training_command(command, repo_root=ROOT.parent)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Unable to prepare embedding datasets: {exc}", file=sys.stderr)
+            return 2
     if "--dry-run" in command or "--print-command" in command:
         if _native_command_is_dense_gpt_cli(command):
             return _run_dense_gpt_compiled_cli_capture(command, env)
@@ -2661,6 +2995,8 @@ def main(
     tokens = list(sys.argv[1:] if argv is None else argv)
     if _is_native_train_tui_request(tokens, stdin_isatty=stdin_isatty, stdout_isatty=stdout_isatty):
         return _native_train_tui_main(tokens)
+    if _is_native_embedding_infer(tokens):
+        return _native_embedding_infer_main(tokens)
     if _is_direct_native_train_cli_train(tokens):
         return _direct_native_train_cli_main(tokens)
     if stdin_isatty is None and stdout_isatty is None:
@@ -2692,7 +3028,9 @@ def main(
 
 
 if __name__ == "__main__":
-    if _is_native_train_tui_request(sys.argv[1:]):
+    if _is_native_embedding_infer(sys.argv[1:]):
+        main = _native_embedding_infer_main
+    elif _is_native_train_tui_request(sys.argv[1:]):
         main = _native_train_tui_main
     elif _is_direct_native_train_cli_train(sys.argv[1:]):
         main = _direct_native_train_cli_main
@@ -2718,6 +3056,8 @@ if __name__ == "__main__":
 
 
 if __name__ == "__main__":
+    if _is_native_embedding_infer(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
     if _is_native_train_tui_request(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_direct_native_train_cli_train(sys.argv[1:]):

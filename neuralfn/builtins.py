@@ -636,7 +636,9 @@ token_cross_entropy_module = module_neuron(
         Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
     ],
     output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
-    module_config={},
+    # H0302: z_loss_coef > 0 adds z_loss_coef * mean(logsumexp(logits)^2).
+    # Config-only (no port change), so the variant-library contract is unaffected.
+    module_config={"z_loss_coef": 0.0},
 )
 
 

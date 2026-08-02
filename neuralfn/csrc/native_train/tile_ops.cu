@@ -369,6 +369,14 @@ void launch_fill_many_values_mixed_float32_bf16_bits(
     std::int64_t bf16_max_elements,
     cudaStream_t stream);
 void launch_init_gpt2_token_weight_float32(float* values, std::int64_t n, cudaStream_t stream);
+void launch_seeded_normal_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    std::uint64_t seed,
+    std::uint64_t offset,
+    float stddev,
+    cudaStream_t stream);
 void launch_init_gpt2_token_weight_fast_float32(float* values, std::int64_t n, cudaStream_t stream);
 void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
     float* values,
@@ -2280,6 +2288,39 @@ void launch_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
     std::int64_t vocab,
     std::int64_t row_stride,
     cudaStream_t stream);
+void launch_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets(
+    const std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* partials,
+    float* z_partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    cudaStream_t stream);
+void launch_token_cross_entropy_variant_bf16_u16(
+    std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float z_loss_coef,
+    float logit_softcap,
+    bool write_gradient,
+    cudaStream_t stream);
+void launch_qk_rms_norm_packed_bf16_forward(
+    std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, float, cudaStream_t);
+void launch_qk_rms_norm_packed_bf16_backward(
+    const std::uint16_t*, const float*, float*, std::uint16_t*,
+    std::int64_t, std::int64_t, std::int64_t, cudaStream_t);
+int launch_differential_packed_attention_forward_bf16(
+    const std::uint16_t*, std::uint16_t*, std::int64_t, std::int64_t, std::int64_t,
+    std::int64_t, float, float, float, cudaStream_t);
+int launch_differential_packed_attention_backward_bf16(
+    const std::uint16_t*, const float*, std::uint16_t*,
+    std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+    float, float, cudaStream_t);
 void launch_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -4299,6 +4340,19 @@ int nfn_native_tile_init_gpt2_token_weight_float32(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_init_gpt2_token_weight_float32(values, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_seeded_normal_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    std::uint64_t seed,
+    std::uint64_t offset,
+    float stddev,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_seeded_normal_float32(
+        values, shadow_bf16_bits, n, seed, offset, stddev, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -8285,6 +8339,100 @@ int nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
     neuralfn::tile_cuda::launch_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
         logits_bf16_bits, targets, partials, rows, vocab, row_stride, as_stream(cuda_stream));
     return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets(
+    const std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* partials,
+    float* z_partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_z_partials_strided_bf16_bits_u16_targets(
+        logits_bf16_bits, targets, partials, z_partials, rows, vocab, row_stride,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_variant_bf16_u16(
+    std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float z_loss_coef,
+    float logit_softcap,
+    bool write_gradient,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_variant_bf16_u16(
+        logits_bf16_bits, targets, row_losses, rows, vocab, row_stride, loss_scale,
+        z_loss_coef, logit_softcap, write_gradient, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_qk_rms_norm_packed_bf16_forward(
+    std::uint16_t* packed_qkv_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    float eps,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_qk_rms_norm_packed_bf16_forward(
+        packed_qkv_bits, rstd, rows, heads, head_dim, eps, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_qk_rms_norm_packed_bf16_backward(
+    const std::uint16_t* normalized_qkv_bits,
+    const float* rstd,
+    float* grad_qkv_float,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_qk_rms_norm_packed_bf16_backward(
+        normalized_qkv_bits, rstd, grad_qkv_float, grad_qkv_bf16_bits,
+        rows, heads, head_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_differential_packed_attention_forward_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    float eps,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_forward_bf16(
+        qkv_bf16_bits, out_bf16_bits, batch, heads, seq_len, head_dim,
+        lambda, output_scale, eps, as_stream(cuda_stream));
+}
+
+int nfn_native_tile_differential_packed_attention_backward_bf16(
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float lambda,
+    float output_scale,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_backward_bf16(
+        out_bf16_bits, grad_out, grad_qkv_bf16_bits,
+        batch, heads, seq_len, head_dim, lambda, output_scale,
+        as_stream(cuda_stream));
 }
 
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(

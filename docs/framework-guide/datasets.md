@@ -2,6 +2,53 @@
 
 NeuralFn manages training datasets through a server-side catalog, with download, upload, and loading APIs. A special `dataset_source` module node feeds tokenized data directly into a graph during training.
 
+## Native embedding dataset manifests
+
+Native embedding runs use a run-local JSON manifest rather than the graph
+`dataset_source` node. The top-level `datasets` array may mix topics and
+objectives; `weight` controls deterministic batch frequency and `loss_weight`
+scales that dataset's loss. Each native microbatch contains one dataset and one
+objective.
+
+| Objective | Required logical columns |
+|---|---|
+| `raw` | `text` (TXT also supports one record per line) |
+| `retrieval` | `query`, `positive`, optional `negatives` array |
+| `similarity` | `sentence1`, `sentence2`, numeric `score` |
+| `class` | `text`, `label` |
+
+Entries accept `format: txt|jsonl|json|csv|parquet|hf`, `split`, `name` or
+`topic`, `weight`, `loss_weight`, and `columns`. Similarity entries may define
+`score_min` and `score_max`; scores are clipped after normalization to the
+native cosine range `[-1, 1]`. Relative file paths resolve from the manifest.
+
+```json
+{
+  "datasets": [
+    {"source": "documents.txt", "objective": "raw", "weight": 3},
+    {
+      "source": "org/search-pairs",
+      "format": "hf",
+      "split": "train",
+      "objective": "retrieval",
+      "columns": {"query": "question", "positive": "passage"}
+    }
+  ]
+}
+```
+
+The Python preparation boundary converts these sources to
+`embedding_indexed_v1`: a metadata sidecar plus a numeric TSV stream containing
+uint32 token IDs and objective metadata. The C++ trainer consumes only the
+compiled stream. This is intentionally separate from the raw little-endian
+uint16 token shards used by native next-token LM training. Those legacy `.bin`
+shards are contiguous little-endian uint16 token IDs; an llm.c-compatible
+1024-byte header is optional, and native alias discovery recognizes
+`fineweb_train_*.bin` / `fineweb_val_*.bin` plus the TinyStories train/val
+filenames. The LM sampler creates targets by shifting the contiguous stream by
+one token. None of those assumptions apply to variable-length embedding
+records.
+
 ## Dataset catalog
 
 Each NeuralFn project has its own dataset catalog. Datasets can be:

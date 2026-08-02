@@ -93,6 +93,15 @@ Canonical docs:
   `NFN_ALLOW_TORCH_TRAINING` as a graph-backed bypass; one-off graph-backed
   debugging should call Python SDK trainer APIs directly until native C++
   trainers exist for those model families.
+- Keep `embedding` as a separate first-class native model type. Never present
+  the legacy `--train-embedding-lm` next-token diagnostic as sentence embedding
+  training. Embedding TUI state must use record batches, vector/pooling and
+  objective settings, accept a dataset array/manifest, route to
+  `nfn_embedding_native_train`, and produce checkpoints loadable by `nfn embed`.
+- Native embedding manifests use raw, retrieval, similarity, or class schemas
+  and compile to uint32 IDs before the Torch-free C++ loop. Preserve the
+  distinction from LM uint16 token shards and keep exact-resume optimizer plus
+  dataset-mixer state paired with the model checkpoint.
 
 ## Entry points
 

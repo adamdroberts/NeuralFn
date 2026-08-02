@@ -321,6 +321,7 @@ class ModelSpec:
     vocab_size: int = 256
     tie_embeddings: bool = True
     logit_softcap: float = 0.0
+    z_loss_coef: float = 0.0
     block_spec: BlockSpec = field(default_factory=lambda: BlockSpec(family="gpt2"))
     template: TemplateSpec = field(default_factory=TemplateSpec)
     jepa_latent_dim: int = 128
@@ -370,6 +371,7 @@ Complete model architecture specification.
 | `vocab_size` | `int` | `256` | Vocabulary size |
 | `tie_embeddings` | `bool` | `True` | Tie input embedding and LM head weights |
 | `logit_softcap` | `float` | `0.0` | Logit soft-capping (0=disabled, >0=tanh softcap) |
+| `z_loss_coef` | `float` | `0.0` | Z-loss coefficient. `>0` adds `z_loss_coef * mean(logsumexp(logits, -1) ** 2)` to the token cross-entropy, anchoring the log-partition so the logit scale cannot drift over a long pretraining run. `0.0` reproduces plain cross-entropy exactly. Used by `gpt2_zloss` / `gpt2_stable` at `1e-4` |
 | `block_spec` | `BlockSpec` | GPT-2 defaults | Per-block architecture spec |
 | `template` | `TemplateSpec` | defaults | High-level template spec |
 | `jepa_latent_dim` | `int` | `128` | JEPA latent dimension |
@@ -416,7 +418,7 @@ Convert a `ModelSpec` to a plain dictionary via `dataclasses.asdict`.
 
 ## Preset Builder Functions
 
-All preset builders accept `**kwargs` to override default values. Common kwargs include `model_dim` (or `n_embd`), `num_layers` (or `n_layer`), `vocab_size`, `num_heads`, `num_kv_heads`, `tie_embeddings`, `logit_softcap`, and block-specific parameters.
+All preset builders accept `**kwargs` to override default values. Common kwargs include `model_dim` (or `n_embd`), `num_layers` (or `n_layer`), `vocab_size`, `num_heads`, `num_kv_heads`, `tie_embeddings`, `logit_softcap`, `z_loss_coef`, and block-specific parameters.
 
 ### `build_composed_lm_spec`
 
@@ -449,6 +451,11 @@ when constructing fine-tuning graphs.
 | `build_gpt2_spec(**kwargs)` | gpt2 | dense | eager | LayerNorm, GELU MLP, absolute pos, linear bias |
 | `build_gpt2_megakernel_spec(**kwargs)` | gpt2 | dense | megakernel | GPT-2 shape with megakernel runtime metadata |
 | `build_gpt2_evo_spec(**kwargs)` | gpt2 | dense | eager | **[Experimental]** GPT-2 where one block (`layer_evo_index`, default middle) is excluded from the optimizer and trained by an interleaved evolutionary search (`layer_evo_*` knobs); all other parameters train by gradient. The 5090 harness `cli/scripts/train_gpt2_evo.py` is a Torch-free native shim that delegates to the compiled C++ CUDA Tile GPT-2-evo/dense-GPT path with a 12-layer SM120 AdamW run, requested NVFP4 activation intent, 60-step LR warmup, `--lr-schedule cosine` by default, and live validation loss every 1000 steps. Use `--lr-schedule constant` for fixed-LR runs and `--final-lr-fraction F` to set the final LR fraction. Native plan/runtime JSON also reports the effective dense-trainer activation storage; until native FP4 packing is wired into projection/attention inputs, NVFP4 requests are effective `bf16-float32-mixed` with packing inactive. Native inference uses `nfn infer --checkpoint .../gpt2_evo --prompt-tokens IDS`, while legacy graph-backed `.pt/.json` artifacts can still use `python cli/scripts/infer_gpt2.py --evo` or explicit `nfn infer --graph ... --weights ...` |
+| `build_gpt2_zloss_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + z-loss anchored log-partition; sets `z_loss_coef=1e-4` (override via kwargs). `ModelSpec.z_loss_coef` flows to the `token_cross_entropy` neuron's `module_config`, and `TokenCrossEntropyStage` adds `z_loss_coef * mean(logsumexp(logits, -1) ** 2)`. `z_loss_coef=0.0` reproduces plain cross-entropy exactly |
+| `build_gpt2_softcap_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + tanh logit softcap; sets `logit_softcap=30.0` |
+| `build_gpt2_qknorm_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + QK-norm; sets `use_qk_norm=True` on the block spec |
+| `build_gpt2_diff_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + Differential Transformer attention; sets `attention_variant="differential"` and `diff_lambda_init=0.8` |
+| `build_gpt2_stable_spec(**kwargs)` | gpt2 | dense | eager | GPT-2 + z-loss and QK-norm stacked; the dense pretraining-stability recipe |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |
@@ -611,3 +618,16 @@ In addition to the usual LLaMA/MoE overrides (`n_layer` / `num_layers`, `n_embd`
 **Breaking-change note [Experimental]:** The hybrid preset's compiled/root input contract is now `(tokens, targets, sem_targets)` instead of `(tokens, sem_targets)`.
 
 **Disclaimer [Experimental]:** This builder and its `ModelSpec` fields are research prototypes and may change.
+
+### Native coverage of the dense GPT-2 pretraining variants
+
+`gpt2_zloss`, `gpt2_softcap`, `gpt2_qknorm`, `gpt2_diff`, and `gpt2_stable` are
+compiled dense-GPT presets. `nfn_gpt2_native_train --list-templates` reports
+each with `selected_graph_native_runnable: true` and
+`native_training_coverage_class: "implemented-dense-gpt-transformer-lm"`.
+The native trainer applies z-loss and softcap in fused cross-entropy
+forward/backward kernels, QK-norm in packed-QKV RMSNorm forward/backward
+kernels, and differential attention through two native half-QK causal-attention
+passes plus native combine/RMSNorm forward/backward. The compiled
+`gpt2_diff` benchmark holds lambda at `diff_lambda_init=0.8`; it does not update
+the graph runtime's learnable lambda parameter.

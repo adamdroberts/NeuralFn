@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import importlib
 import os
@@ -60,12 +61,14 @@ from neuralfn.native_gpt2 import (
     native_gpt2_checkpoint_sampler_argv,
     native_gpt2_checkpoint_sampler_env,
     native_gpt2_parameter_count,
+    native_gpt2_artifact_stale_sources,
     native_gpt2_prompt_tokens,
     native_gpt2_runner_status,
     native_gpt2_template_catalog,
     read_native_gpt2_checkpoint_info,
     render_native_gpt2_checkpoint_sampler_text,
     resolve_native_gpt2_cli,
+    resolve_fresh_native_gpt2_cli,
     resolve_native_gpt2_binding_command,
     resolve_native_gpt2_executable,
     resolve_native_gpt2_launcher,
@@ -93,6 +96,123 @@ from neuralfn.native_train import (
     run_native_train,
     validate_strict_native_train_command,
 )
+
+
+def _write_test_linked_manifest(linked: Path, root: Path) -> None:
+    inputs = [
+        linked,
+        *(root / source for source in native_gpt2_module.NATIVE_GPT2_COMMON_SOURCES),
+        *(root / source for source in native_gpt2_module.NATIVE_GPT2_TILE_SOURCES),
+        root / "build/libnfn_native_train_tile_ops.so",
+        root / "tools/build_native_gpt_cli_linked.sh",
+    ]
+    manifest = Path(f"{linked}.inputs.sha256")
+    manifest.write_text(
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.resolve()}\n"
+            for path in inputs
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_fresh_native_gpt2_cli_requires_linked_and_never_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linked = tmp_path / "nfn_gpt_native_train_linked"
+    generic = tmp_path / "nfn_gpt_native_train"
+    legacy = tmp_path / "nfn_gpt2_native_train"
+    for path in (linked, generic, legacy):
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+    root = Path(__file__).parents[1]
+    _write_test_linked_manifest(linked, root)
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", "/tmp/ignored-native-train")
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", "/tmp/ignored-gpt")
+    monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", "/tmp/ignored-gpt2")
+    monkeypatch.delenv("NFN_NATIVE_GPT_AUTO_REBUILD", raising=False)
+    monkeypatch.setattr(native_gpt2_module, "DEFAULT_NATIVE_GPT_CLI_LINKED", str(linked))
+    monkeypatch.setattr(native_gpt2_module, "DEFAULT_NATIVE_GPT_CLI", str(generic))
+    monkeypatch.setattr(native_gpt2_module, "LEGACY_NATIVE_GPT2_CLI", str(legacy))
+
+    assert resolve_fresh_native_gpt2_cli(repo_root=root) == str(linked)
+    linked.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
+    assert native_gpt2_artifact_stale_sources(
+        linked,
+        repo_root=root,
+        linked_tile_ops=True,
+    )
+    with pytest.raises(RuntimeError, match="no fallback"):
+        resolve_fresh_native_gpt2_cli(
+            repo_root=root,
+            prompt_for_rebuild=False,
+        )
+
+
+def test_fresh_native_gpt2_cli_rejects_only_stale_or_missing_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT2_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT_AUTO_REBUILD", raising=False)
+    monkeypatch.setattr(
+        native_gpt2_module,
+        "DEFAULT_NATIVE_GPT_CLI_LINKED",
+        str(tmp_path / "missing-linked"),
+    )
+    monkeypatch.setattr(
+        native_gpt2_module,
+        "DEFAULT_NATIVE_GPT_CLI",
+        str(tmp_path / "missing-generic"),
+    )
+    monkeypatch.setattr(
+        native_gpt2_module,
+        "LEGACY_NATIVE_GPT2_CLI",
+        str(tmp_path / "missing-compat"),
+    )
+
+    with pytest.raises(RuntimeError, match="tools/build_native_gpt_cli_linked.sh"):
+        resolve_fresh_native_gpt2_cli(
+            repo_root=Path(__file__).parents[1],
+            prompt_for_rebuild=False,
+        )
+
+
+def test_fresh_native_gpt2_cli_prompt_force_rebuilds_linked_and_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).parents[1]
+    linked = tmp_path / "nfn_gpt_native_train_linked"
+    linked.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    linked.chmod(0o755)
+    os.utime(linked, (1, 1))
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT2_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT_AUTO_REBUILD", raising=False)
+    monkeypatch.setattr(native_gpt2_module, "DEFAULT_NATIVE_GPT_CLI_LINKED", str(linked))
+    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+
+    def rebuild(command, **kwargs):
+        assert command == [
+            "bash",
+            "tools/build_native_gpt_cli_linked.sh",
+            str(linked),
+        ]
+        assert kwargs["env"]["NFN_NATIVE_GPT_FORCE_REBUILD"] == "1"
+        _write_test_linked_manifest(linked, root)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(native_gpt2_module.subprocess, "run", rebuild)
+
+    assert resolve_fresh_native_gpt2_cli(
+        repo_root=root,
+        prompt_for_rebuild=True,
+    ) == str(linked)
 
 
 def _write_raw_text_dataset(root: Path) -> tuple[Path, dict[str, object]]:

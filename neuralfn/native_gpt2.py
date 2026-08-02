@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
 import subprocess
 import struct
+import sys
 from typing import Any, Sequence
 
 from .native_cuda_device import resolve_cuda_visible_devices_value
@@ -19,6 +21,22 @@ DEFAULT_NATIVE_GPT_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI
 LEGACY_NATIVE_GPT2_CLI = "build/nfn_gpt2_native_train"
+NATIVE_GPT2_REBUILD_COMMAND = (
+    "NFN_NATIVE_GPT_FORCE_REBUILD=1 "
+    "bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked"
+)
+NATIVE_GPT2_COMMON_SOURCES = (
+    "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp",
+    "neuralfn/csrc/native_train/token_shards.cpp",
+    "neuralfn/csrc/native_train/token_shards.h",
+    "neuralfn/csrc/native_train/shipped_gpt_template_presets.h",
+)
+NATIVE_GPT2_TILE_SOURCES = (
+    "neuralfn/csrc/native_train/tile_ops.cu",
+    "neuralfn/csrc/native_train/tile_ops.h",
+    "neuralfn/csrc/tile_cuda/kernels.cu",
+    "tools/build_native_train_tile_ops.sh",
+)
 NATIVE_GPT2_BINDING_MODULES = (
     "neuralfn_native_gpt",
     "neuralfn._native_gpt",
@@ -406,6 +424,139 @@ def resolve_native_gpt2_cli(value: str | None = None) -> str:
     if legacy_path.exists():
         return str(legacy_path)
     return str(default_path)
+
+
+def native_gpt2_artifact_stale_sources(
+    artifact: str | os.PathLike[str],
+    *,
+    repo_root: str | os.PathLike[str] | None = None,
+    linked_tile_ops: bool = False,
+) -> tuple[str, ...]:
+    """Return changed inputs for a built native GPT trainer artifact."""
+    root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    path = Path(artifact)
+    if not path.exists():
+        return ("<missing>",)
+    dependencies = list(NATIVE_GPT2_COMMON_SOURCES)
+    if linked_tile_ops:
+        dependencies.extend(NATIVE_GPT2_TILE_SOURCES)
+        dependencies.append("build/libnfn_native_train_tile_ops.so")
+        dependencies.append("tools/build_native_gpt_cli_linked.sh")
+        manifest = Path(f"{path}.inputs.sha256")
+        if not manifest.is_file():
+            return (f"<missing hash manifest: {manifest}>",)
+        recorded: dict[Path, str] = {}
+        try:
+            for raw_line in manifest.read_text(encoding="utf-8").splitlines():
+                digest, separator, raw_path = raw_line.partition("  ")
+                if not separator or len(digest) != 64:
+                    return (f"<invalid hash manifest: {manifest}>",)
+                recorded_path = Path(raw_path)
+                if not recorded_path.is_absolute():
+                    recorded_path = root / recorded_path
+                recorded[recorded_path.resolve()] = digest
+        except OSError:
+            return (f"<unreadable hash manifest: {manifest}>",)
+
+        expected = [path, *(root / relative for relative in dependencies)]
+        stale: list[str] = []
+        for expected_path in expected:
+            resolved = expected_path.resolve()
+            label = (
+                str(resolved.relative_to(root.resolve()))
+                if resolved.is_relative_to(root.resolve())
+                else str(resolved)
+            )
+            expected_digest = recorded.get(resolved)
+            if expected_digest is None:
+                stale.append(f"<untracked: {label}>")
+                continue
+            if not resolved.is_file():
+                stale.append(f"<missing: {label}>")
+                continue
+            digest = hashlib.sha256()
+            with resolved.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected_digest:
+                stale.append(label)
+        return tuple(stale)
+    build_script = {
+        "nfn_gpt_native_train_linked": "tools/build_native_gpt_cli_linked.sh",
+        "nfn_gpt_native_train": "tools/build_native_gpt_cli.sh",
+        "nfn_gpt2_native_train": "tools/build_native_gpt2_cli.sh",
+    }.get(path.name)
+    if build_script:
+        dependencies.append(build_script)
+    artifact_mtime = path.stat().st_mtime
+    stale: list[str] = []
+    for relative in dependencies:
+        source = root / relative
+        if not source.exists() or source.stat().st_mtime > artifact_mtime:
+            stale.append(relative)
+    return tuple(stale)
+
+
+def resolve_fresh_native_gpt2_cli(
+    *,
+    repo_root: str | os.PathLike[str] | None = None,
+    prompt_for_rebuild: bool | None = None,
+) -> str:
+    """Resolve the linked in-tree trainer used by ``nfn train``.
+
+    This strict route never falls back to, or accepts overrides for, the generic
+    or compatibility binaries.
+    """
+    root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    linked_path = root / DEFAULT_NATIVE_GPT_CLI_LINKED
+    stale = native_gpt2_artifact_stale_sources(
+        linked_path,
+        repo_root=root,
+        linked_tile_ops=True,
+    )
+    if not stale:
+        return str(linked_path)
+
+    stale_text = ", ".join(stale)
+    print(
+        "[nfn train] linked native GPT trainer is stale or missing: "
+        f"{linked_path} ({stale_text})",
+        file=sys.stderr,
+    )
+    should_rebuild = _env_flag_enabled("NFN_NATIVE_GPT_AUTO_REBUILD")
+    if prompt_for_rebuild is None:
+        prompt_for_rebuild = bool(sys.stdin.isatty() and sys.stderr.isatty())
+    if not should_rebuild and prompt_for_rebuild:
+        response = input(
+            "Force-recompile build/nfn_gpt_native_train_linked and continue? [y/N] "
+        )
+        should_rebuild = response.strip().lower() in {"y", "yes"}
+
+    if should_rebuild:
+        rebuild_env = os.environ.copy()
+        rebuild_env["NFN_NATIVE_GPT_FORCE_REBUILD"] = "1"
+        subprocess.run(
+            [
+                "bash",
+                "tools/build_native_gpt_cli_linked.sh",
+                str(linked_path),
+            ],
+            cwd=root,
+            env=rebuild_env,
+            check=True,
+        )
+        stale = native_gpt2_artifact_stale_sources(
+            linked_path,
+            repo_root=root,
+            linked_tile_ops=True,
+        )
+        if not stale:
+            return str(linked_path)
+
+    raise RuntimeError(
+        "The required linked native GPT trainer is stale or missing; no fallback "
+        f"will be used. Rebuild with `{NATIVE_GPT2_REBUILD_COMMAND}`."
+    )
 
 
 def native_gpt2_cli_uses_linked_tile_ops(value: str | os.PathLike[str] | None) -> bool:

@@ -254,6 +254,8 @@ struct Config {
     int sample_top_k = 32;
     float sample_repetition_penalty = 1.0f;
     int sample_seed = 1337;
+    int train_seed = 1337;
+    bool train_seed_explicit = false;
     bool checkpoint_logits_smoke = false;
     bool checkpoint_qkv_smoke = false;
     bool checkpoint_attention_smoke = false;
@@ -268,7 +270,40 @@ struct Config {
     bool checkpoint_layout = false;
     int checkpoint_layout_sample_buffers = 8;
     bool layer_evo_enabled = false;
+    bool gpt2_normal_init = false;
+    bool fixed_validation_slice = false;
 };
+
+std::string normalize_template_name(const std::string& value);
+
+struct DenseGptVariantConfig {
+    float z_loss_coef = 0.0f;
+    float logit_softcap = 0.0f;
+    float qk_norm_eps = 0.0f;
+    float differential_lambda_init = 0.0f;
+    bool use_qk_norm = false;
+    bool use_differential_attention = false;
+};
+
+DenseGptVariantConfig dense_gpt_variant_config(const std::string& template_name) {
+    const std::string name = normalize_template_name(template_name);
+    DenseGptVariantConfig variant;
+    if (name == "gpt2_zloss" || name == "gpt2_stable") {
+        variant.z_loss_coef = 1.0e-4f;
+    }
+    if (name == "gpt2_softcap") {
+        variant.logit_softcap = 30.0f;
+    }
+    if (name == "gpt2_qknorm" || name == "gpt2_stable") {
+        variant.use_qk_norm = true;
+        variant.qk_norm_eps = 1.0e-6f;
+    }
+    if (name == "gpt2_diff") {
+        variant.use_differential_attention = true;
+        variant.differential_lambda_init = 0.8f;
+    }
+    return variant;
+}
 
 bool validation_shards_required_for_config(const Config& cfg) {
     return !cfg.startup_only && cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
@@ -292,6 +327,13 @@ struct StagePlan {
 struct ValidationLossRecord {
     std::int64_t step = 0;
     std::int64_t batches = 0;
+    std::int64_t tokens = 0;
+    double loss_sum = 0.0;
+    double loss_mean = 0.0;
+};
+
+struct TrainLossRecord {
+    std::int64_t step = 0;
     std::int64_t tokens = 0;
     double loss_sum = 0.0;
     double loss_mean = 0.0;
@@ -613,6 +655,9 @@ void print_usage(const char* program) {
         << "  --top-k K                         Native checkpoint sampler top-k; <=0 samples from full vocab (default 32)\n"
         << "  --repetition-penalty VALUE        Native checkpoint sampler repetition penalty; 1 disables it (default 1)\n"
         << "  --seed N                          Native checkpoint sampler seed (default 1337)\n"
+        << "  --train-seed N                    Deterministic training data/init seed; selects a non-wrapping shard offset\n"
+        << "  --init-mode legacy|gpt2-normal    Parameter initialization mode (default legacy)\n"
+        << "  --fixed-validation-slice          Reset validation sampling before each evaluation\n"
         << "  --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
@@ -794,6 +839,11 @@ const std::vector<std::string>& native_dense_gpt_template_selectors() {
         "gpt3",
         "gpt2_megakernel",
         "gpt2_moa",
+        "gpt2_zloss",
+        "gpt2_softcap",
+        "gpt2_qknorm",
+        "gpt2_diff",
+        "gpt2_stable",
         "nanogpt",
         "nanogpt_modern",
         "nanogpt_megakernel",
@@ -836,6 +886,9 @@ std::string native_training_coverage_class_for_template(const std::string& templ
     const std::string name = strip_modern_suffix(resolved_native_template_name(template_name));
     if (name == "gpt" || name == "gpt2" || name == "gpt3" ||
         name == "gpt2_megakernel" || name == "gpt2_moa" ||
+        name == "gpt2_zloss" || name == "gpt2_softcap" ||
+        name == "gpt2_qknorm" || name == "gpt2_diff" ||
+        name == "gpt2_stable" ||
         name == "nanogpt" || name == "nanogpt_megakernel") {
         return "implemented-dense-gpt-transformer-lm";
     }
@@ -11629,6 +11682,7 @@ int run_transformer_lm_training_json(
     const char* program,
     double token_shard_resolution_wall_ms) {
     const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    const DenseGptVariantConfig variant = dense_gpt_variant_config(cfg.template_name);
     const std::int64_t kHeads = geometry.num_heads;
     const std::int64_t kDefaultTargetLayers = geometry.num_layers;
     const std::int64_t kVocab = geometry.vocab_size;
@@ -12266,6 +12320,7 @@ int run_transformer_lm_training_json(
     bool resume_optimizer_state_available = false;
     bool resume_sampler_seek_applied = false;
     std::int64_t resume_sampler_seek_batch = 0;
+    std::int64_t training_sampler_start_batch = 0;
     std::int64_t resume_optimizer_checkpoint_tensor_count = 0;
     std::int64_t resume_optimizer_checkpoint_payload_elements = 0;
     std::int64_t resume_optimizer_checkpoint_h2d_copy_count = 0;
@@ -12778,6 +12833,19 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using AttentionStatsResetFn = void (*)();
+    using QkRmsNormPackedForwardFn = int (*)(
+        std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using QkRmsNormPackedBackwardFn = int (*)(
+        const std::uint16_t*, const float*, float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, void*);
+    using DifferentialPackedAttentionForwardFn = int (*)(
+        const std::uint16_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        float, float, float, void*);
+    using DifferentialPackedAttentionBackwardFn = int (*)(
+        const std::uint16_t*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        float, float, void*);
     using AttentionStatsCountFn = std::int64_t (*)();
     using AttentionStatsErrorFn = int (*)();
     using TrainerLinearStatsResetFn = void (*)();
@@ -12866,6 +12934,9 @@ int run_transformer_lm_training_json(
         const std::uint16_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn = int (*)(
         const std::uint16_t*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyVariantBf16U16Fn = int (*)(
+        std::uint16_t*, const std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, float, float, bool, void*);
     using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
         float*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
@@ -12945,6 +13016,8 @@ int run_transformer_lm_training_json(
         float, float, float, float, float, float, void*);
     using FillManyFn = int (*)(float* const*, const std::int64_t*, std::int64_t, std::int64_t, float, void*);
     using InitGpt2TokenWeightFn = int (*)(float*, std::int64_t, void*);
+    using SeededNormalFn = int (*)(
+        float*, std::uint16_t*, std::int64_t, std::uint64_t, std::uint64_t, float, void*);
     using InitGpt2TokenWeightWithBf16ShadowFn = int (*)(
         float*, std::uint16_t*, std::int64_t, void*);
     using InitGpt2TokenWeightPaddedWithBf16ShadowFn = int (*)(
@@ -12980,6 +13053,7 @@ int run_transformer_lm_training_json(
     FillManyValuesBf16BitsFn fill_many_values_bf16_bits = nullptr;
     FillManyValuesMixedFn fill_many_values_mixed = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
+    SeededNormalFn seeded_normal = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight_fast = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_with_bf16_shadow = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_fast_with_bf16_shadow = nullptr;
@@ -13099,6 +13173,10 @@ int run_transformer_lm_training_json(
     MoaBackwardInplaceFn moa_backward_inplace = nullptr;
     MoaBackwardInplaceBf16BitsFn moa_backward_inplace_bf16_bits = nullptr;
     AttentionFn attention = nullptr;
+    QkRmsNormPackedForwardFn qk_rms_norm_packed_forward = nullptr;
+    QkRmsNormPackedBackwardFn qk_rms_norm_packed_backward = nullptr;
+    DifferentialPackedAttentionForwardFn differential_packed_attention_forward = nullptr;
+    DifferentialPackedAttentionBackwardFn differential_packed_attention_backward = nullptr;
     AttentionStatsResetFn attention_stats_reset = nullptr;
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
@@ -13239,6 +13317,7 @@ int run_transformer_lm_training_json(
     TokenCrossEntropyPartialsStridedBf16BitsFn ce_partials_strided_bf16_bits = nullptr;
     TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn
         ce_partials_strided_bf16_bits_u16_targets = nullptr;
+    TokenCrossEntropyVariantBf16U16Fn ce_variant_bf16_u16 = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceStridedWorkspaceFn ce_backward_inplace_strided_workspace = nullptr;
@@ -13849,6 +13928,8 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearStatsCountFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_bf16_threads_per_row");
+                seeded_normal = load_symbol<SeededNormalFn>(
+                    tile_handle, "nfn_native_tile_seeded_normal_float32");
                 attention_backward_dprep_default_warps_per_block_fn =
                     load_symbol<TrainerLinearStatsCountFn>(
                         tile_handle,
@@ -13982,6 +14063,18 @@ int run_transformer_lm_training_json(
                 }
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32");
+                qk_rms_norm_packed_forward = load_symbol<QkRmsNormPackedForwardFn>(
+                    tile_handle, "nfn_native_tile_qk_rms_norm_packed_bf16_forward");
+                qk_rms_norm_packed_backward = load_symbol<QkRmsNormPackedBackwardFn>(
+                    tile_handle, "nfn_native_tile_qk_rms_norm_packed_bf16_backward");
+                differential_packed_attention_forward =
+                    load_symbol<DifferentialPackedAttentionForwardFn>(
+                        tile_handle,
+                        "nfn_native_tile_differential_packed_attention_forward_bf16");
+                differential_packed_attention_backward =
+                    load_symbol<DifferentialPackedAttentionBackwardFn>(
+                        tile_handle,
+                        "nfn_native_tile_differential_packed_attention_backward_bf16");
                 packed_attention_forward = load_symbol<PackedAttentionForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32");
                 packed_attention_forward_store_lse = load_symbol<PackedAttentionForwardStoreLseFn>(
@@ -14027,6 +14120,9 @@ int run_transformer_lm_training_json(
                     load_symbol<TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets");
+                ce_variant_bf16_u16 = load_symbol<TokenCrossEntropyVariantBf16U16Fn>(
+                    tile_handle,
+                    "nfn_native_tile_token_cross_entropy_variant_bf16_u16");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32");
                 ce_backward_inplace_bf16_bits_workspace =
@@ -14351,6 +14447,7 @@ int run_transformer_lm_training_json(
                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
     const bool store_packed_attention_activations_enabled =
         packed_qkv_attention_enabled &&
+        !variant.use_differential_attention &&
         env_flag_enabled_or_default(store_packed_attention_activations_env, true);
     const std::string store_residual1_activations_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS",
@@ -14448,6 +14545,7 @@ int run_transformer_lm_training_json(
     const bool bf16_attention_grad_out_handoff_enabled =
         packed_qkv_attention_enabled &&
         bf16_qkv_grad_handoff_enabled &&
+        !variant.use_differential_attention &&
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
                               "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
@@ -16213,6 +16311,7 @@ int run_transformer_lm_training_json(
         float* ln1_rstd = nullptr;
         float* qkv = nullptr;
         std::uint16_t* qkv_bf16 = nullptr;
+        float* qk_norm_rstd = nullptr;
         float* q = nullptr;
         float* k = nullptr;
         float* v = nullptr;
@@ -16254,6 +16353,7 @@ int run_transformer_lm_training_json(
         std::uint16_t* qkv = nullptr;
         std::uint16_t* o = nullptr;
         float* lse = nullptr;
+        float* qk_norm_rstd = nullptr;
     };
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(activation_tape_count));
@@ -16441,6 +16541,11 @@ int run_transformer_lm_training_json(
     float* stored_packed_attention_lse_arena = nullptr;
     std::int64_t stored_packed_attention_lse_arena_elements = 0;
     std::int64_t stored_packed_attention_lse_arena_bytes = 0;
+    float* stored_packed_attention_qk_norm_rstd_arena = nullptr;
+    const std::int64_t stored_packed_attention_qk_norm_rstd_elements =
+        variant.use_qk_norm
+            ? stored_packed_attention_block_count * rows * kHeads * 2
+            : 0;
     std::int64_t stored_packed_attention_store_blocks = 0;
     std::int64_t stored_packed_attention_restore_blocks = 0;
     std::int64_t stored_packed_attention_backward_kernel_launches = 0;
@@ -16799,6 +16904,11 @@ int run_transformer_lm_training_json(
             if (stored_packed_attention_lse_arena != nullptr) {
                 stored.lse = stored_packed_attention_lse_arena +
                              i * stored_packed_attention_lse_elements_per_block;
+            }
+            if (stored_packed_attention_qk_norm_rstd_arena != nullptr) {
+                stored.qk_norm_rstd =
+                    stored_packed_attention_qk_norm_rstd_arena +
+                    i * rows * kHeads * 2;
             }
         }
     };
@@ -17304,6 +17414,9 @@ int run_transformer_lm_training_json(
                 visit(&tape.attn_heads, activation_elements, prefix + ".attn.heads");
                 visit(&tape.attn_out, activation_elements, prefix + ".attn.out");
             }
+            if (variant.use_qk_norm) {
+                visit(&tape.qk_norm_rstd, rows * kHeads * 2, prefix + ".attn.qk_norm.rstd");
+            }
             visit(
                 &tape.attn_proj,
                 float_attention_projection_output_elided ? 0 : activation_elements,
@@ -17415,6 +17528,9 @@ int run_transformer_lm_training_json(
              {&stored_packed_attention_lse_arena,
               stored_packed_attention_lse_elements,
               "stored_packed_attention_lse_arena"},
+             {&stored_packed_attention_qk_norm_rstd_arena,
+              stored_packed_attention_qk_norm_rstd_elements,
+              "stored_packed_attention_qk_norm_rstd_arena"},
              {&grad_sumsq_partials, gradient_partial_count, "grad_sumsq_partials"},
              {&grad_clip_scale, 1, "grad_clip_scale"},
     }) {
@@ -18829,6 +18945,62 @@ int run_transformer_lm_training_json(
             concurrent_parameter_init_count += 1;
         }
     });
+    run_setup_cuda_timed("setup.gpt2_normal_init", [&]() {
+        if (!cfg.gpt2_normal_init || !error.empty()) {
+            return;
+        }
+        if (seeded_normal == nullptr) {
+            error = "required Tile CUDA symbol nfn_native_tile_seeded_normal_float32 is unavailable";
+            return;
+        }
+        std::uint64_t offset = 0;
+        const std::uint64_t seed = static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(cfg.train_seed));
+        auto normal = [&](float* values,
+                          std::uint16_t* shadow,
+                          std::int64_t elements,
+                          float stddev,
+                          const std::string& name) {
+            if (!error.empty()) {
+                return;
+            }
+            run(seeded_normal(values, shadow, elements, seed, offset, stddev, nullptr), name);
+            offset += static_cast<std::uint64_t>(elements);
+        };
+        normal(token_weight, token_weight_bf16, public_token_weight_elements, 0.02f,
+               "token_weight.gpt2_normal");
+        normal(position_weight, nullptr, position_weight_elements, 0.02f,
+               "position_weight.gpt2_normal");
+        const float residual_projection_std =
+            0.02f / std::sqrt(2.0f * static_cast<float>(std::max<std::int64_t>(trained_layers, 1)));
+        for (std::size_t i = 0; i < blocks.size(); ++i) {
+            TransformerBlockParams& block = blocks[i];
+            const std::string prefix = "block" + std::to_string(i);
+            normal(block.qkv_weight, block.qkv_weight_bf16, kQkvWeightElements, 0.02f,
+                   prefix + ".attn.qkv.weight.gpt2_normal");
+            normal(block.attn_proj_weight, block.attn_proj_weight_bf16,
+                   kAttnProjWeightElements, residual_projection_std,
+                   prefix + ".attn.proj.weight.gpt2_normal");
+            normal(block.fc_weight, block.fc_weight_bf16, kFcWeightElements, 0.02f,
+                   prefix + ".mlp.fc.weight.gpt2_normal");
+            normal(block.mlp_proj_weight, block.mlp_proj_weight_bf16,
+                   kMlpProjWeightElements, residual_projection_std,
+                   prefix + ".mlp.proj.weight.gpt2_normal");
+        }
+        if (error.empty() && token_weight_padding_elements > 0) {
+            run(fill(token_weight + public_token_weight_elements,
+                     token_weight_padding_elements, 0.0f, nullptr),
+                "token_weight.gpt2_normal.padding.zero");
+            if (error.empty() && token_weight_bf16 != nullptr) {
+                run(float32_to_bf16_bits(
+                        token_weight + public_token_weight_elements,
+                        token_weight_bf16 + public_token_weight_elements,
+                        token_weight_padding_elements,
+                        nullptr),
+                    "token_weight.gpt2_normal.padding_bf16.zero");
+            }
+        }
+    });
     auto refresh_token_weight_bf16 = [&](const std::string& name) {
         if (!token_weight_bf16_shadow_enabled || token_weight_bf16 == nullptr || !error.empty()) {
             return;
@@ -19388,15 +19560,37 @@ int run_transformer_lm_training_json(
     set_active_batch_size(batch_size);
 
     neuralfn::native_train::SequentialTokenBatchSampler sampler(dataset.train_shards, seq_len, batch_size);
-    if (resume_checkpoint_requested && resume_checkpoint_step > 0 && error.empty()) {
+    if (cfg.train_seed_explicit && error.empty()) {
+        const std::int64_t total_batches = sampler.total_batches();
+        const std::int64_t required_batches =
+            (resume_checkpoint_step + cfg.max_steps) * std::max<std::int64_t>(grad_accum_steps, 1);
+        if (required_batches > total_batches) {
+            std::ostringstream message;
+            message << "seeded dense GPT benchmark needs " << required_batches
+                    << " non-wrapping train batches but dataset only exposes " << total_batches;
+            error = message.str();
+        } else {
+            std::uint64_t value = static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(cfg.train_seed));
+            value += 0x9e3779b97f4a7c15ULL;
+            value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+            value ^= value >> 31;
+            const std::int64_t available_starts = total_batches - required_batches + 1;
+            training_sampler_start_batch =
+                static_cast<std::int64_t>(value % static_cast<std::uint64_t>(available_starts));
+        }
+    }
+    if (error.empty() && (training_sampler_start_batch > 0 || resume_checkpoint_step > 0)) {
         if (resume_checkpoint_step >
             std::numeric_limits<std::int64_t>::max() / std::max<std::int64_t>(grad_accum_steps, 1)) {
             error = "resume sampler seek batch overflow";
             resume_checkpoint_error = error;
         } else {
-            resume_sampler_seek_batch = resume_checkpoint_step * grad_accum_steps;
+            resume_sampler_seek_batch =
+                training_sampler_start_batch + resume_checkpoint_step * grad_accum_steps;
             if (sampler.seek_batch(resume_sampler_seek_batch)) {
-                resume_sampler_seek_applied = true;
+                resume_sampler_seek_applied = resume_checkpoint_step > 0;
             } else {
                 std::ostringstream message;
                 message << "failed to seek dense GPT train sampler to batch "
@@ -19408,6 +19602,7 @@ int run_transformer_lm_training_json(
     }
     std::vector<float> host_loss(1, 0.0f);
     std::vector<ValidationLossRecord> validation_losses;
+    std::vector<TrainLossRecord> train_losses;
     const float attention_scale = 1.0f / std::sqrt(static_cast<float>(kHeadDim));
 
     auto run_layer_norm = [&](
@@ -19787,12 +19982,48 @@ int run_transformer_lm_training_json(
 
     auto accumulate_lm_head_loss_from_current_logits = [&](
         const std::string& label,
-        const std::uint16_t* bf16_logit_chunk,
+        std::uint16_t* bf16_logit_chunk,
         const float* float_logit_chunk,
         std::int64_t row_count,
         const std::int64_t* target_chunk,
         const std::uint16_t* target_chunk_u16,
         bool use_bf16_logits) {
+        const bool use_variant_ce =
+            variant.z_loss_coef > 0.0f || variant.logit_softcap > 0.0f;
+        if (use_variant_ce && use_bf16_logits && target_chunk_u16 != nullptr) {
+            if (ce_variant_bf16_u16 == nullptr || row_max == nullptr) {
+                error = "native GPT variant CE kernel or row-loss workspace is unavailable";
+                return;
+            }
+            run(ce_variant_bf16_u16(
+                    bf16_logit_chunk,
+                    target_chunk_u16,
+                    row_max,
+                    row_count,
+                    kVocab,
+                    kPaddedVocab,
+                    0.0f,
+                    variant.z_loss_coef,
+                    variant.logit_softcap,
+                    false,
+                    nullptr),
+                label + ".ce.forward.variant_bf16_u16");
+            const float* current = row_max;
+            std::int64_t current_count = row_count;
+            float* next = loss_reduce_a;
+            while (current_count > 1 && error.empty()) {
+                run(sum_partials(current, next, current_count, nullptr),
+                    label + ".loss.variant.sum_partials");
+                current = next;
+                current_count = partial_count_for(current_count);
+                next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
+            }
+            if (error.empty()) {
+                run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr),
+                    label + ".loss.variant.accumulate");
+            }
+            return;
+        }
         if (use_bf16_logits) {
             if (lm_head_public_vocab_ce_enabled) {
                 if (direct_u16_token_ids_enabled) {
@@ -20117,6 +20348,8 @@ int run_transformer_lm_training_json(
                 lm_head_public_vocab_ce_enabled &&
                 direct_u16_token_ids_enabled &&
                 lm_head_classifier_backward_loss_bf16_u16 != nullptr;
+            const bool use_variant_ce =
+                variant.z_loss_coef > 0.0f || variant.logit_softcap > 0.0f;
             const bool use_row_loss_reduction =
                 use_fused_ce_loss_backward &&
                 lm_head_row_loss_reduction_requested &&
@@ -20262,7 +20495,7 @@ int run_transformer_lm_training_json(
                 lm_head_logits_cublaslt_gemm_count += std::max<std::int64_t>(0, cublaslt_after - cublaslt_before);
                 lm_head_logits_bf16_gemm_count += std::max<std::int64_t>(0, bf16_after - bf16_before);
             });
-            if (record_loss && !use_fused_ce_loss_backward) {
+            if (record_loss && !use_fused_ce_loss_backward && !use_variant_ce) {
                 run_timed_stage("lm_head_backward.loss_accumulate", [&]() {
                     if (error.empty()) {
                         accumulate_lm_head_loss_from_current_logits(
@@ -20278,6 +20511,7 @@ int run_transformer_lm_training_json(
             }
             bool lm_head_chunk_backward_done = false;
             const bool use_cooperative_lm_head_backward =
+                !use_variant_ce &&
                 (lm_head_cooperative_backward_kernel_enabled ||
                  lm_head_cooperative_backward_cuda_graph_enabled ||
                  lm_head_cooperative_backward_cublaslt_wrapper_enabled ||
@@ -20357,7 +20591,29 @@ int run_transformer_lm_training_json(
             if (!lm_head_chunk_backward_done) {
                 run_timed_stage("lm_head_backward.ce", [&]() {
                     if (error.empty()) {
-                        if (lm_head_bf16_logits_enabled) {
+                        if (use_variant_ce) {
+                            if (!lm_head_bf16_logits_enabled || !direct_u16_token_ids_enabled ||
+                                ce_variant_bf16_u16 == nullptr) {
+                                error = "native GPT z-loss/softcap requires BF16 logits, u16 targets, and the variant CE kernel";
+                                return;
+                            }
+                            run(ce_variant_bf16_u16(
+                                    bf16_logit_chunk,
+                                    target_chunk_u16,
+                                    record_loss ? row_max : nullptr,
+                                    row_count,
+                                    kVocab,
+                                    kPaddedVocab,
+                                    accumulation_scale / static_cast<float>(active_rows),
+                                    variant.z_loss_coef,
+                                    variant.logit_softcap,
+                                    true,
+                                    nullptr),
+                                "ce.backward.variant_bf16_u16");
+                            if (record_loss && error.empty()) {
+                                reduce_lm_head_row_losses();
+                            }
+                        } else if (lm_head_bf16_logits_enabled) {
                             if (lm_head_public_vocab_ce_enabled) {
                                 if (direct_u16_token_ids_enabled) {
                                     if (use_fused_ce_loss_backward) {
@@ -20581,6 +20837,7 @@ int run_transformer_lm_training_json(
                     lm_head_dhidden_bf16_gemm_count += std::max<std::int64_t>(0, bf16_after - bf16_before);
                     if (error.empty() &&
                         !record_loss &&
+                        !use_variant_ce &&
                         lm_head_prob_only_corrections_enabled &&
                         !lm_head_prob_only_combined_corrections_enabled &&
                         token_weight_bf16 != nullptr) {
@@ -20726,6 +20983,7 @@ int run_transformer_lm_training_json(
                     }
                     if (error.empty() &&
                         !record_loss &&
+                        !use_variant_ce &&
                         lm_head_prob_only_corrections_enabled &&
                         !lm_head_prob_only_combined_corrections_enabled &&
                         hidden_bf16_chunk != nullptr) {
@@ -20745,6 +21003,7 @@ int run_transformer_lm_training_json(
                     }
                     if (error.empty() &&
                         !record_loss &&
+                        !use_variant_ce &&
                         lm_head_prob_only_combined_corrections_enabled &&
                         !lm_head_prob_only_ce_target_corrections_enabled &&
                         token_weight_bf16 != nullptr &&
@@ -21112,6 +21371,11 @@ int run_transformer_lm_training_json(
             fused_packed_attention_store != nullptr && fused_packed_attention_store->ln1_rstd != nullptr
                 ? fused_packed_attention_store->ln1_rstd
                 : tape.ln1_rstd;
+        float* active_qk_norm_rstd =
+            fused_packed_attention_store != nullptr &&
+                    fused_packed_attention_store->qk_norm_rstd != nullptr
+                ? fused_packed_attention_store->qk_norm_rstd
+                : tape.qk_norm_rstd;
 	        run_timed_stage(stage_name + ".attention", [&]() {
 	            run_timed_stage(stage_name + ".attention.ln1", [&]() {
 	                if (ln1_precomputed) {
@@ -21183,10 +21447,46 @@ int run_transformer_lm_training_json(
                     if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, active_batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
                 }
             });
+            run_timed_stage(stage_name + ".attention.qk_norm", [&]() {
+                if (!variant.use_qk_norm) {
+                    return;
+                }
+                if (!packed_qkv_attention_enabled || qk_rms_norm_packed_forward == nullptr ||
+                    active_qk_norm_rstd == nullptr) {
+                    error = "native GPT QK normalization requires packed QKV RMSNorm kernels and workspace";
+                    return;
+                }
+                run(qk_rms_norm_packed_forward(
+                        active_qkv_bf16,
+                        active_qk_norm_rstd,
+                        active_rows,
+                        kHeads,
+                        kHeadDim,
+                        variant.qk_norm_eps,
+                        nullptr),
+                    label + ".attn.qk_norm.forward");
+            });
             run_timed_stage(stage_name + ".attention.sdpa", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        if (fused_packed_attention_store != nullptr &&
+                        if (variant.use_differential_attention) {
+                            if (differential_packed_attention_forward == nullptr) {
+                                error = "native GPT differential-attention forward kernel is unavailable";
+                            } else {
+                                run(differential_packed_attention_forward(
+                                        active_qkv_bf16,
+                                        active_packed_attn_out_bf16,
+                                        active_batch_size,
+                                        kHeads,
+                                        seq_len,
+                                        kHeadDim,
+                                        variant.differential_lambda_init,
+                                        1.0f - variant.differential_lambda_init,
+                                        kNormEps,
+                                        nullptr),
+                                    label + ".attn.sdpa.forward_differential_packed_qkv_bf16");
+                            }
+                        } else if (fused_packed_attention_store != nullptr &&
                             fused_packed_attention_store->lse != nullptr) {
                             run(packed_attention_forward_store_lse(
                                     active_qkv_bf16,
@@ -21882,6 +22182,11 @@ int run_transformer_lm_training_json(
             dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate ? 0.0f : 1.0f;
         std::uint16_t* active_qkv_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->qkv : tape.qkv_bf16;
+        const float* active_qk_norm_rstd =
+            stored_packed_attention != nullptr &&
+                    stored_packed_attention->qk_norm_rstd != nullptr
+                ? stored_packed_attention->qk_norm_rstd
+                : tape.qk_norm_rstd;
         std::uint16_t* active_qkv_grad_bf16 =
             direct_bf16_qkv_grad_scratch_enabled &&
                     mlp_forward_act_bf16 != nullptr &&
@@ -22529,7 +22834,26 @@ int run_transformer_lm_training_json(
             run_timed_stage("block_backward.attn_sdpa.to_qkv", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        if (stored_packed_attention != nullptr &&
+                        if (variant.use_differential_attention) {
+                            if (differential_packed_attention_backward == nullptr ||
+                                grad_attn_out == nullptr ||
+                                !bf16_qkv_grad_handoff_enabled) {
+                                error = "native GPT differential-attention backward requires float attention gradients and BF16 QKV handoff";
+                            } else {
+                                run(differential_packed_attention_backward(
+                                        active_packed_attn_out_bf16,
+                                        grad_attn_out,
+                                        active_qkv_grad_bf16,
+                                        active_batch_size,
+                                        kHeads,
+                                        seq_len,
+                                        kHeadDim,
+                                        variant.differential_lambda_init,
+                                        1.0f - variant.differential_lambda_init,
+                                        nullptr),
+                                    label + ".attn.sdpa.backward_differential_packed_qkv_bf16");
+                            }
+                        } else if (stored_packed_attention != nullptr &&
                             stored_packed_attention->lse != nullptr) {
                             const std::uint16_t* dprep_grad_out_bf16 = ensure_attention_dprep_grad_out_bf16();
                             if (dprep_grad_out_bf16 != nullptr) {
@@ -22715,6 +23039,29 @@ int run_transformer_lm_training_json(
                     if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, active_batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
                 }
             });
+        });
+        run_timed_stage("block_backward.qk_norm", [&]() {
+            if (!variant.use_qk_norm || !error.empty()) {
+                return;
+            }
+            if (qk_rms_norm_packed_backward == nullptr || active_qk_norm_rstd == nullptr) {
+                error = "native GPT QK normalization backward kernel or workspace is unavailable";
+                return;
+            }
+            if (bf16_qkv_grad_handoff_enabled && active_qkv_grad_bf16 == active_qkv_bf16) {
+                error = "native GPT QK normalization requires distinct packed QKV gradient scratch";
+                return;
+            }
+            run(qk_rms_norm_packed_backward(
+                    active_qkv_bf16,
+                    active_qk_norm_rstd,
+                    bf16_qkv_grad_handoff_enabled ? nullptr : grad_qkv,
+                    bf16_qkv_grad_handoff_enabled ? active_qkv_grad_bf16 : nullptr,
+                    active_rows,
+                    kHeads,
+                    kHeadDim,
+                    nullptr),
+                label + ".attn.qk_norm.backward");
         });
         run_timed_stage("block_backward.qkv", [&]() {
             const std::uint16_t* ln1_bf16_for_dweight =
@@ -23729,6 +24076,9 @@ int run_transformer_lm_training_json(
         const auto validation_start_time = Clock::now();
         ValidationLossRecord record;
         record.step = step;
+        if (cfg.fixed_validation_slice) {
+            val_sampler->reset();
+        }
         for (std::int64_t batch_index = 0; batch_index < cfg.eval_batches; ++batch_index) {
             if (!val_sampler->next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
                 val_sampler->reset();
@@ -24083,6 +24433,11 @@ int run_transformer_lm_training_json(
                     final_loss_mean = final_loss_sum / static_cast<double>(effective_train_batch_tokens);
                     train_loss_eval_count += 1;
                     train_loss_last_step = optimizer_step;
+                    train_losses.push_back(TrainLossRecord{
+                        optimizer_step,
+                        effective_train_batch_tokens,
+                        final_loss_sum,
+                        final_loss_mean});
                 }
                 if (should_write_progress || should_record_train_loss) {
                     write_progress_line(optimizer_step, should_record_train_loss, final_loss_mean);
@@ -25758,6 +26113,11 @@ int run_transformer_lm_training_json(
                   steady_state_wall_ms_per_step
             : 0.0;
     const double setup_plus_train_loop_wall_ms = setup_wall_ms + train_loop_wall_ms;
+    const double train_compute_wall_ms = std::max(0.0, train_loop_wall_ms - validation_wall_ms);
+    const double train_compute_tokens_per_second =
+        train_compute_wall_ms > 0.0
+            ? static_cast<double>(tokens_processed) * 1000.0 / train_compute_wall_ms
+            : 0.0;
     const double setup_amortized_train_tokens_per_second =
         setup_plus_train_loop_wall_ms > 0.0
             ? static_cast<double>(tokens_processed) * 1000.0 /
@@ -25805,6 +26165,22 @@ int run_transformer_lm_training_json(
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"tile_cuda\": " << native_tile_cuda_activation_json(cfg) << ",\n"
         << "  \"native_moa_enabled\": " << (native_moa_enabled ? "true" : "false") << ",\n"
+        << "  \"variant\": {\n"
+        << "    \"z_loss_coef\": " << dense_gpt_variant_config(cfg.template_name).z_loss_coef << ",\n"
+        << "    \"logit_softcap\": " << dense_gpt_variant_config(cfg.template_name).logit_softcap << ",\n"
+        << "    \"qk_norm_enabled\": "
+        << (dense_gpt_variant_config(cfg.template_name).use_qk_norm ? "true" : "false") << ",\n"
+        << "    \"qk_norm_eps\": " << dense_gpt_variant_config(cfg.template_name).qk_norm_eps << ",\n"
+        << "    \"differential_attention_enabled\": "
+        << (dense_gpt_variant_config(cfg.template_name).use_differential_attention ? "true" : "false") << ",\n"
+        << "    \"differential_lambda_init\": "
+        << dense_gpt_variant_config(cfg.template_name).differential_lambda_init << "\n"
+        << "  },\n"
+        << "  \"train_seed\": " << cfg.train_seed << ",\n"
+        << "  \"train_seed_explicit\": " << (cfg.train_seed_explicit ? "true" : "false") << ",\n"
+        << "  \"training_sampler_start_batch\": " << training_sampler_start_batch << ",\n"
+        << "  \"initialization_mode\": \"" << (cfg.gpt2_normal_init ? "gpt2-normal" : "legacy") << "\",\n"
+        << "  \"fixed_validation_slice\": " << (cfg.fixed_validation_slice ? "true" : "false") << ",\n"
         << "  \"moa_interval\": " << cfg.moa_interval << ",\n"
         << "  \"moa_selected_activation\": \"" << json_escape(moa_last_selected_activation) << "\",\n"
         << "  \"moa_probe_runs\": " << moa_probe_runs << ",\n"
@@ -25851,7 +26227,8 @@ int run_transformer_lm_training_json(
         << "  \"projected_20k_setup_amortized_tokens_per_second\": "
         << projected_20k_setup_amortized_tokens_per_second << ",\n"
         << "  \"validation_wall_ms\": " << validation_wall_ms << ",\n"
-        << "  \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
+        << "  \"train_compute_wall_ms\": " << train_compute_wall_ms << ",\n"
+        << "  \"train_compute_tokens_per_second\": " << train_compute_tokens_per_second << ",\n"
         << "  \"checkpoint_wall_ms\": " << checkpoint_wall_ms << ",\n"
         << "  \"cleanup_wall_ms\": " << cleanup_wall_ms << ",\n"
         << "  \"total_wall_ms\": " << total_wall_ms << ",\n"
@@ -25905,7 +26282,8 @@ int run_transformer_lm_training_json(
         << (train_steady_state_parity_metric_available ? "true" : "false") << ",\n"
         << "    \"train_timing_contract\": \"" << train_timing_contract << "\",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
-        << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
+        << "    \"train_compute_wall_ms\": " << train_compute_wall_ms << ",\n"
+        << "    \"train_compute_tokens_per_second\": " << train_compute_tokens_per_second << ",\n"
         << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"
         << "    \"post_train_diagnostic_samples_elided\": "
         << (post_train_diagnostic_samples_elided ? "true" : "false") << ",\n"
@@ -27598,7 +27976,22 @@ int run_transformer_lm_training_json(
         << "  \"train_loss_last_step\": " << train_loss_last_step << ",\n"
         << "  \"train_loss_sparse\": false,\n"
         << "  \"train_loss_sampling\": \"disabled\",\n"
-        << "  \"train_loss_on_validation_steps\": false,\n"
+        << "  \"train_loss_on_validation_steps\": true,\n"
+        << "  \"train_losses\": [\n";
+    for (std::size_t i = 0; i < train_losses.size(); ++i) {
+        const TrainLossRecord& record = train_losses[i];
+        std::cout
+            << "    {\"step\": " << record.step
+            << ", \"tokens\": " << record.tokens
+            << ", \"loss_sum\": " << record.loss_sum
+            << ", \"loss_mean\": " << record.loss_mean << "}";
+        if (i + 1 != train_losses.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ],\n"
         << "  \"token_id_direct_u16_enabled\": " << (direct_u16_token_ids_enabled ? "true" : "false") << ",\n"
         << "  \"embedding_residual_fusion_enabled\": "
         << (fuse_embedding_residual_enabled ? "true" : "false") << ",\n"
@@ -29081,6 +29474,30 @@ int main(int argc, char** argv) {
             cfg.sample_seed = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--seed=", 0) == 0) {
             cfg.sample_seed = parse_int(value_after_equals("--seed="), "--seed");
+        } else if (arg == "--train-seed") {
+            cfg.train_seed = parse_int(require_value(argc, argv, &i, arg), arg);
+            cfg.train_seed_explicit = true;
+        } else if (arg.rfind("--train-seed=", 0) == 0) {
+            cfg.train_seed = parse_int(value_after_equals("--train-seed="), "--train-seed");
+            cfg.train_seed_explicit = true;
+        } else if (arg == "--init-mode") {
+            const std::string mode = normalize_template_name(require_value(argc, argv, &i, arg));
+            if (mode != "legacy" && mode != "gpt2_normal") {
+                std::cerr << "--init-mode expects legacy or gpt2-normal\n";
+                return 2;
+            }
+            cfg.gpt2_normal_init = mode == "gpt2_normal";
+        } else if (arg.rfind("--init-mode=", 0) == 0) {
+            const std::string mode = normalize_template_name(value_after_equals("--init-mode="));
+            if (mode != "legacy" && mode != "gpt2_normal") {
+                std::cerr << "--init-mode expects legacy or gpt2-normal\n";
+                return 2;
+            }
+            cfg.gpt2_normal_init = mode == "gpt2_normal";
+        } else if (arg == "--fixed-validation-slice") {
+            cfg.fixed_validation_slice = true;
+        } else if (arg == "--no-fixed-validation-slice") {
+            cfg.fixed_validation_slice = false;
         } else if (arg == "--checkpoint-logits-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_logits_smoke = true;

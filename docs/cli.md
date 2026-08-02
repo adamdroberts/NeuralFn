@@ -7,6 +7,35 @@ the shared dataset manager, and defaults artifacts to `~/NeuralFn/artifacts`.
 
 For the longer operator runbook, see [../cli/README.md](../cli/README.md).
 
+## Native text embeddings
+
+`nfn train --base-model embedding` opens model-aware embedding setup rather
+than LM setup. It accepts `--embedding-stage
+pretrain|posttrain|finetune|resume`, `--embedding-architecture
+bert|gpt-derived`, pooling/vector dimensions, record batch sizes, raw-text MLM
+and contrastive weights, triplet margin, and `--adapter-type none|lora|qlora`.
+Supply either a JSON dataset array with `--embedding-datasets-manifest PATH` or
+repeat `--embedding-dataset PATH` for raw-text sources.
+
+```bash
+nfn train --base-model embedding \
+  --embedding-datasets-manifest datasets.json \
+  --embedding-stage pretrain \
+  --embedding-dim 384 \
+  --output-dir artifacts/embed-384
+
+nfn embed --checkpoint artifacts/embed-384/embedding_model.bin \
+  --text "example text"
+```
+
+Warm-start post-training/fine-tuning uses `--base-checkpoint`; it imports model
+weights but resets optimizer state. Exact continuation uses
+`--embedding-stage resume --resume-from-checkpoint DIR` and requires the paired
+`embedding_optimizer.bin`. Adapter selections freeze the base encoder and train
+the projection adapter; both resumable adapter and merged checkpoints are written.
+The legacy dense-GPT `--train-embedding-lm` flag remains a next-token
+token-table diagnostic and is not used by this model type.
+
 ## Install
 
 ```bash
@@ -955,6 +984,43 @@ nfn kernels doctor
 nfn kernels bench --device auto --iterations 200
 nfn kernels examples
 ```
+
+For dense GPT, the Python `nfn train`/TUI route refuses stale in-tree trainer
+artifacts and automatically selects only
+`build/nfn_gpt_native_train_linked`. It does not fall back to the generic or
+dynamic compatibility frontend. The linked build emits
+`build/nfn_gpt_native_train_linked.inputs.sha256`, covering the executable,
+trainer/token/preset/Tile sources, Tile library, and build scripts. A missing
+manifest/input, an untracked expected input, or a content-hash mismatch marks
+the executable stale; timestamps are not used for route approval. An
+interactive terminal lists the stale inputs and prompts:
+`Force-recompile build/nfn_gpt_native_train_linked and continue? [y/N]`.
+The accepted rebuild is:
+
+```bash
+NFN_NATIVE_GPT_FORCE_REBUILD=1 \
+  bash tools/build_native_gpt_cli_linked.sh build/nfn_gpt_native_train_linked
+```
+
+Non-interactive runs fail with that command instead of waiting for input.
+`NFN_NATIVE_GPT_AUTO_REBUILD=1` accepts it automatically. Dense-GPT
+`nfn train` ignores `NFN_NATIVE_TRAIN_CLI`, `NFN_NATIVE_GPT_CLI`, and
+`NFN_NATIVE_GPT2_CLI`, so inherited environment cannot redirect the route.
+Lower-level SDK and compatibility entrypoints retain their override contracts.
+TUI launches display and append SHA-256 provenance for the selected executable
+and Tile-ops library to the configured train log.
+
+The training TUI is metric-transparent. Native progress lines are formatted as
+readable labeled segments while preserving every emitted field, including
+tokens, native elapsed time, tokens/second, sampled train loss, optimizer step,
+microbatch geometry and completion counts, accumulation, effective batch size,
+and eval/loss-due flags. Validation and setup fields are preserved the same
+way. At completion, the concise result card is followed by a complete
+human-readable metric view: nested result fields become dotted paths such as
+`timing.train_tokens_per_second`, `train_losses[0].loss_mean`, and
+`kernel_routes.attention_forward_scalar_launch_count`. This exposes all scalar,
+list, and nested metrics without printing a raw JSON blob. Train/eval logs
+continue to retain the original unformatted trainer streams.
 
 ## Kernel diagnostics
 
