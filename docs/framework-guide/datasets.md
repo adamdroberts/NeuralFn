@@ -40,7 +40,13 @@ native cosine range `[-1, 1]`. Relative file paths resolve from the manifest.
 The Python preparation boundary converts these sources to
 `embedding_indexed_v1`: a metadata sidecar plus a numeric TSV stream containing
 uint32 token IDs and objective metadata. The C++ trainer consumes only the
-compiled stream. This is intentionally separate from the raw little-endian
+compiled stream. From-scratch models use stable native hash buckets; BERT
+compilation reserves/prepends ID 2 as CLS so `pooling=cls` does not silently
+pool the first content token. When
+`--embedding-hf-model` is present, preparation instead uses the imported HF
+tokenizer (`tokenizer.json`, or the standard-library WordPiece path for
+`vocab.txt`) and records its directory in the sidecar, so imported vocabulary
+rows and dataset IDs remain aligned. This is intentionally separate from the raw little-endian
 uint16 token shards used by native next-token LM training. Those legacy `.bin`
 shards are contiguous little-endian uint16 token IDs; an llm.c-compatible
 1024-byte header is optional, and native alias discovery recognizes

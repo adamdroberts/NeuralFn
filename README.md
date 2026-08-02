@@ -15,12 +15,15 @@ NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph
 
 `nfn train --base-model embedding` is a separate sentence/document embedding
 route; it does not use the legacy `--train-embedding-lm` next-token diagnostic.
-It can pretrain the compact native token/position bi-encoder from raw text,
-post-train it on retrieval, scored-similarity, or labeled examples, warm-start
-or resume native embedding checkpoints, and fine-tune the projection with LoRA
-or NF4-grouped QLoRA. The interactive `nfn train` dashboard
-switches from LM token-batch controls to embedding dimensions, record batches,
-pooling, masking/contrastive weights, margins, and adapter settings.
+It can pretrain a full native transformer bi-encoder from raw text, post-train
+it on retrieval, scored-similarity, or labeled examples, warm-start or resume
+native embedding checkpoints, and fine-tune every transformer linear with LoRA
+or NF4-grouped QLoRA. BERT mode uses bidirectional attention and post-norm
+blocks; GPT-derived mode uses causal attention, pre-norm blocks, and a final
+LayerNorm. The interactive `nfn train` dashboard switches from LM token-batch
+controls to transformer layers/heads/MLP width, embedding dimensions, record
+batches, pooling, masking/contrastive weights, margins, HF import, and adapter
+settings.
 
 Create a JSON manifest whose `datasets` value is an array, so one run can mix
 topics and objectives deterministically:
@@ -44,6 +47,22 @@ nfn embed --checkpoint artifacts/my-embedding/embedding_model.bin \
   --text "mid-century walnut table"
 ```
 
+To continue from a Hugging Face BERT-family or GPT-2-family model,
+pass a local model directory or Hub ID. Prefix/suffix-based tensor discovery
+supports wrapped checkpoints such as Sentence Transformers; the importer copies
+the HF tokenizer, forces the native geometry to the imported checkpoint,
+preserves its GELU variant and LayerNorm epsilon, and does not import Torch:
+
+```bash
+pip install 'neuralfn[embeddings]'
+nfn train --base-model embedding \
+  --embedding-hf-model sentence-transformers/all-MiniLM-L6-v2 \
+  --embedding-stage finetune \
+  --embedding-datasets-manifest retrieval.json \
+  --adapter-type lora \
+  --output-dir artifacts/minilm-search
+```
+
 Raw pretraining accepts TXT (one record per non-empty line) or a `text` field.
 Retrieval records use `query`, `positive`, and optional `negatives`; similarity
 records use `sentence1`, `sentence2`, and numeric `score`; labeled records use
@@ -51,7 +70,9 @@ records use `sentence1`, `sentence2`, and numeric `score`; labeled records use
 accepted, and a `columns` object can remap those logical names. Parquet and Hub
 sources require `pip install 'neuralfn[embeddings]'`. The preparation boundary
 compiles all sources into a hashed uint32 token stream; the training and
-inference loops themselves are standalone C++ and do not load Torch.
+inference loops themselves are standalone C++ and do not load Torch. Imported
+weights may be safetensors or a plain PyTorch ZIP state dict; the latter is
+decoded with a restricted unpickler and never imports PyTorch.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` is the
 fast native CLI/SDK guard for that contract. It now treats native inference as
 valid only when checkpoint metadata detection and compiled
