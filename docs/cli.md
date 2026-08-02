@@ -28,11 +28,25 @@ nfn embed --checkpoint artifacts/embed-384/embedding_model.bin \
   --text "example text"
 ```
 
+From-scratch runs configure `--hidden-dim`, `--num-layers`, `--num-heads`, and
+`--intermediate-dim`. To import an existing transformer, use
+`--embedding-hf-model MODEL_ID_OR_PATH` and optionally
+`--embedding-hf-revision REVISION`; the importer accepts BERT-family and
+GPT-2-family safetensors or plain PyTorch ZIP state-dict layouts, discovers wrapper prefixes by tensor suffix,
+copies tokenizer assets, and overrides the native geometry while preserving
+the activation and LayerNorm epsilon. It never loads Torch. Install
+`neuralfn[embeddings]` for Hub downloads and tokenizer.json
+support; local BERT `vocab.txt` WordPiece import uses the standard library.
+
 Warm-start post-training/fine-tuning uses `--base-checkpoint`; it imports model
 weights but resets optimizer state. Exact continuation uses
 `--embedding-stage resume --resume-from-checkpoint DIR` and requires the paired
-`embedding_optimizer.bin`. Adapter selections freeze the base encoder and train
-the projection adapter; both resumable adapter and merged checkpoints are written.
+`embedding_optimizer.bin`. Adapter selections freeze the base tensors and train
+LoRA matrices on every attention/MLP linear and the final projection; QLoRA
+reads all of those frozen linear weights through NF4 group-64 dequantization.
+Both resumable adapter and merged checkpoints are written.
+`NFNEMB1` compact checkpoints are not loadable by this transformer path; create
+a new `NFNEMB2` base or import a supported HF model.
 The legacy dense-GPT `--train-embedding-lm` flag remains a next-token
 token-table diagnostic and is not used by this model type.
 

@@ -28,11 +28,16 @@ struct Config {
     std::string stage = "pretrain";
     std::string adapter_type = "none";
     std::string pooling = "mean";
+    std::string activation = "gelu-tanh";
     std::string base_checkpoint;
     std::string resume_checkpoint;
     int vocab_size = 32768;
     int hidden_dim = 128;
     int output_dim = 128;
+    int num_layers = 2;
+    int num_heads = 4;
+    int intermediate_dim = 0;
+    int mask_token_id = 1;
     int max_tokens = 128;
     int batch_size = 32;
     int effective_batch_size = 256;
@@ -55,12 +60,14 @@ struct Config {
     float contrastive_weight = 1.0f;
     float lora_alpha = 32.0f;
     float lora_dropout = 0.05f;
+    float layer_norm_epsilon = 1e-5f;
     bool normalize = true;
     bool dry_run = false;
     bool print_command = false;
     bool print_plan = false;
     bool embed_mode = false;
     std::string embed_text;
+    std::vector<uint32_t> embed_token_ids;
     std::string checkpoint;
 };
 
@@ -74,17 +81,6 @@ struct Example {
     std::vector<uint32_t> first;
     std::vector<uint32_t> second;
     std::vector<std::vector<uint32_t>> negatives;
-};
-
-struct Encoded {
-    std::vector<uint32_t> tokens;
-    std::vector<size_t> pooled_positions;
-    std::vector<float> pooled_weights;
-    std::vector<float> hidden;
-    std::vector<float> pre_norm;
-    std::vector<float> value;
-    std::vector<float> adapter_input;
-    std::vector<float> adapter_hidden;
 };
 
 std::vector<std::string> split_keep(const std::string& text, char delimiter) {
@@ -140,8 +136,11 @@ bool is_value_option(const std::string& arg) {
     static const std::vector<std::string> names = {
         "--embedding-data", "--embedding-data-sha256", "--output-dir", "--embedding-architecture",
         "--embedding-stage", "--adapter-type", "--pooling", "--base-checkpoint", "--resume-from-checkpoint",
-        "--checkpoint", "--embed-text", "--embedding-vocab-size", "--hidden-dim", "--model-dim",
+        "--activation", "--layer-norm-epsilon",
+        "--checkpoint", "--embed-text", "--embed-token-ids", "--embedding-vocab-size", "--hidden-dim", "--model-dim",
         "--embedding-dim", "--max-seq-len", "--batch-size", "--effective-batch-size", "--train-batch-records",
+        "--num-layers", "--num-heads", "--intermediate-dim",
+        "--mask-token-id",
         "--max-steps", "--native-cuda-checkpoint-every", "--checkpoint-every-steps", "--progress-every-steps",
         "--warmup-steps", "--seed", "--lora-rank", "--learning-rate", "--weight-decay", "--beta1", "--beta2",
         "--adam-eps", "--grad-clip-norm", "--triplet-margin", "--temperature", "--mlm-probability",
@@ -174,13 +173,19 @@ Config parse_args(int argc, char** argv) {
         else if (arg == "--embedding-stage") cfg.stage = take();
         else if (arg == "--adapter-type") cfg.adapter_type = take();
         else if (arg == "--pooling") cfg.pooling = take();
+        else if (arg == "--activation") cfg.activation = take();
         else if (arg == "--base-checkpoint") cfg.base_checkpoint = take();
         else if (arg == "--resume-from-checkpoint") cfg.resume_checkpoint = take();
         else if (arg == "--checkpoint") cfg.checkpoint = take();
         else if (arg == "--embed-text") { cfg.embed_text = take(); cfg.embed_mode = true; }
+        else if (arg == "--embed-token-ids") { cfg.embed_token_ids = parse_ids(take()); cfg.embed_mode = true; }
         else if (arg == "--embedding-vocab-size") cfg.vocab_size = std::stoi(take());
         else if (arg == "--hidden-dim" || arg == "--model-dim") cfg.hidden_dim = std::stoi(take());
         else if (arg == "--embedding-dim") cfg.output_dim = std::stoi(take());
+        else if (arg == "--num-layers") cfg.num_layers = std::stoi(take());
+        else if (arg == "--num-heads") cfg.num_heads = std::stoi(take());
+        else if (arg == "--intermediate-dim") cfg.intermediate_dim = std::stoi(take());
+        else if (arg == "--mask-token-id") cfg.mask_token_id = std::stoi(take());
         else if (arg == "--max-seq-len") cfg.max_tokens = std::stoi(take());
         else if (arg == "--batch-size") cfg.batch_size = std::stoi(take());
         else if (arg == "--effective-batch-size" || arg == "--train-batch-records") cfg.effective_batch_size = std::stoi(take());
@@ -203,6 +208,7 @@ Config parse_args(int argc, char** argv) {
         else if (arg == "--contrastive-loss-weight") cfg.contrastive_weight = std::stof(take());
         else if (arg == "--lora-alpha") cfg.lora_alpha = std::stof(take());
         else if (arg == "--lora-dropout") cfg.lora_dropout = std::stof(take());
+        else if (arg == "--layer-norm-epsilon") cfg.layer_norm_epsilon = std::stof(take());
         else if (arg == "--normalize-embeddings") cfg.normalize = true;
         else if (arg == "--no-normalize-embeddings") cfg.normalize = false;
         else if (arg == "--dry-run" || arg == "--native-cuda-dry-run") cfg.dry_run = true;
@@ -213,10 +219,10 @@ Config parse_args(int argc, char** argv) {
             std::cout << "Native NeuralFn text embedding trainer\n"
                       << "  --embedding-data PATH --embedding-stage pretrain|posttrain|finetune|resume\n"
                       << "  --embedding-architecture bert|gpt-derived --adapter-type none|lora|qlora\n"
-                      << "  --checkpoint PATH --embed-text TEXT\n";
+                      << "  --checkpoint PATH (--embed-text TEXT | --embed-token-ids IDS)\n";
             std::exit(0);
         } else if (is_value_option(arg)) {
-            (void)take(); // accepted orchestration option which does not change this compact loop
+            (void)take(); // accepted orchestration option handled outside this trainer core
         } else if (arg == "--no-checkpoint" || arg == "--write-checkpoint") {
             // compatibility flags; final usable artifact is always written
         } else {
@@ -269,292 +275,7 @@ void read_vector(std::ifstream& in, std::vector<float>& values) {
     if (!in) throw std::runtime_error("truncated embedding checkpoint");
 }
 
-struct Model {
-    Config cfg;
-    uint32_t step = 0;
-    std::vector<float> token;
-    std::vector<float> position;
-    std::vector<float> projection;
-    std::vector<float> bias;
-    std::vector<float> adapter_a;
-    std::vector<float> adapter_b;
-    std::vector<uint8_t> q_projection;
-    std::vector<float> q_projection_scales;
-    std::vector<float> grad_token, grad_position, grad_projection, grad_bias, grad_a, grad_b;
-    std::vector<float> m_token, v_token, m_position, v_position, m_projection, v_projection, m_bias, v_bias, m_a, v_a, m_b, v_b;
-
-    explicit Model(Config config) : cfg(std::move(config)) {
-        std::mt19937 random(static_cast<uint32_t>(cfg.seed));
-        std::normal_distribution<float> normal(0.0f, 0.02f);
-        token.resize(static_cast<size_t>(cfg.vocab_size) * cfg.hidden_dim);
-        position.resize(static_cast<size_t>(cfg.max_tokens) * cfg.hidden_dim);
-        projection.resize(static_cast<size_t>(cfg.output_dim) * cfg.hidden_dim);
-        bias.assign(cfg.output_dim, 0.0f);
-        for (float& value : token) value = normal(random);
-        for (float& value : position) value = normal(random);
-        for (float& value : projection) value = normal(random) / std::sqrt(static_cast<float>(cfg.hidden_dim));
-        if (cfg.adapter_type != "none") {
-            adapter_a.resize(static_cast<size_t>(cfg.lora_rank) * cfg.hidden_dim);
-            adapter_b.assign(static_cast<size_t>(cfg.output_dim) * cfg.lora_rank, 0.0f);
-            for (float& value : adapter_a) value = normal(random);
-        }
-        rebuild_quantized_projection();
-        allocate_optimizer();
-    }
-
-    void rebuild_quantized_projection() {
-        q_projection.clear(); q_projection_scales.clear();
-        if (cfg.adapter_type != "qlora") return;
-        static constexpr std::array<float, 16> codebook{-1.0f, -0.6961928f, -0.5250731f, -0.3949175f, -0.2844414f, -0.1847734f, -0.0910500f, 0.0f, 0.0795803f, 0.1609302f, 0.2461123f, 0.3379152f, 0.4407098f, 0.5626170f, 0.7229568f, 1.0f};
-        constexpr size_t group_size = 64;
-        q_projection.assign((projection.size() + 1) / 2, 0);
-        q_projection_scales.resize((projection.size() + group_size - 1) / group_size, 1.0f);
-        for (size_t group = 0; group < q_projection_scales.size(); ++group) {
-            const size_t begin = group * group_size;
-            const size_t end = std::min(projection.size(), begin + group_size);
-            float scale = 0.0f;
-            for (size_t i = begin; i < end; ++i) scale = std::max(scale, std::abs(projection[i]));
-            scale = std::max(scale, 1e-12f); q_projection_scales[group] = scale;
-            for (size_t i = begin; i < end; ++i) {
-                const float normalized = projection[i] / scale;
-                int best = 0;
-                for (int code = 1; code < 16; ++code) if (std::abs(normalized - codebook[code]) < std::abs(normalized - codebook[best])) best = code;
-                if ((i & 1u) == 0) q_projection[i / 2] = static_cast<uint8_t>(best);
-                else q_projection[i / 2] |= static_cast<uint8_t>(best << 4);
-            }
-        }
-    }
-
-    void allocate_optimizer() {
-        auto zeros = [](const std::vector<float>& source) { return std::vector<float>(source.size(), 0.0f); };
-        grad_token = zeros(token); grad_position = zeros(position); grad_projection = zeros(projection); grad_bias = zeros(bias);
-        grad_a = zeros(adapter_a); grad_b = zeros(adapter_b);
-        m_token = zeros(token); v_token = zeros(token); m_position = zeros(position); v_position = zeros(position);
-        m_projection = zeros(projection); v_projection = zeros(projection); m_bias = zeros(bias); v_bias = zeros(bias);
-        m_a = zeros(adapter_a); v_a = zeros(adapter_a); m_b = zeros(adapter_b); v_b = zeros(adapter_b);
-    }
-
-    void initialize_adapter(const std::string& requested) {
-        cfg.adapter_type = requested;
-        if (requested == "none") { adapter_a.clear(); adapter_b.clear(); allocate_optimizer(); return; }
-        std::mt19937 random(static_cast<uint32_t>(cfg.seed + 17));
-        std::normal_distribution<float> normal(0.0f, 0.02f);
-        adapter_a.resize(static_cast<size_t>(cfg.lora_rank) * cfg.hidden_dim);
-        adapter_b.assign(static_cast<size_t>(cfg.output_dim) * cfg.lora_rank, 0.0f);
-        for (float& value : adapter_a) value = normal(random);
-        rebuild_quantized_projection();
-        allocate_optimizer();
-    }
-
-    std::vector<float> base_projection() const {
-        std::vector<float> result = projection;
-        if (cfg.adapter_type == "qlora" && !q_projection.empty()) {
-            static constexpr std::array<float, 16> codebook{-1.0f, -0.6961928f, -0.5250731f, -0.3949175f, -0.2844414f, -0.1847734f, -0.0910500f, 0.0f, 0.0795803f, 0.1609302f, 0.2461123f, 0.3379152f, 0.4407098f, 0.5626170f, 0.7229568f, 1.0f};
-            for (size_t i = 0; i < result.size(); ++i) {
-                const uint8_t packed = q_projection[i / 2];
-                const uint8_t code = (i & 1u) == 0 ? packed & 0x0fu : packed >> 4;
-                result[i] = q_projection_scales[i / 64] * codebook[code];
-            }
-        }
-        return result;
-    }
-
-    std::vector<float> effective_projection() const {
-        std::vector<float> result = base_projection();
-        if (adapter_a.empty()) return result;
-        const float scale = cfg.lora_alpha / static_cast<float>(cfg.lora_rank);
-        for (int o = 0; o < cfg.output_dim; ++o) for (int h = 0; h < cfg.hidden_dim; ++h) {
-            float delta = 0.0f;
-            for (int r = 0; r < cfg.lora_rank; ++r) delta += adapter_b[o * cfg.lora_rank + r] * adapter_a[r * cfg.hidden_dim + h];
-            result[o * cfg.hidden_dim + h] += scale * delta;
-        }
-        return result;
-    }
-
-    Encoded encode(const std::vector<uint32_t>& ids, bool training = false) const {
-        Encoded out;
-        out.tokens.assign(ids.begin(), ids.begin() + std::min(ids.size(), static_cast<size_t>(cfg.max_tokens)));
-        out.hidden.assign(cfg.hidden_dim, 0.0f);
-        if (cfg.pooling == "cls") out.pooled_positions = {0};
-        else if (cfg.pooling == "last") out.pooled_positions = {out.tokens.size() - 1};
-        else { out.pooled_positions.resize(out.tokens.size()); std::iota(out.pooled_positions.begin(), out.pooled_positions.end(), 0); }
-        out.pooled_weights.assign(out.pooled_positions.size(), 1.0f);
-        if (cfg.architecture == "gpt-derived" && cfg.pooling == "mean") {
-            for (size_t i = 0; i < out.pooled_positions.size(); ++i) out.pooled_weights[i] = static_cast<float>(i + 1);
-        }
-        const float weight_sum = std::accumulate(out.pooled_weights.begin(), out.pooled_weights.end(), 0.0f);
-        for (size_t i = 0; i < out.pooled_positions.size(); ++i) {
-            const size_t p = out.pooled_positions[i];
-            const float pool_weight = out.pooled_weights[i] / std::max(weight_sum, 1e-12f);
-            const size_t row = static_cast<size_t>(out.tokens[p] % cfg.vocab_size) * cfg.hidden_dim;
-            const size_t pos = p * cfg.hidden_dim;
-            for (int h = 0; h < cfg.hidden_dim; ++h) out.hidden[h] += pool_weight * (token[row + h] + position[pos + h]);
-        }
-        auto matrix = base_projection();
-        out.pre_norm.assign(cfg.output_dim, 0.0f);
-        for (int o = 0; o < cfg.output_dim; ++o) {
-            float sum = bias[o];
-            for (int h = 0; h < cfg.hidden_dim; ++h) sum += matrix[o * cfg.hidden_dim + h] * out.hidden[h];
-            out.pre_norm[o] = sum;
-        }
-        if (!adapter_a.empty()) {
-            out.adapter_input = out.hidden;
-            if (training && cfg.lora_dropout > 0.0f) {
-                const float keep_probability = 1.0f - cfg.lora_dropout;
-                for (int h = 0; h < cfg.hidden_dim; ++h) {
-                    uint32_t bits = static_cast<uint32_t>((step + 1u) * 2654435761u) ^ static_cast<uint32_t>((h + 1) * 2246822519u) ^ out.tokens.front();
-                    const float sample = static_cast<float>(bits & 0x00ffffffu) / static_cast<float>(0x01000000u);
-                    out.adapter_input[h] = sample < cfg.lora_dropout ? 0.0f : out.adapter_input[h] / keep_probability;
-                }
-            }
-            out.adapter_hidden.assign(cfg.lora_rank, 0.0f);
-            for (int r = 0; r < cfg.lora_rank; ++r) for (int h = 0; h < cfg.hidden_dim; ++h) out.adapter_hidden[r] += adapter_a[r * cfg.hidden_dim + h] * out.adapter_input[h];
-            const float scale = cfg.lora_alpha / static_cast<float>(cfg.lora_rank);
-            for (int o = 0; o < cfg.output_dim; ++o) for (int r = 0; r < cfg.lora_rank; ++r) out.pre_norm[o] += scale * adapter_b[o * cfg.lora_rank + r] * out.adapter_hidden[r];
-        }
-        out.value = out.pre_norm;
-        if (cfg.normalize) {
-            float norm = 0.0f;
-            for (float value : out.value) norm += value * value;
-            norm = std::sqrt(std::max(norm, 1e-12f));
-            for (float& value : out.value) value /= norm;
-        }
-        return out;
-    }
-
-    void backward(const Encoded& encoded, const std::vector<float>& grad_value) {
-        std::vector<float> grad_pre = grad_value;
-        if (cfg.normalize) {
-            float norm = 0.0f;
-            for (float value : encoded.pre_norm) norm += value * value;
-            norm = std::sqrt(std::max(norm, 1e-12f));
-            float dot = 0.0f;
-            for (int o = 0; o < cfg.output_dim; ++o) dot += grad_value[o] * encoded.value[o];
-            for (int o = 0; o < cfg.output_dim; ++o) grad_pre[o] = (grad_value[o] - encoded.value[o] * dot) / norm;
-        }
-        std::vector<float> grad_hidden(cfg.hidden_dim, 0.0f);
-        auto matrix = base_projection();
-        const bool adapters = !adapter_a.empty();
-        for (int o = 0; o < cfg.output_dim; ++o) {
-            grad_bias[o] += grad_pre[o];
-            for (int h = 0; h < cfg.hidden_dim; ++h) {
-                if (!adapters) grad_projection[o * cfg.hidden_dim + h] += grad_pre[o] * encoded.hidden[h];
-                grad_hidden[h] += matrix[o * cfg.hidden_dim + h] * grad_pre[o];
-            }
-        }
-        if (adapters) {
-            const float scale = cfg.lora_alpha / static_cast<float>(cfg.lora_rank);
-            for (int o = 0; o < cfg.output_dim; ++o) for (int r = 0; r < cfg.lora_rank; ++r) {
-                grad_b[o * cfg.lora_rank + r] += scale * grad_pre[o] * encoded.adapter_hidden[r];
-                for (int h = 0; h < cfg.hidden_dim; ++h) grad_a[r * cfg.hidden_dim + h] += scale * grad_pre[o] * adapter_b[o * cfg.lora_rank + r] * encoded.adapter_input[h];
-            }
-        }
-        if (adapters) return; // LoRA and QLoRA freeze base encoder and projection.
-        const float weight_sum = std::accumulate(encoded.pooled_weights.begin(), encoded.pooled_weights.end(), 0.0f);
-        for (size_t i = 0; i < encoded.pooled_positions.size(); ++i) {
-            const size_t p = encoded.pooled_positions[i];
-            const float pool_weight = encoded.pooled_weights[i] / std::max(weight_sum, 1e-12f);
-            const size_t row = static_cast<size_t>(encoded.tokens[p] % cfg.vocab_size) * cfg.hidden_dim;
-            const size_t pos = p * cfg.hidden_dim;
-            for (int h = 0; h < cfg.hidden_dim; ++h) {
-                grad_token[row + h] += grad_hidden[h] * pool_weight;
-                grad_position[pos + h] += grad_hidden[h] * pool_weight;
-            }
-        }
-    }
-
-    void zero_grad() {
-        for (auto* vector : {&grad_token, &grad_position, &grad_projection, &grad_bias, &grad_a, &grad_b}) std::fill(vector->begin(), vector->end(), 0.0f);
-    }
-
-    void update_vector(std::vector<float>& parameter, std::vector<float>& gradient, std::vector<float>& first, std::vector<float>& second, float lr, float scale) {
-        if (parameter.empty()) return;
-        const float one_minus_b1 = 1.0f - cfg.beta1;
-        const float one_minus_b2 = 1.0f - cfg.beta2;
-        const float correction1 = 1.0f - std::pow(cfg.beta1, static_cast<float>(step));
-        const float correction2 = 1.0f - std::pow(cfg.beta2, static_cast<float>(step));
-        for (size_t i = 0; i < parameter.size(); ++i) {
-            const float grad = gradient[i] * scale + cfg.weight_decay * parameter[i];
-            first[i] = cfg.beta1 * first[i] + one_minus_b1 * grad;
-            second[i] = cfg.beta2 * second[i] + one_minus_b2 * grad * grad;
-            parameter[i] -= lr * (first[i] / correction1) / (std::sqrt(second[i] / correction2) + cfg.adam_eps);
-        }
-    }
-
-    void update(float lr, float batch_scale) {
-        ++step;
-        float norm = 0.0f;
-        for (const auto* vector : {&grad_token, &grad_position, &grad_projection, &grad_bias, &grad_a, &grad_b}) for (float value : *vector) norm += value * value;
-        norm = std::sqrt(norm) * batch_scale;
-        const float clip = norm > cfg.grad_clip && cfg.grad_clip > 0.0f ? cfg.grad_clip / norm : 1.0f;
-        const float scale = batch_scale * clip;
-        if (adapter_a.empty()) {
-            update_vector(token, grad_token, m_token, v_token, lr, scale);
-            update_vector(position, grad_position, m_position, v_position, lr, scale);
-            update_vector(projection, grad_projection, m_projection, v_projection, lr, scale);
-            update_vector(bias, grad_bias, m_bias, v_bias, lr, scale);
-        } else {
-            update_vector(adapter_a, grad_a, m_a, v_a, lr, scale);
-            update_vector(adapter_b, grad_b, m_b, v_b, lr, scale);
-        }
-    }
-
-    void save(const fs::path& path, bool merged) const {
-        fs::create_directories(path.parent_path());
-        std::ofstream out(path, std::ios::binary);
-        const std::array<char, 8> magic{'N','F','N','E','M','B','1','\0'};
-        out.write(magic.data(), magic.size());
-        const std::array<uint32_t, 7> header{1u, static_cast<uint32_t>(cfg.vocab_size), static_cast<uint32_t>(cfg.hidden_dim), static_cast<uint32_t>(cfg.output_dim), static_cast<uint32_t>(cfg.max_tokens), step, static_cast<uint32_t>(merged ? 0 : (cfg.adapter_type == "qlora" ? 2 : cfg.adapter_type == "lora" ? 1 : 0))};
-        out.write(reinterpret_cast<const char*>(header.data()), static_cast<std::streamsize>(header.size() * sizeof(uint32_t)));
-        float margin_value = cfg.margin;
-        out.write(reinterpret_cast<const char*>(&margin_value), sizeof(margin_value));
-        const std::array<uint32_t, 4> settings{
-            static_cast<uint32_t>(cfg.architecture == "gpt-derived" ? 1 : 0),
-            static_cast<uint32_t>(cfg.pooling == "cls" ? 1 : cfg.pooling == "last" ? 2 : 0),
-            static_cast<uint32_t>(cfg.normalize ? 1 : 0),
-            static_cast<uint32_t>(cfg.lora_rank),
-        };
-        out.write(reinterpret_cast<const char*>(settings.data()), static_cast<std::streamsize>(settings.size() * sizeof(uint32_t)));
-        out.write(reinterpret_cast<const char*>(&cfg.lora_alpha), sizeof(cfg.lora_alpha));
-        out.write(reinterpret_cast<const char*>(&cfg.lora_dropout), sizeof(cfg.lora_dropout));
-        write_vector(out, token); write_vector(out, position);
-        write_vector(out, merged ? effective_projection() : projection); write_vector(out, bias);
-        if (merged) { write_vector(out, std::vector<float>{}); write_vector(out, std::vector<float>{}); }
-        else { write_vector(out, adapter_a); write_vector(out, adapter_b); }
-        if (!out) throw std::runtime_error("failed writing embedding checkpoint: " + path.string());
-    }
-
-    void load(const fs::path& path) {
-        fs::path resolved = fs::is_directory(path) ? path / "embedding_model.bin" : path;
-        std::ifstream in(resolved, std::ios::binary);
-        if (!in) throw std::runtime_error("cannot open embedding checkpoint: " + resolved.string());
-        std::array<char, 8> magic{}; in.read(magic.data(), magic.size());
-        if (std::string(magic.data(), 7) != "NFNEMB1") throw std::runtime_error("not a NeuralFn embedding checkpoint: " + resolved.string());
-        std::array<uint32_t, 7> header{}; in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size() * sizeof(uint32_t)));
-        float stored_margin = 0.0f; in.read(reinterpret_cast<char*>(&stored_margin), sizeof(stored_margin));
-        std::array<uint32_t, 4> settings{};
-        in.read(reinterpret_cast<char*>(settings.data()), static_cast<std::streamsize>(settings.size() * sizeof(uint32_t)));
-        float stored_lora_alpha = 0.0f;
-        in.read(reinterpret_cast<char*>(&stored_lora_alpha), sizeof(stored_lora_alpha));
-        float stored_lora_dropout = 0.0f;
-        in.read(reinterpret_cast<char*>(&stored_lora_dropout), sizeof(stored_lora_dropout));
-        cfg.vocab_size = static_cast<int>(header[1]); cfg.hidden_dim = static_cast<int>(header[2]); cfg.output_dim = static_cast<int>(header[3]); cfg.max_tokens = static_cast<int>(header[4]); step = header[5];
-        cfg.margin = stored_margin;
-        cfg.architecture = settings[0] == 1 ? "gpt-derived" : "bert";
-        cfg.pooling = settings[1] == 1 ? "cls" : settings[1] == 2 ? "last" : "mean";
-        cfg.normalize = settings[2] != 0;
-        cfg.lora_rank = static_cast<int>(settings[3]);
-        cfg.lora_alpha = stored_lora_alpha;
-        cfg.lora_dropout = stored_lora_dropout;
-        read_vector(in, token); read_vector(in, position); read_vector(in, projection); read_vector(in, bias); read_vector(in, adapter_a); read_vector(in, adapter_b);
-        if (!adapter_a.empty()) {
-            cfg.adapter_type = header[6] == 2 ? "qlora" : "lora";
-            cfg.lora_rank = static_cast<int>(adapter_a.size() / static_cast<size_t>(cfg.hidden_dim));
-        }
-        rebuild_quantized_projection();
-        allocate_optimizer();
-    }
-};
+#include "embedding_transformer.h"
 
 float cosine(const Encoded& left, const Encoded& right) {
     return std::inner_product(left.value.begin(), left.value.end(), right.value.begin(), 0.0f);
@@ -604,11 +325,9 @@ struct DatasetMixer {
 
 void save_training_state(const Model& model, const DatasetMixer& mixer, const fs::path& path) {
     std::ofstream out(path, std::ios::binary);
-    const std::array<char, 8> magic{'N','F','N','E','O','P','T','1'};
+    const std::array<char, 8> magic{'N','F','N','E','O','P','T','2'};
     out.write(magic.data(), magic.size());
-    for (const auto* values : {&model.m_token, &model.v_token, &model.m_position, &model.v_position,
-                               &model.m_projection, &model.v_projection, &model.m_bias, &model.v_bias,
-                               &model.m_a, &model.v_a, &model.m_b, &model.v_b}) write_vector(out, *values);
+    model.save_optimizer(out);
     uint64_t count = mixer.cursors.size();
     out.write(reinterpret_cast<const char*>(&count), sizeof(count));
     for (size_t value : mixer.cursors) { uint64_t item = value; out.write(reinterpret_cast<const char*>(&item), sizeof(item)); }
@@ -620,10 +339,8 @@ void load_training_state(Model& model, DatasetMixer& mixer, const fs::path& path
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("exact embedding resume requires optimizer state: " + path.string());
     std::array<char, 8> magic{}; in.read(magic.data(), magic.size());
-    if (std::string(magic.data(), magic.size()) != "NFNEOPT1") throw std::runtime_error("invalid embedding optimizer state: " + path.string());
-    for (auto* values : {&model.m_token, &model.v_token, &model.m_position, &model.v_position,
-                         &model.m_projection, &model.v_projection, &model.m_bias, &model.v_bias,
-                         &model.m_a, &model.v_a, &model.m_b, &model.v_b}) read_vector(in, *values);
+    if (std::string(magic.data(), magic.size()) != "NFNEOPT2") throw std::runtime_error("invalid embedding optimizer state: " + path.string());
+    model.load_optimizer(in);
     uint64_t count = 0; in.read(reinterpret_cast<char*>(&count), sizeof(count));
     if (count != mixer.cursors.size()) throw std::runtime_error("embedding resume dataset count does not match checkpoint");
     for (size_t& value : mixer.cursors) { uint64_t item = 0; in.read(reinterpret_cast<char*>(&item), sizeof(item)); value = static_cast<size_t>(item); }
@@ -636,14 +353,16 @@ float train_example(Model& model, const Example& ex, const Example& fallback_neg
     std::vector<uint32_t> second_ids = ex.second.empty() ? ex.first : ex.second;
     std::vector<size_t> masked_positions;
     if (ex.objective == "raw") {
-        for (size_t position = 0; position < second_ids.size(); ++position) {
+        const size_t mask_begin = model.cfg.architecture == "bert" && second_ids.size() > 1 ? 1u : 0u;
+        for (size_t position = mask_begin; position < second_ids.size(); ++position) {
             uint32_t random_bits = static_cast<uint32_t>(position * 2654435761u) ^ static_cast<uint32_t>((model.step + 1u) * 2246822519u) ^ second_ids[position];
             const float sample = static_cast<float>(random_bits & 0x00ffffffu) / static_cast<float>(0x01000000u);
-            if (sample < model.cfg.mlm_probability) { masked_positions.push_back(position); second_ids[position] = 1u; }
+            if (sample < model.cfg.mlm_probability) { masked_positions.push_back(position); second_ids[position] = static_cast<uint32_t>(model.cfg.mask_token_id); }
         }
         if (masked_positions.empty()) {
-            const size_t position = static_cast<size_t>((model.step + ex.first.size()) % ex.first.size());
-            masked_positions.push_back(position); second_ids[position] = 1u;
+            const size_t candidates = ex.first.size() - mask_begin;
+            const size_t position = mask_begin + static_cast<size_t>((model.step + ex.first.size()) % std::max<size_t>(1, candidates));
+            masked_positions.push_back(position); second_ids[position] = static_cast<uint32_t>(model.cfg.mask_token_id);
         }
     }
     Encoded second = model.encode(second_ids, true);
@@ -681,28 +400,7 @@ float train_example(Model& model, const Example& ex, const Example& fallback_neg
         metrics["positive_cosine"] += positive;
         metrics["negative_cosine"] += negative_score;
         if (ex.objective == "raw") {
-            // Deterministic masked-token reconstruction: pull each masked token
-            // row toward the masked-view context and push a stable negative row.
-            float mlm_loss = 0.0f;
-            for (size_t masked_position : masked_positions) {
-                const uint32_t positive_id = ex.first[masked_position] % static_cast<uint32_t>(model.cfg.vocab_size);
-                const uint32_t negative_id = 3u + (positive_id * 1103515245u + model.step + static_cast<uint32_t>(masked_position) + 12345u) % static_cast<uint32_t>(model.cfg.vocab_size - 3);
-                float pos_dot = 0.0f, neg_dot = 0.0f;
-                for (int h = 0; h < model.cfg.hidden_dim; ++h) {
-                    pos_dot += second.hidden[h] * model.token[static_cast<size_t>(positive_id) * model.cfg.hidden_dim + h];
-                    neg_dot += second.hidden[h] * model.token[static_cast<size_t>(negative_id) * model.cfg.hidden_dim + h];
-                }
-                const float mlm_hinge = std::max(0.0f, 1.0f + neg_dot - pos_dot);
-                mlm_loss += mlm_hinge;
-                if (mlm_hinge > 0.0f && model.adapter_a.empty()) {
-                    for (int h = 0; h < model.cfg.hidden_dim; ++h) {
-                        const float mask_scale = model.cfg.mlm_weight / static_cast<float>(masked_positions.size());
-                        model.grad_token[static_cast<size_t>(positive_id) * model.cfg.hidden_dim + h] -= mask_scale * second.hidden[h];
-                        model.grad_token[static_cast<size_t>(negative_id) * model.cfg.hidden_dim + h] += mask_scale * second.hidden[h];
-                    }
-                }
-            }
-            mlm_loss /= static_cast<float>(masked_positions.size());
+            const float mlm_loss = model.mlm_backward(second, ex.first, masked_positions, ex.loss_weight * model.cfg.mlm_weight);
             loss = model.cfg.contrastive_weight * loss + model.cfg.mlm_weight * mlm_loss;
             metrics["mlm_loss"] += mlm_loss;
         }
@@ -713,10 +411,10 @@ float train_example(Model& model, const Example& ex, const Example& fallback_neg
 void save_metadata(const Model& model, const Config& cfg, const fs::path& output, const std::unordered_map<std::string, double>& metrics) {
     std::ofstream meta(output / "embedding_model.json");
     meta << "{\n"
-         << "  \"format\": \"nfn_embedding_v1\",\n"
+         << "  \"format\": \"nfn_embedding_v2\",\n"
          << "  \"model_type\": \"text_embedding\",\n"
          << "  \"backend\": \"native-cpp\",\n"
-         << "  \"encoder_core\": \"native_token_position_biencoder\",\n"
+         << "  \"encoder_core\": \"native_transformer_biencoder\",\n"
          << "  \"architecture_profile\": \"" << json_escape(cfg.architecture) << "\",\n"
          << "  \"stage\": \"" << json_escape(cfg.stage) << "\",\n"
          << "  \"adapter_type\": \"" << json_escape(cfg.adapter_type) << "\",\n"
@@ -725,6 +423,12 @@ void save_metadata(const Model& model, const Config& cfg, const fs::path& output
          << "  \"normalized\": " << (cfg.normalize ? "true" : "false") << ",\n"
          << "  \"vocab_size\": " << cfg.vocab_size << ",\n"
          << "  \"hidden_dim\": " << cfg.hidden_dim << ",\n"
+         << "  \"num_layers\": " << cfg.num_layers << ",\n"
+         << "  \"num_heads\": " << cfg.num_heads << ",\n"
+         << "  \"intermediate_dim\": " << cfg.intermediate_dim << ",\n"
+         << "  \"activation\": \"" << json_escape(cfg.activation) << "\",\n"
+         << "  \"layer_norm_epsilon\": " << cfg.layer_norm_epsilon << ",\n"
+         << "  \"mask_token_id\": " << cfg.mask_token_id << ",\n"
          << "  \"output_dim\": " << cfg.output_dim << ",\n"
          << "  \"max_tokens\": " << cfg.max_tokens << ",\n"
          << "  \"step\": " << model.step << ",\n"
@@ -740,7 +444,11 @@ int run_embed(Config cfg) {
     if (cfg.checkpoint.empty()) throw std::runtime_error("embedding inference requires --checkpoint");
     Model model(cfg);
     model.load(cfg.checkpoint);
-    auto ids = tokenize(cfg.embed_text, model.cfg.vocab_size, model.cfg.max_tokens);
+    auto ids = cfg.embed_token_ids.empty() ? tokenize(cfg.embed_text, model.cfg.vocab_size, model.cfg.max_tokens) : cfg.embed_token_ids;
+    if (cfg.embed_token_ids.empty() && model.cfg.architecture == "bert" && (ids.empty() || ids.front() != 2u)) {
+        ids.insert(ids.begin(), 2u);
+        if (ids.size() > static_cast<size_t>(model.cfg.max_tokens)) ids.resize(static_cast<size_t>(model.cfg.max_tokens));
+    }
     auto encoded = model.encode(ids);
     std::cout << "{\"status\":\"native-embedding-inference\",\"dimension\":" << encoded.value.size() << ",\"normalized\":" << (model.cfg.normalize ? "true" : "false") << ",\"embedding\":[";
     for (size_t i = 0; i < encoded.value.size(); ++i) { if (i) std::cout << ','; std::cout << std::setprecision(9) << encoded.value[i]; }
@@ -754,11 +462,12 @@ int run_train(Config cfg) {
     if (cfg.pooling != "mean" && cfg.pooling != "cls" && cfg.pooling != "last") throw std::runtime_error("embedding pooling must be mean, cls, or last");
     if (cfg.stage != "pretrain" && cfg.stage != "posttrain" && cfg.stage != "finetune" && cfg.stage != "resume") throw std::runtime_error("embedding stage must be pretrain, posttrain, finetune, or resume");
     if (cfg.adapter_type != "none" && cfg.adapter_type != "lora" && cfg.adapter_type != "qlora") throw std::runtime_error("adapter type must be none, lora, or qlora");
+    if (cfg.activation != "gelu" && cfg.activation != "gelu-tanh") throw std::runtime_error("embedding activation must be gelu or gelu-tanh");
     if (cfg.stage == "resume" && cfg.resume_checkpoint.empty()) throw std::runtime_error("resume stage requires --resume-from-checkpoint");
     if (cfg.stage == "finetune" && cfg.base_checkpoint.empty() && cfg.resume_checkpoint.empty()) throw std::runtime_error("finetune stage requires --base-checkpoint or --resume-from-checkpoint");
-    if (cfg.hidden_dim <= 0 || cfg.output_dim <= 0 || cfg.vocab_size < 4 || cfg.max_tokens <= 0 || cfg.batch_size <= 0 || cfg.max_steps <= 0) throw std::runtime_error("embedding dimensions, batch size, and steps must be positive");
+    if (cfg.hidden_dim <= 0 || cfg.output_dim <= 0 || cfg.vocab_size < 4 || cfg.max_tokens <= 0 || cfg.batch_size <= 0 || cfg.max_steps <= 0 || cfg.num_layers <= 0 || cfg.num_heads <= 0 || cfg.hidden_dim % cfg.num_heads != 0 || cfg.mask_token_id < 0 || cfg.mask_token_id >= cfg.vocab_size) throw std::runtime_error("embedding dimensions, transformer layers/heads, mask token, batch size, and steps must be valid; hidden dim must divide heads");
     if (cfg.print_plan || cfg.dry_run) {
-        std::cout << "{\"status\":\"native-embedding-plan\",\"backend\":\"native-cpp\",\"architecture\":\"" << json_escape(cfg.architecture) << "\",\"stage\":\"" << json_escape(cfg.stage) << "\",\"adapter_type\":\"" << json_escape(cfg.adapter_type) << "\",\"data\":\"" << json_escape(cfg.data) << "\",\"hidden_dim\":" << cfg.hidden_dim << ",\"output_dim\":" << cfg.output_dim << ",\"max_steps\":" << cfg.max_steps << "}\n";
+        std::cout << "{\"status\":\"native-embedding-plan\",\"backend\":\"native-cpp\",\"encoder_core\":\"native_transformer_biencoder\",\"architecture\":\"" << json_escape(cfg.architecture) << "\",\"stage\":\"" << json_escape(cfg.stage) << "\",\"adapter_type\":\"" << json_escape(cfg.adapter_type) << "\",\"data\":\"" << json_escape(cfg.data) << "\",\"hidden_dim\":" << cfg.hidden_dim << ",\"num_layers\":" << cfg.num_layers << ",\"num_heads\":" << cfg.num_heads << ",\"intermediate_dim\":" << (cfg.intermediate_dim > 0 ? cfg.intermediate_dim : cfg.hidden_dim * 4) << ",\"output_dim\":" << cfg.output_dim << ",\"max_steps\":" << cfg.max_steps << "}\n";
         return 0;
     }
     auto examples = load_data(cfg);
@@ -773,8 +482,14 @@ int run_train(Config cfg) {
         load_training_state(model, mixer, state_path);
     } else if (!cfg.base_checkpoint.empty()) {
         const std::string requested_adapter = cfg.adapter_type;
+        const int requested_rank = cfg.lora_rank;
+        const float requested_alpha = cfg.lora_alpha;
+        const float requested_dropout = cfg.lora_dropout;
         model.load(cfg.base_checkpoint);
         model.step = 0;
+        model.cfg.lora_rank = requested_rank;
+        model.cfg.lora_alpha = requested_alpha;
+        model.cfg.lora_dropout = requested_dropout;
         model.initialize_adapter(requested_adapter);
     }
     std::unordered_map<std::string, double> metrics;
@@ -825,7 +540,7 @@ int run_train(Config cfg) {
     }
     fs::path output(cfg.output_dir); fs::create_directories(output);
     model.save(output / "embedding_model.bin", true);
-    if (!model.adapter_a.empty()) model.save(output / "embedding_adapter.bin", false);
+    if (model.adapters_enabled()) model.save(output / "embedding_adapter.bin", false);
     save_training_state(model, mixer, output / "embedding_optimizer.bin");
     metrics["loss_mean"] = accumulated_loss / static_cast<double>(cfg.max_steps);
     metrics["examples_seen"] = static_cast<double>(examples_seen);
@@ -835,7 +550,7 @@ int run_train(Config cfg) {
     std::ofstream(output / "DONE") << "step=" << model.step << '\n';
     std::cout << "{\"status\":\"native-embedding-trained\",\"passed\":true,\"backend\":\"native-cpp\",\"steps_completed\":" << model.step
               << ",\"records\":" << examples.size() << ",\"model_type\":\"text_embedding\",\"architecture_profile\":\"" << json_escape(model.cfg.architecture)
-              << "\",\"encoder_core\":\"native_token_position_biencoder\",\"checkpoint\":{\"checkpoint_path\":\"" << json_escape((output / "embedding_model.bin").string())
+              << "\",\"encoder_core\":\"native_transformer_biencoder\",\"checkpoint\":{\"checkpoint_path\":\"" << json_escape((output / "embedding_model.bin").string())
               << "\",\"done_marker\":\"" << json_escape((output / "DONE").string()) << "\"},\"metrics\":{\"loss_mean\":" << metrics["loss_mean"]
               << ",\"positive_cosine\":" << metrics["positive_cosine"] << ",\"negative_cosine\":" << metrics["negative_cosine"] << "}}\n";
     return 0;

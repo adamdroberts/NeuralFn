@@ -616,9 +616,8 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt2_compat_custom_graph_command"]["passed"] is True
     assert "--graph-file" in entrypoints["train_gpt2_compat_custom_graph_command"]["stdout"]
     assert entrypoints["nfn_train_gpt2_evo_family_command"]["passed"] is True
-    assert "--train-transformer-lm" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
-    assert "--layer-evo" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
-    assert "--tile-cuda-activation-dtype nvfp4" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
+    assert "nfn_gpt2_evo_native_train" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
+    assert "--dry-run" in entrypoints["nfn_train_gpt2_evo_family_command"]["stdout"]
     shell_entrypoints = {entry["name"]: entry for entry in payload["shell_entrypoints"]}
     assert shell_entrypoints["train_gpt_dry_run"]["passed"] is True
     assert "--model-family gpt" in shell_entrypoints["train_gpt_dry_run"]["stdout"]
@@ -787,6 +786,11 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "gpt3",
         "gpt2_megakernel",
         "gpt2_moa",
+        "gpt2_zloss",
+        "gpt2_softcap",
+        "gpt2_qknorm",
+        "gpt2_diff",
+        "gpt2_stable",
         "nanogpt",
         "nanogpt_modern",
         "nanogpt_megakernel",
@@ -805,19 +809,19 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert train_step_sentinels == {}
     dataset_loop_sentinels = linked_catalog["dataset_loop_sentinels"]
     assert dataset_loop_sentinels["llama"]["passed"] is True
-    assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["llama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["llama"]["native_runnable"] is True
     assert dataset_loop_sentinels["llama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["dense_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["dense_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["dense_jepa_evo"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["dense_jepa_evo"]["native_runnable"] is True
     assert dataset_loop_sentinels["dense_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["native_runnable"] is True
     assert dataset_loop_sentinels["semantic_dense_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["mixllama"]["passed"] is True
-    assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["mixllama"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["mixllama"]["native_runnable"] is True
     assert dataset_loop_sentinels["mixllama"]["missing_requirements"] == []
     assert dataset_loop_sentinels["ttt_llama"]["passed"] is True
@@ -837,14 +841,14 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert dataset_loop_sentinels["hnet_lm"]["native_runnable"] is True
     assert dataset_loop_sentinels["hnet_lm"]["missing_requirements"] == []
     assert dataset_loop_sentinels["moe_jepa_evo"]["passed"] is True
-    assert dataset_loop_sentinels["moe_jepa_evo"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["moe_jepa_evo"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["moe_jepa_evo"]["native_runnable"] is True
     assert dataset_loop_sentinels["moe_jepa_evo"]["missing_requirements"] == []
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["passed"] is True
-    assert dataset_loop_sentinels["moe_jepa_evo_modern"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["moe_jepa_evo_modern"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["moe_jepa_evo_modern"]["native_runnable"] is True
     assert dataset_loop_sentinels["semantic_router_moe_modern"]["passed"] is True
-    assert dataset_loop_sentinels["semantic_router_moe_modern"]["status"] == "native-family-dataset-loop-diagnostic"
+    assert dataset_loop_sentinels["semantic_router_moe_modern"]["status"] == "native-family-dataset-loop"
     assert dataset_loop_sentinels["semantic_router_moe_modern"]["native_runnable"] is True
     assert dataset_loop_sentinels["semantic_router_moe_modern"]["missing_requirements"] == []
     assert linked_catalog["covered_native_sentinels"] == {}

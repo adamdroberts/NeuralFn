@@ -98,6 +98,15 @@ Canonical docs:
   training. Embedding TUI state must use record batches, vector/pooling and
   objective settings, accept a dataset array/manifest, route to
   `nfn_embedding_native_train`, and produce checkpoints loadable by `nfn embed`.
+- Keep the embedding core a real `NFNEMB2` transformer: BERT uses bidirectional
+  post-norm blocks and GPT-derived uses causal pre-norm blocks. Preserve full
+  encoder backpropagation and all-linear LoRA/QLoRA coverage; do not replace it
+  with pooled token/position tables or projection-only adapters.
+- `--embedding-hf-model` imports BERT-family and GPT-2-family safetensors or
+  restricted PyTorch ZIP state dicts by tensor suffix/shape, copies tokenizer
+  assets, and overrides native geometry.
+  Keep dataset compilation and `nfn embed` on that tokenizer and keep the
+  importer Torch-free.
 - Native embedding manifests use raw, retrieval, similarity, or class schemas
   and compile to uint32 IDs before the Torch-free C++ loop. Preserve the
   distinction from LM uint16 token shards and keep exact-resume optimizer plus

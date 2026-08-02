@@ -26,6 +26,7 @@ REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn-native-train"),
     Path("build/nfn_native"),
     Path("build/nfn-native"),
+    Path("build/nfn_embedding_native_train"),
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt_native_train_linked"),
@@ -109,6 +110,11 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
     Path("build/nfn-native"): (
         Path("neuralfn/csrc/native_train/nfn_native.cpp"),
         Path("tools/build_native_nfn_cli.sh"),
+    ),
+    Path("build/nfn_embedding_native_train"): (
+        Path("neuralfn/csrc/native_embedding/nfn_embedding_native_train.cpp"),
+        Path("neuralfn/csrc/native_embedding/embedding_transformer.h"),
+        Path("tools/build_native_embedding_cli.sh"),
     ),
     Path("build/nfn_gpt2_evo_native_train"): (
         Path("neuralfn/csrc/native_train/gpt2_evo_native_train.cpp"),
@@ -226,6 +232,7 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn-native-train"): ("bash", "tools/build_native_train_cli.sh"),
     Path("build/nfn_native"): ("bash", "tools/build_native_nfn_cli.sh"),
     Path("build/nfn-native"): ("bash", "tools/build_native_nfn_cli.sh"),
+    Path("build/nfn_embedding_native_train"): ("bash", "tools/build_native_embedding_cli.sh"),
     Path("build/nfn_gpt2_evo_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_nanogpt_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
@@ -1230,6 +1237,11 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATE_SELECTORS = (
     "gpt3",
     "gpt2_megakernel",
     "gpt2_moa",
+    "gpt2_zloss",
+    "gpt2_softcap",
+    "gpt2_qknorm",
+    "gpt2_diff",
+    "gpt2_stable",
     "nanogpt",
     "nanogpt_modern",
     "nanogpt_megakernel",
@@ -1240,6 +1252,11 @@ REQUIRED_NATIVE_DENSE_GPT_TEMPLATES = {
     "gpt2_modern": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
     "gpt2_megakernel": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
     "gpt2_moa": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_zloss": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_softcap": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_qknorm": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_diff": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
+    "gpt2_stable": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 1024},
     "gpt3": {"model_dim": 768, "num_heads": 12, "num_layers": 12, "seq_len": 2048},
     "nanogpt": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},
     "nanogpt_modern": {"model_dim": 320, "num_heads": 5, "num_layers": 5, "seq_len": 1024},

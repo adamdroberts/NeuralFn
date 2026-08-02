@@ -71,6 +71,7 @@ include = ["neuralfn*", "server*"]
 neuralfn = [
   "csrc/native_gpt2/*.cpp",
   "csrc/native_embedding/*.cpp",
+  "csrc/native_embedding/*.h",
   "csrc/native_train/*.cpp",
   "csrc/native_train/*.cu",
   "csrc/native_train/*.h",

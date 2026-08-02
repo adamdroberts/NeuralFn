@@ -369,6 +369,8 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --embedding-dataset PATH (repeatable)
           --embedding-stage {pretrain,posttrain,finetune,resume}
           --embedding-architecture {bert,gpt-derived}
+          --embedding-hf-model MODEL_ID_OR_PATH
+          --embedding-hf-revision REVISION
 
         examples:
           nfn train
@@ -530,7 +532,7 @@ def _native_embedding_infer_main(argv: list[str] | None = None) -> int:
     if not checkpoint or (text_value is None and input_path is None) or (text_value is not None and input_path is not None):
         print("nfn embed requires --checkpoint and exactly one of --text or --input", file=sys.stderr)
         return 2
-    from neuralfn.native_embedding import resolve_native_embedding_cli
+    from neuralfn.native_embedding import read_embedding_checkpoint_header, resolve_native_embedding_cli, tokenize_huggingface_text
 
     executable = resolve_native_embedding_cli(ROOT.parent)
     texts: list[str]
@@ -538,10 +540,27 @@ def _native_embedding_infer_main(argv: list[str] | None = None) -> int:
         texts = [line for line in Path(input_path).expanduser().read_text(encoding="utf-8").splitlines() if line.strip()]
     else:
         texts = [str(text_value)]
+    checkpoint_path = Path(checkpoint).expanduser()
+    checkpoint_file = checkpoint_path / "embedding_model.bin" if checkpoint_path.is_dir() else checkpoint_path
+    tokenizer_dir = next(
+        (
+            candidate
+            for candidate in (checkpoint_file.parent, checkpoint_file.parent / "hf_import")
+            if (candidate / "tokenizer.json").is_file() or (candidate / "vocab.txt").is_file()
+        ),
+        None,
+    )
+    max_tokens = read_embedding_checkpoint_header(checkpoint_file)["max_tokens"]
     for item in texts:
+        inference_args = [executable, "--checkpoint", checkpoint]
+        if tokenizer_dir is not None:
+            token_ids = tokenize_huggingface_text(item, tokenizer_dir, max_tokens=max_tokens)
+            inference_args.extend(["--embed-token-ids", ",".join(str(token) for token in token_ids)])
+        else:
+            inference_args.extend(["--embed-text", item])
         try:
             proc = subprocess.run(
-                [executable, "--checkpoint", checkpoint, "--embed-text", item],
+                inference_args,
                 check=False,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -1279,11 +1298,19 @@ _TRAIN_TUI_HYPERPARAMS = (
 _TRAIN_TUI_EMBEDDING_HYPERPARAMS = (
     ("--embedding-stage", "embedding_stage", "Training stage", "pretrain", "embedding-stage", "From-scratch pretraining, supervised post-training, fine-tuning, or exact resume."),
     ("--embedding-architecture", "embedding_architecture", "Architecture", "bert", "embedding-architecture", "Bidirectional BERT-style or GPT-derived encoder profile."),
+    ("--embedding-hf-model", "embedding_hf_model", "HF base model", "", "optional-text", "Optional local path or Hugging Face model ID whose transformer weights and tokenizer are imported without Torch."),
+    ("--embedding-hf-revision", "embedding_hf_revision", "HF revision", "", "optional-text", "Optional Hugging Face branch, tag, or commit for the imported base."),
     ("--base-checkpoint", "base_checkpoint", "Base checkpoint", "", "text", "Native embedding checkpoint used as a weight-only warm start."),
     ("--resume-from-checkpoint", "resume_from_checkpoint", "Resume checkpoint", "", "text", "Native embedding checkpoint used to continue a prior run."),
     ("--pooling", "pooling", "Pooling", "mean", "pooling", "Sequence pooling: mean, cls, or last."),
     ("--embedding-vocab-size", "embedding_vocab_size", "Vocabulary buckets", "32768", "int", "Stable native tokenizer hash buckets; IDs are uint32."),
-    ("--hidden-dim", "hidden_dim", "Encoder width", "128", "int", "Native token/position encoder width."),
+    ("--hidden-dim", "hidden_dim", "Encoder width", "128", "int", "Transformer hidden width; imported HF geometry overrides this value."),
+    ("--num-layers", "num_layers", "Transformer layers", "2", "int", "Self-attention/MLP encoder blocks; imported HF geometry overrides this value."),
+    ("--num-heads", "num_heads", "Attention heads", "4", "int", "Attention heads per transformer block."),
+    ("--intermediate-dim", "intermediate_dim", "MLP width", "512", "int", "Feed-forward intermediate width."),
+    ("--activation", "activation", "Activation", "gelu-tanh", "embedding-activation", "Exact GELU or GPT-2-compatible tanh GELU approximation."),
+    ("--layer-norm-epsilon", "layer_norm_epsilon", "LayerNorm epsilon", "1e-5", "positive-float", "LayerNorm stability epsilon; imported HF geometry overrides this value."),
+    ("--mask-token-id", "mask_token_id", "Mask token ID", "1", "int", "Token substituted by raw-text MLM; imported HF tokenizer metadata overrides this value."),
     ("--embedding-dim", "embedding_dim", "Embedding width", "128", "int", "Vector dimension returned by nfn embed."),
     ("--max-seq-len", "max_seq_len", "Text tokens", "128", "int", "Maximum tokens per text record."),
     ("--batch-size", "batch_size", "Microbatch records", "32", "int", "Records from one dataset/objective per native microbatch."),
@@ -1637,6 +1664,11 @@ def _native_train_validate_tui_value(key: str, value: str) -> str:
             return "gpt-derived"
         if normalized != "bert":
             raise ValueError("value must be bert or gpt-derived")
+        return normalized
+    if kind == "embedding-activation":
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized not in {"gelu", "gelu-tanh"}:
+            raise ValueError("value must be gelu or gelu-tanh")
         return normalized
     if kind == "pooling":
         normalized = value.strip().lower()

@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+- Replaced the initial compact embedding lookup/pooling core with the full
+  `NFNEMB2` native transformer bi-encoder. BERT mode now executes
+  bidirectional multi-head self-attention, GELU feed-forward blocks, residuals,
+  embedding LayerNorm, and post-norm blocks; GPT-derived mode executes causal
+  attention, pre-norm blocks, and final LayerNorm. MLM and contrastive losses
+  backpropagate through token/position embeddings and every transformer layer,
+  and LoRA/QLoRA adapters now cover Q/K/V, attention output, both MLP matrices,
+  and the embedding projection rather than only the final projection.
+- Aligned special-token behavior across preparation and inference. Native
+  from-scratch BERT records now prepend reserved CLS ID 2, MLM does not mask
+  that position, and direct `--embed-text` inference applies the same rule.
+  Imported models persist and use their tokenizer's real mask ID (for example,
+  BERT ID 4/103 or GPT EOS fallback) instead of hard-coding ID 1.
+- Added Torch-free Hugging Face model import through
+  `--embedding-hf-model MODEL_ID_OR_PATH` and optional
+  `--embedding-hf-revision`. The standard-library safetensors reader supports
+  F32, F16, and BF16 weights, sharded files, wrapper prefixes, BERT-family
+  tensor suffixes, and GPT-2 Conv1D QKV/MLP layouts. Import copies tokenizer
+  assets, overrides the native geometry from `config.json`, uses that tokenizer
+  while compiling training records and in `nfn embed`, and writes an
+  `embedding_import.json` provenance record. Exact/tanh GELU selection and the
+  source LayerNorm epsilon are retained; integer HF buffers such as
+  `position_ids` are regenerated. A restricted, Torch-free reader also imports
+  plain PyTorch ZIP state dicts (`pytorch_model.bin`), including strided tensor
+  views and float32/float64/float16/bfloat16 storages; executable pickle globals
+  and legacy non-ZIP pickle files are rejected.
+- Fixed the repository no-Torch verifier's duplicated dense-selector
+  expectation to include the already shipped `gpt2_zloss`, `gpt2_softcap`,
+  `gpt2_qknorm`, `gpt2_diff`, and `gpt2_stable` selectors. Native template
+  catalog validation now passes all four entrypoints rather than failing on the
+  stale nine-selector expectation.
+
+  **Breaking changes:** native embedding model and optimizer checkpoints now
+  use `NFNEMB2`/`NFNEOPT2`. The transformer trainer deliberately rejects old
+  `NFNEMB1` compact-encoder checkpoints because those artifacts contain no
+  attention/MLP weights to migrate. Re-pretrain the model or import a supported
+  Hugging Face transformer, then create new adapters against that base.
+
+- Verified full transformer weight updates, BERT and GPT-2 safetensors import,
+  WordPiece dataset preparation, normalized native inference, full-linear
+  LoRA/QLoRA artifacts, exact resume, retrieval ranking, TUI/CLI routing, and
+  selector catalog parity with the focused embedding/CLI suites (88 tests and
+  122 preset subtests), the required template suite (31 tests), real
+  `hf-internal-testing/tiny-random-bert`, `tiny-random-gpt2`, and PyTorch-ZIP
+  `tiny-random-distilbert` Hub artifacts, and the repository no-Torch verifier
+  (31 artifacts, four native catalogs, 69 Python entrypoints, and 24 shell
+  entrypoints; zero failures).
+
 - Added first-class native text embedding training and inference. `nfn train`
   now offers an `embedding` model type whose TUI replaces LM sequence/token
   controls with embedding stage, encoder profile, pooling, vector width,

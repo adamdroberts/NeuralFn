@@ -802,8 +802,9 @@ Press `Ctrl+C` again to force an immediate abort.
 
 ## Text embedding model type
 
-Choose `embedding` in `nfn train` to pretrain or post-train the native text
-bi-encoder. The dashboard's Datasets row accepts either a JSON manifest path or
+Choose `embedding` in `nfn train` to pretrain or post-train the native BERT or
+GPT-derived transformer bi-encoder. The dashboard exposes layer/head/MLP
+geometry and an optional HF model/revision import. The Datasets row accepts either a JSON manifest path or
 a comma-separated array of source paths; manifest entries are preferred when
 objectives, column mappings, topic weights, hard negatives, labels, or scores
 differ. Use `--embedding-dataset PATH` repeatedly for raw-text shorthand.
@@ -814,3 +815,11 @@ write the resumable `embedding_adapter.bin`. `--base-checkpoint` starts a new op
 `--embedding-stage resume --resume-from-checkpoint DIR` restores model,
 optimizer moments, dataset cursors, and mixer state. Run `nfn embed --checkpoint
 DIR/embedding_model.bin --text TEXT` to verify the saved model.
+
+`--embedding-hf-model` accepts a local directory or Hub ID containing
+safetensors or a plain `pytorch_model.bin` ZIP state dict plus `config.json`.
+BERT-family and GPT-2-family tensor layouts are
+mapped into the same `NFNEMB2` transformer used for from-scratch training; HF
+tokenizer assets are used for both data preparation and `nfn embed`. LoRA and
+QLoRA apply to all attention, MLP, and projection linears. Old `NFNEMB1`
+compact checkpoints must be retrained or replaced with an HF import.

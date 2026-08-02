@@ -413,8 +413,6 @@ def test_no_torch_verifier_covers_universal_gpt_native_routes() -> None:
         assert geometry["seq_len"] == 1024
 
     llama_template = templates_by_name["llama"]
-    assert llama_template["selected_graph_support_status"] == "native-train-step-slice"
+    assert llama_template["selected_graph_support_status"] == "native-family-dataset-loop"
     assert llama_template["selected_graph_native_runnable"] is True
-    assert llama_template["native_training_missing_requirements"] == [
-        "production-family-forward-backward-optimizer-loop"
-    ]
+    assert llama_template["native_training_missing_requirements"] == []
