@@ -5,6 +5,7 @@
 extern "C" {
 
 int nfn_native_tile_ops_abi_version();
+int nfn_native_tile_strict_math_abi_version();
 const char* nfn_native_tile_ops_error_string(int code);
 void nfn_native_tile_attention_forward_stats_reset();
 std::int64_t nfn_native_tile_attention_forward_row_launch_count();

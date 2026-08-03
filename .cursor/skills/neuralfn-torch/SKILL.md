@@ -48,6 +48,21 @@ logits = cache.step(prompt)
 next_token = logits.argmax(dim=-1)
 ```
 
+For exact-zero strict inference, construct the FP32
+`CompiledTorchGraph(..., kernel_backend="torch")` under the shared inference
+policy and pass it as `InferenceCache(graph, device="cuda", compiled=compiled)`.
+The strict policy covers the forward as well as argmax, disables autocast,
+TF32, reduced-precision reductions, and non-math SDPA, and enables fail-closed
+deterministic algorithms. Do not claim positive-temperature `top_k=1` is strict
+compute; it only makes token selection greedy.
+Call `prepare_inference_process_environment()` before CUDA, validate the graph
+and loaded FP32 state with `validate_strict_graph_support()` and
+`validate_strict_compiled_graph()`, then hold
+`inference_execution(0, torch_module=torch)` around the complete generation.
+The context selects either the complete hierarchical
+`fp32_precision="ieee"` controls or the legacy TF32-disable controls according
+to the installed PyTorch version; do not mix those API generations.
+
 ## Building graphs with presets
 
 ```python

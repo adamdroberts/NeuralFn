@@ -6,6 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from neuralfn.graph import NeuronGraph
+from neuralfn.inference_policy import (
+    compute_policy_payload,
+    inference_execution,
+    temperature_uses_strict_inference,
+    validate_inference_temperature,
+    validate_strict_compiled_graph,
+    validate_strict_graph_support,
+)
 
 from ..dependencies import get_db, require_auth
 from ..models import AgentStatusModel, EdgeModel, EdgeUpdateModel, ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest, NeuronDefModel, NodeModel, SessionCreateRequest, SessionGraphUpdateRequest
@@ -679,8 +687,10 @@ def chat_generate(
       - ``base_checkpoint``: str | None — optional .pt path loaded into the graph before generation
       - ``adapter_checkpoint``: str | None — optional adapter .pt loaded on top of base
 
-    Returns ``{prompt, generated, tokens}`` where ``generated`` is the decoded
-    continuation and ``tokens`` is the full token id sequence.
+    Returns ``{prompt, generated, tokens, compute_policy}`` where ``generated``
+    is the decoded continuation, ``tokens`` is the full token id sequence, and
+    ``compute_policy`` reports the standard or strict execution contract that
+    was active for this generation.
     """
     try:
         bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
@@ -691,7 +701,13 @@ def chat_generate(
     if not prompt_text:
         raise HTTPException(status_code=400, detail="'prompt' must be a non-empty string")
     max_new = int(body.get("max_new_tokens", 64))
-    temperature = float(body.get("temperature", 0.8))
+    try:
+        temperature = validate_inference_temperature(body.get("temperature", 0.8))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="'temperature' must be a finite number greater than or equal to 0",
+        ) from exc
     top_k_raw = body.get("top_k", 32)
     top_k = int(top_k_raw) if top_k_raw is not None else None
     base_ckpt = str(body.get("base_checkpoint") or "").strip()
@@ -705,24 +721,8 @@ def chat_generate(
     from neuralfn.inference import (
         InferenceCache,
         load_pt_checkpoint,
-        load_adapter_checkpoint,
     )
     from neuralfn.torch_backend import CompiledTorchGraph
-
-    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
-    compiled = CompiledTorchGraph(graph)
-    if base_ckpt:
-        state, _meta = load_pt_checkpoint(base_ckpt)
-        compiled.load_state_dict(state, strict=False)
-    if adapter_ckpt:
-        # load_adapter_checkpoint round-trips through CompiledTorchGraph; apply to the graph.
-        load_adapter_checkpoint(graph, adapter_ckpt)
-
-    device = torch.device(str(graph.torch_config.get("device", "cpu")))
-    if device.type == "cuda" and not torch.cuda.is_available():
-        device = torch.device("cpu")
-    compiled.to(device)
-    compiled.train(False)
 
     # Tokenize prompt. Use utf-8 byte encoding as a fallback when the graph's
     # tokenization is unknown — works for byte-level / char-level models;
@@ -732,31 +732,65 @@ def chat_generate(
     if not prompt_ids:
         prompt_ids = [0]
 
-    tokens = torch.tensor([prompt_ids], dtype=torch.long, device=device)
-    cache = InferenceCache(graph, device=str(device))
-    generated_ids: list[int] = list(prompt_ids)
-    with torch.no_grad():
-        for _ in range(max_new):
-            logits = cache.step(tokens)
-            if logits.ndim == 2:
-                last_logits = logits[0]
-            else:
-                last_logits = logits.reshape(-1)
-            if temperature > 0:
-                scaled = last_logits / max(temperature, 1e-6)
-                if top_k is not None and top_k > 0:
-                    topv, topi = torch.topk(scaled, k=min(top_k, scaled.numel()))
-                    probs = torch.softmax(topv, dim=-1)
-                    pick = torch.multinomial(probs, num_samples=1)
-                    next_id = int(topi[pick].item())
+    strict_inference = temperature_uses_strict_inference(temperature)
+    with inference_execution(temperature, torch_module=torch) as active_policy:
+        graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+        if strict_inference:
+            validate_strict_graph_support(graph)
+        compiled = CompiledTorchGraph(
+            graph,
+            kernel_backend="torch" if strict_inference else "auto",
+        )
+        if base_ckpt:
+            state, _meta = load_pt_checkpoint(base_ckpt)
+            compiled.load_state_dict(state, strict=False)
+        if adapter_ckpt:
+            # Apply the adapter to the same compiled model that will generate.
+            # Rebuilding through load_adapter_checkpoint would discard both the
+            # loaded base weights and the strict backend selection.
+            state, _meta = load_pt_checkpoint(adapter_ckpt)
+            compiled.load_state_dict(state, strict=False)
+
+        device = torch.device(str(graph.torch_config.get("device", "cpu")))
+        if device.type == "cuda" and not torch.cuda.is_available():
+            device = torch.device("cpu")
+        compiled.to(device)
+        compiled.train(False)
+        if strict_inference:
+            validate_strict_compiled_graph(compiled)
+
+        tokens = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+        cache = InferenceCache(graph, device=str(device), compiled=compiled)
+        generated_ids: list[int] = list(prompt_ids)
+        with torch.no_grad():
+            for _ in range(max_new):
+                logits = cache.step(tokens)
+                if logits.ndim == 2:
+                    last_logits = logits[0]
                 else:
-                    probs = torch.softmax(scaled, dim=-1)
-                    pick = torch.multinomial(probs, num_samples=1)
-                    next_id = int(pick.item())
-            else:
-                next_id = int(torch.argmax(last_logits).item())
-            generated_ids.append(next_id)
-            tokens = torch.tensor([[next_id]], dtype=torch.long, device=device)
+                    last_logits = logits.reshape(-1)
+                if temperature > 0:
+                    scaled = last_logits / max(temperature, 1e-6)
+                    if top_k is not None and top_k > 0:
+                        topv, topi = torch.topk(scaled, k=min(top_k, scaled.numel()))
+                        probs = torch.softmax(topv, dim=-1)
+                        pick = torch.multinomial(probs, num_samples=1)
+                        next_id = int(topi[pick].item())
+                    else:
+                        probs = torch.softmax(scaled, dim=-1)
+                        pick = torch.multinomial(probs, num_samples=1)
+                        next_id = int(pick.item())
+                else:
+                    next_id = int(torch.argmax(last_logits).item())
+                generated_ids.append(next_id)
+                tokens = torch.tensor([[next_id]], dtype=torch.long, device=device)
+
+        backend = "torch_math" if strict_inference else str(compiled.resolved_kernel_backend)
+        policy_payload = compute_policy_payload(active_policy, backend=backend)
+        # This route never enters Torch autocast, including in standard mode.
+        # Other false fields mean the standard policy did not force that
+        # optimization off; they are guarantees, not ambient process probes.
+        policy_payload["autocast_disabled"] = True
 
     continuation_ids = generated_ids[len(prompt_ids):]
     try:
@@ -768,6 +802,7 @@ def chat_generate(
         "generated": generated_text,
         "tokens": generated_ids,
         "prompt_length": len(prompt_ids),
+        "compute_policy": policy_payload,
     }
 
 

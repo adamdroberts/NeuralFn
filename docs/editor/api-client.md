@@ -39,6 +39,13 @@ These interfaces mirror the server-side Pydantic models and are used for request
 | `ProjectAnalytics` | Aggregated training statistics |
 | `RunSnapshot` | Training run status, loss, step, events |
 | `BootstrapResponse` | First-run bootstrap result |
+| `InferenceComputePolicy` | Versioned strict/standard backend and CUDA precision-control telemetry |
+| `ChatGenerateResponse` | Generated text/tokens plus the applied `compute_policy` |
+
+`InferenceComputePolicy` booleans are per-generation guarantees. A false value
+in standard mode means that control was not forced by the request, not that the
+client sampled the worker's ambient CUDA state. REST chat does not use Torch
+autocast, so its `autocast_disabled` field is true in either mode.
 
 ## Types
 
@@ -80,6 +87,7 @@ The exported `api` object provides the following methods:
 | `execute(sessionId, req)` | `POST /api/sessions/:id/execute` | Runs a forward pass and returns outputs. |
 | `executeTrace(sessionId, req)` | `POST /api/sessions/:id/execute-trace` | Runs a traced forward pass with edge telemetry. |
 | `traceTorchPreview(sessionId, req)` | `POST /api/sessions/:id/trace-torch` | Compiles to Torch and runs a traced preview. |
+| `chatGenerate(projectId, sessionId, req)` | `POST /api/projects/:projectId/sessions/:sessionId/chat/generate` | Generates from the session graph; exact temperature zero requests strict deterministic compute and returns policy telemetry. |
 | `startTraining(sessionId, req)` | `POST /api/sessions/:id/train` | Starts training via SSE. Returns an `AbortController` for cancellation. |
 | `getActiveRun(sessionId)` | `GET /api/sessions/:id/active-run` | Returns the active run for a session. |
 | `listRuns(projectId)` | `GET /api/runs?project_id=...` | Lists training runs. |

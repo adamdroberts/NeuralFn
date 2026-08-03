@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 import importlib
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -441,6 +442,7 @@ def native_gpt2_artifact_stale_sources(
     if linked_tile_ops:
         dependencies.extend(NATIVE_GPT2_TILE_SOURCES)
         dependencies.append("build/libnfn_native_train_tile_ops.so")
+        dependencies.append("build/libnfn_native_train_tile_ops_strict.so")
         dependencies.append("tools/build_native_gpt_cli_linked.sh")
         manifest = Path(f"{path}.inputs.sha256")
         if not manifest.is_file():
@@ -800,10 +802,14 @@ def native_gpt2_checkpoint_sampler_argv(
     seed: int = 1337,
     cli: str | None = None,
     encoding_name: str = "gpt2",
+    strict_tile_ops_lib: str | os.PathLike[str] | None = None,
 ) -> list[str]:
     """Return the compiled native GPT checkpoint sampler command."""
 
-    return [
+    temperature_value = float(temperature)
+    if not math.isfinite(temperature_value) or temperature_value < 0.0:
+        raise ValueError("temperature must be finite and non-negative")
+    command = [
         resolve_native_gpt2_cli(cli),
         "--sample-checkpoint",
         str(Path(checkpoint).expanduser()),
@@ -816,7 +822,7 @@ def native_gpt2_checkpoint_sampler_argv(
         "--max-new-tokens",
         str(int(max_new_tokens)),
         "--temperature",
-        str(float(temperature)),
+        str(temperature_value),
         "--top-k",
         str(int(top_k)),
         "--repetition-penalty",
@@ -824,6 +830,10 @@ def native_gpt2_checkpoint_sampler_argv(
         "--seed",
         str(int(seed)),
     ]
+    strict_tile_ops_value = str(strict_tile_ops_lib or "").strip()
+    if strict_tile_ops_value:
+        command.extend(["--strict-tile-ops-lib", strict_tile_ops_value])
+    return command
 
 
 def native_gpt2_checkpoint_sampler_env(
@@ -880,6 +890,7 @@ def run_native_gpt2_checkpoint_sampler(
     seed: int = 1337,
     cli: str | None = None,
     encoding_name: str = "gpt2",
+    strict_tile_ops_lib: str | os.PathLike[str] | None = None,
     cuda_visible_devices: str = "0",
     cuda_device_max_connections: str = "1",
     runner: str = "auto",
@@ -897,6 +908,7 @@ def run_native_gpt2_checkpoint_sampler(
         seed=seed,
         cli=cli,
         encoding_name=encoding_name,
+        strict_tile_ops_lib=strict_tile_ops_lib,
     )
     normalized_runner = str(runner or "auto").strip().lower().replace("_", "-")
     if normalized_runner not in {"auto", "binding", "compiled-cli"}:

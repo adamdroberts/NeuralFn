@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+- Added fail-closed deterministic inference for exact zero temperature across
+  graph-backed CLI/script generation, interactive inference, REST/editor chat,
+  and native GPT checkpoint sampling. Strict graph inference uses a dedicated
+  FP32 Torch/math execution path with autocast, TF32, reduced-precision
+  reductions, non-math SDPA backends, and cuDNN benchmarking disabled while
+  deterministic algorithms are enabled. REST generation coordinates these
+  process-global controls with a writer-preferring gate so ordinary requests
+  may overlap but strict requests run exclusively and restore the prior CUDA
+  policy afterward. Newer PyTorch hierarchical FP32 controls are set to IEEE
+  and restored as one hierarchy without mixing their legacy TF32 API; an
+  incomplete hierarchy or a stateful training-time mask/timestep graph fails
+  closed.
+- Added the native strict inference sidecar
+  `libnfn_native_train_tile_ops_strict.so`. Temperature-zero native sampling
+  verifies its versioned strict-math ABI before CUDA execution and never falls
+  back to the optimized training library. The strict build omits CUDA fast
+  math and the TF32/cuBLAS and BF16/ThunderKittens feature paths; strict sampler
+  dispatch uses only deterministic FP32 forward kernels and never calls packed
+  BF16 megakernels or atomic-reduction kernels. Positive-temperature sampling
+  and all training paths retain the existing optimized library. The native CLI
+  and SDK accept `--strict-tile-ops-lib` / `strict_tile_ops_lib`, with
+  `NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB` as the deployment override.
+- Added versioned `compute_policy` telemetry to REST and native sampler output,
+  preserved literal zero in the editor temperature control, and allowed
+  `InferenceCache` to reuse an already loaded compiled graph. Strict guarantees
+  cover repeated inference with the same checkpoint, inputs, GPU architecture,
+  driver, CUDA/PyTorch, and NeuralFn build; loading a BF16/FP16 checkpoint into
+  FP32 compute does not restore precision already absent from the artifact.
+
+  **Breaking changes:** inference temperatures must now be finite and greater
+  than or equal to zero. Negative, NaN, and infinite values that previously
+  reached greedy or undefined sampling paths are rejected. Exact zero may
+  produce different logits/tokens and is intentionally slower because it
+  activates strict computation. A positive temperature with `top_k=1` remains
+  greedy token selection but no longer carries a deterministic CUDA-compute
+  guarantee; callers requiring strict execution must pass `temperature=0`.
+
+- Verified the strict policy with 135 focused Python/CLI/REST/native contract
+  tests and 10 subtests, plus the inference-artifact suite (24 tests and 84
+  subtests; one network-dependent tokenizer case deselected), the editor
+  production build, the end-to-end native command installer test, Python
+  compile checks, shell syntax checks, and diff validation. Two fresh native
+  strict runs on the same checkpoint and GPU
+  produced identical output JSON and nonzero stage/logit samples; the strict
+  sidecar reported ABI version 1, the normal sidecar was rejected with ABI 0
+  before CUDA load, a tiny positive temperature remained on the optimized
+  standard path, and a tiny negative temperature was rejected.
+
+- Fixed native training dispatch for non-dense presets selected through the GPT
+  template catalog or training TUI. Template-family resolution now happens
+  before dense-GPT defaults are expanded, so `gpt + deepseek_v4` launches
+  `nfn_deepseek_v4_native_train` without synthesized dense-only model-family or
+  training-action selectors and without injected backend, activation, sampling,
+  or dense-GPT optimizer-quality defaults. Generic TUI schedule values and
+  other compatible explicit options remain forwarded. The
+  `--tile-ops-lib linked` sentinel is now added only when the final executable is
+  the linked dense-GPT trainer; family trainers retain an explicitly supplied
+  Tile ops `.so`, otherwise use the normal library default, and reject
+  `linked`. This is a backwards-compatible routing correction with no public API
+  or artifact-format change.
+- Verified the fix with focused command-generation coverage for DeepSeek V4 and
+  another non-dense family, TUI state resolution, explicit `.so` preservation,
+  family `linked` rejection, and unchanged dense-GPT linked routing, plus the
+  native no-Torch dependency verifier and a one-step DeepSeek V4 checkpoint and
+  inference verification.
+
 - Replaced the initial compact embedding lookup/pooling core with the full
   `NFNEMB2` native transformer bi-encoder. BERT mode now executes
   bidirectional multi-head self-attention, GELU feed-forward blocks, residuals,

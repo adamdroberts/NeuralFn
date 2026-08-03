@@ -21,6 +21,7 @@ GPT_TRAIN_LAUNCHER="${NFN_NATIVE_GPT_TRAIN_CLI:-${ROOT_DIR}/build/nfn_train_gpt}
 SM120_LAUNCHER="${NFN_NATIVE_SM120_CLI:-${ROOT_DIR}/build/nfn_train_gpt_sm120}"
 MISSING_TRAINERS_DIR="${NFN_NATIVE_MISSING_TRAINERS_DIR:-${ROOT_DIR}/build}"
 EMBEDDING_CLI="${NFN_NATIVE_EMBEDDING_CLI:-${ROOT_DIR}/build/nfn_embedding_native_train}"
+STRICT_TILE_OPS_LIB="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops_strict.so}"
 MISSING_TARGETS=(
   nfn_gpt2_evo_native_train
   nfn_nanogpt_native_train
@@ -36,6 +37,12 @@ mkdir -p "${BIN_DIR}"
 if [[ ! -x "${NATIVE_CLI}" ]]; then
   echo "Native GPT CLI not found or not executable: ${NATIVE_CLI}" >&2
   echo "Run: bash ${ROOT_DIR}/tools/build_native_gpt_cli.sh" >&2
+  exit 2
+fi
+
+if [[ ! -f "${STRICT_TILE_OPS_LIB}" ]]; then
+  echo "Native GPT strict inference Tile sidecar not found: ${STRICT_TILE_OPS_LIB}" >&2
+  echo "Run: NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 bash ${ROOT_DIR}/tools/build_native_train_tile_ops.sh" >&2
   exit 2
 fi
 
@@ -73,6 +80,7 @@ ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-train"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt-native"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt-native-train"
+ln -sfn "${STRICT_TILE_OPS_LIB}" "${BIN_DIR}/libnfn_native_train_tile_ops_strict.so"
 if [[ -x "${COMPAT_NATIVE_CLI}" ]]; then
   ln -sfn "${COMPAT_NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-compat"
 fi
@@ -98,6 +106,7 @@ printf '%s\n' "${BIN_DIR}/nfn-gpt2-native"
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-native-train"
 printf '%s\n' "${BIN_DIR}/nfn-gpt-native"
 printf '%s\n' "${BIN_DIR}/nfn-gpt-native-train"
+printf '%s\n' "${BIN_DIR}/libnfn_native_train_tile_ops_strict.so"
 if [[ -L "${BIN_DIR}/nfn-gpt2-native-compat" ]]; then
   printf '%s\n' "${BIN_DIR}/nfn-gpt2-native-compat"
 fi

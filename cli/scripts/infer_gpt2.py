@@ -17,6 +17,8 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
+from neuralfn.inference_policy import validate_inference_temperature
+
 DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
 DEFAULT_WEIGHTS_ARTIFACT = artifact_path("gpt2.pt")
 DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
@@ -102,6 +104,13 @@ def repetition_penalty_arg(raw: str) -> float:
     return value
 
 
+def inference_temperature_arg(raw: str) -> float:
+    try:
+        return validate_inference_temperature(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = create_argument_parser(description="Run text generation with exported GPT artifacts on CUDA.")
     parser.add_argument("--megakernel", action="store_true", help="Use the gpt2_megakernel artifacts.")
@@ -145,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated token ids. Overrides --prompt when provided.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -275,6 +284,11 @@ def main() -> int:
     if native_result is not None:
         return native_result
 
+    from neuralfn.inference_policy import prepare_inference_process_environment, validate_inference_temperature
+
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
+
     import torch
 
     from infer_jepa_semantic import (
@@ -325,6 +339,7 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
         raw_text_encoding_name = resolve_raw_text_encoding_name(

@@ -9,6 +9,60 @@ table helpers, or `InferenceCache` methods still requires PyTorch to be
 installed explicitly; missing PyTorch raises an `ImportError` before the
 operation starts.
 
+## Strict inference policy
+
+`neuralfn.inference_policy` is Torch-free at import time and centralizes the
+temperature-zero compute contract:
+
+```python
+from neuralfn.inference_policy import (
+    compute_policy_payload,
+    inference_execution,
+    prepare_inference_process_environment,
+    temperature_uses_strict_inference,
+    validate_inference_temperature,
+    validate_strict_compiled_graph,
+    validate_strict_graph_support,
+)
+
+prepare_inference_process_environment()  # before importing/initializing CUDA
+import torch
+
+temperature = validate_inference_temperature(requested_temperature)
+
+with inference_execution(temperature, torch_module=torch) as policy:
+    # Keep the complete forward and token selection inside the context.
+    token = run_generation()
+
+telemetry = compute_policy_payload(policy, backend="torch_math")
+```
+
+Temperatures must be finite and nonnegative; only exact zero selects strict
+execution. `temperature_uses_strict_inference(value)` exposes that exact-zero
+predicate after validation. `prepare_inference_process_environment()` establishes
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` and fails if CUDA was already initialized
+under another value. At zero, `inference_execution()` takes the process-wide
+exclusive gate, applies and verifies deterministic/precision controls,
+synchronizes outstanding CUDA work, restores the previous controls, and then
+releases the gate. Positive-temperature contexts take shared access and do not
+change the optimized backend policy.
+
+When the installed PyTorch exposes its hierarchical precision API, the strict
+context explicitly requires `"ieee"` for the global, CUDA matmul, cuDNN,
+cuDNN convolution, and cuDNN RNN `fp32_precision` controls. On earlier releases
+it uses the legacy `allow_tf32=False` plus highest matmul precision controls.
+The two API generations are not mixed, and an incomplete hierarchical API
+fails closed.
+
+Call `validate_strict_graph_support()` before compiling a user-supplied graph
+and `validate_strict_compiled_graph()` after loading and moving weights. The
+latter rejects any remaining non-FP32 floating parameters or buffers. The
+graph validator also rejects training-time stateful stochastic mask/timestep
+modules whose changing counters would violate repeatable inference. The
+context does not compile or replace a model and cannot disable an autocast
+context opened by the caller; strict callers must use a Torch-only FP32
+compiled graph and keep autocast disabled.
+
 Native dense GPT CUDA checkpoints use the Torch-free `neuralfn.native_gpt` and
 compatibility `neuralfn.native_gpt2` helpers. Use
 `latest_native_gpt_checkpoint(output_dir)` to resolve the latest completed
@@ -226,6 +280,8 @@ class InferenceCache:
         self,
         graph: NeuronGraph,
         device: str | None = None,
+        *,
+        compiled: CompiledTorchGraph | None = None,
     ) -> None
 ```
 
@@ -239,6 +295,15 @@ Works with both training graphs (tokens + targets -> loss) and inference-only gr
 |-----------|------|---------|-------------|
 | `graph` | `NeuronGraph` | *(required)* | The graph to run inference on |
 | `device` | `str \| None` | `None` | Device string. Falls back to `graph.torch_config["device"]` or `"cuda"`. |
+| `compiled` | `CompiledTorchGraph \| None` | `None` | Reuse an already constructed and weight-loaded graph. The cache moves it to `device`; when omitted the cache compiles `graph` as before. |
+
+Pass `compiled=` when checkpoint or adapter weights have already been loaded,
+or when a temperature-zero strict FP32 graph was selected. This prevents the
+cache from silently constructing a second model with different weights or
+backend policy.
+
+`SemanticInferenceCache` accepts the same keyword-only `compiled=` argument and
+retains its existing semantic-vector inspection behavior.
 
 ### Methods
 

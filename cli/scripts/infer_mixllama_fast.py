@@ -11,6 +11,7 @@ from infer_gpt2 import (
     add_dataset_download_arguments,
     add_dataset_selector_arguments,
     add_raw_text_tokenizer_arguments,
+    inference_temperature_arg,
     repetition_penalty_arg,
 )
 
@@ -63,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated token ids. Overrides --prompt when provided.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -90,6 +91,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    from neuralfn.inference_policy import (
+        inference_execution,
+        prepare_inference_process_environment,
+        validate_inference_temperature,
+    )
+
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
 
     import torch
 
@@ -141,6 +151,7 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
         raw_text_encoding_name = resolve_raw_text_encoding_name(
@@ -201,12 +212,16 @@ def main() -> int:
 
         log_stage("Generation about to start")
         resolved_logits_key: str | None = None
-        with torch.no_grad():
+        with inference_execution(args.temperature, torch_module=torch), torch.no_grad():
             for step_idx in range(args.max_new_tokens):
                 context_ids = generated[-context_window:]
                 tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
                 targets = torch.zeros_like(tokens)
-                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                with torch.autocast(
+                    device_type=device.type,
+                    dtype=amp_dtype,
+                    enabled=use_amp and args.temperature > 0.0,
+                ):
                     _outputs, trace = compiled.trace(tokens, targets)
 
                 if resolved_logits_key is None:

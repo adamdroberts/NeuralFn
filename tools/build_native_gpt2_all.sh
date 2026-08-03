@@ -15,6 +15,7 @@ NATIVE_TRAIN_OUT="${NFN_NATIVE_TRAIN_CLI_OUT:-}"
 NATIVE_NFN_OUT="${NFN_NATIVE_NFN_CLI_OUT:-}"
 MISSING_TRAINERS_OUT_DIR="${NFN_NATIVE_MISSING_TRAINERS_OUT_DIR:-}"
 NATIVE_TILE_OPS_OUT="${NFN_NATIVE_TRAIN_TILE_OPS_OUT:-}"
+NATIVE_STRICT_TILE_OPS_OUT="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT:-}"
 EMBEDDING_CLI_OUT="${NFN_NATIVE_EMBEDDING_CLI_OUT:-}"
 
 if [[ -n "${GPT_BINDING_OUT}" ]]; then
@@ -42,9 +43,17 @@ else
 fi
 
 if [[ -n "${NATIVE_TILE_OPS_OUT}" ]]; then
-  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${NATIVE_TILE_OPS_OUT}"
+  if [[ -n "${NATIVE_STRICT_TILE_OPS_OUT}" ]]; then
+    NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 \
+    NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT="${NATIVE_STRICT_TILE_OPS_OUT}" \
+      bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${NATIVE_TILE_OPS_OUT}"
+  else
+    NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 \
+      bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${NATIVE_TILE_OPS_OUT}"
+  fi
 else
-  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
+  NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 \
+    bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
 fi
 
 if [[ -n "${GPT_CLI_OUT}" ]]; then

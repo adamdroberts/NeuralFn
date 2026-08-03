@@ -8,8 +8,9 @@ from typing import Any
 
 from infer_gpt2 import (
     add_dataset_download_arguments,
-    repetition_penalty_arg,
     add_dataset_selector_arguments,
+    inference_temperature_arg,
+    repetition_penalty_arg,
 )
 from infer_llama_fast import (
     DEFAULT_DATASET_ALIAS,
@@ -59,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-batches", type=int, default=8)
     parser.add_argument("--eval-batch-size", type=int, default=8)
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -143,6 +144,16 @@ def resolve_prompt_suite(
 def main() -> int:
     args = build_parser().parse_args()
 
+    from neuralfn.inference_policy import (
+        inference_execution,
+        prepare_inference_process_environment,
+        temperature_uses_strict_inference,
+        validate_inference_temperature,
+    )
+
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
+
     import torch
 
     from infer_jepa_semantic import (
@@ -184,10 +195,14 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
 
         amp_dtype, amp_name = resolve_autocast_dtype(graph)
+        if temperature_uses_strict_inference(args.temperature):
+            amp_dtype = torch.float32
+            amp_name = "float32"
         log_stage(f"Compiled graph ready on {device.type} with autocast dtype {amp_name}")
 
         raw_text_encoding_name = resolve_raw_text_encoding_name(
@@ -218,15 +233,16 @@ def main() -> int:
             print("Could not resolve a positive context window from the graph.", file=sys.stderr)
             return 1
 
-        validation_loss = evaluate_validation_loss(
-            compiled,
-            dataset_path,
-            device=device,
-            amp_dtype=amp_dtype,
-            seq_len=context_window,
-            batch_size=args.eval_batch_size,
-            eval_batches=args.eval_batches,
-        )
+        with inference_execution(args.temperature, torch_module=torch):
+            validation_loss = evaluate_validation_loss(
+                compiled,
+                dataset_path,
+                device=device,
+                amp_dtype=amp_dtype,
+                seq_len=context_window,
+                batch_size=args.eval_batch_size,
+                eval_batches=args.eval_batches,
+            )
         prompt_suite_name, prompt_suite = resolve_prompt_suite(
             dataset_name=dataset_name,
             dataset_meta=dataset_meta,

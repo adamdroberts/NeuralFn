@@ -835,6 +835,8 @@ void print_usage(const char* program) {
         << "  --checkpoint, --native-checkpoint, --weights PATH\n"
         << "                                        Native model_*.bin file or directory.\n"
         << "  --prompt-tokens IDS                     Comma-separated token ids for sampling.\n"
+        << "  --temperature VALUE                     Finite value >= 0; exact zero selects strict deterministic FP32 CUDA inference.\n"
+        << "  --strict-tile-ops-lib PATH              Override the required strict temperature-zero Tile sidecar.\n"
         << "  --native-info                           Inspect checkpoint metadata instead of sampling.\n"
         << "  --print-command                         Print the compiled delegate command.\n";
 }

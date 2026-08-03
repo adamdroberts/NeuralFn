@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+from neuralfn.inference_policy import prepare_inference_process_environment
+
+# Deterministic CUDA inference requires the cuBLAS workspace contract to be
+# present before any route imports can initialize Torch/CUDA.  The helper is
+# deliberately Torch-free so importing the server remains lightweight.
+prepare_inference_process_environment()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -60,4 +67,3 @@ if dist_dir.exists():
         
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Frontend index.html not found")
-

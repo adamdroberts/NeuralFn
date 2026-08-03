@@ -8,16 +8,24 @@ TOKEN_SHARDS_HEADER="${ROOT_DIR}/neuralfn/csrc/native_train/token_shards.h"
 CATALOG_HEADER="${ROOT_DIR}/neuralfn/csrc/native_train/shipped_gpt_template_presets.h"
 OUT="${1:-${ROOT_DIR}/build/nfn_gpt_native_train}"
 TILE_OPS_LIB="${NFN_NATIVE_TRAIN_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
+STRICT_TILE_OPS_LIB="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB:-${TILE_OPS_LIB%.so}_strict.so}"
 CXX_BIN="${CXX:-c++}"
 CXX_OPT_FLAGS="${NFN_NATIVE_GPT_CXX_OPT_FLAGS:--O0}"
 FORCE_REBUILD="${NFN_NATIVE_GPT_FORCE_REBUILD:-${NFN_NATIVE_FORCE_REBUILD:-0}}"
 
 if [[ ! -f "${TILE_OPS_LIB}" ||
+      ! -f "${STRICT_TILE_OPS_LIB}" ||
       "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${STRICT_TILE_OPS_LIB}" ||
       "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${STRICT_TILE_OPS_LIB}" ||
       "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}" ||
-      "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}" ]]; then
-  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}"
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${STRICT_TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${STRICT_TILE_OPS_LIB}" ]]; then
+  NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 \
+  NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT="${STRICT_TILE_OPS_LIB}" \
+    bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}"
 fi
 
 source_newer_than_out() {
@@ -31,6 +39,7 @@ if [[ "${FORCE_REBUILD}" != "1" && -f "${OUT}" ]]; then
      ! source_newer_than_out "${TOKEN_SHARDS_HEADER}" &&
      ! source_newer_than_out "${CATALOG_HEADER}" &&
      ! source_newer_than_out "${TILE_OPS_LIB}" &&
+     ! source_newer_than_out "${STRICT_TILE_OPS_LIB}" &&
      ! source_newer_than_out "${BASH_SOURCE[0]}"; then
     printf '%s\n' "${OUT}"
     exit 0

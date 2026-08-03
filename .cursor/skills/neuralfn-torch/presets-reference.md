@@ -514,10 +514,17 @@ import_quantized_pt(graph: NeuronGraph, path: str | Path) -> None
 ```python
 from neuralfn.inference import InferenceCache
 
-cache = InferenceCache(graph: NeuronGraph, device: str | None = None)
+cache = InferenceCache(
+    graph: NeuronGraph,
+    device: str | None = None,
+    *,
+    compiled: CompiledTorchGraph | None = None,
+)
 ```
 
-Stateful KV cache manager for autoregressive generation. Wraps a `CompiledTorchGraph`.
+Stateful KV cache manager for autoregressive generation. Wraps a
+`CompiledTorchGraph`; pass a weight-loaded strict FP32 graph through
+`compiled=` so cache construction preserves the selected inference policy.
 
 **Methods:**
 - `reset() -> None` -- clear KV cache for new sequence

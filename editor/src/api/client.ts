@@ -125,6 +125,26 @@ export interface GraphData {
   output_node_ids: string[];
 }
 
+export interface InferenceComputePolicy {
+  version: 1;
+  mode: "strict" | "standard";
+  trigger: "temperature_zero" | null;
+  backend: string;
+  deterministic_algorithms: boolean;
+  autocast_disabled: boolean;
+  tf32_disabled: boolean;
+  reduced_precision_reductions_disabled: boolean;
+  fast_math_disabled: boolean;
+}
+
+export interface ChatGenerateResponse {
+  prompt: string;
+  generated: string;
+  tokens: number[];
+  prompt_length: number;
+  compute_policy: InferenceComputePolicy;
+}
+
 export type VariantLibraryData = Record<string, Record<string, GraphData>>;
 
 export interface TrainingMessage {
@@ -428,7 +448,7 @@ export const api = {
       adapter_checkpoint?: string;
     },
   ) =>
-    json<{ prompt: string; generated: string; tokens: number[]; prompt_length: number }>(
+    json<ChatGenerateResponse>(
       `${sessionBase(projectId, sessionId)}/chat/generate`,
       {
         method: "POST",

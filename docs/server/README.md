@@ -13,6 +13,25 @@ The FastAPI app uses a lifespan context manager to:
 
 CORS origins are configured via the `NEURALFN_ALLOW_ORIGINS` environment variable (defaults to the Vite dev server URLs).
 
+Before importing routes that may load Torch, the server arms the inference
+process environment with `CUBLAS_WORKSPACE_CONFIG=:4096:8` for deterministic
+cuBLAS workspaces. Chat generation then
+uses a writer-preferring gate around process-global CUDA precision controls:
+positive-temperature requests take shared access, while exact
+`temperature=0` runs exclusively with deterministic FP32 Torch math and
+restores the previous settings before releasing the gate. This preserves normal
+request concurrency without allowing strict and optimized CUDA policies to
+overlap in one worker.
+
+An embedding server that initialized CUDA before importing `server.app` under
+a different or unset workspace value must be restarted. The strict path fails
+rather than mutating this cuBLAS contract after CUDA initialization.
+
+Strict requests fail if required deterministic controls are unavailable or the
+session graph relies on explicitly quantized/low-precision/custom-only compute.
+Native checkpoint processes use the separate strict Tile sidecar described in
+the CLI and Python SDK documentation instead of this Torch gate.
+
 ## Router Tree
 
 All REST endpoints live under the `/api` prefix. Sub-routers handle distinct domains:

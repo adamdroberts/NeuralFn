@@ -9,6 +9,14 @@ import sys
 from typing import Any, Callable
 
 from cli_utils import artifact_path, create_argument_parser
+from neuralfn.inference_policy import (
+    inference_execution,
+    prepare_inference_process_environment,
+    temperature_uses_strict_inference,
+    validate_inference_temperature,
+    validate_strict_compiled_graph,
+    validate_strict_graph_support,
+)
 
 DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
 DEFAULT_WEIGHTS_ARTIFACT = artifact_path("jepa_semantic_hybrid.pt")
@@ -57,6 +65,13 @@ def _lightweight_repetition_penalty_arg(raw: str) -> float:
     return value
 
 
+def inference_temperature_arg(raw: str) -> float:
+    try:
+        return validate_inference_temperature(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _build_lightweight_parser() -> argparse.ArgumentParser:
     parser = create_argument_parser(
         description="Run text generation with exported jepa_semantic_hybrid artifacts on CUDA."
@@ -94,7 +109,7 @@ def _build_lightweight_parser() -> argparse.ArgumentParser:
         help="Generate the 0..1 semantic_router_vecs tensor. Required automatically when the loaded graph expects it.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -437,6 +452,7 @@ def load_compiled_inference_graph(
     graph_path: Path,
     weights_path: Path | None,
     device: torch.device,
+    temperature: float | None = None,
 ) -> tuple[object, CompiledTorchGraph, dict[str, torch.Tensor], Path]:
     _ensure_runtime_imports()
     graph = load_graph(graph_path)
@@ -467,11 +483,57 @@ def load_compiled_inference_graph(
         graph_path=graph_path,
         weights_path=resolved_weights_path,
     )
-    compiled = CompiledTorchGraph(graph)
+    strict = temperature is not None and temperature_uses_strict_inference(temperature)
+    if strict:
+        validate_strict_graph_support(graph)
+    compiled = (
+        CompiledTorchGraph(graph, kernel_backend="torch")
+        if strict
+        else CompiledTorchGraph(graph)
+    )
     compiled.load_state_dict(state_dict)
     compiled.to(device)
     compiled.eval()
+    if strict:
+        validate_strict_compiled_graph(compiled)
     return graph, compiled, state_dict, resolved_weights_path
+
+
+def strict_compiled_inference_graph(
+    graph,
+    compiled: CompiledTorchGraph,
+    *,
+    device: torch.device,
+) -> CompiledTorchGraph:
+    """Return a float32-capable Torch-only graph for strict generation."""
+
+    _ensure_runtime_imports()
+    validate_strict_graph_support(graph)
+    if str(getattr(compiled, "resolved_kernel_backend", "torch")) == "torch":
+        validate_strict_compiled_graph(compiled)
+        return compiled
+    strict_compiled = CompiledTorchGraph(graph, kernel_backend="torch")
+    strict_compiled.load_state_dict(compiled.state_dict())
+    strict_compiled.to(device)
+    strict_compiled.eval()
+    validate_strict_compiled_graph(strict_compiled)
+    return strict_compiled
+
+
+def standard_compiled_inference_graph(
+    graph,
+    compiled: CompiledTorchGraph,
+    *,
+    device: torch.device,
+) -> CompiledTorchGraph:
+    """Clone loaded state into the ordinary optimized inference backend."""
+
+    _ensure_runtime_imports()
+    standard_compiled = CompiledTorchGraph(graph, kernel_backend="auto")
+    standard_compiled.load_state_dict(compiled.state_dict())
+    standard_compiled.to(device)
+    standard_compiled.eval()
+    return standard_compiled
 
 
 def parse_csv_ints(raw: str) -> list[int]:
@@ -551,7 +613,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate the 0..1 semantic_router_vecs tensor. Required automatically when the loaded graph expects it.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -1093,15 +1155,27 @@ def sample_next_token(
     generator: torch.Generator,
 ) -> int:
     _ensure_runtime_imports()
+    temperature = validate_inference_temperature(temperature)
     step_logits = apply_repetition_penalty(
         logits.float(),
         token_history=token_history,
         repetition_penalty=repetition_penalty,
     )
-    if temperature <= 0.0:
+    if temperature == 0.0:
         return int(torch.argmax(step_logits, dim=-1).item())
     step_logits = top_k_filter(step_logits, top_k)
-    step_logits = top_p_filter(step_logits, top_p) / temperature
+    step_logits = top_p_filter(step_logits, top_p)
+    if temperature < torch.finfo(step_logits.dtype).tiny:
+        # Preserve the exact-zero policy boundary for every positive Python
+        # float without underflowing the FP32 divisor to zero. Centering keeps
+        # the double-precision scale finite at the winning logit; smaller
+        # logits may safely saturate to -inf and therefore zero probability.
+        double_logits = step_logits.double()
+        step_logits = (
+            double_logits - double_logits.max(dim=-1, keepdim=True).values
+        ) / temperature
+    else:
+        step_logits = step_logits / temperature
     probs = torch.softmax(step_logits, dim=-1)
     next_token = torch.multinomial(probs, num_samples=1, generator=generator)
     return int(next_token.item())
@@ -1187,6 +1261,8 @@ def describe_routing(trace: dict[str, tuple[torch.Tensor, ...]]) -> str | None:
 def main() -> int:
     configure_console_logging()
     args = build_parser().parse_args()
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
     _ensure_runtime_imports()
     resolve_dataset_selector_args(args)
     resolve_mode_defaults(args)
@@ -1217,6 +1293,7 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
         raw_text_encoding_name = resolve_raw_text_encoding_name(
@@ -1314,49 +1391,54 @@ def main() -> int:
             print(f"Prompt text: {prompt_text}")
 
         logits_trace_key = None
-        with torch.no_grad():
-            for step_idx in range(args.max_new_tokens):
-                context_ids = generated[-context_window:]
-                tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
-                targets = torch.zeros_like(tokens)
-                model_inputs = build_semantic_model_inputs(
-                    graph,
-                    tokens,
-                    targets,
-                    sem_targets,
-                    semantic_router_vecs=semantic_router_vecs,
-                )
-                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                    _outputs, trace = compiled.trace(*model_inputs)
-                if logits_trace_key is None:
-                    logits_trace_key = find_logits_trace_key(trace, requested=args.logits_node)
-                    log_stage(f"Resolved logits trace key: {logits_trace_key}")
-                logits = trace[logits_trace_key][0][:, -1, :]
-                next_token = sample_next_token(
-                    logits,
-                    temperature=args.temperature,
-                    top_k=args.top_k,
-                    token_history=generated,
-                    repetition_penalty=args.repetition_penalty,
-                    generator=generator,
-                )
-                generated.append(next_token)
-                if args.log_every > 0 and step_idx % args.log_every == 0:
-                    token_desc = describe_token(tokenizer, next_token)
-                    routing_summary = describe_routing(trace)
-                    if routing_summary:
-                        log_stage(
-                            f"Generation step {step_idx + 1}/{args.max_new_tokens}: "
-                            f"token={next_token} text={token_desc!r} {routing_summary}"
-                        )
-                    else:
-                        log_stage(
-                            f"Generation step {step_idx + 1}/{args.max_new_tokens}: "
-                            f"token={next_token} text={token_desc!r}"
-                        )
-                if args.stop_token is not None and next_token == args.stop_token:
-                    log_stage(f"Stop token {args.stop_token} emitted at generation step {step_idx + 1}.")
-                    break
+        with inference_execution(args.temperature, torch_module=torch):
+            with torch.no_grad():
+                for step_idx in range(args.max_new_tokens):
+                    context_ids = generated[-context_window:]
+                    tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
+                    targets = torch.zeros_like(tokens)
+                    model_inputs = build_semantic_model_inputs(
+                        graph,
+                        tokens,
+                        targets,
+                        sem_targets,
+                        semantic_router_vecs=semantic_router_vecs,
+                    )
+                    with torch.autocast(
+                        device_type=device.type,
+                        dtype=amp_dtype,
+                        enabled=use_amp and args.temperature > 0.0,
+                    ):
+                        _outputs, trace = compiled.trace(*model_inputs)
+                    if logits_trace_key is None:
+                        logits_trace_key = find_logits_trace_key(trace, requested=args.logits_node)
+                        log_stage(f"Resolved logits trace key: {logits_trace_key}")
+                    logits = trace[logits_trace_key][0][:, -1, :]
+                    next_token = sample_next_token(
+                        logits,
+                        temperature=args.temperature,
+                        top_k=args.top_k,
+                        token_history=generated,
+                        repetition_penalty=args.repetition_penalty,
+                        generator=generator,
+                    )
+                    generated.append(next_token)
+                    if args.log_every > 0 and step_idx % args.log_every == 0:
+                        token_desc = describe_token(tokenizer, next_token)
+                        routing_summary = describe_routing(trace)
+                        if routing_summary:
+                            log_stage(
+                                f"Generation step {step_idx + 1}/{args.max_new_tokens}: "
+                                f"token={next_token} text={token_desc!r} {routing_summary}"
+                            )
+                        else:
+                            log_stage(
+                                f"Generation step {step_idx + 1}/{args.max_new_tokens}: "
+                                f"token={next_token} text={token_desc!r}"
+                            )
+                    if args.stop_token is not None and next_token == args.stop_token:
+                        log_stage(f"Stop token {args.stop_token} emitted at generation step {step_idx + 1}.")
+                        break
 
         generated_tail = generated[len(prompt_ids):]
         generated_text = decode_tokens(tokenizer, generated_tail) if tokenizer is not None else ""

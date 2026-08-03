@@ -154,6 +154,9 @@ constexpr const char* kLmHeadCooperativeBackwardLlmKParityCapabilitySymbol =
     "nfn_native_tile_lm_head_classifier_backward_llmk_classifier_matmul_parity";
 constexpr const char* kLmHeadCooperativeBackwardGraphPrewarmSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16";
+constexpr const char* kStrictMathAbiVersionSymbol =
+    "nfn_native_tile_strict_math_abi_version";
+constexpr int kStrictMathAbiVersion = 1;
 
 void append_cuda_error_message(
     std::ostringstream& out,
@@ -176,6 +179,7 @@ struct Config {
     std::string output_dir;
     std::string backend = "tile-cuda";
     std::string tile_ops_lib;
+    std::string strict_tile_ops_lib;
     std::string activation = "gelu";
     std::string tile_cuda_activation_dtype = "nvfp4";
     std::string template_name = "gpt";
@@ -250,7 +254,7 @@ struct Config {
     bool sample_checkpoint = false;
     std::string sample_prompt_tokens;
     int sample_max_new_tokens = 64;
-    float sample_temperature = 0.8f;
+    double sample_temperature = 0.8;
     int sample_top_k = 32;
     float sample_repetition_penalty = 1.0f;
     int sample_seed = 1337;
@@ -627,6 +631,7 @@ void print_usage(const char* program) {
         << "  --backend tile-cuda               NeuralFn-owned CUDA Tile backend (default and only training backend)\n"
         << "  --target PATH                     Ignored compatibility option; external training bridges are not supported\n"
         << "  --tile-ops-lib PATH               libnfn_native_train_tile_ops.so path for --backend tile-cuda checks\n"
+        << "  --strict-tile-ops-lib PATH        Precise FP32 Tile sidecar required when sampler temperature is exactly zero\n"
         << "  --check-tile-ops                  Verify raw NeuralFn Tile trainer ABI symbols and exit\n"
         << "  --smoke-tile-ops                  Launch nfn_native_tile_fill_float32 through CUDA runtime and verify copyback\n"
         << "  --smoke-nvfp4-pack                Launch native NVFP4 pack/unpack storage kernels and verify copyback\n"
@@ -651,7 +656,7 @@ void print_usage(const char* program) {
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Run autoregressive CUDA Tile checkpoint forwards and return generated token ids for prompt-token input\n"
-        << "  --temperature VALUE               Native checkpoint sampler temperature; <=0 uses greedy argmax (default 0.8)\n"
+        << "  --temperature VALUE               Finite nonnegative sampler temperature; exact zero enforces strict deterministic FP32 and greedy argmax (default 0.8)\n"
         << "  --top-k K                         Native checkpoint sampler top-k; <=0 samples from full vocab (default 32)\n"
         << "  --repetition-penalty VALUE        Native checkpoint sampler repetition penalty; 1 disables it (default 1)\n"
         << "  --seed N                          Native checkpoint sampler seed (default 1337)\n"
@@ -2151,6 +2156,7 @@ std::string normalize_backend(std::string value);
 std::string dl_last_error(const char* fallback);
 std::vector<std::string> cuda_runtime_candidates(const Config& cfg);
 std::string default_tile_ops_lib(const char* program);
+std::string default_strict_tile_ops_lib(const char* program);
 bool linked_tile_ops_requested(std::string_view path);
 void* open_tile_ops_library(const std::string& path, int flags, bool* linked_requested);
 std::vector<BufferPlan> build_native_gpt_checkpoint_layout(
@@ -2846,6 +2852,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
     std::string error;
     const bool run_sampler = cfg.sample_checkpoint;
+    const bool strict_inference = run_sampler && cfg.sample_temperature == 0.0;
     const bool run_all_layers = cfg.checkpoint_forward_logits_smoke || run_sampler;
     const bool run_final_logits = cfg.checkpoint_block_logits_smoke || run_all_layers;
     const bool run_mlp = cfg.checkpoint_block_smoke || run_final_logits;
@@ -2872,13 +2879,28 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         std::cerr << "--max-new-tokens must be non-negative\n";
         return 2;
     }
-    if (run_sampler && !std::isfinite(cfg.sample_temperature)) {
-        std::cerr << "--temperature must be finite\n";
+    if (run_sampler && (!std::isfinite(cfg.sample_temperature) || cfg.sample_temperature < 0.0)) {
+        std::cerr << "--temperature must be finite and non-negative\n";
         return 2;
     }
     if (run_sampler && (!std::isfinite(cfg.sample_repetition_penalty) || cfg.sample_repetition_penalty <= 0.0f)) {
         std::cerr << "--repetition-penalty must be finite and positive\n";
         return 2;
+    }
+    if (run_sampler) {
+        resolve_symbolic_cuda_visible_devices();
+        setenv_default_if_empty("CUDA_VISIBLE_DEVICES", "0");
+        setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
+        if (strict_inference) {
+            // These must be established before the strict sidecar or CUDA
+            // runtime is loaded. Strict mode intentionally overrides ambient
+            // values rather than silently accepting a weaker process policy.
+            setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8", 1);
+            setenv("NVIDIA_TF32_OVERRIDE", "0", 1);
+            setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 1);
+        } else {
+            setenv_default_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "1");
+        }
     }
 
     std::ifstream in(checkpoint_path, std::ios::binary);
@@ -3048,12 +3070,17 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         return 2;
     }
 
-    const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    const std::string tile_lib_path = strict_inference
+        ? (cfg.strict_tile_ops_lib.empty()
+            ? default_strict_tile_ops_lib(program)
+            : cfg.strict_tile_ops_lib)
+        : (cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib);
     std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
     bool tile_loaded = false;
     bool cuda_runtime_loaded = false;
     bool kernels_loaded = false;
+    int strict_math_abi_version = 0;
     bool passed = false;
     float sample_ln = 0.0f;
     float sample_qkv = 0.0f;
@@ -3099,6 +3126,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         std::int64_t,
         void*);
     using MergeHeadsFn = int (*)(const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using StrictMathAbiVersionFn = int (*)();
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
@@ -3143,6 +3171,22 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
+        if (strict_inference && linked_tile_ops) {
+            error = "strict temperature-zero inference requires a dedicated precise Tile sidecar; linked Tile ops are not accepted";
+        } else if (strict_inference) {
+            auto strict_math_abi_version_fn = load_symbol<StrictMathAbiVersionFn>(
+                tile_handle, kStrictMathAbiVersionSymbol);
+            strict_math_abi_version = strict_math_abi_version_fn == nullptr
+                ? 0
+                : strict_math_abi_version_fn();
+            if (strict_math_abi_version != kStrictMathAbiVersion) {
+                std::ostringstream out;
+                out << "strict temperature-zero inference requires "
+                    << kStrictMathAbiVersionSymbol << " ABI " << kStrictMathAbiVersion
+                    << "; loaded " << tile_lib_path << " reported " << strict_math_abi_version;
+                error = out.str();
+            }
+        }
         bf16_to_float = load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
         token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
         position_embedding = load_symbol<PositionEmbeddingFn>(
@@ -3163,12 +3207,13 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         kernels_loaded = bf16_to_float != nullptr && token_embedding != nullptr &&
             position_embedding != nullptr && residual_add != nullptr &&
             layer_norm != nullptr && linear != nullptr &&
+            (!strict_inference || strict_math_abi_version == kStrictMathAbiVersion) &&
             (!run_attention || (
                 split_qkv_to_heads != nullptr &&
                 attention != nullptr &&
                 merge_heads != nullptr)) &&
             (!run_mlp || gelu_add_bias != nullptr);
-        if (!kernels_loaded) {
+        if (!kernels_loaded && error.empty()) {
             error = run_mlp
                 ? "missing Tile ABI symbol for checkpoint block smoke"
                 : (run_attention
@@ -3554,11 +3599,11 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
             if (i < 32) {
                 max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
             }
-            if (run_sampler && cfg.sample_temperature > 0.0f) {
+            if (run_sampler && cfg.sample_temperature > 0.0) {
                 candidates.emplace_back(value, i);
             }
         }
-        if (!run_sampler || cfg.sample_temperature <= 0.0f || cfg.sample_top_k == 1 || !error.empty()) {
+        if (!run_sampler || cfg.sample_temperature == 0.0 || cfg.sample_top_k == 1 || !error.empty()) {
             return;
         }
         const std::size_t k = cfg.sample_top_k <= 0
@@ -3835,8 +3880,24 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"prompt_token_count\": " << prompt_tokens.size() << ",\n"
         << "  \"sequence_token_count\": " << working_tokens.size() << ",\n"
         << "  \"max_new_tokens\": " << (run_sampler ? cfg.sample_max_new_tokens : 0) << ",\n"
-        << "  \"sampling_strategy\": \"" << (run_sampler && cfg.sample_temperature > 0.0f && cfg.sample_top_k != 1 ? "top-k-temperature" : "greedy-argmax") << "\",\n"
-        << "  \"temperature\": " << (run_sampler ? cfg.sample_temperature : 0.0f) << ",\n"
+        << "  \"compute_policy\": {\n"
+        << "    \"version\": 1,\n"
+        << "    \"mode\": \"" << (strict_inference ? "strict" : "standard") << "\",\n"
+        << "    \"trigger\": " << (strict_inference ? "\"temperature_zero\"" : "null") << ",\n"
+        << "    \"backend\": \"" << (strict_inference ? "native-tile-fp32" : "tile-cuda-optimized") << "\",\n"
+        << "    \"deterministic_algorithms\": " << (strict_inference ? "true" : "false") << ",\n"
+        << "    \"autocast_disabled\": true,\n"
+        << "    \"tf32_disabled\": " << (strict_inference ? "true" : "false") << ",\n"
+        << "    \"reduced_precision_reductions_disabled\": " << (strict_inference ? "true" : "false") << ",\n"
+        << "    \"fast_math_disabled\": " << (strict_inference ? "true" : "false") << ",\n"
+        << "    \"atomic_reductions_disabled\": " << (strict_inference ? "true" : "false") << ",\n"
+        << "    \"strict_math_abi_version\": " << strict_math_abi_version << ",\n"
+        << "    \"strict_sidecar_verified\": "
+        << (strict_inference && strict_math_abi_version == kStrictMathAbiVersion ? "true" : "false") << ",\n"
+        << "    \"checkpoint_storage_precision\": \"bf16\"\n"
+        << "  },\n"
+        << "  \"sampling_strategy\": \"" << (run_sampler && cfg.sample_temperature > 0.0 && cfg.sample_top_k != 1 ? "top-k-temperature" : "greedy-argmax") << "\",\n"
+        << "  \"temperature\": " << (run_sampler ? cfg.sample_temperature : 0.0) << ",\n"
         << "  \"top_k\": " << (run_sampler ? cfg.sample_top_k : 0) << ",\n"
         << "  \"repetition_penalty\": " << (run_sampler ? cfg.sample_repetition_penalty : 1.0f) << ",\n"
         << "  \"seed\": " << (run_sampler ? cfg.sample_seed : 0) << ",\n"
@@ -4735,6 +4796,88 @@ std::string default_tile_ops_lib(const char* program) {
         return build_path.string();
     }
     return "libnfn_native_train_tile_ops.so";
+}
+
+std::string default_strict_tile_ops_lib(const char* program) {
+    std::string env_value = env_or_empty("NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB");
+    if (!env_value.empty()) {
+        return env_value;
+    }
+
+    const auto strict_sibling = [](const fs::path& executable) -> std::optional<fs::path> {
+        if (!executable.has_parent_path()) {
+            return std::nullopt;
+        }
+        const fs::path sibling =
+            executable.parent_path() / "libnfn_native_train_tile_ops_strict.so";
+        std::error_code exists_error;
+        if (fs::exists(sibling, exists_error) && !exists_error) {
+            return sibling;
+        }
+        return std::nullopt;
+    };
+    const auto canonical_strict_sibling = [&](const fs::path& executable) -> std::optional<fs::path> {
+        std::error_code canonical_error;
+        const fs::path canonical_executable = fs::canonical(executable, canonical_error);
+        if (canonical_error) {
+            return std::nullopt;
+        }
+        return strict_sibling(canonical_executable);
+    };
+
+    const fs::path exe_path(program == nullptr ? "" : program);
+    if (exe_path.has_parent_path()) {
+        if (const auto sibling = strict_sibling(exe_path)) {
+            return sibling->string();
+        }
+        if (const auto sibling = canonical_strict_sibling(exe_path)) {
+            return sibling->string();
+        }
+    } else if (!exe_path.empty()) {
+        // execvp leaves argv[0] bare when an installed command is found through
+        // PATH. Search the same PATH entries before resolving /proc/self/exe so
+        // a sidecar installed beside a symlinked command remains discoverable.
+        const std::string search_path = env_or_empty("PATH");
+        std::size_t begin = 0;
+        while (begin <= search_path.size()) {
+            const std::size_t end = search_path.find(':', begin);
+            const std::string entry = search_path.substr(
+                begin,
+                end == std::string::npos ? std::string::npos : end - begin);
+            const fs::path directory = entry.empty() ? fs::current_path() : fs::path(entry);
+            const fs::path candidate = directory / exe_path;
+            if (access(candidate.c_str(), X_OK) == 0) {
+                if (const auto sibling = strict_sibling(candidate)) {
+                    return sibling->string();
+                }
+                if (const auto sibling = canonical_strict_sibling(candidate)) {
+                    return sibling->string();
+                }
+            }
+            if (end == std::string::npos) {
+                break;
+            }
+            begin = end + 1;
+        }
+    }
+
+    // Linux exposes the running image independently of argv[0]. This covers
+    // custom launchers and PATH-less execve calls when the real binary and
+    // strict sidecar are deployed together.
+    if (const auto sibling = canonical_strict_sibling("/proc/self/exe")) {
+        return sibling->string();
+    }
+
+    if (!exe_path.empty()) {
+        if (const auto sibling = canonical_strict_sibling(exe_path)) {
+            return sibling->string();
+        }
+    }
+    fs::path build_path = fs::current_path() / "build" / "libnfn_native_train_tile_ops_strict.so";
+    if (fs::exists(build_path)) {
+        return build_path.string();
+    }
+    return "libnfn_native_train_tile_ops_strict.so";
 }
 
 bool linked_tile_ops_requested(std::string_view path) {
@@ -29337,6 +29480,10 @@ int main(int argc, char** argv) {
             cfg.tile_ops_lib = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--tile-ops-lib=", 0) == 0) {
             cfg.tile_ops_lib = value_after_equals("--tile-ops-lib=");
+        } else if (arg == "--strict-tile-ops-lib") {
+            cfg.strict_tile_ops_lib = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--strict-tile-ops-lib=", 0) == 0) {
+            cfg.strict_tile_ops_lib = value_after_equals("--strict-tile-ops-lib=");
         } else if (arg == "--template-name" || arg == "--template" || arg == "--preset") {
             cfg.template_name = normalize_template_name(require_value(argc, argv, &i, arg));
             cfg.template_explicit = true;
@@ -29458,9 +29605,9 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--max-new-tokens=", 0) == 0) {
             cfg.sample_max_new_tokens = parse_int(value_after_equals("--max-new-tokens="), "--max-new-tokens");
         } else if (arg == "--temperature") {
-            cfg.sample_temperature = static_cast<float>(parse_double(require_value(argc, argv, &i, arg), arg));
+            cfg.sample_temperature = parse_double(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--temperature=", 0) == 0) {
-            cfg.sample_temperature = static_cast<float>(parse_double(value_after_equals("--temperature="), "--temperature"));
+            cfg.sample_temperature = parse_double(value_after_equals("--temperature="), "--temperature");
         } else if (arg == "--top-k") {
             cfg.sample_top_k = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--top-k=", 0) == 0) {

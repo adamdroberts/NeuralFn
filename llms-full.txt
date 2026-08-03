@@ -3610,13 +3610,17 @@ cache.reset()
 ### Constructor
 
 ```python
-InferenceCache(graph, device=None)
+InferenceCache(graph, device=None, *, compiled=None)
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `graph` | `NeuronGraph` | required | A torch-runtime graph, typically built from a template preset. |
 | `device` | `str` | from `torch_config` or `"cuda"` | Device to run inference on. |
+| `compiled` | `CompiledTorchGraph` | `None` | Optional precompiled, weight-loaded model to reuse. |
+
+Pass `compiled=` for a temperature-zero strict FP32 graph so cache construction
+does not replace the selected backend or loaded weights.
 
 ### KV cache nodes
 
@@ -6445,6 +6449,8 @@ class InferenceCache:
         self,
         graph: NeuronGraph,
         device: str | None = None,
+        *,
+        compiled: CompiledTorchGraph | None = None,
     ) -> None
 ```
 
@@ -6458,6 +6464,7 @@ Works with both training graphs (tokens + targets -> loss) and inference-only gr
 |-----------|------|---------|-------------|
 | `graph` | `NeuronGraph` | *(required)* | The graph to run inference on |
 | `device` | `str \| None` | `None` | Device string. Falls back to `graph.torch_config["device"]` or `"cuda"`. |
+| `compiled` | `CompiledTorchGraph \| None` | `None` | Reuse an already constructed and weight-loaded graph. |
 
 ### Methods
 
@@ -11544,10 +11551,17 @@ import_quantized_pt(graph: NeuronGraph, path: str | Path) -> None
 ```python
 from neuralfn.inference import InferenceCache
 
-cache = InferenceCache(graph: NeuronGraph, device: str | None = None)
+cache = InferenceCache(
+    graph: NeuronGraph,
+    device: str | None = None,
+    *,
+    compiled: CompiledTorchGraph | None = None,
+)
 ```
 
-Stateful KV cache manager for autoregressive generation. Wraps a `CompiledTorchGraph`.
+Stateful KV cache manager for autoregressive generation. Wraps a
+`CompiledTorchGraph`; pass a weight-loaded strict FP32 graph through
+`compiled=` so cache construction preserves the selected inference policy.
 
 **Methods:**
 - `reset() -> None` -- clear KV cache for new sequence

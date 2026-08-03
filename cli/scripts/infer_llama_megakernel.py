@@ -11,6 +11,7 @@ from infer_gpt2 import (
     add_dataset_download_arguments,
     add_dataset_selector_arguments,
     add_raw_text_tokenizer_arguments,
+    inference_temperature_arg,
     repetition_penalty_arg,
 )
 
@@ -60,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated token ids. Overrides --prompt when provided.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument(
         "--repetition-penalty",
@@ -87,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    from neuralfn.inference_policy import prepare_inference_process_environment, validate_inference_temperature
+
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
 
     import torch
 
@@ -135,6 +141,7 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
         raw_text_encoding_name = resolve_raw_text_encoding_name(

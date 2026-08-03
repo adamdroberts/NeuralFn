@@ -109,6 +109,16 @@ frontend for a non-dense family. For direct family binaries, `nfn train --base-m
 --print-command` runs the family frontend so GPT-2-evo and similar targets can
 print their final compiled delegate command instead of the Python wrapper's
 intermediate argv.
+
+Template-selected training resolves the preset's native family before applying
+dense-GPT executable and argument defaults. Choosing DeepSeek V4 from the GPT
+template catalog in the training TUI, or running `nfn train --base-model gpt
+--template-name deepseek_v4 ...`, therefore launches
+`nfn_deepseek_v4_native_train`. The `--tile-ops-lib linked` sentinel is reserved
+for the final linked dense-GPT executable; family trainers use an explicit Tile
+ops `.so` path when supplied or their normal
+`build/libnfn_native_train_tile_ops.so` default.
+
 During execution, the `nfn train` TUI preserves every field emitted by native
 progress, microbatch, setup, and validation lines and renders key/value metrics
 as labeled segments instead of replacing the line with a shorter step counter.
@@ -4557,12 +4567,55 @@ token-id only by default; pass `--prompt-tokens` for the no-tokenizer path. Set
 `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` only when you intentionally want the
 wrapper to import `tiktoken` and encode a raw text `--prompt` before launching
 the same native sampler. Native checkpoint sampling honors `--temperature`,
-`--top-k`, `--repetition-penalty`, and `--seed`; use `--temperature 0` or
-`--top-k 1` for deterministic greedy argmax generation. Native checkpoint
+`--top-k`, `--repetition-penalty`, and `--seed`. Use `--temperature 0` for
+strict deterministic greedy inference. A positive temperature with `--top-k 1`
+still selects greedily, but it does not activate the strict CUDA compute policy.
+Native checkpoint
 sampling now uses the same `cuda_visible_devices="0"` default as native
 training helpers. Set `CUDA_VISIBLE_DEVICES` or pass
 `cuda_visible_devices="dedicated"` when a run should use the display-disabled
 GPU selector.
+
+### Temperature-zero strict inference
+
+All inference entrypoints require a finite temperature greater than or equal to
+zero. Exact zero activates a fail-closed policy around the complete model
+forward and argmax selection: graph-backed CUDA inference uses an FP32
+Torch/math backend with autocast, TF32, reduced-precision reductions, flash or
+memory-efficient SDPA, and cuDNN benchmarking disabled, while PyTorch
+deterministic algorithms are enabled. Interactive `/temp 0` applies this policy
+to the next generation and restores normal optimized execution after the
+temperature becomes positive again. REST chat serializes strict requests
+against other inference while allowing ordinary requests to overlap.
+
+On PyTorch versions with the hierarchical precision API, strict execution sets
+the global, CUDA-matmul, cuDNN, cuDNN-convolution, and cuDNN-RNN
+`fp32_precision` controls to `"ieee"`. Older versions use the legacy
+`allow_tf32=False` and `set_float32_matmul_precision("highest")` controls. The
+policy detects the API as a complete set and never mixes the new and legacy
+TF32 controls.
+
+Strict graph-backed entrypoints set
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` before Torch or CUDA initialization. If an
+embedding application imports NeuralFn inference after CUDA is already active
+without that exact value, strict execution fails and the process must be
+restarted with the variable set; it never advertises determinism after a late
+or incompatible cuBLAS initialization.
+
+Native `.bin` sampling at zero requires the sibling
+`build/libnfn_native_train_tile_ops_strict.so`; build it with the normal native
+GPT aggregate scripts or override its path with `--strict-tile-ops-lib PATH` /
+`NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB`. The sampler verifies the sidecar's
+strict-math ABI and errors instead of falling back to the optimized
+TF32/BF16/fast-math library. Existing fused graph stages remain usable when
+they execute through FP32 math SDPA; BF16 ThunderKittens and packed-QKV
+megakernels are never selected in strict mode.
+
+The guarantee is scoped to the same checkpoint, inputs, GPU architecture,
+driver, CUDA/PyTorch, and NeuralFn build. BF16/FP16 checkpoint storage has
+already discarded information that FP32 execution cannot reconstruct; strict
+mode prevents further optional runtime precision loss. Inference graphs that
+retain stateful training-time mask or random-timestep modules fail closed.
 The canonical `python cli/scripts/infer_gpt.py --help` wrapper now preserves
 its own program name in argparse output (`usage: infer_gpt.py`) instead of
 leaking the compatibility `infer_gpt2.py` script name; native checkpoint

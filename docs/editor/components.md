@@ -77,6 +77,18 @@ Right-side panel for training controls and visualization:
 - Torch trace display showing per-layer timing and shape statistics.
 - Error display for failed runs.
 
+## ChatPanel
+
+**Default export.**
+
+Interactive generation drawer for the current session graph. It accepts an
+optional base checkpoint and adapter, generation length, temperature, and
+top-k controls. The temperature field preserves literal zero and rejects
+negative or non-finite input. At zero it shows a `strict` indicator, sends the
+unchanged numeric value to the server, and displays the returned compute-policy
+badge on the assistant message so users can distinguish strict deterministic
+execution from ordinary optimized or `top_k=1` greedy selection.
+
 ## PortConfig
 
 **Default export.**

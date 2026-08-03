@@ -8,6 +8,19 @@ load Torch. The actual `.pt` checkpoint operations, quantized export/import,
 semantic table helpers, and `InferenceCache` execution are legacy
 Torch-backed workflows and require PyTorch to be installed explicitly.
 
+For an application-owned generation loop, import the Torch-free controls from
+`neuralfn.inference_policy`, call
+`prepare_inference_process_environment()` before Torch/CUDA initialization,
+validate the requested temperature, and keep the complete forward plus token
+selection inside `inference_execution(temperature, torch_module=torch)`. Exact
+zero requires a Torch-only FP32 compiled graph with autocast disabled; validate
+the graph before compilation and the compiled floating state after loading via
+`validate_strict_graph_support()` and `validate_strict_compiled_graph()`.
+Positive temperatures retain the normal optimized backend.
+Strict policy enforcement uses PyTorch's hierarchical `fp32_precision="ieee"`
+controls when the complete API is available and otherwise uses the legacy
+TF32-disable controls; it does not mix the two API generations.
+
 ## Weight export and import
 
 ### Full-precision export
@@ -113,13 +126,19 @@ cache.reset()
 ### Constructor
 
 ```python
-InferenceCache(graph, device=None)
+InferenceCache(graph, device=None, *, compiled=None)
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `graph` | `NeuronGraph` | required | A torch-runtime graph, typically built from a template preset. |
 | `device` | `str` | from `torch_config` or `"cuda"` | Device to run inference on. |
+| `compiled` | `CompiledTorchGraph` | `None` | Optional precompiled, weight-loaded model to reuse instead of constructing another graph. |
+
+Temperature-zero generation should pass the strict FP32 compiled graph through
+`compiled=` so the cache cannot bypass the selected compute policy. Existing
+callers that omit the keyword retain the original construction behavior.
+`SemanticInferenceCache` exposes the same keyword for semantic graph callers.
 
 ### KV cache nodes
 

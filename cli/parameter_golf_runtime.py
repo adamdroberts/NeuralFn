@@ -441,10 +441,11 @@ def build_parameter_golf_model(
     config: ParameterGolfConfig,
     *,
     device: torch.device,
+    force_float32: bool = False,
 ) -> ParameterGolfGPT:
     model = ParameterGolfGPT(config)
     model.load_state_dict(state_dict, strict=True)
-    if device.type == "cuda":
+    if device.type == "cuda" and not force_float32:
         model = model.bfloat16()
         for module in model.modules():
             if isinstance(module, CastedLinear):

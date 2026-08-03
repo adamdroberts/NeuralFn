@@ -47,7 +47,17 @@ Canonical docs:
 - Treat `nfn train --base-model gpt` and `cli/scripts/train_gpt.py` as the
   canonical dense GPT native trainer surface. `gpt2` and `gpt3` are dense GPT
   aliases that route to the same CUDA Tile C++ trainer and must forward
-  `--model-family` into the compiled frontend.
+  `--model-family` into the compiled frontend when the selected template remains
+  dense-compatible.
+- Resolve a selected template's native family and final executable before
+  applying dense-GPT-only defaults. In particular, `gpt + deepseek_v4` must
+  route to `nfn_deepseek_v4_native_train` without `--model-family`,
+  `--train-transformer-lm`, or dense-GPT handoff backend, activation, sampling,
+  and optimizer-quality defaults. Generic schedule values selected in the TUI
+  remain forwarded.
+  Add `--tile-ops-lib linked` only when the final target is the linked dense-GPT
+  executable; family trainers use an explicit real `.so` path or their normal
+  Tile-ops-library default, and must reject the `linked` sentinel.
 - GPT-3 does not need a separate architecture path. It defaults to a 2048-token
   context only when the caller did not supply `--train-seq-len`,
   `--template-name`/`--preset`, or `--graph-file`; otherwise the selected
@@ -156,8 +166,10 @@ Canonical docs:
   reports `model_family: gpt` and dispatches to the no-Python cached-shard CLI;
   `gpt2` and `gpt3` are aliases for that same compiled dense GPT trainer;
   plan/runtime JSON reports `architecture_source`, `architecture_contract`, and
-  `model_family_context_policy` so the selected template or custom graph is the
-  architecture source of truth;
+  `model_family_context_policy` so a dense-compatible template or custom graph
+  remains the architecture source of truth. A shipped non-dense template from
+  the GPT catalog must instead route to its compiled family trainer before
+  dense defaults are expanded;
   NanoGPT `--train-token-lm` dispatches to its partial native trainer; unsupported
   families fail from the native registry.
 - GPT-2 native training uses the SM120 AdamW schedule: 20,000 steps, seq len
@@ -372,25 +384,29 @@ Canonical docs:
 - GPT-2 native command paths must accept `--template-name` / `--template` /
   `--preset` and `--graph-file` / `--graph` without importing Torch. Cover
   every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, including
-  `gpt2_megakernel`, `nanogpt_megakernel`, and aliases such as `mixllama`.
+  `gpt2_megakernel`, `nanogpt_megakernel`, `deepseek_v4`, and aliases such as
+  `mixllama`.
   Keep the compiled C++ `shipped_template_catalog` in sync with that SDK
   catalog, and assert `template_known` plus `shipped_template_catalog_count` in
   native plan tests.
-  Top-level `nfn train --base-model gpt`, `gpt2`, or `gpt3` direct
-  compiled-CLI handoff should add `--train-transformer-lm` for normal training
-  commands, including selector commands, unless a plan/check/smoke/train action
-  was already requested. New SDK code can use `neuralfn.native_gpt` aliases;
+  After template-family resolution, top-level `nfn train --base-model gpt`,
+  `gpt2`, or `gpt3` direct compiled-CLI handoff should retain
+  `--train-transformer-lm` only for normal dense-compatible training commands
+  unless a plan/check/smoke/train action was already requested. Routed
+  non-dense selectors must not retain that action. New SDK code can use
+  `neuralfn.native_gpt` aliases;
   existing `neuralfn.native_gpt2` names remain wrappers over the same
   implementation.
   Dense GPT-2-compatible presets (`gpt2`, `gpt2_megakernel`, and `gpt2_moa`)
   may run the current native loop; `gpt2_moa` should resolve to
   `--native-cuda-activation moa`. `--dry-run` / `--print-plan` should report
   `status: "native-transformer-lm-ready"` plus
-  `training_step_plan.status: "ready"`; structurally different template names
-  and custom graph files must report `selected-graph-native-trainer-missing`
-  until a matching C++ Tile trainer plan exists. Unknown/unshipped template
-  names must report `unknown-template` so typos are not mixed with known
-  migration backlog items.
+  `training_step_plan.status: "ready"`. Structurally different shipped template
+  names must route to a matching compiled family binary when one exists; custom
+  graph files without a matching native trainer still report
+  `selected-graph-native-trainer-missing`. Unknown/unshipped template names must
+  report `unknown-template` so typos are not mixed with known migration backlog
+  items.
 - GPT-2 native `--train-transformer-lm` must honor `train_batch_tokens` as the
   effective optimizer-step batch. Derive `grad_accum_steps` from
   `batch_size * seq_len`, stream that many cached-shard microbatches through
@@ -738,8 +754,8 @@ Canonical docs:
 - `nfn_nanogpt_native_train --smoke-embedding-norm-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` samples a real native uint16 token/target batch from cached shards, runs token/position embedding, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradient, and AdamW update kernels, then verifies copyback values without Python/Torch.
 - `nfn_nanogpt_native_train --smoke-fused-qkv-attention-step --tile-ops-lib PATH` runs a tiny attention stage through one fused `attn.qkv.weight`, QKV split, SDPA forward/backward, QKV gradient merge, fused qkv weight backward, output projection backward, and AdamW updates for fused qkv/output weights without Python/Torch.
 - `nfn_nanogpt_native_train --smoke-transformer-block-step --tile-ops-lib PATH` composes LayerNorm, fused-QKV attention, residual adds, MLP, backward passes, gradient accumulation, and AdamW updates for a tiny transformer block through raw native kernels without Python/Torch.
-- Native GPT checkpoints from `train_gpt2cu` or NeuralFn's `nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir PATH` are `model_########.bin` files with optional matching `DONE_########` markers. Keep `nfn infer --checkpoint PATH --native-info` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --native-info` on a Torch-free metadata path via `read_native_gpt_checkpoint_info()` / `read_native_gpt2_checkpoint_info()`; do not route native `.bin` checkpoints into the graph-backed `.pt` loader. `nfn_gpt_native_train --native-info --native-checkpoint PATH` and `nfn_gpt_native_train --inspect-checkpoint PATH` provide the compiled C++ JSON inspection path and must exit before CUDA, token-shard resolution, Torch, Python dataset setup, or graph-node execution. `nfn infer --checkpoint PATH --prompt-tokens IDS` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --prompt-tokens IDS` must dispatch to `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`; text prompt forms first tokenize with the GPT-2 tokenizer and then use that same compiled sampler command. That sampler validates checkpoint/token contracts in compiled C++ and executes autoregressive CUDA Tile checkpoint forward passes, returning up to `--max-new-tokens` IDs in `generated_tokens`; successful wrapper calls also print `Generated token ids` plus GPT-2-decoded `Generated text` without importing Torch. `nfn_gpt_native_train --checkpoint-layout --native-checkpoint PATH` decodes the native tensor layout, payload offsets, and bounded payload samples from the checkpoint header without CUDA/Torch; use that for native sampler wiring instead of Python-side layout inference. `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH --checkpoint-load-tensor NAME --checkpoint-load-elements N` verifies the checkpoint payload load prerequisite by selecting a named tensor from that layout, moving a bounded bf16 slice through CUDA memory, and converting it with `nfn_native_tile_bf16_bits_to_float32` without Torch or graph-editor tensors. `nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS` runs the first checkpoint-backed CUDA Tile forward slice through embeddings, final norm, and tied LM-head logits. `nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` runs checkpoint embeddings plus the selected block's `ln_1` and `attn.c_attn` QKV projection through CUDA Tile kernels. `nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through split-to-heads, causal attention, and merge-heads. `nfn_gpt_native_train --checkpoint-attention-residual-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through `attn.c_proj` and residual add. `nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through `ln_2`, MLP fc, GELU+bias, MLP projection, and final block residual. `nfn_gpt_native_train --checkpoint-block-logits-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through final norm and tied LM-head logits for the last prompt token; decoded text rendering remains pending.
-- Use `nfn_gpt_native_train --checkpoint-forward-logits-smoke --native-checkpoint PATH --prompt-tokens IDS` for the first full checkpoint-stack native forward: it runs every GPT block, final LayerNorm, and tied LM-head logits through CUDA Tile kernels, reports `transformer_blocks_executed: true` and `blocks_executed`, and keeps `graph_editor_node_flow: false`. Full generation-loop sampling remains pending.
+- Native GPT checkpoints from `train_gpt2cu` or NeuralFn's `nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir PATH` are `model_########.bin` files with optional matching `DONE_########` markers. Keep `nfn infer --checkpoint PATH --native-info` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --native-info` on a Torch-free metadata path via `read_native_gpt_checkpoint_info()` / `read_native_gpt2_checkpoint_info()`; do not route native `.bin` checkpoints into the graph-backed `.pt` loader. `nfn_gpt_native_train --native-info --native-checkpoint PATH` and `nfn_gpt_native_train --inspect-checkpoint PATH` provide the compiled C++ JSON inspection path and must exit before CUDA, token-shard resolution, Torch, Python dataset setup, or graph-node execution. `nfn infer --checkpoint PATH --prompt-tokens IDS` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --prompt-tokens IDS` must dispatch to `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`; text prompt forms first tokenize with the GPT-2 tokenizer and then use that same compiled sampler command. That sampler validates checkpoint/token contracts in compiled C++ and executes autoregressive CUDA Tile checkpoint forward passes, returning up to `--max-new-tokens` IDs in `generated_tokens`; successful wrapper calls also print `Generated token ids` plus GPT-2-decoded `Generated text` without importing Torch. Exact `temperature=0` must select and ABI-verify `libnfn_native_train_tile_ops_strict.so` before CUDA, never fall back to the optimized trainer library, and report strict `compute_policy` telemetry. Override the sidecar only through `--strict-tile-ops-lib`, SDK `strict_tile_ops_lib`, or `NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB`; positive `temperature` and training retain `libnfn_native_train_tile_ops.so`, while positive `temperature` plus `top_k=1` is greedy without strict CUDA compute. `nfn_gpt_native_train --checkpoint-layout --native-checkpoint PATH` decodes the native tensor layout, payload offsets, and bounded payload samples from the checkpoint header without CUDA/Torch; use that for native sampler wiring instead of Python-side layout inference. `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH --checkpoint-load-tensor NAME --checkpoint-load-elements N` verifies the checkpoint payload load prerequisite by selecting a named tensor from that layout, moving a bounded bf16 slice through CUDA memory, and converting it with `nfn_native_tile_bf16_bits_to_float32` without Torch or graph-editor tensors. `nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS` runs the first checkpoint-backed CUDA Tile forward slice through embeddings, final norm, and tied LM-head logits. `nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` runs checkpoint embeddings plus the selected block's `ln_1` and `attn.c_attn` QKV projection through CUDA Tile kernels. `nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through split-to-heads, causal attention, and merge-heads. `nfn_gpt_native_train --checkpoint-attention-residual-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through `attn.c_proj` and residual add. `nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through `ln_2`, MLP fc, GELU+bias, MLP projection, and final block residual. `nfn_gpt_native_train --checkpoint-block-logits-smoke --native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` continues through final norm and tied LM-head logits for the last prompt token; decoded text rendering remains pending.
+- Use `nfn_gpt_native_train --checkpoint-forward-logits-smoke --native-checkpoint PATH --prompt-tokens IDS` for a bounded full checkpoint-stack forward: it runs every GPT block, final LayerNorm, and tied LM-head logits through CUDA Tile kernels, reports `transformer_blocks_executed: true` and `blocks_executed`, and keeps `graph_editor_node_flow: false`. Autoregressive generation uses the sampler contract on the following line.
 - Current `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS --max-new-tokens N` no longer returns the old pending-plan JSON: it executes the full checkpoint stack once per generated token through CUDA Tile kernels and returns up to `N` IDs in `generated_tokens`.
 - `cli/scripts/train_gpt2_evo.py` hands off to the model-aware native C++ preflight or delegated dense GPT native trainer before Torch imports. The compiled preflight `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 1000 --tile-cuda-activation-dtype nvfp4` reports the AdamW/NVFP4/evo-layer schedule and native delegation contract without importing Python/Torch, and dense GPT-2-compatible evo training runs through `nfn_gpt_native_train --train-transformer-lm --layer-evo`. Run native outputs with `nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2_evo --prompt-tokens 50256 --max-new-tokens 64`; legacy graph-backed `.pt/.json` artifacts can still use `python cli/scripts/infer_gpt2.py --evo --prompt "..."` or `nfn infer --graph ... --weights ...`. Keep `infer_gpt2.py --help` and artifact default resolution no-Torch even though graph-backed `.pt/.json` generation still imports the legacy runtime after parsing.
 - Native trainer CE logits backward in `libnfn_native_train_tile_ops.so` uses row-wise CUDA Tile kernels for vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat workspace for full GPT-class vocabularies; do not reintroduce the elementwise large-vocab fallback.
