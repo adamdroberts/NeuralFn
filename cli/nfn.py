@@ -2177,22 +2177,6 @@ def _native_template_family(argv: list[str]) -> str | None:
     return _NATIVE_TEMPLATE_FAMILY_ALIASES.get(template)
 
 
-def _remove_split_or_bool_flags(out: list[str], *flags: str) -> None:
-    remove = set(flags)
-    idx = 0
-    while idx < len(out):
-        arg = out[idx]
-        if arg in remove:
-            del out[idx]
-            if idx < len(out) and arg not in {"--train-transformer-lm", "--backend"}:
-                del out[idx]
-            continue
-        if any(arg.startswith(flag + "=") for flag in remove):
-            del out[idx]
-            continue
-        idx += 1
-
-
 def _has_native_activation(argv: list[str]) -> bool:
     return any(
         arg in {"--activation", "--native-cuda-activation"} or
@@ -2252,15 +2236,26 @@ def _append_native_semantic_moe_defaults(out: list[str]) -> None:
 def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
-    dense_gpt = _is_dense_gpt_native_model(model) and not (model in {"nanogpt", "nano-gpt"} and token_lm_requested)
-    explicit_dense_model = dense_gpt and _explicit_arg(argv, "--base-model", "--model")
-    family_cli = None if dense_gpt else _resolve_direct_native_train_family_cli(model)
-    native_cli = family_cli or _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
+    dense_gpt = _is_dense_gpt_native_model(model) and not (
+        model in {"nanogpt", "nano-gpt"} and token_lm_requested
+    )
+    template_family = (
+        None
+        if _explicit_arg(argv, "--graph-file", "--graph")
+        else _native_template_family(argv)
+    )
+    if dense_gpt and template_family is not None:
+        resolved_model = template_family
+        dense_gpt = False
+    else:
+        resolved_model = model
+    family_cli = None if dense_gpt else _resolve_direct_native_train_family_cli(resolved_model)
+    native_cli = family_cli or _resolve_direct_native_train_cli("gpt" if dense_gpt else resolved_model)
     out = [native_cli]
     tile_ops_lib_explicit = _explicit_arg(argv, "--tile-ops-lib", "--native-cuda-tile-ops-lib")
     include_model = not dense_gpt and family_cli is None
     if include_model:
-        out.extend(["--base-model", model])
+        out.extend(["--base-model", resolved_model])
     elif dense_gpt:
         model_family = _canonical_dense_gpt_model_family(model)
         out.extend(["--model-family", model_family])
@@ -2473,6 +2468,15 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
             continue
         out.append(arg)
         idx += 1
+    explicit_tile_ops_value = _arg_value(out, "--tile-ops-lib")
+    if (
+        explicit_tile_ops_value == "linked"
+        and not (dense_gpt and _native_gpt_cli_uses_linked_tile_ops(out[0]))
+    ):
+        raise ValueError(
+            "--tile-ops-lib linked is only valid for the linked dense-GPT trainer; "
+            "omit the flag so the family trainer resolves its Tile library, or pass the real .so path"
+        )
     if dense_gpt and _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
         _append_value_arg(out, "--native-cuda-activation", "moa")
     if (
@@ -2491,14 +2495,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         _append_native_semantic_moe_defaults(out)
     if dense_gpt and not _explicit_arg(out, "--backend"):
         _append_value_arg(out, "--backend", "tile-cuda")
-    if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
+    if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(out[0]) and not tile_ops_lib_explicit:
         _append_value_arg(out, "--tile-ops-lib", "linked")
-    template_family = None if _explicit_arg(out, "--graph-file", "--graph") else _native_template_family(out)
-    if dense_gpt and template_family is not None:
-        family_cli = _resolve_direct_native_train_family_cli(template_family)
-        if family_cli is not None:
-            out[0] = family_cli
-            _remove_split_or_bool_flags(out, "--model-family", "--train-transformer-lm")
     return out
 
 
@@ -2540,7 +2538,8 @@ def _native_train_artifact_rows(command: list[str]) -> list[tuple[str, str]]:
     if executable is not None:
         rows.append(executable)
     tile_value = _arg_value(command, "--tile-ops-lib")
-    if tile_value == "linked" or (
+    linked_dense_gpt = bool(command) and _native_gpt_cli_uses_linked_tile_ops(command[0])
+    if (tile_value == "linked" and linked_dense_gpt) or (
         tile_value is None
         and command
         and Path(command[0]).name in {"nfn_gpt_native_train", "nfn_gpt_native_train_linked"}
@@ -2875,7 +2874,11 @@ def _direct_native_train_cli_main(
     progress_tui: bool = False,
 ) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
-    command = _direct_native_train_cli_argv(tokens)
+    try:
+        command = _direct_native_train_cli_argv(tokens)
+    except ValueError as exc:
+        print(f"Unable to resolve native training command: {exc}", file=sys.stderr)
+        return 2
     model = _native_train_model(tokens)
     token_lm_requested = any(arg == "--train-token-lm" for arg in tokens)
     routed_family = (

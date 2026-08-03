@@ -47,7 +47,17 @@ Canonical docs:
 - Treat `nfn train --base-model gpt` and `cli/scripts/train_gpt.py` as the
   canonical dense GPT native trainer surface. `gpt2` and `gpt3` are dense GPT
   aliases that route to the same CUDA Tile C++ trainer and must forward
-  `--model-family` into the compiled frontend.
+  `--model-family` into the compiled frontend when the selected template remains
+  dense-compatible.
+- Resolve a selected template's native family and final executable before
+  applying dense-GPT-only defaults. In particular, `gpt + deepseek_v4` must
+  route to `nfn_deepseek_v4_native_train` without `--model-family`,
+  `--train-transformer-lm`, or dense-GPT handoff backend, activation, sampling,
+  and optimizer-quality defaults. Generic schedule values selected in the TUI
+  remain forwarded.
+  Add `--tile-ops-lib linked` only when the final target is the linked dense-GPT
+  executable; family trainers use an explicit real `.so` path or their normal
+  Tile-ops-library default, and must reject the `linked` sentinel.
 - GPT-3 does not need a separate architecture path. It defaults to a 2048-token
   context only when the caller did not supply `--train-seq-len`,
   `--template-name`/`--preset`, or `--graph-file`; otherwise the selected
@@ -156,8 +166,10 @@ Canonical docs:
   reports `model_family: gpt` and dispatches to the no-Python cached-shard CLI;
   `gpt2` and `gpt3` are aliases for that same compiled dense GPT trainer;
   plan/runtime JSON reports `architecture_source`, `architecture_contract`, and
-  `model_family_context_policy` so the selected template or custom graph is the
-  architecture source of truth;
+  `model_family_context_policy` so a dense-compatible template or custom graph
+  remains the architecture source of truth. A shipped non-dense template from
+  the GPT catalog must instead route to its compiled family trainer before
+  dense defaults are expanded;
   NanoGPT `--train-token-lm` dispatches to its partial native trainer; unsupported
   families fail from the native registry.
 - GPT-2 native training uses the SM120 AdamW schedule: 20,000 steps, seq len
@@ -372,25 +384,29 @@ Canonical docs:
 - GPT-2 native command paths must accept `--template-name` / `--template` /
   `--preset` and `--graph-file` / `--graph` without importing Torch. Cover
   every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, including
-  `gpt2_megakernel`, `nanogpt_megakernel`, and aliases such as `mixllama`.
+  `gpt2_megakernel`, `nanogpt_megakernel`, `deepseek_v4`, and aliases such as
+  `mixllama`.
   Keep the compiled C++ `shipped_template_catalog` in sync with that SDK
   catalog, and assert `template_known` plus `shipped_template_catalog_count` in
   native plan tests.
-  Top-level `nfn train --base-model gpt`, `gpt2`, or `gpt3` direct
-  compiled-CLI handoff should add `--train-transformer-lm` for normal training
-  commands, including selector commands, unless a plan/check/smoke/train action
-  was already requested. New SDK code can use `neuralfn.native_gpt` aliases;
+  After template-family resolution, top-level `nfn train --base-model gpt`,
+  `gpt2`, or `gpt3` direct compiled-CLI handoff should retain
+  `--train-transformer-lm` only for normal dense-compatible training commands
+  unless a plan/check/smoke/train action was already requested. Routed
+  non-dense selectors must not retain that action. New SDK code can use
+  `neuralfn.native_gpt` aliases;
   existing `neuralfn.native_gpt2` names remain wrappers over the same
   implementation.
   Dense GPT-2-compatible presets (`gpt2`, `gpt2_megakernel`, and `gpt2_moa`)
   may run the current native loop; `gpt2_moa` should resolve to
   `--native-cuda-activation moa`. `--dry-run` / `--print-plan` should report
   `status: "native-transformer-lm-ready"` plus
-  `training_step_plan.status: "ready"`; structurally different template names
-  and custom graph files must report `selected-graph-native-trainer-missing`
-  until a matching C++ Tile trainer plan exists. Unknown/unshipped template
-  names must report `unknown-template` so typos are not mixed with known
-  migration backlog items.
+  `training_step_plan.status: "ready"`. Structurally different shipped template
+  names must route to a matching compiled family binary when one exists; custom
+  graph files without a matching native trainer still report
+  `selected-graph-native-trainer-missing`. Unknown/unshipped template names must
+  report `unknown-template` so typos are not mixed with known migration backlog
+  items.
 - GPT-2 native `--train-transformer-lm` must honor `train_batch_tokens` as the
   effective optimizer-step batch. Derive `grad_accum_steps` from
   `batch_size * seq_len`, stream that many cached-shard microbatches through

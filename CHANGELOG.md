@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Fixed native training dispatch for non-dense presets selected through the GPT
+  template catalog or training TUI. Template-family resolution now happens
+  before dense-GPT defaults are expanded, so `gpt + deepseek_v4` launches
+  `nfn_deepseek_v4_native_train` without synthesized dense-only model-family or
+  training-action selectors and without injected backend, activation, sampling,
+  or dense-GPT optimizer-quality defaults. Generic TUI schedule values and
+  other compatible explicit options remain forwarded. The
+  `--tile-ops-lib linked` sentinel is now added only when the final executable is
+  the linked dense-GPT trainer; family trainers retain an explicitly supplied
+  Tile ops `.so`, otherwise use the normal library default, and reject
+  `linked`. This is a backwards-compatible routing correction with no public API
+  or artifact-format change.
+- Verified the fix with focused command-generation coverage for DeepSeek V4 and
+  another non-dense family, TUI state resolution, explicit `.so` preservation,
+  family `linked` rejection, and unchanged dense-GPT linked routing, plus the
+  native no-Torch dependency verifier and a one-step DeepSeek V4 checkpoint and
+  inference verification.
+
 - Replaced the initial compact embedding lookup/pooling core with the full
   `NFNEMB2` native transformer bi-encoder. BERT mode now executes
   bidirectional multi-head self-attention, GELU feed-forward blocks, residuals,

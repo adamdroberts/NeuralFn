@@ -109,6 +109,16 @@ frontend for a non-dense family. For direct family binaries, `nfn train --base-m
 --print-command` runs the family frontend so GPT-2-evo and similar targets can
 print their final compiled delegate command instead of the Python wrapper's
 intermediate argv.
+
+Template-selected training resolves the preset's native family before applying
+dense-GPT executable and argument defaults. Choosing DeepSeek V4 from the GPT
+template catalog in the training TUI, or running `nfn train --base-model gpt
+--template-name deepseek_v4 ...`, therefore launches
+`nfn_deepseek_v4_native_train`. The `--tile-ops-lib linked` sentinel is reserved
+for the final linked dense-GPT executable; family trainers use an explicit Tile
+ops `.so` path when supplied or their normal
+`build/libnfn_native_train_tile_ops.so` default.
+
 During execution, the `nfn train` TUI preserves every field emitted by native
 progress, microbatch, setup, and validation lines and renders key/value metrics
 as labeled segments instead of replacing the line with a shorter step counter.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import importlib.util
 import json
@@ -9,6 +11,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
 
@@ -1707,6 +1710,314 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("validation: 3.5 at step 2", proc.stdout)
         self.assertIn("checkpoint.checkpoint_path", proc.stdout)
         self.assertIn("validation.losses[0].loss_mean", proc.stdout)
+
+    def test_nfn_train_gpt_family_templates_route_before_dense_defaults(self) -> None:
+        nfn = _load_nfn_cli_module()
+        family_clis = {
+            "deepseek-v4": "/tmp/nfn_deepseek_v4_native_train",
+            "llama": "/tmp/nfn_llama_native_train",
+        }
+        cases = (
+            ("deepseek_v4", "nfn_deepseek_v4_native_train"),
+            ("llama-modern", "nfn_llama_native_train"),
+        )
+
+        with (
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_cli",
+                side_effect=AssertionError("dense/unified resolver must not run"),
+            ) as fallback_resolver,
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                side_effect=lambda family: family_clis.get(family),
+            ),
+        ):
+            for template_name, executable_name in cases:
+                with self.subTest(template_name=template_name):
+                    command = nfn._direct_native_train_cli_argv(
+                        [
+                            "train",
+                            "--base-model",
+                            "gpt",
+                            "--template-name",
+                            template_name,
+                            "--tinystories",
+                        ]
+                    )
+
+                    self.assertEqual(executable_name, Path(command[0]).name)
+                    self.assertEqual(template_name, command[command.index("--template-name") + 1])
+                    self.assertIn("--tinystories", command)
+                    self.assertNotIn("--model-family", command)
+                    self.assertNotIn("--train-transformer-lm", command)
+                    self.assertNotIn("--backend", command)
+                    self.assertNotIn("--tile-ops-lib", command)
+                    self.assertNotIn("--native-cuda-activation", command)
+                    for default_flag in nfn._NATIVE_GPT_QUALITY_DEFAULTS:
+                        self.assertNotIn(default_flag, command)
+            fallback_resolver.assert_not_called()
+
+    def test_nfn_train_tui_deepseek_state_resolves_to_family_command(self) -> None:
+        nfn = _load_nfn_cli_module()
+        state = {
+            "model": "gpt",
+            "template": "deepseek_v4",
+            "dataset": "tinystories",
+            "output_dir": "/tmp/deepseek-v4-tui",
+            "train_log_file": "",
+            "eval_log_file": "",
+            "launch_mode": "dry-run",
+        }
+        tui_command = nfn._native_train_command_tokens_from_state(state)
+
+        with (
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                side_effect=lambda family: (
+                    "/tmp/nfn_deepseek_v4_native_train" if family == "deepseek-v4" else None
+                ),
+            ),
+        ):
+            command = nfn._direct_native_train_cli_argv(tui_command)
+
+        self.assertEqual("nfn_deepseek_v4_native_train", Path(command[0]).name)
+        self.assertIn("--template-name", command)
+        self.assertIn("deepseek_v4", command)
+        self.assertIn("--max-steps", command)
+        self.assertIn("--output-dir", command)
+        self.assertIn("--dry-run", command)
+        self.assertIn("--print-command", command)
+        self.assertNotIn("--model-family", command)
+        self.assertNotIn("--train-transformer-lm", command)
+        self.assertNotIn("--backend", command)
+        self.assertNotIn("--tile-ops-lib", command)
+        self.assertNotIn("--native-cuda-activation", command)
+        self.assertNotIn("--native-cuda-sample-every", command)
+        self.assertNotIn("--native-cuda-generate-tokens", command)
+        self.assertNotIn("--beta1", command)
+        self.assertNotIn("--beta2", command)
+        self.assertNotIn("--adam-eps", command)
+        self.assertNotIn("--grad-clip-norm", command)
+
+    def test_nfn_train_gpt_family_template_uses_unified_override_when_family_cli_is_missing(self) -> None:
+        nfn = _load_nfn_cli_module()
+
+        with (
+            mock.patch.dict(os.environ, {"NFN_NATIVE_TRAIN_CLI": "/bin/echo"}),
+            mock.patch(
+                "neuralfn.native_gpt2.resolve_fresh_native_gpt2_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--template-name",
+                    "deepseek_v4",
+                    "--tinystories",
+                ]
+            )
+
+        self.assertEqual("/bin/echo", command[0])
+        self.assertEqual("deepseek-v4", command[command.index("--base-model") + 1])
+        self.assertEqual("deepseek_v4", command[command.index("--template-name") + 1])
+        self.assertIn("--tinystories", command)
+        self.assertNotIn("--model-family", command)
+        self.assertNotIn("--train-transformer-lm", command)
+        self.assertNotIn("--backend", command)
+        self.assertNotIn("--tile-ops-lib", command)
+        self.assertNotIn("--native-cuda-activation", command)
+        for default_flag in nfn._NATIVE_GPT_QUALITY_DEFAULTS:
+            self.assertNotIn(default_flag, command)
+
+    def test_nfn_train_gpt_family_template_uses_generic_native_fallback_when_family_cli_is_missing(self) -> None:
+        nfn = _load_nfn_cli_module()
+
+        with (
+            mock.patch.dict(os.environ, {"NFN_NATIVE_TRAIN_CLI": ""}),
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                return_value=None,
+            ),
+            mock.patch(
+                "neuralfn.native_gpt2.resolve_fresh_native_gpt2_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--template-name",
+                    "deepseek_v4",
+                    "--tinystories",
+                ]
+            )
+
+        self.assertEqual("nfn_native_train", Path(command[0]).name)
+        self.assertEqual("deepseek-v4", command[command.index("--base-model") + 1])
+        self.assertEqual("deepseek_v4", command[command.index("--template-name") + 1])
+        self.assertIn("--tinystories", command)
+        self.assertNotIn("--model-family", command)
+        self.assertNotIn("--train-transformer-lm", command)
+        self.assertNotIn("--backend", command)
+        self.assertNotIn("--tile-ops-lib", command)
+        self.assertNotIn("--native-cuda-activation", command)
+        for default_flag in nfn._NATIVE_GPT_QUALITY_DEFAULTS:
+            self.assertNotIn(default_flag, command)
+
+    def test_nfn_train_gpt_family_template_preserves_explicit_tile_library(self) -> None:
+        nfn = _load_nfn_cli_module()
+        tile_library = "/tmp/libnfn_native_train_tile_ops.so"
+
+        with (
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                side_effect=lambda family: (
+                    "/tmp/nfn_deepseek_v4_native_train" if family == "deepseek-v4" else None
+                ),
+            ),
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--template-name",
+                    "deepseek_v4",
+                    "--native-cuda-tile-ops-lib",
+                    tile_library,
+                    "--learning-rate",
+                    "0.00017",
+                    "--max-steps",
+                    "37",
+                ]
+            )
+
+        self.assertEqual("nfn_deepseek_v4_native_train", Path(command[0]).name)
+        self.assertEqual(tile_library, command[command.index("--tile-ops-lib") + 1])
+        self.assertEqual("0.00017", command[command.index("--learning-rate") + 1])
+        self.assertEqual("37", command[command.index("--max-steps") + 1])
+        self.assertNotIn("linked", command)
+
+    def test_nfn_train_gpt_family_template_rejects_linked_tile_library(self) -> None:
+        nfn = _load_nfn_cli_module()
+        stderr = io.StringIO()
+
+        with (
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                side_effect=lambda family: (
+                    "/tmp/nfn_deepseek_v4_native_train" if family == "deepseek-v4" else None
+                ),
+            ),
+            contextlib.redirect_stderr(stderr),
+        ):
+            return_code = nfn._direct_native_train_cli_main(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--template-name",
+                    "deepseek_v4",
+                    "--tile-ops-lib",
+                    "linked",
+                    "--native-cuda-print-command",
+                ]
+            )
+
+        self.assertEqual(2, return_code)
+        self.assertIn("--tile-ops-lib linked is only valid", stderr.getvalue())
+        self.assertIn("family trainer", stderr.getvalue())
+        self.assertIn("real .so path", stderr.getvalue())
+
+    def test_nfn_train_family_provenance_does_not_expand_linked_tile_library(self) -> None:
+        nfn = _load_nfn_cli_module()
+
+        rows = dict(
+            nfn._native_train_artifact_rows(
+                [
+                    "/tmp/nfn_deepseek_v4_native_train",
+                    "--tile-ops-lib",
+                    "linked",
+                ]
+            )
+        )
+
+        self.assertEqual(f"{NEURALFN_ROOT / 'linked'} (missing)", rows["tile ops"])
+        self.assertNotIn(
+            str(NEURALFN_ROOT / "build" / "libnfn_native_train_tile_ops.so"),
+            rows["tile ops"],
+        )
+
+    def test_nfn_train_dense_linked_provenance_expands_tile_library(self) -> None:
+        nfn = _load_nfn_cli_module()
+        tile_library = NEURALFN_ROOT / "build" / "libnfn_native_train_tile_ops.so"
+
+        rows = dict(
+            nfn._native_train_artifact_rows(
+                [
+                    "/tmp/nfn_gpt_native_train_linked",
+                    "--tile-ops-lib",
+                    "linked",
+                ]
+            )
+        )
+
+        self.assertTrue(rows["tile ops"].startswith(str(tile_library)))
+        self.assertNotIn(str(NEURALFN_ROOT / "linked"), rows["tile ops"])
+
+    def test_nfn_train_dense_gpt_keeps_linked_defaults(self) -> None:
+        nfn = _load_nfn_cli_module()
+
+        with (
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_cli",
+                return_value="/tmp/nfn_gpt_native_train_linked",
+            ),
+            mock.patch.object(
+                nfn,
+                "_resolve_direct_native_train_family_cli",
+                return_value=None,
+            ),
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                ["train", "--base-model", "gpt", "--tinystories"]
+            )
+
+        self.assertEqual("nfn_gpt_native_train_linked", Path(command[0]).name)
+        self.assertEqual("gpt", command[command.index("--model-family") + 1])
+        self.assertIn("--train-transformer-lm", command)
+        self.assertEqual("tile-cuda", command[command.index("--backend") + 1])
+        self.assertEqual("linked", command[command.index("--tile-ops-lib") + 1])
+        self.assertIn("--native-cuda-activation", command)
+        for default_flag in nfn._NATIVE_GPT_QUALITY_DEFAULTS:
+            self.assertIn(default_flag, command)
 
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
         code = textwrap.dedent(

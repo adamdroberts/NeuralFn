@@ -984,6 +984,7 @@ nfn train --no-tui --base-model gpt --tinystories --train-log-file ~/NeuralFn/ar
 nfn train --plan
 nfn train --base-model gpt --dataset tinystories --eval-every-steps 1000
 nfn train --base-model gpt3 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
+nfn train --base-model gpt --template-name deepseek_v4 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
 nfn-native-train --base-model jamba --native-cuda-smoke-jamba-mamba-state-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn-native-train --base-model jamba --native-cuda-smoke-jamba-layer-schedule-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
 nfn-native-train --base-model hnet-lm --native-cuda-smoke-hnet-byte-lm-loop-step --native-cuda-tile-ops-lib build/libnfn_native_train_tile_ops.so
@@ -999,8 +1000,22 @@ nfn kernels bench --device auto --iterations 200
 nfn kernels examples
 ```
 
-For dense GPT, the Python `nfn train`/TUI route refuses stale in-tree trainer
-artifacts and automatically selects only
+The Python CLI and TUI resolve the selected template family and final executable
+before applying trainer-specific defaults. For example, `--base-model gpt
+--template-name deepseek_v4` (including the equivalent GPT-catalog TUI
+selection) dispatches to `nfn_deepseek_v4_native_train`; it removes the
+synthesized dense-only `--model-family` and `--train-transformer-lm` selectors
+and does not append the dense-GPT handoff's backend, activation, sampling, or
+optimizer-quality defaults. Generic schedule values selected in the TUI, and
+other compatible explicitly supplied options, remain forwarded. Non-dense
+family trainers use an explicit
+`--tile-ops-lib /path/to/libnfn_native_train_tile_ops.so` when supplied, or
+their normal `build/libnfn_native_train_tile_ops.so` default when omitted.
+`--tile-ops-lib linked` is valid only when the final executable is the linked
+dense-GPT trainer and is rejected for family trainers.
+
+When the final resolved trainer remains dense GPT, the Python `nfn train`/TUI
+route refuses stale in-tree trainer artifacts and automatically selects only
 `build/nfn_gpt_native_train_linked`. It does not fall back to the generic or
 dynamic compatibility frontend. The linked build emits
 `build/nfn_gpt_native_train_linked.inputs.sha256`, covering the executable,
@@ -1073,6 +1088,8 @@ direct default invocations avoid the dynamic Tile ops loader. Guards append
 `--tile-ops-lib linked` unless the caller already supplied a Tile ops library
 flag, so direct scripts such as `python cli/scripts/train_nanogpt.py ...` enter
 the linked CUDA Tile trainer path instead of paying the dynamic Tile ops load.
+This sentinel injection happens only after the final executable is known to be
+the linked dense-GPT trainer; it is never inherited by a routed family binary.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections`
 compares the default LM-head route against the diagnostic probability-only
 CE+dlogits path with combined target correction. That path uses vec8 normal
