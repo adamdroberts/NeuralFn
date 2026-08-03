@@ -410,9 +410,10 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --prompt TEXT
           --prompt-tokens IDS
           --max-new-tokens N
-          --temperature FLOAT
+          --temperature FLOAT (finite >=0; exact zero enables strict deterministic CUDA inference)
           --top-k N
           --top-p FLOAT
+          --strict-tile-ops-lib PATH
           --kernel-backend tile-cuda
           --tile-cuda-strict, --no-tile-cuda-strict
 
@@ -1056,6 +1057,7 @@ def _run_lightweight_native_gpt_sampler(tokens: list[str], checkpoint: str) -> i
             top_k=_arg_int_value(tokens, "--top-k", 32),
             repetition_penalty=_arg_float_value(tokens, "--repetition-penalty", 1.0),
             seed=_arg_int_value(tokens, "--seed", 1337),
+            strict_tile_ops_lib=_arg_value(tokens, "--strict-tile-ops-lib"),
         )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

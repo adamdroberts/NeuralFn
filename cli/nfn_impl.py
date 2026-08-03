@@ -76,10 +76,20 @@ from infer_jepa_semantic import (
     resolve_semantic_router_vecs,
     resolve_semantic_targets,
     sample_next_token,
+    standard_compiled_inference_graph,
+    strict_compiled_inference_graph,
     tokenizer_manifest_for_graph,
     top_p_arg,
 )
 from infer_llama_fast import generate_sequence
+from neuralfn.inference_policy import (
+    inference_execution,
+    prepare_inference_process_environment,
+    temperature_uses_strict_inference,
+    validate_inference_temperature,
+    validate_strict_compiled_graph,
+    validate_strict_graph_support,
+)
 from train_llama_fast import LLAMA_DEFAULTS
 from train_mixllama_fast import MIXLLAMA_DEFAULTS
 from train_nanogpt import NANOGPT_DEFAULTS
@@ -508,6 +518,8 @@ class InferRuntimeContext:
     amp_name: str
     context_window: int
     generation_backend: str = "graph"
+    strict_compiled: Any | None = None
+    parameter_golf_config: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -1074,7 +1086,7 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         parser.add_argument("--semantic-topics", default=None, help="Optional semantic topic overrides in dimension=topic form.")
         parser.add_argument("--experimental-semantic-router-vecs", action="store_true", help="Generate semantic_router_vecs when the loaded graph expects them.")
         parser.add_argument("--max-new-tokens", type=int, default=None, help="Maximum new tokens to generate.")
-        parser.add_argument("--temperature", type=float, default=None, help="Sampling temperature.")
+        parser.add_argument("--temperature", type=_infer_temperature_arg, default=None, help="Sampling temperature.")
         parser.add_argument("--top-k", type=int, default=None, help="Top-k sampling cutoff.")
         parser.add_argument("--top-p", type=top_p_arg, default=None, help="Nucleus sampling cutoff.")
         parser.add_argument("--repetition-penalty", type=repetition_penalty_arg, default=None, help="Penalty applied to tokens already seen in the prompt or continuation.")
@@ -1107,7 +1119,7 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         parser.add_argument("--semantic-topics", default=None, help="Optional semantic topic overrides.")
         parser.add_argument("--experimental-semantic-router-vecs", action="store_true", help="Generate semantic_router_vecs when the loaded graph expects them.")
         parser.add_argument("--max-new-tokens", type=int, default=None, help="Maximum new tokens to generate per prompt.")
-        parser.add_argument("--temperature", type=float, default=None, help="Sampling temperature.")
+        parser.add_argument("--temperature", type=_infer_temperature_arg, default=None, help="Sampling temperature.")
         parser.add_argument("--top-k", type=int, default=None, help="Top-k sampling cutoff.")
         parser.add_argument("--top-p", type=top_p_arg, default=None, help="Nucleus sampling cutoff.")
         parser.add_argument("--repetition-penalty", type=repetition_penalty_arg, default=None, help="Penalty applied to previously seen tokens.")
@@ -1549,7 +1561,7 @@ def infer_settings_from_args(args: argparse.Namespace) -> InferChatSettings:
     return InferChatSettings(
         top_k=int(getattr(args, "top_k", None) or 0),
         top_p=float(getattr(args, "top_p", None) or DEFAULT_INFER_TOP_P),
-        temperature=float(getattr(args, "temperature", None) or 0.0),
+        temperature=validate_inference_temperature(getattr(args, "temperature", None) or 0.0),
         max_new_tokens=int(getattr(args, "max_new_tokens", None) or 1),
         repetition_penalty=float(getattr(args, "repetition_penalty", None) or 1.0),
         autocomplete_words=int(getattr(args, "autocomplete_words", None) or 0),
@@ -1560,7 +1572,10 @@ def infer_settings_signature(settings: InferChatSettings) -> tuple[int, float, f
     return (
         int(settings.top_k),
         round(float(settings.top_p), 6),
-        round(float(settings.temperature), 6),
+        # Exact zero is a compute-policy boundary. Preserve even subnormal
+        # positive values so autocomplete/previews cannot reuse strict output
+        # for a standard-temperature request (or vice versa).
+        float(settings.temperature),
         int(settings.max_new_tokens),
         round(float(settings.repetition_penalty), 6),
         int(settings.autocomplete_words),
@@ -1623,10 +1638,7 @@ def _infer_positive_int(raw: str, *, flag_name: str) -> int:
 
 
 def _infer_temperature_arg(raw: str) -> float:
-    value = float(raw)
-    if value < 0.0:
-        raise ValueError("temperature must be greater than or equal to 0.")
-    return value
+    return validate_inference_temperature(raw)
 
 
 def _infer_repetition_penalty_arg(raw: str) -> float:
@@ -1819,9 +1831,14 @@ def build_infer_runtime_context(
 ) -> InferRuntimeContext:
     args.dataset_alias = str(getattr(args, "dataset_alias", None) or DEFAULT_DATASET_ALIAS)
     ensure_infer_defaults(args, interactive=interactive)
+    args.temperature = validate_inference_temperature(args.temperature)
     checkpoint_path = resolve_graphless_checkpoint_path(args)
     if checkpoint_path is not None:
-        return build_parameter_golf_infer_runtime_context(args, checkpoint_path=checkpoint_path)
+        return build_parameter_golf_infer_runtime_context(
+            args,
+            checkpoint_path=checkpoint_path,
+            interactive=interactive,
+        )
     apply_tinystories_dataset_defaults(args)
     resolve_dataset_selector_args(args)
 
@@ -1844,6 +1861,14 @@ def build_infer_runtime_context(
         graph_path=graph_path,
         weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", None) else None,
         device=device,
+        temperature=args.temperature,
+    )
+    compiled, strict_compiled = resolve_initial_infer_compiled_models(
+        graph,
+        compiled,
+        device=device,
+        temperature=args.temperature,
+        interactive=interactive,
     )
     raw_text_encoding_name = resolve_raw_text_encoding_name(graph, encoding_override=getattr(args, "raw_text_encoding_override", None))
     dataset_alias = resolve_inference_dataset_alias(args, graph, default_alias=DEFAULT_DATASET_ALIAS, log=log_stage)
@@ -1885,13 +1910,38 @@ def build_infer_runtime_context(
         amp_dtype=amp_dtype,
         amp_name=amp_name,
         context_window=context_window,
+        strict_compiled=strict_compiled,
     )
+
+
+def resolve_initial_infer_compiled_models(
+    graph,
+    compiled,
+    *,
+    device: torch.device,
+    temperature: float,
+    interactive: bool,
+) -> tuple[Any, Any | None]:
+    """Keep distinct standard/strict models when a live session starts at zero."""
+
+    if not temperature_uses_strict_inference(temperature):
+        return compiled, None
+    strict_compiled = compiled
+    if not interactive:
+        return compiled, strict_compiled
+    standard_compiled = standard_compiled_inference_graph(
+        graph,
+        strict_compiled,
+        device=device,
+    )
+    return standard_compiled, strict_compiled
 
 
 def build_parameter_golf_infer_runtime_context(
     args: argparse.Namespace,
     *,
     checkpoint_path: Path,
+    interactive: bool = False,
 ) -> InferRuntimeContext:
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint artifact not found: {checkpoint_path}")
@@ -1922,7 +1972,13 @@ def build_parameter_golf_infer_runtime_context(
     )
     tokenizer = load_sentencepiece_tokenizer(tokenizer_path, expected_vocab_size=config.vocab_size)
     amp_dtype, amp_name = _amp_dtype_from_name(getattr(args, "amp_dtype", None), device=device)
-    model = build_parameter_golf_model(state_dict, config, device=device)
+    initial_strict = temperature_uses_strict_inference(args.temperature)
+    model = build_parameter_golf_model(
+        state_dict,
+        config,
+        device=device,
+        force_float32=initial_strict and not interactive,
+    )
 
     graph_info = SimpleNamespace(
         name=PARAMETER_GOLF_CHECKPOINT_FORMAT,
@@ -1952,6 +2008,8 @@ def build_parameter_golf_infer_runtime_context(
         amp_name=amp_name,
         context_window=int(config.context_window),
         generation_backend="parameter_golf",
+        strict_compiled=model if initial_strict and not interactive else None,
+        parameter_golf_config=config,
     )
 
 
@@ -2093,6 +2151,48 @@ def parameter_golf_repeat_bans(
     return sorted(bans)
 
 
+def infer_context_for_temperature(
+    context: InferRuntimeContext,
+    temperature: float,
+) -> InferRuntimeContext:
+    """Resolve the model/AMP view used by the next interactive generation."""
+
+    temperature = validate_inference_temperature(temperature)
+    if not temperature_uses_strict_inference(temperature):
+        return context
+    if context.generation_backend == "parameter_golf":
+        if context.parameter_golf_config is None:
+            raise RuntimeError("temperature=0 strict inference is missing the Parameter Golf model configuration.")
+        if context.strict_compiled is None:
+            context.strict_compiled = build_parameter_golf_model(
+                context.state_dict,
+                context.parameter_golf_config,
+                device=context.device,
+                force_float32=True,
+            )
+        validate_strict_compiled_graph(context.strict_compiled)
+        return replace(
+            context,
+            compiled=context.strict_compiled,
+            amp_dtype=torch.float32,
+            amp_name="float32",
+        )
+
+    validate_strict_graph_support(context.graph)
+    if context.strict_compiled is None:
+        context.strict_compiled = strict_compiled_inference_graph(
+            context.graph,
+            context.compiled,
+            device=context.device,
+        )
+    return replace(
+        context,
+        compiled=context.strict_compiled,
+        amp_dtype=torch.float32,
+        amp_name="float32",
+    )
+
+
 def build_parameter_golf_generation(
     context: InferRuntimeContext,
     *,
@@ -2102,9 +2202,11 @@ def build_parameter_golf_generation(
     log_every: int,
     log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
+    temperature = validate_inference_temperature(settings.temperature)
+    strict = temperature_uses_strict_inference(temperature)
     generated = list(prompt_ids)
     resolved_logits_key = resolve_parameter_golf_logits_key(str(getattr(context.args, "logits_node", None) or "auto"))
-    use_amp = autocast_enabled_for(context.device, context.amp_dtype)
+    use_amp = autocast_enabled_for(context.device, context.amp_dtype) and not strict
     repeat_run_limit = int(
         getattr(context.args, "repeat_run_limit", None)
         if getattr(context.args, "repeat_run_limit", None) is not None
@@ -2115,7 +2217,7 @@ def build_parameter_golf_generation(
         if getattr(context.args, "no_repeat_ngram_size", None) is not None
         else DEFAULT_PARAMETER_GOLF_NO_REPEAT_NGRAM_SIZE
     )
-    with torch.no_grad():
+    with inference_execution(temperature, torch_module=torch), torch.no_grad():
         for step_idx in range(int(settings.max_new_tokens)):
             context_ids = generated[-context.context_window:]
             tokens = torch.tensor([context_ids], dtype=torch.long, device=context.device)
@@ -2137,7 +2239,7 @@ def build_parameter_golf_generation(
             )
             next_token = sample_next_token(
                 next_logits,
-                temperature=float(settings.temperature),
+                temperature=temperature,
                 top_k=int(settings.top_k),
                 top_p=float(settings.top_p),
                 token_history=generated,
@@ -2184,6 +2286,10 @@ def build_infer_generation(
     generator: torch.Generator | None = None,
     log: Callable[[str], None] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    prepare_inference_process_environment()
+    temperature = validate_inference_temperature(settings.temperature)
+    settings = replace(settings, temperature=temperature)
+    context = infer_context_for_temperature(context, temperature)
     active_generator = context.generator if generator is None else generator
     log_every = int(getattr(context.args, "log_every", 0) or 0)
     if context.generation_backend == "parameter_golf":
@@ -2423,7 +2529,7 @@ INFER_SLASH_COMMANDS: tuple[InferSlashCommand, ...] = (
         aliases=("/temperature",),
         value_hint="<float>",
         setting_field="temperature",
-        value_type=float,
+        value_type=_infer_temperature_arg,
     ),
     InferSlashCommand(
         "/top_k",
@@ -4757,10 +4863,16 @@ def build_semantic_generation(
     log_every: int,
     log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
+    temperature = validate_inference_temperature(temperature)
+    strict = temperature_uses_strict_inference(temperature)
+    if strict:
+        validate_strict_graph_support(graph)
+        if str(getattr(compiled, "resolved_kernel_backend", "torch")) != "torch":
+            raise RuntimeError("temperature=0 strict inference requires a Torch-only compiled graph.")
     generated = list(prompt_ids)
     resolved_logits_key: str | None = None
-    use_amp = autocast_enabled_for(device, amp_dtype)
-    with torch.no_grad():
+    use_amp = autocast_enabled_for(device, amp_dtype) and not strict
+    with inference_execution(temperature, torch_module=torch), torch.no_grad():
         for step_idx in range(max_new_tokens):
             context_ids = generated[-context_window:]
             tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
@@ -4807,6 +4919,7 @@ def build_semantic_generation(
 
 def run_infer(state: dict[str, Any]) -> int:
     configure_console_logging()
+    prepare_inference_process_environment()
     interactive = bool(state.get("_tty", is_tty()))
     args = namespace_from_state("infer", state)
     try:
@@ -4853,8 +4966,13 @@ def run_infer(state: dict[str, Any]) -> int:
 
 def run_eval(state: dict[str, Any]) -> int:
     configure_console_logging()
+    prepare_inference_process_environment()
     recipe = recipe_from_state(state)
     args = namespace_from_state("eval", state)
+    requested_temperature = getattr(args, "temperature", None)
+    if requested_temperature is None:
+        requested_temperature = INFER_GENERATION_PRESETS["balanced"]["temperature"]
+    args.temperature = validate_inference_temperature(requested_temperature)
     args.dataset_alias = str(getattr(args, "dataset_alias", None) or DEFAULT_DATASET_ALIAS)
     resolve_inference_artifact_defaults(args, mode_name=recipe.mode_name())
     apply_tinystories_dataset_defaults(args)
@@ -4875,6 +4993,7 @@ def run_eval(state: dict[str, Any]) -> int:
         graph_path=graph_path,
         weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", None) else None,
         device=device,
+        temperature=args.temperature,
     )
     raw_text_encoding_name = resolve_raw_text_encoding_name(graph, encoding_override=getattr(args, "raw_text_encoding_override", None))
     dataset_alias = resolve_inference_dataset_alias(args, graph, default_alias=DEFAULT_DATASET_ALIAS, log=log_stage)
@@ -4903,26 +5022,31 @@ def run_eval(state: dict[str, Any]) -> int:
     )
     if getattr(args, "amp_dtype", None):
         graph.torch_config = {**graph.torch_config, "amp_dtype": amp_name}
-    if "semantic_data_source" in graph.nodes:
-        validation_loss = evaluate_semantic_model(
-            graph,
-            dataset_path,
-            device=str(args.device),
-            seq_len=context_window,
-            batch_size=int(args.eval_batch_size),
-            eval_batches=int(args.eval_batches),
-            encoding_name=raw_text_encoding_name,
-        )
-    else:
-        validation_loss = evaluate_validation_loss(
-            compiled,
-            dataset_path,
-            device=device,
-            amp_dtype=amp_dtype,
-            seq_len=context_window,
-            batch_size=int(args.eval_batch_size),
-            eval_batches=int(args.eval_batches),
-        )
+    if temperature_uses_strict_inference(args.temperature):
+        amp_dtype = torch.float32
+        amp_name = "float32"
+    with inference_execution(args.temperature, torch_module=torch):
+        if "semantic_data_source" in graph.nodes:
+            validation_loss = evaluate_semantic_model(
+                graph,
+                dataset_path,
+                device=str(args.device),
+                seq_len=context_window,
+                batch_size=int(args.eval_batch_size),
+                eval_batches=int(args.eval_batches),
+                encoding_name=raw_text_encoding_name,
+                compiled=compiled,
+            )
+        else:
+            validation_loss = evaluate_validation_loss(
+                compiled,
+                dataset_path,
+                device=device,
+                amp_dtype=amp_dtype,
+                seq_len=context_window,
+                batch_size=int(args.eval_batch_size),
+                eval_batches=int(args.eval_batches),
+            )
 
     prompt_suite_name, prompt_suite = resolve_prompt_suite(
         dataset_name=dataset_name,

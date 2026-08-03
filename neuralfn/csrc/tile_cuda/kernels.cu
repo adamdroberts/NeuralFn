@@ -13,6 +13,14 @@
 #include <cublas_v2.h>
 #endif
 
+#if defined(NFN_TILE_CUDA_STRICT_MATH_BUILD) && \
+    (defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR) || defined(NFN_TILE_CUDA_USE_TK_ATTENTION))
+#error "strict inference Tile builds must omit cuBLAS and ThunderKittens feature macros"
+#endif
+#if defined(NFN_TILE_CUDA_STRICT_MATH_BUILD) && defined(__CUDA_FAST_MATH__)
+#error "strict inference Tile builds must not use nvcc --use_fast_math"
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>

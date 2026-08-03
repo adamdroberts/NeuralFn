@@ -387,6 +387,13 @@ class TestRuntimeWiring:
 # ---------------------------------------------------------------------------
 
 class TestInferenceCache:
+    def test_cache_accepts_precompiled_graph(self):
+        spec = build_nanogpt_spec(**_tiny_kwargs(), vocab_size=128)
+        graph = _cpu_graph(build_gpt_root_graph(name="cache_precompiled", model_spec=spec))
+        compiled = CompiledTorchGraph(graph)
+        cache = InferenceCache(graph, device="cpu", compiled=compiled)
+        assert cache.compiled is compiled
+
     def test_cache_step_with_training_graph(self):
         """Training graphs return scalar loss; step() handles multi-input."""
         spec = build_nanogpt_spec(**_tiny_kwargs(), vocab_size=128)

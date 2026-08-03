@@ -283,9 +283,15 @@ class InferenceCache:
     perplexity evaluation).
     """
 
-    def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        device: str | None = None,
+        *,
+        compiled: "CompiledTorchGraph | None" = None,
+    ) -> None:
         torch, CompiledTorchGraph = _load_torch_inference_stack()
-        self.compiled = CompiledTorchGraph(graph)
+        self.compiled = compiled if compiled is not None else CompiledTorchGraph(graph)
         self.compiled.eval()
         resolved = device or str(graph.torch_config.get("device", "cuda"))
         self.device = torch.device(resolved)
@@ -329,8 +335,14 @@ class SemanticInferenceCache(InferenceCache):
     produced by the encoder for inspection / conditioned generation.
     """
 
-    def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
-        super().__init__(graph, device)
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        device: str | None = None,
+        *,
+        compiled: "CompiledTorchGraph | None" = None,
+    ) -> None:
+        super().__init__(graph, device, compiled=compiled)
         self._last_semantic_vec: "torch.Tensor" | None = None
 
     @property

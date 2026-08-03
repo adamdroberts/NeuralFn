@@ -3469,6 +3469,17 @@ int nfn_native_tile_ops_abi_version() {
     return 1;
 }
 
+int nfn_native_tile_strict_math_abi_version() {
+#if defined(NFN_TILE_CUDA_STRICT_MATH_BUILD) && \
+    !defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR) && \
+    !defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && \
+    !defined(__CUDA_FAST_MATH__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 const char* nfn_native_tile_ops_error_string(int code) {
     return cudaGetErrorString(static_cast<cudaError_t>(code));
 }

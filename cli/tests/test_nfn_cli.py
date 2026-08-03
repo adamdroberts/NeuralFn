@@ -1156,6 +1156,106 @@ print("NUMPY_LOADED", "numpy" in sys.modules)
         self.assertIn("Generated text:", rendered)
         self.assertIn("hi!", rendered)
 
+    def test_live_temperature_zero_selects_cached_torch_graph_then_restores_standard(self) -> None:
+        standard_compiled = SimpleNamespace(resolved_kernel_backend="tile_cuda")
+        strict_compiled = SimpleNamespace(resolved_kernel_backend="torch")
+        context = nfn_impl.InferRuntimeContext(
+            args=argparse.Namespace(),
+            graph_path=Path("/tmp/model.json"),
+            resolved_weights_path=Path("/tmp/model.pt"),
+            graph=SimpleNamespace(nodes={}, torch_config={}, variant_library={}),
+            compiled=standard_compiled,
+            state_dict={},
+            tokenizer=None,
+            tokenizer_path=None,
+            tokenizer_name=None,
+            raw_text_encoding_name="fake",
+            dataset_alias="fake",
+            device=torch.device("cpu"),
+            generator=torch.Generator(),
+            amp_dtype=torch.bfloat16,
+            amp_name="bfloat16",
+            context_window=32,
+        )
+
+        self.assertIs(context, nfn_impl.infer_context_for_temperature(context, 0.8))
+        with patch.object(nfn_impl, "strict_compiled_inference_graph", return_value=strict_compiled) as compile_strict:
+            strict_view = nfn_impl.infer_context_for_temperature(context, 0.0)
+            second_strict_view = nfn_impl.infer_context_for_temperature(context, -0.0)
+        compile_strict.assert_called_once()
+        self.assertIs(strict_compiled, strict_view.compiled)
+        self.assertIs(strict_compiled, second_strict_view.compiled)
+        self.assertEqual(torch.float32, strict_view.amp_dtype)
+        standard_view = nfn_impl.infer_context_for_temperature(context, 0.8)
+        self.assertIs(standard_compiled, standard_view.compiled)
+        self.assertEqual(torch.bfloat16, standard_view.amp_dtype)
+
+    def test_live_session_starting_at_zero_keeps_distinct_standard_graph(self) -> None:
+        graph = SimpleNamespace(nodes={}, torch_config={}, variant_library={})
+        strict_compiled = SimpleNamespace(resolved_kernel_backend="torch")
+        standard_compiled = SimpleNamespace(resolved_kernel_backend="tile_cuda")
+        with patch.object(
+            nfn_impl,
+            "standard_compiled_inference_graph",
+            return_value=standard_compiled,
+        ) as compile_standard:
+            resolved_standard, resolved_strict = nfn_impl.resolve_initial_infer_compiled_models(
+                graph,
+                strict_compiled,
+                device=torch.device("cpu"),
+                temperature=0.0,
+                interactive=True,
+            )
+
+        compile_standard.assert_called_once_with(graph, strict_compiled, device=torch.device("cpu"))
+        self.assertIs(standard_compiled, resolved_standard)
+        self.assertIs(strict_compiled, resolved_strict)
+
+    def test_live_parameter_golf_temperature_zero_uses_cached_fp32_model(self) -> None:
+        config = ParameterGolfConfig(
+            vocab_size=16,
+            num_layers=1,
+            model_dim=8,
+            num_heads=2,
+            num_kv_heads=1,
+            mlp_mult=2,
+            tie_embeddings=True,
+            context_window=8,
+        )
+        source = ParameterGolfGPT(config)
+        state_dict = source.state_dict()
+        standard_model = ParameterGolfGPT(config).bfloat16().eval()
+        context = nfn_impl.InferRuntimeContext(
+            args=argparse.Namespace(),
+            graph_path=Path("/tmp/model.pt"),
+            resolved_weights_path=Path("/tmp/model.pt"),
+            graph=SimpleNamespace(nodes={}, torch_config={}),
+            compiled=standard_model,
+            state_dict=state_dict,
+            tokenizer=None,
+            tokenizer_path=None,
+            tokenizer_name=None,
+            raw_text_encoding_name="fake",
+            dataset_alias="fake",
+            device=torch.device("cpu"),
+            generator=torch.Generator(),
+            amp_dtype=torch.bfloat16,
+            amp_name="bfloat16",
+            context_window=8,
+            generation_backend="parameter_golf",
+            parameter_golf_config=config,
+        )
+
+        self.assertTrue(any(parameter.dtype == torch.bfloat16 for parameter in standard_model.parameters()))
+        standard_view = nfn_impl.infer_context_for_temperature(context, 0.8)
+        strict_view = nfn_impl.infer_context_for_temperature(context, 0.0)
+        second_strict_view = nfn_impl.infer_context_for_temperature(context, -0.0)
+        restored_view = nfn_impl.infer_context_for_temperature(context, 0.8)
+        self.assertIs(standard_model, standard_view.compiled)
+        self.assertTrue(all(parameter.dtype == torch.float32 for parameter in strict_view.compiled.parameters()))
+        self.assertIs(strict_view.compiled, second_strict_view.compiled)
+        self.assertIs(standard_model, restored_view.compiled)
+
     def test_run_infer_noninteractive_parameter_golf_checkpoint_generates(self) -> None:
         class FakeTokenizer:
             def encode(self, text, out_type=int):
@@ -1411,6 +1511,19 @@ print("NUMPY_LOADED", "numpy" in sys.modules)
         updated, _status = result
         self.assertAlmostEqual(0.5, updated.temperature)
         self.assertEqual(32, updated.top_k)
+
+    def test_apply_infer_setting_command_rejects_invalid_temperatures_without_mutation(self) -> None:
+        settings = nfn_impl.InferChatSettings(
+            top_k=32, top_p=0.95, temperature=0.8, max_new_tokens=64
+        )
+        for raw in ("-0.1", "nan", "inf", "-inf"):
+            with self.subTest(raw=raw):
+                result = nfn_impl.apply_infer_setting_command(f"/temp {raw}", settings)
+                self.assertIsNotNone(result)
+                updated, status = result
+                self.assertIs(settings, updated)
+                self.assertEqual(0.8, updated.temperature)
+                self.assertIn("Invalid", status)
 
     def test_apply_infer_setting_command_parses_int_top_k(self) -> None:
         settings = nfn_impl.InferChatSettings(
@@ -1668,6 +1781,25 @@ print("NUMPY_LOADED", "numpy" in sys.modules)
         self.assertGreater(rows, 2)
         self.assertGreaterEqual(output.getvalue().count("\033[2K"), rows)
         self.assertIn("\r\n", output.getvalue())
+
+    def test_infer_settings_signature_preserves_exact_zero_policy_boundary(self) -> None:
+        strict = nfn_impl.InferChatSettings(
+            top_k=32,
+            top_p=1.0,
+            temperature=0.0,
+            max_new_tokens=64,
+        )
+        standard = nfn_impl.InferChatSettings(
+            top_k=32,
+            top_p=1.0,
+            temperature=1.0e-50,
+            max_new_tokens=64,
+        )
+
+        self.assertNotEqual(
+            nfn_impl.infer_settings_signature(strict),
+            nfn_impl.infer_settings_signature(standard),
+        )
 
     def test_read_infer_chat_line_tab_accepts_inline_autocomplete(self) -> None:
         settings = nfn_impl.InferChatSettings(

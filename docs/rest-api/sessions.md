@@ -99,6 +99,66 @@ is no longer a fixed 40 for each routed dimension.
 
 Reserved for future semantic-conditioned generation. The current response remains a placeholder.
 
+## Chat generation
+
+### POST /{session_id}/chat/generate
+
+Runs autoregressive generation against the session graph.
+
+```json
+{
+  "prompt": "Once upon a time",
+  "max_new_tokens": 64,
+  "temperature": 0,
+  "top_k": 32,
+  "base_checkpoint": "/models/base.pt",
+  "adapter_checkpoint": "/models/adapter.pt"
+}
+```
+
+`prompt` must be non-empty. `temperature` defaults to `0.8` and must be finite
+and greater than or equal to zero; invalid values return HTTP 400. Exact zero
+selects greedy argmax and strict compute for the complete forward pass. Strict
+CUDA requests disable autocast, TF32, reduced-precision reductions, and
+non-math SDPA while enabling fail-closed deterministic algorithms. A positive
+temperature with `top_k: 1` is greedy selection without this strict policy.
+
+Standard generations may execute concurrently. A temperature-zero request
+takes an exclusive, writer-preferring inference gate while process-global
+Torch/CUDA settings are applied and restored, so it cannot overlap another
+generation using different math controls.
+
+```json
+{
+  "prompt": "Once upon a time",
+  "generated": "...",
+  "tokens": [79, 110, 99, 101],
+  "prompt_length": 16,
+  "compute_policy": {
+    "version": 1,
+    "mode": "strict",
+    "trigger": "temperature_zero",
+    "backend": "torch_math",
+    "deterministic_algorithms": true,
+    "autocast_disabled": true,
+    "tf32_disabled": true,
+    "reduced_precision_reductions_disabled": true,
+    "fast_math_disabled": true
+  }
+}
+```
+
+The boolean fields describe guarantees applied to this generation, not a probe
+of unrelated ambient process state. A false standard-mode field means the
+request did not force that optimization off. REST chat itself never enters
+Torch autocast, so `autocast_disabled` is true in both standard and strict
+responses; strict mode additionally guarantees every listed precision and
+determinism control.
+
+Base and adapter checkpoints are loaded into the same compiled model used by
+the inference cache. Unsupported quantized or custom-op-only graphs fail rather
+than silently claiming strict FP32 execution.
+
 ### GET /{session_id}
 
 Returns session details including graph metadata (node/edge counts, revision).

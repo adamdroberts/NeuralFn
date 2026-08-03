@@ -247,6 +247,37 @@ class InferMegakernelArtifactTest(unittest.TestCase):
         self.assertEqual(0, without_penalty)
         self.assertEqual(1, with_penalty)
 
+    def test_sample_next_token_rejects_negative_and_nonfinite_temperature(self) -> None:
+        module = self.load_module("infer_jepa_semantic")
+        logits = torch.tensor([[3.0, 2.8, 0.1]], dtype=torch.float32)
+        generator = torch.Generator()
+        for temperature in (-0.1, float("nan"), float("inf"), float("-inf")):
+            with self.subTest(temperature=temperature):
+                with self.assertRaisesRegex(ValueError, "finite number"):
+                    module.sample_next_token(
+                        logits,
+                        temperature=temperature,
+                        top_k=0,
+                        token_history=[],
+                        repetition_penalty=1.0,
+                        generator=generator,
+                    )
+
+    def test_sample_next_token_accepts_subnormal_positive_temperature(self) -> None:
+        module = self.load_module("infer_jepa_semantic")
+        logits = torch.tensor([[1.0, 3.0, 2.0]], dtype=torch.float32)
+
+        next_token = module.sample_next_token(
+            logits,
+            temperature=1.0e-50,
+            top_k=0,
+            token_history=[],
+            repetition_penalty=1.0,
+            generator=torch.Generator().manual_seed(1337),
+        )
+
+        self.assertEqual(1, next_token)
+
     def test_top_p_filter_drops_tokens_outside_nucleus(self) -> None:
         module = self.load_module("infer_jepa_semantic")
         logits = torch.tensor([[10.0, 9.0, 1.0]], dtype=torch.float32)
@@ -343,6 +374,7 @@ class InferMegakernelArtifactTest(unittest.TestCase):
 
     def test_load_compiled_graph_uses_weights_referenced_by_graph_when_not_explicit(self) -> None:
         module = self.load_module("infer_jepa_semantic")
+        module._ensure_runtime_imports()
         graph_path = artifact_path("semantic_router_moe.json")
         fake_graph = SimpleNamespace(
             name="semantic_router_moe_sdk",
@@ -353,7 +385,8 @@ class InferMegakernelArtifactTest(unittest.TestCase):
         state_dict = {"node_modules.model.node_modules.token_embed.embedding.weight": torch.zeros(1, 1)}
 
         class FakeCompiled:
-            def __init__(self, _graph):
+            def __init__(self, _graph, *, kernel_backend="auto"):
+                self.kernel_backend = kernel_backend
                 self.loaded_state_dict = None
 
             def load_state_dict(self, payload):
@@ -386,6 +419,7 @@ class InferMegakernelArtifactTest(unittest.TestCase):
         self.assertEqual(graph_path.with_suffix(".pt"), resolved_weights_path)
         self.assertEqual([graph_path.with_suffix(".pt")], loaded_paths)
         self.assertEqual(state_dict, compiled.loaded_state_dict)
+        self.assertEqual("auto", compiled.kernel_backend)
 
     def test_load_tokenizer_from_graph_manifest_supports_tiktoken(self) -> None:
         module = self.load_module("infer_jepa_semantic")

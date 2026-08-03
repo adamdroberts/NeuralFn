@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-${NFN_NATIVE_TRAIN_TILE_OPS_OUT:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}}"
+if [[ "${OUT}" == *.so ]]; then
+  DEFAULT_STRICT_OUT="${OUT%.so}_strict.so"
+else
+  DEFAULT_STRICT_OUT="${OUT}_strict.so"
+fi
+STRICT_OUT="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT:-${DEFAULT_STRICT_OUT}}"
 NVCC_BIN="${NVCC:-nvcc}"
 KERNELS_SRC="${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"
 ABI_SRC="${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"
@@ -66,3 +72,33 @@ mkdir -p "$(dirname "${OUT}")"
   -lcublas -lcublasLt "${EXTRA_LDLIBS[@]}" \
   -o "${OUT}"
 printf '%s\n' "${OUT}"
+
+# Temperature-zero checkpoint inference deliberately uses a separate binary.
+# Keep all training/TK/cuBLAS tuning in the normal library while compiling the
+# strict sidecar without fast math, TF32/cuBLAS, TK/BF16, or packed-kernel
+# feature macros.  The inference ABI then dispatches only deterministic FP32
+# kernels from this library.
+case "${NFN_NATIVE_BUILD_STRICT_TILE_OPS:-0}" in
+  1|true|TRUE|yes|YES|on|ON)
+    STRICT_CUDA_ARCH="${NFN_TILE_CUDA_STRICT_ARCH:-sm_120}"
+    mkdir -p "$(dirname "${STRICT_OUT}")"
+    "${NVCC_BIN}" -std=c++20 -O3 --shared -Xcompiler -fPIC \
+      -enable-tile \
+      -arch="${STRICT_CUDA_ARCH}" \
+      --ftz=false \
+      --prec-div=true \
+      --prec-sqrt=true \
+      -DNFN_TILE_CUDA_STRICT_MATH_BUILD=1 \
+      -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
+      "${KERNELS_SRC}" "${ABI_SRC}" \
+      -Xlinker -Bsymbolic \
+      -o "${STRICT_OUT}"
+    printf '%s\n' "${STRICT_OUT}"
+    ;;
+  0|false|FALSE|no|NO|off|OFF)
+    ;;
+  *)
+    echo "Unsupported NFN_NATIVE_BUILD_STRICT_TILE_OPS value: ${NFN_NATIVE_BUILD_STRICT_TILE_OPS}" >&2
+    exit 2
+    ;;
+esac

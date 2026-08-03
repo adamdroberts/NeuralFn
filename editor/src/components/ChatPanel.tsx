@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api/client";
+import { api, type InferenceComputePolicy } from "../api/client";
 import { useGraphStore } from "../store/graphStore";
 
 type ChatMessage = {
@@ -8,6 +8,7 @@ type ChatMessage = {
   content: string;
   pending?: boolean;
   tokenCount?: number;
+  computePolicy?: InferenceComputePolicy;
 };
 
 const randomId = () => `m_${Math.random().toString(36).slice(2, 9)}_${Date.now()}`;
@@ -48,6 +49,10 @@ export default function ChatPanel() {
     if (!projectId || !sessionId) return;
     const text = input.trim();
     if (!text || busy) return;
+    if (!Number.isFinite(temperature) || temperature < 0) {
+      setError("Temperature must be a finite number greater than or equal to 0");
+      return;
+    }
     setError(null);
 
     const userMsg: ChatMessage = { id: randomId(), role: "user", content: text };
@@ -72,7 +77,13 @@ export default function ChatPanel() {
       setMessages((m) =>
         m.map((msg) =>
           msg.id === pendingAssistant.id
-            ? { ...msg, content: resp.generated || "(empty completion)", pending: false, tokenCount: resp.tokens.length }
+            ? {
+                ...msg,
+                content: resp.generated || "(empty completion)",
+                pending: false,
+                tokenCount: resp.tokens.length,
+                computePolicy: resp.compute_policy,
+              }
             : msg,
         ),
       );
@@ -162,11 +173,25 @@ export default function ChatPanel() {
                 <input
                   type="number"
                   step={0.1}
+                  min={0}
                   value={temperature}
-                  onChange={(e) => setTemperature(parseFloat(e.target.value) || 0.8)}
+                  onChange={(e) => {
+                    const nextTemperature = e.currentTarget.valueAsNumber;
+                    if (!Number.isFinite(nextTemperature) || nextTemperature < 0) {
+                      setError("Temperature must be a finite number greater than or equal to 0");
+                      return;
+                    }
+                    setTemperature(nextTemperature);
+                    setError(null);
+                  }}
                   className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200"
                 />
               </label>
+              {temperature === 0 && (
+                <span className="rounded bg-cyan-950 px-1 text-[10px] text-cyan-300">
+                  strict
+                </span>
+              )}
               <label>
                 Top-k
                 <input
@@ -214,6 +239,17 @@ export default function ChatPanel() {
                     {msg.role}
                     {msg.tokenCount !== undefined && (
                       <span className="ml-2 text-gray-600">{msg.tokenCount} toks</span>
+                    )}
+                    {msg.computePolicy && (
+                      <span
+                        className={`ml-2 ${
+                          msg.computePolicy.mode === "strict" ? "text-cyan-400" : "text-gray-600"
+                        }`}
+                      >
+                        {msg.computePolicy.mode === "strict"
+                          ? `strict deterministic · ${msg.computePolicy.backend}`
+                          : `standard · ${msg.computePolicy.backend}`}
+                      </span>
                     )}
                   </div>
                   {msg.content}

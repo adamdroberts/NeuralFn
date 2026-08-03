@@ -537,6 +537,20 @@ python scripts/infer_jepa_semantic.py \
   --repetition-penalty 1.1
 ```
 
+Inference temperatures must be finite and at least zero. Exact
+`--temperature 0` activates strict deterministic execution around both the
+model forward and greedy selection: graph-backed CUDA inference switches to
+FP32 Torch math with autocast, TF32, reduced-precision reductions, and
+non-deterministic SDPA paths disabled. Native `.bin` inference requires the
+separately built `libnfn_native_train_tile_ops_strict.so`; use
+`--strict-tile-ops-lib PATH` or
+`NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB` to override its sibling-library
+default. Positive temperature remains on the optimized backend, and
+`--top-k 1` alone is greedy without the strict compute guarantee.
+Graph-backed entrypoints arm `CUBLAS_WORKSPACE_CONFIG=:4096:8` before importing
+Torch; an embedding process that initialized CUDA under another value must be
+restarted with that exact setting before it can run temperature-zero inference.
+
 The master `nfn infer` entrypoint can also load supported graphless Parameter
 Golf root-GPT `.pt` checkpoints. These are not NeuralFn graph exports, so pass
 the checkpoint and the matching SentencePiece model directly:

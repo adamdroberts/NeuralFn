@@ -3318,7 +3318,47 @@ start. Use prompt tokens for the no-tokenizer path. Raw text prompts for native
 tokenization is intentionally acceptable before launching the same native
 sampler. The native sampler accepts `temperature`, `top_k`,
 `repetition_penalty`, and `seed` through the SDK and corresponding CLI flags;
-use `temperature=0` or `top_k=1` for deterministic greedy argmax output.
+use `temperature=0` for strict deterministic greedy output. Positive
+`temperature` with `top_k=1` remains greedy but does not activate strict CUDA
+computation. Zero-temperature native inference selects and verifies
+`libnfn_native_train_tile_ops_strict.so`, built without fast math or the
+cuBLAS/TF32 and BF16/TK feature paths. Its sampler ABI dispatches only FP32
+forward kernels and never calls the library's unrelated packed-BF16 or atomic
+training kernels.
+Override its location with `strict_tile_ops_lib=...` in the SDK,
+`--strict-tile-ops-lib PATH` in the compiled CLI, or
+`NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB` operationally. The optimized
+`libnfn_native_train_tile_ops.so` remains the training and positive-temperature
+library.
+
+Successful native sampling includes a versioned `compute_policy` object. Its
+stable common fields match REST telemetry; native output additionally reports
+the strict sidecar ABI and the checkpoint storage boundary:
+
+```json
+{
+  "compute_policy": {
+    "version": 1,
+    "mode": "strict",
+    "trigger": "temperature_zero",
+    "backend": "native-tile-fp32",
+    "deterministic_algorithms": true,
+    "autocast_disabled": true,
+    "tf32_disabled": true,
+    "reduced_precision_reductions_disabled": true,
+    "fast_math_disabled": true,
+    "atomic_reductions_disabled": true,
+    "strict_math_abi_version": 1,
+    "strict_sidecar_verified": true,
+    "checkpoint_storage_precision": "bf16"
+  }
+}
+```
+
+At positive temperature, `mode` is `standard`, `trigger` is `null`, the
+optimized backend remains selected, and strict-only booleans/ABI verification
+are false or zero. `autocast_disabled` remains true because the native sampler
+does not use Torch autocast in either mode.
 Measured llm.kittens parity runs default to a bounded workstation parity band:
 `train_loop_wall_ms_per_step=1.003`, plus
 `train_loop_cuda_event_steady_state_wall_ms_per_step=1.003` when train-loop

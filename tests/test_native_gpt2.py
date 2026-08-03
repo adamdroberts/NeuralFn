@@ -104,6 +104,7 @@ def _write_test_linked_manifest(linked: Path, root: Path) -> None:
         *(root / source for source in native_gpt2_module.NATIVE_GPT2_COMMON_SOURCES),
         *(root / source for source in native_gpt2_module.NATIVE_GPT2_TILE_SOURCES),
         root / "build/libnfn_native_train_tile_ops.so",
+        root / "build/libnfn_native_train_tile_ops_strict.so",
         root / "tools/build_native_gpt_cli_linked.sh",
     ]
     manifest = Path(f"{linked}.inputs.sha256")
@@ -264,8 +265,13 @@ def _load_native_training_guard_module():
     return module
 
 
-def _write_native_checkpoint(path: Path, *, step: int | None = None, version: int = 5) -> Path:
-    max_seq_len = 8
+def _write_native_checkpoint(
+    path: Path,
+    *,
+    step: int | None = None,
+    version: int = 5,
+    max_seq_len: int = 8,
+) -> Path:
     vocab_size = 16
     num_layers = 1
     num_heads = 1
@@ -952,6 +958,7 @@ def test_native_no_torch_dependency_verifier_requires_compiled_gpt_artifacts() -
     assert all(path.relative_to(root) in artifacts for path in present_optional_globs)
     assert Path("build/nfn_gpt_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/libnfn_native_train_tile_ops.so") in module.REQUIRED_DEFAULT_ARTIFACTS
+    assert Path("build/libnfn_native_train_tile_ops_strict.so") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt_native_train_linked") not in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_native_train") in module.REQUIRED_DEFAULT_ARTIFACTS
     assert Path("build/nfn_train_gpt") in module.REQUIRED_DEFAULT_ARTIFACTS
@@ -1301,6 +1308,53 @@ def test_nfn_infer_checkpoint_directory_uses_latest_native_checkpoint(tmp_path: 
     assert "Traceback" not in proc.stderr
 
 
+def test_nfn_infer_forwards_strict_native_zero_options(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000020.bin", step=20)
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    observed = tmp_path / "native-infer-argv.txt"
+    strict_tile_ops = tmp_path / "libnfn_native_train_tile_ops_strict.so"
+    native_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_INFER_ARGV\"\n"
+        "printf '%s\\n' '{\"generated_tokens\": [0]}'\n",
+        encoding="utf-8",
+    )
+    native_cli.chmod(0o755)
+    env = os.environ.copy()
+    env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+    env["NFN_NATIVE_GPT_BINDING"] = "0"
+    env["NFN_TEST_NATIVE_INFER_ARGV"] = str(observed)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli/nfn.py"),
+            "infer",
+            "--checkpoint",
+            str(checkpoint),
+            "--prompt-tokens",
+            "1,2,3",
+            "--temperature",
+            "0",
+            "--strict-tile-ops-lib",
+            str(strict_tile_ops),
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    argv = observed.read_text(encoding="utf-8").splitlines()
+    assert argv[argv.index("--temperature") + 1] == "0.0"
+    assert argv[argv.index("--strict-tile-ops-lib") + 1] == str(strict_tile_ops)
+    assert "Generated token ids: [0]" in proc.stdout
+
+
 def test_infer_gpt2_checkpoint_alias_directory_uses_latest_native_checkpoint(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     _write_native_checkpoint(tmp_path / "model_00000010.bin", step=10)
@@ -1412,6 +1466,81 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
     assert "Generated token ids: [1, 2, 3]" in rendered
 
 
+def test_native_gpt_checkpoint_sampler_sdk_enforces_strict_zero_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000001.bin", step=1)
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    strict_tile_ops = tmp_path / "libnfn_native_train_tile_ops_strict.so"
+
+    argv = native_gpt2_checkpoint_sampler_argv(
+        checkpoint,
+        prompt_tokens="1,2,3",
+        temperature=0.0,
+        strict_tile_ops_lib=strict_tile_ops,
+    )
+
+    assert argv[argv.index("--temperature") + 1] == "0.0"
+    assert argv[argv.index("--strict-tile-ops-lib") + 1] == str(strict_tile_ops)
+    tiny_positive_argv = native_gpt2_checkpoint_sampler_argv(
+        checkpoint,
+        prompt_tokens="1,2,3",
+        temperature=1.0e-50,
+    )
+    assert tiny_positive_argv[tiny_positive_argv.index("--temperature") + 1] == "1e-50"
+    for invalid in (-0.1, -1.0e-50, float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            native_gpt2_checkpoint_sampler_argv(
+                checkpoint,
+                prompt_tokens="1,2,3",
+                temperature=invalid,
+            )
+
+
+def test_native_gpt_strict_zero_cpp_and_tile_build_contracts() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    tile_ops = (root / "neuralfn/csrc/native_train/tile_ops.cu").read_text(encoding="utf-8")
+    kernels = (root / "neuralfn/csrc/tile_cuda/kernels.cu").read_text(encoding="utf-8")
+    build = (root / "tools/build_native_train_tile_ops.sh").read_text(encoding="utf-8")
+    strict_build = build.split("# Temperature-zero checkpoint inference", 1)[1]
+
+    assert "--strict-tile-ops-lib" in source
+    assert "NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB" in source
+    assert "libnfn_native_train_tile_ops_strict.so" in source
+    assert "double sample_temperature = 0.8;" in source
+    assert "cfg.sample_temperature == 0.0" in source
+    assert "cfg.sample_temperature < 0.0" in source
+    assert 'env_or_empty("PATH")' in source
+    assert 'canonical_strict_sibling("/proc/self/exe")' in source
+    assert 'setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8", 1)' in source
+    assert 'setenv("NVIDIA_TF32_OVERRIDE", "0", 1)' in source
+    assert "kStrictMathAbiVersion = 1" in source
+    assert "compute_policy" in source
+    assert "nfn_native_tile_strict_math_abi_version" in tile_ops
+    assert "NFN_TILE_CUDA_STRICT_MATH_BUILD" in kernels
+    assert "__CUDA_FAST_MATH__" in kernels
+    assert "--use_fast_math" not in strict_build
+    assert "-DNFN_TILE_CUDA_USE_CUBLAS_LINEAR" not in strict_build
+    assert "-DNFN_TILE_CUDA_USE_TK_ATTENTION" not in strict_build
+    assert "-DNFN_TILE_CUDA_STRICT_MATH_BUILD=1" in strict_build
+    assert "--ftz=false" in strict_build
+    assert "--prec-div=true" in strict_build
+    assert "--prec-sqrt=true" in strict_build
+    assert 'case "${NFN_NATIVE_BUILD_STRICT_TILE_OPS:-0}" in' in strict_build
+
+    build_all = (root / "tools/build_native_gpt2_all.sh").read_text(encoding="utf-8")
+    rebuild_sm120 = (root / "tools/rebuild_native_sm120.sh").read_text(encoding="utf-8")
+    assert "NFN_NATIVE_BUILD_STRICT_TILE_OPS=1" in build_all
+    assert "NFN_NATIVE_BUILD_STRICT_TILE_OPS=1" in rebuild_sm120
+
+
 def test_nfn_native_checkpoint_sampler_uses_sdk_binding_helper() -> None:
     source = (Path(__file__).resolve().parents[1] / "cli" / "nfn.py").read_text(encoding="utf-8")
     function_body = source.rsplit("def _run_lightweight_native_gpt_sampler(", 1)[1].split("\ndef ", 1)[0]
@@ -1421,6 +1550,7 @@ def test_nfn_native_checkpoint_sampler_uses_sdk_binding_helper() -> None:
     assert "top_k=" in function_body
     assert "repetition_penalty=" in function_body
     assert "seed=" in function_body
+    assert "strict_tile_ops_lib=" in function_body
     assert "native_gpt_checkpoint_sampler_argv" not in function_body
     assert "subprocess.run" not in function_body
 
@@ -20887,6 +21017,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     linked_train = bin_dir / "nfn-gpt2-native-train"
     linked_gpt_native = bin_dir / "nfn-gpt-native"
     linked_gpt_train = bin_dir / "nfn-gpt-native-train"
+    linked_strict_tile_ops = bin_dir / "libnfn_native_train_tile_ops_strict.so"
     linked_gpt2_compat = bin_dir / "nfn-gpt2-native-compat"
     linked_unified = bin_dir / "nfn-native-train"
     linked_native_nfn = bin_dir / "nfn-native"
@@ -20901,6 +21032,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_train.is_symlink()
     assert linked_gpt_native.is_symlink()
     assert linked_gpt_train.is_symlink()
+    assert linked_strict_tile_ops.is_symlink()
     assert linked_gpt2_compat.is_symlink()
     assert linked_unified.is_symlink()
     assert linked_native_nfn.is_symlink()
@@ -20915,6 +21047,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_train.resolve() == linked_native_cli
     assert linked_gpt_native.resolve() == linked_native_cli
     assert linked_gpt_train.resolve() == linked_native_cli
+    assert linked_strict_tile_ops.resolve() == root / "build/libnfn_native_train_tile_ops_strict.so"
     assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
     assert linked_native_nfn.resolve() == native_nfn_cli
@@ -20925,6 +21058,96 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_sm120_alias.resolve() == sm120_launcher
     assert linked_nanogpt_underscore.resolve() == missing_dir / "nfn_nanogpt_native_train"
     assert linked_nanogpt.resolve() == missing_dir / "nfn_nanogpt_native_train"
+
+    # A bare argv[0] from execvp must retain the installed PATH location. The
+    # real binary lives elsewhere, while the strict sidecar is installed next
+    # to this symlink, and the command runs from an unrelated directory.
+    bare_path_cli = bin_dir / "nfn-strict-path-probe"
+    bare_path_cli.symlink_to(native_cli)
+    unrelated_cwd = tmp_path / "unrelated-cwd"
+    unrelated_cwd.mkdir()
+    path_probe_checkpoint = _write_native_checkpoint(
+        tmp_path / "path-probe.bin",
+        max_seq_len=64,
+    )
+    path_probe_env = os.environ.copy()
+    path_probe_env["PATH"] = f"{bin_dir}{os.pathsep}{path_probe_env.get('PATH', '')}"
+    path_probe_env.pop("NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB", None)
+    path_probe = subprocess.run(
+        [
+            "nfn-strict-path-probe",
+            "--sample-checkpoint",
+            str(path_probe_checkpoint),
+            "--prompt-tokens",
+            "1",
+            "--max-new-tokens",
+            "0",
+            "--temperature",
+            "0",
+            "--cuda-runtime-lib",
+            str(tmp_path / "missing-libcudart.so"),
+        ],
+        cwd=unrelated_cwd,
+        env=path_probe_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert path_probe.returncode == 2
+    path_probe_payload = json.loads(path_probe.stdout)
+    assert path_probe_payload["tile_ops_library"] == str(linked_strict_tile_ops)
+    assert path_probe_payload["tile_ops_loaded"] is True
+    assert path_probe_payload["compute_policy"]["strict_sidecar_verified"] is True
+
+    negative_tiny_probe = subprocess.run(
+        [
+            "nfn-strict-path-probe",
+            "--sample-checkpoint",
+            str(path_probe_checkpoint),
+            "--prompt-tokens",
+            "1",
+            "--temperature",
+            "-1e-50",
+        ],
+        cwd=unrelated_cwd,
+        env=path_probe_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert negative_tiny_probe.returncode == 2
+    assert "--temperature must be finite and non-negative" in negative_tiny_probe.stderr
+
+    positive_tiny_probe = subprocess.run(
+        [
+            "nfn-strict-path-probe",
+            "--sample-checkpoint",
+            str(path_probe_checkpoint),
+            "--prompt-tokens",
+            "1",
+            "--max-new-tokens",
+            "0",
+            "--temperature",
+            "1e-50",
+            "--tile-ops-lib",
+            str(root / "build/libnfn_native_train_tile_ops.so"),
+            "--cuda-runtime-lib",
+            str(tmp_path / "missing-libcudart.so"),
+        ],
+        cwd=unrelated_cwd,
+        env=path_probe_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert positive_tiny_probe.returncode == 2
+    positive_tiny_payload = json.loads(positive_tiny_probe.stdout)
+    assert positive_tiny_payload["compute_policy"]["mode"] == "standard"
+    assert positive_tiny_payload["compute_policy"]["strict_sidecar_verified"] is False
+    assert positive_tiny_payload["sampling_strategy"] == "top-k-temperature"
 
     help_proc = subprocess.run(
         [str(linked_native), "--help"],
@@ -20955,6 +21178,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert native_nfn_help.returncode == 0, native_nfn_help.stderr
     assert "Compiled NeuralFn native CLI shim" in native_nfn_help.stdout
+    assert "--strict-tile-ops-lib PATH" in native_nfn_help.stdout
+    assert "exact zero selects strict deterministic FP32 CUDA inference" in native_nfn_help.stdout
 
     sm120_help = subprocess.run(
         [str(linked_sm120), "--help"],

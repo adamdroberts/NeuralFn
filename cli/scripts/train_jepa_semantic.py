@@ -2414,6 +2414,7 @@ def evaluate_model(
     batch_size: int,
     eval_batches: int,
     encoding_name: str | None = None,
+    compiled=None,
 ) -> float:
     if eval_batches <= 0:
         return float("nan")
@@ -2434,7 +2435,8 @@ def evaluate_model(
     dual_dataset = DualSourceEvalDataset(val_dataset, semantic_inputs, graph_input_roles(graph))
     loader = torch.utils.data.DataLoader(dual_dataset, batch_size=batch_size, shuffle=False)
 
-    compiled = CompiledTorchGraph(graph)
+    if compiled is None:
+        compiled = CompiledTorchGraph(graph)
     compiled.to(device)
     compiled.eval()
 

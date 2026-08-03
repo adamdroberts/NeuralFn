@@ -10,18 +10,44 @@ OUT="${1:-${ROOT_DIR}/build/nfn_gpt_native_train_linked}"
 OUT="$(realpath -m "${OUT}")"
 MANIFEST="${OUT}.inputs.sha256"
 TILE_OPS_LIB="${NFN_NATIVE_TRAIN_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
+STRICT_TILE_OPS_LIB="${NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB:-${TILE_OPS_LIB%.so}_strict.so}"
 CXX_BIN="${CXX:-c++}"
 CXX_OPT_FLAGS="${NFN_NATIVE_GPT_CXX_OPT_FLAGS:--O0}"
 FORCE_REBUILD="${NFN_NATIVE_GPT_FORCE_REBUILD:-${NFN_NATIVE_FORCE_REBUILD:-0}}"
 
+source_newer_than_out() {
+  local source_path="$1"
+  [[ "${source_path}" -nt "${OUT}" ]]
+}
+
 if [[ "${FORCE_REBUILD}" != "1" && -f "${OUT}" ]]; then
-  if [[ -f "${MANIFEST}" ]] && sha256sum --status --check "${MANIFEST}"; then
+  if ! source_newer_than_out "${SRC}" &&
+     ! source_newer_than_out "${TOKEN_SHARDS_SRC}" &&
+     ! source_newer_than_out "${TOKEN_SHARDS_HEADER}" &&
+     ! source_newer_than_out "${CATALOG_HEADER}" &&
+     ! source_newer_than_out "${TILE_OPS_LIB}" &&
+     ! source_newer_than_out "${STRICT_TILE_OPS_LIB}" &&
+     ! source_newer_than_out "${BASH_SOURCE[0]}" &&
+     [[ -f "${MANIFEST}" ]] && sha256sum --status --check "${MANIFEST}"; then
     printf '%s\n' "${OUT}"
     exit 0
   fi
 fi
 
-bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}"
+if [[ ! -f "${TILE_OPS_LIB}" ||
+      ! -f "${STRICT_TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${STRICT_TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${STRICT_TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${STRICT_TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" -nt "${STRICT_TILE_OPS_LIB}" ]]; then
+  NFN_NATIVE_BUILD_STRICT_TILE_OPS=1 \
+  NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_OUT="${STRICT_TILE_OPS_LIB}" \
+    bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}"
+fi
 mkdir -p "$(dirname "${OUT}")"
 "${CXX_BIN}" -std=c++20 ${CXX_OPT_FLAGS} -Wall -Wextra -pedantic \
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
@@ -42,6 +68,7 @@ sha256sum \
   "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" \
   "${ROOT_DIR}/tools/build_native_gpt_cli_linked.sh" \
   "${TILE_OPS_LIB}" \
+  "${STRICT_TILE_OPS_LIB}" \
   > "${MANIFEST}.tmp"
 mv "${MANIFEST}.tmp" "${MANIFEST}"
 printf '%s\n' "${OUT}"

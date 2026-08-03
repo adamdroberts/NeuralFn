@@ -12,6 +12,7 @@ from infer_gpt2 import (
     add_dataset_download_arguments,
     add_dataset_selector_arguments,
     add_raw_text_tokenizer_arguments,
+    inference_temperature_arg,
     repetition_penalty_arg,
 )
 
@@ -47,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated token ids. Overrides --prompt when provided.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--temperature", type=inference_temperature_arg, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument("--top-p", type=top_p_arg, default=1.0)
     parser.add_argument(
@@ -94,6 +95,13 @@ def generate_sequence(
 ) -> dict[str, Any]:
     import torch
 
+    from neuralfn.inference_policy import (
+        inference_execution,
+        temperature_uses_strict_inference,
+        validate_inference_temperature,
+        validate_strict_graph_support,
+    )
+
     from infer_jepa_semantic import (
         autocast_enabled_for,
         decode_tokens,
@@ -102,54 +110,62 @@ def generate_sequence(
         sample_next_token,
     )
 
+    temperature = validate_inference_temperature(temperature)
+    strict = temperature_uses_strict_inference(temperature)
+    if strict:
+        validate_strict_graph_support(getattr(compiled, "graph", None))
+        if str(getattr(compiled, "resolved_kernel_backend", "torch")) != "torch":
+            raise RuntimeError("temperature=0 strict inference requires a Torch-only compiled graph.")
+
     generated = list(prompt_ids)
     resolved_logits_key: str | None = None
-    use_amp = autocast_enabled_for(device, amp_dtype)
-    with torch.no_grad():
-        for step_idx in range(max_new_tokens):
-            context_ids = generated[-context_window:]
-            tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
-            targets = torch.zeros_like(tokens)
-            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                _outputs, trace = compiled.trace(tokens, targets)
+    use_amp = autocast_enabled_for(device, amp_dtype) and not strict
+    with inference_execution(temperature, torch_module=torch):
+        with torch.no_grad():
+            for step_idx in range(max_new_tokens):
+                context_ids = generated[-context_window:]
+                tokens = torch.tensor([context_ids], dtype=torch.long, device=device)
+                targets = torch.zeros_like(tokens)
+                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                    _outputs, trace = compiled.trace(tokens, targets)
 
-            if resolved_logits_key is None:
-                resolved_logits_key = find_logits_trace_key(trace, logits_node)
-                if log is not None:
-                    log(f"Using traced logits node {resolved_logits_key}")
+                if resolved_logits_key is None:
+                    resolved_logits_key = find_logits_trace_key(trace, logits_node)
+                    if log is not None:
+                        log(f"Using traced logits node {resolved_logits_key}")
 
-            logits = trace[resolved_logits_key][0]
-            next_token = sample_next_token(
-                logits[:, -1, :],
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p,
-                token_history=generated,
-                repetition_penalty=repetition_penalty,
-                generator=generator,
-            )
-            generated.append(next_token)
-
-            should_log = (
-                log is not None
-                and log_every > 0
-                and (
-                    step_idx == 0
-                    or (step_idx + 1) % max(log_every, 1) == 0
-                    or step_idx + 1 >= max_new_tokens
+                logits = trace[resolved_logits_key][0]
+                next_token = sample_next_token(
+                    logits[:, -1, :],
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    token_history=generated,
+                    repetition_penalty=repetition_penalty,
+                    generator=generator,
                 )
-            )
-            if should_log:
-                token_piece = describe_token(tokenizer, next_token)
-                log(
-                    f"Generation step {step_idx + 1}/{max_new_tokens}: "
-                    f"token={next_token} piece={token_piece!r}"
-                )
+                generated.append(next_token)
 
-            if stop_token is not None and next_token == stop_token:
-                if log is not None:
-                    log(f"Stop token {stop_token} reached; ending generation early")
-                break
+                should_log = (
+                    log is not None
+                    and log_every > 0
+                    and (
+                        step_idx == 0
+                        or (step_idx + 1) % max(log_every, 1) == 0
+                        or step_idx + 1 >= max_new_tokens
+                    )
+                )
+                if should_log:
+                    token_piece = describe_token(tokenizer, next_token)
+                    log(
+                        f"Generation step {step_idx + 1}/{max_new_tokens}: "
+                        f"token={next_token} piece={token_piece!r}"
+                    )
+
+                if stop_token is not None and next_token == stop_token:
+                    if log is not None:
+                        log(f"Stop token {stop_token} reached; ending generation early")
+                    break
 
     generated_tail = generated[len(prompt_ids):]
     return {
@@ -163,6 +179,11 @@ def generate_sequence(
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    from neuralfn.inference_policy import prepare_inference_process_environment, validate_inference_temperature
+
+    prepare_inference_process_environment()
+    args.temperature = validate_inference_temperature(args.temperature)
 
     import torch
 
@@ -208,6 +229,7 @@ def main() -> int:
             graph_path=graph_path,
             weights_path=Path(args.weights).expanduser().resolve() if getattr(args, "weights", "") else None,
             device=device,
+            temperature=args.temperature,
         )
         log_stage(f"Loading weights from {resolved_weights_path}")
         raw_text_encoding_name = resolve_raw_text_encoding_name(

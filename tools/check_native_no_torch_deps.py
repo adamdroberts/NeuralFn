@@ -19,6 +19,7 @@ import tomllib
 REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt_native_train"),
     Path("build/libnfn_native_train_tile_ops.so"),
+    Path("build/libnfn_native_train_tile_ops_strict.so"),
     Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_train_gpt"),
     Path("build/nfn_train_gpt_sm120"),
@@ -65,6 +66,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
         Path("tools/build_native_train_tile_ops.sh"),
+        Path("build/libnfn_native_train_tile_ops_strict.so"),
         Path("tools/build_native_gpt_cli.sh"),
     ),
     Path("build/nfn_gpt_native_train_linked"): (
@@ -76,6 +78,7 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_train/tile_ops.h"),
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
         Path("tools/build_native_train_tile_ops.sh"),
+        Path("build/libnfn_native_train_tile_ops_strict.so"),
         Path("tools/build_native_gpt_cli_linked.sh"),
     ),
     Path("build/nfn_train_gpt_sm120"): (
@@ -193,6 +196,12 @@ ARTIFACT_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/tile_cuda/kernels.cu"),
         Path("tools/build_native_train_tile_ops.sh"),
     ),
+    Path("build/libnfn_native_train_tile_ops_strict.so"): (
+        Path("neuralfn/csrc/native_train/tile_ops.cu"),
+        Path("neuralfn/csrc/native_train/tile_ops.h"),
+        Path("neuralfn/csrc/tile_cuda/kernels.cu"),
+        Path("tools/build_native_train_tile_ops.sh"),
+    ),
     Path("build/libnfn_native_train_tile_ops_tk.so"): (
         Path("neuralfn/csrc/native_train/tile_ops.cu"),
         Path("neuralfn/csrc/native_train/tile_ops.h"),
@@ -248,6 +257,12 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/nfn_hnet_lm_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/nfn_universal_llama_native_train"): ("bash", "tools/build_native_missing_trainers.sh"),
     Path("build/libnfn_native_train_tile_ops.so"): ("bash", "tools/build_native_train_tile_ops.sh"),
+    Path("build/libnfn_native_train_tile_ops_strict.so"): (
+        "env",
+        "NFN_NATIVE_BUILD_STRICT_TILE_OPS=1",
+        "bash",
+        "tools/build_native_train_tile_ops.sh",
+    ),
     Path("build/libnfn_native_train_tile_ops_tk.so"): (
         "bash",
         "tools/build_native_train_tile_ops.sh",
@@ -281,10 +296,14 @@ NATIVE_GPT_RUNTIME_CONTRACT_MARKERS = (
     b'"sm120_memory_block_size"',
     b'"sm120_layernorm_bwd_blocks_per_sm"',
 )
+STRICT_TILE_RUNTIME_CONTRACT_MARKERS = (
+    b"nfn_native_tile_strict_math_abi_version",
+)
 REQUIRED_ARTIFACT_STRING_MARKERS = {
     Path("build/nfn_gpt_native_train"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
     Path("build/nfn_gpt_native_train_linked"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
     Path("build/nfn_gpt2_native_train"): NATIVE_GPT_RUNTIME_CONTRACT_MARKERS,
+    Path("build/libnfn_native_train_tile_ops_strict.so"): STRICT_TILE_RUNTIME_CONTRACT_MARKERS,
 }
 FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "torch",

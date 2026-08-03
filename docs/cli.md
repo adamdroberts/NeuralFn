@@ -2383,7 +2383,23 @@ same native sampler only when `NFN_NATIVE_GPT_ALLOW_PYTHON_TOKENIZER=1` is set.
 Without that explicit opt-in, native `.bin` checkpoint inference rejects raw
 text prompts before importing tokenizer packages. Native checkpoint sampling
 honors `--temperature`, `--top-k`, `--repetition-penalty`, and `--seed`; use
-`--temperature 0` or `--top-k 1` for deterministic greedy argmax generation.
+`--temperature 0` for strict deterministic greedy generation. Positive
+temperature with `--top-k 1` remains greedy selection but keeps the normal
+optimized compute policy.
+
+Every inference command rejects negative and non-finite temperatures. Exact
+zero wraps the complete forward pass and argmax in strict execution: graph
+inference uses FP32 Torch math with deterministic algorithms, autocast/TF32 and
+reduced-precision reductions disabled, while native checkpoint inference
+requires `build/libnfn_native_train_tile_ops_strict.so`. Override that native
+sidecar with `--strict-tile-ops-lib PATH` or
+`NFN_NATIVE_STRICT_INFERENCE_TILE_OPS_LIB`; a missing or incompatible sidecar is
+an error rather than a fallback. Interactive `/temp 0` affects the next
+generation, and changing back to a positive value restores optimized inference.
+Graph-backed commands establish `CUBLAS_WORKSPACE_CONFIG=:4096:8` before Torch
+or CUDA initialization. If CUDA was already initialized under a different or
+unset value, strict inference fails; restart that embedding process with the
+exact setting instead of changing it after CUDA startup.
 
 Plan and runtime JSON also include `native_geometry_contract`. The compiled dense GPT loop reports `name: "native-dense-gpt-transformer"` and `shape_source: "selected_dense_gpt_geometry"` for preset selection or `"custom_graph_template_spec"` for compatible custom graph metadata. The contract records the selected dense model width, head count, head dim, GELU 4x MLP, absolute positions, LayerNorm, public vocab 50,257, padded vocab 50,304, sequence length, and layer count. `template_geometry_dynamic` is true whenever the selected runtime geometry differs from the GPT-2 default, such as `gpt3` context or `nanogpt` width/layer count; `custom_graph_geometry_dynamic` is true when an existing graph file exposes compatible GPT `template_spec` metadata. The same object includes `selected_template_geometry` and `geometry_matches_compiled_loop`, so selecting `nanogpt` records and uses its 320-wide/5-head/5-layer dense GPT geometry.
 

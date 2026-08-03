@@ -39,6 +39,21 @@ from neuralfn.config import ModelSpec, BlockSpec, TemplateSpec
 from neuralfn.inference import export_to_pt, import_from_pt, InferenceCache
 ```
 
+`InferenceCache(graph, device=..., compiled=...)` may reuse an already
+weight-loaded `CompiledTorchGraph`; use this for temperature-zero strict FP32
+inference so cache construction cannot replace the selected backend. Native GPT
+sampler helpers accept `strict_tile_ops_lib=` for the required exact-zero
+`libnfn_native_train_tile_ops_strict.so` sidecar. Temperatures must be finite
+and nonnegative; only exact zero activates strict deterministic CUDA compute.
+Application-owned Torch loops must call the Torch-free
+`prepare_inference_process_environment()` before CUDA, validate with
+`validate_inference_temperature()`, use a Torch-only FP32 model verified by
+`validate_strict_graph_support()` / `validate_strict_compiled_graph()`, and keep
+the complete forward and argmax inside
+`inference_execution(temperature, torch_module=torch)`.
+The context uses the complete hierarchical PyTorch `fp32_precision="ieee"`
+API when available and otherwise the legacy TF32-disable API; never mix them.
+
 ## Creating neurons
 
 ### Scalar function neuron (`@neuron`)
