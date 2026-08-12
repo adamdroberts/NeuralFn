@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 #include <string_view>
 #include <vector>
@@ -2321,6 +2323,14 @@ int launch_differential_packed_attention_backward_bf16(
     const std::uint16_t*, const float*, std::uint16_t*,
     std::int64_t, std::int64_t, std::int64_t, std::int64_t,
     float, float, cudaStream_t);
+int launch_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t*, std::uint16_t*, std::int64_t, std::int64_t, std::int64_t,
+    std::int64_t, const float*, float, float, cudaStream_t);
+int launch_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*,
+    std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+    const float*, float, float, float*, cudaStream_t);
+int release_differential_packed_attention_workspaces();
 void launch_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -2353,6 +2363,15 @@ void launch_route_balance_loss_float32(
     const float* density,
     float* out,
     std::int64_t experts,
+    cudaStream_t stream);
+void launch_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
     cudaStream_t stream);
 void launch_softmax_distillation_partials_float32(
     const float* teacher_logits,
@@ -2874,6 +2893,11 @@ int launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_
     std::int64_t block_size,
     std::int64_t compress_stride,
     cudaStream_t stream);
+void reset_turboquant_attention_launch_stats();
+std::int64_t turboquant_attention_launch_count();
+int launch_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    cudaStream_t stream);
 
 }  // namespace neuralfn::tile_cuda
 
@@ -2883,6 +2907,165 @@ constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
 constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
 constexpr int kLmHeadGraphThreadCacheCapacity = 8;
+constexpr std::int64_t kRawSparseAttentionMaxKeySequenceLength = 1024;
+constexpr std::int64_t kTurboQuantAttentionMaxSequenceLength = 16384;
+constexpr std::int64_t kTurboQuantAttentionMaxHeadDimension = 256;
+
+int validate_raw_sparse_attention_key_sequence_length(
+    bool use_sparse_rules,
+    std::int64_t seq_k) {
+    return use_sparse_rules && seq_k > kRawSparseAttentionMaxKeySequenceLength
+        ? static_cast<int>(cudaErrorInvalidValue)
+        : static_cast<int>(cudaSuccess);
+}
+
+bool checked_positive_product(
+    std::int64_t left,
+    std::int64_t right,
+    std::int64_t* output) {
+    if (output == nullptr || left < 0 || right < 0 ||
+        (left != 0 && right > std::numeric_limits<std::int64_t>::max() / left)) {
+        return false;
+    }
+    *output = left * right;
+    return true;
+}
+
+bool normalize_turboquant_attention_descriptor(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1* source,
+    NfnNativeTileTurboQuantAttentionDescriptorV1* output) {
+    if (source == nullptr || output == nullptr ||
+        source->struct_size < sizeof(NfnNativeTileTurboQuantAttentionDescriptorV1) ||
+        source->version != NFN_NATIVE_TILE_TURBOQUANT_ATTENTION_V1 ||
+        source->flags != 0 || source->reserved0 != 0 ||
+        (source->profile != NFN_NATIVE_TILE_TURBOQUANT_PROFILE_MSE_3_5 &&
+         source->profile != NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5) ||
+        source->query == nullptr || source->key_records == nullptr ||
+        source->value_records == nullptr || source->current_key == nullptr ||
+        source->current_value == nullptr || source->output == nullptr ||
+        source->rotation == nullptr || source->centroids_2bit == nullptr ||
+        source->centroids_3bit == nullptr || source->centroids_4bit == nullptr ||
+        (source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5 &&
+         source->qjl_projection == nullptr) ||
+        source->batch_size <= 0 || source->num_layers <= 0 ||
+        source->layer_index < 0 || source->layer_index >= source->num_layers ||
+        source->query_heads <= 0 || source->kv_heads <= 0 ||
+        source->query_heads % source->kv_heads != 0 ||
+        source->head_dim < 2 ||
+        source->head_dim > kTurboQuantAttentionMaxHeadDimension ||
+        source->head_dim % 2 != 0 || source->past_sequence_length < 0 ||
+        source->past_sequence_length >= kTurboQuantAttentionMaxSequenceLength ||
+        source->cache_capacity <= 0 ||
+        source->past_sequence_length > source->cache_capacity ||
+        !std::isfinite(source->scale) || !(source->scale > 0.0f)) {
+        return false;
+    }
+
+    const std::int64_t pairs = source->head_dim / 2;
+    const std::int64_t value_index_bytes = (pairs * 7 + 7) / 8;
+    const std::int64_t key_index_bytes =
+        source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5
+        ? (pairs * 5 + 7) / 8
+        : value_index_bytes;
+    const std::int64_t sign_bytes = (source->head_dim + 7) / 8;
+    const std::int64_t expected_key_record_bytes =
+        4 + key_index_bytes +
+        (source->profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5
+             ? 4 + sign_bytes
+             : 0);
+    const std::int64_t expected_value_record_bytes = 4 + value_index_bytes;
+    if (source->key_record_bytes != expected_key_record_bytes ||
+        source->value_record_bytes != expected_value_record_bytes) {
+        return false;
+    }
+
+    std::int64_t cache_records_per_batch = 0;
+    std::int64_t cache_positions_per_batch = 0;
+    std::int64_t minimum_key_batch_stride = 0;
+    std::int64_t minimum_value_batch_stride = 0;
+    std::int64_t query_elements_per_batch = 0;
+    std::int64_t kv_elements_per_batch = 0;
+    std::int64_t launch_blocks = 0;
+    if (!checked_positive_product(
+            source->num_layers, source->cache_capacity,
+            &cache_positions_per_batch) ||
+        !checked_positive_product(
+            cache_positions_per_batch, source->kv_heads,
+            &cache_records_per_batch) ||
+        !checked_positive_product(
+            cache_records_per_batch, expected_key_record_bytes,
+            &minimum_key_batch_stride) ||
+        !checked_positive_product(
+            cache_records_per_batch, expected_value_record_bytes,
+            &minimum_value_batch_stride) ||
+        !checked_positive_product(
+            source->query_heads, source->head_dim,
+            &query_elements_per_batch) ||
+        !checked_positive_product(
+            source->kv_heads, source->head_dim,
+            &kv_elements_per_batch) ||
+        !checked_positive_product(
+            source->batch_size, source->query_heads, &launch_blocks) ||
+        launch_blocks > static_cast<std::int64_t>(
+            std::numeric_limits<unsigned int>::max())) {
+        return false;
+    }
+
+    *output = *source;
+    auto normalize_stride = [](std::int64_t supplied, std::int64_t minimum,
+                               std::int64_t* target) {
+        if (target == nullptr || supplied < 0 || (supplied != 0 && supplied < minimum)) {
+            return false;
+        }
+        *target = supplied == 0 ? minimum : supplied;
+        return true;
+    };
+    const bool strides_valid = normalize_stride(
+               source->key_cache_batch_stride_bytes,
+               minimum_key_batch_stride,
+               &output->key_cache_batch_stride_bytes) &&
+        normalize_stride(
+               source->value_cache_batch_stride_bytes,
+               minimum_value_batch_stride,
+               &output->value_cache_batch_stride_bytes) &&
+        normalize_stride(
+               source->query_batch_stride,
+               query_elements_per_batch,
+               &output->query_batch_stride) &&
+        normalize_stride(
+               source->current_key_batch_stride,
+               kv_elements_per_batch,
+               &output->current_key_batch_stride) &&
+        normalize_stride(
+               source->current_value_batch_stride,
+               kv_elements_per_batch,
+               &output->current_value_batch_stride) &&
+        normalize_stride(
+               source->output_batch_stride,
+               query_elements_per_batch,
+               &output->output_batch_stride);
+    if (!strides_valid) {
+        return false;
+    }
+    auto batch_span_fits = [source](std::int64_t stride, std::int64_t span) {
+        const std::int64_t remaining_batches = source->batch_size - 1;
+        return remaining_batches == 0 ||
+            (stride <= (std::numeric_limits<std::int64_t>::max() - span) /
+                 remaining_batches);
+    };
+    return batch_span_fits(
+               output->key_cache_batch_stride_bytes,
+               minimum_key_batch_stride) &&
+        batch_span_fits(
+               output->value_cache_batch_stride_bytes,
+               minimum_value_batch_stride) &&
+        batch_span_fits(output->query_batch_stride, query_elements_per_batch) &&
+        batch_span_fits(
+               output->current_key_batch_stride, kv_elements_per_batch) &&
+        batch_span_fits(
+               output->current_value_batch_stride, kv_elements_per_batch) &&
+        batch_span_fits(output->output_batch_stride, query_elements_per_batch);
+}
 
 bool env_flag_enabled(const char* name) {
     const char* value = std::getenv(name);
@@ -3478,6 +3661,28 @@ int nfn_native_tile_strict_math_abi_version() {
 #else
     return 0;
 #endif
+}
+
+int nfn_native_tile_turboquant_attention_abi_version() {
+    return NFN_NATIVE_TILE_TURBOQUANT_ATTENTION_V1;
+}
+
+int nfn_native_tile_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1* descriptor) {
+    NfnNativeTileTurboQuantAttentionDescriptorV1 normalized{};
+    if (!normalize_turboquant_attention_descriptor(descriptor, &normalized)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    return neuralfn::tile_cuda::launch_turboquant_attention_forward_v1(
+        normalized, as_stream(normalized.cuda_stream));
+}
+
+void nfn_native_tile_turboquant_attention_stats_reset() {
+    neuralfn::tile_cuda::reset_turboquant_attention_launch_stats();
+}
+
+std::int64_t nfn_native_tile_turboquant_attention_launch_count() {
+    return neuralfn::tile_cuda::turboquant_attention_launch_count();
 }
 
 const char* nfn_native_tile_ops_error_string(int code) {
@@ -8446,6 +8651,46 @@ int nfn_native_tile_differential_packed_attention_backward_bf16(
         as_stream(cuda_stream));
 }
 
+int nfn_native_tile_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_forward_learned_lambda_bf16(
+        qkv_bf16_bits, out_bf16_bits, batch, heads, seq_len, head_dim,
+        lambda, output_scale, eps, as_stream(cuda_stream));
+}
+
+int nfn_native_tile_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    float* grad_lambda,
+    void* cuda_stream) {
+    return neuralfn::tile_cuda::launch_differential_packed_attention_backward_learned_lambda_bf16(
+        qkv_bf16_bits, out_bf16_bits, grad_out, grad_qkv_bf16_bits,
+        batch, heads, seq_len, head_dim, lambda, output_scale, eps,
+        grad_lambda, as_stream(cuda_stream));
+}
+
+int nfn_native_tile_differential_packed_attention_release_workspaces() {
+    return neuralfn::tile_cuda::release_differential_packed_attention_workspaces();
+}
+
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -8742,6 +8987,41 @@ int nfn_native_tile_route_balance_loss_float32(
     }
     neuralfn::tile_cuda::launch_route_balance_loss_float32(
         density, out, experts, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density_workspace,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
+    void* cuda_stream) {
+    if (rows <= 0 || experts <= 0 ||
+        rows > std::numeric_limits<std::int64_t>::max() / experts ||
+        rows > std::numeric_limits<int>::max() ||
+        experts > std::numeric_limits<int>::max() ||
+        !std::isfinite(coefficient) || coefficient < 0.0f) {
+        return 1;
+    }
+    if (coefficient == 0.0f) {
+        return 0;
+    }
+    if (router_logits == nullptr || density_workspace == nullptr ||
+        weighted_loss_accumulator == nullptr || grad_router_logits == nullptr) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_moe_router_aux_loss_backward_float32(
+        router_logits,
+        density_workspace,
+        weighted_loss_accumulator,
+        grad_router_logits,
+        rows,
+        experts,
+        coefficient,
+        as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -9937,6 +10217,11 @@ int nfn_native_tile_scaled_dot_product_attention_float32(
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_float32(
         q,
         k,
@@ -9985,6 +10270,11 @@ int nfn_native_tile_scaled_dot_product_attention_backward_float32(
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_backward_float32(
         q,
         k,
@@ -10036,6 +10326,11 @@ int nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float
     std::int64_t block_size,
     std::int64_t compress_stride,
     void* cuda_stream) {
+    const int validation_status = validate_raw_sparse_attention_key_sequence_length(
+        use_sparse_rules, seq_k);
+    if (validation_status != 0) {
+        return validation_status;
+    }
     neuralfn::tile_cuda::launch_scaled_dot_product_attention_backward_from_merged_grad_float32(
         q,
         k,

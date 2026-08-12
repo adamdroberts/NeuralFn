@@ -7,16 +7,12 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <cerrno>
-#include <cstring>
-#include <unistd.h>
 
 namespace {
 
@@ -99,42 +95,29 @@ std::string json_escape(std::string_view value) {
     return out.str();
 }
 
-std::string shell_quote(const std::string& value) {
-    if (value.empty()) {
-        return "''";
-    }
-    bool simple = true;
-    for (char ch : value) {
-        if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-' || ch == '.' || ch == '/' || ch == ':' || ch == '=')) {
-            simple = false;
-            break;
-        }
-    }
-    if (simple) {
-        return value;
-    }
-    std::ostringstream out;
-    out << '\'';
-    for (char ch : value) {
-        if (ch == '\'') {
-            out << "'\\''";
-        } else {
-            out << ch;
-        }
-    }
-    out << '\'';
-    return out.str();
+constexpr std::string_view kGraphFaithfulBlocker =
+    "the native dense delegate does not implement the authored GPT2-Evo whole-block optimization contract";
+
+const std::vector<std::string_view>& graph_faithful_missing_gates() {
+    static const std::vector<std::string_view> gates = {
+        "exclude every tensor in the designated transformer block from gradient and AdamW updates",
+        "mutate, evaluate, select, and adopt every tensor in the designated transformer block rather than only block_N.ln1.weight",
+        "checkpoint and resume the whole-block evolutionary state with graph-faithful parity",
+    };
+    return gates;
 }
 
-void print_command(const std::vector<std::string>& command) {
-    for (std::size_t i = 0; i < command.size(); ++i) {
-        if (i != 0) {
-            std::cout << ' ';
+void print_missing_gates_json(std::string_view indent) {
+    const auto& gates = graph_faithful_missing_gates();
+    std::cout << "[\n";
+    for (std::size_t i = 0; i < gates.size(); ++i) {
+        std::cout << indent << "  \"" << json_escape(gates[i]) << "\"";
+        if (i + 1 != gates.size()) {
+            std::cout << ',';
         }
-        std::cout << shell_quote(command[i]);
+        std::cout << '\n';
     }
-    std::cout << '\n';
-    std::cout.flush();
+    std::cout << indent << ']';
 }
 
 std::string require_value(int argc, char** argv, int* index, const std::string& flag) {
@@ -219,50 +202,6 @@ std::string resolve_tile_ops_lib(const Gpt2EvoPlan& plan, const char* program) {
         return build_path.string();
     }
     return "libnfn_native_train_tile_ops.so";
-}
-
-std::string resolve_dense_gpt_cli(const char* program) {
-    const char* env = std::getenv("NFN_NATIVE_GPT_CLI");
-    if (env != nullptr && std::string_view(env).size() > 0) {
-        return std::string(env);
-    }
-    std::filesystem::path exe_path(program);
-    if (exe_path.has_parent_path()) {
-        std::filesystem::path linked_sibling = exe_path.parent_path() / "nfn_gpt_native_train_linked";
-        if (std::filesystem::exists(linked_sibling)) {
-            return linked_sibling.string();
-        }
-        std::filesystem::path sibling = exe_path.parent_path() / "nfn_gpt_native_train";
-        if (std::filesystem::exists(sibling)) {
-            return sibling.string();
-        }
-    }
-    std::filesystem::path linked_build_path = std::filesystem::current_path() / "build" / "nfn_gpt_native_train_linked";
-    if (std::filesystem::exists(linked_build_path)) {
-        return linked_build_path.string();
-    }
-    std::filesystem::path build_path = std::filesystem::current_path() / "build" / "nfn_gpt_native_train";
-    if (std::filesystem::exists(build_path)) {
-        return build_path.string();
-    }
-    return "nfn_gpt_native_train";
-}
-
-std::string output_dir_for_dense_delegate(const Gpt2EvoPlan& plan) {
-    if (plan.output.empty()) {
-        return "artifacts";
-    }
-    std::filesystem::path output_path(plan.output);
-    if (output_path.has_parent_path()) {
-        return output_path.parent_path().string();
-    }
-    return "artifacts";
-}
-
-std::string format_cli_double(double value) {
-    std::ostringstream out;
-    out << std::setprecision(12) << std::defaultfloat << value;
-    return out.str();
 }
 
 std::vector<std::string> cuda_runtime_candidates(const Gpt2EvoPlan& plan) {
@@ -352,7 +291,7 @@ std::string selected_graph_support_status(const Gpt2EvoPlan& plan) {
     if (!selected_template_is_shipped(plan)) {
         return "unknown-template";
     }
-    return selected_template_is_dense_gpt2_compatible(plan) ? "native-dense-gpt-layer-evo-delegate"
+    return selected_template_is_dense_gpt2_compatible(plan) ? "preflight-only-graph-faithful-layer-evo-missing"
                                                            : "template-native-trainer-missing";
 }
 
@@ -375,7 +314,8 @@ void print_usage(const char* program) {
         << "Usage: " << program << " [native gpt2-evo options]\n\n"
         << "Compiled NeuralFn GPT-2 evo native training preflight.\n"
         << "This target parses the GPT-2 evo training contract in C++ and reports the\n"
-        << "native CUDA Tile kernels still required for layer-evolution training.\n\n"
+        << "native CUDA Tile kernels and whole-block semantics still required for\n"
+        << "graph-faithful layer-evolution training.\n\n"
         << "Core options:\n"
         << "  --dataset-alias PATH_OR_ALIAS   Dataset alias or cached shard directory\n"
         << "  --tinystories                   Use TinyStoriesV2 GPT-4 alias\n"
@@ -405,12 +345,13 @@ void print_usage(const char* program) {
         << "  --evo-layer-mutation-scale X    Gaussian mutation scale, default 0.02\n"
         << "  --evo-tournament-size N         Evo tournament pool size, default 3\n"
         << "  --evo-elite-count N             Evo elite count, default 1\n"
-        << "  --no-layer-evo                  Disable evo-layer metadata in the plan\n"
+        << "  --no-layer-evo                  Disable evo metadata for inspection only; use nfn_gpt_native_train for ordinary dense training\n"
         << "  --tile-ops-lib PATH             Raw libnfn_native_train_tile_ops.so path for evo kernel smoke\n"
         << "  --cuda-runtime-lib PATH         CUDA runtime path for evo kernel smoke; env NFN_CUDA_RUNTIME_LIB also works\n"
         << "  --smoke-evo-kernels             Execute tiny mutate/select/adopt evo Tile kernels and exit\n"
-        << "  --print-plan                    Print the native JSON plan and exit 0\n"
-        << "  --dry-run                       Print the plan, then fail because training is not implemented\n"
+        << "  --print-plan                    Print the blocked native JSON plan and exit 0\n"
+        << "  --dry-run                       Print the blocked plan without delegating\n"
+        << "  --print-command                 Print the blocked plan and missing whole-block gates; never delegates\n"
         << "  --native-cuda-*                 Wrapper aliases are accepted for print-plan, smoke, and library paths\n";
 }
 
@@ -459,12 +400,11 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         (4 * plan.model_dim * plan.model_dim) +
         (plan.model_dim * 4 * plan.model_dim);
     const std::string support_status = selected_graph_support_status(plan);
-    const bool native_runnable = plan.graph_file.empty() && selected_template_is_dense_gpt2_compatible(plan);
+    const bool native_runnable = false;
     const std::string status =
         support_status == "custom-graph-file-missing"
             ? support_status
-            : (native_runnable ? "native-preflight-dense-gpt-layer-evo-delegate"
-                               : "native-preflight-missing-evo-trainer");
+            : "native-preflight-blocked-graph-faithful-layer-evo-missing";
     std::cout
         << "{\n"
         << "  \"model_family\": \"gpt2-evo\",\n"
@@ -476,6 +416,12 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "  \"template_known\": " << (selected_template_is_shipped(plan) ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (native_runnable ? "true" : "false") << ",\n"
+        << "  \"training_execution_blocked\": true,\n"
+        << "  \"blocking_reason\": \"" << json_escape(kGraphFaithfulBlocker) << "\",\n"
+        << "  \"missing_graph_faithful_gates\": ";
+    print_missing_gates_json("  ");
+    std::cout
+        << ",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"shipped_template_catalog\": [";
     const std::vector<std::string>& presets = shipped_gpt_template_presets();
@@ -555,22 +501,33 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "    \"tournament_size\": " << plan.evo_tournament_size << ",\n"
         << "    \"elite_count\": " << plan.evo_elite_count << ",\n"
         << "    \"evo_block_parameters\": " << evo_block_parameters << ",\n"
-        << "    \"forward_candidate_eval_enabled\": true,\n"
+        << "    \"graph_faithful_whole_block_candidate_eval_enabled\": false,\n"
+        << "    \"diagnostic_ln1_candidate_eval_available\": "
+        << (plan.layer_evo_enabled ? "true" : "false") << ",\n"
         << "    \"candidate_loss_source\": \"native-forward-loss-current-batch\",\n"
+        << "    \"current_gradient_optimizer_scope\": \""
+        << (plan.layer_evo_enabled
+                ? "all-transformer-block-tensors-including-designated-evo-block"
+                : "ordinary-dense-adamw-all-tensors")
+        << "\",\n"
+        << "    \"current_evolution_parameter_scope\": \""
+        << (plan.layer_evo_enabled ? "block_N.ln1.weight-only" : "disabled") << "\",\n"
+        << "    \"required_evolution_parameter_scope\": \"every-tensor-in-designated-transformer-block\",\n"
         << "    \"graph_editor_tensor_flow\": false\n"
         << "  },\n"
         << "  \"estimated_parameters\": " << parameters << ",\n"
         << "  \"available_native_kernels\": [\n"
-        << "    \"cached uint16 token-shard dispatch through the dense GPT-2 native CLI\",\n"
-        << "    \"AdamW optimizer profile and validation cadence parsed before Python/Torch import\",\n"
+        << "    \"dataset, schedule, optimizer, and template preflight parsing without Python/Torch import\",\n"
         << "    \"NVFP4 activation intent preserved in the compiled native plan\",\n"
         << "    \"template/custom graph selector parsed before graph-backed runtime import\",\n"
         << "    \"device-side evo candidate mutation, best-loss selection, and best-candidate adoption Tile ABI\",\n"
-        << "    \"native CUDA forward-only candidate evaluation for current plus mutated evo-layer weights\",\n"
-        << "    \"dense GPT native transformer trainer delegate with --layer-evo for GPT-2-compatible templates\"\n"
+        << "    \"diagnostic native CUDA forward-only candidate evaluation for current plus mutated ln1.weight candidates\"\n"
         << "  ],\n"
         << "  \"required_native_kernels\": [\n"
-        << "    \"NVFP4 activation packing over projection and attention inputs in the native trainer\"\n"
+        << "    \"NVFP4 activation packing over projection and attention inputs in the native trainer\",\n"
+        << "    \"whole-block parameter exclusion from gradient and AdamW optimization\",\n"
+        << "    \"whole-block evolutionary mutation, evaluation, selection, and adoption\",\n"
+        << "    \"whole-block evolutionary checkpoint and resume parity\"\n"
         << "  ],\n"
         << "  \"unparsed_args\": [";
     for (std::size_t i = 0; i < plan.unparsed_args.size(); ++i) {
@@ -825,7 +782,14 @@ int print_evo_kernel_smoke_json(const Gpt2EvoPlan& plan, const char* program) {
         << "  \"best_index\": " << host_best_index << ",\n"
         << "  \"best_loss\": " << host_best_loss << ",\n"
         << "  \"max_adopt_abs_error\": " << max_adopt_abs_error << ",\n"
-        << "  \"passed\": " << (passed ? "true" : "false");
+        << "  \"passed\": " << (passed ? "true" : "false") << ",\n"
+        << "  \"selected_graph_support_status\": \""
+        << json_escape(selected_graph_support_status(plan)) << "\",\n"
+        << "  \"selected_graph_native_runnable\": false,\n"
+        << "  \"training_execution_blocked\": true,\n"
+        << "  \"blocking_reason\": \"" << json_escape(kGraphFaithfulBlocker) << "\",\n"
+        << "  \"missing_graph_faithful_gates\": ";
+    print_missing_gates_json("  ");
     if (!error.empty()) {
         std::cout << ",\n"
                   << "  \"error\": \"" << json_escape(error) << "\"\n";
@@ -1076,134 +1040,37 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
     return plan;
 }
 
-std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const char* program) {
-    std::vector<std::string> args;
-    args.push_back(resolve_dense_gpt_cli(program));
-    args.push_back("--backend");
-    args.push_back("tile-cuda");
-    args.push_back("--train-transformer-lm");
-    args.push_back("--template-name");
-    args.push_back(plan.template_name);
-    args.push_back("--dataset-alias");
-    args.push_back(plan.dataset_alias);
-    args.push_back("--output-dir");
-    args.push_back(output_dir_for_dense_delegate(plan));
-    args.push_back("--max-steps");
-    args.push_back(std::to_string(plan.max_steps));
-    args.push_back("--train-seq-len");
-    args.push_back(std::to_string(plan.train_seq_len));
-    args.push_back("--batch-size");
-    args.push_back(std::to_string(plan.batch_size));
-    args.push_back("--train-batch-tokens");
-    args.push_back(std::to_string(plan.train_batch_tokens));
-    args.push_back("--eval-batches");
-    args.push_back(std::to_string(plan.eval_batches));
-    args.push_back("--eval-batch-size");
-    args.push_back(std::to_string(plan.eval_batch_size));
-    args.push_back("--eval-every-steps");
-    args.push_back(std::to_string(plan.eval_every_steps));
-    args.push_back("--warmup-steps");
-    args.push_back(std::to_string(plan.warmup_steps));
-    args.push_back("--learning-rate");
-    args.push_back(format_cli_double(plan.learning_rate));
-    args.push_back("--lr-schedule");
-    args.push_back(plan.lr_schedule);
-    args.push_back("--final-lr-fraction");
-    args.push_back(format_cli_double(plan.final_lr_fraction));
-    args.push_back("--weight-decay");
-    args.push_back(format_cli_double(plan.weight_decay));
-    args.push_back("--beta1");
-    args.push_back(format_cli_double(plan.beta1));
-    args.push_back("--beta2");
-    args.push_back(format_cli_double(plan.beta2));
-    args.push_back("--adam-eps");
-    args.push_back(format_cli_double(plan.adam_eps));
-    args.push_back("--grad-clip-norm");
-    args.push_back(format_cli_double(plan.grad_clip_norm));
-    args.push_back("--tile-cuda-activation-dtype");
-    args.push_back(plan.tile_activation_dtype);
-    if (plan.require_native_nvfp4_activation_packing) {
-        args.push_back("--require-native-nvfp4-activation-packing");
+int report_blocked_training_execution(const Gpt2EvoPlan& plan) {
+    print_plan_json(plan);
+    std::cerr
+        << "nfn_gpt2_evo_native_train: GPT2-Evo training is blocked before delegate exec, "
+           "CUDA setup, allocation, or model mutation because "
+        << kGraphFaithfulBlocker << ".\n";
+    for (const std::string_view gate : graph_faithful_missing_gates()) {
+        std::cerr << "  missing gate: " << gate << '\n';
     }
-    if (!plan.tile_ops_lib.empty()) {
-        args.push_back("--tile-ops-lib");
-        args.push_back(plan.tile_ops_lib);
-    }
-    if (!plan.cuda_runtime_lib.empty()) {
-        args.push_back("--cuda-runtime-lib");
-        args.push_back(plan.cuda_runtime_lib);
-    }
-    if (plan.layer_evo_enabled) {
-        args.push_back("--layer-evo");
-        args.push_back("--evo-layer-index");
-        args.push_back(std::to_string(plan.evo_layer_index));
-        args.push_back("--evo-layer-interval");
-        args.push_back(std::to_string(plan.evo_layer_interval));
-        args.push_back("--evo-layer-population");
-        args.push_back(std::to_string(plan.evo_layer_population));
-        args.push_back("--evo-layer-mutation-scale");
-        args.push_back(format_cli_double(plan.evo_layer_mutation_scale));
-        args.push_back("--evo-tournament-size");
-        args.push_back(std::to_string(plan.evo_tournament_size));
-        args.push_back("--evo-elite-count");
-        args.push_back(std::to_string(plan.evo_elite_count));
-    } else {
-        args.push_back("--no-layer-evo");
-    }
-    if (plan.startup_only) {
-        args.push_back("--startup-only");
-    }
-    args.insert(args.end(), plan.unparsed_args.begin(), plan.unparsed_args.end());
-    return args;
-}
-
-int print_dense_gpt_delegate_command(const Gpt2EvoPlan& plan, const char* program) {
-    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
+    if (!plan.layer_evo_enabled) {
         std::cerr
-            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
-            << "Use --print-plan to inspect the native support status.\n";
-        return 2;
+            << "--no-layer-evo does not turn this GPT2-Evo entrypoint into ordinary dense training; "
+               "invoke nfn_gpt_native_train directly for that distinct workflow.\n";
     }
-    print_command(dense_gpt_delegate_args(plan, program));
-    return 0;
-}
-
-int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
-    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
-        std::cerr
-            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
-            << "Use --print-plan to inspect the native support status.\n";
-        return 2;
-    }
-
-    std::vector<std::string> args = dense_gpt_delegate_args(plan, program);
-
-    std::vector<char*> delegate_argv;
-    delegate_argv.reserve(args.size() + 1);
-    for (std::string& arg : args) {
-        delegate_argv.push_back(arg.data());
-    }
-    delegate_argv.push_back(nullptr);
-    execvp(args.front().c_str(), delegate_argv.data());
-    std::cerr << "nfn_gpt2_evo_native_train: failed to exec dense GPT delegate '"
-              << args.front() << "': " << std::strerror(errno) << "\n";
-    return 127;
+    return 2;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
     bool print_plan = false;
     bool dry_run = false;
     bool print_delegate_command = false;
     Gpt2EvoPlan plan = parse_args(argc, argv, &print_plan, &dry_run, &print_delegate_command);
     validate_plan(plan);
     if (plan.smoke_evo_kernels) {
+        setenv_default_if_empty("CUDA_MODULE_LOADING", "LAZY");
         return print_evo_kernel_smoke_json(plan, argv[0]);
     }
     if (print_delegate_command) {
-        return print_dense_gpt_delegate_command(plan, argv[0]);
+        return report_blocked_training_execution(plan);
     }
     if (print_plan || dry_run) {
         print_plan_json(plan);
@@ -1219,5 +1086,5 @@ int main(int argc, char** argv) {
     if (dry_run) {
         return 0;
     }
-    return exec_dense_gpt_delegate(plan, argv[0]);
+    return report_blocked_training_execution(plan);
 }

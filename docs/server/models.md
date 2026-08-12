@@ -64,7 +64,7 @@ All request and response schemas are defined in `server/models.py`. These models
 |-------|------|-------------|
 | `name` | `str` | Graph name |
 | `training_method` | `str` | One of the supported training methods |
-| `runtime` | `str` | Execution runtime identifier |
+| `runtime` | `GraphRuntime` | `scalar`, `torch`, or `native-cuda` |
 | `surrogate_config` | `dict` | Optional surrogate training configuration |
 | `evo_config` | `dict` | Optional evolutionary training configuration |
 | `torch_config` | `dict` | Optional Torch training configuration |
@@ -92,8 +92,9 @@ All request and response schemas are defined in `server/models.py`. These models
 | Field | Type | Description |
 |-------|------|-------------|
 | `method` | `str` | Training method to use |
-| `train_inputs` | `dict` | Optional explicit training inputs |
-| `train_targets` | `dict` | Optional explicit training targets |
+| `runtime` | `GraphRuntime` | Optional run override: `scalar`, `torch`, or `native-cuda` |
+| `train_inputs` | `list[list[number]]` | Optional explicit training inputs |
+| `train_targets` | `list[list[number]]` | Optional explicit training targets |
 | `dataset_names` | `list[str]` | Dataset names for data-driven training |
 | `text_column` | `str` | Column name for text data |
 | `seq_len` | `int` | Sequence length for tokenization |
@@ -105,6 +106,11 @@ All request and response schemas are defined in `server/models.py`. These models
 | `generations` | `int` | Number of generations (evolutionary method) |
 | `batch_size` | `int` | Training batch size |
 | `weight_decay` | `float` | Optimizer weight decay |
+| `training_mode` | `str` | `pretrain`, `sft`, `dpo`, `ppo`, or `reward_model`; native-cuda currently accepts only `pretrain` |
+
+Native-cuda requests require exactly one project-accessible cached alias in
+`dataset_names`; `runtime` is a per-run override and does not rewrite the saved
+graph setting.
 
 ### DownloadDatasetRequest
 

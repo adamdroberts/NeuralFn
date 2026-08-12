@@ -230,9 +230,15 @@ Options:
   --preset NAME          Alias for --template-name
   --graph-file PATH      Native-compatible dense GPT custom graph metadata
   --graph PATH           Alias for --graph-file
+  --graph-fingerprint H  Expected SHA-256 of the exact graph bytes
   --dataset-alias PATH   Dataset alias/path for the compiled C++ resolver
   --output-dir PATH      Native output directory
   --lr-schedule NAME     Forwarded native LR schedule: cosine or constant
+  --lr-schedule-total-steps N
+                         Stable absolute LR horizon; omit on strict resume to inherit it
+  --train-seed N         Explicit training/init and shard-sampler seed
+  --resume-from-checkpoint PATH
+                         Continue from a native checkpoint bundle
   --final-lr-fraction F  Final LR fraction for cosine decay; default 0
   -h, --help             Show this help
 

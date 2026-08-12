@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+import neuralfn.tile_cuda.autograd as tile_cuda_autograd
 from neuralfn.tile_cuda import (
     NVFP4Tensor,
     TileCudaConfig,
@@ -1381,6 +1382,129 @@ def _compare_stage(name: str, cfg: dict[str, object], inputs: tuple[torch.Tensor
         torch.testing.assert_close(actual_param.grad, expected_param.grad, rtol=1e-5, atol=1e-6)
 
 
+def _expert_dispatch_inputs(model_dim: int) -> tuple[torch.Tensor, ...]:
+    return (
+        torch.linspace(-1.0, 1.0, 2 * 3 * model_dim).reshape(2, 3, model_dim),
+        torch.tensor(
+            [
+                [[0.7, 0.3], [0.4, 0.6], [0.5, 0.5]],
+                [[0.2, 0.8], [0.9, 0.1], [0.35, 0.65]],
+            ],
+            dtype=torch.float32,
+        ),
+        torch.tensor(
+            [
+                [[0, 1], [1, 2], [2, 0]],
+                [[2, 1], [0, 2], [1, 0]],
+            ],
+            dtype=torch.long,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("model_dim", "mlp_mult", "multiple_of", "hidden_dim"),
+    [
+        pytest.param(5, 8.0 / 3.0, None, 13, id="fractional-8-over-3"),
+        pytest.param(6, 2.5, 8, 16, id="fractional-aligned"),
+        pytest.param(5, 8.0 / 3.0, 0, 13, id="zero-alignment-sentinel"),
+        pytest.param(4, 2.0, None, 8, id="legacy-integer-unaligned"),
+    ],
+)
+def test_expert_dispatch_geometry_and_tile_cpu_fallback_parity(
+    model_dim: int,
+    mlp_mult: float,
+    multiple_of: int | None,
+    hidden_dim: int,
+) -> None:
+    cfg: dict[str, object] = {
+        "model_dim": model_dim,
+        "experts": 3,
+        "mlp_mult": mlp_mult,
+    }
+    if multiple_of is not None:
+        cfg["multiple_of"] = multiple_of
+
+    reference = build_module("expert_dispatch", cfg)
+    tile = build_tile_module(
+        "expert_dispatch",
+        cfg,
+        TileCudaConfig(backend="tile_cuda", strict=False),
+    )
+    assert tile is not None
+    expected_shapes = {
+        "w1": (3, model_dim, hidden_dim),
+        "w2": (3, hidden_dim, model_dim),
+        "w3": (3, model_dim, hidden_dim),
+    }
+    for name, expected_shape in expected_shapes.items():
+        assert tuple(getattr(reference, name).shape) == expected_shape
+        assert tuple(getattr(tile, name).shape) == expected_shape
+
+    torch.manual_seed(1234)
+    _compare_stage(
+        "expert_dispatch",
+        cfg,
+        _expert_dispatch_inputs(model_dim),
+        "cpu",
+        TileCudaConfig(backend="tile_cuda", strict=False),
+    )
+
+
+def test_expert_dispatch_legacy_omitted_multiplier_defaults_to_four() -> None:
+    cfg: dict[str, object] = {"model_dim": 3, "experts": 3}
+    reference = build_module("expert_dispatch", cfg)
+    tile = build_tile_module(
+        "expert_dispatch",
+        cfg,
+        TileCudaConfig(backend="tile_cuda", strict=False),
+    )
+    assert tile is not None
+    assert tuple(reference.w1.shape) == (3, 3, 12)
+    assert tuple(reference.w2.shape) == (3, 12, 3)
+    assert tuple(reference.w3.shape) == (3, 3, 12)
+    assert reference.state_dict().keys() == tile.state_dict().keys()
+
+    torch.manual_seed(1234)
+    _compare_stage(
+        "expert_dispatch",
+        cfg,
+        _expert_dispatch_inputs(3),
+        "cpu",
+        TileCudaConfig(backend="tile_cuda", strict=False),
+    )
+
+
+@pytest.mark.parametrize("mlp_mult", [0.0, -1.0, float("nan"), float("inf")])
+def test_expert_dispatch_rejects_invalid_multiplier(mlp_mult: float) -> None:
+    cfg: dict[str, object] = {"model_dim": 4, "experts": 3, "mlp_mult": mlp_mult}
+    with pytest.raises(ValueError, match="mlp_mult must be finite and positive"):
+        build_module("expert_dispatch", cfg)
+    with pytest.raises(ValueError, match="mlp_mult must be finite and positive"):
+        build_tile_module(
+            "expert_dispatch",
+            cfg,
+            TileCudaConfig(backend="tile_cuda", strict=False),
+        )
+
+
+def test_expert_dispatch_rejects_negative_multiple_of() -> None:
+    cfg: dict[str, object] = {
+        "model_dim": 4,
+        "experts": 3,
+        "mlp_mult": 2.0,
+        "multiple_of": -1,
+    }
+    with pytest.raises(ValueError, match="multiple_of must be non-negative"):
+        build_module("expert_dispatch", cfg)
+    with pytest.raises(ValueError, match="multiple_of must be non-negative"):
+        build_tile_module(
+            "expert_dispatch",
+            cfg,
+            TileCudaConfig(backend="tile_cuda", strict=False),
+        )
+
+
 def _compare_stage_fp16_cast_contract(
     name: str,
     cfg: dict[str, object],
@@ -1665,6 +1789,214 @@ def _require_cuda_tile_extension() -> TileCudaConfig:
     if ext is None:
         pytest.skip("CUDA Tile extension could not be built or loaded in this environment")
     return config
+
+
+_SPARSE_RIGHT_ALIGNED_CASES: tuple[tuple[str, dict[str, object]], ...] = (
+    (
+        "sliding_window_attention",
+        {"window_size": 3, "is_causal": True, "dropout_p": 0.0},
+    ),
+    (
+        "block_sparse_attention",
+        {"sparse_block_size": 3, "num_sinks": 1, "is_causal": True, "dropout_p": 0.0},
+    ),
+    (
+        "streaming_attention_sinks",
+        {"window_size": 2, "num_sinks": 1, "is_causal": True, "dropout_p": 0.0},
+    ),
+    (
+        "native_sparse_attention",
+        {"window_size": 2, "num_sinks": 1, "compress_stride": 3, "is_causal": True, "dropout_p": 0.0},
+    ),
+)
+
+_SPARSE_CACHE_PREFIX_CASES: tuple[tuple[str, int, int, int], ...] = (
+    ("left", 0, 3, 3),
+    ("middle", 5, 10, 10),
+    ("right", 15, 19, 19),
+)
+
+
+def _sparse_cache_prefix_inputs(
+    *,
+    query_start: int,
+    query_stop: int,
+    key_stop: int,
+    device: str,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Two query heads over one KV head also exercises the public GQA contract.
+    q_all = torch.linspace(-0.8, 0.9, 2 * 19 * 4, dtype=torch.float32, device=device).reshape(1, 2, 19, 4)
+    k_all = torch.linspace(0.7, -0.6, 19 * 4, dtype=torch.float32, device=device).reshape(1, 1, 19, 4)
+    v_all = (torch.arange(19 * 4, dtype=torch.float32, device=device) / 13.0).reshape(1, 1, 19, 4)
+    return (
+        q_all[:, :, query_start:query_stop, :].contiguous(),
+        k_all[:, :, :key_stop, :].contiguous(),
+        v_all[:, :, :key_stop, :].contiguous(),
+    )
+
+
+class _SparseAttentionExtensionSpy:
+    def __init__(self, extension: object) -> None:
+        self.extension = extension
+        self.launches: list[dict[str, object]] = []
+
+    def tile_scaled_dot_product_attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        is_causal: bool,
+        right_align_causal: bool,
+        use_sparse_rules: bool,
+        window: int,
+        num_sinks: int,
+        block_size: int,
+        compress_stride: int,
+    ) -> torch.Tensor:
+        self.launches.append(
+            {
+                "seq_q": q.size(2),
+                "seq_k": k.size(2),
+                "is_causal": is_causal,
+                "right_align_causal": right_align_causal,
+                "use_sparse_rules": use_sparse_rules,
+                "window": window,
+                "num_sinks": num_sinks,
+                "block_size": block_size,
+                "compress_stride": compress_stride,
+            }
+        )
+        return self.extension.tile_scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            is_causal,
+            right_align_causal,
+            use_sparse_rules,
+            window,
+            num_sinks,
+            block_size,
+            compress_stride,
+        )
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.extension, name)
+
+
+@pytest.mark.parametrize(
+    ("prefix_name", "query_start", "query_stop", "key_stop"),
+    _SPARSE_CACHE_PREFIX_CASES,
+    ids=[case[0] for case in _SPARSE_CACHE_PREFIX_CASES],
+)
+@pytest.mark.parametrize(
+    ("name", "cfg"),
+    _SPARSE_RIGHT_ALIGNED_CASES,
+    ids=[case[0] for case in _SPARSE_RIGHT_ALIGNED_CASES],
+)
+def test_tile_cuda_sparse_attention_cpu_fallback_matches_torch_for_right_aligned_cache_prefixes(
+    name: str,
+    cfg: dict[str, object],
+    prefix_name: str,
+    query_start: int,
+    query_stop: int,
+    key_stop: int,
+) -> None:
+    del prefix_name
+    q, k, v = _sparse_cache_prefix_inputs(
+        query_start=query_start,
+        query_stop=query_stop,
+        key_stop=key_stop,
+        device="cpu",
+    )
+    reference = build_module(name, cfg)
+    tile = build_tile_module(name, cfg, TileCudaConfig(backend="tile_cuda", strict=False))
+    assert reference is not None
+    assert tile is not None
+
+    expected = reference(q, k, v)
+    actual = tile(q, k, v)
+
+    torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("prefix_name", "query_start", "query_stop", "key_stop"),
+    _SPARSE_CACHE_PREFIX_CASES,
+    ids=[case[0] for case in _SPARSE_CACHE_PREFIX_CASES],
+)
+@pytest.mark.parametrize(
+    ("name", "cfg"),
+    _SPARSE_RIGHT_ALIGNED_CASES,
+    ids=[case[0] for case in _SPARSE_RIGHT_ALIGNED_CASES],
+)
+def test_tile_cuda_sparse_attention_strict_gpu_launch_matches_torch_for_right_aligned_cache_prefixes(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    cfg: dict[str, object],
+    prefix_name: str,
+    query_start: int,
+    query_stop: int,
+    key_stop: int,
+) -> None:
+    del prefix_name
+    config = _require_cuda_tile_extension()
+    extension = load_tile_cuda_extension(config)
+    assert extension is not None
+    spy = _SparseAttentionExtensionSpy(extension)
+    monkeypatch.setattr(tile_cuda_autograd, "load_tile_cuda_extension", lambda _config: spy)
+    q, k, v = _sparse_cache_prefix_inputs(
+        query_start=query_start,
+        query_stop=query_stop,
+        key_stop=key_stop,
+        device="cuda",
+    )
+    reference = build_module(name, cfg).to("cuda")
+    tile = build_tile_module(name, cfg, config)
+    assert tile is not None
+    tile = tile.to("cuda")
+
+    expected = reference(q, k, v)
+    actual = tile(q, k, v)
+
+    torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
+    assert spy.launches == [
+        {
+            "seq_q": query_stop - query_start,
+            "seq_k": key_stop,
+            "is_causal": True,
+            "right_align_causal": True,
+            "use_sparse_rules": True,
+            "window": int(cfg.get("window_size", 0)),
+            "num_sinks": int(cfg.get("num_sinks", 0)),
+            "block_size": int(cfg.get("sparse_block_size", 0)),
+            "compress_stride": int(cfg.get("compress_stride", 0)),
+        }
+    ]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="torch.cuda is not available")
+@pytest.mark.parametrize(
+    ("name", "cfg"),
+    _SPARSE_RIGHT_ALIGNED_CASES,
+    ids=[case[0] for case in _SPARSE_RIGHT_ALIGNED_CASES],
+)
+def test_tile_cuda_sparse_attention_strict_gpu_rejects_key_sequence_above_1024(
+    name: str,
+    cfg: dict[str, object],
+) -> None:
+    tile = build_tile_module(
+        name,
+        cfg,
+        TileCudaConfig(backend="tile_cuda", strict=True, build_enabled=False),
+    )
+    assert tile is not None
+    tile = tile.to("cuda")
+    q = torch.zeros((1, 2, 3, 4), dtype=torch.float32, device="cuda")
+    k = torch.zeros((1, 1, 1025, 4), dtype=torch.float32, device="cuda")
+    v = torch.zeros_like(k)
+
+    with pytest.raises(RuntimeError, match="key sequence <= 1024"):
+        tile(q, k, v)
 
 
 @pytest.mark.parametrize(("name", "cfg", "inputs"), MODULE_CASES)

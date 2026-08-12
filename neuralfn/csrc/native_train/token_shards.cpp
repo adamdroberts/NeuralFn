@@ -1,12 +1,16 @@
 #include "token_shards.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -325,14 +329,70 @@ void append_contiguous_chunks_into(
     const std::uintmax_t start = shard.header_uint16 + local_chunk_index * static_cast<std::uintmax_t>(seq_len);
     const std::uintmax_t values = chunk_count * static_cast<std::uintmax_t>(seq_len) + 1U;
     scratch.resize(static_cast<std::size_t>(values));
-    std::ifstream input(shard.path, std::ios::binary);
-    if (!input) {
-        throw std::runtime_error("failed to open token shard: " + shard.path.string());
-    }
-    input.seekg(static_cast<std::streamoff>(start * 2U), std::ios::beg);
-    input.read(reinterpret_cast<char*>(scratch.data()), static_cast<std::streamsize>(values * 2U));
-    if (input.gcount() != static_cast<std::streamsize>(values * 2U)) {
-        throw std::runtime_error("short read from token shard: " + shard.path.string());
+    const std::uintmax_t byte_offset = start * 2U;
+    const std::uintmax_t byte_count = values * 2U;
+    if (shard.stable_fd >= 0) {
+        const auto matches_snapshot = [&](const struct stat& status) {
+            return S_ISREG(status.st_mode) && status.st_size >= 0 &&
+                static_cast<std::uintmax_t>(status.st_size) == shard.bytes &&
+                static_cast<std::uintmax_t>(status.st_dev) == shard.stable_device &&
+                static_cast<std::uintmax_t>(status.st_ino) == shard.stable_inode &&
+                static_cast<std::int64_t>(status.st_mtim.tv_sec) ==
+                    shard.stable_mtime_seconds &&
+                static_cast<std::int64_t>(status.st_mtim.tv_nsec) ==
+                    shard.stable_mtime_nanoseconds &&
+                static_cast<std::int64_t>(status.st_ctim.tv_sec) ==
+                    shard.stable_ctime_seconds &&
+                static_cast<std::int64_t>(status.st_ctim.tv_nsec) ==
+                    shard.stable_ctime_nanoseconds;
+        };
+        struct stat before {};
+        if (::fstat(shard.stable_fd, &before) != 0 ||
+            !matches_snapshot(before) ||
+            byte_offset > static_cast<std::uintmax_t>(
+                std::numeric_limits<off_t>::max()) ||
+            byte_count > static_cast<std::uintmax_t>(
+                std::numeric_limits<ssize_t>::max())) {
+            throw std::runtime_error(
+                "stable token shard changed before batch read: " +
+                shard.path.string());
+        }
+        std::size_t consumed = 0;
+        while (consumed < static_cast<std::size_t>(byte_count)) {
+            ssize_t count = -1;
+            do {
+                count = ::pread(
+                    shard.stable_fd,
+                    reinterpret_cast<char*>(scratch.data()) + consumed,
+                    static_cast<std::size_t>(byte_count) - consumed,
+                    static_cast<off_t>(byte_offset + consumed));
+            } while (count < 0 && errno == EINTR);
+            if (count <= 0) {
+                throw std::runtime_error(
+                    "stable token shard changed during batch read: " +
+                    shard.path.string());
+            }
+            consumed += static_cast<std::size_t>(count);
+        }
+        struct stat after {};
+        if (::fstat(shard.stable_fd, &after) != 0 ||
+            !matches_snapshot(after)) {
+            throw std::runtime_error(
+                "stable token shard changed during batch read: " +
+                shard.path.string());
+        }
+    } else {
+        std::ifstream input(shard.path, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("failed to open token shard: " + shard.path.string());
+        }
+        input.seekg(static_cast<std::streamoff>(byte_offset), std::ios::beg);
+        input.read(
+            reinterpret_cast<char*>(scratch.data()),
+            static_cast<std::streamsize>(byte_count));
+        if (input.gcount() != static_cast<std::streamsize>(byte_count)) {
+            throw std::runtime_error("short read from token shard: " + shard.path.string());
+        }
     }
     const std::size_t token_count = static_cast<std::size_t>(chunk_count * static_cast<std::uintmax_t>(seq_len));
     std::memcpy(tokens + offset, scratch.data(), token_count * sizeof(std::uint16_t));

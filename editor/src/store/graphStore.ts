@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 import type {
   GraphData,
+  GraphRuntime,
   NeuronDefData,
   TorchTraceStat,
   TrainingMethod,
@@ -110,7 +111,7 @@ interface GraphState {
   updateActiveGraphSettings: (patch: {
     name?: string;
     training_method?: TrainingMethod;
-    runtime?: "scalar" | "torch";
+    runtime?: GraphRuntime;
     surrogate_config?: Record<string, unknown>;
     evo_config?: Record<string, unknown>;
     torch_config?: Record<string, unknown>;

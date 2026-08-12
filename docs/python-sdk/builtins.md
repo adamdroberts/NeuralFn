@@ -108,6 +108,12 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `gelu_module` | gelu | module | 1 | 1 |
 | `swiglu_module` | swiglu | module | 1 | 1 |
 
+`swiglu` reads `model_dim`, floating-point `mlp_mult`, and optional
+`multiple_of` from `module_config`. Its hidden width is
+`int(model_dim * mlp_mult)`, rounded up to `multiple_of` when provided, in both
+the Torch and CUDA Tile implementations. Custom checkpoints created when the
+runtime ignored non-`8/3` multipliers need projection-shape migration.
+
 ### Torch -- Normalization
 
 | Attribute | Display Name | Kind | Inputs | Outputs |
@@ -115,6 +121,12 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `rms_norm_module` | rms_norm | module | 1 | 1 |
 | `layer_norm_module` | layer_norm | module | 1 | 1 |
 | `dropout_module` | dropout | module | 1 | 1 |
+
+`rms_norm` has two intentionally supported serialized forms. A
+`module_config` containing `model_dim` creates a learnable float32 scale of
+that length initialized to ones; template builders use this affine form. When
+`model_dim` is absent, the module stays parameter-free so existing standalone
+and legacy graph payloads retain their prior behavior.
 
 ### Torch -- Attention
 
@@ -177,6 +189,16 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `load_balance_loss_module` | load_balance_loss | module | 3 | 2 |
 | `aux_loss_add_module` | aux_loss_add | module | 2 | 1 |
 | `loss_scale_module` | loss_scale | module | 1 | 1 |
+
+`expert_dispatch` reads `model_dim`, `experts`, floating-point `mlp_mult`, and
+optional `multiple_of` from `module_config`. Torch and CUDA Tile use identical
+packed parameter shapes: `w1` and `w3` are
+`[experts, model_dim, hidden_dim]`, while `w2` is
+`[experts, hidden_dim, model_dim]`, where `hidden_dim` is
+`max(1, int(model_dim * mlp_mult))` and is rounded upward only for a positive
+alignment. `None` and `0` are unaligned. Legacy serialized nodes that omit
+`mlp_mult` retain the intentional `4.0` default; invalid, non-finite, or
+non-positive multipliers and negative alignments are rejected.
 
 `topk_route_module` accepts `score_fn` in its module config. The default is
 `"softmax"`; `"sigmoid"` and DeepSeek-V4 `"sqrt_softplus"` are also supported

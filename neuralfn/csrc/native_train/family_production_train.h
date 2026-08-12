@@ -1438,8 +1438,10 @@ class FamilyOptimizerState {
 public:
     FamilyOptimizerState() = default;
 
-    explicit FamilyOptimizerState(const std::vector<FamilyDeviceParameterBuffer>& parameter_buffers) {
-        configure(parameter_buffers);
+    explicit FamilyOptimizerState(
+        const std::vector<FamilyDeviceParameterBuffer>& parameter_buffers,
+        float weight_decay = 0.02f) {
+        configure(parameter_buffers, weight_decay);
     }
 
     FamilyOptimizerState(const FamilyOptimizerState&) = delete;
@@ -1461,7 +1463,9 @@ public:
         release();
     }
 
-    void configure(const std::vector<FamilyDeviceParameterBuffer>& parameter_buffers) {
+    void configure(
+        const std::vector<FamilyDeviceParameterBuffer>& parameter_buffers,
+        float weight_decay = 0.02f) {
         release();
         buffers_.clear();
         max_elements_ = 0;
@@ -1478,7 +1482,7 @@ public:
             item.element_offset = buffer.element_offset;
             item.bf16_shadow_offset = bf16_shadow_elements_;
             item.partial_offset = partial_count_;
-            item.weight_decay = default_weight_decay_for_buffer(buffer.spec.name);
+            item.weight_decay = default_weight_decay_for_buffer(buffer.spec.name, weight_decay);
             partial_count_ += optimizer_tile_count(buffer.spec.elements);
             bf16_shadow_elements_ += buffer.spec.elements;
             max_elements_ = std::max(max_elements_, buffer.spec.elements);
@@ -2667,12 +2671,14 @@ private:
         return (elements + NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE - 1) / NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE;
     }
 
-    static float default_weight_decay_for_buffer(const std::string& name) {
+    static float default_weight_decay_for_buffer(
+        const std::string& name,
+        float weight_decay = 0.02f) {
         if (name.find("norm.weight") != std::string::npos ||
             (name.size() >= 5 && name.rfind(".bias") == name.size() - 5)) {
             return 0.0f;
         }
-        return 0.02f;
+        return weight_decay;
     }
 
     static std::size_t checked_float_bytes(std::int64_t elements, std::string* error) {

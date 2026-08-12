@@ -2,10 +2,77 @@
 
 #include <cstdint>
 
+enum : std::uint32_t {
+    NFN_NATIVE_TILE_TURBOQUANT_ATTENTION_V1 = 1,
+    NFN_NATIVE_TILE_TURBOQUANT_PROFILE_MSE_3_5 = 1,
+    NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5 = 2,
+};
+
+// Additive TurboQuant attention ABI.  struct_size is first so callers may pass
+// a larger future descriptor while v1 validates and consumes this prefix.
+//
+// key_records/value_records use the resident CPU-v1 byte layout, batched as
+// [batch][layer][position][kv_head][record].  An MSE key record is
+// [f32 norm][mixed-bit indices]; a QJL key record is
+// [f32 norm][f32 residual_norm][mixed-bit indices][ceil(head_dim/8) signs].
+// Value records are always [f32 norm][mixed-bit indices].  Mixed-bit fields are
+// packed least-significant bit first, with canonical even/odd channel widths
+// 4/3 for MSE values and keys, and 3/2 for QJL keys.  The current row remains
+// exact float32 and participates in the same stable softmax as historical
+// compressed rows.  Matrix/table pointers and all tensor pointers are device
+// pointers; matrices are row-major float64, matching the CPU-v1 tables.
+struct NfnNativeTileTurboQuantAttentionDescriptorV1 {
+    std::uint32_t struct_size;
+    std::uint32_t version;
+    std::uint32_t profile;
+    std::uint32_t flags;
+
+    const float* query;
+    const std::uint8_t* key_records;
+    const std::uint8_t* value_records;
+    const float* current_key;
+    const float* current_value;
+    float* output;
+
+    const double* rotation;
+    const double* qjl_projection;
+    const double* centroids_2bit;
+    const double* centroids_3bit;
+    const double* centroids_4bit;
+
+    std::int64_t batch_size;
+    std::int64_t layer_index;
+    std::int64_t num_layers;
+    std::int64_t query_heads;
+    std::int64_t kv_heads;
+    std::int64_t head_dim;
+    std::int64_t past_sequence_length;
+    std::int64_t cache_capacity;
+    std::int64_t key_record_bytes;
+    std::int64_t value_record_bytes;
+
+    // Zero selects the canonical contiguous span for that tensor/cache.
+    std::int64_t key_cache_batch_stride_bytes;
+    std::int64_t value_cache_batch_stride_bytes;
+    std::int64_t query_batch_stride;
+    std::int64_t current_key_batch_stride;
+    std::int64_t current_value_batch_stride;
+    std::int64_t output_batch_stride;
+
+    float scale;
+    std::uint32_t reserved0;
+    void* cuda_stream;
+};
+
 extern "C" {
 
 int nfn_native_tile_ops_abi_version();
 int nfn_native_tile_strict_math_abi_version();
+int nfn_native_tile_turboquant_attention_abi_version();
+int nfn_native_tile_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1* descriptor);
+void nfn_native_tile_turboquant_attention_stats_reset();
+std::int64_t nfn_native_tile_turboquant_attention_launch_count();
 const char* nfn_native_tile_ops_error_string(int code);
 void nfn_native_tile_attention_forward_stats_reset();
 std::int64_t nfn_native_tile_attention_forward_row_launch_count();
@@ -2792,6 +2859,37 @@ int nfn_native_tile_differential_packed_attention_backward_bf16(
     float output_scale,
     void* cuda_stream);
 
+int nfn_native_tile_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    void* cuda_stream);
+
+int nfn_native_tile_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    float* grad_lambda,
+    void* cuda_stream);
+
+// Drains every stream that has used differential packed attention, then frees
+// its stream-owned scratch. Safe to call while prior launches are still queued.
+int nfn_native_tile_differential_packed_attention_release_workspaces();
+
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -2952,6 +3050,19 @@ int nfn_native_tile_route_balance_loss_float32(
     std::int64_t experts,
     void* cuda_stream);
 
+// Computes the shipped standard-MoE graph auxiliary loss and adds its exact
+// all-expert softmax-Jacobian gradient to grad_router_logits. The weighted loss
+// is accumulated across layer calls. A zero coefficient is an exact no-op.
+int nfn_native_tile_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density_workspace,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
+    void* cuda_stream);
+
 int nfn_native_tile_softmax_distillation_partials_float32(
     const float* teacher_logits,
     const float* student_logits,
@@ -3110,6 +3221,8 @@ int nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32(
     float loss_scale,
     void* cuda_stream);
 
+// Sparse-rule execution is bounded to seq_k <= 1024. A larger key sequence
+// returns cudaErrorInvalidValue before any kernel launch.
 int nfn_native_tile_scaled_dot_product_attention_float32(
     const float* q,
     const float* k,
@@ -3132,6 +3245,8 @@ int nfn_native_tile_scaled_dot_product_attention_float32(
     std::int64_t compress_stride,
     void* cuda_stream);
 
+// Sparse-rule execution is bounded to seq_k <= 1024. A larger key sequence
+// returns cudaErrorInvalidValue before any kernel launch.
 int nfn_native_tile_scaled_dot_product_attention_backward_float32(
     const float* q,
     const float* k,
@@ -3157,6 +3272,8 @@ int nfn_native_tile_scaled_dot_product_attention_backward_float32(
     std::int64_t compress_stride,
     void* cuda_stream);
 
+// Sparse-rule execution is bounded to seq_k <= 1024. A larger key sequence
+// returns cudaErrorInvalidValue before any kernel launch.
 int nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32(
     const float* q,
     const float* k,

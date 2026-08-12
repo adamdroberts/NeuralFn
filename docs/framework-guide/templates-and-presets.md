@@ -107,6 +107,12 @@ These presets combine the modern-LLM kernels (§21–§33 in `todo-kernels.md`) 
 | `diff_semantic_moe_jepa_evo` | `build_diff_semantic_moe_jepa_evo_spec` | — | Differential attention crossed with the semantic chunk-routed MoE + JEPA stack |
 | `dyt_geglu_semantic_dense_jepa_evo` | `build_dyt_geglu_semantic_dense_jepa_evo_spec` | — | DyT + GeGLU crossed with the semantic dense JEPA Evo stack |
 
+`longctx_sparse_llama` currently has full-input/recompute sparse semantics, not
+a resident sparse-cache adapter. Tile sparse launches accept key prefixes up to
+1024 positions; strict Python and raw sparse C-ABI paths fail closed above that
+bound. Do not infer physical K/V eviction or bounded resident storage from the
+sparse mask.
+
 **DeepSeek-V4 mapping note:** V4-Pro's *domain-specific experts* (independently cultivated per math/code/agent/instruction, then consolidated) are the post-training analog of NeuralFn's architectural **semantic vocab-grounded per-dimension experts** (`semantic_router_moe`, `semantic_moe_jepa_evo`) — one expert per semantic dimension at routing time.
 
 **Native training selection:** `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` is
@@ -130,7 +136,11 @@ trainer plans are implemented; they do not fall back to Torch by default.
 The native `gpt2_moa` loop probes the same current batch with all four
 weight-preserving activations at step 1 and the configured interval, chooses the
 lowest-loss activation, and records the selected activation and probe counters
-in runtime JSON.
+in runtime JSON. A completed graph-authored run also writes the strict sibling
+`model_XXXXXXXX.moa.json` beside its dense-v5 model and empty DONE marker. That
+metadata binds the selected activation, canonical candidates, positive
+interval, model bytes, and source graph; migration must use it instead of the
+bare `.bin` before resident prefill/decode or CPU cache/TurboQuant is enabled.
 The compiled `nfn_train_gpt` / `nfn_train_gpt_sm120` launchers use the generated
 C++ copy of `SHIPPED_GPT_TEMPLATE_PRESETS`, so `--base-model <preset>` accepts
 the same shipped template names as `--template-name <preset>`. Non-family
@@ -142,11 +152,19 @@ Use `nfn train --base-model gpt --list-templates`, raw
 opening datasets or resolving token shards. The JSON action lists every shipped
 template selector plus `gpt` and `gpt3`, reports `token_shards_resolved: false`,
 and includes `selected_graph_support_status` plus
-`selected_graph_native_runnable` for each selector. Every listed selector now
-reports `selected_graph_native_runnable: true`; dense GPT-compatible templates
-report `native-transformer-lm`, and smoke-covered non-dense shipped families
-report `native-trainer-covered`. Runtime custom-graph and unknown-template
-guards remain separate from this no-data catalog action. The `train_gpt.py`
+`selected_graph_native_runnable` for each selector. This no-data catalog reports
+selector/family reachability, not graph-authored execution proof. All 66 shipped
+presets lower structurally into Native IR, but only seven reviewed GPT-2
+profiles (`gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
+`gpt2_softcap`, `gpt2_stable`, and `gpt2_zloss`), exact canonical `llama`
+and its graph-equivalent `llama_fast` alias, and standard-MoE `moe`,
+`mixllama`, and `mixllama_fast`, plus trusted-planner proof-bound `gpt2_diff`
+training, have production graph-file adapters. These 13 are execution-ready;
+the other 53 shipped profiles are not.
+Dense GPT-compatible catalog entries report `native-transformer-lm`; canonical
+LLaMA reports its covered production family trainer, while incomplete families
+retain their current registry status. Runtime custom-graph and unknown-template
+guards remain separate from this catalog action. The `train_gpt.py`
 wrapper does not forward its default dataset alias or eval cadence flags for
 this catalog action.
 
@@ -222,8 +240,8 @@ These keys can be passed in config-dict flows such as `build_model_spec_from_con
 | `n_embd` | `model_dim` | `128` | Hidden dimension. |
 | `vocab_size` | -- | `256` | Vocabulary size. |
 | `num_kv_heads` | -- | `2` | Number of KV heads for GQA. `None` for full MHA. |
-| `mlp_multiplier` | -- | `4.0` (GPT), `8/3` (Llama) | FFN hidden-dim multiplier. |
-| `multiple_of` | -- | `256` | Round FFN hidden dim to this multiple (Llama-family). |
+| `mlp_multiplier` | -- | `4.0` (GPT), `8/3` (Llama and standard MoE) | FFN/expert hidden-dim multiplier; fractional SwiGLU and MoE values are preserved. |
+| `multiple_of` | -- | `256` (Llama), `None` (standard MoE) | Positive values round the computed FFN/expert hidden dim upward; `None` or `0` leaves it unaligned. |
 | `experts` | -- | `8` | Number of MoE experts (MoE presets). |
 | `top_k` | -- | `2` | Top-K expert routing (MoE presets). |
 | `rope_base` / `rope_theta` | -- | `10000.0` | RoPE base for attention-enabled presets, including hybrid routed experts. |
@@ -236,6 +254,14 @@ These keys can be passed in config-dict flows such as `build_model_spec_from_con
 | `semantic_align_loss_coef` | -- | `0.5` | Scalar for semantic-alignment loss on semantic routing presets. |
 | `semantic_vocab_ref` | -- | default vocab | Semantic vocabulary file used by semantic projector/router stages. |
 | `route_chunk_size` | -- | `32` | Chunk size for `semantic_dense_jepa_evo` planner updates and `semantic_moe_jepa_evo` route updates. |
+
+For MoE dispatch, the effective expert width is
+`max(1, int(model_dim * mlp_multiplier))`, then rounded upward only when
+`multiple_of > 0`. The standard `moe`, `mixllama`, and `mixllama_fast`
+presets therefore use an unaligned `8/3` width unless the caller opts into an
+alignment. This affects the packed shapes of every expert's `w1`, `w2`, and
+`w3`; checkpoints created with the former integer-truncated multiplier must be
+rebuilt or remapped.
 | `semantic_shared_experts` | -- | `2` | Always-on shared experts for `semantic_moe_jepa_evo`. |
 | `semantic_free_experts` | -- | `8` | Free learned experts for `semantic_moe_jepa_evo`. |
 | `route_evo_enabled` | -- | `true` | Enable periodic route-evolution search for `semantic_moe_jepa_evo`. |
@@ -249,6 +275,15 @@ These keys can be passed in config-dict flows such as `build_model_spec_from_con
 | `lora_rank` / `lora_alpha` | -- | `8` / `16.0` | LoRA/qLoRA rank and scaling. |
 | `lora_targets` | -- | `("q_proj", "v_proj")` | Projection roles wrapped by LoRA/qLoRA. |
 | `qlora_group_size` | -- | `64` | NF4 group size for qLoRA base projections. |
+
+For dense LLaMA-style blocks, Torch and CUDA Tile now implement the template
+literally: SwiGLU uses `int(model_dim * mlp_multiplier)` and then rounds up to
+`multiple_of`, while every template RMSNorm carries `model_dim` and owns a
+learnable float32 scale initialized to ones. Legacy serialized RMSNorm nodes
+without `model_dim` remain parameter-free. When loading an older template
+checkpoint, initialize the new norm scales to ones; custom SwiGLU checkpoints
+whose multiplier was not `8/3` may also require projection tensors to be
+rebuilt or remapped to the corrected hidden width.
 
 ---
 
@@ -351,6 +386,25 @@ each with `selected_graph_native_runnable: true` and
 The native trainer applies z-loss and softcap in fused cross-entropy
 forward/backward kernels, QK-norm in packed-QKV RMSNorm forward/backward
 kernels, and differential attention through two native half-QK causal-attention
-passes plus native combine/RMSNorm forward/backward. The compiled
-`gpt2_diff` benchmark holds lambda at `diff_lambda_init=0.8`; it does not update
-the graph runtime's learnable lambda parameter.
+passes plus native combine/RMSNorm forward/backward. The low-level compiled
+`gpt2_diff` path now initializes one FP32 lambda per layer from
+`diff_lambda_init=0.8`, computes and clips its gradient, updates it with AdamW,
+and writes graph-bound differential parameter/optimizer sidecars without
+changing dense-v5. Its `model_XXXXXXXX.diff.json` uses strict continuation
+schema `neuralfn.native_gpt2_diff.training_checkpoint` version 2 while retaining
+the unchanged binary-artifact `checkpoint_kind=trained_dense_v5_plus_diff_v1`.
+Before Tile/CUDA/H2D, resume binds all five binaries, graph, training-only
+ordered shard contents, counters/sampler position, seed, accumulation shape,
+optimizer/LR horizon, BF16 routes, and a canonical numerics profile of supported
+effective routes; validation shards are not identity-bound. Final export is create-only and
+DONE-last/fsynced, but is not an atomic-rename protocol and does not protect
+ancestor symlink components or metadata-smoke output. Its exact execution
+remains packed-QKV-only and requires the learned-lambda ABI. The legacy
+fixed-lambda ABI remains outside it with rounded-output/non-layer-local backward
+debt. Consequently,
+`selected_graph_native_runnable` in the raw compiled catalog is not
+graph-authored migration/resident proof. An exact planner materialization emits
+`native-training-proof.json` and locally promotes training readiness only after
+source/configuration/topology/shape/geometry validation. Generic Native IR
+capabilities, migration, and native forward stay false until downstream
+consumers validate and execute the additive state.

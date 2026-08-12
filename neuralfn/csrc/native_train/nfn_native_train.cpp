@@ -81,14 +81,14 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "gpt2-evo",
-        "implemented",
+        "preflight-only",
         "nfn_gpt2_evo_native_train",
-        "native-dense-gpt-layer-evo-delegate",
+        "blocked-graph-faithful-whole-block-evolution-missing",
         "not-applicable",
-        "dense-gpt2-compatible-layer-evo-delegate",
-        "required-tile-symbols-present",
-        "delegate-to-dense-gpt-loop",
-        "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo.",
+        "gpt2-evo-whole-block-contract-unimplemented",
+        "evo-primitive-kernels-present",
+        "blocked-before-delegate-exec",
+        "GPT-2 evo is a model-aware native C++ preflight with an isolated evo-kernel smoke. Training is blocked because the dense delegate AdamW-updates the designated block and evolves only ln1.weight, while the authored graph excludes and evolves every tensor in that block.",
     },
     {
         "nanogpt",
@@ -759,7 +759,17 @@ void append_value_arg(std::vector<std::string>& args, std::string flag, std::str
 
 void append_native_gpt_quality_defaults(std::vector<std::string>& args) {
     for (const NativeGptDefault& entry : NATIVE_GPT_QUALITY_DEFAULTS) {
-        if (!has_forwarded_value_flag(args, entry.flag)) {
+        const bool explicit_value =
+            has_forwarded_value_flag(args, entry.flag) ||
+            (entry.flag == std::string_view("--lr-schedule") &&
+             has_forwarded_value_flag(args, "--learning-rate-schedule")) ||
+            (entry.flag == std::string_view("--final-lr-fraction") &&
+             (has_forwarded_value_flag(args, "--learning-rate-decay-frac") ||
+              has_forwarded_value_flag(args, "--learning-rate-decay-fraction"))) ||
+            (entry.flag == std::string_view("--train-loss-every-steps") &&
+             (has_forwarded_value_flag(args, "--train-log-every") ||
+              has_forwarded_value_flag(args, "--train-log-every-steps")));
+        if (!explicit_value) {
             append_value_arg(
                 args,
                 std::string(entry.flag),
@@ -889,6 +899,12 @@ void print_usage(const char* program) {
         << "  --list-models                   Print native training coverage\n"
         << "  --list-templates                Forward dense GPT template catalog lookup without dataset/CUDA setup\n"
         << "  --native-cuda-list-templates    Wrapper alias for --list-templates\n"
+        << "  --graph-file PATH               Graph-authored native training source\n"
+        << "  --lr-schedule cosine|constant  Learning-rate schedule mode\n"
+        << "  --lr-schedule-total-steps N    Stable absolute LR horizon; omit on strict resume to inherit it\n"
+        << "  --train-seed N                 Explicit training/init and shard-sampler seed\n"
+        << "  --resume-from-checkpoint PATH  Continue from a native checkpoint bundle\n"
+        << "  --graph-fingerprint SHA256     Bind graph-authored training to exact graph bytes\n"
         << "  --json                          Use JSON with --list-models\n"
         << "  --help                          Show this help\n\n"
         << "Python wrapper aliases such as --tinystories, --dataset tinystories, --output,\n"
@@ -1137,6 +1153,11 @@ int main(int argc, char** argv) {
                 "--native-cuda-tile-ops-lib",
                 "--native-cuda-cuda-runtime-lib",
                 "--native-cuda-lm-head-row-chunk-size",
+                "--learning-rate-schedule",
+                "--learning-rate-decay-frac",
+                "--learning-rate-decay-fraction",
+                "--train-log-every",
+                "--train-log-every-steps",
                 "--template",
                 "--preset",
                 "--graph",
@@ -1154,6 +1175,14 @@ int main(int argc, char** argv) {
                 append_value_arg(forwarded, "--cuda-runtime-lib", value);
             } else if (arg == "--native-cuda-lm-head-row-chunk-size") {
                 append_value_arg(forwarded, "--lm-head-row-chunk-size", value);
+            } else if (arg == "--learning-rate-schedule") {
+                append_value_arg(forwarded, "--lr-schedule", value);
+            } else if (arg == "--learning-rate-decay-frac" ||
+                       arg == "--learning-rate-decay-fraction") {
+                append_value_arg(forwarded, "--final-lr-fraction", value);
+            } else if (arg == "--train-log-every" ||
+                       arg == "--train-log-every-steps") {
+                append_value_arg(forwarded, "--train-loss-every-steps", value);
             } else if (arg == "--template" || arg == "--preset") {
                 append_value_arg(forwarded, "--template-name", value);
             } else if (arg == "--graph") {
@@ -1169,6 +1198,11 @@ int main(int argc, char** argv) {
             "--native-cuda-tile-ops-lib",
             "--native-cuda-cuda-runtime-lib",
             "--native-cuda-lm-head-row-chunk-size",
+            "--learning-rate-schedule",
+            "--learning-rate-decay-frac",
+            "--learning-rate-decay-fraction",
+            "--train-log-every",
+            "--train-log-every-steps",
             "--template",
             "--preset",
             "--graph",
@@ -1187,6 +1221,14 @@ int main(int argc, char** argv) {
                 append_value_arg(forwarded, "--cuda-runtime-lib", value);
             } else if (value_alias == "--native-cuda-lm-head-row-chunk-size") {
                 append_value_arg(forwarded, "--lm-head-row-chunk-size", value);
+            } else if (value_alias == "--learning-rate-schedule") {
+                append_value_arg(forwarded, "--lr-schedule", value);
+            } else if (value_alias == "--learning-rate-decay-frac" ||
+                       value_alias == "--learning-rate-decay-fraction") {
+                append_value_arg(forwarded, "--final-lr-fraction", value);
+            } else if (value_alias == "--train-log-every" ||
+                       value_alias == "--train-log-every-steps") {
+                append_value_arg(forwarded, "--train-loss-every-steps", value);
             } else if (value_alias == "--template" || value_alias == "--preset") {
                 append_value_arg(forwarded, "--template-name", value);
             } else if (value_alias == "--graph") {

@@ -2,6 +2,1328 @@
 
 ## Unreleased
 
+- Added an opt-in, process-local resident prefix cache for foreground native
+  Responses. `nfn infer --serve` now accepts `--prefix-cache-capacity N`, and
+  the public frozen `NativeServeConfig` has matching
+  `prefix_cache_capacity: int = 0`. Zero preserves the prior cold-per-request
+  behavior. A positive entry count requires `--state-db` plus either effective
+  lossless `full` cache with jointly proven `session_prefix_cow`, or the
+  reviewed dense CPU TurboQuant cache with jointly proven
+  `session_prefix_cow_cpu_turboquant`. Cache-off and Tile-CUDA TurboQuant fail
+  before socket bind; Tile device-state COW remains open.
+- Added a deterministic, capacity-bounded LRU of sealed native sessions behind
+  the private `neuralfn._native_prefix_cache` implementation boundary. Stored
+  response IDs and exact `(conversation ID, items revision)` values are
+  API-key-scope-local candidate aliases. Every hit independently renders the
+  current durable history, computes the exact token LCP, forks only that
+  non-empty prefix, and verifies the child's token history/native cached rows.
+  Entries stay pinned during native fork, while eviction, purge, native close,
+  and capacity-one parent replacement preserve lease safety. Restart is cold;
+  SQLite never serializes sessions or K/V state.
+- Foreground HTTP Responses now retain their independent native lease through
+  durable terminalization. Only stored `completed` or `incomplete` results are
+  admitted after the response/output/conversation transaction commits. Failed
+  and cancelled outcomes close the lease. A `store: false` lineage request can
+  hit an existing parent but cannot publish a new entry. Chat Completions and
+  background Responses remain deliberately cold and never hit or enter this
+  serving LRU. The supported public
+  `NativeResponsesService.execute()+finish()` embedding phases also remain cold;
+  the HTTP app owns the private combined resident lifecycle.
+- Response usage now reports truthful resident prefix observations.
+  `input_tokens_details.cached_tokens` is bounded by both the exact forked LCP
+  and the child session's native cached-row count. `cache_write_tokens` counts
+  only newly written prepared-prompt rows, capped by the prompt suffix and
+  observed native row delta; decoded output rows are excluded. Enabled servers
+  add `/health.prefix_cache` with capacity/entry/alias, lease/fork, hit/miss/
+  eviction/purge, commit/rejection, token, and capacity-observation counters.
+  Shared/private/detach byte fields explicitly use
+  `sum-of-per-session-capacity-observations; shared allocations may be
+  represented by more than one session`; they are not unique physical memory.
+- Response, conversation, and conversation-item deletions now take the same
+  process-local transition boundary as durable finish and conservatively purge
+  the complete API-key cache scope. The per-scope epoch advances even for an
+  empty cache, so a child/fresh lease prepared before deletion cannot republish
+  deleted ancestor state afterward. This fence is intentionally single-process:
+  one cache-enabled state database must have one owning server/service, and all
+  semantic mutations must flow through its `NativeResponsesService`. A second
+  process or out-of-band raw `NativeStateStore` mutation cannot notify the
+  process-local cache and is unsupported.
+- Advanced the standalone native state store to schema version 4. Each
+  conversation now has a monotonic `items_revision`. Preparation obtains
+  ordered items plus revision in one transaction; foreground completion
+  atomically commits terminal response state, output rows, conversation rows,
+  and the expected-revision CAS before publishing a resident alias. Background
+  completion performs the same CAS inside its response/job/event transaction
+  while remaining cache-cold. A racing append/delete/completion commits no
+  stale output or conversation rows, terminalizes the stored response as
+  failed, and reports `conversation_conflict` (buffered HTTP 409 with
+  `param=conversation`, or semantic `response.failed` after stream/background
+  start). Previous-response deletion races similarly use
+  `response_lineage_conflict` and `param=previous_response_id`: the complete
+  stored lineage is re-read under the terminalization transition before any
+  output commit or cache admission.
+- Migration deliberately does not invent concurrency snapshots for durable
+  work that was queued by an older binary. A legacy queued background response
+  linked to a conversation is terminalized as failed with
+  `conversation_snapshot_unavailable` rather than running against current
+  items. A legacy previous-response-only job may reconstruct only a currently
+  completed/incomplete lineage, records that signature, and revalidates it at
+  finish; missing or nonterminal ancestry fails with
+  `response_lineage_unavailable`.
+- Added public schema-v4 state primitives:
+  `conversation_items_snapshot()`,
+  `append_conversation_items_with_revision()`,
+  `delete_conversation_item_with_revision()`, and
+  `finish_foreground_response()`. The latter returns the stored response plus
+  post-commit conversation revision and publishes response terminal/output/
+  optional conversation state in one transaction. `finish_background_job()`
+  accepts optional `conversation_id`, `conversation_items`, and
+  `expected_conversation_revision` CAS keywords. Stale revisions raise
+  `NativeStateConflictError` with its public
+  `code="conversation_conflict"`; legacy blind append/delete methods preserve
+  their return shapes while advancing the same revision.
+- Hardened shutdown ownership for streamed foreground Responses. The app tracks
+  detached foreground SSE drivers through generation and durable lease
+  disposal. Lifespan cleanup stops and awaits the background driver, awaits all
+  tracked foreground drivers, drains the compute queue, then shuts down the
+  prefix cache before closing the resident model and state store. This prevents
+  late publication or native session work after model teardown.
+
+  **Breaking changes -- native serving state v4 and configuration shape:**
+  opening an existing schema-v1, v2, or v3 state database now adds
+  `conversations.items_revision` in place, treats existing conversation history
+  as revision zero, and advances metadata to v4. Older binaries reject that
+  database. Back it up before first opening with this release when rollback
+  matters, and restore the backup before starting an older server. Legacy
+  queued conversation-linked background jobs cannot be given a historical v4
+  item snapshot and therefore fail once with
+  `conversation_snapshot_unavailable` after upgrade. The frozen
+  `NativeServeConfig` dataclass also gains the trailing
+  `prefix_cache_capacity: int = 0` field after `log_level`. Existing positional
+  argument meanings are preserved, but callers that exhaustively serialize,
+  destructure, pattern-match, or assert the exact dataclass field shape must
+  accept the new field; keyword construction remains recommended. Direct state
+  embedders that append or delete conversation items must account for the new
+  monotonic revision and use the CAS APIs when a response is generated against
+  a snapshot.
+- Added a jointly gated, Responses-only constrained generation profile for
+  resident native serving. Native Execution manifests now emit additive
+  `structured_output` and `function_tools` feature ABI records only from exact
+  source metadata: `json-schema-ascii-byte-greedy-v1` with token selection
+  `current_logits_exact_prefill`, plus optional
+  `responses-forced-function-call-v1`. `NativeInferenceModel` reports those
+  capabilities effective only when artifact booleans/ABI profiles, the
+  binding's boolean `current_logits_exact_prefill` primitive, and callable
+  read-only logits all agree. The C++ binding retains resident ABI v1 and still
+  reports its own C++-owned tools/structured booleans false; Python owns the
+  bounded grammar/protocol. Runtime startup additionally requires the exact
+  artifact-selected chat template and preflights the complete model vocabulary
+  for exact token bytes plus standalone printable-ASCII coverage. Boolean or
+  floating contract versions, extra tool-template fields, profile mismatch,
+  operator-selected chat-template fallbacks, and incomplete tokenizers remain
+  fail-closed before bind.
+- Added the serving-internal `neuralfn.native_constrained` implementation
+  module (not a supported top-level Python SDK export), a deterministic byte-prefix engine for
+  strict flat root-object schemas. It accepts 1-32 required scalar
+  string/integer/number/boolean properties with optional finite homogeneous
+  enums, preserves inert SDK/Pydantic `title`/`description` annotations, and
+  rejects nested objects, arrays, unions/null, refs, defaults, patterns,
+  bounds, formats, and unknown keywords. Generation reads finite
+  `current_logits`, masks every grammar-invalid global argmax, greedily selects
+  the highest allowed single-byte token with lowest-ID tie breaking, commits
+  the exact prefix through `prefill`, verifies session history after every
+  commit, and independently parses/revalidates completed JSON. It never calls
+  ordinary decode or emits an uncommitted callback. The profile is bounded to
+  a 32 KiB canonical schema and 4096 output byte-tokens; length exhaustion is
+  an explicit incomplete response.
+- Extended `/v1/responses` with buffered, stored, foreground strict structured
+  output and exactly one forced flat strict client-executed function. These
+  two constrained-generation modes require `temperature=0`, `top_p=1`,
+  `parallel_tool_calls=false`, and
+  reject streaming/background work before persistence, queue admission, or
+  session creation. Function generation emits official `function_call` items
+  with stable `fc_`/`call_` IDs and JSON-string arguments; NeuralFn performs no
+  client function execution. A separate request submits the sole string
+  `function_call_output` against `previous_response_id`. Durable reconstruction
+  retains typed call/result items and rejects corrupt state, unknown or
+  mismatched IDs, duplicate/already-resolved results, ambiguous unresolved
+  calls, and incomplete calls. The result continuation is ordinary text
+  generation and may use ordinary sampling controls, but remains stored,
+  buffered, foreground, and requires disabled truncation. Constrained requests
+  remain excluded from input-token counting; function calls/results remain
+  excluded from Conversations, compaction, and automatic truncation.
+  Multiple/parallel/auto/required/custom/hosted tools,
+  constrained streaming/background, Chat Completions tools, and all broader
+  schema forms remain explicit exclusions. Engine plus serving regression
+  passes 95 focused tests. The exact cached official `openai==2.44.0` client
+  passes 18 typed SDK tests (73 combined with the 55-test ASGI suite), including
+  Pydantic `output_parsed`, `ParsedResponseFunctionToolCall.parsed_arguments`,
+  exactly-once client execution, the separate result continuation, and typed
+  fail-closed errors for unsupported modes and wrong call IDs.
+
+  The same pinned client now also passes twelve focused tests, with one
+  separately opt-in resident-CUDA case skipped by default, through real
+  loopback sockets rather than only an in-process ASGI transport.
+  That slice covers Models, buffered Chat, Chat SSE framing with final usage,
+  Pydantic structured Responses parsing, ordered semantic Responses SSE, a
+  forced Pydantic function plus separate client-owned result continuation,
+  invalid-Bearer `AuthenticationError`, typed `400`/`404` errors, synchronous
+  and `AsyncOpenAI` semantic streaming, stored background-stream cursor
+  resumption, foreground stream-close cooperative cancellation/session
+  disposal, background stream-close continuation, and graceful
+  client/server/runtime/thread shutdown. The opt-in resident case loads a fresh resident
+  binding plus strict Tile sidecar, serves a real tiny dense-v5 artifact through
+  the same TCP/SDK path on an RTX 5090, and requires a positive Tile-CUDA
+  attention launch count. Three additional transport cases use a per-test CA
+  and certificate to prove default TLS verification failure plus explicit-CA
+  success, route HTTPS through a real loopback proxy that observes `CONNECT`,
+  and negotiate ALPN `h2` with HTTP/1 disabled before carrying Models and
+  Responses SSE over HTTP/2 frames. The HTTP/2 edge buffers the completed
+  upstream Uvicorn HTTP/1.1 SSE body, so it does not prove incremental proxy
+  forwarding or direct Uvicorn HTTP/2. The current cached-client run is
+  `12 passed, 1 skipped` for the socket module and `30 passed, 1 skipped`
+  across both SDK modules; the resident case was separately proved live. This
+  remains synthetic dispatch/lifecycle/transport evidence. Representative
+  trained and all shipped tokenizer/model artifacts remain separate gates.
+
+  **Breaking changes:** the standalone native Responses state database advances
+  from schema version 2 to version 3. Opening a v1 or v2 database with this
+  release migrates only its metadata/table-compatible ledger state and keeps
+  existing rows, but the semantic fence now reserves typed `function_call` and
+  `function_call_output` history. Older binaries reject the resulting v3
+  database instead of silently dropping those items. Operators who require
+  binary rollback must back up the state database before first opening it with
+  this release; restore that backup before running an older server.
+- Added a registry-derived shipped-text coverage gate. It compares all 66
+  `SHIPPED_GPT_TEMPLATE_PRESETS` with `native_trainer_specs()` and
+  `NATIVE_TRAIN_FAMILY_TARGETS`, requires each preset to have exactly one
+  native-family owner and matching target, builds and Native-IR-lowers every
+  actual preset graph, and checks training persistence plus resident inference
+  as either proved or explicitly blocked by adapter/plan/missing-gate evidence.
+  The current matrix has 12 persistence+resident-ready presets and 54 explicit
+  blockers; the test does not promote the blocked entries. The new focused
+  gate passes two tests and the combined registry/training slice passes 80.
+- Added exact dense, canonical-LLaMA, and standard-MoE full-cache
+  session-prefix copy-on-write while retaining resident inference ABI v1.
+  Resident-ready lossless-cache artifacts emit additive `session_prefix_cow`
+  v1 with operation `fork_session` and the format-specific profile
+  `dense-full-cache-kv-final-hidden-v1`,
+  `llama-full-cache-gqa-kv-final-hidden-v1`, or
+  `standard-moe-full-cache-gqa-kv-final-hidden-v1`. The Python SDK exposes
+  `model.fork_session(source, token_count=None, seed=0)` only when artifact,
+  feature ABI, binding capability, and callable agree. A child shares the
+  parent's adapter-specific native K/V and final-hidden allocation for the
+  selected non-empty prefix; whichever owner next appends through prefill or
+  decode first copies the complete store. Token history, logical length, RNG,
+  cancellation, reset/truncate, counters, and close remain independent, with explicit
+  shared-storage and detach telemetry. A freshly rebuilt binding passes a
+  combined 151-test Native-IR, SDK, dense, canonical-LLaMA, and standard-MoE
+  resident matrix. Failed post-detach prefill/decode restores the original
+  shared allocation and detach telemetry before reporting cancellation; both
+  delegated MoE and direct LLaMA cancellation/retry paths are covered. This
+  initial full-cache COW slice is additive and intentionally
+  excluded nonstandard MoE, CPU/Tile TurboQuant, and serving lineage/LRU reuse;
+  Responses still creates a fresh session and prefills its complete rendered
+  prompt. Model close now publishes a lifecycle
+  barrier under the same lock used for native session creation/fork and Python
+  registration. Pre-boundary handles are included in teardown; post-boundary
+  creation, forks, and newly admitted session work fail before binding
+  allocation/compute; partially registered handles are closed on error. The
+  teardown owner closes every session/model handle once and receives the first
+  error. Concurrent/reentrant duplicate `close()` calls deliberately return
+  without waiting, avoiding deadlock when the duplicate caller already holds a
+  session operation lock. The SDK lifecycle file passes 41 tests, including a
+  deterministic two-session close/operation interleaving repeated ten times.
+- Extended the additive session-fork primitive to the reviewed dense CPU
+  TurboQuant cache without changing resident inference ABI v1. Compatible
+  dense-v5 artifacts now declare the separate boolean capability
+  `session_prefix_cow_cpu_turboquant` and
+  `kernel_abi.session_prefix_cow_cpu_turboquant` version 1/status `ready` only
+  for the exact profile
+  `dense-cpu-turboquant-mse-qjl-packed-kv-final-hidden-v1`, operation
+  `fork_session`, and backend `cpu-reference-packed`. The public
+  `NativeInferenceCapabilities.session_prefix_cow_cpu_turboquant` becomes true
+  only when that artifact record, the binding boolean, the binding's exact
+  profile inventory, and the callable `fork_session` jointly agree. The source
+  must be a dense session whose effective cache is CPU `turboquant` with
+  `mse-3.5` or `qjl-3.5`; Tile-CUDA-configured models and sessions fail closed.
+  The parent and child share the preallocated packed K/V byte store and
+  lossless final-hidden store. The first prefill/decode append clones both
+  whole-capacity stores before publishing either replacement; logical
+  truncate/reset keeps sharing. Failed or cancelled appends atomically restore
+  the original shared stores, detach count, and detached-capacity telemetry.
+  Existing shared-storage/use-count/cached-row/capacity counters apply to this
+  CPU packed path, while tokens, RNG, cancellation, logical length, counters,
+  and close remain session-local. This is an SDK/native session fork only, not
+  a Responses/Chat prefix cache, CAS/revision protocol, LRU, or Tile device-state
+  COW implementation. Verification rebuilt the resident binding and passed
+  130 dense/Native-IR/SDK tests, 27 LLaMA/MoE regressions, the default Tile
+  module's 8 CPU tests with 4 opt-in cases skipped, and an independent
+  21-case COW audit. The opt-in Tile run compiled both sidecars but its four
+  live cases stopped before session creation at `cudaGetDeviceCount` status 35
+  (driver/runtime mismatch), so this slice makes no live Tile-CUDA or Tile-COW
+  claim.
+- Corrected GPT2-Evo native routing to fail closed at the authored whole-block
+  semantic boundary. `build_gpt2_evo_spec()` excludes every tensor in one
+  designated transformer block from gradients/AdamW and evolves the complete
+  block; the retained dense implementation AdamW-updates those tensors and
+  mutates/evaluates/selects/adopts only `block_N.ln1.weight`. The family C++
+  target and both compiled/Python registries now report `preflight-only`,
+  `blocked-graph-faithful-whole-block-evolution-missing`, and
+  `blocked-before-delegate-exec` rather than advertising a runnable delegate.
+  Family print-plan/dry-run remain inspection; normal/startup/print-command
+  return 2 before delegate exec, CUDA setup/allocation, or output creation.
+  The generic `nfn_gpt_native_train` now applies the same guard to every
+  `--layer-evo` alias and implicit `--evo-*` enablement before Tile loading,
+  CUDA environment/setup, `--json-out`/checkpoint creation, or training
+  mutation. Its print-plan/dry-run emit the exact three whole-block missing
+  gates and false side-effect-attempt fields. A final `--no-layer-evo` selects
+  the distinct ordinary dense workflow; explicitly isolated primitive and
+  metadata/checkpoint smokes stay diagnostic and do not create a graph-faithful
+  GPT2-Evo claim. Focused family preflight passes nine tests and the direct
+  generic guard passes twenty, including constructor-marking Tile/no-output
+  side-effect proof.
+
+  **Breaking changes -- GPT2-Evo execution demotion:** callers that previously
+  treated `gpt2-evo` registry status `implemented`, its dense delegate command,
+  or direct generic `--layer-evo` as runnable native training must now treat the
+  route as preflight-only. Normal/startup/print-command invocations fail with
+  `native-preflight-blocked-graph-faithful-layer-evo-missing`. Use ordinary
+  dense GPT without layer-evo only when that is the intended different model;
+  otherwise keep graph-backed legacy experiments or implement whole-block
+  optimizer exclusion, evolution, and checkpoint/resume parity before
+  re-enabling native execution.
+- Corrected NanoGPT's public Native IR capability inheritance without changing
+  its compiled command routing. `nanogpt`, `nanogpt_megakernel`, and
+  `nanogpt_modern` still lower structurally and route to
+  `nfn_gpt_native_train`, but they no longer inherit the ordinary dense-v5
+  persistence, architecture-forward, or resident-inference proof. The shipped
+  NanoGPT graphs author bias-free linear layers and dropout, while the shared
+  dense loop/checkpoint remains the biased, dropout-free GPT-2 contract. The
+  family registry now reports `architecture_persistence_proven=false`,
+  `native_forward="diagnostic-transition-only"`, and
+  `resident_inference=false`, with selector-specific bias/dropout blockers.
+  Focused registry coverage passes 13 tests and the registry/graph-training
+  slice passes 41.
+
+  **Breaking changes -- NanoGPT capability correction:** callers that treated
+  trainer registration or shared-executable routing as proof of graph-faithful
+  NanoGPT checkpoints/inference must now honor the false persistence/forward/
+  resident gates. Existing commands still resolve, but their output must not be
+  migrated or served as exact NanoGPT until bias-free parameter persistence,
+  deterministic dropout forward/backward/resume, selector topology, and a real
+  resident adapter are implemented and proved.
+- Added real migrated-graph/resident differential coverage for the six
+  graph-equivalent reviewed dense-v5 profiles: `gpt2`, `gpt2_megakernel`,
+  `gpt2_zloss`, `gpt2_qknorm`, `gpt2_stable`, and `gpt2_softcap`. Each fixture
+  serializes and SHA-binds its source graph, losslessly migrates a nontrivial
+  two-layer/two-head checkpoint, imports and accounts for every native tensor
+  in the compiled Torch graph (including packed-QKV splitting and padded
+  vocabulary), and compares every prompt-prefix resident C++ logit with both
+  the graph and an independent formula before matching CE or the configured
+  z-loss. Six focused cases and 14 combined relevant cases pass. This evidence
+  deliberately does not close source-bound `gpt2_moa` for non-GELU selections:
+  the executable authoring graph still contains a literal GELU stage while the
+  committed activation is carried by sibling checkpoint metadata.
+- Added a strict source-bound MoA graph parity/debug runtime and completed the
+  missing all-activation differential proof. MoA migration now copies the exact
+  validated sibling metadata as owner-only `model.moa.json` and records its
+  artifact path, size, and SHA-256. The new public module
+  `neuralfn.native_moa_graph_runtime` loads only exact `gpt2_moa` artifacts,
+  rejects duplicate JSON keys and graph/model/metadata/tensor-table drift,
+  imports every dense-v5 tensor into the untouched authored graph, and overlays
+  only canonical `model/block_N/mlp/gelu` stages with committed tanh-GELU,
+  ReLU, SiLU, or ReLU-squared semantics. All four selections match the real
+  resident C++ logits and independent CE/formula oracle. The focused parity
+  file passes 11 tests, the combined MoA/parity/Native IR/inference gate passes
+  96, and the resident MoA slice passes six. This module is a Torch parity/debug
+  path, not resident serving, and it proves artifact consistency rather than
+  authenticity against coordinated replacement of every file and hash.
+
+  **Breaking changes -- migrated MoA metadata copy:** previously migrated MoA
+  directories that carry selection fields only in the manifest no longer
+  satisfy the current effective MoA capability gate. Re-run
+  `nfn migrate graph-to-native` from the original byte-identical graph and
+  graph-bound `model_XXXXXXXX.moa.json` bundle to produce `model.moa.json` plus
+  its path/size/hash descriptor before loading or serving the artifact.
+- Fixed the legacy graph and graphless Parameter Golf interactive REPL so a
+  turn entered after `/mode stateless` still passes through the role-message
+  prompt resolver and retains configured developer/system instructions. Raw
+  `--prompt-tokens` behavior and non-TTY one-shot inference are unchanged.
+  Transcript verification now covers the four effective public text paths
+  (ordinary graph, semantic graph, Parameter Golf, and resident artifacts),
+  binds the graph path to all 66 shipped preset names, and binds the resident
+  path to the 12 execution-ready aliases while explicitly excluding unproved
+  `gpt2_diff`. Initial-turn retention, developer/system history, role-message
+  developer/tool rendering and trimming,
+  stateless/transcript switching and resumption, system-aware reset, role-stop
+  stripping, whole-group trimming, output reservation, prefix reuse, and
+  oversized mandatory-turn errors pass 39 focused tests; the combined legacy
+  guard/transcript slice passes 48 tests, and the core CLI suite passes 98
+  tests plus 10 subtests. Raw checkpoint helpers, compiled token-ID inference,
+  and the direct `infer_*.py` compatibility scripts remain deliberately
+  one-shot; no terminal command fabricates developer/tool messages.
+- Made sparse Tile attention fail closed at its real kernel bound and restored
+  the public Python extension build after the shared kernel began consuming
+  `tile_ops.h`. PyTorch's source loader now passes the explicit
+  `neuralfn/csrc/native_train` include directory. The raw float32 forward,
+  backward, and merged-gradient backward C ABIs return
+  `cudaErrorInvalidValue` before launch when sparse rules are enabled with
+  `seq_k > 1024`; the inclusive 1024 boundary and every non-sparse call remain
+  unchanged. CPU reference tests now prove right-aligned GQA recompute slices
+  for sliding, block, streaming-sink, and NSA rules at left/middle/right
+  prefixes, exact boundary key sets, partial blocks, excluded-history
+  invariance, and logical long-history cardinality. The rebuilt public
+  extension passed 16 focused RTX 5090 strict tests (12 real sparse launches
+  and four 1025-key rejections), and a fresh raw sidecar passed both compiled
+  ABI boundary tests. This is sparse recompute/mask evidence, not a resident
+  sparse cache, physical eviction, or bounded K/V-storage claim.
+
+  **Breaking changes:** raw Tile C-ABI callers that previously submitted
+  sparse `seq_k > 1024` could launch the fixed-width scalar kernel and silently
+  omit later keys. Those calls now return `cudaErrorInvalidValue`; callers must
+  cap/chunk the key prefix or use another exact implementation until a
+  separately proved multi-tile sparse kernel exists.
+- Added public read-only `NativeInferenceModel.current_logits(session)` and
+  `NativeInferenceSession.current_logits()` diagnostics. They expose the
+  compiled resident binding's finite logits for a non-empty committed prefix
+  without sampling, token commitment, or cache/RNG mutation, enabling honest
+  teacher-forced NLL/perplexity and parity measurements through the SDK. A
+  missing or malformed binding result fails explicitly. Focused SDK coverage
+  passes 29 tests.
+- Added `tools/bench_native_resident_turboquant.py`, a fail-closed public-SDK
+  benchmark with separate fresh timing and quality/VRAM workers for full cache,
+  CPU MSE/QJL, and optional Tile-CUDA MSE/QJL at 1K/4K/16K. It records TTFT,
+  decode tokens/sec, live/uncompressed/capacity bytes, transfer/dispatch
+  counters, backward-truncate teacher-forced NLL/perplexity and argmax
+  agreement, separate free-running greedy agreement, and a clearly labeled
+  baseline-subtracted sampled device-global `cudaMemGetInfo` delta. Tile
+  workers require positive VRAM/launch/upload/H2D/D2H evidence and zero CPU
+  compressed-attention calls. Missing dependencies or mismatched telemetry
+  fail the parent without a partial result. The schema is
+  `neuralfn.native_resident_turboquant_benchmark` v1 and always records
+  `speedup_claimed=false`; six focused harness tests pass.
+- Ran the full five-mode 1K/4K/16K matrix on an otherwise idle RTX 5090 using a
+  nontrivial synthetic one-layer/dimension-2/vocabulary-4 dense-v5 fixture with
+  fixed 16K capacity, repeated token zero, no warmup, one timing sample, 16
+  decode tokens, and a 128-token quality tail. Full/MSE-CPU/QJL-CPU/MSE-Tile/
+  QJL-Tile 16K TTFT was respectively 1.039/10.612/12.698/69.612/69.877 seconds;
+  decode throughput was 7629/774/645/120/119 tokens/sec. Both Tile profiles
+  measured a 4 MiB sampled device-global delta, exact same-profile CPU quality
+  and greedy agreement, positive transfers/launches, and zero CPU compressed
+  calls. Full-cache free-running agreement was 16/16 everywhere;
+  teacher-forced full agreement was 128/128 except 127/128 at 4K. Signed
+  synthetic perplexity deltas were about -3.31e-5/-3.60e-5/-3.70e-5 across
+  1K/4K/16K. These results prove the benchmark/dispatch path and explicitly
+  reject a speedup on this launch-dominated fixture; they are not representative
+  trained-model language-quality evidence. A matching trained artifact/corpus
+  run remains required before any product performance or quality-neutrality
+  claim. Raw JSON is `/tmp/nfn-resident-tq-bench-live-1k-4k-16k.json`.
+- Added an explicit resident Tile-CUDA TurboQuant attention backend for the
+  seven reviewed dense-v5 topologies. Resident ABI v1 and the existing
+  `kernel_abi.turboquant_cache` CPU packed-cache contract remain unchanged; a
+  separate `capabilities.turboquant_tile_attention` plus
+  `kernel_abi.turboquant_tile_attention` feature ABI v1 is emitted only for a
+  resident-ready dense-v5 artifact with context at most 16,384 and an even
+  head dimension in 2..256. `KVCacheConfig` now accepts
+  `turboquant_attention_backend`, `tile_ops_lib`, `cuda_runtime_lib`, and
+  `cuda_device`. The infer and serve CLIs expose matching flags. CPU remains the
+  default, the old session payload remains unchanged when the backend key is
+  absent, and an explicit `tile-cuda` request never falls back to CPU.
+- Added a host-compiled/dynamically loaded resident bridge that validates base
+  Tile ABI v1, strict-math ABI v1, the TurboQuant attention feature ABI/symbol,
+  CUDA runtime, device, and geometry before creating a session. Rotation,
+  QJL, and centroid tables are uploaded once per model/profile; each session
+  owns its CUDA stream, packed device cache, and Q/K/V/output buffers. CPU code
+  still owns weights, projections, deterministic encoding, and the packed host
+  cache. Each committed packed row is uploaded once, while historical
+  compressed scoring/value reconstruction runs exclusively through CUDA and
+  returns only the attention output. Truncate/reset remain logical and session
+  cleanup releases all device resources. Telemetry identifies backend,
+  sidecar/runtime/device, GPU launches, row uploads, H2D/D2H bytes, and CPU
+  compressed-attention call count.
+- Tightened resident capability proof so Tile support is reported effective
+  only when artifact/binding booleans, the exact feature ABI/symbol, and the
+  binding configure callable all agree. Schema and ABI gates now reject Python
+  booleans instead of accepting `True` as integer version `1`. Restored the
+  documented `--native-checkpoint` alias on `nfn infer --serve` as well as the
+  one-shot route.
+- Verification rebuilt a fresh strict CUDA sidecar and the CPU-loadable
+  resident extension. Missing/stale/incomplete sidecars, geometry, legacy CPU
+  payloads, and lifecycle gates pass without CUDA (`8 passed`, two live tests
+  skipped in the first bounded run). On an RTX 5090, direct-binding MSE/QJL
+  lifecycle parity passed (`2 passed`) and public-SDK MSE/QJL
+  prefill/truncate/refill/reset/decode passed (`2 passed`); all Tile sessions
+  reported positive GPU launches, row uploads, H2D and D2H bytes, and exactly
+  zero CPU compressed-attention calls. Those lifecycle tests alone make no
+  throughput, VRAM, perplexity, quality-neutrality, or speedup claim; the
+  separate synthetic calibration above exercises those measurements without
+  generalizing them to a trained model.
+- Promoted exact graph-authored `gpt2_moa` from training-only selection to a
+  source-bound migration and CPU resident-inference contract. A completed
+  graph-bound dense-v5 `model_XXXXXXXX.bin` now has sibling
+  `model_XXXXXXXX.moa.json` using
+  `neuralfn.native_dense_moa.inference_checkpoint` v1 and the existing empty
+  `DONE_XXXXXXXX` marker. The strict inspector requires canonical top-level
+  metadata, `preset=gpt2_moa`, `checkpoint_kind=trained_dense_v5`, the model
+  path/format/size/SHA, byte-identical source-graph filename/SHA, complete
+  geometry, canonical `[gelu,relu,silu,relu2]` candidates, one selected
+  activation, and a positive probe interval. Graph migration accepts that
+  metadata JSON rather than the bare MoA `.bin`, rehashes graph and model,
+  copies the validated dense-v5 bytes as owner-only `model.bin`, and retains
+  the selection/source/metadata hashes in the manifest. Ordinary dense-v5,
+  LLaMA, and standard-MoE formats remain readable and unchanged.
+- Extended the dense CPU resident engine and independent binding proof to the
+  exact MoA contract. The selected activation is fixed for every resident MLP;
+  inference never reruns training-time candidate probes. Prefill, decode,
+  truncate/reset, recomputation `off`, lossless `auto`/`full`, interleaved
+  sessions, cancellation/rollback, and supported-even-head packed CPU
+  `mse-3.5`/`qjl-3.5` TurboQuant now share the existing dense lifecycle and
+  cache guarantees. Topology/source/model/selection tampering and an unbound
+  MoA `.bin` fail closed. This is a seventh reviewed dense resident topology.
+  The binding remains a CPU reference model engine by default. The separately
+  gated explicit Tile-CUDA TurboQuant attention backend described above is
+  additive and does not imply a speedup or move model weights/projections to
+  the GPU.
+- **Breaking changes -- graph-bound `gpt2_moa` resume:** A direct,
+  selector-only `--template-name gpt2_moa` first-leg run remains supported and
+  still emits the ordinary dense-v5 files, but that unbound output no longer
+  resumes by silently resetting the activation to GELU. Activation-faithful
+  resume now requires a graph-bound run and its validated sibling
+  `model_XXXXXXXX.moa.json`; missing or changed metadata fails explicitly.
+- Made the graph-authored `gpt2_diff` capability gate fail honest while
+  preserving Native IR structural lowering and exact topology validation. The
+  graph owns one learned scalar lambda per layer. Although the low-level packed
+  trainer now has the additive learned-lambda training bundle described below,
+  Native IR migration and resident inference do not inspect or consume that
+  bundle, and the resident engine has no differential attention/cache path. The
+  selector adapter records those missing downstream consumer proofs. Generic
+  registry, migration-manifest, native-forward, and resident capability proof
+  remain false. The trusted graph-training planner is promoted separately by
+  the exact proof contract below; persistence plus resident inference remain
+  12 ready and 54 blocked.
+- **Breaking changes -- graph-authored `gpt2_diff` execution gate:** Earlier
+  planner/registry metadata advertised `gpt2_diff` as architecture-persistent
+  and execution-ready even though dense-v5 omitted its learned per-layer
+  lambda and non-packed execution changed the attention formula. Callers must
+  still honor false generic migration/native-forward/resident capabilities and
+  must not migrate or serve that selector as exact native inference. Structural
+  lowering remains available, and exact training is restored only through the
+  trusted proof below. The source-bound training bundle is not a substitute for
+  a migration/resident consumer. Restore those downstream capabilities only
+  after migration validates and carries that bundle and the resident engine
+  implements and proves the exact differential forward/cache semantics;
+  dense-v5 alone cannot supply the learned state.
+- Restored exact graph-planned **training** for `gpt2_diff` without promoting
+  migration or resident inference. `plan_native_graph_training()` now reruns
+  the strict GPT-2 configuration and active-topology validators over the same
+  immutable source-byte identity used by Native IR and, only on success,
+  materializes `native-training-proof.json`. Its canonical
+  `neuralfn.native_graph_training_proof` version-1 contract binds the source
+  SHA-256, validator/configuration/topology contract identifiers, reviewed
+  root/block/attention/MLP shape hashes, and exact native geometry. The native
+  trainer requires `--graph-file`, `--graph-fingerprint`, and
+  `--graph-preflight-proof` together and verifies the canonical two-field proof
+  envelope before any plan output, Tile load, CUDA setup, H2D, or mutation. It
+  also binds the proof contract SHA-256 into differential metadata and strict
+  resume. Exact graph-training readiness is therefore 13 of 66 with 53 blocked,
+  while migration/resident readiness remains 12 of 66 with 54 blocked.
+
+  The proof digest is an unkeyed integrity check for a trusted local planner
+  handoff, not authentication or a signature. A caller that can replace both
+  graph and proof can recompute it. Use the canonical `nfn train --runtime
+  native-cuda --graph-file ...` materialization path; do not treat arbitrary
+  caller-supplied proof files as trusted attestations.
+
+  **Breaking changes -- graph-bound `gpt2_diff` proof requirement:** Direct
+  graph-bound differential invocations previously required only a graph path
+  and lowercase SHA-256. They now require the planner-issued proof path as the
+  third member of the exact handoff, including plan/startup/check and training
+  operations. Python config dataclasses gained `graph_preflight_proof`; callers
+  that construct them positionally must move to keyword arguments. Dry-run and
+  print-plan through the high-level CLI remain non-mutating Python planner
+  inspection, while print-command reports that materialization is required
+  instead of emitting a command whose proof path does not exist.
+- Hardened editor/server completion discovery for the strict differential
+  bundle. It derives exact artifact sizes from proof-bound geometry before
+  opening payloads, then validates each no-follow descriptor independently
+  with streaming SHA-256, fixed-header, BF16/FP32 finite-state, and nonnegative
+  second-moment checks. It no longer retains all five artifacts or copies
+  gigabyte-scale dense payload slices in Python. The full server-native suite
+  passes 32 tests; a 32 MiB regression keeps traced Python peak allocation
+  below 8 MiB while the strict bundle and self-consistent tamper cases remain
+  covered.
+- Made the remaining low-level `gpt2_diff` trainer path fail closed before
+  Tile loading, allocation, parameter initialization, microbatches, optimizer
+  mutation, or checkpoint/output creation whenever exact packed differential
+  execution is unavailable. It now requires packed-QKV enabled, sequence length
+  at least 16, divisible geometry with an even head dimension, BF16 QKV-gradient
+  handoff, and the differential learned-lambda forward, backward, and
+  workspace-release Tile ABI symbols. Defensive
+  forward/backward guards prevent the selector from entering ordinary SDPA;
+  ordinary `gpt2` keeps its existing short-sequence/split-QKV path. The focused
+  fail-closed and combined packed/preflight suites pass.
+
+  **Breaking changes -- `gpt2_diff` fallback removal:** raw or graph-authored
+  `gpt2_diff` runs that previously disabled packed QKV, used a sequence shorter
+  than 16, selected incompatible head geometry, disabled BF16 handoff, or used
+  a stale Tile sidecar could silently execute ordinary attention. They now exit
+  with the prefix `native GPT gpt2_diff packed differential preflight failed:`
+  before mutation. Rebuild the sidecar and satisfy the exact packed contract;
+  this safety gate alone does not make the selector execution-ready for
+  migration/resident inference.
+- Completed the strict source-bound learned-lambda training and continuation
+  contract for the exact low-level packed `gpt2_diff` path. The trainer owns one
+  device FP32 lambda per layer from the authored `0.8` initializer, recomputes
+  each layer's two attention branches, backpropagates the exact pre-quantization
+  RMSNorm-aware gradient, uses deterministic two-stage lambda reduction, and
+  includes lambda in global clipping and AdamW with FP32 first/second moments
+  and zero weight decay. Additive learned-lambda Tile forward/backward and
+  release ABIs use per-stream workspaces, serialize conflicting calls, reject
+  per-thread default-stream mode, and propagate CUDA errors exactly. The learned
+  trainer requires these learned-lambda symbols; the retained legacy
+  fixed-lambda differential ABI remains outside this path with rounded-output
+  and non-layer-local backward correctness debt. Raw learned-ABI callers must
+  stay on one current CUDA device because the workspace registry is keyed by
+  stream rather than device plus stream; the single-device trainer is covered,
+  while multi-device raw-ABI ownership remains an explicit open boundary.
+- Promoted `model_XXXXXXXX.diff.json` to
+  `neuralfn.native_gpt2_diff.training_checkpoint` version 2 while deliberately
+  retaining `checkpoint_kind=trained_dense_v5_plus_diff_v1`: the dense-v5,
+  dense parameter/optimizer, and differential parameter/optimizer binary
+  formats remain unchanged. Resume is continuation-only and completes all host
+  preflight before Tile loading, CUDA setup, or restore H2D. It verifies the
+  byte-identical source graph; DONE-gated digests, contained names, full headers,
+  geometry, finite state, and counters for all five binaries; optimizer and
+  microbatch progress; sampler position; batch/sequence/token/accumulation
+  shape; training-seed explicitness/value; LR schedule and absolute horizon;
+  warmup/final fraction, AdamW, clipping, and LM-head chunk settings; effective
+  BF16 weight/dWeight routes; and a canonical SHA-256 over supported effective
+  arithmetic, precision, and reduction routes. It does not hash arbitrary raw
+  environment text. The profile excludes unrelated logging,
+  output, allocator, prewarm, and library-path settings.
+- Bound continuation to the resolver-ordered training corpus. Its digest covers
+  each training shard basename, byte count, header/token metadata, and contents;
+  no-follow regular-file descriptors remain open and are revalidated for
+  device/inode/size/time identity during reads. Path replacement therefore does
+  not redirect a running job, while in-place mutation fails with structured
+  cleanup. Validation shards are intentionally outside this identity.
+  `--max-steps` remains additional work. `--lr-schedule-total-steps N` is the
+  absolute optimizer-step horizon: fresh omission uses `--max-steps`, resume
+  omission inherits version-2 metadata, and an explicit mismatch fails. An
+  explicit first-leg `--train-seed` must be repeated with the same value.
+- Made final trained-checkpoint publication create-only and DONE-gated. Each
+  target uses exclusive no-follow creation, a regular-file/single-link check,
+  file fsync, a directory fsync before DONE, DONE-last creation and fsync, and a
+  final directory fsync. In-process failures attempt to unlink only files newly
+  created by the transaction. This is not a temp-file/atomic-rename protocol,
+  does not reject symlinks in ancestor path components, and does not change the
+  separate `--checkpoint-metadata-smoke` path.
+- Added `lr_schedule`, `lr_schedule_total_steps`, `train_seed`,
+  `resume_from_checkpoint`, `graph_fingerprint`, and
+  `graph_preflight_proof` to the public
+  `NativeGptRunConfig` / `NativeGpt2RunConfig` builders and compiled-CLI
+  serialization. Direct Python entrypoints, `nfn train`, the generic frontend,
+  and SM120 helpers forward the same contract. The legacy llm.kittens short
+  argv now rejects native-only continuation fields instead of silently dropping
+  them; Tile binding/launcher resolution retains and prefers the compiled argv
+  for dataset-alias or strict configs.
+- Added the optional `final_lr_fraction` keyword to both native GPT builder
+  families. An explicit fraction now wins over a derived `min_lr / learning_rate`
+  value in fast, configured, binding, and launcher paths. Split and equals forms
+  of the schedule, final-LR, and train-loss aliases are normalized before quality
+  defaults, preventing a later cosine, zero-fraction, or cadence default from
+  overriding the caller's value.
+- Hardened graph-bound differential preflight and resume restoration. JSON
+  geometry integers now use checked signed-64-bit accumulation, non-finite or
+  out-of-range multipliers fail before Tile/CUDA, and malformed numeric fields
+  cannot silently fall back to default geometry. Strict continuation restores
+  BF16-primary block weights through bounded FP32 device staging plus the
+  existing deterministic conversion kernel when FP32 block storage is elided;
+  it validates the complete tensor layout before allocation/H2D and publishes
+  restored telemetry only after all BF16 refreshes succeed.
+- **Breaking changes -- native GPT config construction and command resolution:**
+  `NativeGptRunConfig` / `NativeGpt2RunConfig` gained the continuation fields
+  above, so callers that passed optional dataclass fields positionally must move
+  to keyword arguments. Previously the legacy llm.kittens short command could
+  silently omit native-only schedule/resume/graph state; it now raises. Build
+  those runs with `build_native_gpt_compiled_cli_run_config(...)` (or its GPT-2
+  compatibility helper), or supply `dataset_alias` plus the compiled trainer
+  executable and consume `compiled_cli_argv()` / the Tile launcher.
+- Verification covers host-only preflight rejection, metadata and shard drift,
+  target collision/symlink refusal, exact lambda math against an independent
+  straight-through BF16 oracle, and an opt-in same-build CUDA continuation run.
+  The runtime proof compares only the five final binary artifacts for a straight
+  four-step run versus split two-plus-two-step continuation under the same graph,
+  training corpus, Tile library, settings, and supported effective numerics
+  profile. It does not claim byte-identical JSON/DONE files, cross-build
+  determinism,
+  validation-corpus identity, migration/resident support, or performance.
+- Kept Native IR migration explicitly closed for differential artifacts. A
+  `gpt2_diff` graph paired with `.pt`, raw `.bin`, or metadata-v2 `.diff.json`
+  weights now fails before generic checkpoint dispatch and output creation with
+  guidance to retain the complete five-artifact bundle. This replaces the
+  misleading LLaMA-metadata error previously produced for `.diff.json`; it does
+  not add a migration or resident differential consumer. Generic registry and
+  migration capability proof retain their explicit missing downstream gates,
+  while the separate exact graph-training planner uses the proof contract above.
+
+- **Breaking changes -- `gpt2_diff` metadata v1 resume rejection:** version-1
+  `.diff.json` metadata and old fixed-lambda, model-only, or dense-only bundles
+  can no longer resume as learned differential state. Retain the complete
+  version-2 source-bound bundle for continuation, or retrain and remigrate after
+  downstream consumers are implemented. The `checkpoint_kind` string remains
+  `trained_dense_v5_plus_diff_v1`; use metadata `version`, not that artifact-kind
+  label, to distinguish the continuation contract.
+
+- **Breaking changes -- create-only learned-differential export:** a final
+  `gpt2_diff` export now refuses to overwrite any model, dense sidecar,
+  differential sidecar, metadata, or DONE target for its step. Select a fresh
+  output directory/checkpoint step, or explicitly remove or archive the old
+  complete target set before retrying. Direct `gpt2_diff` training still
+  requires the planner-issued `--graph-file`, verified `--graph-fingerprint`,
+  and `--graph-preflight-proof` triplet. Public Native
+  IR migration/resident serving remains fail-closed until separate bundle
+  consumers and exact differential cache execution are proved.
+- Verification for the combined truth-gating slice includes the complete
+  Native IR/graph-planner suites (`60 passed`), the independent registry suite
+  (`50 passed`), and the combined MoA/native-graph/CLI slice (`58 passed`, 17
+  focused MoA tests). Strict MoA coverage includes metadata/digest and
+  ordinary-dense compatibility, selected-activation cache/TurboQuant parity,
+  tamper rejection, and graph-bound resume restoring the persisted activation
+  without a candidate probe while missing metadata fails closed. A live one-step CUDA
+  MoA export produced metadata whose model/source hashes passed the
+  dependency-light inspector. Documentation consistency and whitespace checks
+  are recorded with this entry; that MoA-specific acceptance did not exercise
+  the later optional resident Tile-CUDA attention backend or complete
+  `gpt2_diff` training state.
+- Added an additive Tile-sidecar TurboQuant attention feature ABI without
+  changing base Tile ABI v1 or the existing CPU-resident
+  `kernel_abi.turboquant_cache` meaning. The size-prefixed
+  `NfnNativeTileTurboQuantAttentionDescriptorV1` and versioned forward symbol
+  consume CPU-v1 packed MSE/QJL historical records directly, support MHA/GQA
+  and explicit batch/layer/record strides, include the exact current K/V row,
+  and use deterministic chunked online softmax through a 16,384-row total
+  context without materializing a dequantized cache matrix. Additive reset/count
+  probes prove the CUDA path launched and repeated executions are bitwise
+  stable. Invalid profiles, geometry, record sizes, strides, overflows, and
+  descriptor versions fail before launch. A fresh RTX 5090 run rebuilt the
+  normal fast-math/TK and strict sidecars and passed all 19 live tests against
+  the portable and native CPU oracles across both profiles, MHA/GQA, dimensions
+  8/64/128, current-only attention, 1023/1024/1025 and 4K/16K boundaries, and
+  invalid descriptors. The resident integration described above now consumes
+  this symbol behind a separate explicit feature gate. A transfer-inclusive
+  synthetic 1K/4K/16K calibration now exercises the full, CPU-TurboQuant, and
+  Tile-CUDA paths and records raw latency, cache, quality, agreement, transfer,
+  launch, and sampled device-memory evidence. A representative trained-model
+  and real-corpus benchmark remains open, so no general speedup or quality
+  claim is emitted.
+- Fixed `cli/scripts/train_llama_megakernel.py` so the native handoff always
+  owns and forwards exactly one runtime selector: `llama-megakernel` by default
+  or `llama-fast-megakernel` with the consumed wrapper-only `--fast` flag.
+  Caller-supplied template aliases can no longer turn this named wrapper into a
+  different profile, and action-only dry-run/plan/Tile checks retain the
+  selector. This is deliberately not a megakernel capability promotion: audit
+  confirmed that the current fused-attention ABI sequences ordinary CUDA
+  kernels on the host, while graph migration, strict checkpoints, and resident
+  inference for both selectors remain fail-closed. Focused wrapper coverage
+  passes 3 tests/12 subtests, CLI-help coverage passes 3 tests/34 subtests, and
+  Python compilation plus `git diff --check` pass.
+- Promoted the exact graph-equivalent standard-MoE cluster (`moe`, `mixllama`,
+  and compile-runtime `mixllama_fast`) through graph-authored native training,
+  strict checkpoint migration, and resident inference. The planner proves the
+  full RMSNorm/RoPE/GQA/dense-attention/softmax-top-k/SwiGLU topology, preserves
+  the floating `mlp_multiplier`, encodes graph `multiple_of=None` as the native
+  `--multiple-of 0` sentinel, passes expert count/top-k and the configured
+  router auxiliary-loss coefficient, and keeps megakernel, modern, DeepSeek,
+  shared-expert, aux-free, and JEPA neighbors closed. CLI, SDK, editor/server,
+  and MCP handoffs re-plan the immutable graph snapshot and route real launches
+  to `nfn_mixllama_native_train --train-moe-dataset-loop`.
+- Added the production all-expert router auxiliary loss
+  `E * sum(mean_rows(softmax(router_logits))^2)` and its exact accumulating
+  softmax-Jacobian gradient to the native Tile ABI. Positive coefficients must
+  remain finite and nonzero after float32 narrowing; zero is an exact no-op,
+  and aux-free/modern profiles reject a positive standard coefficient. The
+  standard-MoE production checkpoint writer now emits a DONE-gated,
+  source-SHA-bound `neuralfn.native_family_standard_moe.inference_checkpoint`
+  v1 metadata document plus an exact contiguous float32 tensor image. The
+  dependency-light inspector verifies the contained path, file size/SHA,
+  ordered tensor names/shapes/offsets/hashes, model geometry, routing semantics,
+  preset/runtime identity, and source graph before migration or server
+  checkpoint discovery accepts it. Fixed checkpoint eligibility to use the
+  standard-MoE full-geometry predicate; the former LLaMA-only predicate let a
+  successful MoE optimizer step omit the strict production contract.
+- Added an in-process standard-MoE resident engine with immutable one-load model
+  ownership and isolated session history/RNG/cancellation/cache state. It runs
+  real RMSNorm, half-split RoPE, GQA, softmax top-k-renormalized routing, routed
+  SwiGLU experts, and untied-head logits. `off` recomputation and preallocated
+  lossless `full` cache agree across decode, truncate/refill, reset, and
+  interleaved sessions; explicit TurboQuant stays closed. Migrated artifacts now
+  drive the ordinary SDK and raw-token CLI resident paths rather than diagnostic
+  transition sampling. Deterministic tests import every native ABI tensor into
+  the exact source graph, compare every prefix logit with the resident engine,
+  independently reconstruct cross-entropy plus router auxiliary loss, and
+  verify finite nonzero router gradients.
+- **Breaking changes:** Native Execution Manifest v1 tensor entries now always
+  emit an explicit `layout` field (`row_major` for current portable tensors).
+  `NativeTensorSpec.from_dict()` defaults an omitted field to `row_major` for
+  older Python-produced manifests, but strict external schema consumers must
+  accept the added key. Standard-MoE artifacts that previously exposed only
+  diagnostic native-family metadata or transition checkpoints are not accepted
+  by the resident path; retrain with a graph file and migrate the new
+  `mixllama_native_family_model_*.json` metadata so the source SHA, DONE marker,
+  tensor table, and `model.f32` sidecar are all present. Rebuild the resident
+  binding and Tile library because the C++ model dispatch and router-auxiliary
+  ABI changed.
+- Verification for this standard-MoE slice: 117 focused planner/CLI/server/
+  checkpoint/migration/resident tests, then 153 combined Native IR/inference/
+  CLI/server tests, 13 resident-MoE tests including graph-logit/loss/gradient and
+  ordinary CLI/SDK inference, and the mandatory 34-preset compile/forward gate.
+  A fresh host family binary accepted the exact graph-derived plan with 21
+  canonical buffers and no unparsed arguments. An initial live launch correctly
+  rejected a stale CUDA Tile sidecar that lacked the router-auxiliary symbol;
+  rebuilding it from the current sources exported that ABI. On an RTX 5090,
+  exact tiny canonical-LLaMA and standard-MoE graphs then each completed one
+  real CUDA optimizer step and wrote their graph-SHA-bound production
+  checkpoints. Inspection found 11 LLaMA tensors and 12 standard-MoE tensors;
+  both checkpoints migrated losslessly, loaded through a freshly rebuilt
+  resident extension, and produced raw-token full-cache output (`3,3`) through
+  the ordinary CLI. Post-fix regressions passed 18 MoE contract tests, 58
+  graph-training/CLI/MoE tests, and 88 combined LLaMA/MoE planner, checkpoint,
+  resident, and CLI tests. Dependency inspection passes for the isolated family
+  executable. The repository-wide lean-entrypoint audit remains red on unrelated
+  stale `build/` trainers. No all-family, CUDA-performance, or resident
+  TurboQuant-GPU claim is made by this training acceptance.
+- Added durable, resumable SSE for the bounded stored-background Responses
+  path. Requests created with `background: true`, `stream: true`, and
+  `store: true` now persist `response.created`, lifecycle, text-delta/done, and
+  exactly one semantic terminal event in an API-key-scoped sequence ledger.
+  The detached background driver continues generation when the create-stream
+  subscriber disconnects. `GET /v1/responses/{id}` now supports the official
+  `stream`, exclusive `starting_after`, `include`/`include[]`, and
+  `include_obfuscation` retrieval query shape; default replay returns the
+  once-generated persisted delta obfuscation, while false omits it without
+  changing the ledger. Only responses originally created as stored background
+  streams are replayable. Local background work still requires `store: true`,
+  so this remains a bounded compatibility slice rather than a full hosted-API
+  claim. Native state schema version 2 adds the cascading response-event table
+  and one-terminal index and migrates version-1 stores without rewriting their
+  existing records. Terminal response/job state, output item, done events, and
+  terminal event commit atomically; queued cancellation and interrupted-job
+  recovery also write one durable terminal. Verification passes
+  `54` focused state/serve tests and `7` typed-client tests with
+  `openai==2.36.0`, including concurrent contiguous sequence allocation,
+  disconnect continuation, restart replay, scope isolation, success/failure/
+  cancellation/recovery terminal uniqueness, strict query validation, and SDK
+  resume deserialization.
+- Promoted `llama_fast` as the sole compile-runtime alias of the exact canonical
+  LLaMA graph-file training and resident-inference adapter. The registry still
+  proves the complete active topology and runtime capability profile;
+  `llama_fast_megakernel` and every neighboring LLaMA family preset remain
+  fail-closed. Planner, CLI, SDK, MCP/server handoff, checkpoint migration, and
+  the resident C++ loader normalize the trainer/checkpoint ABI identity to
+  `llama` while preserving `source_selector=llama_fast`, `source_preset`,
+  `source_runtime=compile`, and the graph SHA-256 in artifact provenance.
+  Focused independent verification passes 133 registry/planner/CLI/server/MCP/
+  resident/API tests, including exact-profile rejection and real-logit loading
+  from a migrated compile-profile graph.
+- Added a version-pinned official OpenAI Python SDK compatibility suite for the
+  bounded native-serving contract. `tests/test_native_openai_sdk.py` audits
+  `openai==2.36.0` typed deserialization and error mapping for Models, buffered
+  and streamed Chat Completions, buffered and semantic-streamed Responses,
+  stored response retrieval/input items/token counting/lineage/compaction,
+  Conversations and items, SQLite close/reopen persistence for stored response,
+  conversation, and queued-background IDs, background cancellation, resumable
+  stored-background retrieval, and HTTP
+  `400`/`401`/`404`/`409`/`429`/`500` exception classes. The audited environment
+  passes seven tests; the normal NeuralFn environment explicitly skips the file
+  when the optional SDK is absent or has a different version. This is bounded
+  evidence, not a full-current-API claim: tools, structured output,
+  multimodality, several optional request fields, non-stored background work,
+  and portable OpenAI compaction remain outside the implemented contract.
+- **Breaking changes -- Torch/Tile LLaMA parameter semantics:** corrected the
+  Torch and CUDA Tile implementations to match the architecture encoded by
+  template graphs. Before this change, `rms_norm` ignored a supplied
+  `model_dim` and was always parameter-free; it now owns a learnable float32
+  scale initialized to ones whenever `model_dim` is present. Nodes from legacy
+  or hand-authored graph payloads that omit `model_dim` intentionally remain
+  parameter-free. Before this change, `swiglu` discarded its configured
+  `mlp_mult` (and the Torch builder narrowed it to an integer) and always used
+  an `8/3` hidden width. It now preserves the floating multiplier, computes
+  `int(model_dim * mlp_mult)`, and rounds that width up to `multiple_of` when
+  configured in both backends. Default LLaMA `8/3` SwiGLU dimensions are
+  unchanged, but other custom multipliers can change `w1`/`w3` row counts and
+  `w2` input width. To migrate an existing template checkpoint, add each new
+  RMSNorm `weight` tensor initialized to ones (or regenerate/re-export the
+  checkpoint). For a custom non-`8/3` SwiGLU checkpoint, rebuild or explicitly
+  remap the three projection tensors to the corrected width before strict
+  loading. Verification is provided by
+  `tests/test_torch_backend_llama_semantics.py`, the Torch/Tile module suite,
+  and the all-preset compile-and-forward gate in
+  `tests/test_template_presets.py`.
+- **Breaking changes -- MoE expert hidden-width semantics:** corrected
+  `expert_dispatch` so its Torch and CUDA Tile implementations preserve a
+  floating `mlp_mult` instead of narrowing it to an integer. The hidden width
+  is now `max(1, int(model_dim * mlp_mult))`, rounded upward only when an
+  explicit positive `multiple_of` is present; `None` and `0` mean no
+  alignment. Shipped standard and semantic MoE graph builders now serialize
+  both values into every dispatch node. Before this change, the standard-MoE
+  default `8/3` was truncated to `2`, so existing affected checkpoints have
+  narrower `w1`/`w3` output dimensions and `w2` input dimensions and cannot be
+  loaded as if they used the corrected architecture. Rebuild those expert
+  tensors or retrain/re-export the checkpoint. Hand-authored legacy dispatch
+  nodes that omit `mlp_mult` intentionally retain the historical `4.0`
+  default. Verification covers all affected shipped presets, fractional and
+  aligned shapes, omitted-field compatibility, invalid config rejection, and
+  deterministic Torch/Tile CPU forward/backward parity; the mandatory preset
+  gate passes 34 tests and the full CPU Tile module sweep passes 111 tests with
+  282 CUDA-only skips. This prerequisite does not by itself promote the
+  standard-MoE graph-to-native adapter.
+- Added `neuralfn.turboquant`, a dependency-free portable correctness oracle
+  for the planned TurboQuant cache. `TurboQuantReferenceCodec` implements
+  deterministic seeded Gaussian rotation with QR-style orthogonalization,
+  sphere-coordinate Lloyd-Max codebooks, float32 vector norms, genuinely
+  contiguous mixed 3/4-bit index packing, and the paper's optional one-bit QJL
+  residual correction for key/query inner products. Values always use the MSE
+  reconstruction/weighted-accumulation path. The two 3.5-bit profiles require
+  an explicit fixed half-channel outlier set, and exact per-row metadata/index
+  byte accounting is exposed. Twelve focused goldens cover orthogonality,
+  centroid symmetry/known limits, 3-bit straddling, mixed packing, norms,
+  deterministic seeds, QJL ensemble behavior, value handling, validation, and
+  lean imports. The oracle now supplies the deterministic model-level tables
+  used by the exact-dense native packed CPU cache. The additive sidecar CUDA
+  agreement added later in this Unreleased section consumes that same v1
+  format; existing `kv_quant_pack/unpack` behavior is unchanged.
+- Added the dependency-light resident inference SDK contract:
+  `NativeInferenceModel`, `NativeInferenceSession`,
+  `NativeInferenceCapabilities`, `GenerationConfig`, `KVCacheConfig`,
+  `GenerationEvent`, and `GenerationResult`, with lazy top-level exports. The
+  coordinator loads a proven binding/model once, isolates session token/RNG/
+  cancellation state, exposes the common lifecycle operations, synchronizes
+  exact longest-common prefixes, rebuilds after front trimming, serializes
+  model compute, and invokes callbacks only after native and Python token state
+  are committed. It streams and verifies the bound checkpoint's declared size
+  and SHA-256 before native load. Manifest, resident ABI, binding, cache, and
+  explicit TurboQuant requests fail closed, and there is no subprocess
+  fallback.
+- Added the first compiled implementation of that ABI in
+  `neuralfn._native_inference`, built by
+  `tools/build_native_inference_binding.sh` and the native build-all/install
+  workflow. The C++ dense GPT-family v5 reference engine validates and loads
+  immutable bf16 checkpoint weights once, executes real GPT-2 dense
+  forward/sampling math in-process, and isolates token history, RNG,
+  cancellation, and lifecycle state per session. `auto`/`full` allocate
+  fixed-capacity per-layer K/V plus final-hidden history and perform one-row
+  incremental decode; `off` preserves full-prefix recomputation as a parity
+  oracle. Exact-prefix truncation and suffix prefill reuse resident state, and
+  a front-trim rebuild starts at absolute position zero. Telemetry reports
+  cache bytes/capacity/uncompressed bytes, cached tokens, compression ratio,
+  strict/lossy flags, fallback reason, prefix reuse, and decode rows. The
+  engine reports zero subprocess spawns and keeps the old
+  `_native_gpt`/`_native_gpt2` one-shot capture surface intact. Manifest paths
+  are relative and containment-checked; model topology, geometry, context,
+  checkpoint format, and fingerprint declarations are revalidated in C++.
+  Nine compiled-binding tests plus the SDK suite prove one immutable load,
+  entire-logit cache/recompute parity through decode/truncate/reset, exact byte
+  accounting, two interleaved full-cache sessions, lifecycle/cancellation,
+  strict-temperature behavior, direct graph migration/load, serving-runtime
+  consumption, path confinement, and one-shot compatibility. The same binding
+  now implements native packed `mse-3.5` and `qjl-3.5` K/V caches for supported
+  even head dimensions. Shared rotation/QJL/Lloyd-Max tables load once per
+  model/profile; historical key scores and weighted values operate directly on
+  packed rows without constructing a dequantized cache matrix, while the final
+  hidden row remains lossless. Portable/native packed bytes and numerical
+  operations agree for both profiles. Resident tests additionally prove exact
+  actual/uncompressed byte accounting, deterministic temperature-zero lossy
+  decode, truncate/reset/cancel behavior, session isolation, fail-closed model
+  geometry/ABI, and no full-cache substitution. The same dense-v5 weights now
+  execute the parameter-free inference semantics of `gpt2_qknorm`,
+  `gpt2_stable`, and `gpt2_softcap`: per-head Q/K RMS normalization at
+  `eps=1e-6` is applied before attention/cache encoding, and positive logit
+  softcap is applied after the tied output projection. Along with `gpt2`,
+  `gpt2_megakernel`, and `gpt2_zloss`, these six presets now receive resident,
+  lossless-cache, TurboQuant, and lean-serving proof only when the explicit
+  resident contract fields and active lowered dataflow exactly match the model
+  spec. Python migration and the C++ loader independently require each layer's
+  `q_heads`/`k_heads -> qk_norm -> scaled_dot_product_attention` port chain and
+  the `tied_lm_head -> logit_softcap -> token_cross_entropy` chain, rejecting
+  disconnected, relocated, duplicated, or bypassed transforms. Missing fields
+  can still lower structurally but cannot produce a resident-ready artifact;
+  dense-v5 checkpoint materialization rejects them before creating an output.
+  Inspector/runtime telemetry records the active semantics. Formula-oracle,
+  multi-layer/multi-head cache/recompute, deterministic compressed-cache,
+  direct migration/load, missing-field, edge-bypass, and topology-tamper tests
+  cover the new paths.
+  The current task-specific CLI/MCP/editor/native/serving/TurboQuant suite
+  passes 221 tests; the mandatory preset gate passes 32 tests including every
+  ordered preset pair; the resident binding builds cleanly; TypeScript and the
+  Vite production build pass over 998 modules; Python compilation, scoped local
+  documentation-link checks, trailing-whitespace checks, and `git diff --check`
+  are clean. These bounded gates do not claim all-family adapters or CUDA/Tile
+  compressed attention.
+  CUDA/Tile performance/agreement, differential/MoA/modern variants, and other
+  non-dense adapters remain unproved; the canonical LLaMA exception is recorded
+  below.
+  In-flight cancellation now crosses the private binding as a typed
+  interruption instead of a generic fatal error: prefill rolls back and raises
+  the new public `NativeInferenceCancelledError`, decode returns a cancelled
+  zero-token result, and `reset()` restores the initial RNG state for
+  deterministic reuse. Non-cancellation binding errors still poison the
+  session. Effective model telemetry reports artifact/binding joint
+  TurboQuant support rather than a binding-wide bit; direct model telemetry is
+  geometry-gated. Codec construction rejects non-orthonormal rotations,
+  noncanonical even-channel width layouts, malformed/asymmetric codebooks,
+  degenerate QJL projections, null vectors, and invalid cache geometry.
+  Verification includes concurrent compiled QJL prefill/decode cancellation,
+  rollback/reset/retry and same-seed parity, malformed-table probes, and the
+  combined resident SDK/binding suite (39 passed).
+- Added the first canonical non-dense resident adapter for the native-family
+  `llama` preset. A live full-architecture trainer checkpoint can now emit the
+  additive `neuralfn.native_family_llama.inference_checkpoint` v2 contract with
+  exact geometry, semantics, contiguous tensor records, sidecar hash, and DONE
+  marker. The dependency-light `inspect_native_family_llama_checkpoint()`
+  rejects diagnostic/v1 metadata, direct `.f32`, unsafe paths, incomplete
+  writes, shape/offset/size/hash drift, or anything other than the reviewed
+  RMSNorm, half-split production-sign RoPE, GQA, dense attention, gate-first
+  SwiGLU, biasless/dropout-zero, untied-head topology. Migration validates the
+  metadata without Torch/NumPy, copies the exact sidecar as owner-only
+  `model.f32`, rehashes the copy, and stamps resident ABI v1 with lossless
+  cache support while keeping TurboQuant false.
+  The compiled resident binding now contains a real canonical LLaMA float32
+  CPU reference engine alongside dense-v5. It loads immutable weights once;
+  owns preallocated per-session compact GQA K/V plus final-hidden history; and
+  implements `off`, `auto`, and `full` through prefill, one-token decode,
+  truncate/refill, reset, cancellation/rollback, interleaved sessions, and
+  exact-prefix reuse. Binding load independently re-runs the canonical topology
+  proof, validates all tensor names/roles/shapes/offsets/dtypes/checksums and
+  graph-derived hidden geometry, hashes the exact float buffer it loaded, and
+  rejects same-size tampering. Explicit LLaMA TurboQuant fails closed.
+  Non-interactive `nfn infer --prompt-tokens` now remains useful when a resident
+  artifact has no supported text tokenizer: the CLI prints one warning and
+  renders generated token IDs as comma-separated integers. That fallback does
+  not fabricate text and is not used for interactive prompts or HTTP serving.
+  Canonical LLaMA currently proves only the resident/lean-serving model ABI;
+  its migrated SentencePiece-classified graph lacks the named tiktoken/chat
+  presentation metadata required by the standalone server, so end-to-end
+  LLaMA Chat Completions/Responses remain unclaimed.
+  Verification: `tests/test_native_resident_llama.py` passes 7 independent
+  float-boundary oracle and lifecycle/tamper cases. The added migration-parity
+  case SHA-binds the exact serialized source graph, imports every native ABI
+  tensor into the compiled graph (including packed gate/up projections and
+  padded-vocabulary slicing), compares every prompt-prefix logit row against
+  both the resident engine and an independent Python oracle, and matches graph
+  cross-entropy loss to cross-entropy over resident logits. The combined canonical
+  LLaMA registry/checkpoint/CLI suite passes 17 tests; the resident binding and
+  standalone adapter compile cleanly; and the required preset gate passes 32
+  tests.
+- Added the exact canonical `llama` graph-file training adapter alongside the
+  eight reviewed dense adapters. Source-inert planning reuses the resident
+  topology proof, rejects edge transforms and embedded state the trainer would
+  ignore, derives layers/model/rounded hidden width/MHA-or-GQA heads/vocabulary/
+  context/RoPE from the graph, and records field-level architecture provenance
+  plus the exact source SHA-256. The planner keeps execution actions separate
+  from geometry: real CLI/server launches select the LLaMA dataset loop, while
+  dry-run, print-plan, symbol-check, and sample operations cannot enter
+  training. Caller-selected train/smoke actions fail before binary resolution.
+  `NativeTrainRunConfig` independently re-runs LLaMA planning and requires each
+  plan-owned argument exactly once, closing the previous fabricated path/SHA
+  bypass.
+  The family C++ frontend now pairs `--graph-file` with
+  `--graph-fingerprint`, hashes the graph before dataset/CUDA initialization,
+  rejects unknown graph-mode arguments, and rehashes at checkpoint write for
+  TOCTOU protection. `--weight-decay` is parsed, validated, reported, and
+  applied to non-norm/non-bias family optimizer buffers; norm weights and
+  biases retain zero decay. Canonical v2 metadata records the narrower
+  `{filename, sha256, byte_identity_verified}` source identity instead of
+  claiming that C++ independently performed topology preflight. Server
+  checkpoint discovery returns validated LLaMA metadata JSON rather than its
+  `.f32`, refuses unsafe dense fallback, and requires the checkpoint source SHA
+  to match the preparation plan. Migration likewise rejects source-provenance
+  mismatch before copying `model.f32`.
+  Verification rebuilt `build/nfn_llama_native_train`; the combined planner,
+  registry, CLI, SDK, server, checkpoint, migration, resident-LLaMA, and lean
+  dependency suite passes 121 tests.
+  Direct CPU-safe binary probes proved that conflicting train plus dry-run
+  stays non-training, weight decay appears in the optimizer contract, a bad
+  graph SHA fails before dataset access, and an unknown graph argument fails
+  closed. A later bounded RTX 5090 acceptance completed one exact graph-authored
+  optimizer step, inspected the source-SHA-bound 11-tensor LLaMA v2 checkpoint,
+  migrated it losslessly, loaded it through a freshly rebuilt resident
+  extension, and generated raw tokens through the ordinary full-cache CLI.
+  **Breaking changes:** direct family-binary graph invocations must now provide
+  matching `--graph-file` and lowercase `--graph-fingerprint`; unrecognized
+  graph-mode arguments and caller-selected graph-training actions are rejected;
+  and a LLaMA v2 checkpoint whose declared source SHA differs from the graph
+  supplied for migration is no longer accepted. Callers should use
+  `plan_native_graph_training()` or the high-level CLI/server workflow rather
+  than assembling canonical LLaMA geometry and provenance manually.
+- Tightened native model-catalog admission so serving requires both a proven
+  `capabilities.serve=true` adapter and explicit
+  `model.text_generation=true`. Embedding, encoder-only, and malformed stale
+  manifests now fail before resident model loading and cannot be advertised by
+  `/v1/models`; capability derivation carries the same independent gate for
+  future resident adapters. Focused startup verification covers an artifact
+  that deliberately overclaims `serve` while declaring a non-generative model.
+- Added an explicit resident request-session admission limit to standalone
+  serving. `nfn infer --serve --session-limit N` caps the running request plus
+  queued session reservations independently of `--queue-capacity`; omitting it
+  preserves the existing one-running-plus-all-waiters contract by defaulting
+  to `queue_capacity + 1`. Admission is non-blocking, distinguishes
+  `session_limit_exceeded` from `queue_saturated` in the OpenAI-shaped HTTP 429
+  envelope, exposes reservation/rejection counters under `/health`, and
+  releases both limits after success or failure. CLI plumbing, invalid-value,
+  defaulting, saturation, release, and health-accounting coverage is included
+  in the focused serving suite. Queue shutdown now has a single idempotent
+  drain shared by concurrent `close()` and `aclose()` callers, rejects a
+  worker-thread self-close instead of deadlocking, finishes draining before
+  re-raising asynchronous cancellation, and uses nested lifespan cleanup so a
+  failed or cancelled background driver cannot skip queue or resident-model
+  closure. The integrated serving lifecycle suite passes 82 tests.
+- Added the initial Chat-Completions-only `neuralfn.native_serve` milestone and
+  lightweight `nfn infer --checkpoint ARTIFACT --serve` dispatch. The
+  standalone FastAPI app loads and validates a single resident native model
+  before Uvicorn can bind and does not initialize the editor database, cookies,
+  persistence worker, MCP, Torch, NumPy, or NetworkX. It implements
+  authenticated `/health`, OpenAI-shaped model
+  list/retrieve, and buffered or real committed-token Chat Completions SSE that
+  ends in `data: [DONE]`. A non-blocking bounded queue feeds exactly one model
+  worker; saturation returns OpenAI-shaped HTTP 429. Startup validates
+  tokenizer/chat-template/context metadata, resident/cache ABI proof, contained
+  checkpoint loading, and the remote binding rule. Loopback defaults to no
+  auth; non-loopback requires `NFN_INFER_API_KEY` or a private
+  `--api-key-file` unless explicitly overridden. Added the lean `[serve]`
+  dependency extra, isolated REST/server/CLI/SDK documentation, 13 focused app
+  tests, and 4 CLI plumbing tests. Compatible dense-v5 migration artifacts now
+  carry the narrowly scoped `serve` capability and default to the lossless full
+  cache; graph-only/generic `.pt` artifacts and unsupported topologies remain
+  closed. At this initial milestone, Responses, Conversations, SQLite state,
+  background jobs, tools, structured output, multimedia, batching, TurboQuant,
+  and non-dense adapters were explicitly not claimed; the following entries
+  record the later bounded Responses/state and TurboQuant extensions.
+- Added the stateful text subset of OpenAI-compatible Responses and
+  Conversations to the standalone native inference server when `--state-db`
+  is configured. Responses now support create/retrieve/delete, input-item
+  listing, input-token counting, API-key-scoped `previous_response_id`
+  lineage, lossless scope-bound `/v1/responses/compact` references, semantic SSE
+  terminal events without `[DONE]`, durable background execution, and
+  cancellation. Compaction preserves exact normalized text context in the
+  private state database and returns an unguessable local reference in the
+  OpenAI `encrypted_content` field; it is restart-safe but deliberately not a
+  portable OpenAI ciphertext. Conversations support create/retrieve/metadata
+  update/delete plus item create/retrieve/list/delete, and completed response
+  inputs/outputs are appended to the selected conversation. The versioned
+  SQLite store uses WAL, mode `0600`, API-key fingerprint partitions, durable
+  queued jobs, and restart recovery that marks only interrupted in-progress
+  jobs failed with `server_restarted`; resident KV buffers remain ephemeral and
+  prompt tokens are reconstructed from durable JSON state. Tools, tool-result
+  items, structured output, and multimedia remain fail-closed capability
+  errors rather than simulated support. Stateful JSON requests are capped at 1
+  MiB, and compaction rejects context beyond the artifact window before writing
+  state. Verification: the focused native state, serving, and serving-CLI suite
+  passes 33 tests.
+- Made the bounded resident compute worker recover after native generation
+  failures on Python 3.13. Worker exceptions are transported to the event loop
+  as ordinary outcomes and re-raised there, avoiding a stuck subsequent
+  `run_in_executor` await. The failed session closes, its queue slot is
+  released, the HTTP failure is normalized, and a fresh request succeeds
+  without reloading the model or spawning a subprocess.
+- Aligned the bounded stateful item resources with the current OpenAI cursor
+  contract. Response input-item and Conversation item lists now honor
+  `after`, `limit` (1-100), and `order` (`desc` by default), report page-local
+  `first_id`/`last_id` plus accurate `has_more`, and reject invalid cursors or
+  parameters with normalized errors. Response deletion now returns the
+  documented `{id, object: "response", deleted: true}` resource. Focused
+  serving verification passes 23 tests.
+
+  **Breaking changes:** `DELETE /v1/responses/{id}` now returns HTTP 200 with
+  the OpenAI deleted-response JSON object; it previously returned an empty
+  HTTP 204 response. Clients that asserted 204 should accept and parse the
+  deleted-resource object instead.
+- Added a lightweight legacy-inference migration guard. Ordinary
+  `nfn infer --graph GRAPH [--weights WEIGHTS]` and graphless Parameter Golf
+  `--checkpoint MODEL.pt` / graphless `--weights MODEL.pt` requests still
+  forward unchanged to the compatibility runtime, now after one deprecation
+  warning. Graph-backed warnings use `shlex.join()` to print the exact
+  `nfn migrate graph-to-native --graph ... [--weights ...] --output-dir ...`
+  command for the supplied paths. Graphless checkpoints have no serialized
+  topology, so their warning explicitly requires a matching NeuralFn graph and
+  prints a `MATCHING_GRAPH.json` command template instead of guessing one.
+  `--serve` and explicit `--kv-cache turboquant` requests for either legacy
+  artifact class now return exit code 2 before native serving or the full
+  graph/Parameter Golf runtime can start. Legacy `.pt` migration preserves a
+  validated generic graph/tensor bundle; it does not make that bundle
+  resident-loadable, so serving and TurboQuant still require a separately
+  compatible resident checkpoint. Verification covers 35 focused
+  guard/migration/resident/serve cases plus 98 core CLI tests and 10 subtests;
+  direct-script rejection smokes, Python compilation, and scoped diff checks
+  also pass.
+
+  **Breaking changes -- legacy graph-runtime deprecation:** ordinary graph and
+  graphless Parameter Golf inference remain available, but now emit a
+  deprecation warning before entering the compatibility runtime. Scripts that
+  assert an empty stderr stream must accept that warning. Migrate graph-backed
+  calls with the exact printed `nfn migrate graph-to-native --graph ...
+  [--weights ...] --output-dir ...` command. A graphless checkpoint cannot be
+  migrated safely without its matching graph. Native serving and explicit
+  TurboQuant requests no longer enter either legacy runtime; migrate to an
+  independently resident-capable artifact or keep using the compatibility
+  inference path without those flags.
+- Changed interactive legacy graph inference to a process-local role-message
+  transcript by default. Added `--chat-mode transcript|stateless`,
+  `--system-prompt`, and `--chat-template auto|plain_roles|PATH` to full CLI
+  parsing and lightweight help. Transcript rendering supports developer,
+  system, user, assistant, and tool items; prefers usable artifact/tokenizer
+  templates; warns before the CLI-only plain-role fallback; treats explicit
+  marker templates as data; reserves output capacity; drops oldest complete
+  groups first; retains leading instructions and the newest request; strips
+  configured role/EOS delimiters; retains the initial prompt as the first turn;
+  and keeps `/reset` system-aware. Non-TTY inference and the current lightweight
+  native checkpoint sampler remain one-shot. Eight focused transcript tests
+  and the existing 98 CLI tests plus 10 subtests pass.
+
+  **Breaking changes:** interactive TTY graph inference now starts in
+  `transcript` rather than `stateless` mode, so later turns include earlier role
+  messages. Pass `--chat-mode stateless` at startup or enter
+  `/mode stateless` to retain the former independent-turn behavior. Piped and
+  other non-TTY inference is unchanged.
+
+- Added manifest-first resident artifact inference to ordinary `nfn infer`.
+  A Native Execution manifest directory/file now dispatches before the legacy
+  raw `model_*.bin` sampler and graph runtime, loads one in-process model and
+  session, and supports non-TTY one-shot or TTY transcript/stateless operation.
+  Passing the checkpoint file inside a migrated artifact now reaches that same
+  resident path when its sibling v1 manifest binds the exact contained file;
+  mismatched, absolute, or escaping checkpoint declarations cannot claim an
+  unrelated raw checkpoint. Standalone unbound `.bin` files retain the legacy
+  token-only one-shot compatibility route.
+  System prompts, artifact/explicit/plain-role templates, initial-turn
+  retention, group-aware output-reserved trimming, stop IDs/delimiters,
+  `/mode`, `/reset`, and cache/profile/sampling controls share the documented
+  contract. Each turn synchronizes the exact prefix through the resident SDK,
+  enabling cross-turn lossless cache reuse without a subprocess fallback.
+  Eleven focused resident-CLI cases plus five legacy/serving dispatch regressions
+  passed; the legacy raw-checkpoint sampler remains one-shot.
+
+- Added versioned Native Execution IR v1 and the fail-closed
+  `nfn migrate graph-to-native` migration path. Graph JSON is validated and
+  variant libraries are resolved into deterministic node/edge/subgraph paths
+  ahead of native execution; the authoring graph and its serialized bytes are
+  left unchanged. Native manifests capture model classification, resolved
+  topology, tensor descriptors, tokenizer/chat metadata, context/stop metadata,
+  native ABI requirements, session-state kinds, source/checkpoint fingerprints,
+  and conservative capability gates. The explicit module-lowering registry
+  structurally covers all 66 shipped text presets and all of their root variant
+  entries; new or unknown module types fail closed until reviewed and
+  registered. Arbitrary graph-supplied Python functions are unsupported and are
+  never executed during migration preflight.
+- Added optional legacy `.pt` conversion after graph compatibility succeeds.
+  The checkpoint is opened only in an isolated Python worker using PyTorch's
+  restricted `weights_only` loader; the parent validates the returned schema,
+  bundle length, tensor alignment, offsets, and SHA-256 hashes. Materialization
+  writes a new, owner-only artifact directory containing
+  `native-execution-manifest.json`, `compatibility-report.json`, and optional
+  64-byte-aligned `weights.bin`. Existing directories and symlinks are rejected,
+  including for dry runs, and incompatible graphs never create output.
+- Added dependency-light native dense-v5 `.bin` migration at the same boundary.
+  The inspector validates magic/version, exact file length, graph/model
+  contract, checkpoint geometry, and every tensor range without allocating the
+  payload; migration then copies the source as owner-only `model.bin`, verifies
+  the copied size/SHA-256, and records the canonical tensor table and context.
+  The reviewed dense-v5-compatible preset set (`gpt2`, `gpt2_megakernel`,
+  `gpt2_zloss`, `gpt2_qknorm`, `gpt2_stable`, and `gpt2_softcap`) receives
+  resident ABI v1 `ready`, lossless-cache, TurboQuant (for even heads), and
+  lean-serving capabilities after exact active-topology proof. Graph-only
+  artifacts, legacy `.pt` bundles, differential/MoA/modern variants, and other
+  non-dense families stay fail-closed.
+- Added public Native IR SDK types and helpers:
+  `NativeExecutionManifest`, `NativeTensorSpec`, `NativeLoweringIssue`,
+  `NativeCompatibilityReport`, `NativeMigrationResult`,
+  `compile_graph_to_native_manifest()`, `compile_native_graph_payload()`, and
+  `migrate_graph_to_native()`. The serialized-payload compiler and graph-only
+  CLI path do not import Torch, NumPy, or NetworkX and never construct a
+  source-executing `NeuronDef`.
+  The deterministic capability registry exposes `NativeLoweringSpec`,
+  `NativeTrainerSpec`, `NativeGraphTrainingAdapter`, `NativeCapabilityProof`,
+  `native_lowering_specs()`, `native_trainer_specs()`,
+  `native_graph_training_adapters()`, `registered_native_module_types()`,
+  `classify_native_graph_training_selector()`, `classify_native_model()`, and
+  `capability_proof_for()`. Registry membership
+  is deliberately not treated as inference or serving proof. The six reviewed
+  dense-v5-compatible presets plus a bound dense-v5 checkpoint are the reviewed
+  dense resident/lossless-cache/lean-serving proof; supported even head
+  geometry additionally proves native packed CPU TurboQuant cache ABI v1.
+  Canonical LLaMA plus its v2 float32 checkpoint is the separate non-dense
+  resident/lossless-cache exception described above. Graph-only artifacts,
+  generic `.pt` bundles, differential/MoA/modern variants, other non-dense
+  families, and resident CUDA/Tile TurboQuant capability remains false; the
+  separately tested sidecar feature ABI does not alter the manifest gate.
+- Added `NativeGraphTrainPlan`, `plan_native_graph_training()`, and
+  `preflight_native_graph_training()` as the shared fail-closed planning
+  boundary for graph-authored native training. `nfn train --runtime
+  native-cuda --graph-file ...` now performs source-inert Native IR lowering
+  before resolving a trainer and makes the validated graph authoritative for
+  selector, layer count, sequence length, and activation mode. Exact topology,
+  module configuration, geometry, selector features, and unit edge transforms
+  are required. Reviewed adapters for `gpt2`, `gpt2_diff`,
+  `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`,
+  `gpt2_stable`, and `gpt2_zloss` route to the production dense trainer.
+  Canonical `llama` and its compile-runtime alias `llama_fast` are the ninth
+  and tenth reviewed adapters; the other 56 shipped profiles fail honestly
+  with stable node-specific issues. Both LLaMA selectors use the canonical
+  native `llama` identity while preserving source-profile provenance.
+  Unsupported graphs stop before binary resolution or subprocess launch, and
+  registered diagnostic transition samplers are never treated as production
+  graph adapters.
+- Real graph-authored runs now exclusively materialize
+  `OUTPUT_DIR/native-ir` with the Native IR manifest, compatibility report,
+  exact-byte `source-graph.json`, and `native-training-plan.json`, then launch
+  from that immutable snapshot. A second fingerprint check closes the gap
+  between preflight and snapshot creation. Dry runs and command printing
+  preflight without creating artifacts; an existing artifact path is refused.
+  The adapter boundary is explicit in metadata: ready plans report
+  `execution_ready: true` and `graph_preflight_enforced: true`, while retaining
+  `trainer_consumes_native_ir: false` because the existing executable consumes
+  the validated snapshot plus canonical selector rather than parsing the
+  emitted IR. `--train-token-lm`, `--train-embedding-lm`, and
+  `--no-train-transformer-lm` are rejected for this graph adapter.
+- Added the authenticated editor/server/MCP native-training workflow. Graph and
+  request runtimes now accept `native-cuda`; the Training panel selects one
+  project-granted cached dataset alias without changing graph topology, shows
+  exact node-specific preflight failures, and launches only after the shared
+  Native IR planner reports a reviewed adapter. REST adds `/runs/preflight` and
+  the JSON acknowledgement endpoint `/runs/start`; MCP `train_start` uses those
+  same endpoints, preserves `status="started"`, exposes `run_status`, and no
+  longer swallows launch errors. Unsupported adapters and non-pretrain native
+  modes fail closed with no Torch fallback. Per-run immutable Native IR,
+  compatibility/artifact metadata, and the verified contained checkpoint path
+  are persisted (`.bin` for dense or inference-checkpoint v2 metadata `.json`
+  for canonical LLaMA); Alembic revision `20260804_0003` adds the run
+  metadata columns. Native stop reports `unsupported` because the compiled ABI
+  has no cooperative cancellation. Verification passed 23 combined focused
+  server/MCP/platform API tests, an online SQLite legacy-row
+  upgrade/backfill/downgrade, offline MySQL SQL rendering, Python compile
+  checks, and the editor production build.
+- Verified Native IR v1 with 16 focused migration/registry cases covering
+  deterministic round trips, source preservation, safe custom-source rejection,
+  graph-before-checkpoint ordering, `.pt` tensor conversion and checksums,
+  stable structural diagnostics, non-mutating programmatic compilation,
+  destination/symlink refusal, lean imports, all 66 shipped preset lowerings,
+  explicit-registry fail-closed behavior, and missing serving metadata. Added
+  three focused CLI cases for lightweight help, Torch/NumPy/NetworkX-free
+  graph-only dry runs, and exit-code-2 incompatible preflight with no output,
+  plus focused graph-training planner and CLI routing cases. The mandatory preset gate passed
+  all 32 tests, including every one of the 4,356 ordered preset-library merge
+  pairs, and the native dependency suite passed all 10 tests after rebuilding
+  the stale scoped and linked native GPT binaries.
+- Reverified the integrated Native IR, graph-training planner, resident SDK,
+  compiled dense binding, migration CLI, and lean serving slice with 86 focused
+  tests. The narrower Native IR/checkpoint/SDK/binding/TurboQuant-reference set
+  passed 68 tests, and the native no-Torch dependency suite passed all 10
+  tests. These gates do not stand in for the still-missing all-family forwards,
+  broad OpenAI SDK coverage, or performance benchmarks. Standalone
+  CUDA/CPU-oracle parity and the later reviewed-dense resident integration are
+  recorded by the newer entries above; non-dense TurboQuant remains closed.
+
 - Added fail-closed deterministic inference for exact zero temperature across
   graph-backed CLI/script generation, interactive inference, REST/editor chat,
   and native GPT checkpoint sampling. Strict graph inference uses a dedicated

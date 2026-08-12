@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -49,10 +49,13 @@ class EdgeModel(BaseModel):
     bias: float = 0.0
 
 
+GraphRuntime = Literal["scalar", "torch", "native-cuda"]
+
+
 class GraphModel(BaseModel):
     name: str = "graph"
     training_method: str = "surrogate"
-    runtime: str = "scalar"
+    runtime: GraphRuntime = "scalar"
     surrogate_config: dict[str, Any] = Field(default_factory=dict)
     evo_config: dict[str, Any] = Field(default_factory=dict)
     torch_config: dict[str, Any] = Field(default_factory=dict)
@@ -103,6 +106,7 @@ class FineTuneConfigModel(BaseModel):
 
 class TrainRequest(BaseModel):
     method: str | None = "surrogate"
+    runtime: GraphRuntime | None = None
     train_inputs: list[list[float | int]] = Field(default_factory=list)
     train_targets: list[list[float | int]] = Field(default_factory=list)
     dataset_names: list[str] | None = None

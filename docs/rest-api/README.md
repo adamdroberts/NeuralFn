@@ -1,5 +1,10 @@
 # NeuralFn REST API
 
+The editor API documented on this page is distinct from the standalone native
+inference server. See [Native Inference Serving](native-inference-serving.md)
+for its `/health`, `/v1/models`, and `/v1/chat/completions` contracts,
+OpenAI-shaped errors, Bearer authentication, and deliberate exclusions.
+
 ## Base URL
 
 All endpoints are served under `/api`.
@@ -61,3 +66,4 @@ The client should merge or discard local changes using the returned graph and re
 - [Sessions](sessions.md) -- sessions, graphs, nodes, edges, execution, templates, datasets, agent
 - [Datasets](datasets.md) -- dataset catalog (download, upload, access control)
 - [Training Runs](runs.md) -- start, monitor, and stop training runs
+- [Native Inference Serving](native-inference-serving.md) -- standalone resident Models and Chat Completions, plus opt-in stateful text Responses/Conversations, local compaction, and background jobs

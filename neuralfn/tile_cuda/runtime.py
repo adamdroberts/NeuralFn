@@ -157,6 +157,11 @@ def _extension_sources() -> list[str]:
     return [str(source_dir / "bindings.cpp"), str(source_dir / "kernels.cu")]
 
 
+def _extension_include_paths() -> list[str]:
+    include_dir = _repo_root() / "neuralfn" / "csrc" / "native_train"
+    return [str(include_dir)]
+
+
 def _resolved_arch_flag(config: TileCudaConfig, diagnostics: TileCudaDiagnostics) -> str:
     arch = config.resolved_arch
     if arch:
@@ -201,6 +206,7 @@ def load_tile_cuda_extension(config: TileCudaConfig | None = None) -> Any | None
             name="neuralfn_tile_cuda_ext",
             sources=_extension_sources(),
             build_directory=str(build_dir),
+            extra_include_paths=_extension_include_paths(),
             extra_cflags=["-std=c++20"],
             extra_cuda_cflags=["-std=c++20", "--enable-tile", f"-arch={arch_flag}"],
             verbose=bool(os.environ.get("NFN_TILE_CUDA_VERBOSE")),

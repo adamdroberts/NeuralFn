@@ -50,11 +50,115 @@ GPT template selection is explicit on the native path. The default public
 template alias is `gpt`, which currently resolves to the implemented dense GPT
 native topology and is reported separately as `resolved_native_template_name` in
 compiled JSON. Pass `--template-name NAME` / `--preset NAME` to select any name
-in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
-custom graph JSON. `gpt`, `gpt2`, and `gpt2_megakernel`, plus `gpt2_moa` with
-native MoA activation, use the implemented compiled CUDA Tile trainer; unsupported
-templates and graph files fail fast with native missing-trainer JSON instead of
-falling back to Torch.
+in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`. A `--graph-file PATH`
+request is stricter: the CLI first performs source-inert Native IR lowering,
+then validates the exact trainer-facing graph contract. Twelve reviewed graphs
+are execution-ready: `gpt2`, `gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`,
+`gpt2_softcap`, `gpt2_stable`, `gpt2_zloss`, canonical `llama`, and its exact
+compile-runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`,
+and `mixllama_fast`, route to a
+compiled CUDA Tile trainer. LLaMA requires the exact proved RMSNorm/RoPE/MHA-
+or-GQA/dense-attention/gate-first-SwiGLU, biasless, dropout-zero, untied graph.
+The graph controls the selector and geometry even when conflicting
+CLI flags are supplied. A real run snapshots the validated graph and plan in
+`OUTPUT_DIR/native-ir`; dry-run and command-printing modes do not create it.
+The LLaMA family binary rehashes that snapshot before dataset/CUDA setup and at
+checkpoint write, applies caller `--weight-decay` to non-norm/non-bias
+parameters, and emits graph provenance in its inference-checkpoint v2 metadata.
+Both source profiles use native template/checkpoint identity `llama`; the plan
+retains the original selector, preset, runtime, and source SHA-256.
+Standard-MoE planning additionally proves softmax top-k-renormalized routing,
+auxiliary-loss balance, no shared experts, floating expert width, and exact
+root/block/attention/MLP edge wiring. It maps graph `multiple_of=None` to
+`--multiple-of 0`, passes the configured router coefficient, and selects
+`--train-moe-dataset-loop`; its strict metadata binds the ordered tensor table
+and float32 sidecar to the same graph digest. CPU/build/migration/resident parity
+is verified.
+
+Exact `gpt2_moa` plans also pass the graph fingerprint, canonical
+GELU/ReLU/SiLU/ReLU2 candidates, and positive probe interval to the dense
+trainer. A completed run writes `model_XXXXXXXX.moa.json` beside the dense-v5
+model and empty DONE marker. Downstream migration must use that metadata JSON,
+which records the final selected activation and binds it to the exact source
+graph/model; inference does not rerun candidate probes. A resumed run must find
+and validate the sibling metadata, restores that activation without a fresh
+probe, and rejects missing or tampered metadata. This strict workflow is
+graph-bound: direct selector-only `gpt2_moa` first-leg training remains
+supported and emits ordinary dense-v5, but an unbound resume fails explicitly
+instead of resetting the activation to GELU.
+
+`gpt2_diff` is the thirteenth execution-ready **graph-training** profile, but
+only through `plan_native_graph_training(..., materialize=True)`. The trusted
+planner validates the exact serialized configuration and active differential
+topology from one source-byte snapshot, then writes a canonical
+`native-training-proof.json` that binds the source SHA-256, validator and shape
+contracts, and native geometry. The trainer requires the materialized graph,
+fingerprint, and proof paths together before plan/Tile/CUDA work. The proof
+digest is an unkeyed local-handoff integrity check, not an authenticity or
+signature mechanism; do not trust arbitrary caller-created graph/proof pairs.
+
+Its low-level compiled path learns one FP32 lambda
+per layer and writes graph-bound differential parameter, optimizer, and strict
+metadata sidecars while keeping dense-v5 byte-compatible. The metadata is
+`neuralfn.native_gpt2_diff.training_checkpoint` version 2, with the unchanged
+binary-artifact kind `trained_dense_v5_plus_diff_v1`. Resume is
+continuation-only and verifies, before Tile/CUDA/H2D, the source graph and all
+five binaries, optimizer/microbatch and sampler counters, seed contract,
+batch/accumulation shape, ordered training-shard identity, optimizer/LR and
+absolute schedule horizon, LM-head chunk, effective BF16 routes, and a canonical
+numerics profile of supported effective routes. Stable no-follow descriptors are retained
+for the training shards; validation shards are not identity-bound. `--max-steps` is
+additional work. Omit `--lr-schedule-total-steps` on resume to inherit the
+version-2 horizon, and repeat an explicit first-leg `--train-seed` value.
+Version-1 metadata is rejected.
+
+The public dense-GPT Python builders accept an explicit
+`final_lr_fraction`. It takes precedence over a fraction derived from
+`min_lr`; schedule, final-LR, and train-loss aliases are normalized before
+quality defaults so caller intent is not overwritten on configured or direct
+launch paths.
+
+Final differential export is create-only and DONE-gated: exclusive no-follow
+regular files are fsynced, the directory is fsynced, DONE is created/fsynced
+last, and the directory is fsynced again. In-process failure attempts to clean
+up only newly created targets. This is not an atomic-rename protocol, ancestor
+symlinks are outside its guarantee, and metadata-smoke output is not covered.
+The trainer also fails before Tile load or state mutation unless packed QKV,
+sequence length at least 16, divisible/even head geometry, BF16 QKV-gradient
+handoff, and the learned-lambda differential forward, backward, and
+workspace-release Tile ABI symbols are present.
+The retained legacy fixed-lambda ABI is outside this learned path and still has
+rounded-output/non-layer-local backward correctness debt.
+Exact graph-training plans report local persistence/execution readiness true
+only after issuing the proof. Generic Native IR capability, migration, and
+resident inference remain false because those consumers do not yet consume the
+additive state or implement differential attention. The graph-training split is
+13 ready and 53 blocked; persistence plus resident inference remain 12 ready
+and 54 blocked.
+
+NanoGPT command routing is likewise not graph-faithful execution proof. The
+shared dense target can select NanoGPT geometry, but its persisted and executed
+contract still has GPT-2 linear biases and no authored dropout. Because the
+shipped NanoGPT graphs require bias-free linears and dropout, all three NanoGPT
+selectors retain explicit persistence, native-forward, and resident blockers.
+Do not migrate or serve those outputs as exact NanoGPT artifacts until the
+bias/dropout and selector-specific contracts are independently proved.
+
+A bounded RTX 5090 acceptance ran one real optimizer step for an
+exact tiny canonical-LLaMA graph and an exact tiny standard-MoE graph, inspected
+their graph-bound production checkpoints, migrated them losslessly, rebuilt the
+resident extension, and generated raw tokens with the ordinary full-cache CLI.
+Build the family trainer and Tile sidecar from the same sources before running
+this workflow; a stale sidecar without the standard-MoE router-auxiliary symbol
+is rejected before the optimizer step. This acceptance covers those exact
+reviewed profiles only, not the remaining families, resident TurboQuant GPU
+integration, or performance.
+Dry-run/plan/check operations dominate training actions, and caller-selected
+smoke/train modes are rejected by the graph-authoritative CLI.
+Other graph profiles fail before trainer resolution with node-specific
+compatibility JSON instead of falling back to Torch or a diagnostic transition
+sampler. The adapter records that graph preflight is enforced while the current
+trainer remains selector-driven and does not parse Native IR directly.
 
 Dense GPT native transformer training now fuses token embedding, absolute
 position embedding, and the scaled embedding residual add in the raw Tile-CUDA

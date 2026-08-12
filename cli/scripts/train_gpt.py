@@ -357,7 +357,17 @@ def _env_default(names: tuple[str, ...]) -> str:
 
 def _append_quality_defaults(out: list[str]) -> None:
     for flag, env_names in _QUALITY_DEFAULTS.items():
-        if not _explicit_arg(out, flag):
+        explicit_flags = (flag,)
+        if flag == "--lr-schedule":
+            explicit_flags += ("--learning-rate-schedule",)
+        elif flag == "--final-lr-fraction":
+            explicit_flags += (
+                "--learning-rate-decay-frac",
+                "--learning-rate-decay-fraction",
+            )
+        elif flag == "--train-loss-every-steps":
+            explicit_flags += ("--train-log-every", "--train-log-every-steps")
+        if not _explicit_arg(out, *explicit_flags):
             _append_value(out, flag, _env_default(env_names))
     if not _has_native_activation(out):
         activation_default = "moa" if _native_template_name(out) == "gpt2_moa" else "gelu"
@@ -559,6 +569,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-tile-ops-lib": "--tile-ops-lib",
         "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
         "--native-cuda-lm-head-row-chunk-size": "--lm-head-row-chunk-size",
+        "--learning-rate-schedule": "--lr-schedule",
+        "--learning-rate-decay-frac": "--final-lr-fraction",
+        "--learning-rate-decay-fraction": "--final-lr-fraction",
+        "--train-log-every": "--train-loss-every-steps",
+        "--train-log-every-steps": "--train-loss-every-steps",
         "--native-cuda-checkpoint-every": "--native-cuda-checkpoint-every",
         "--native-cuda-sample-every": "--native-cuda-sample-every",
         "--native-cuda-generate-tokens": "--native-cuda-generate-tokens",
@@ -660,6 +675,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--train-seq-len",
         "--train-batch-tokens",
         "--learning-rate",
+        "--lr-schedule",
+        "--lr-schedule-total-steps",
+        "--train-seed",
+        "--resume-from-checkpoint",
+        "--native-cuda-resume-from-checkpoint",
         "--final-lr-fraction",
         "--weight-decay",
         "--beta1",
@@ -683,6 +703,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--preset",
         "--graph-file",
         "--graph",
+        "--graph-fingerprint",
+        "--graph-preflight-proof",
         "--cuda-runtime-lib",
         "--tile-ops-lib",
         "--activation",

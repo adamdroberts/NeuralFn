@@ -113,6 +113,9 @@ build_one() {
     if [[ "${model}" == "mixllama" || "${model}" == "deepseek-v4" || "${model}" == "moe-jepa-evo" || "${model}" == "semantic-router-moe" ]]; then
       symbols="${symbols},nfn_native_tile_topk_route_float32,nfn_native_tile_topk_route_backward_float32,nfn_native_tile_expert_bias_add_float32,nfn_native_tile_broadcast_expert_routes_float32,nfn_native_tile_moe_swiglu_forward_float32,nfn_native_tile_moe_swiglu_backward_float32,nfn_native_tile_moe_swiglu_backward_with_route_grad_float32"
     fi
+    if [[ "${model}" == "mixllama" || "${model}" == "moe-jepa-evo" || "${model}" == "jamba" ]]; then
+      symbols="${symbols},nfn_native_tile_moe_router_aux_loss_backward_float32"
+    fi
     if [[ "${model}" == "deepseek-v4" ]]; then
       symbols="${symbols},nfn_native_tile_mhc_beta_gradient_float32,nfn_native_tile_moe_swiglu_forward_quantized_float32,nfn_native_tile_moe_swiglu_backward_quantized_float32"
     fi

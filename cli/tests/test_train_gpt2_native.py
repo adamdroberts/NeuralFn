@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
+from neuralfn.torch_templates import build_gpt_root_graph, build_model_spec_from_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,44 @@ def _load_nfn_cli_module():
     return module
 
 
+def _write_native_graph_train_fixture(path: Path, preset: str = "gpt2") -> None:
+    model_spec = build_model_spec_from_config(
+        {
+            "preset": preset,
+            "model_dim": 32,
+            "num_layers": 1,
+            "num_heads": 4,
+            "num_kv_heads": 4,
+            "multiple_of": 16,
+            "vocab_size": 50257,
+        },
+        preview_defaults=True,
+    )
+    graph = build_gpt_root_graph(name=f"{preset}_cli_fixture", model_spec=model_spec)
+    path.write_text(json.dumps(graph.to_dict()), encoding="utf-8")
+
+
 class TrainGpt2NativeStartupTest(unittest.TestCase):
+    def test_nfn_train_help_lists_strict_continuation_controls(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(NEURALFN_ROOT / "cli" / "nfn.py"), "train", "--help"],
+            cwd=NEURALFN_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        for option in (
+            "--graph-fingerprint",
+            "--lr-schedule",
+            "--lr-schedule-total-steps",
+            "--train-seed",
+            "--resume-from-checkpoint",
+        ):
+            self.assertIn(option, proc.stdout)
+
     def test_nfn_train_tui_embedding_state_uses_embedding_fields_and_dataset_array(self) -> None:
         nfn = _load_nfn_cli_module()
         state = nfn._native_train_default_state()
@@ -217,6 +255,333 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NATIVE_GPT_SDK_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
+
+    def test_native_gpt_schedule_horizon_is_optional_and_forwarded_only_when_explicit(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            from train_gpt_native import _fast_compiled_cli_argv, build_parser
+
+            parser = build_parser()
+            inherited = parser.parse_args(["--output", "/tmp/model.pt"])
+            explicit = parser.parse_args(
+                ["--output", "/tmp/model.pt", "--lr-schedule-total-steps", "12000"]
+            )
+            inherited_command = _fast_compiled_cli_argv(inherited, "/tmp/native-cache")
+            explicit_command = _fast_compiled_cli_argv(explicit, "/tmp/native-cache")
+            print("INHERITED", inherited.lr_schedule_total_steps, "--lr-schedule-total-steps" in inherited_command)
+            horizon_index = explicit_command.index("--lr-schedule-total-steps")
+            print("EXPLICIT", explicit.lr_schedule_total_steps, explicit_command[horizon_index + 1])
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("INHERITED None False", proc.stdout)
+        self.assertIn("EXPLICIT 12000 12000", proc.stdout)
+
+        nfn = _load_nfn_cli_module()
+        with mock.patch.object(
+            nfn,
+            "_resolve_direct_native_train_cli",
+            return_value="/tmp/nfn_gpt_native_train",
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt2",
+                    "--dataset-alias",
+                    "/tmp/native-cache",
+                    "--lr-schedule-total-steps=12000",
+                ]
+            )
+        horizon_index = command.index("--lr-schedule-total-steps")
+        self.assertEqual("12000", command[horizon_index + 1])
+
+    def test_native_gpt_strict_continuation_fields_survive_fast_and_config_paths(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            from train_gpt_native import (
+                _build_compiled_cli_config,
+                _fast_compiled_cli_argv,
+                build_parser,
+            )
+            from train_gpt import _fast_compiled_cli_argv as canonical_fast_argv
+
+            args = build_parser().parse_args([
+                "--output", "/tmp/model.pt",
+                "--native-cuda-executable", "/custom/nfn_gpt_native_train",
+                "--template-name", "gpt2_diff",
+                "--lr-schedule", "constant",
+                "--final-lr-fraction", "0.25",
+                "--min-lr", "0.00006",
+                "--lr-schedule-total-steps", "12000",
+                "--train-seed", "4242",
+                "--resume-from-checkpoint", "/tmp/model_00000010.bin",
+                "--graph-file", "/tmp/gpt2_diff.json",
+                "--graph-fingerprint", {('a' * 64)!r},
+                "--graph-preflight-proof", "/tmp/native-training-proof.json",
+            ])
+            fast = _fast_compiled_cli_argv(args, "/tmp/native-cache")
+            config = _build_compiled_cli_config(args, "/tmp/native-cache")
+            configured = config.compiled_cli_argv()
+            for name, command in (("FAST", fast), ("CONFIG", configured)):
+                print(name, command[0])
+                print(name, command[command.index("--lr-schedule") + 1])
+                print(name, command[command.index("--final-lr-fraction") + 1])
+                print(name, command[command.index("--lr-schedule-total-steps") + 1])
+                print(name, command[command.index("--train-seed") + 1])
+                print(name, command[command.index("--resume-from-checkpoint") + 1])
+                print(name, command[command.index("--graph-file") + 1])
+                print(name, command[command.index("--graph-fingerprint") + 1])
+                print(name, command[command.index("--graph-preflight-proof") + 1])
+            print("PREFER_COMPILED", config.launch_dict()["prefer_compiled_cli"])
+            print("LEGACY_ARGV", config.launch_dict()["argv"])
+            canonical = canonical_fast_argv([
+                "--runtime", "native-cuda",
+                "--dataset-alias", "/tmp/native-cache",
+                "--lr-schedule=constant",
+                "--lr-schedule-total-steps=12000",
+                "--train-seed=4242",
+                "--resume-from-checkpoint=/tmp/model_00000010.bin",
+                "--graph-file=/tmp/gpt2_diff.json",
+                "--graph-fingerprint={('a' * 64)}",
+                "--graph-preflight-proof=/tmp/native-training-proof.json",
+            ])
+            assert canonical is not None
+            print("CANONICAL", canonical[canonical.index("--lr-schedule") + 1])
+            print("CANONICAL", canonical[canonical.index("--lr-schedule-total-steps") + 1])
+            print("CANONICAL", canonical[canonical.index("--train-seed") + 1])
+            print("CANONICAL", canonical[canonical.index("--resume-from-checkpoint") + 1])
+            print("CANONICAL", canonical[canonical.index("--graph-file") + 1])
+            print("CANONICAL", canonical[canonical.index("--graph-fingerprint") + 1])
+            print("CANONICAL", canonical[canonical.index("--graph-preflight-proof") + 1])
+            for proof_args in (
+                ["--graph-preflight-proof", "/tmp/native-training-proof.json"],
+                ["--graph-preflight-proof=/tmp/native-training-proof.json"],
+            ):
+                proof_command = canonical_fast_argv([
+                    "--runtime", "native-cuda",
+                    "--dataset-alias", "/tmp/native-cache",
+                    *proof_args,
+                ])
+                assert proof_command is not None
+                proof_values = [
+                    proof_command[index + 1]
+                    for index, item in enumerate(proof_command[:-1])
+                    if item == "--graph-preflight-proof"
+                ]
+                assert proof_values == ["/tmp/native-training-proof.json"], proof_command
+                assert not any(
+                    item.startswith("--graph-preflight-proof=")
+                    for item in proof_command
+                )
+                print("PROOF_TRANSPORT", proof_values[0])
+            quality_alias_cases = (
+                ("--lr-schedule", ("--learning-rate-schedule",), "constant"),
+                (
+                    "--final-lr-fraction",
+                    ("--learning-rate-decay-frac", "--learning-rate-decay-fraction"),
+                    "0.25",
+                ),
+                (
+                    "--train-loss-every-steps",
+                    ("--train-log-every", "--train-log-every-steps"),
+                    "17",
+                ),
+            )
+            for canonical_flag, alias_flags, expected in quality_alias_cases:
+                for alias_flag in alias_flags:
+                    for equal_form in (False, True):
+                        value_args = (
+                            [f"{{alias_flag}}={{expected}}"]
+                            if equal_form
+                            else [alias_flag, expected]
+                        )
+                        aliased = canonical_fast_argv([
+                            "--runtime", "native-cuda",
+                            "--dataset-alias", "/tmp/native-cache",
+                            *value_args,
+                        ])
+                        assert aliased is not None
+                        values = []
+                        for index, item in enumerate(aliased):
+                            if item == canonical_flag:
+                                values.append(aliased[index + 1])
+                            elif item.startswith(canonical_flag + "="):
+                                values.append(item.split("=", 1)[1])
+                        assert values == [expected], (alias_flag, equal_form, aliased)
+                        assert not any(
+                            item == alias_flag or item.startswith(alias_flag + "=")
+                            for item in aliased
+                        )
+                        print("FAST_ALIAS", canonical_flag, expected)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        for name in ("FAST", "CONFIG"):
+            self.assertIn(f"{name} /custom/nfn_gpt_native_train", proc.stdout)
+            self.assertIn(f"{name} constant", proc.stdout)
+            self.assertIn(f"{name} 0.25", proc.stdout)
+            self.assertIn(f"{name} 12000", proc.stdout)
+            self.assertIn(f"{name} 4242", proc.stdout)
+            self.assertIn(f"{name} /tmp/model_00000010.bin", proc.stdout)
+            self.assertIn(f"{name} /tmp/gpt2_diff.json", proc.stdout)
+            self.assertIn(f"{name} {'a' * 64}", proc.stdout)
+            self.assertIn(f"{name} /tmp/native-training-proof.json", proc.stdout)
+        self.assertIn("CANONICAL constant", proc.stdout)
+        self.assertIn("CANONICAL 12000", proc.stdout)
+        self.assertIn("CANONICAL 4242", proc.stdout)
+        self.assertIn("CANONICAL /tmp/model_00000010.bin", proc.stdout)
+        self.assertIn("CANONICAL /tmp/gpt2_diff.json", proc.stdout)
+        self.assertIn(f"CANONICAL {'a' * 64}", proc.stdout)
+        self.assertIn("CANONICAL /tmp/native-training-proof.json", proc.stdout)
+        self.assertEqual(
+            2,
+            proc.stdout.count("PROOF_TRANSPORT /tmp/native-training-proof.json"),
+        )
+        self.assertIn("FAST_ALIAS --lr-schedule constant", proc.stdout)
+        self.assertIn("FAST_ALIAS --final-lr-fraction 0.25", proc.stdout)
+        self.assertIn("FAST_ALIAS --train-loss-every-steps 17", proc.stdout)
+        self.assertIn("PREFER_COMPILED True", proc.stdout)
+        self.assertIn("LEGACY_ARGV []", proc.stdout)
+
+        nfn = _load_nfn_cli_module()
+        with mock.patch.object(
+            nfn,
+            "_resolve_direct_native_train_cli",
+            return_value="/tmp/nfn_gpt_native_train",
+        ):
+            command = nfn._direct_native_train_cli_argv(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt2",
+                    "--dataset-alias",
+                    "/tmp/native-cache",
+                    "--lr-schedule=constant",
+                    "--lr-schedule-total-steps=12000",
+                    "--train-seed=4242",
+                    "--resume-from-checkpoint=/tmp/model_00000010.bin",
+                    "--graph-file=/tmp/gpt2_diff.json",
+                    f"--graph-fingerprint={'a' * 64}",
+                    "--graph-preflight-proof=/tmp/native-training-proof.json",
+                ]
+            )
+        self.assertEqual(
+            "constant", command[command.index("--lr-schedule") + 1]
+        )
+        self.assertEqual(
+            "4242", command[command.index("--train-seed") + 1]
+        )
+        self.assertEqual(
+            "12000",
+            command[command.index("--lr-schedule-total-steps") + 1],
+        )
+        self.assertEqual(
+            "/tmp/model_00000010.bin",
+            command[command.index("--resume-from-checkpoint") + 1],
+        )
+        self.assertEqual(
+            "/tmp/gpt2_diff.json",
+            command[command.index("--graph-file") + 1],
+        )
+        self.assertEqual(
+            "a" * 64,
+            command[command.index("--graph-fingerprint") + 1],
+        )
+        self.assertEqual(
+            "/tmp/native-training-proof.json",
+            command[command.index("--graph-preflight-proof") + 1],
+        )
+
+        quality_alias_cases = (
+            ("--lr-schedule", ("--learning-rate-schedule",), "constant"),
+            (
+                "--final-lr-fraction",
+                ("--learning-rate-decay-frac", "--learning-rate-decay-fraction"),
+                "0.25",
+            ),
+            (
+                "--train-loss-every-steps",
+                ("--train-log-every", "--train-log-every-steps"),
+                "17",
+            ),
+        )
+        for canonical_flag, alias_flags, expected in quality_alias_cases:
+            for alias_flag in alias_flags:
+                for equal_form in (False, True):
+                    with self.subTest(alias_flag=alias_flag, equal_form=equal_form):
+                        value_args = (
+                            [f"{alias_flag}={expected}"]
+                            if equal_form
+                            else [alias_flag, expected]
+                        )
+                        with mock.patch.object(
+                            nfn,
+                            "_resolve_direct_native_train_cli",
+                            return_value="/tmp/nfn_gpt_native_train",
+                        ):
+                            aliased = nfn._direct_native_train_cli_argv(
+                                [
+                                    "train",
+                                    "--base-model",
+                                    "gpt2",
+                                    "--dataset-alias",
+                                    "/tmp/native-cache",
+                                    *value_args,
+                                ]
+                            )
+                        canonical_values = []
+                        for index, item in enumerate(aliased):
+                            if item == canonical_flag:
+                                canonical_values.append(aliased[index + 1])
+                            elif item.startswith(canonical_flag + "="):
+                                canonical_values.append(item.split("=", 1)[1])
+                        self.assertEqual([expected], canonical_values)
+                        self.assertFalse(
+                            any(
+                                item == alias_flag
+                                or item.startswith(alias_flag + "=")
+                                for item in aliased
+                            )
+                        )
 
     def test_nfn_root_help_does_not_import_torch(self) -> None:
         for argv in (["--help"], ["--help-style", "verbose", "--help"], []):
@@ -2020,6 +2385,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             self.assertIn(default_flag, command)
 
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        graph_path = Path(temporary.name) / "custom-graph.json"
+        _write_native_graph_train_fixture(graph_path, "gpt2")
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -2035,7 +2404,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--dataset-alias=/tmp/native-cache",
                 "--template-name=semantic_router_moe",
                 "--graph-file",
-                "/tmp/custom-graph.json",
+                {str(graph_path)!r},
                 "--native-cuda-dry-run",
                 "--native-cuda-print-command",
             ]
@@ -2066,8 +2435,11 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
-        self.assertIn("--template-name semantic_router_moe", proc.stdout)
-        self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
+        self.assertIn("--template-name gpt2", proc.stdout)
+        self.assertNotIn("semantic_router_moe", proc.stdout)
+        self.assertIn(f"--graph-file {graph_path.resolve()}", proc.stdout)
+        self.assertIn("--num-layers 1", proc.stdout)
+        self.assertIn("--train-seq-len 1024", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -2355,6 +2727,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt3_does_not_override_explicit_template_graph_or_seq_len(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        graph_path = Path(temporary.name) / "custom-graph.json"
+        _write_native_graph_train_fixture(graph_path, "gpt2_moa")
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -2369,7 +2745,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "gpt3",
                 "--dataset-alias=/tmp/native-cache",
                 "--template-name=gpt2_moa",
-                "--graph-file=/tmp/custom-graph.json",
+                "--graph-file={graph_path}",
                 "--train-seq-len=4096",
                 "--native-cuda-dry-run",
                 "--native-cuda-print-command",
@@ -2399,13 +2775,17 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("build/nfn_gpt_native_train_linked", proc.stdout)
         self.assertNotIn("/bin/echo", proc.stdout)
-        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--model-family gpt2", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
-        self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
-        self.assertIn("--train-seq-len 4096", proc.stdout)
-        self.assertNotIn("--train-seq-len 2048", proc.stdout)
+        self.assertIn(f"--graph-file {graph_path.resolve()}", proc.stdout)
+        self.assertIn("--train-seq-len 1024", proc.stdout)
+        self.assertNotIn("--train-seq-len 4096", proc.stdout)
 
     def test_nfn_train_gpt2_translates_kernel_backend_to_native_backend(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        graph_path = Path(temporary.name) / "custom-graph.json"
+        _write_native_graph_train_fixture(graph_path, "gpt2_moa")
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -2421,9 +2801,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--dataset-alias=/tmp/native-cache",
                 "--kernel-backend=tile-cuda",
                 "--preset=gpt2_moa",
-                "--graph=/tmp/custom-graph.json",
-                "--train-embedding-lm",
-                "--train-transformer-lm",
+                "--graph={graph_path}",
                 "--native-cuda-no-checkpoint",
                 "--eval-batches=1",
                 "--eval-batch-size=1",
@@ -2462,9 +2840,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("/bin/echo", proc.stdout)
         self.assertIn("--backend tile-cuda", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
-        self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
+        self.assertIn(f"--graph-file {graph_path.resolve()}", proc.stdout)
         self.assertIn("--native-cuda-activation moa", proc.stdout)
-        self.assertIn("--train-embedding-lm", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("--no-checkpoint", proc.stdout)
         self.assertNotIn("--native-cuda-no-checkpoint", proc.stdout)
@@ -2827,6 +3204,99 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("--tinystories", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("TRAIN_JEPA_LOADED False", proc.stdout)
+
+    def test_train_llama_megakernel_wrapper_owns_native_template_selector_for_all_actions(self) -> None:
+        cases = (
+            ("default-dry-run", ["--native-cuda-dry-run"], "llama-megakernel", ("--dry-run",)),
+            (
+                "fast-print-plan",
+                ["--fast", "--native-cuda-dry-run", "--native-cuda-print-plan"],
+                "llama-fast-megakernel",
+                ("--dry-run", "--print-plan"),
+            ),
+            (
+                "fast-check",
+                ["--fast", "--native-cuda-dry-run", "--native-cuda-check-tile-ops"],
+                "llama-fast-megakernel",
+                ("--dry-run", "--check-tile-ops"),
+            ),
+            (
+                "caller-overrides",
+                [
+                    "--fast",
+                    "--template-name",
+                    "llama",
+                    "--template-name=not-the-wrapper",
+                    "--template",
+                    "also-not-the-wrapper",
+                    "--preset=still-not-the-wrapper",
+                    "--native-cuda-dry-run",
+                ],
+                "llama-fast-megakernel",
+                ("--dry-run",),
+            ),
+        )
+        for case_name, wrapper_args, expected_template, normalized_flags in cases:
+            with self.subTest(case=case_name):
+                code = textwrap.dedent(
+                    f"""
+                    from pathlib import Path
+                    import os
+                    import runpy
+                    import sys
+                    import tempfile
+
+                    root = Path({str(NEURALFN_ROOT)!r})
+                    script = root / "cli" / "scripts" / "train_llama_megakernel.py"
+                    family_cli = Path(tempfile.mkdtemp()) / "nfn_llama_native_train"
+                    family_cli.write_text(
+                        "#!/usr/bin/env bash\\n"
+                        "printf 'LLAMA_MEGAKERNEL_ARGS\\n'\\n"
+                        "printf '%s\\n' \\"$@\\"\\n"
+                        "exit 23\\n",
+                        encoding="utf-8",
+                    )
+                    family_cli.chmod(0o755)
+                    os.environ["NFN_NATIVE_LLAMA_CLI"] = str(family_cli)
+                    sys.path.insert(0, str(root / "cli" / "scripts"))
+                    sys.argv = [str(script), *{wrapper_args!r}]
+                    try:
+                        runpy.run_path(str(script), run_name="__main__")
+                    except SystemExit as exc:
+                        exit_code = int(exc.code or 0)
+                    else:
+                        exit_code = 0
+                    print("TORCH_LOADED", "torch" in sys.modules)
+                    raise SystemExit(exit_code)
+                    """
+                )
+                env = os.environ.copy()
+                env.pop("PYTHONPATH", None)
+                env.pop("NFN_NATIVE_LLAMA_CLI", None)
+                proc = subprocess.run(
+                    [sys.executable, "-c", code],
+                    cwd=NEURALFN_ROOT,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                self.assertEqual(23, proc.returncode, proc.stderr)
+                forwarded = proc.stdout.splitlines()
+                marker_index = forwarded.index("LLAMA_MEGAKERNEL_ARGS")
+                forwarded = forwarded[marker_index + 1 : forwarded.index("TORCH_LOADED False")]
+                self.assertEqual(1, forwarded.count("--template-name"))
+                template_index = forwarded.index("--template-name")
+                self.assertEqual(expected_template, forwarded[template_index + 1])
+                self.assertNotIn("--fast", forwarded)
+                self.assertNotIn("llama", forwarded)
+                self.assertNotIn("not-the-wrapper", forwarded)
+                self.assertNotIn("also-not-the-wrapper", forwarded)
+                self.assertNotIn("still-not-the-wrapper", forwarded)
+                for flag in normalized_flags:
+                    self.assertIn(flag, forwarded)
 
     def test_legacy_training_scripts_ignore_legacy_torch_training_env(self) -> None:
         code = textwrap.dedent(

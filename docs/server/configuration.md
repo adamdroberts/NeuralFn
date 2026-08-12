@@ -33,6 +33,11 @@ settings = get_settings()
 
 `Settings` computes `root_dir` from `__file__`, resolving to the repository root (the parent of the `server/` package directory). Relative paths such as `snapshots_dir` are resolved against `root_dir` at runtime. Artifacts default to `~/NeuralFn/artifacts` so CLI and graph-run outputs share one local store unless `NEURALFN_ARTIFACTS_DIR` overrides it.
 
+Editor/MCP native training writes one private tree per run below
+`artifacts_dir/runs/<run-id>/`: the inert editor graph, materialized Native IR
+and compatibility/training-plan sidecars, then the compiled trainer's
+checkpoint directory. Existing run paths are never overwritten.
+
 ## Example `.env`
 
 ```
@@ -47,3 +52,35 @@ NEURALFN_MCP_PASSWORD=secret
 For single-process local development or tests, set `NEURALFN_REDIS_URL=` to
 avoid connecting to the default local Redis URL. In that mode, live state is
 held in memory and persistence updates are written synchronously in-process.
+
+## Standalone native inference configuration
+
+`nfn infer --serve` does not read the editor `Settings` singleton above. Its
+configuration is intentionally isolated in `NativeServeConfig` and CLI flags:
+
+| CLI/env | Default | Description |
+|---|---|---|
+| `--checkpoint` | required | Native artifact directory or manifest path |
+| `--host` / `--port` | `127.0.0.1` / `8000` | Listening address |
+| `--served-model-name` | manifest name/family | Model ID exposed under `/v1/models` |
+| `--queue-capacity` | `8` | Maximum waiting requests before HTTP 429 |
+| `--session-limit` | `queue_capacity + 1` | Maximum admitted running-plus-queued request-session reservations before `session_limit_exceeded` HTTP 429 |
+| `--max-output-tokens` | `256` | Per-request output reservation ceiling |
+| `--kv-cache` | `auto` | Lossless full cache when jointly proven; `off` selects recomputation; explicit `turboquant` selects the proved reviewed-dense packed CPU cache |
+| `--turboquant-profile` | `mse-3.5` | Explicit packed-cache profile (`mse-3.5` or `qjl-3.5`), accepted only with joint artifact/binding/cache-ABI proof |
+| `--chat-template` | `auto` | Artifact renderer, explicit `plain_roles`, or placeholder file |
+| `--state-db` | unset | Private versioned SQLite state file enabling scoped Responses/Conversations, local compaction, durable background jobs, and resumable background-stream events |
+| `--api-key-file` | unset | Private file containing accepted Bearer keys |
+| `NFN_INFER_API_KEY` | unset | Single Bearer key supplied outside process arguments |
+| `--allow-unauthenticated-remote` | false | Explicit override of the remote-auth safety rule |
+
+The inference app never opens the editor database and has no Redis, CORS, MCP,
+snapshot, or editor artifact-root setting. Without `--state-db` it is
+stateless beyond resident request sessions. With `--state-db`, it opens only
+the separate private SQLite store described above. Opening a schema-version-1
+store automatically adds the scoped response-event ledger and records schema
+version 2; existing response, item, conversation, compaction, and background-job
+rows are retained. The file is also the source of truth for replay cursors, so
+moving or deleting it invalidates resumability along with the other stateful
+resources. See
+[Standalone Native Inference Server](native-inference-serving.md).

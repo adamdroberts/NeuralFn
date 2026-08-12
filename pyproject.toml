@@ -27,6 +27,12 @@ embeddings = [
   "safetensors>=0.4",
   "tokenizers>=0.19",
 ]
+serve = [
+  "fastapi>=0.100",
+  "pydantic>=2.0",
+  "tiktoken>=0.5",
+  "uvicorn>=0.23",
+]
 server = [
   "alembic>=1.13",
   "fastapi>=0.100",
@@ -70,6 +76,7 @@ include = ["neuralfn*", "server*"]
 [tool.setuptools.package-data]
 neuralfn = [
   "csrc/native_gpt2/*.cpp",
+  "csrc/native_gpt2/*.h",
   "csrc/native_embedding/*.cpp",
   "csrc/native_embedding/*.h",
   "csrc/native_train/*.cpp",

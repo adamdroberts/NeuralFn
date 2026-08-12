@@ -2,6 +2,7 @@ import type { Edge as RFEdge, Node } from "@xyflow/react";
 import type {
   EdgeData,
   GraphData,
+  GraphRuntime,
   NeuronDefData,
   NodeData,
   PortData,
@@ -200,7 +201,7 @@ function normalizeGraphStructure(
   const normalized: GraphData = {
     name: raw.name ?? base.name,
     training_method: (raw.training_method ?? base.training_method) as TrainingMethod,
-    runtime: (raw.runtime ?? base.runtime) as "scalar" | "torch",
+    runtime: (raw.runtime ?? base.runtime) as GraphRuntime,
     surrogate_config: { ...(raw.surrogate_config ?? {}) },
     evo_config: { ...(raw.evo_config ?? {}) },
     torch_config: { ...(raw.torch_config ?? {}) },

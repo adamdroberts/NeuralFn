@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +17,69 @@ import tempfile
 import time
 from textwrap import dedent
 import tomllib
+
+
+_NATIVE_GRAPH_FIXTURE_GZIP_B64 = (
+    "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"
+)
 
 
 REQUIRED_DEFAULT_ARTIFACTS = (
@@ -52,6 +118,7 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
 REQUIRED_DEFAULT_ARTIFACT_GLOBS = (
     "neuralfn/_native_gpt.*.so",
     "neuralfn/_native_gpt2.*.so",
+    "neuralfn/_native_inference.*.so",
     "neuralfn/_native_train.*.so",
 )
 OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
@@ -226,6 +293,19 @@ NATIVE_BINDING_SOURCE_DEPENDENCIES = {
         Path("neuralfn/csrc/native_gpt2/binding.cpp"),
         Path("tools/build_native_gpt2_binding.sh"),
     ),
+    "_native_inference": (
+        Path("neuralfn/csrc/native_gpt2/resident_binding.cpp"),
+        Path("neuralfn/csrc/native_gpt2/resident_dense.cpp"),
+        Path("neuralfn/csrc/native_gpt2/resident_dense.h"),
+        Path("neuralfn/csrc/native_gpt2/resident_llama.cpp"),
+        Path("neuralfn/csrc/native_gpt2/resident_llama.h"),
+        Path("neuralfn/csrc/native_gpt2/resident_moe.cpp"),
+        Path("neuralfn/csrc/native_gpt2/resident_moe.h"),
+        Path("neuralfn/csrc/native_gpt2/resident_sha256.h"),
+        Path("neuralfn/csrc/native_gpt2/resident_turboquant.cpp"),
+        Path("neuralfn/csrc/native_gpt2/resident_turboquant.h"),
+        Path("tools/build_native_inference_binding.sh"),
+    ),
     "_native_train": (
         Path("neuralfn/csrc/native_train/binding.cpp"),
         Path("tools/build_native_train_binding.sh"),
@@ -272,6 +352,7 @@ ARTIFACT_REBUILD_COMMANDS = {
     Path("build/lm_head_backward_bench"): ("bash", "tools/build_lm_head_backward_bench.sh"),
     Path("neuralfn/_native_gpt"): ("bash", "tools/build_native_gpt_binding.sh"),
     Path("neuralfn/_native_gpt2"): ("bash", "tools/build_native_gpt2_binding.sh"),
+    Path("neuralfn/_native_inference"): ("bash", "tools/build_native_inference_binding.sh"),
     Path("neuralfn/_native_train"): ("bash", "tools/build_native_train_binding.sh"),
 }
 FORBIDDEN_LIBRARY_MARKERS = (
@@ -748,7 +829,7 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
                     "import importlib",
                     "import importlib.util",
                     "loaded = []",
-                    "for name in ('neuralfn._native_gpt', 'neuralfn._native_gpt2', 'neuralfn._native_train'):",
+                    "for name in ('neuralfn._native_gpt', 'neuralfn._native_gpt2', 'neuralfn._native_inference', 'neuralfn._native_train'):",
                     "    if importlib.util.find_spec(name) is not None:",
                     "        importlib.import_module(name)",
                     "        loaded.append(name)",
@@ -1010,7 +1091,9 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--template-name",
             "gpt2_moa",
             "--graph-file",
-            "/tmp/native-compatible-gpt-graph.json",
+            "__NFN_NATIVE_GRAPH_STUB__",
+            "--graph-fingerprint",
+            "__NFN_NATIVE_GRAPH_FINGERPRINT__",
             "--print-command",
             "--dry-run",
             "--no-checkpoint",
@@ -1064,7 +1147,9 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--template-name",
             "gpt2_moa",
             "--graph-file",
-            "/tmp/native-compatible-gpt-graph.json",
+            "__NFN_NATIVE_GRAPH_STUB__",
+            "--graph-fingerprint",
+            "__NFN_NATIVE_GRAPH_FINGERPRINT__",
             "--print-command",
             "--dry-run",
             "--no-checkpoint",
@@ -1117,7 +1202,9 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "--template-name",
             "gpt2_moa",
             "--graph-file",
-            "/tmp/native-compatible-gpt-graph.json",
+            "__NFN_NATIVE_GRAPH_STUB__",
+            "--graph-fingerprint",
+            "__NFN_NATIVE_GRAPH_FINGERPRINT__",
             "--print-command",
             "--dry-run",
             "--no-checkpoint",
@@ -1441,6 +1528,7 @@ def artifact_rebuild_command(path: Path, repo_root: Path) -> tuple[str, ...] | N
     name = path.name
     for marker, marker_command in sorted(
         (
+            ("_native_inference", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_inference")]),
             ("_native_gpt2", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_gpt2")]),
             ("_native_gpt", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_gpt")]),
             ("_native_train", ARTIFACT_REBUILD_COMMANDS[Path("neuralfn/_native_train")]),
@@ -1623,17 +1711,12 @@ def _write_latest_native_checkpoint_stub(root: Path) -> Path:
 
 def _write_native_graph_stub(root: Path) -> Path:
     graph = root / "native-custom-gpt-graph.json"
-    graph.write_text(
-        json.dumps(
-            {
-                "name": "native-custom-gpt-graph",
-                "nodes": [],
-                "edges": [],
-                "input_node_ids": [],
-                "output_node_ids": [],
-            }
-        ),
-        encoding="utf-8",
+    # Canonical one-layer GPT-2 graph generated from the shipped template.
+    # Keeping the fixture compressed and data-only lets this verifier exercise
+    # source-safe graph preflight in a lean install without importing the graph
+    # builder, NetworkX, NumPy, or Torch.
+    graph.write_bytes(
+        gzip.decompress(base64.b64decode(_NATIVE_GRAPH_FIXTURE_GZIP_B64))
     )
     return graph
 
@@ -2063,11 +2146,21 @@ def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -
     with tempfile.TemporaryDirectory(prefix="nfn-native-shell-entrypoints-") as tmp:
         temp_root = Path(tmp)
         _write_latest_native_checkpoint_stub(temp_root)
+        native_graph = _write_native_graph_stub(temp_root)
+        native_graph_fingerprint = hashlib.sha256(native_graph.read_bytes()).hexdigest()
         for name, command, extra_env in DEFAULT_SHELL_ENTRYPOINTS:
             env = base_env.copy()
             env.update(extra_env)
             run_command = [
-                str(temp_root) if part == "__NFN_NATIVE_CHECKPOINT_DIR__" else part
+                (
+                    str(temp_root)
+                    if part == "__NFN_NATIVE_CHECKPOINT_DIR__"
+                    else str(native_graph)
+                    if part == "__NFN_NATIVE_GRAPH_STUB__"
+                    else native_graph_fingerprint
+                    if part == "__NFN_NATIVE_GRAPH_FINGERPRINT__"
+                    else part
+                )
                 for part in command
             ]
             build_started: float | None = None

@@ -6,6 +6,7 @@ import importlib
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import sysconfig
@@ -36,6 +37,7 @@ from neuralfn.native_gpt import (
     NativeGptRunConfig,
     NativeGptRunnerStatus,
     build_native_gpt_compiled_cli_run_config,
+    build_native_gpt_run_config,
     capture_native_gpt,
     exec_native_gpt,
     native_gpt_activation,
@@ -49,6 +51,7 @@ from neuralfn.native_gpt import (
     resolve_native_gpt_launcher,
     run_native_gpt,
     run_native_gpt_compiled_cli_capture,
+    write_native_gpt_run_config,
 )
 from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
@@ -652,7 +655,13 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["passed"] is True
     assert "--template-name gpt2_moa" in shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["stdout"]
     assert "--native-cuda-activation moa" in shell_entrypoints["train_gpt_sm120_custom_graph_dry_run"]["stdout"]
-    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
+    assert "--graph-file " in shell_entrypoints[
+        "train_gpt_sm120_custom_graph_dry_run"
+    ]["stdout"]
+    assert "native-custom-gpt-graph.json" in shell_entrypoints[
+        "train_gpt_sm120_custom_graph_dry_run"
+    ]["stdout"]
+    assert "--graph-fingerprint " in shell_entrypoints[
         "train_gpt_sm120_custom_graph_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_sm120_compiled_dry_run"]["passed"] is True
@@ -702,7 +711,13 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert "--native-cuda-activation moa" in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
     ]["stdout"]
-    assert "--graph-file /tmp/native-compatible-gpt-graph.json" in shell_entrypoints[
+    assert "--graph-file " in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
+    assert "native-custom-gpt-graph.json" in shell_entrypoints[
+        "train_gpt_sm120_compiled_custom_graph_dry_run"
+    ]["stdout"]
+    assert "--graph-fingerprint " in shell_entrypoints[
         "train_gpt_sm120_compiled_custom_graph_dry_run"
     ]["stdout"]
     assert shell_entrypoints["train_gpt_compiled_dry_run"]["passed"] is True
@@ -2100,8 +2115,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "command.push_back(sibling_gpt_cli(argv[0]));" in nfn_native_source
     assert 'arg == "--weights"' in nfn_native_source
     assert 'arg.rfind("--weights=", 0) == 0' in nfn_native_source
-    assert "nfn_gpt_native_train_linked" in gpt2_evo_source
-    assert "linked_build_path" in gpt2_evo_source
+    assert "execvp(" not in gpt2_evo_source
+    assert "GPT2-Evo training is blocked before delegate exec" in gpt2_evo_source
+    assert "CUDA setup, allocation, or model mutation because" in gpt2_evo_source
     assert "NATIVE_GPT_TRAIN_BIN" in train_sm120
     assert "COMPILED_SM120_LAUNCHER" in train_sm120
     assert "NFN_NATIVE_SM120_CLI" in train_sm120
@@ -2897,6 +2913,104 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
     assert argv[argv.index("-x") + 1] == "20000"
 
 
+def test_native_gpt_builder_families_preserve_explicit_final_lr_fraction(
+    tmp_path: Path,
+) -> None:
+    dataset_path = _write_uint16_shard_dataset(tmp_path)
+    dataset_meta = json.loads((dataset_path / "meta.json").read_text(encoding="utf-8"))
+    materialized_kwargs = {
+        "dataset_name": "uint16",
+        "dataset_path": dataset_path,
+        "dataset_meta": dataset_meta,
+        "encoding_name": "gpt2",
+        "executable": "/opt/nfn/nfn_gpt_native_train",
+        "eval_every_steps": 0,
+        "sample_every_steps": 0,
+        "generate_tokens": 1,
+        "checkpoint_every_steps": 1,
+        "batch_size": 1,
+        "seq_len": 16,
+        "train_batch_tokens": 16,
+        "learning_rate": 0.0006,
+        "min_lr": 0.00006,
+        "final_lr_fraction": 0.25,
+        "warmup_steps": 0,
+        "weight_decay": 0.0,
+        "max_steps": 1,
+        "num_layers": 1,
+        "activation": "gelu",
+    }
+    gpt2_materialized, _ = build_native_gpt2_run_config(
+        **materialized_kwargs,
+        output_dir=tmp_path / "gpt2-materialized",
+    )
+    gpt_materialized, _ = build_native_gpt_run_config(
+        **materialized_kwargs,
+        output_dir=tmp_path / "gpt-materialized",
+    )
+    compiled_kwargs = {
+        "dataset_alias": str(dataset_path),
+        "executable": "/opt/nfn/nfn_gpt_native_train",
+        "eval_every_steps": 0,
+        "sample_every_steps": 0,
+        "generate_tokens": 1,
+        "checkpoint_every_steps": 1,
+        "batch_size": 1,
+        "seq_len": 16,
+        "train_batch_tokens": 16,
+        "learning_rate": 0.0006,
+        "min_lr": 0.00006,
+        "final_lr_fraction": 0.25,
+        "warmup_steps": 0,
+        "weight_decay": 0.0,
+        "max_steps": 1,
+        "num_layers": 1,
+        "activation": "gelu",
+    }
+    gpt2_compiled = build_native_gpt2_compiled_cli_run_config(
+        **compiled_kwargs,
+        output_dir=tmp_path / "gpt2-compiled",
+    )
+    gpt_compiled = build_native_gpt_compiled_cli_run_config(
+        **compiled_kwargs,
+        output_dir=tmp_path / "gpt-compiled",
+    )
+
+    def assert_single_value(argv: list[str], flag: str, value: str) -> None:
+        assert argv.count(flag) == 1
+        assert argv[argv.index(flag) + 1] == value
+
+    for config in (
+        gpt2_materialized,
+        gpt_materialized,
+        gpt2_compiled,
+        gpt_compiled,
+    ):
+        assert config.final_lr_fraction == pytest.approx(0.25)
+        assert_single_value(config.argv(), "-q", "0.25")
+        assert_single_value(
+            config.compiled_cli_argv(), "--final-lr-fraction", "0.25"
+        )
+        assert_single_value(
+            config.launcher_argv("/opt/nfn/launcher"),
+            "--final-lr-fraction",
+            "0.25",
+        )
+        launch_payload = config.launch_dict()
+        assert launch_payload["prefer_compiled_cli"] is True
+        assert_single_value(
+            launch_payload["compiled_cli_argv"],
+            "--final-lr-fraction",
+            "0.25",
+        )
+
+    derived = build_native_gpt2_compiled_cli_run_config(
+        **{key: value for key, value in compiled_kwargs.items() if key != "final_lr_fraction"},
+        output_dir=tmp_path / "gpt2-derived",
+    )
+    assert derived.final_lr_fraction == pytest.approx(0.1)
+
+
 def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shard_inspection(tmp_path: Path) -> None:
     cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
@@ -2919,6 +3033,12 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         beta2=0.98,
         adam_eps=1e-8,
         grad_clip_norm=0.75,
+        lr_schedule="constant",
+        lr_schedule_total_steps=30000,
+        train_seed=4242,
+        resume_from_checkpoint="/checkpoints/model_00000010.bin",
+        graph_fingerprint="a" * 64,
+        graph_preflight_proof="/graphs/native-training-proof.json",
         max_steps=20000,
         num_layers=12,
         activation="gelu",
@@ -2938,6 +3058,8 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         train_transformer_lm=True,
         checkpoint_metadata_smoke=True,
         cuda_runtime_lib="/usr/local/cuda/lib64/libcudart.so",
+        graph_file="/graphs/gpt2_diff.json",
+        template_name="gpt2_diff",
     )
 
     argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt2_native_train")
@@ -2960,6 +3082,17 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--beta1") + 1] == "0.87"
     assert argv[argv.index("--beta2") + 1] == "0.98"
     assert argv[argv.index("--adam-eps") + 1] == "1e-08"
+    assert argv[argv.index("--lr-schedule") + 1] == "constant"
+    assert argv[argv.index("--lr-schedule-total-steps") + 1] == "30000"
+    assert argv[argv.index("--train-seed") + 1] == "4242"
+    assert argv[argv.index("--resume-from-checkpoint") + 1] == (
+        "/checkpoints/model_00000010.bin"
+    )
+    assert argv[argv.index("--graph-file") + 1] == "/graphs/gpt2_diff.json"
+    assert argv[argv.index("--graph-fingerprint") + 1] == "a" * 64
+    assert argv[argv.index("--graph-preflight-proof") + 1] == (
+        "/graphs/native-training-proof.json"
+    )
     assert argv[argv.index("--grad-clip-norm") + 1] == "0.75"
     assert argv[argv.index("--tile-ops-lib") + 1] == "/opt/nfn/libnfn_native_train_tile_ops.so"
     assert "--smoke-tile-ops" in argv
@@ -2981,10 +3114,26 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--train-loss-every-steps") + 1] == "1000"
     assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "8192"
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
-    assert cfg.template_name == "gpt"
-    assert argv[argv.index("--template-name") + 1] == "gpt"
+    assert cfg.template_name == "gpt2_diff"
+    assert argv[argv.index("--template-name") + 1] == "gpt2_diff"
     assert cfg.write_checkpoint is True
     assert "--no-checkpoint" not in argv
+    payload = cfg.to_dict()
+    assert payload["argv"] == []
+    assert payload["launcher_argv"][1:4] == [
+        "--target",
+        payload["compiled_cli_argv"][0],
+        "--",
+    ]
+    assert "--train-seed" in payload["launcher_argv"]
+    assert payload["prefer_compiled_cli"] is True
+    assert "lr_schedule" in payload["legacy_command_error"]
+    assert "--graph-fingerprint" in cfg.launcher_argv(
+        "/opt/nfn/nfn_gpt2_tile_train"
+    )
+    assert "--graph-preflight-proof" in cfg.launcher_argv(
+        "/opt/nfn/nfn_gpt2_tile_train"
+    )
 
 
 def test_build_native_gpt2_compiled_cli_config_can_defer_shape_to_graph_metadata(tmp_path: Path) -> None:
@@ -5497,7 +5646,149 @@ def test_write_native_gpt2_run_config_includes_command(tmp_path: Path) -> None:
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["argv"][0] == "train_gpt2cu"
     assert "train_gpt2cu -i train.bin -j val.bin" in payload["command"]
+    assert payload["lr_schedule"] == "cosine"
+    assert payload["lr_schedule_total_steps"] is None
+    assert "--lr-schedule-total-steps" not in payload["compiled_cli_argv"]
     assert payload["runner"]["requested"] == "auto"
+
+
+def test_strict_native_gpt_config_serializes_compiled_continuation_fields(
+    tmp_path: Path,
+) -> None:
+    cfg = NativeGpt2RunConfig(
+        executable="/custom/nfn_gpt_native_train",
+        train_data="train.bin",
+        val_data="val.bin",
+        output_dir="out",
+        model_descriptor="d2",
+        eval_every_steps=0,
+        sample_every_steps=0,
+        generate_tokens=8,
+        checkpoint_every_steps=2,
+        batch_size=1,
+        seq_len=16,
+        train_batch_tokens=32,
+        learning_rate=0.0006,
+        final_lr_fraction=0.1,
+        warmup_steps=1,
+        weight_decay=0.1,
+        max_steps=2,
+        lr_schedule="constant",
+        lr_schedule_total_steps=4,
+        train_seed=731,
+        resume_from_checkpoint="/checkpoints/model_00000002.bin",
+        dataset_alias="/datasets/cached-shards",
+        template_name="gpt2_diff",
+        graph_file="/graphs/gpt2_diff.json",
+        graph_fingerprint="c" * 64,
+        graph_preflight_proof="/graphs/native-training-proof.json",
+    )
+    generic_cfg = NativeGptRunConfig(**cfg.__dict__)
+    gpt2_path = tmp_path / "gpt2.json"
+    generic_path = tmp_path / "gpt.json"
+
+    write_native_gpt2_run_config(cfg, gpt2_path, runner="compiled-cli")
+    write_native_gpt_run_config(generic_cfg, generic_path, runner="compiled-cli")
+
+    for path in (gpt2_path, generic_path):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["lr_schedule"] == "constant"
+        assert payload["lr_schedule_total_steps"] == 4
+        assert payload["train_seed"] == 731
+        assert payload["resume_from_checkpoint"] == (
+            "/checkpoints/model_00000002.bin"
+        )
+        assert payload["graph_fingerprint"] == "c" * 64
+        assert payload["graph_preflight_proof"] == (
+            "/graphs/native-training-proof.json"
+        )
+        assert payload["prefer_compiled_cli"] is True
+        assert payload["argv"] == []
+        assert payload["compiled_cli_argv"][0] == (
+            "/custom/nfn_gpt_native_train"
+        )
+        assert "--lr-schedule-total-steps" in payload["compiled_cli_argv"]
+        assert payload["launcher_argv"][1:4] == [
+            "--target",
+            "/custom/nfn_gpt_native_train",
+            "--",
+        ]
+
+    legacy_strict_cfg = NativeGpt2RunConfig(
+        **{
+            **cfg.__dict__,
+            "executable": "train_gpt2cu",
+            "dataset_alias": None,
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match="strict native GPT fields cannot be represented by legacy short executable",
+    ):
+        legacy_strict_cfg.compiled_cli_argv()
+    assert legacy_strict_cfg.compiled_cli_argv(
+        "/custom/nfn_gpt_native_train"
+    )[0] == "/custom/nfn_gpt_native_train"
+
+    diff_cfg = NativeGpt2RunConfig(
+        **{
+            **cfg.__dict__,
+            "template_name": "gpt2_diff",
+        }
+    )
+    assert diff_cfg.compiled_cli_argv()[
+        diff_cfg.compiled_cli_argv().index("--graph-fingerprint") + 1
+    ] == "c" * 64
+    assert diff_cfg.compiled_cli_argv()[
+        diff_cfg.compiled_cli_argv().index("--graph-preflight-proof") + 1
+    ] == "/graphs/native-training-proof.json"
+    selector_only_diff = NativeGpt2RunConfig(
+        **{
+            **diff_cfg.__dict__,
+            "graph_file": "",
+            "graph_fingerprint": "",
+            "graph_preflight_proof": "",
+        }
+    )
+    selector_only_argv = selector_only_diff.compiled_cli_argv()
+    assert "--graph-file" not in selector_only_argv
+    assert "--graph-fingerprint" not in selector_only_argv
+    assert "--graph-preflight-proof" not in selector_only_argv
+    for overrides, error in (
+        ({"graph_fingerprint": ""}, "requires graph_file, graph_fingerprint, and"),
+        ({"graph_file": ""}, "requires graph_file, graph_fingerprint, and"),
+        ({"graph_preflight_proof": ""}, "requires graph_file, graph_fingerprint, and"),
+        (
+            {"graph_fingerprint": "C" * 64},
+            "must be 64 lowercase hexadecimal characters",
+        ),
+        (
+            {"graph_preflight_proof": " /graphs/native-training-proof.json "},
+            "path must not contain surrounding whitespace",
+        ),
+        (
+            {"graph_fingerprint": " " + "c" * 64 + " "},
+            "must be 64 lowercase hexadecimal characters",
+        ),
+        ({"lr_schedule_total_steps": 0}, "must be positive"),
+    ):
+        invalid = NativeGpt2RunConfig(
+            **{
+                **diff_cfg.__dict__,
+                **overrides,
+            }
+        )
+        with pytest.raises(ValueError, match=error):
+            invalid.compiled_cli_argv()
+
+    wrong_selector = NativeGpt2RunConfig(
+        **{
+            **diff_cfg.__dict__,
+            "template_name": "gpt2",
+        }
+    )
+    with pytest.raises(ValueError, match="only valid for gpt2_diff"):
+        wrong_selector.compiled_cli_argv()
 
 
 def test_native_gpt2_activation_rejects_unknown_value() -> None:
@@ -6574,6 +6865,70 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     assert status.binding_module == "neuralfn._native_gpt2"
     assert run_native_gpt2(cfg, runner="auto") == 0
     binding_module = importlib.import_module("neuralfn._native_gpt2")
+    materialized_cfg = NativeGpt2RunConfig(
+        **{
+            **cfg.__dict__,
+            "executable": "/custom/nfn_gpt_native_train",
+            "dataset_alias": "/datasets/cached-shards",
+            "final_lr_fraction": 0.25,
+        }
+    )
+    assert materialized_cfg.launch_dict()["prefer_compiled_cli"] is True
+    resolved_materialized = binding_module.resolve_native_gpt2_command(
+        materialized_cfg.launch_dict()
+    )
+    assert resolved_materialized == materialized_cfg.compiled_cli_argv()
+    assert resolved_materialized.count("--final-lr-fraction") == 1
+    assert resolved_materialized[
+        resolved_materialized.index("--final-lr-fraction") + 1
+    ] == "0.25"
+    materialized_launcher = materialized_cfg.launcher_argv(
+        "/opt/nfn/nfn_gpt2_tile_train"
+    )
+    assert materialized_launcher.count("--final-lr-fraction") == 1
+    assert materialized_launcher[
+        materialized_launcher.index("--final-lr-fraction") + 1
+    ] == "0.25"
+    assert materialized_cfg.compiled_cli_argv()[0] == (
+        "/custom/nfn_gpt_native_train"
+    )
+    strict_cfg = NativeGpt2RunConfig(
+        **{
+            **cfg.__dict__,
+            "lr_schedule": "constant",
+            "lr_schedule_total_steps": 30000,
+            "train_seed": 42,
+            "resume_from_checkpoint": "/checkpoints/model_00000010.bin",
+            "graph_file": "/graphs/gpt2_diff.json",
+            "graph_fingerprint": "b" * 64,
+            "graph_preflight_proof": "/graphs/native-training-proof.json",
+            "template_name": "gpt2_diff",
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match="strict native GPT fields cannot be represented by legacy short executable",
+    ):
+        strict_cfg.launch_dict()
+    assert strict_cfg.compiled_cli_argv("/custom/nfn_gpt_native_train")[0] == (
+        "/custom/nfn_gpt_native_train"
+    )
+    strict_cfg = NativeGpt2RunConfig(
+        **{
+            **strict_cfg.__dict__,
+            "executable": "/custom/nfn_gpt_native_train",
+            "dataset_alias": "/datasets/cached-shards",
+        }
+    )
+    assert binding_module.resolve_native_gpt2_command(
+        strict_cfg.launch_dict()
+    ) == strict_cfg.compiled_cli_argv()
+    assert strict_cfg.launch_dict()["argv"] == []
+    assert strict_cfg.launcher_argv()[1:4] == [
+        "--target",
+        strict_cfg.compiled_cli_argv()[0],
+        "--",
+    ]
     captured = binding_module.run_gpt2_capture(
         {
             "compiled_cli_argv": [
@@ -6946,7 +7301,7 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
     cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="cached-shards",
-        executable="/tmp/should-not-run-raw-train-gpt2cu",
+        executable=str(compiled_cli),
         output_dir=tmp_path / "out",
         eval_every_steps=250,
         sample_every_steps=20000,
@@ -7511,6 +7866,139 @@ def test_compiled_sm120_launcher_honors_native_env_defaults(tmp_path: Path) -> N
     assert short_arg_args[short_arg_args.index("--max-steps") + 1] == "1"
     assert short_arg_args.count("--max-steps") == 1
     assert "--fast-startup" in short_arg_args
+
+
+def test_compiled_and_shell_sm120_helpers_forward_strict_continuation_fields(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    compiled_launcher = tmp_path / "nfn_train_gpt_sm120"
+    build = subprocess.run(
+        [
+            "bash",
+            str(root / "tools" / "build_train_gpt_sm120_cli.sh"),
+            str(compiled_launcher),
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    fake_native = tmp_path / "nfn_gpt_native_train"
+    fake_native.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_GPT_ARGV\"\n",
+        encoding="utf-8",
+    )
+    fake_native.chmod(0o755)
+    common = [
+        "--dataset-alias",
+        "/tmp/native-cache",
+        "--lr-schedule=constant",
+        "--lr-schedule-total-steps=12000",
+        "--train-seed",
+        "4242",
+        "--resume-from-checkpoint=/tmp/model_00000010.bin",
+        "--graph-file",
+        "/tmp/gpt2_diff.json",
+        f"--graph-fingerprint={'d' * 64}",
+        "--graph-preflight-proof",
+        "/tmp/native-training-proof.json",
+    ]
+
+    def run_and_read(command: list[str], output: Path, *, shell_fallback: bool) -> list[str]:
+        env = os.environ.copy()
+        env.update(
+            {
+                "NFN_NATIVE_GPT_TRAIN_BIN": str(fake_native),
+                "NFN_TEST_NATIVE_GPT_ARGV": str(output),
+            }
+        )
+        if shell_fallback:
+            env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
+        proc = subprocess.run(
+            command,
+            cwd=root,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return output.read_text(encoding="utf-8").splitlines()
+
+    compiled_args = run_and_read(
+        [str(compiled_launcher), *common],
+        tmp_path / "compiled-argv.txt",
+        shell_fallback=False,
+    )
+    shell_args = run_and_read(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh"), *common],
+        tmp_path / "shell-argv.txt",
+        shell_fallback=True,
+    )
+    def forwarded_value(args: list[str], flag: str) -> str:
+        if flag in args:
+            return args[args.index(flag) + 1]
+        prefix = flag + "="
+        return next(item.removeprefix(prefix) for item in args if item.startswith(prefix))
+
+    def forwarded_values(args: list[str], flag: str) -> list[str]:
+        values: list[str] = []
+        prefix = flag + "="
+        for index, item in enumerate(args):
+            if item == flag and index + 1 < len(args):
+                values.append(args[index + 1])
+            elif item.startswith(prefix):
+                values.append(item.removeprefix(prefix))
+        return values
+
+    for args in (compiled_args, shell_args):
+        assert forwarded_values(args, "--lr-schedule")[-1] == "constant"
+        assert forwarded_value(args, "--lr-schedule-total-steps") == "12000"
+        assert forwarded_value(args, "--train-seed") == "4242"
+        assert forwarded_value(args, "--resume-from-checkpoint") == (
+            "/tmp/model_00000010.bin"
+        )
+        assert forwarded_value(args, "--graph-file") == "/tmp/gpt2_diff.json"
+        assert forwarded_value(args, "--graph-fingerprint") == "d" * 64
+        assert forwarded_value(args, "--graph-preflight-proof") == (
+            "/tmp/native-training-proof.json"
+        )
+
+    compiled_help = subprocess.run(
+        [str(compiled_launcher), "--help"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    shell_help_env = os.environ.copy()
+    shell_help_env["NFN_SM120_USE_COMPILED_LAUNCHER"] = "0"
+    shell_help = subprocess.run(
+        ["bash", str(root / "tools" / "train_gpt_sm120.sh"), "--help"],
+        cwd=root,
+        env=shell_help_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert compiled_help.returncode == 0
+    assert shell_help.returncode == 0
+    for output in (compiled_help.stdout, shell_help.stdout):
+        assert "--lr-schedule" in output
+        assert "--lr-schedule-total-steps" in output
+        assert "--train-seed" in output
+        assert "--resume-from-checkpoint" in output
+        assert "--graph-fingerprint" in output
 
 
 def test_generic_train_gpt_shell_wrapper_prefers_compiled_launcher_and_falls_back(
@@ -8086,8 +8574,11 @@ def test_native_train_model_registry_falls_back_without_generic_dispatcher(
     models = {entry["name"]: entry for entry in registry["models"]}
 
     assert models["gpt"]["native_target"] == "nfn_gpt_native_train"
-    assert models["gpt2-evo"]["status"] == "implemented"
-    assert models["gpt2-evo"]["transformer_lm_status"] == "native-dense-gpt-layer-evo-delegate"
+    assert models["gpt2-evo"]["status"] == "preflight-only"
+    assert models["gpt2-evo"]["transformer_lm_status"] == (
+        "blocked-graph-faithful-whole-block-evolution-missing"
+    )
+    assert models["gpt2-evo"]["trainer_loop_status"] == "blocked-before-delegate-exec"
     assert models["nanogpt"]["token_lm_status"] == "implemented"
     assert models["llama"]["status"] == "native-trainer-covered"
     assert models["llama"]["kernel_status"] == "required-tile-symbols-present"
@@ -8202,7 +8693,7 @@ def test_native_train_cpp_binding_builds_and_runs(
         encoding="utf-8",
     )
     cli.chmod(0o755)
-    monkeypatch.setattr(neuralfn, "__path__", list(neuralfn.__path__) + [str(package_dir)])
+    monkeypatch.setattr(neuralfn, "__path__", [str(package_dir), *list(neuralfn.__path__)])
     monkeypatch.delitem(sys.modules, "neuralfn_native_train", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_train", raising=False)
     monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(cli))
@@ -8219,7 +8710,8 @@ def test_native_train_cpp_binding_builds_and_runs(
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_train"
     assert run_native_train(cfg, runner="auto") == 31
-    assert binding_args.read_text(encoding="utf-8").splitlines() == [
+    resolved_args = binding_args.read_text(encoding="utf-8").splitlines()
+    assert resolved_args[:7] == [
         "--base-model",
         "gpt2",
         "--dry-run",
@@ -8228,6 +8720,7 @@ def test_native_train_cpp_binding_builds_and_runs(
         "--graph-file",
         "/tmp/sdk-native-gpt.json",
     ]
+    assert resolved_args[resolved_args.index("--lr-schedule") + 1] == "cosine"
 
     raw_cli = tmp_path / "raw_train_gpt2cu"
     raw_cli.write_text("#!/usr/bin/env bash\nexit 41\n", encoding="utf-8")
@@ -8257,6 +8750,196 @@ def test_native_train_cpp_binding_builds_and_runs(
         "--dataset-alias",
         "cached-shards",
     ]
+    assert module.run_train(
+        {
+            "train_data": "materialized-train.bin",
+            "val_data": "materialized-val.bin",
+            "prefer_compiled_cli": True,
+            "argv": [str(raw_cli), "--should-not-run"],
+            "compiled_cli_argv": [
+                str(compiled_cli),
+                "--dataset-alias",
+                "materialized-shards",
+            ],
+            "launcher_argv": [str(raw_cli), "--launcher-fallback"],
+        }
+    ) == 33
+    assert observed_args.read_text(encoding="utf-8").splitlines() == [
+        "--dataset-alias",
+        "materialized-shards",
+    ]
+
+
+def test_unified_native_frontend_forwards_strict_continuation_fields(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    frontend = tmp_path / "nfn_native_train"
+    build = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_train_cli.sh"), str(frontend)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+
+    for schedule_flag in ("--lr-schedule", "--learning-rate-schedule"):
+        for equal_form in (False, True):
+            schedule_args = (
+                [f"{schedule_flag}=constant"]
+                if equal_form
+                else [schedule_flag, "constant"]
+            )
+            strict_args = schedule_args + (
+                [
+                    "--lr-schedule-total-steps=12000",
+                    "--train-seed=4242",
+                    "--resume-from-checkpoint=/tmp/model_00000010.bin",
+                    "--graph-fingerprint=" + "e" * 64,
+                    "--graph-preflight-proof=/tmp/native-training-proof.json",
+                ]
+                if equal_form
+                else [
+                    "--lr-schedule-total-steps",
+                    "12000",
+                    "--train-seed",
+                    "4242",
+                    "--resume-from-checkpoint",
+                    "/tmp/model_00000010.bin",
+                    "--graph-fingerprint",
+                    "e" * 64,
+                    "--graph-preflight-proof",
+                    "/tmp/native-training-proof.json",
+                ]
+            )
+            proc = subprocess.run(
+                [
+                    str(frontend),
+                    "--base-model",
+                    "gpt2",
+                    "--native-gpt-cli",
+                    "/custom/nfn_gpt_native_train",
+                    "--dataset-alias",
+                    "/tmp/native-cache",
+                    "--graph-file",
+                    "/tmp/gpt2_diff.json",
+                    *strict_args,
+                    "--print-command",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            assert proc.returncode == 0, proc.stderr
+            command = proc.stdout.strip()
+            command_args = shlex.split(command)
+            schedule_values = []
+            for index, item in enumerate(command_args):
+                if item == "--lr-schedule":
+                    schedule_values.append(command_args[index + 1])
+                elif item.startswith("--lr-schedule="):
+                    schedule_values.append(item.split("=", 1)[1])
+            assert command.startswith("/custom/nfn_gpt_native_train ")
+            assert schedule_values == ["constant"]
+            assert not any(
+                item == "--learning-rate-schedule"
+                or item.startswith("--learning-rate-schedule=")
+                for item in command_args
+            )
+            assert (
+                "--lr-schedule-total-steps 12000" in command
+                or "--lr-schedule-total-steps=12000" in command
+            )
+            assert "--train-seed 4242" in command or "--train-seed=4242" in command
+            assert (
+                "--resume-from-checkpoint /tmp/model_00000010.bin" in command
+                or "--resume-from-checkpoint=/tmp/model_00000010.bin" in command
+            )
+            assert "--graph-file /tmp/gpt2_diff.json" in command
+            assert (
+                f"--graph-fingerprint {'e' * 64}" in command
+                or f"--graph-fingerprint={'e' * 64}" in command
+            )
+            assert (
+                "--graph-preflight-proof /tmp/native-training-proof.json" in command
+                or "--graph-preflight-proof=/tmp/native-training-proof.json" in command
+            )
+
+    quality_aliases = (
+        (
+            "--final-lr-fraction",
+            ("--learning-rate-decay-frac", "--learning-rate-decay-fraction"),
+            "0.25",
+        ),
+        (
+            "--train-loss-every-steps",
+            ("--train-log-every", "--train-log-every-steps"),
+            "17",
+        ),
+    )
+    for canonical_flag, alias_flags, expected_value in quality_aliases:
+        for alias_flag in alias_flags:
+            for equal_form in (False, True):
+                value_args = (
+                    [f"{alias_flag}={expected_value}"]
+                    if equal_form
+                    else [alias_flag, expected_value]
+                )
+                proc = subprocess.run(
+                    [
+                        str(frontend),
+                        "--base-model",
+                        "gpt2",
+                        "--native-gpt-cli",
+                        "/custom/nfn_gpt_native_train",
+                        "--dataset-alias",
+                        "/tmp/native-cache",
+                        *value_args,
+                        "--print-command",
+                    ],
+                    cwd=root,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                assert proc.returncode == 0, proc.stderr
+                command_args = shlex.split(proc.stdout.strip())
+                canonical_values = []
+                for index, item in enumerate(command_args):
+                    if item == canonical_flag:
+                        canonical_values.append(command_args[index + 1])
+                    elif item.startswith(canonical_flag + "="):
+                        canonical_values.append(item.split("=", 1)[1])
+                assert canonical_values == [expected_value]
+                assert not any(
+                    item == alias_flag or item.startswith(alias_flag + "=")
+                    for item in command_args
+                )
+
+    help_proc = subprocess.run(
+        [str(frontend), "--help"],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert help_proc.returncode == 0
+    for flag in (
+        "--lr-schedule",
+        "--lr-schedule-total-steps",
+        "--train-seed",
+        "--resume-from-checkpoint",
+        "--graph-fingerprint",
+    ):
+        assert flag in help_proc.stdout
 
 
 def test_native_gpt_dense_resume_state_sidecars_are_reported() -> None:
@@ -8380,6 +9063,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["optimizer"] == {
         "profile": "adamw",
         "learning_rate": 0.0006,
+        "lr_schedule": "cosine",
         "final_lr_fraction": 0.0,
         "weight_decay": 0.1,
         "beta1": 0.87,
@@ -8441,6 +9125,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "gpt3",
             "gpt2_megakernel",
             "gpt2_moa",
+            "gpt2_zloss",
+            "gpt2_softcap",
+            "gpt2_qknorm",
+            "gpt2_diff",
+            "gpt2_stable",
             "nanogpt",
             "nanogpt_modern",
             "nanogpt_megakernel",
@@ -8790,11 +9479,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "interval": 10,
         "population": 8,
         "mutation_scale": 0.02,
+        "tournament_size": 3,
+        "elite_count": 1,
         "forward_candidate_eval_enabled": True,
         "candidate_loss_source": "native-forward-loss-device-resident-current-batch",
         "candidate_loss_transport": "device-to-device",
     }
-    assert tile_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
+    assert tile_payload["attention_forward_strategy"] == "neuralfn-packed-qkv-bf16-row-tile"
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
     assert tile_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert tile_payload["attention_forward_value_chunk_size"] == 64
@@ -11435,7 +12126,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert statuses["gpt"] == "implemented"
     assert statuses["gpt2"] == "implemented"
     assert statuses["gpt3"] == "implemented"
-    assert statuses["gpt2-evo"] == "implemented"
+    assert statuses["gpt2-evo"] == "preflight-only"
     assert statuses["nanogpt"] == "implemented"
     assert native_targets["gpt"] == "nfn_gpt_native_train"
     assert native_targets["gpt2"] == "nfn_gpt_native_train"
@@ -11445,11 +12136,13 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert transformer_statuses["gpt"] == "native-transformer-lm"
     assert transformer_statuses["gpt2"] == "native-transformer-lm"
     assert transformer_statuses["gpt3"] == "native-transformer-lm"
-    assert transformer_statuses["gpt2-evo"] == "native-dense-gpt-layer-evo-delegate"
+    assert transformer_statuses["gpt2-evo"] == "blocked-graph-faithful-whole-block-evolution-missing"
     assert transformer_statuses["nanogpt"] == "native-transformer-lm"
     assert token_statuses["gpt2-evo"] == "not-applicable"
     assert token_statuses["nanogpt"] == "implemented"
-    assert geometry_statuses["gpt2-evo"] == "dense-gpt2-compatible-layer-evo-delegate"
+    assert geometry_statuses["gpt2-evo"] == "gpt2-evo-whole-block-contract-unimplemented"
+    assert kernel_statuses["gpt2-evo"] == "evo-primitive-kernels-present"
+    assert loop_statuses["gpt2-evo"] == "blocked-before-delegate-exec"
     assert geometry_statuses["nanogpt"] == "dense-gpt-template-geometry"
     assert kernel_statuses["gpt"] == "required-tile-symbols-present"
     assert loop_statuses["gpt"] == "implemented"
@@ -15182,14 +15875,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert unified_evo_delegate.returncode == 0, unified_evo_delegate.stderr
-    assert str(fake_gpt) in unified_evo_delegate.stdout
-    assert str(gpt2_evo) not in unified_evo_delegate.stdout
-    assert "--train-transformer-lm" in unified_evo_delegate.stdout
-    assert "--layer-evo" in unified_evo_delegate.stdout
-    assert "--eval-every-steps 1000" in unified_evo_delegate.stdout
-    assert "--warmup-steps 60" in unified_evo_delegate.stdout
-    assert "--tile-cuda-activation-dtype nvfp4" in unified_evo_delegate.stdout
+    assert unified_evo_delegate.returncode == 2
+    unified_evo_report = json.loads(unified_evo_delegate.stdout)
+    assert unified_evo_report["selected_graph_native_runnable"] is False
+    assert unified_evo_report["training_execution_blocked"] is True
+    assert "blocked before delegate exec" in unified_evo_delegate.stderr
+    assert str(fake_gpt) not in unified_evo_delegate.stdout
 
     unified_moe_jepa = subprocess.run(
         [
@@ -16604,12 +17295,23 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan_proc.returncode == 0, evo_plan_proc.stderr
     evo_plan = json.loads(evo_plan_proc.stdout)
     assert evo_plan["model_family"] == "gpt2-evo"
-    assert evo_plan["status"] == "native-preflight-dense-gpt-layer-evo-delegate"
+    assert evo_plan["status"] == "native-preflight-blocked-graph-faithful-layer-evo-missing"
     assert evo_plan["template_name"] == "gpt2_moa"
     assert evo_plan["graph_file"] == ""
     assert evo_plan["template_known"] is True
-    assert evo_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
-    assert evo_plan["selected_graph_native_runnable"] is True
+    assert evo_plan["selected_graph_support_status"] == (
+        "preflight-only-graph-faithful-layer-evo-missing"
+    )
+    assert evo_plan["selected_graph_native_runnable"] is False
+    assert evo_plan["training_execution_blocked"] is True
+    assert evo_plan["missing_graph_faithful_gates"] == [
+        "exclude every tensor in the designated transformer block from gradient and AdamW updates",
+        (
+            "mutate, evaluate, select, and adopt every tensor in the designated transformer "
+            "block rather than only block_N.ln1.weight"
+        ),
+        "checkpoint and resume the whole-block evolutionary state with graph-faithful parity",
+    ]
     assert evo_plan["layer_evo"]["tournament_size"] == 5
     assert evo_plan["layer_evo"]["elite_count"] == 2
     assert evo_plan["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
@@ -16648,11 +17350,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         in evo_plan["available_native_kernels"]
     )
     assert (
-        "dense GPT native transformer trainer delegate with --layer-evo for GPT-2-compatible templates"
-        in evo_plan["available_native_kernels"]
-    )
-    assert (
-        "native CUDA forward-only candidate evaluation for current plus mutated evo-layer weights"
+        "diagnostic native CUDA forward-only candidate evaluation for current plus mutated ln1.weight candidates"
         in evo_plan["available_native_kernels"]
     )
     assert (
@@ -16679,8 +17377,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     evo_modern_plan = json.loads(evo_modern_plan_proc.stdout)
     assert evo_modern_plan["template_name"] == "gpt2_modern"
     assert evo_modern_plan["template_known"] is True
-    assert evo_modern_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
-    assert evo_modern_plan["selected_graph_native_runnable"] is True
+    assert evo_modern_plan["selected_graph_support_status"] == (
+        "preflight-only-graph-faithful-layer-evo-missing"
+    )
+    assert evo_modern_plan["selected_graph_native_runnable"] is False
 
     evo_custom_graph_path = tmp_path / "gpt2-evo-custom.json"
     evo_custom_graph_path.write_text('{"nodes": {}, "edges": {}}\n', encoding="utf-8")
@@ -17228,7 +17928,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     evo_dry_run_plan = json.loads(evo_dry_run.stdout[evo_dry_run_json_start:])
     assert evo_dry_run_plan["schedule"]["eval_every_steps"] == 1000
     assert evo_dry_run_plan["layer_evo"]["enabled"] is True
-    assert evo_dry_run_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
+    assert evo_dry_run_plan["selected_graph_support_status"] == (
+        "preflight-only-graph-faithful-layer-evo-missing"
+    )
+    assert evo_dry_run_plan["selected_graph_native_runnable"] is False
 
     evo_print_command = subprocess.run(
         [
@@ -17247,16 +17950,11 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert evo_print_command.returncode == 0
-    assert str(fake_gpt) in evo_print_command.stdout
-    assert str(gpt2_evo) not in evo_print_command.stdout
-    assert "--train-transformer-lm" in evo_print_command.stdout
-    assert "--layer-evo" in evo_print_command.stdout
-    assert "--eval-every-steps 1000" in evo_print_command.stdout
-    assert "--tile-cuda-activation-dtype nvfp4" in evo_print_command.stdout
-    assert "--dry-run" not in evo_print_command.stdout
-    assert "--print-command" not in evo_print_command.stdout
-    assert "--native-cuda-print-command" not in evo_print_command.stdout
+    assert evo_print_command.returncode == 2
+    evo_print_report = json.loads(evo_print_command.stdout)
+    assert evo_print_report["selected_graph_native_runnable"] is False
+    assert evo_print_report["training_execution_blocked"] is True
+    assert str(fake_gpt) not in evo_print_command.stdout
 
     evo_delegate_print_command = subprocess.run(
         [
@@ -17286,23 +17984,16 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert evo_delegate_print_command.returncode == 0
-    assert str(fake_gpt) in evo_delegate_print_command.stdout
-    assert evo_delegate_print_command.stdout.count(str(fake_gpt)) == 1
-    assert "--train-transformer-lm" in evo_delegate_print_command.stdout
-    assert "--layer-evo" in evo_delegate_print_command.stdout
-    assert "--tile-cuda-activation-dtype nvfp4" in evo_delegate_print_command.stdout
-    assert "--dataset-alias /tmp/native-cache" in evo_delegate_print_command.stdout
-    assert "--eval-every-steps 1000" in evo_delegate_print_command.stdout
-    assert "--beta1 0.87" in evo_delegate_print_command.stdout
-    assert "--beta2 0.98" in evo_delegate_print_command.stdout
-    assert "--adam-eps 1e-08" in evo_delegate_print_command.stdout
-    assert "--grad-clip-norm 0.75" in evo_delegate_print_command.stdout
-    assert "--evo-tournament-size 5" in evo_delegate_print_command.stdout
-    assert "--evo-elite-count 2" in evo_delegate_print_command.stdout
-    assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
-    assert "--startup-only" in evo_delegate_print_command.stdout
-    assert "--native-cuda-startup-only" not in evo_delegate_print_command.stdout
+    assert evo_delegate_print_command.returncode == 2
+    evo_delegate_report = json.loads(evo_delegate_print_command.stdout)
+    assert evo_delegate_report["selected_graph_native_runnable"] is False
+    assert evo_delegate_report["schedule"]["eval_every_steps"] == 1000
+    assert evo_delegate_report["optimizer"]["beta1"] == 0.87
+    assert evo_delegate_report["optimizer"]["beta2"] == 0.98
+    assert evo_delegate_report["optimizer"]["grad_clip_norm"] == 0.75
+    assert evo_delegate_report["layer_evo"]["tournament_size"] == 5
+    assert evo_delegate_report["layer_evo"]["elite_count"] == 2
+    assert str(fake_gpt) not in evo_delegate_print_command.stdout
 
     evo_required_nvfp4_delegate = subprocess.run(
         [
@@ -17316,8 +18007,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert evo_required_nvfp4_delegate.returncode == 0
-    assert "--require-native-nvfp4-activation-packing" in evo_required_nvfp4_delegate.stdout
+    assert evo_required_nvfp4_delegate.returncode == 2
+    evo_required_nvfp4_report = json.loads(evo_required_nvfp4_delegate.stdout)
+    assert evo_required_nvfp4_report["tile_cuda"]["native_activation_packing_required"] is True
 
 
 def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> None:
@@ -20801,7 +21493,9 @@ def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) ->
     assert "TorchTrainer path" not in proc.stderr
 
 
-def test_top_level_nfn_train_gpt2_evo_prints_family_delegate_command(tmp_path: Path) -> None:
+def test_top_level_nfn_train_gpt2_evo_prints_nonexecuting_family_command(
+    tmp_path: Path,
+) -> None:
     root = Path(__file__).resolve().parents[1]
     family_cli = tmp_path / "nfn_gpt2_evo_native_train"
     family_cli.write_text(
@@ -20836,13 +21530,15 @@ def test_top_level_nfn_train_gpt2_evo_prints_family_delegate_command(tmp_path: P
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.startswith("delegate-native ")
-    assert str(family_cli) not in proc.stdout
-    assert "--tinystories" in proc.stdout
-    assert "--dry-run" in proc.stdout
-    assert "--print-command" in proc.stdout
-    assert "--eval-every-steps 1000" in proc.stdout
-    assert "--base-model" not in proc.stdout
+    assert shlex.split(proc.stdout.strip()) == [
+        str(family_cli),
+        "--tinystories",
+        "--print-command",
+        "--dry-run",
+        "--eval-every-steps",
+        "1000",
+    ]
+    assert "delegate-native" not in proc.stdout
     assert "--model-family" not in proc.stdout
 
 

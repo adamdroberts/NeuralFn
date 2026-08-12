@@ -1,3 +1,5 @@
+#include "tile_ops.h"
+
 #include <cuda_tile.h>
 
 #include <cuda_bf16.h>
@@ -33,6 +35,7 @@
 #include <cstring>
 #include <map>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -90,6 +93,7 @@ constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
 constexpr std::int64_t kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64;
 constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 128;
+std::atomic<std::int64_t> g_turboquant_attention_launch_count{0};
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_float_hd64_dprep_launch_count{0};
@@ -156,6 +160,7 @@ struct DifferentialPackedAttentionWorkspace {
   float* lse_first = nullptr;
   float* lse_second = nullptr;
   float* combine_rstd = nullptr;
+  float* grad_lambda_partials = nullptr;
   float* q_first = nullptr;
   float* k_first = nullptr;
   float* q_second = nullptr;
@@ -173,7 +178,16 @@ struct DifferentialPackedAttentionWorkspace {
   std::int64_t output_capacity = 0;
   std::int64_t lse_capacity = 0;
 };
-DifferentialPackedAttentionWorkspace g_differential_packed_attention_workspace;
+// Differential attention launches may be issued on independent CUDA streams.
+// Each stream owns its scratch so kernels from two in-flight calls never alias
+// one process-global buffer.  A slot is only replaced after draining its own
+// stream, which also makes explicit workspace teardown safe.
+struct DifferentialPackedAttentionWorkspaceSlot {
+  DifferentialPackedAttentionWorkspace workspace;
+  std::mutex call_mutex;
+};
+std::map<cudaStream_t, std::shared_ptr<DifferentialPackedAttentionWorkspaceSlot>>
+    g_differential_packed_attention_workspaces;
 std::mutex g_differential_packed_attention_workspace_mutex;
 
 // H0208 / MK-A: [chunks, dim] dgamma/dbeta partials for the atomic-free
@@ -16307,6 +16321,53 @@ __global__ void differential_combine_rms_bf16_kernel(
   }
 }
 
+__global__ void differential_combine_rms_learned_lambda_bf16_kernel(
+    const std::uint16_t* first_bits,
+    const std::uint16_t* second_bits,
+    std::uint16_t* output_bits,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  if (segment >= rows * heads) {
+    return;
+  }
+  const std::int64_t base = segment * head_dim;
+  const auto* first = reinterpret_cast<const __nv_bfloat16*>(first_bits);
+  const auto* second = reinterpret_cast<const __nv_bfloat16*>(second_bits);
+  auto* output = reinterpret_cast<__nv_bfloat16*>(output_bits);
+  const float lambda_value = *lambda;
+  __shared__ float scratch[64];
+  float sumsq = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float value = __bfloat162float(first[base + d]) -
+        lambda_value * __bfloat162float(second[base + d]);
+    sumsq += value * value;
+  }
+  scratch[threadIdx.x] = sumsq;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    rstd[segment] = rsqrtf(scratch[0] / static_cast<float>(head_dim) + eps);
+  }
+  __syncthreads();
+  const float inv_rms = rstd[segment];
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float value = __bfloat162float(first[base + d]) -
+        lambda_value * __bfloat162float(second[base + d]);
+    output[base + d] = __float2bfloat16(value * inv_rms * output_scale);
+  }
+}
+
 __global__ void differential_combine_rms_backward_kernel(
     const std::uint16_t* output_bits,
     const float* rstd,
@@ -16345,6 +16406,92 @@ __global__ void differential_combine_rms_backward_kernel(
     const float grad = scale * (grad_output[base + d] - norm_value * mean_dot);
     grad_first[base + d] = grad;
     grad_second[base + d] = -lambda * grad;
+  }
+}
+
+__global__ void differential_combine_rms_learned_lambda_backward_kernel(
+    const std::uint16_t* first_bits,
+    const std::uint16_t* second_bits,
+    const float* rstd,
+    const float* grad_output,
+    float* grad_first,
+    float* grad_second,
+    float* grad_lambda_partials,
+    std::int64_t rows,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale) {
+  const std::int64_t segment = static_cast<std::int64_t>(blockIdx.x);
+  if (segment >= rows * heads) {
+    return;
+  }
+  const std::int64_t base = segment * head_dim;
+  const auto* first = reinterpret_cast<const __nv_bfloat16*>(first_bits);
+  const auto* second = reinterpret_cast<const __nv_bfloat16*>(second_bits);
+  const float lambda_value = *lambda;
+  __shared__ float scratch[64];
+  float dot = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float combined =
+        __bfloat162float(first[base + d]) -
+        lambda_value * __bfloat162float(second[base + d]);
+    const float norm_value = combined * rstd[segment];
+    dot += grad_output[base + d] * norm_value;
+  }
+  scratch[threadIdx.x] = dot;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  const float mean_dot = scratch[0] / static_cast<float>(head_dim);
+  const float scale = output_scale * rstd[segment];
+  float lambda_partial = 0.0f;
+  for (std::int64_t d = threadIdx.x; d < head_dim; d += blockDim.x) {
+    const float combined =
+        __bfloat162float(first[base + d]) -
+        lambda_value * __bfloat162float(second[base + d]);
+    const float norm_value = combined * rstd[segment];
+    const float grad = scale * (grad_output[base + d] - norm_value * mean_dot);
+    grad_first[base + d] = grad;
+    grad_second[base + d] = -lambda_value * grad;
+    lambda_partial -= __bfloat162float(second[base + d]) * grad;
+  }
+  scratch[threadIdx.x] = lambda_partial;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    grad_lambda_partials[segment] = scratch[0];
+  }
+}
+
+__global__ void differential_reduce_lambda_partials_kernel(
+    const float* partials,
+    std::int64_t count,
+    float* grad_lambda) {
+  __shared__ float scratch[256];
+  float sum = 0.0f;
+  for (std::int64_t index = threadIdx.x; index < count; index += blockDim.x) {
+    sum += partials[index];
+  }
+  scratch[threadIdx.x] = sum;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (threadIdx.x < stride) {
+      scratch[threadIdx.x] += scratch[threadIdx.x + stride];
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x == 0) {
+    *grad_lambda += scratch[0];
   }
 }
 
@@ -19073,6 +19220,85 @@ __tile_global__ void route_balance_loss_float32_kernel(
   ct::store(out + out_idx, ct::sum(sq, 0_ic) * scale);
 }
 
+__global__ void moe_router_aux_density_float32_kernel(
+    const float* __restrict__ router_logits,
+    float* __restrict__ density,
+    std::int64_t rows,
+    std::int64_t experts) {
+  const std::int64_t expert =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (expert >= experts) {
+    return;
+  }
+
+  float probability_sum = 0.0f;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    const std::int64_t base = row * experts;
+    float row_max = -3.4028234663852886e38f;
+    for (std::int64_t col = 0; col < experts; ++col) {
+      row_max = fmaxf(row_max, router_logits[base + col]);
+    }
+    float denominator = 0.0f;
+    for (std::int64_t col = 0; col < experts; ++col) {
+      denominator += expf(router_logits[base + col] - row_max);
+    }
+    probability_sum += expf(router_logits[base + expert] - row_max) / denominator;
+  }
+  density[expert] = probability_sum / static_cast<float>(rows);
+}
+
+__global__ void moe_router_aux_loss_accumulate_float32_kernel(
+    const float* __restrict__ density,
+    float* __restrict__ weighted_loss_accumulator,
+    std::int64_t experts,
+    float coefficient) {
+  if (blockIdx.x != 0 || threadIdx.x != 0) {
+    return;
+  }
+  float squared_density_sum = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    squared_density_sum += density[expert] * density[expert];
+  }
+  *weighted_loss_accumulator +=
+      coefficient * static_cast<float>(experts) * squared_density_sum;
+}
+
+__global__ void moe_router_aux_backward_float32_kernel(
+    const float* __restrict__ router_logits,
+    const float* __restrict__ density,
+    float* __restrict__ grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient) {
+  const std::int64_t row =
+      static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (row >= rows) {
+    return;
+  }
+
+  const std::int64_t base = row * experts;
+  float row_max = -3.4028234663852886e38f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    row_max = fmaxf(row_max, router_logits[base + expert]);
+  }
+  float denominator = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    denominator += expf(router_logits[base + expert] - row_max);
+  }
+  float density_probability_dot = 0.0f;
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float probability = expf(router_logits[base + expert] - row_max) / denominator;
+    density_probability_dot += density[expert] * probability;
+  }
+  const float gradient_scale =
+      2.0f * coefficient * static_cast<float>(experts) / static_cast<float>(rows);
+  for (std::int64_t expert = 0; expert < experts; ++expert) {
+    const float probability = expf(router_logits[base + expert] - row_max) / denominator;
+    grad_router_logits[base + expert] +=
+        gradient_scale * probability * (density[expert] - density_probability_dot);
+  }
+}
+
 __tile_global__ void softmax_distillation_partials_float32_kernel(
     const float* __restrict__ teacher_logits,
     const float* __restrict__ student_logits,
@@ -20246,7 +20472,300 @@ __global__ void native_family_jepa_mask_u16_float32_kernel(
   }
 }
 
+constexpr int kTurboQuantAttentionThreads = 256;
+constexpr std::int64_t kTurboQuantMaxHeadDimension = 256;
+
+__device__ __forceinline__ float turboquant_read_record_float(
+    const std::uint8_t* source) {
+  // CPU-v1 writes native little-endian float32 bytes with memcpy.  Records can
+  // be unaligned (for example, a 10-dimensional MSE record is nine bytes), so
+  // assemble the word rather than dereferencing a float pointer.
+  const std::uint32_t bits =
+      static_cast<std::uint32_t>(source[0]) |
+      (static_cast<std::uint32_t>(source[1]) << 8) |
+      (static_cast<std::uint32_t>(source[2]) << 16) |
+      (static_cast<std::uint32_t>(source[3]) << 24);
+  return __uint_as_float(bits);
+}
+
+__device__ __forceinline__ std::uint32_t turboquant_packed_index(
+    const std::uint8_t* packed,
+    std::int64_t coordinate,
+    bool qjl_key) {
+  // CPU-v1 uses 4/3 bits on even/odd value (and MSE-key) coordinates.
+  // QJL keys subtract one bit from each coordinate, yielding 3/2 bits.
+  const std::int64_t pair = coordinate / 2;
+  const bool odd = (coordinate & 1) != 0;
+  const std::int64_t bit_offset = qjl_key
+      ? pair * 5 + (odd ? 3 : 0)
+      : pair * 7 + (odd ? 4 : 0);
+  const int width = qjl_key ? (odd ? 2 : 3) : (odd ? 3 : 4);
+  std::uint32_t value = 0;
+  for (int bit = 0; bit < width; ++bit) {
+    const std::int64_t absolute = bit_offset + bit;
+    value |= static_cast<std::uint32_t>(
+        (packed[absolute / 8] >> (absolute % 8)) & 1u) << bit;
+  }
+  return value;
+}
+
+__device__ __forceinline__ double turboquant_centroid(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    int width,
+    std::uint32_t index) {
+  if (width == 2) {
+    return descriptor.centroids_2bit[index];
+  }
+  if (width == 3) {
+    return descriptor.centroids_3bit[index];
+  }
+  return descriptor.centroids_4bit[index];
+}
+
+__device__ __forceinline__ const std::uint8_t* turboquant_record(
+    const std::uint8_t* base,
+    std::int64_t batch,
+    std::int64_t batch_stride,
+    std::int64_t layer,
+    std::int64_t capacity,
+    std::int64_t position,
+    std::int64_t kv_heads,
+    std::int64_t kv_head,
+    std::int64_t record_bytes) {
+  const std::int64_t record =
+      (layer * capacity + position) * kv_heads + kv_head;
+  return base + batch * batch_stride + record * record_bytes;
+}
+
+__device__ __forceinline__ double turboquant_historical_key_score(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    const std::uint8_t* record,
+    const double* rotated_query,
+    const double* projected_query) {
+  const bool qjl =
+      descriptor.profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5;
+  const float norm = turboquant_read_record_float(record);
+  const std::uint8_t* packed = record + (qjl ? 8 : 4);
+  double base = 0.0;
+  for (std::int64_t coordinate = 0; coordinate < descriptor.head_dim;
+       ++coordinate) {
+    const int width = qjl
+        ? ((coordinate & 1) != 0 ? 2 : 3)
+        : ((coordinate & 1) != 0 ? 3 : 4);
+    base += rotated_query[coordinate] * turboquant_centroid(
+        descriptor,
+        width,
+        turboquant_packed_index(packed, coordinate, qjl));
+  }
+  if (qjl) {
+    const float residual_norm = turboquant_read_record_float(record + 4);
+    const std::int64_t index_bytes =
+        ((descriptor.head_dim / 2) * 5 + 7) / 8;
+    const std::uint8_t* signs = packed + index_bytes;
+    double signed_sum = 0.0;
+    for (std::int64_t coordinate = 0; coordinate < descriptor.head_dim;
+         ++coordinate) {
+      const bool positive =
+          ((signs[coordinate / 8] >> (coordinate % 8)) & 1u) != 0;
+      signed_sum += projected_query[coordinate] * (positive ? 1.0 : -1.0);
+    }
+    constexpr double kSqrtPiOverTwo = 1.2533141373155002512;
+    base += kSqrtPiOverTwo / static_cast<double>(descriptor.head_dim) *
+        static_cast<double>(residual_norm) * signed_sum;
+  }
+  return static_cast<double>(norm) * base;
+}
+
+__device__ __forceinline__ double turboquant_historical_value_coordinate(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    const std::uint8_t* record,
+    std::int64_t output_coordinate) {
+  const float norm = turboquant_read_record_float(record);
+  const std::uint8_t* packed = record + 4;
+  double unit = 0.0;
+  for (std::int64_t rotated_coordinate = 0;
+       rotated_coordinate < descriptor.head_dim;
+       ++rotated_coordinate) {
+    const int width = (rotated_coordinate & 1) != 0 ? 3 : 4;
+    const std::uint32_t index = turboquant_packed_index(
+        packed, rotated_coordinate, false);
+    unit += descriptor.rotation[
+        rotated_coordinate * descriptor.head_dim + output_coordinate] *
+        turboquant_centroid(descriptor, width, index);
+  }
+  return static_cast<double>(norm) * unit;
+}
+
+__global__ void turboquant_attention_forward_v1_kernel(
+    NfnNativeTileTurboQuantAttentionDescriptorV1 descriptor) {
+  const std::int64_t linear_head = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t batch = linear_head / descriptor.query_heads;
+  const std::int64_t query_head = linear_head - batch * descriptor.query_heads;
+  const std::int64_t query_heads_per_kv = descriptor.query_heads / descriptor.kv_heads;
+  const std::int64_t kv_head = query_head / query_heads_per_kv;
+  const std::int64_t thread = static_cast<std::int64_t>(threadIdx.x);
+  const bool qjl =
+      descriptor.profile == NFN_NATIVE_TILE_TURBOQUANT_PROFILE_QJL_3_5;
+
+  const float* query = descriptor.query +
+      batch * descriptor.query_batch_stride + query_head * descriptor.head_dim;
+  const float* current_key = descriptor.current_key +
+      batch * descriptor.current_key_batch_stride + kv_head * descriptor.head_dim;
+  const float* current_value = descriptor.current_value +
+      batch * descriptor.current_value_batch_stride + kv_head * descriptor.head_dim;
+  float* output = descriptor.output +
+      batch * descriptor.output_batch_stride + query_head * descriptor.head_dim;
+
+  __shared__ double rotated_query[kTurboQuantMaxHeadDimension];
+  __shared__ double projected_query[kTurboQuantMaxHeadDimension];
+  __shared__ double scores[kTurboQuantAttentionThreads];
+  __shared__ double reduction[kTurboQuantAttentionThreads];
+  __shared__ double running_max;
+  __shared__ double running_denominator;
+  __shared__ double next_max;
+  __shared__ double old_rescale;
+
+  if (thread < descriptor.head_dim) {
+    double rotated = 0.0;
+    double projected = 0.0;
+    for (std::int64_t column = 0; column < descriptor.head_dim; ++column) {
+      const double coordinate = static_cast<double>(query[column]);
+      rotated += descriptor.rotation[thread * descriptor.head_dim + column] * coordinate;
+      if (qjl) {
+        projected += descriptor.qjl_projection[
+            thread * descriptor.head_dim + column] * coordinate;
+      }
+    }
+    rotated_query[thread] = rotated;
+    projected_query[thread] = projected;
+  }
+  if (thread == 0) {
+    running_max = -1.7976931348623157e308;
+    running_denominator = 0.0;
+  }
+  __syncthreads();
+
+  double output_numerator = 0.0;
+  const std::int64_t total_rows = descriptor.past_sequence_length + 1;
+  for (std::int64_t chunk_start = 0; chunk_start < total_rows;
+       chunk_start += kTurboQuantAttentionThreads) {
+    const std::int64_t position = chunk_start + thread;
+    double score = -1.7976931348623157e308;
+    if (position < total_rows) {
+      if (position == descriptor.past_sequence_length) {
+        score = 0.0;
+        for (std::int64_t coordinate = 0; coordinate < descriptor.head_dim;
+             ++coordinate) {
+          score += static_cast<double>(query[coordinate]) *
+              static_cast<double>(current_key[coordinate]);
+        }
+      } else {
+        const std::uint8_t* key_record = turboquant_record(
+            descriptor.key_records,
+            batch,
+            descriptor.key_cache_batch_stride_bytes,
+            descriptor.layer_index,
+            descriptor.cache_capacity,
+            position,
+            descriptor.kv_heads,
+            kv_head,
+            descriptor.key_record_bytes);
+        score = turboquant_historical_key_score(
+            descriptor, key_record, rotated_query, projected_query);
+      }
+      score *= static_cast<double>(descriptor.scale);
+    }
+    scores[thread] = score;
+    reduction[thread] = score;
+    __syncthreads();
+
+    // Fixed-order reductions and sequential chunks make the result repeatable
+    // while the online rescaling keeps 16K-row softmax finite.
+    for (int offset = kTurboQuantAttentionThreads / 2; offset > 0; offset /= 2) {
+      if (thread < offset) {
+        reduction[thread] = fmax(reduction[thread], reduction[thread + offset]);
+      }
+      __syncthreads();
+    }
+    if (thread == 0) {
+      next_max = fmax(running_max, reduction[0]);
+      old_rescale = running_denominator == 0.0
+          ? 0.0
+          : exp(running_max - next_max);
+    }
+    __syncthreads();
+
+    scores[thread] = position < total_rows ? exp(scores[thread] - next_max) : 0.0;
+    reduction[thread] = scores[thread];
+    __syncthreads();
+    for (int offset = kTurboQuantAttentionThreads / 2; offset > 0; offset /= 2) {
+      if (thread < offset) {
+        reduction[thread] += reduction[thread + offset];
+      }
+      __syncthreads();
+    }
+
+    if (thread < descriptor.head_dim) {
+      output_numerator *= old_rescale;
+      const std::int64_t chunk_rows = min(
+          static_cast<std::int64_t>(kTurboQuantAttentionThreads),
+          total_rows - chunk_start);
+      for (std::int64_t row = 0; row < chunk_rows; ++row) {
+        const std::int64_t row_position = chunk_start + row;
+        double value = 0.0;
+        if (row_position == descriptor.past_sequence_length) {
+          value = static_cast<double>(current_value[thread]);
+        } else {
+          const std::uint8_t* value_record = turboquant_record(
+              descriptor.value_records,
+              batch,
+              descriptor.value_cache_batch_stride_bytes,
+              descriptor.layer_index,
+              descriptor.cache_capacity,
+              row_position,
+              descriptor.kv_heads,
+              kv_head,
+              descriptor.value_record_bytes);
+          value = turboquant_historical_value_coordinate(
+              descriptor, value_record, thread);
+        }
+        output_numerator += scores[row] * value;
+      }
+    }
+    if (thread == 0) {
+      running_denominator = running_denominator * old_rescale + reduction[0];
+      running_max = next_max;
+    }
+    __syncthreads();
+  }
+
+  if (thread < descriptor.head_dim) {
+    output[thread] = static_cast<float>(output_numerator / running_denominator);
+  }
+}
+
 }  // namespace
+
+void reset_turboquant_attention_launch_stats() {
+  g_turboquant_attention_launch_count.store(0, std::memory_order_relaxed);
+}
+
+std::int64_t turboquant_attention_launch_count() {
+  return g_turboquant_attention_launch_count.load(std::memory_order_relaxed);
+}
+
+int launch_turboquant_attention_forward_v1(
+    const NfnNativeTileTurboQuantAttentionDescriptorV1& descriptor,
+    cudaStream_t stream) {
+  const std::int64_t blocks = descriptor.batch_size * descriptor.query_heads;
+  turboquant_attention_forward_v1_kernel<<<
+      static_cast<unsigned int>(blocks), kTurboQuantAttentionThreads, 0, stream>>>(descriptor);
+  const cudaError_t status = cudaPeekAtLastError();
+  if (status == cudaSuccess) {
+    g_turboquant_attention_launch_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  return static_cast<int>(status);
+}
 
 int linear_backward_bias_threads_per_block() {
   return linear_backward_bias_threads_per_block_value();
@@ -27038,6 +27557,26 @@ void launch_route_balance_loss_float32(
   route_balance_loss_float32_kernel<<<1, 1, 0, stream>>>(density, out, experts);
 }
 
+void launch_moe_router_aux_loss_backward_float32(
+    const float* router_logits,
+    float* density,
+    float* weighted_loss_accumulator,
+    float* grad_router_logits,
+    std::int64_t rows,
+    std::int64_t experts,
+    float coefficient,
+    cudaStream_t stream) {
+  constexpr int kThreads = 256;
+  const int expert_blocks = static_cast<int>((experts + kThreads - 1) / kThreads);
+  const int row_blocks = static_cast<int>((rows + kThreads - 1) / kThreads);
+  moe_router_aux_density_float32_kernel<<<expert_blocks, kThreads, 0, stream>>>(
+      router_logits, density, rows, experts);
+  moe_router_aux_loss_accumulate_float32_kernel<<<1, 1, 0, stream>>>(
+      density, weighted_loss_accumulator, experts, coefficient);
+  moe_router_aux_backward_float32_kernel<<<row_blocks, kThreads, 0, stream>>>(
+      router_logits, density, grad_router_logits, rows, experts, coefficient);
+}
+
 void launch_softmax_distillation_partials_float32(
     const float* teacher_logits,
     const float* student_logits,
@@ -30053,6 +30592,7 @@ static void release_differential_packed_attention_workspace(
   if (workspace.lse_first != nullptr) cudaFree(workspace.lse_first);
   if (workspace.lse_second != nullptr) cudaFree(workspace.lse_second);
   if (workspace.combine_rstd != nullptr) cudaFree(workspace.combine_rstd);
+  if (workspace.grad_lambda_partials != nullptr) cudaFree(workspace.grad_lambda_partials);
   if (workspace.q_first != nullptr) cudaFree(workspace.q_first);
   if (workspace.k_first != nullptr) cudaFree(workspace.k_first);
   if (workspace.q_second != nullptr) cudaFree(workspace.q_second);
@@ -30069,14 +30609,44 @@ static void release_differential_packed_attention_workspace(
   workspace = {};
 }
 
-static DifferentialPackedAttentionWorkspace* ensure_differential_packed_attention_workspace(
+struct DifferentialPackedAttentionWorkspaceLease {
+  std::shared_ptr<DifferentialPackedAttentionWorkspaceSlot> slot;
+  std::unique_lock<std::mutex> call_lock;
+
+  DifferentialPackedAttentionWorkspace* workspace() const {
+    return slot == nullptr ? nullptr : &slot->workspace;
+  }
+};
+
+static cudaError_t acquire_differential_packed_attention_workspace(
     std::int64_t qkv_elements,
     std::int64_t output_elements,
     std::int64_t lse_elements,
-    cudaStream_t stream) {
-  std::lock_guard<std::mutex> lock(g_differential_packed_attention_workspace_mutex);
-  DifferentialPackedAttentionWorkspace& current =
-      g_differential_packed_attention_workspace;
+    cudaStream_t stream,
+    DifferentialPackedAttentionWorkspaceLease* lease) {
+  if (lease == nullptr || stream == cudaStreamPerThread) {
+    return cudaErrorInvalidValue;
+  }
+  std::shared_ptr<DifferentialPackedAttentionWorkspaceSlot> slot;
+  std::unique_lock<std::mutex> call_lock;
+  try {
+    {
+      std::lock_guard<std::mutex> registry_lock(
+          g_differential_packed_attention_workspace_mutex);
+      auto& entry = g_differential_packed_attention_workspaces[stream];
+      if (entry == nullptr) {
+        entry = std::make_shared<DifferentialPackedAttentionWorkspaceSlot>();
+      }
+      slot = entry;
+      // Keep the registry locked until this call owns the slot.  Teardown uses
+      // the same registry -> slot order, so it cannot unregister/free a slot in
+      // the gap between lookup and call ownership.
+      call_lock = std::unique_lock<std::mutex>(slot->call_mutex);
+    }
+  } catch (const std::bad_alloc&) {
+    return cudaErrorMemoryAllocation;
+  }
+  DifferentialPackedAttentionWorkspace& current = slot->workspace;
   if (current.qkv_capacity >= qkv_elements &&
       current.output_capacity >= output_elements &&
       current.lse_capacity >= lse_elements &&
@@ -30086,6 +30656,7 @@ static DifferentialPackedAttentionWorkspace* ensure_differential_packed_attentio
       current.grad_out_first != nullptr && current.grad_out_second != nullptr &&
       current.lse_first != nullptr && current.lse_second != nullptr &&
       current.combine_rstd != nullptr &&
+      current.grad_lambda_partials != nullptr &&
       current.q_first != nullptr && current.k_first != nullptr &&
       current.q_second != nullptr && current.k_second != nullptr &&
       current.v != nullptr && current.head_out_first != nullptr &&
@@ -30093,7 +30664,9 @@ static DifferentialPackedAttentionWorkspace* ensure_differential_packed_attentio
       current.grad_k_first != nullptr && current.grad_v_first != nullptr &&
       current.grad_q_second != nullptr && current.grad_k_second != nullptr &&
       current.grad_v_second != nullptr) {
-    return &current;
+    lease->slot = std::move(slot);
+    lease->call_lock = std::move(call_lock);
+    return cudaSuccess;
   }
   DifferentialPackedAttentionWorkspace next;
   next.qkv_capacity = qkv_elements;
@@ -30111,41 +30684,134 @@ static DifferentialPackedAttentionWorkspace* ensure_differential_packed_attentio
       sizeof(float) * static_cast<std::size_t>(output_elements / 2);
   const std::size_t value_float_bytes =
       sizeof(float) * static_cast<std::size_t>(output_elements);
-  bool ok =
-      cudaMalloc(&next.qkv_first, qkv_bytes) == cudaSuccess &&
-      cudaMalloc(&next.qkv_second, qkv_bytes) == cudaSuccess &&
-      cudaMalloc(&next.out_first, output_bf16_bytes) == cudaSuccess &&
-      cudaMalloc(&next.out_second, output_bf16_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_qkv_first, qkv_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_qkv_second, qkv_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_out_first, output_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_out_second, output_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.lse_first, lse_bytes) == cudaSuccess &&
-      cudaMalloc(&next.lse_second, lse_bytes) == cudaSuccess &&
-      cudaMalloc(&next.combine_rstd, lse_bytes) == cudaSuccess &&
-      cudaMalloc(&next.q_first, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.k_first, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.q_second, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.k_second, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.v, value_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.head_out_first, value_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.head_out_second, value_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_q_first, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_k_first, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_v_first, value_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_q_second, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_k_second, qk_float_bytes) == cudaSuccess &&
-      cudaMalloc(&next.grad_v_second, value_float_bytes) == cudaSuccess;
-  if (!ok) {
+  cudaError_t allocation_status = cudaSuccess;
+  const auto allocate = [&](auto** pointer, std::size_t bytes) {
+    if (allocation_status == cudaSuccess) {
+      allocation_status = cudaMalloc(pointer, bytes);
+    }
+  };
+  allocate(&next.qkv_first, qkv_bytes);
+  allocate(&next.qkv_second, qkv_bytes);
+  allocate(&next.out_first, output_bf16_bytes);
+  allocate(&next.out_second, output_bf16_bytes);
+  allocate(&next.grad_qkv_first, qkv_bytes);
+  allocate(&next.grad_qkv_second, qkv_bytes);
+  allocate(&next.grad_out_first, output_float_bytes);
+  allocate(&next.grad_out_second, output_float_bytes);
+  allocate(&next.lse_first, lse_bytes);
+  allocate(&next.lse_second, lse_bytes);
+  allocate(&next.combine_rstd, lse_bytes);
+  allocate(&next.grad_lambda_partials, lse_bytes);
+  allocate(&next.q_first, qk_float_bytes);
+  allocate(&next.k_first, qk_float_bytes);
+  allocate(&next.q_second, qk_float_bytes);
+  allocate(&next.k_second, qk_float_bytes);
+  allocate(&next.v, value_float_bytes);
+  allocate(&next.head_out_first, value_float_bytes);
+  allocate(&next.head_out_second, value_float_bytes);
+  allocate(&next.grad_q_first, qk_float_bytes);
+  allocate(&next.grad_k_first, qk_float_bytes);
+  allocate(&next.grad_v_first, value_float_bytes);
+  allocate(&next.grad_q_second, qk_float_bytes);
+  allocate(&next.grad_k_second, qk_float_bytes);
+  allocate(&next.grad_v_second, value_float_bytes);
+  if (allocation_status != cudaSuccess) {
     release_differential_packed_attention_workspace(next);
-    return nullptr;
+    return allocation_status;
   }
   if (current.qkv_first != nullptr) {
-    cudaStreamSynchronize(stream);
+    const cudaError_t synchronize_status = cudaStreamSynchronize(stream);
+    if (synchronize_status != cudaSuccess) {
+      release_differential_packed_attention_workspace(next);
+      return synchronize_status;
+    }
     release_differential_packed_attention_workspace(current);
   }
   current = next;
-  return &current;
+  lease->slot = std::move(slot);
+  lease->call_lock = std::move(call_lock);
+  return cudaSuccess;
+}
+
+int release_differential_packed_attention_workspaces() {
+  std::lock_guard<std::mutex> registry_lock(
+      g_differential_packed_attention_workspace_mutex);
+  int status = 0;
+  for (auto& entry : g_differential_packed_attention_workspaces) {
+    std::unique_lock<std::mutex> call_lock(entry.second->call_mutex);
+    const cudaError_t synchronize_status = cudaStreamSynchronize(entry.first);
+    if (synchronize_status != cudaSuccess && status == 0) {
+      status = static_cast<int>(synchronize_status);
+      continue;
+    }
+    release_differential_packed_attention_workspace(entry.second->workspace);
+  }
+  if (status == 0) {
+    g_differential_packed_attention_workspaces.clear();
+  }
+  return status;
+}
+
+struct DifferentialPackedAttentionGeometry {
+  std::int64_t rows = 0;
+  std::int64_t model_dim = 0;
+  std::int64_t qkv_elements = 0;
+  std::int64_t output_elements = 0;
+  std::int64_t lse_elements = 0;
+};
+
+static bool checked_positive_product(
+    std::int64_t left,
+    std::int64_t right,
+    std::int64_t* product) {
+  if (product == nullptr || left <= 0 || right <= 0 ||
+      left > std::numeric_limits<std::int64_t>::max() / right) {
+    return false;
+  }
+  *product = left * right;
+  return true;
+}
+
+static bool validate_differential_packed_attention_geometry(
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    float output_scale,
+    float eps,
+    bool require_eps,
+    DifferentialPackedAttentionGeometry* geometry) {
+  if (geometry == nullptr || batch <= 0 || heads <= 0 || seq_len <= 0 ||
+      head_dim <= 1 || (head_dim % 2) != 0 ||
+      !std::isfinite(output_scale) || output_scale <= 0.0f ||
+      (require_eps && (!std::isfinite(eps) || eps <= 0.0f))) {
+    return false;
+  }
+  DifferentialPackedAttentionGeometry checked;
+  if (!checked_positive_product(batch, seq_len, &checked.rows) ||
+      !checked_positive_product(heads, head_dim, &checked.model_dim) ||
+      !checked_positive_product(
+          checked.rows, checked.model_dim, &checked.output_elements) ||
+      !checked_positive_product(checked.output_elements, 2, &checked.qkv_elements) ||
+      !checked_positive_product(checked.rows, heads, &checked.lse_elements)) {
+    return false;
+  }
+  constexpr std::int64_t kThreads = 256;
+  const std::int64_t max_grid_elements =
+      static_cast<std::int64_t>(std::numeric_limits<int>::max()) * kThreads -
+      (kThreads - 1);
+  if (checked.output_elements > max_grid_elements / 3 ||
+      checked.lse_elements > std::numeric_limits<int>::max() ||
+      static_cast<std::uint64_t>(checked.qkv_elements) >
+          std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t) ||
+      static_cast<std::uint64_t>(checked.output_elements) >
+          std::numeric_limits<std::size_t>::max() / sizeof(float) ||
+      static_cast<std::uint64_t>(checked.lse_elements) >
+          std::numeric_limits<std::size_t>::max() / sizeof(float)) {
+    return false;
+  }
+  *geometry = checked;
+  return true;
 }
 
 int launch_differential_packed_attention_forward_bf16(
@@ -30159,20 +30825,27 @@ int launch_differential_packed_attention_forward_bf16(
     float output_scale,
     float eps,
     cudaStream_t stream) {
-  if (head_dim <= 1 || (head_dim % 2) != 0) {
-    return 2;
+  DifferentialPackedAttentionGeometry geometry;
+  if (qkv_bf16_bits == nullptr || out_bf16_bits == nullptr ||
+      !std::isfinite(lambda) ||
+      !validate_differential_packed_attention_geometry(
+          batch, heads, seq_len, head_dim, output_scale, eps, true,
+          &geometry)) {
+    return static_cast<int>(cudaErrorInvalidValue);
   }
-  const std::int64_t rows = batch * seq_len;
-  const std::int64_t model_dim = heads * head_dim;
-  const std::int64_t qkv_elements = rows * model_dim * 2;
-  const std::int64_t output_elements = rows * model_dim;
-  const std::int64_t lse_elements = batch * heads * seq_len;
-  DifferentialPackedAttentionWorkspace* workspace =
-      ensure_differential_packed_attention_workspace(
-          qkv_elements, output_elements, lse_elements, stream);
-  if (workspace == nullptr) {
-    return 2;
+  const std::int64_t rows = geometry.rows;
+  const std::int64_t qkv_elements = geometry.qkv_elements;
+  const std::int64_t output_elements = geometry.output_elements;
+  const std::int64_t lse_elements = geometry.lse_elements;
+  DifferentialPackedAttentionWorkspaceLease workspace_lease;
+  const cudaError_t workspace_status =
+      acquire_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream,
+          &workspace_lease);
+  if (workspace_status != cudaSuccess) {
+    return static_cast<int>(workspace_status);
   }
+  DifferentialPackedAttentionWorkspace* workspace = workspace_lease.workspace();
   constexpr int kThreads = 256;
   const int blocks =
       static_cast<int>((output_elements + kThreads - 1) / kThreads);
@@ -30214,17 +30887,28 @@ int launch_differential_packed_attention_backward_bf16(
     float lambda,
     float output_scale,
     cudaStream_t stream) {
-  const std::int64_t rows = batch * seq_len;
-  const std::int64_t model_dim = heads * head_dim;
-  const std::int64_t qkv_elements = rows * model_dim * 2;
-  const std::int64_t output_elements = rows * model_dim;
-  const std::int64_t lse_elements = batch * heads * seq_len;
-  DifferentialPackedAttentionWorkspace* workspace =
-      ensure_differential_packed_attention_workspace(
-          qkv_elements, output_elements, lse_elements, stream);
-  if (workspace == nullptr) {
-    return 2;
+  DifferentialPackedAttentionGeometry geometry;
+  if (out_bf16_bits == nullptr || grad_out == nullptr ||
+      grad_qkv_bf16_bits == nullptr || !std::isfinite(lambda) ||
+      !validate_differential_packed_attention_geometry(
+          batch, heads, seq_len, head_dim, output_scale, 1.0f, false,
+          &geometry)) {
+    return static_cast<int>(cudaErrorInvalidValue);
   }
+  const std::int64_t rows = geometry.rows;
+  const std::int64_t model_dim = geometry.model_dim;
+  const std::int64_t qkv_elements = geometry.qkv_elements;
+  const std::int64_t output_elements = geometry.output_elements;
+  const std::int64_t lse_elements = geometry.lse_elements;
+  DifferentialPackedAttentionWorkspaceLease workspace_lease;
+  const cudaError_t workspace_status =
+      acquire_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream,
+          &workspace_lease);
+  if (workspace_status != cudaSuccess) {
+    return static_cast<int>(workspace_status);
+  }
+  DifferentialPackedAttentionWorkspace* workspace = workspace_lease.workspace();
   differential_combine_rms_backward_kernel<<<static_cast<int>(rows * heads), 64, 0, stream>>>(
       out_bf16_bits, workspace->combine_rstd, grad_out,
       workspace->grad_out_first, workspace->grad_out_second,
@@ -30247,6 +30931,170 @@ int launch_differential_packed_attention_backward_bf16(
   const int blocks =
       static_cast<int>((output_qkv_elements + kThreads - 1) / kThreads);
   differential_merge_float_head_grads_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->grad_q_first, workspace->grad_k_first, workspace->grad_v_first,
+      workspace->grad_q_second, workspace->grad_k_second, workspace->grad_v_second,
+      grad_qkv_bf16_bits, batch, heads, seq_len, head_dim);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_differential_packed_attention_forward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    cudaStream_t stream) {
+  DifferentialPackedAttentionGeometry geometry;
+  if (qkv_bf16_bits == nullptr || out_bf16_bits == nullptr || lambda == nullptr ||
+      !validate_differential_packed_attention_geometry(
+          batch, heads, seq_len, head_dim, output_scale, eps, true,
+          &geometry)) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  const std::int64_t rows = geometry.rows;
+  const std::int64_t qkv_elements = geometry.qkv_elements;
+  const std::int64_t output_elements = geometry.output_elements;
+  const std::int64_t lse_elements = geometry.lse_elements;
+  DifferentialPackedAttentionWorkspaceLease workspace_lease;
+  const cudaError_t workspace_status =
+      acquire_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream,
+          &workspace_lease);
+  if (workspace_status != cudaSuccess) {
+    return static_cast<int>(workspace_status);
+  }
+  DifferentialPackedAttentionWorkspace* workspace = workspace_lease.workspace();
+  constexpr int kThreads = 256;
+  const int blocks =
+      static_cast<int>((output_elements + kThreads - 1) / kThreads);
+  differential_unpack_qkv_heads_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      qkv_bf16_bits, workspace->q_first, workspace->k_first,
+      workspace->q_second, workspace->k_second, workspace->v,
+      batch, heads, seq_len, head_dim);
+  const float attention_scale = rsqrtf(static_cast<float>(head_dim / 2));
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_first, workspace->k_first, workspace->v,
+      workspace->head_out_first, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_second, workspace->k_second, workspace->v,
+      workspace->head_out_second, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  heads_float32_to_packed_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->head_out_first, workspace->out_first,
+      batch, heads, seq_len, head_dim);
+  heads_float32_to_packed_bf16_kernel<<<blocks, kThreads, 0, stream>>>(
+      workspace->head_out_second, workspace->out_second,
+      batch, heads, seq_len, head_dim);
+  differential_combine_rms_learned_lambda_bf16_kernel<<<
+      static_cast<int>(rows * heads), 64, 0, stream>>>(
+      workspace->out_first, workspace->out_second, out_bf16_bits,
+      workspace->combine_rstd, rows, heads, head_dim, lambda, output_scale, eps);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_differential_packed_attention_backward_learned_lambda_bf16(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    const float* lambda,
+    float output_scale,
+    float eps,
+    float* grad_lambda,
+    cudaStream_t stream) {
+  DifferentialPackedAttentionGeometry geometry;
+  if (qkv_bf16_bits == nullptr || out_bf16_bits == nullptr || grad_out == nullptr ||
+      grad_qkv_bf16_bits == nullptr || lambda == nullptr || grad_lambda == nullptr ||
+      !validate_differential_packed_attention_geometry(
+          batch, heads, seq_len, head_dim, output_scale, eps, true,
+          &geometry)) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  const std::int64_t rows = geometry.rows;
+  const std::int64_t model_dim = geometry.model_dim;
+  const std::int64_t qkv_elements = geometry.qkv_elements;
+  const std::int64_t output_elements = geometry.output_elements;
+  const std::int64_t lse_elements = geometry.lse_elements;
+  DifferentialPackedAttentionWorkspaceLease workspace_lease;
+  const cudaError_t workspace_status =
+      acquire_differential_packed_attention_workspace(
+          qkv_elements, output_elements, lse_elements, stream,
+          &workspace_lease);
+  if (workspace_status != cudaSuccess) {
+    return static_cast<int>(workspace_status);
+  }
+  DifferentialPackedAttentionWorkspace* workspace = workspace_lease.workspace();
+
+  // Rebuild the branch state from this layer's packed QKV.  The workspace is
+  // shared by the ABI, so backward must never rely on whichever layer happened
+  // to run forward most recently.
+  constexpr int kThreads = 256;
+  const int output_blocks =
+      static_cast<int>((output_elements + kThreads - 1) / kThreads);
+  differential_unpack_qkv_heads_float32_kernel<<<output_blocks, kThreads, 0, stream>>>(
+      qkv_bf16_bits, workspace->q_first, workspace->k_first,
+      workspace->q_second, workspace->k_second, workspace->v,
+      batch, heads, seq_len, head_dim);
+  const float attention_scale = rsqrtf(static_cast<float>(head_dim / 2));
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_first, workspace->k_first, workspace->v,
+      workspace->head_out_first, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  launch_scaled_dot_product_attention_float32(
+      workspace->q_second, workspace->k_second, workspace->v,
+      workspace->head_out_second, output_elements, heads, heads,
+      seq_len, seq_len, head_dim / 2, head_dim, attention_scale,
+      true, false, false, 0, 0, 0, 0, stream);
+  heads_float32_to_packed_bf16_kernel<<<output_blocks, kThreads, 0, stream>>>(
+      workspace->head_out_first, workspace->out_first,
+      batch, heads, seq_len, head_dim);
+  heads_float32_to_packed_bf16_kernel<<<output_blocks, kThreads, 0, stream>>>(
+      workspace->head_out_second, workspace->out_second,
+      batch, heads, seq_len, head_dim);
+
+  // Recompute the exact BF16 branch handoff and RMS statistic from this
+  // layer's packed QKV.  out_bf16_bits is retained for ABI validation only;
+  // the exact pre-output-quantization combined vector drives the Jacobian.
+  differential_combine_rms_learned_lambda_bf16_kernel<<<
+      static_cast<int>(rows * heads), 64, 0, stream>>>(
+      workspace->out_first, workspace->out_second, grad_qkv_bf16_bits,
+      workspace->combine_rstd, rows, heads, head_dim, lambda, output_scale, eps);
+  differential_combine_rms_learned_lambda_backward_kernel<<<
+      static_cast<int>(rows * heads), 64, 0, stream>>>(
+      workspace->out_first, workspace->out_second, workspace->combine_rstd, grad_out,
+      workspace->grad_out_first, workspace->grad_out_second,
+      workspace->grad_lambda_partials,
+      rows, heads, head_dim, lambda, output_scale);
+  differential_reduce_lambda_partials_kernel<<<1, 256, 0, stream>>>(
+      workspace->grad_lambda_partials, rows * heads, grad_lambda);
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      workspace->q_first, workspace->k_first, workspace->v,
+      workspace->grad_out_first,
+      workspace->grad_q_first, workspace->grad_k_first, workspace->grad_v_first,
+      batch, heads, heads, seq_len, seq_len, head_dim / 2, head_dim,
+      attention_scale, true, false, false, 0, 0, 0, 0, true, stream);
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      workspace->q_second, workspace->k_second, workspace->v,
+      workspace->grad_out_second,
+      workspace->grad_q_second, workspace->grad_k_second, workspace->grad_v_second,
+      batch, heads, heads, seq_len, seq_len, head_dim / 2, head_dim,
+      attention_scale, true, false, false, 0, 0, 0, 0, true, stream);
+  const std::int64_t output_qkv_elements = rows * model_dim * 3;
+  const int qkv_blocks =
+      static_cast<int>((output_qkv_elements + kThreads - 1) / kThreads);
+  differential_merge_float_head_grads_bf16_kernel<<<qkv_blocks, kThreads, 0, stream>>>(
       workspace->grad_q_first, workspace->grad_k_first, workspace->grad_v_first,
       workspace->grad_q_second, workspace->grad_k_second, workspace->grad_v_second,
       grad_qkv_bf16_bits, batch, heads, seq_len, head_dim);

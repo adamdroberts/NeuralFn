@@ -1,5 +1,10 @@
 # NeuralFn Server Architecture
 
+This editor/backend process is not used by `nfn infer --serve`. The standalone
+resident inference app has no editor database, cookie auth, persistence worker,
+or MCP initialization; see
+[Standalone Native Inference Server](native-inference-serving.md).
+
 The NeuralFn backend is a **FastAPI** application defined in `server/app.py`. It manages neural-network graph state, training runs, datasets, authentication, and exposes both a REST API and an MCP bridge for agent-driven workflows.
 
 ## Application Lifecycle
@@ -54,6 +59,7 @@ Business logic is isolated from route handlers in service classes:
 - **AuthService** -- user management, login/logout, session tokens, permission checks.
 - **WorkspaceService** -- projects, editor sessions, graph mutations, snapshots, analytics.
 - **RunService** -- training run lifecycle, background threads, progress streaming.
+- **native_training** -- fail-closed editor/MCP Native IR preflight, immutable run materialization, and canonical native trainer dispatch.
 - **DatasetService** -- HuggingFace dataset downloads, uploads, project-level access grants.
 
 See [services.md](services.md) for detailed method listings.
@@ -75,3 +81,5 @@ See [services.md](services.md) for detailed method listings.
 - [Authentication](authentication.md) -- password hashing, session cookies, auth middleware.
 - [Services](services.md) -- WorkspaceService, RunService, DatasetService, LiveStateStore, PersistenceWorker, graph_ops.
 - [Models](models.md) -- Pydantic request/response schemas.
+- [Standalone Native Inference Server](native-inference-serving.md) -- isolated resident app, startup gates, and bounded compute queue.
+- [Editor Native Training Service](native-training.md) -- native-cuda run preflight, REST flow, persisted IR/checkpoint metadata, and current limits.

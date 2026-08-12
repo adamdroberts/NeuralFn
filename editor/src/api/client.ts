@@ -72,6 +72,7 @@ export interface PortData {
 }
 
 export type TrainingMethod = "surrogate" | "evolutionary" | "frozen" | "torch";
+export type GraphRuntime = "scalar" | "torch" | "native-cuda";
 
 export interface VariantRefData {
   family: string;
@@ -114,7 +115,7 @@ export interface EdgeData {
 export interface GraphData {
   name: string;
   training_method: TrainingMethod;
-  runtime: "scalar" | "torch";
+  runtime: GraphRuntime;
   surrogate_config: Record<string, unknown>;
   evo_config: Record<string, unknown>;
   torch_config: Record<string, unknown>;
@@ -158,6 +159,79 @@ export interface TrainingMessage {
   round?: number;
   local_step?: number;
   error?: string;
+  status?: string;
+  checkpoint_path?: string;
+  artifact_metadata?: Record<string, unknown>;
+}
+
+export interface NativeLoweringIssue {
+  path: string;
+  code: string;
+  message: string;
+  severity?: string;
+  node_kind?: string;
+  operation?: string;
+}
+
+export interface TrainingPreflightResponse {
+  runtime: GraphRuntime;
+  compatible: boolean;
+  execution_ready: boolean;
+  trainer_family?: string;
+  training_selector?: string;
+  native_target?: string | null;
+  issues: NativeLoweringIssue[];
+  blockers?: string[];
+  compatibility_report: Record<string, unknown>;
+  training_compatibility: {
+    compatible: boolean;
+    issues: NativeLoweringIssue[];
+  };
+  artifact_metadata: Record<string, unknown>;
+}
+
+export interface TrainingRequestData {
+  method?: string | null;
+  runtime?: GraphRuntime;
+  train_inputs?: number[][];
+  train_targets?: number[][];
+  dataset_names?: string[];
+  seq_len?: number;
+  outer_rounds?: number;
+  loss_fn?: string;
+  epochs?: number;
+  learning_rate?: number;
+  population_size?: number;
+  generations?: number;
+  batch_size?: number;
+  weight_decay?: number;
+  training_mode?: "pretrain" | "sft" | "dpo" | "ppo" | "reward_model";
+  base_checkpoint_path?: string;
+  ref_checkpoint_path?: string;
+  reward_checkpoint_path?: string;
+  adapter_only_save?: boolean;
+  finetune_config?: {
+    adapter_type?: "none" | "lora" | "qlora" | "randmap";
+    lora_rank?: number;
+    lora_alpha?: number;
+    lora_dropout?: number;
+    lora_targets?: string[];
+    lora_bias?: boolean;
+    qlora_group_size?: number;
+    qlora_compute_dtype?: string;
+    beta?: number;
+    dpo_loss_type?: string;
+    dpo_label_smoothing?: number;
+    kl_coef?: number;
+    ppo_clip?: number;
+    ppo_vf_coef?: number;
+    ppo_ent_coef?: number;
+    rollout_length?: number;
+    ppo_epochs_per_rollout?: number;
+    ppo_minibatch_size?: number;
+    gae_gamma?: number;
+    gae_lambda?: number;
+  };
 }
 
 export interface TorchTraceStat {
@@ -273,6 +347,7 @@ export interface RunSnapshot {
   running?: boolean;
   done?: boolean;
   method?: string | null;
+  runtime?: GraphRuntime;
   requested_method?: string | null;
   graph_name?: string | null;
   dataset_names?: string[];
@@ -283,6 +358,9 @@ export interface RunSnapshot {
   last_step?: number | null;
   stop_requested?: boolean;
   error?: string | null;
+  compatibility_report?: Record<string, unknown>;
+  artifact_metadata?: Record<string, unknown>;
+  checkpoint_path?: string | null;
   started_at?: number | null;
   updated_at?: number | null;
   completed_at?: number | null;
@@ -459,50 +537,9 @@ export const api = {
   startTraining: (
     projectId: string,
     sessionId: string,
-    body: {
-      method?: string | null;
-      train_inputs?: Array<Array<number | string>>;
-      train_targets?: Array<Array<number | string>>;
-      dataset_names?: string[];
-      seq_len?: number;
-      outer_rounds?: number;
-      loss_fn?: string;
-      epochs?: number;
-      learning_rate?: number;
-      population_size?: number;
-      generations?: number;
-      batch_size?: number;
-      weight_decay?: number;
-      // ── Fine-tuning ─────────────────────────────────────────────
-      training_mode?: "pretrain" | "sft" | "dpo" | "ppo" | "reward_model";
-      base_checkpoint_path?: string;
-      ref_checkpoint_path?: string;
-      reward_checkpoint_path?: string;
-      adapter_only_save?: boolean;
-      finetune_config?: {
-        adapter_type?: "none" | "lora" | "qlora" | "randmap";
-        lora_rank?: number;
-        lora_alpha?: number;
-        lora_dropout?: number;
-        lora_targets?: string[];
-        lora_bias?: boolean;
-        qlora_group_size?: number;
-        qlora_compute_dtype?: string;
-        beta?: number;
-        dpo_loss_type?: string;
-        dpo_label_smoothing?: number;
-        kl_coef?: number;
-        ppo_clip?: number;
-        ppo_vf_coef?: number;
-        ppo_ent_coef?: number;
-        rollout_length?: number;
-        ppo_epochs_per_rollout?: number;
-        ppo_minibatch_size?: number;
-        gae_gamma?: number;
-        gae_lambda?: number;
-      };
-    },
+    body: TrainingRequestData,
     onMessage: (data: TrainingMessage) => void,
+    onError?: (error: unknown) => void,
   ) => {
     const ctrl = new AbortController();
     fetch(BASE + `${sessionBase(projectId, sessionId)}/runs`, {
@@ -536,9 +573,22 @@ export const api = {
           }
         }
       }
-    });
+    }).catch((error) => onError?.(error));
     return ctrl;
   },
+
+  preflightTraining: (
+    projectId: string,
+    sessionId: string,
+    body: TrainingRequestData,
+  ) =>
+    json<TrainingPreflightResponse>(
+      `${sessionBase(projectId, sessionId)}/runs/preflight`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
 
   getActiveRun: (projectId: string, sessionId: string) =>
     json<RunSnapshot>(`${sessionBase(projectId, sessionId)}/runs/active`),

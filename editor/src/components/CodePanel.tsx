@@ -4,7 +4,7 @@ import { selectActiveGraph, selectSelectedNode, useGraphStore } from "../store/g
 import { listCompatibleVariantVersions } from "../store/graphUtils";
 import PortConfig from "./PortConfig";
 import DatasetSourcePanel from "./DatasetSourcePanel";
-import type { TrainingMethod } from "../api/client";
+import type { GraphRuntime, TrainingMethod } from "../api/client";
 
 export default function CodePanel() {
   const activeGraph = useGraphStore(selectActiveGraph);
@@ -73,7 +73,9 @@ export default function CodePanel() {
     ) : null;
 
   if (!node) {
-    const isTorchGraph = activeGraph.training_method === "torch" || activeGraph.runtime === "torch";
+    const isTorchGraph =
+      activeGraph.runtime !== "native-cuda" &&
+      (activeGraph.training_method === "torch" || activeGraph.runtime === "torch");
     return (
       <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col">
         <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-auto p-4">
@@ -119,6 +121,28 @@ export default function CodePanel() {
               <option value="torch">torch</option>
             </select>
           </label>
+
+          <label className="text-[11px] text-gray-400">
+            Runtime
+            <select
+              value={activeGraph.runtime}
+              onChange={(e) =>
+                updateActiveGraphSettings({ runtime: e.target.value as GraphRuntime })
+              }
+              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+            >
+              <option value="scalar">scalar</option>
+              <option value="torch">torch</option>
+              <option value="native-cuda">native-cuda</option>
+            </select>
+          </label>
+
+          {activeGraph.runtime === "native-cuda" && (
+            <div className="rounded border border-cyan-800 bg-cyan-950/40 px-3 py-2 text-[11px] text-cyan-100">
+              Start runs from the Training panel. Native IR compatibility is checked before any trainer launches;
+              unsupported nodes are reported by graph path.
+            </div>
+          )}
 
           {isTorchGraph && (
             <>

@@ -291,8 +291,13 @@ long long parse_nonnegative_i64_or(const std::string& value, long long fallback)
         << "  --base-model NAME | --model-family NAME\n"
         << "  --template-name NAME | --template NAME | --preset NAME\n"
         << "  --graph-file PATH | --graph PATH\n"
+        << "  --graph-fingerprint SHA256\n"
         << "  --dataset-alias PATH | --dataset-path PATH\n"
         << "  --output-dir PATH\n"
+        << "  --lr-schedule cosine|constant\n"
+        << "  --lr-schedule-total-steps N  Stable absolute LR horizon; omit on strict resume to inherit it\n"
+        << "  --train-seed N\n"
+        << "  --resume-from-checkpoint PATH\n"
         << "  --native-cuda-fast-startup | --fast-startup\n"
         << "  -h, --help\n";
     std::exit(0);

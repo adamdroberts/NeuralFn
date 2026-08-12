@@ -17,11 +17,20 @@ from neuralfn.trainer import SurrogateTrainer, TrainConfig
 from neuralfn.torch_backend import TorchTrainConfig, TorchTrainer
 
 from ..db import get_session_factory
-from ..db_models import EditorSession, TrainingRun, User, ensure_utc, utcnow
+from ..db_models import EditorSession, TrainingRun, User, ensure_utc, utcnow, uuid_str
 from ..models import TrainRequest
+from ..settings import get_settings
 from .dataset_service import get_dataset_service
 from .graph_ops import find_attached_dataset_config, find_attached_text_dataset_config
 from .live_state import get_live_state_store
+from .native_training import (
+    NATIVE_RUNTIME,
+    NativeTrainingIncompatibleError,
+    NativeTrainingPreparation,
+    execute_native_training,
+    preflight_native_training,
+    prepare_native_training_run,
+)
 from .session_service import get_workspace_service
 
 
@@ -31,6 +40,7 @@ class ActiveRunHandle:
     session_id: str
     project_id: str
     started_by_user_id: str | None
+    runtime: str = "scalar"
     progress_queue: list[dict[str, Any]] = field(default_factory=list)
     done_event: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
@@ -55,6 +65,9 @@ class RunService:
         dataset_names: list[str],
         seq_len: int,
         requested_method: str | None,
+        compatibility_report: dict[str, Any] | None = None,
+        artifact_metadata: dict[str, Any] | None = None,
+        checkpoint_path: str | None = None,
     ) -> dict[str, Any]:
         now = time.time()
         return {
@@ -67,6 +80,9 @@ class RunService:
             "graph_name": graph.name,
             "graph_training_method": graph.training_method,
             "runtime": graph.runtime,
+            "compatibility_report": dict(compatibility_report or {}),
+            "artifact_metadata": dict(artifact_metadata or {}),
+            "checkpoint_path": checkpoint_path,
             "dataset_names": list(dataset_names),
             "seq_len": seq_len,
             "event_id": 0,
@@ -99,6 +115,9 @@ class RunService:
         last_step: int | None = None,
         error: str | None = None,
         completed_at: datetime | None = None,
+        compatibility_report: dict[str, Any] | None = None,
+        artifact_metadata: dict[str, Any] | None = None,
+        checkpoint_path: str | None = None,
     ) -> None:
         run_row = db.get(TrainingRun, run_id)
         if run_row is None:
@@ -113,6 +132,12 @@ class RunService:
             run_row.error = error
         if completed_at is not None:
             run_row.completed_at = completed_at
+        if compatibility_report is not None:
+            run_row.compatibility_report = dict(compatibility_report)
+        if artifact_metadata is not None:
+            run_row.artifact_metadata = dict(artifact_metadata)
+        if checkpoint_path is not None:
+            run_row.checkpoint_path = checkpoint_path
         run_row.updated_at = utcnow()
         db.commit()
 
@@ -190,6 +215,7 @@ class RunService:
         handle: ActiveRunHandle,
         *,
         graph: NeuronGraph,
+        persisted_runtime: str,
         status: str,
         error: str | None = None,
     ) -> None:
@@ -225,12 +251,17 @@ class RunService:
             user = db.get(User, handle.started_by_user_id) if handle.started_by_user_id else None
             session_row = db.get(EditorSession, handle.session_id)
             if user is not None and session_row is not None and status in {"completed", "stopped"}:
+                persisted_graph = graph.to_dict()
+                # TrainRequest.runtime is a per-run override. Preserve the
+                # saved graph setting unless the caller explicitly saved it
+                # before launch (as the editor does).
+                persisted_graph["runtime"] = persisted_runtime
                 self._workspace.update_session_graph(
                     db,
                     user,
                     project_id=handle.project_id,
                     session_id=handle.session_id,
-                    graph=graph.to_dict(),
+                    graph=persisted_graph,
                     expected_revision=None,
                     persist_snapshot=True,
                     snapshot_reason=f"run_{status}",
@@ -252,12 +283,16 @@ class RunService:
                 "status": row.status,
                 "requested_method": row.requested_method,
                 "resolved_method": row.resolved_method,
+                "runtime": row.runtime,
                 "graph_name": row.graph_name,
                 "dataset_names": row.dataset_names,
                 "seq_len": row.seq_len,
                 "last_loss": row.last_loss,
                 "last_step": row.last_step,
                 "error": row.error,
+                "compatibility_report": row.compatibility_report,
+                "artifact_metadata": row.artifact_metadata,
+                "checkpoint_path": row.checkpoint_path,
                 "started_at": self._iso(row.started_at),
                 "completed_at": self._iso(row.completed_at),
             }
@@ -289,12 +324,16 @@ class RunService:
             "done": row.status in {"completed", "stopped", "error"},
             "requested_method": row.requested_method,
             "method": row.resolved_method,
+            "runtime": row.runtime,
             "graph_name": row.graph_name,
             "dataset_names": row.dataset_names,
             "seq_len": row.seq_len,
             "last_loss": row.last_loss,
             "last_step": row.last_step,
             "error": row.error,
+            "compatibility_report": row.compatibility_report,
+            "artifact_metadata": row.artifact_metadata,
+            "checkpoint_path": row.checkpoint_path,
             "started_at": self._timestamp(row.started_at),
             "completed_at": self._timestamp(row.completed_at),
             "updated_at": self._timestamp(row.updated_at),
@@ -343,6 +382,11 @@ class RunService:
             handle = self._active_runs.get(run_id)
         if handle is None:
             return {"status": "not_running"}
+        if handle.runtime == NATIVE_RUNTIME:
+            return {
+                "status": "unsupported",
+                "message": "The current compiled native trainer ABI does not expose cooperative cancellation.",
+            }
         self._live_state.patch_run_status(
             run_id,
             {"stop_requested": True, "updated_at": time.time()},
@@ -350,6 +394,37 @@ class RunService:
         if handle.trainer is not None:
             handle.trainer.stop()
         return {"status": "stopping"}
+
+    def preflight_run(
+        self,
+        db: Session,
+        user: User,
+        *,
+        project_id: str,
+        session_id: str,
+        body: TrainRequest,
+    ) -> dict[str, Any]:
+        """Return the same native compatibility shape used by a real run."""
+
+        bundle = self._workspace.get_session_bundle(db, user, project_id, session_id)
+        graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+        runtime = body.runtime or graph.runtime
+        if runtime not in {"scalar", "torch", NATIVE_RUNTIME}:
+            raise ValueError(f"Unsupported training runtime {runtime!r}.")
+        if runtime != NATIVE_RUNTIME:
+            return {
+                "runtime": runtime,
+                "compatible": True,
+                "execution_ready": True,
+                "issues": [],
+                "compatibility_report": {},
+                "training_compatibility": {"compatible": True, "issues": []},
+                "artifact_metadata": {},
+            }
+        if (body.training_mode or "pretrain") != "pretrain":
+            raise ValueError("Native CUDA editor training currently supports pretraining only.")
+        graph.runtime = NATIVE_RUNTIME
+        return preflight_native_training(graph.to_dict())
 
     def start_run(
         self,
@@ -368,10 +443,18 @@ class RunService:
                 raise ValueError("A training run is already active for this session")
 
         graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+        persisted_runtime = graph.runtime
+        runtime = body.runtime or graph.runtime
+        if runtime not in {"scalar", "torch", NATIVE_RUNTIME}:
+            raise ValueError(f"Unsupported training runtime {runtime!r}.")
+        graph.runtime = runtime
+        use_native = runtime == NATIVE_RUNTIME
 
         # Fine-tuning: attach finetune_spec to torch_config so TorchTrainer's
         # pre-train hook loads the base checkpoint and freezes non-LoRA params
         # before optimizer construction.
+        if use_native and (body.training_mode or "pretrain") != "pretrain":
+            raise ValueError("Native CUDA editor training currently supports pretraining only.")
         if body.training_mode and body.training_mode != "pretrain":
             ft_cfg = body.finetune_config.model_dump() if body.finetune_config is not None else {}
             graph.torch_config["finetune_spec"] = {
@@ -383,7 +466,13 @@ class RunService:
                 **ft_cfg,
             }
 
-        use_torch = (
+        native_preflight: dict[str, Any] | None = None
+        if use_native:
+            native_preflight = preflight_native_training(graph.to_dict())
+            if not native_preflight["execution_ready"]:
+                raise NativeTrainingIncompatibleError(native_preflight)
+
+        use_torch = not use_native and (
             body.method == "torch"
             or graph.training_method == "torch"
             or graph.runtime == "torch"
@@ -394,7 +483,16 @@ class RunService:
         # Optimization: Don't load full dataset into memory if we are using TorchTrainer
         # and there is an attached dataset_source node.
         attached_ds_cfg = find_attached_text_dataset_config(graph) or find_attached_dataset_config(graph)
-        if use_torch and attached_ds_cfg and not body.dataset_names:
+        if use_native:
+            dataset_names, seq_len = self._resolve_dataset_inputs(
+                db,
+                user,
+                project_id=project_id,
+                graph=graph,
+                body=body,
+            )
+            train_in, train_tgt = np.array([]), np.array([])
+        elif use_torch and attached_ds_cfg and not body.dataset_names:
             train_in, train_tgt = np.array([]), np.array([])
             dataset_names = attached_ds_cfg.get("dataset_names", [])
             seq_len = int(body.seq_len or attached_ds_cfg.get("seq_len") or 64)
@@ -411,22 +509,64 @@ class RunService:
             )
 
         use_legacy = body.method in {"surrogate", "evolutionary"} and not graph.has_nested_subgraphs() and not use_torch
-        resolved_method = "torch" if use_torch else (body.method if use_legacy else "hybrid")
+        resolved_method = (
+            NATIVE_RUNTIME
+            if use_native
+            else ("torch" if use_torch else (body.method if use_legacy else "hybrid"))
+        )
         
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Starting training run: requested_method={body.method}, resolved_method={resolved_method}, torch={use_torch}")
+        logger.info(
+            "Starting training run: requested_method=%s, resolved_method=%s, runtime=%s, torch=%s",
+            body.method,
+            resolved_method,
+            runtime,
+            use_torch,
+        )
+
+        run_id = uuid_str()
+        native_preparation: NativeTrainingPreparation | None = None
+        compatibility_report: dict[str, Any] = {}
+        artifact_metadata: dict[str, Any] = {}
+        if use_native:
+            native_preparation = prepare_native_training_run(
+                graph.to_dict(),
+                run_id=run_id,
+                artifacts_dir=get_settings().artifacts_dir,
+                dataset_names=dataset_names,
+                max_steps=body.epochs,
+                learning_rate=body.learning_rate,
+                batch_size=body.batch_size,
+                weight_decay=body.weight_decay,
+            )
+            if (
+                native_preflight is None
+                or native_preparation.compatibility_report.get("graph_fingerprint")
+                != native_preflight.get("compatibility_report", {}).get("graph_fingerprint")
+                or native_preparation.plan.training_selector
+                != native_preflight.get("training_selector")
+            ):
+                raise RuntimeError(
+                    "Editor graph changed while materializing Native IR; refusing to launch a stale preflight."
+                )
+            compatibility_report = dict(native_preparation.compatibility_report)
+            artifact_metadata = dict(native_preparation.artifact_metadata)
 
         run_row = TrainingRun(
+            id=run_id,
             project_id=project_id,
             session_id=session_id,
             started_by_user_id=user.id,
             status="running",
             requested_method=body.method,
             resolved_method=resolved_method,
+            runtime=runtime,
             graph_name=graph.name,
             dataset_names=dataset_names,
             seq_len=seq_len,
+            compatibility_report=compatibility_report,
+            artifact_metadata=artifact_metadata,
         )
         db.add(run_row)
         db.commit()
@@ -437,6 +577,7 @@ class RunService:
             session_id=session_id,
             project_id=project_id,
             started_by_user_id=user.id,
+            runtime=runtime,
         )
         status = self._new_run_status(
             run_id=run_row.id,
@@ -445,6 +586,8 @@ class RunService:
             dataset_names=dataset_names,
             seq_len=seq_len,
             requested_method=body.method,
+            compatibility_report=compatibility_report,
+            artifact_metadata=artifact_metadata,
         )
         self._live_state.initialize_run(run_row.id, session_id, status)
         with self._lock:
@@ -554,10 +697,42 @@ class RunService:
             else:
                 trainer.train([_torch.zeros(1, 4, dtype=_torch.long)], on_step=lambda info: on_hybrid_progress(info))
 
+        def run_native() -> None:
+            if native_preparation is None:
+                raise RuntimeError("Native training preparation was not created.")
+            checkpoint = execute_native_training(native_preparation)
+            completed_artifacts = {
+                **native_preparation.artifact_metadata,
+                "checkpoint_path": str(checkpoint),
+            }
+            self._live_state.patch_run_status(
+                run_row.id,
+                {
+                    "artifact_metadata": completed_artifacts,
+                    "checkpoint_path": str(checkpoint),
+                    "updated_at": time.time(),
+                },
+            )
+            from .persistence_worker import get_persistence_worker
+
+            get_persistence_worker().enqueue_run_update(
+                run_id=run_row.id,
+                artifact_metadata=completed_artifacts,
+                checkpoint_path=str(checkpoint),
+            )
+            record_event(
+                {
+                    "status": "checkpoint_persisted",
+                    "checkpoint_path": str(checkpoint),
+                    "artifact_metadata": completed_artifacts,
+                }
+            )
+
         is_ppo = body.training_mode == "ppo"
 
         target = (
-            run_ppo if is_ppo
+            run_native if use_native
+            else run_ppo if is_ppo
             else (
                 run_torch
                 if use_torch
@@ -570,11 +745,22 @@ class RunService:
                 target()
             except Exception as exc:
                 record_event({"error": str(exc)})
-                self._finish_run(handle, graph=graph, status="error", error=str(exc))
+                self._finish_run(
+                    handle,
+                    graph=graph,
+                    persisted_runtime=persisted_runtime,
+                    status="error",
+                    error=str(exc),
+                )
             else:
                 status_value = self._live_state.get_run_snapshot(run_row.id, history_limit=0)
                 final_status = "stopped" if status_value and status_value.get("stop_requested") else "completed"
-                self._finish_run(handle, graph=graph, status=final_status)
+                self._finish_run(
+                    handle,
+                    graph=graph,
+                    persisted_runtime=persisted_runtime,
+                    status=final_status,
+                )
             finally:
                 handle.trainer = None
                 handle.done_event.set()

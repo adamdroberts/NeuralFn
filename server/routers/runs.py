@@ -11,6 +11,7 @@ from ..dependencies import get_db, require_auth
 from ..models import TrainRequest
 from ..services.auth_service import AuthContext, PermissionDenied
 from ..services.run_service import get_run_service
+from ..services.native_training import NativeTrainingIncompatibleError
 
 router = APIRouter(prefix="/projects/{project_id}/sessions/{session_id}/runs", tags=["runs"])
 
@@ -68,12 +69,19 @@ def start_run(
         )
     except PermissionDenied as exc:
         raise _wrap_permission(exc) from exc
+    except NativeTrainingIncompatibleError as exc:
+        raise HTTPException(status_code=409, detail=exc.metadata) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).error(f"Failed to start training run: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}") from exc
+
+        logging.getLogger(__name__).error(
+            "Failed to start training run: %s",
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
     async def event_stream():
         idx = 0
@@ -90,6 +98,74 @@ def start_run(
         yield "data: {\"done\": true}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/preflight")
+def preflight_run(
+    project_id: str,
+    session_id: str,
+    body: TrainRequest,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Validate native lowering and adapter support before a run is created."""
+
+    try:
+        return get_run_service().preflight_run(
+            db,
+            auth.user,
+            project_id=project_id,
+            session_id=session_id,
+            body=body,
+        )
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/start")
+def start_run_background(
+    project_id: str,
+    session_id: str,
+    body: TrainRequest,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Start a background run and return its initial persisted metadata as JSON."""
+
+    try:
+        handle = get_run_service().start_run(
+            db,
+            auth.user,
+            project_id=project_id,
+            session_id=session_id,
+            body=body,
+        )
+        snapshot = get_run_service().get_run_snapshot(
+            db,
+            auth.user,
+            project_id,
+            session_id,
+            history_limit=0,
+        )
+        snapshot.setdefault("run_id", handle.run_id)
+        return snapshot
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    except NativeTrainingIncompatibleError as exc:
+        raise HTTPException(status_code=409, detail=exc.metadata) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).error(
+            "Failed to start background training run: %s",
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @router.post("/{run_id}/stop")

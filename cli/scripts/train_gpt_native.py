@@ -66,6 +66,7 @@ NATIVE_GPT_DEFAULTS = {
     "model_family": DEFAULT_MODEL_FAMILY,
     "template_name": "gpt",
     "graph_file": "",
+    "graph_preflight_proof": "",
 }
 NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
 
@@ -292,12 +293,19 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         train_batch_tokens=int(args.train_batch_tokens),
         learning_rate=float(args.learning_rate),
         min_lr=args.min_lr,
+        final_lr_fraction=getattr(args, "final_lr_fraction", None),
         warmup_steps=int(args.warmup_steps),
         weight_decay=float(args.weight_decay),
         beta1=float(args.beta1),
         beta2=float(args.beta2),
         adam_eps=float(args.adam_eps),
         grad_clip_norm=float(args.grad_clip_norm),
+        lr_schedule=str(args.lr_schedule),
+        lr_schedule_total_steps=args.lr_schedule_total_steps,
+        train_seed=args.train_seed,
+        resume_from_checkpoint=str(args.resume_from_checkpoint or ""),
+        graph_fingerprint=str(args.graph_fingerprint or ""),
+        graph_preflight_proof=str(args.graph_preflight_proof or ""),
         max_steps=int(args.max_steps),
         num_layers=int(args.num_layers),
         activation=str(args.native_cuda_activation),
@@ -417,6 +425,16 @@ def _fast_compiled_cli_argv(args: argparse.Namespace, dataset_arg: str | Path) -
         "--native-cuda-activation",
         activation,
     ]
+    if args.lr_schedule_total_steps is not None:
+        command.extend(
+            ["--lr-schedule-total-steps", str(int(args.lr_schedule_total_steps))]
+        )
+    if args.train_seed is not None:
+        command.extend(["--train-seed", str(int(args.train_seed))])
+    if str(args.resume_from_checkpoint or "").strip():
+        command.extend(
+            ["--resume-from-checkpoint", str(args.resume_from_checkpoint)]
+        )
     if bool(getattr(args, "_batch_size_explicit", True)):
         command.extend(["--batch-size", str(int(args.batch_size))])
     if bool(getattr(args, "_seq_len_explicit", True)):
@@ -455,6 +473,12 @@ def _fast_compiled_cli_argv(args: argparse.Namespace, dataset_arg: str | Path) -
         command.extend(["--template-name", template_name])
     if str(args.graph_file or "").strip():
         command.extend(["--graph-file", str(args.graph_file)])
+    if str(args.graph_fingerprint or "").strip():
+        command.extend(["--graph-fingerprint", str(args.graph_fingerprint)])
+    if str(args.graph_preflight_proof or "").strip():
+        command.extend(
+            ["--graph-preflight-proof", str(args.graph_preflight_proof)]
+        )
     if bool(args.native_cuda_print_plan):
         command.append("--print-plan")
     if bool(args.native_cuda_list_templates):
@@ -505,6 +529,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--run-id", default=env_str("RUN_ID", NATIVE_GPT_DEFAULTS["run_id"]))
     parser.add_argument("--seed", type=int, default=env_int("SEED", NATIVE_GPT_DEFAULTS["seed"]))
+    parser.add_argument(
+        "--train-seed",
+        type=int,
+        default=None,
+        help=(
+            "Explicit native training/init and shard-sampler seed. This is separate "
+            "from --seed, which belongs to checkpoint sampling."
+        ),
+    )
     parser.add_argument("--device", default=env_str("DEVICE", NATIVE_GPT_DEFAULTS["device"]))
     parser.add_argument("--tinystories", action="store_true")
     parser.add_argument("--dataset", choices=("tinystories", "golf1", "golf10"), default=None)
@@ -530,6 +563,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--graph",
         default=env_str("GRAPH_FILE", NATIVE_GPT_DEFAULTS["graph_file"]),
         help="Custom NeuralFn graph JSON to select for native training metadata and dispatch.",
+    )
+    parser.add_argument(
+        "--graph-fingerprint",
+        default="",
+        help="Expected lowercase SHA-256 of the exact graph bytes for graph-bound training.",
+    )
+    parser.add_argument(
+        "--graph-preflight-proof",
+        default=env_str(
+            "GRAPH_PREFLIGHT_PROOF",
+            NATIVE_GPT_DEFAULTS["graph_preflight_proof"],
+        ),
+        help=(
+            "Planner-issued native-training-proof.json for exact gpt2_diff graph "
+            "execution. Direct graph callers must materialize it with the native "
+            "graph-training planner."
+        ),
+    )
+    parser.add_argument(
+        "--resume-from-checkpoint",
+        "--native-cuda-resume-from-checkpoint",
+        default="",
+        help=(
+            "Native model_XXXXXXXX.bin checkpoint. Ordinary dense runs restore complete "
+            "parameter/optimizer sidecars when present or warm-start model-only input with "
+            "reset moments; gpt2_diff requires its complete strict version-2 bundle."
+        ),
     )
     parser.add_argument("--tokenizer", default=env_str("TOKENIZER", "gpt2"))
     parser.add_argument("--tokgpt2", action="store_true", help="Use the GPT-2 byte-level BPE tokenizer.")
@@ -557,6 +617,15 @@ def build_parser() -> argparse.ArgumentParser:
             or NATIVE_GPT_DEFAULTS["lr_schedule"]
         ),
         help="Learning-rate schedule for native AdamW: cosine decay after warmup, or constant/fixed.",
+    )
+    parser.add_argument(
+        "--lr-schedule-total-steps",
+        type=int,
+        default=None,
+        help=(
+            "Stable total optimizer-step horizon for the native learning-rate schedule. "
+            "Leave unset on strict resume to inherit the graph-bound checkpoint contract."
+        ),
     )
     parser.add_argument("--min-lr", type=float, default=None)
     parser.add_argument(
@@ -818,12 +887,19 @@ def main(argv: list[str] | None = None) -> int:
             train_batch_tokens=int(args.train_batch_tokens),
             learning_rate=float(args.learning_rate),
             min_lr=args.min_lr,
+            final_lr_fraction=getattr(args, "final_lr_fraction", None),
             warmup_steps=int(args.warmup_steps),
             weight_decay=float(args.weight_decay),
             beta1=float(args.beta1),
             beta2=float(args.beta2),
             adam_eps=float(args.adam_eps),
             grad_clip_norm=float(args.grad_clip_norm),
+            lr_schedule=str(args.lr_schedule),
+            lr_schedule_total_steps=args.lr_schedule_total_steps,
+            train_seed=args.train_seed,
+            resume_from_checkpoint=str(args.resume_from_checkpoint or ""),
+            graph_fingerprint=str(args.graph_fingerprint or ""),
+            graph_preflight_proof=str(args.graph_preflight_proof or ""),
             max_steps=int(args.max_steps),
             num_layers=int(args.num_layers),
             activation=str(args.native_cuda_activation),

@@ -38,6 +38,9 @@ Complete API reference for every public class, function, method, and type in the
 - [**Config**](python-sdk/config.md) -- `TemplateSpec`, `BlockSpec`, `ModelSpec`, type aliases, all preset builders.
 - [**Torch backend**](python-sdk/torch-backend.md) -- `CompiledTorchGraph`, `TorchTrainConfig`, `TorchTrainer`, all `*Stage` modules.
 - [**Torch templates**](python-sdk/torch-templates.md) -- Template and graph builder functions.
+- [**Native Execution IR**](python-sdk/native-ir.md) -- Versioned graph-lowering and migration artifact contract.
+- [**Resident native inference**](python-sdk/native-inference.md) -- Model/session lifecycle, cache gates, exact-prefix reuse, and serving integration.
+- [**TurboQuant reference**](python-sdk/turboquant-reference.md) -- Portable MSE/QJL codec oracle and native CPU agreement boundary.
 - **Training:**
   - [**Overview**](python-sdk/training/README.md) -- When to use each training method.
   - [**Surrogate**](python-sdk/training/surrogate.md) -- `SurrogateModel`, `probe_neuron`, `build_surrogates`.
@@ -57,6 +60,7 @@ Complete API reference for every public class, function, method, and type in the
 - [**Sessions**](rest-api/sessions.md) -- Session/graph CRUD, node/edge mutations, execution, tracing, templates, agent status.
 - [**Datasets**](rest-api/datasets.md) -- Dataset catalog, download, upload, access grants.
 - [**Runs**](rest-api/runs.md) -- Training runs and SSE streaming.
+- [**Native inference serving**](rest-api/native-inference-serving.md) -- Isolated Models, Chat Completions, and opt-in stateful Responses/Conversations API.
 
 ### MCP tools reference (AI agent integration)
 
@@ -76,6 +80,7 @@ Complete API reference for every public class, function, method, and type in the
 - [**Authentication**](server/authentication.md) -- `AuthService`, session cookies, security.
 - [**Services**](server/services.md) -- `WorkspaceService`, `RunService`, `DatasetService`, `LiveStateStore`.
 - [**Models**](server/models.md) -- All Pydantic request/response models.
+- [**Standalone native inference server**](server/native-inference-serving.md) -- Startup gates, bounded execution, SQLite state, and Responses lifecycle.
 
 ### Editor (frontend)
 

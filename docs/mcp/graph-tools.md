@@ -47,12 +47,18 @@ Updates one or more graph-level settings without touching nodes or edges.
 | `session_id` | string | yes | Session ID. |
 | `name` | string | no | Graph display name. |
 | `training_method` | string | no | Default training method (`"surrogate"`, `"torch"`, etc.). |
-| `runtime` | string | no | Execution runtime. |
+| `runtime` | string | no | `scalar`, `torch`, or fail-closed `native-cuda`. |
 | `surrogate_config` | dict | no | Surrogate training configuration. |
 | `evo_config` | dict | no | Evolutionary training configuration. |
 | `torch_config` | dict | no | Torch compilation and training configuration. |
 
 **Returns:** the updated graph settings.
+
+Selecting `native-cuda` records intent only. `train_start(runtime="native-cuda",
+...)` performs the authoritative Native IR and reviewed-adapter preflight. Do
+not infer native support from a successful settings update, and do not add a
+`dataset_source` node to an exact reviewed native graph; pass one cached project
+dataset alias directly to `train_start`.
 
 ---
 

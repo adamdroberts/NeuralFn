@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from copy import deepcopy
 import inspect
 import importlib.util
 import os
@@ -99,6 +100,21 @@ def _tiny_kwargs() -> dict[str, int]:
         "num_kv_heads": 4,
         "multiple_of": 16,
     }
+
+
+def _module_configs(value: object, module_type: str) -> list[dict[str, object]]:
+    configs: list[dict[str, object]] = []
+    if isinstance(value, dict):
+        if value.get("module_type") == module_type:
+            config = value.get("module_config")
+            assert isinstance(config, dict)
+            configs.append(config)
+        for child in value.values():
+            configs.extend(_module_configs(child, module_type))
+    elif isinstance(value, list):
+        for child in value:
+            configs.extend(_module_configs(child, module_type))
+    return configs
 
 
 def _make_terminal_def(role: str, port_name: str):
@@ -401,6 +417,52 @@ def test_build_gpt_template_payload_supports_all_presets() -> None:
         assert payload["graph_settings"]["torch_config"]["template_spec"]["template"]
 
 
+def test_all_moe_preset_dispatch_configs_preserve_fractional_geometry() -> None:
+    affected_presets: set[str] = set()
+    config_override = {
+        **_tiny_kwargs(),
+        "mlp_multiplier": 2.5,
+        "multiple_of": 24,
+    }
+    for preset in PRESETS:
+        config = {"preset": preset, **config_override}
+        spec = build_model_spec_from_config(config, preview_defaults=True)
+        if spec.block_spec.mlp_type != "moe":
+            continue
+
+        affected_presets.add(preset)
+        assert spec.block_spec.mlp_multiplier == 2.5
+        assert spec.block_spec.multiple_of == 24
+        payload = build_gpt_template_payload(name=f"{preset}_expert_geometry", config=config)
+        dispatch_configs = _module_configs(payload, "expert_dispatch")
+        assert dispatch_configs, preset
+        for dispatch_config in dispatch_configs:
+            assert dispatch_config["mlp_mult"] == 2.5, preset
+            assert dispatch_config["multiple_of"] == 24, preset
+
+    assert affected_presets
+
+
+def test_standard_moe_presets_keep_unaligned_fractional_default() -> None:
+    for preset in ("mixllama", "moe", "mixllama_fast"):
+        config = {
+            "preset": preset,
+            "num_layers": 1,
+            "model_dim": 5,
+            "num_heads": 1,
+            "num_kv_heads": 1,
+        }
+        spec = build_model_spec_from_config(config, preview_defaults=True)
+        assert spec.block_spec.mlp_multiplier == 8.0 / 3.0
+        assert spec.block_spec.multiple_of is None
+        payload = build_gpt_template_payload(name=f"{preset}_default_expert_geometry", config=config)
+        dispatch_configs = _module_configs(payload, "expert_dispatch")
+        assert dispatch_configs, preset
+        for dispatch_config in dispatch_configs:
+            assert dispatch_config["mlp_mult"] == 8.0 / 3.0, preset
+            assert dispatch_config["multiple_of"] is None, preset
+
+
 def test_root_graph_defaults_to_float32_amp() -> None:
     graph = build_gpt_root_graph(name="float32_default")
     assert graph.torch_config["amp_dtype"] == "float32"
@@ -421,6 +483,33 @@ def test_reported_presets_resolve_variant_libraries() -> None:
         spec = build_model_spec_from_config({"preset": preset, **_tiny_kwargs()}, preview_defaults=True)
         graph = build_gpt_root_graph(name=f"{preset}_resolve", model_spec=spec)
         graph.resolve_variant_library()
+
+
+def test_all_ordered_preset_pairs_preserve_inline_variant_fallback() -> None:
+    """Loading a second preset may overwrite shared variant families safely."""
+
+    graphs: dict[str, NeuronGraph] = {}
+    for preset in PRESETS:
+        spec = build_model_spec_from_config({"preset": preset, **_tiny_kwargs()}, preview_defaults=True)
+        graphs[preset] = build_gpt_root_graph(name=f"{preset}_pair", model_spec=spec)
+
+    checked = 0
+    for left_name, left in graphs.items():
+        for right_name, right in graphs.items():
+            candidate = deepcopy(left)
+            # This mirrors mergeVariantLibrary: families present in the newly
+            # loaded preset replace old entries, while unrelated families stay.
+            candidate.variant_library.update(deepcopy(right.variant_library))
+            try:
+                candidate.resolve_variant_library()
+                candidate.validate()
+            except Exception as exc:
+                raise AssertionError(
+                    f"variant overwrite failed for {left_name} then {right_name}: {exc}"
+                ) from exc
+            checked += 1
+
+    assert checked == len(PRESETS) ** 2
 
 
 def test_all_presets_compile_and_forward() -> None:

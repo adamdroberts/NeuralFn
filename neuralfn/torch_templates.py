@@ -526,7 +526,21 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
     graph.add_edge(Edge(id="e_router_topk", src_node=topk_src, src_port=0, dst_node="topk", dst_port=0))
 
     # Dispatch
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.expert_dispatch_module, config={"model_dim": model_dim, "experts": spec.experts, "mlp_mult": spec.mlp_multiplier}), instance_id="dispatch", position=(700, 160)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.expert_dispatch_module,
+                config={
+                    "model_dim": model_dim,
+                    "experts": spec.experts,
+                    "mlp_mult": spec.mlp_multiplier,
+                    "multiple_of": spec.multiple_of,
+                },
+            ),
+            instance_id="dispatch",
+            position=(700, 160),
+        )
+    )
     graph.add_edge(Edge(id="e_x_dispatch", src_node="x_in", src_port=0, dst_node="dispatch", dst_port=0))
     graph.add_edge(Edge(id="e_weights_dispatch", src_node="topk", src_port=0, dst_node="dispatch", dst_port=1))
     graph.add_edge(Edge(id="e_indices_dispatch", src_node="topk", src_port=1, dst_node="dispatch", dst_port=2))
@@ -567,7 +581,12 @@ def build_semantic_router_mlp_graph(name: str, model_dim: int, spec: BlockSpec) 
         NeuronInstance(
             clone_neuron_def(
                 BuiltinNeurons.expert_dispatch_module,
-                config={"model_dim": model_dim, "experts": spec.experts, "mlp_mult": spec.mlp_multiplier},
+                config={
+                    "model_dim": model_dim,
+                    "experts": spec.experts,
+                    "mlp_mult": spec.mlp_multiplier,
+                    "multiple_of": spec.multiple_of,
+                },
             ),
             instance_id="dispatch",
             position=(320, 180),

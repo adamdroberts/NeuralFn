@@ -330,12 +330,16 @@ class TokenEmbeddingStage(nn.Module):
 
 
 class RMSNormStage(nn.Module):
-    def __init__(self, eps: float = 1e-6) -> None:
+    def __init__(self, eps: float = 1e-6, model_dim: int | None = None) -> None:
         super().__init__()
         self.eps = eps
+        if model_dim is None:
+            self.register_parameter("weight", None)
+        else:
+            self.weight = nn.Parameter(torch.ones(int(model_dim), dtype=torch.float32))
 
     def forward(self, x: Tensor) -> Tensor:
-        return F.rms_norm(x, (x.size(-1),), eps=self.eps)
+        return F.rms_norm(x, (x.size(-1),), weight=self.weight, eps=self.eps)
 
 
 class ResidualMixStage(nn.Module):
@@ -1709,9 +1713,9 @@ class GeluStage(nn.Module):
         return F.gelu(x)
 
 class SwiGLUStage(nn.Module):
-    def __init__(self, model_dim: int, mlp_mult: int, multiple_of: int | None = None) -> None:
+    def __init__(self, model_dim: int, mlp_mult: float, multiple_of: int | None = None) -> None:
         super().__init__()
-        hidden = int(8.0 * model_dim / 3.0)
+        hidden = int(model_dim * mlp_mult)
         if multiple_of is not None:
             hidden = multiple_of * ((hidden + multiple_of - 1) // multiple_of)
         self.w1 = nn.Linear(model_dim, hidden, bias=False)
@@ -2136,9 +2140,24 @@ class TopKRouteStage(RoutingStatsMixin, nn.Module):
         return topk_weights.to(dtype=logits.dtype), topk_indices
 
 class ExpertDispatchStage(nn.Module):
-    def __init__(self, model_dim: int, experts: int, mlp_mult: int) -> None:
+    def __init__(
+        self,
+        model_dim: int,
+        experts: int,
+        mlp_mult: float,
+        multiple_of: int | None = None,
+    ) -> None:
         super().__init__()
-        hidden_dim = model_dim * mlp_mult
+        multiplier = float(mlp_mult)
+        if not math.isfinite(multiplier) or multiplier <= 0.0:
+            raise ValueError("mlp_mult must be finite and positive")
+        hidden_dim = max(1, int(model_dim * multiplier))
+        if multiple_of is not None:
+            multiple = int(multiple_of)
+            if multiple < 0:
+                raise ValueError("multiple_of must be non-negative")
+            if multiple > 0:
+                hidden_dim = multiple * ((hidden_dim + multiple - 1) // multiple)
         self.w1 = nn.Parameter(torch.empty(experts, model_dim, hidden_dim))
         self.w2 = nn.Parameter(torch.empty(experts, hidden_dim, model_dim))
         self.w3 = nn.Parameter(torch.empty(experts, model_dim, hidden_dim))
@@ -2748,7 +2767,7 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
     if module_type == "swiglu":
         return SwiGLUStage(
             model_dim=int(cfg["model_dim"]),
-            mlp_mult=int(cfg["mlp_mult"]),
+            mlp_mult=float(cfg["mlp_mult"]),
             multiple_of=cfg.get("multiple_of"),
         )
     if module_type in ("geglu", "reglu", "solu"):
@@ -2801,7 +2820,12 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
         return ExpertDispatchStage(
             model_dim=int(cfg["model_dim"]),
             experts=int(cfg["experts"]),
-            mlp_mult=int(cfg["mlp_mult"]),
+            mlp_mult=float(cfg.get("mlp_mult", 4.0)),
+            multiple_of=(
+                int(cfg["multiple_of"])
+                if cfg.get("multiple_of") is not None
+                else None
+            ),
         )
     if module_type == "expert_combine":
         return ExpertCombineStage()
@@ -2884,7 +2908,11 @@ def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_conf
             model_dim=int(cfg["model_dim"]),
         )
     if module_type == "rms_norm":
-        return RMSNormStage(eps=float(cfg.get("eps", 1e-6)))
+        model_dim = cfg.get("model_dim")
+        return RMSNormStage(
+            eps=float(cfg.get("eps", 1e-6)),
+            model_dim=int(model_dim) if model_dim is not None else None,
+        )
     if module_type == "residual_mix":
         return ResidualMixStage(
             dim=int(cfg["dim"]),

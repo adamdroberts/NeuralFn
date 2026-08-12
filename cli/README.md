@@ -1,7 +1,7 @@
 # NeuralFn CLI
 
 The in-repo CLI package exposes the `nfn` command for CUDA-oriented training,
-inference, and evaluation flows outside the web editor. It builds composed
+inference, evaluation, and graph-to-native migration outside the web editor. It builds composed
 language-model recipes from a base model, topology, router mode, optional JEPA
 objective, runtime, dataset, tokenizer, and run preset. It shares the same
 graph builders, dataset manager, semantic vocabulary files, and artifact format
@@ -35,7 +35,8 @@ nfn --help
 ```
 
 The root install no longer pulls in Torch by default. Root `nfn --help` /
-no-argument startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`,
+no-argument startup, `nfn train|infer|eval --help`,
+`nfn migrate graph-to-native --help`, `nfn kernels ... --help`,
 `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT-2
 compatibility training do not import it. Install
 `pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling,
@@ -47,6 +48,291 @@ Importing `nfn_impl` for parser/planner helpers also keeps Torch, NumPy,
 `server.dataset_manager`, graph ops, parameter-golf Torch helpers, and
 `train_jepa_semantic` lazy until a command path actually needs the graph-backed
 runtime.
+
+## Graph-to-native migration
+
+`nfn migrate graph-to-native` lowers a graph into the versioned Native
+Execution IR v1 artifact contract. Start with a dry run:
+
+```bash
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --output-dir artifacts/model-native \
+  --dry-run
+```
+
+The command prints its manifest and compatibility report as JSON. Graph-only
+migration remains on the lightweight path and does not import `nfn_impl`,
+Torch, NumPy, or NetworkX. The requested output path must not already exist
+even for a dry run, but the dry run creates no files.
+
+To materialize an artifact and optionally convert a legacy checkpoint:
+
+```bash
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --weights artifacts/model.pt \
+  --output-dir artifacts/model-native
+
+nfn migrate graph-to-native \
+  --graph artifacts/model.json \
+  --weights artifacts/model_00020000.bin \
+  --output-dir artifacts/model-resident
+
+nfn migrate graph-to-native \
+  --graph artifacts/llama.json \
+  --weights artifacts/llama_native_family_model_00000000.json \
+  --output-dir artifacts/llama-resident
+```
+
+Without `--weights`, the new directory contains
+`native-execution-manifest.json` and `compatibility-report.json`. With a `.pt`
+checkpoint it also contains a 64-byte-aligned `weights.bin`; tensor offsets,
+lengths, dtypes, shapes, and SHA-256 hashes are recorded in the manifest. The
+`.pt` file is opened only after graph preflight succeeds and only in an isolated
+Python worker using PyTorch's restricted `weights_only` loader.
+
+With a graph-compatible native dense-v5 `.bin`, migration stays Torch-free,
+validates the complete model/tensor geometry, copies an owner-only `model.bin`,
+verifies its exact size and SHA-256, and stamps resident ABI v1 plus lossless
+cache and lean-serving capabilities. Generic `.pt` output is not promoted to
+that resident contract.
+
+Canonical `llama` inference-checkpoint v2 metadata follows a second Torch-free
+path for both eager `llama` and the exact compile alias `llama_fast`. Migration
+validates the metadata, DONE marker, exact geometry/semantics,
+contiguous float32 tensor table, sidecar size, and SHA-256 before copying the
+sidecar as owner-only `model.f32`. Direct `.f32` input and diagnostic family-v1
+metadata fail closed.
+
+Migration never rewrites the graph JSON or checkpoint and never overwrites an
+existing directory or symlink. Arbitrary graph-supplied Python functions and
+module types absent from the explicit Native IR registry fail closed. An
+incompatible graph returns exit code 2 with stable node paths and creates no
+artifact.
+
+All 66 shipped text presets currently pass structural lowering, including root
+variant-library entries. Do not interpret this as full inference coverage.
+The seven reviewed dense-v5 preset topologies (`gpt2`, `gpt2_megakernel`,
+source-bound `gpt2_moa`, `gpt2_zloss`, `gpt2_qknorm`, `gpt2_stable`, and
+`gpt2_softcap`) have the resident session, lossless K/V cache, native packed
+CPU TurboQuant cache for even head dimensions, and lean-serving proof. They
+may also select the separately gated hybrid Tile-CUDA historical-attention
+backend explicitly; CPU remains the default. Canonical `llama` and its
+graph-equivalent compile profile `llama_fast` separately prove a real float32
+RMSNorm/RoPE/GQA/SwiGLU resident forward and lossless
+cache, with explicit TurboQuant rejected. Exact standard-MoE `moe`,
+`mixllama`, and `mixllama_fast` artifacts likewise use their real resident
+router/expert forward and lossless cache, with TurboQuant rejected. Generic
+`.pt`, graph-only, differential/modern variants, and every other family remain
+closed. See
+[the Native IR SDK reference](../docs/python-sdk/native-ir.md).
+
+`nfn train --runtime native-cuda --graph-file GRAPH ...` runs the same
+source-safe Native IR preflight before resolving or launching a trainer. Thirteen
+reviewed profiles are execution-ready after exact graph validation: `gpt2`,
+`gpt2_megakernel`, `gpt2_moa`, `gpt2_qknorm`, `gpt2_softcap`,
+`gpt2_stable`, `gpt2_zloss`, exact canonical `llama`, and its exact compile-
+runtime alias `llama_fast`, plus exact standard-MoE `moe`, `mixllama`, and
+`mixllama_fast`, plus exact `gpt2_diff` training through the planner-issued
+proof described below. Both LLaMA profiles invoke the canonical native
+`llama` ABI while retaining source selector/runtime provenance. The graph becomes authoritative
+for selector and geometry, and a real run writes an immutable source snapshot
+plus `native-training-plan.json` under `OUTPUT_DIR/native-ir` before passing
+that snapshot to the selected trainer. Canonical LLaMA derives its complete
+RMSNorm/RoPE/MHA-or-GQA/SwiGLU geometry and source SHA from the graph; the
+family binary verifies byte identity before dataset/CUDA setup and at v2
+checkpoint write. Dry runs, plan/check operations, and command printing
+preflight without entering training or creating artifacts. The current trainers are selector-driven,
+so ready plans still report `trainer_consumes_native_ir: false` together with
+`graph_preflight_enforced: true`. Unsupported/incomplete adapters fail with
+node-specific JSON before binary resolution or subprocess launch; diagnostic
+transition samplers are never accepted as production training. Caller-selected
+train/smoke actions and unrecognized graph-mode family arguments fail closed.
+`gpt2_diff` is graph-training ready only after the trusted planner materializes
+`native-training-proof.json` next to the immutable source snapshot. The proof
+binds the exact source SHA, active semantic/topology validator contracts,
+reviewed shape hashes, and native geometry. The child trainer requires
+`--graph-file`, `--graph-fingerprint`, and `--graph-preflight-proof` together
+before plan/Tile/CUDA work. The proof SHA is an unkeyed local-handoff integrity
+check, not authenticity; use `nfn train` to create it rather than trusting a
+caller-supplied graph/proof pair. Dry-run and print-plan return the non-mutating
+Python plan; print-command reports that materialization is required rather than
+printing a command with a nonexistent proof.
+
+Migration and resident execution remain blocked. The packed trainer learns one FP32
+lambda per layer and emits a DONE-gated five-binary bundle plus
+`model_XXXXXXXX.diff.json`. That metadata uses
+`neuralfn.native_gpt2_diff.training_checkpoint` version 2 while retaining
+`checkpoint_kind=trained_dense_v5_plus_diff_v1`. Resume is continuation-only:
+direct training requires the planner-issued graph/fingerprint/proof triplet.
+Before Tile/CUDA/H2D it binds the source graph, complete
+artifact state,
+optimizer/microbatch and sampler position, seed contract, batch/accumulation
+shape, ordered training-shard contents, optimizer/LR settings and absolute
+horizon, LM-head chunk, effective BF16 routes, and the canonical numerics
+profile of supported effective routes. Validation shards are not in the training identity.
+`--max-steps` is additional work; omit `--lr-schedule-total-steps` on resume to
+inherit the recorded horizon, or supply the same value explicitly. Repeat an
+explicit first-leg `--train-seed` value. Final export is create-only and writes
+the fsynced empty DONE marker last; it is not an atomic-rename protocol,
+ancestor symlinks are outside the guarantee, and metadata-smoke output is not
+covered. The packed-QKV/sequence/head/BF16/ABI preflight remains mandatory, and
+none of this makes the migration or resident adapter execution-ready. The learned trainer
+requires the learned-lambda ABI; the retained legacy fixed-lambda ABI stays
+outside this path with rounded-output/non-layer-local backward debt.
+Migration remains closed: `.pt`, raw `.bin`, and metadata-v2 `.diff.json`
+weights paired with `gpt2_diff` fail with an explicit unimplemented-bundle
+error before generic checkpoint dispatch or output creation.
+
+Standard-MoE graph plans preserve the floating `mlp_multiplier`, translate
+`multiple_of=None` to `--multiple-of 0`, and own expert count, top-k, router
+auxiliary-loss coefficient, runtime alias, and graph digest. A real launch
+selects `--train-moe-dataset-loop`; the strict checkpoint metadata and DONE-
+gated float32 sidecar must remain source-SHA and tensor-table bound. The
+ordinary migrated-artifact SDK/CLI path uses the resident router/expert engine,
+not transition sampling. Explicit TurboQuant remains unsupported.
+
+## Interactive inference state
+
+TTY graph inference defaults to a process-local transcript. The initial
+`--prompt` becomes the first user turn; later turns reuse prior role messages.
+Use `--chat-mode stateless` or `/mode stateless` to keep turns independent.
+`--system-prompt TEXT` adds a leading instruction retained in stateless mode
+and after `/reset`, and
+`--chat-template auto|plain_roles|PATH` selects rendering. Auto prefers a
+usable artifact/tokenizer template and prints a warning before using the
+CLI-only plain-role fallback. An explicit file is treated as data and must
+contain `{{messages}}` (with optional `{{assistant_prompt}}`).
+
+The transcript renderer reserves `--max-new-tokens`, removes the oldest whole
+conversation groups when needed, and errors rather than dropping leading
+instructions or the newest request. `/reset` clears conversation turns but
+keeps the configured system prompt. Configured role/EOS delimiters are removed
+from assistant text before it is displayed and stored. Piped/non-TTY inference
+remains the existing one-shot flow.
+
+The same flags apply to a Native Execution manifest directory or file. That
+manifest-first route loads one `NativeInferenceModel` and one process-local
+session, calls exact-prefix `prefill` for every turn, and reuses the proven
+lossless cache without importing the graph runtime or spawning a native
+sampler. See [resident native CLI inference](../docs/native-cli-inference.md).
+
+Compatible migrations for the seven reviewed dense-v5 preset topologies prove
+the in-process resident binding and retained lossless K/V cache. The legacy raw
+native-checkpoint lightweight sampler remains one-shot; generic `.pt`,
+graph-only, differential/modern dense variants, and unimplemented family
+artifacts do not inherit resident support from these transcript controls.
+Canonical LLaMA artifact-directory, manifest, and exact contained `model.f32`
+invocations also use the resident path. Non-interactive `--prompt-tokens`
+remains tokenizer-free and renders generated token IDs after one warning when
+no text codec exists; text prompts and interactive transcripts still require a
+supported artifact tokenizer. Reviewed
+compatible resident artifacts may explicitly select the proved CPU TurboQuant
+cache only when they are one of the supported dense topologies.
+
+## Native artifact serving
+
+Install the lean server extra and serve one resident native artifact:
+
+```bash
+pip install -e '.[serve]'
+nfn infer \
+  --checkpoint artifacts/model-native \
+  --serve \
+  --chat-template plain_roles \
+  --state-db ./native-inference-state.sqlite3 \
+  --prefix-cache-capacity 64
+```
+
+The server validates auth policy, Native Execution Manifest v1, tokenizer,
+chat renderer, context limit, resident ABI/binding, checkpoint, and cache
+capabilities before Uvicorn opens `127.0.0.1:8000`. It exposes `/health`,
+`/v1/models`, `/v1/models/{model}`, and text-only
+`/v1/chat/completions`. `--queue-capacity` bounds waiters in front of one model
+worker. `--session-limit` separately bounds the running request plus queued
+request-session reservations and defaults to `queue_capacity + 1`; either
+limit rejects excess work immediately with a distinct HTTP 429 code. Streamed
+Chat Completions contain committed-token SSE chunks and end in `data: [DONE]`.
+
+`--state-db PATH` opts into the private WAL-backed Responses/Conversations
+store. It enables text Responses create/retrieve/delete, input items and token
+counting, API-key-scoped lineage and local compaction, semantic Responses SSE,
+Conversations CRUD and items, plus restart-safe background/cancel processing.
+A stored response originally created with both `background` and `stream` true
+continues after a subscriber disconnect and resumes from an exclusive event
+cursor through `GET /v1/responses/{id}?stream=true&starting_after=N`.
+Responses streams end in one semantic terminal event and do not use `[DONE]`;
+resumed deltas include persisted obfuscation by default and may omit it with
+`include_obfuscation=false`.
+
+The state database uses schema v4. It retains durable typed
+function-call/result lineage and adds a monotonic conversation-item revision
+for snapshot/CAS completion. Opening a v1/v2/v3 file adds that revision in
+place and treats existing history as revision zero; back it up first when
+binary rollback is required, because an older server rejects the migrated v4
+file. A legacy conversation-linked background job queued before the upgrade
+has no historical revision snapshot and fails with
+`conversation_snapshot_unavailable` rather than running against current items.
+Legacy previous-response-only queued work reconstructs only a currently
+completed/incomplete lineage or fails with `response_lineage_unavailable`.
+
+`--prefix-cache-capacity N` defaults to `0`. A positive value requires
+`--state-db` and exact effective lossless-full COW or reviewed dense CPU
+TurboQuant COW; Tile-CUDA is rejected. Eligible foreground
+`previous_response_id` and conversation requests fork only a verified exact
+token LCP. Stored completed/incomplete results publish after the durable
+terminal transaction. Failed, cancelled, non-stored, Chat, and background work
+does not enter the LRU; `store: false` can hit but cannot admit. Restart is
+cold. Usage reports exact-LCP/native-row-bounded `cached_tokens` and
+prompt-only `cache_write_tokens`, never decoded rows. `/health.prefix_cache`
+reports entry/LRU/token counters and per-session capacity observations, not
+unique physical bytes. Deleting a response, conversation, or item purges the
+whole API-key scope. A concurrent conversation mutation produces
+`conversation_conflict` (buffered 409 or semantic `response.failed` for an
+already-open stream/background response). Finish also revalidates the complete
+stored `previous_response_id` lineage; deleted or changed ancestry produces
+`response_lineage_conflict` before output/cache publication.
+
+The cache lock and purge epoch are process-local. Run one owning service
+process per cache-enabled state database and route semantic mutations through
+its `NativeResponsesService`; out-of-band raw-store mutations and a second
+server process are unsupported. Shutdown awaits the background and tracked
+foreground stream drivers, drains the queue, then closes cache, model, and state
+in that order.
+
+An artifact that jointly proves `json-schema-ascii-byte-greedy-v1`, binding
+`current_logits_exact_prefill`, and an exact tokenizer can additionally serve
+buffered strict flat JSON-schema Responses. Exact
+`responses-forced-function-call-v1` tool-template metadata enables one forced
+client-executed function call and a later string `function_call_output`
+continuation; NeuralFn never executes the function. Use the artifact template
+through `--chat-template auto`. Schema and function-argument generation
+require stored, non-streamed, foreground greedy execution (`temperature=0`,
+`top_p=1`). The separate client-result continuation uses ordinary text
+sampling but remains stored, buffered, foreground, with truncation disabled.
+
+Set `NFN_INFER_API_KEY` or `--api-key-file` for Bearer authentication.
+Non-loopback `--host` values require a key unless
+`--allow-unauthenticated-remote` is supplied explicitly. The key file must be
+private (for example, mode `0600`).
+
+The current compiled dense-v5 resident binding is a real CPU forward with
+preallocated lossless `--kv-cache auto|full`; `--kv-cache off` retains the
+full-prefix-recompute oracle, and explicit `turboquant` selects the proved
+packed native CPU cache for the seven reviewed dense preset topologies. An
+explicit, separately feature-gated Tile-CUDA backend is available for that
+historical compressed-attention slice; CPU remains the default. A compatible
+native checkpoint graph migration emits the ready resident/serve manifest
+automatically. Generic `.pt`, graph-only, differential/modern dense variants,
+and unimplemented families stay fail-closed. Canonical LLaMA
+proves the resident model ABI with `auto`/`full`/`off`, but text serving still
+fails before bind unless its artifact independently supplies a supported
+tiktoken codec and chat renderer; TurboQuant remains unavailable. General or
+parallel tools, nested/array schemas, constrained stream/background work, Chat
+Completions tools, hosted tools, and multimedia remain rejected with explicit
+OpenAI-shaped errors.
+See [the serving REST contract](../docs/rest-api/native-inference-serving.md).
 
 ## Workflow model
 
@@ -280,7 +566,7 @@ execs `nfn_gpt_native_train` against native `model_*.bin` checkpoints. Checkpoin
 directories resolve to the highest-step `model_########.bin`; graph-backed
 `.pt/.json` inference remains on the Python `nfn infer` path. Default `nfn train` commands
 hand off to this compiled frontend before graph-backed Python can start; dense
-GPT and NanoGPT are implemented through the dense GPT target, and LLaMA,
+GPT and NanoGPT commands route through the dense GPT target, and LLaMA,
 GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
 variants intentionally report missing or preflight-only native trainers. SDK
 calls to `run_native_gpt(..., runner="auto")` still try the Python SDK binding,
@@ -291,6 +577,12 @@ require the compiled launcher. Alias-only configs from
 `build_native_gpt2_compiled_cli_run_config()` still execute the compiled CLI argv
 through the SDK binding, so cached-shard resolution stays in C++ even when
 `runner="auto"` selects `neuralfn._native_gpt2`.
+
+That NanoGPT route is a command/geometry handoff, not a graph-faithful
+checkpoint or inference proof. The shared loop remains biased and
+dropout-free, while shipped NanoGPT graphs require bias-free linears and
+dropout; inspect the Native IR capability proof and keep migration/resident
+inference closed for `nanogpt`, `nanogpt_megakernel`, and `nanogpt_modern`.
 
 Non-dense-GPT `nfn train` commands now fail from the compiled native registry by
 default. Direct legacy training scripts hand off to the same native registry

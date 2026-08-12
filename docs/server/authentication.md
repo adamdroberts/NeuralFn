@@ -59,3 +59,25 @@ Route handlers declare their auth requirements by adding `auth: AuthContext = De
 2. **Subsequent requests**: the browser sends the cookie automatically. `require_auth()` reads the cookie, calls `authenticate_token()`, and injects the resulting `AuthContext`.
 3. **Logout**: the client POSTs to `/api/auth/logout`. The server deletes the cookie and removes the `AuthSession` row.
 4. **Expiry**: sessions expire after `session_ttl_seconds`. Expired sessions are rejected by `authenticate_token()`.
+
+## Native inference Bearer authentication
+
+The standalone `nfn infer --serve` application does not mount or reuse the
+editor cookie flow above. Loopback binding is unauthenticated unless an
+operator configures `NFN_INFER_API_KEY` or `--api-key-file`. Once configured,
+every inference route, including `/health`, requires `Authorization: Bearer
+<key>` and compares the supplied value in constant time.
+
+Key files may contain multiple non-empty lines for rotation, but must not be
+group/world accessible. Supplying both the environment variable and key file
+is rejected. Non-loopback binding requires one of those key sources unless
+`--allow-unauthenticated-remote` explicitly accepts unauthenticated exposure.
+Invalid or missing credentials return the OpenAI error envelope with HTTP 401,
+`code: "invalid_api_key"`, and `WWW-Authenticate: Bearer`.
+
+The native server does not create editor users, cookie sessions, or records in
+the editor database. When `--state-db` is configured, it writes Responses,
+Conversations, compaction references, and background-job records only to its
+separate private SQLite store, partitioned by the accepted Bearer-key
+fingerprint. See
+[the native inference serving contract](../rest-api/native-inference-serving.md).

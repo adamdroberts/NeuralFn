@@ -90,10 +90,24 @@ SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
 
 `SHIPPED_GPT_TEMPLATE_BASE_PRESETS` is the canonical SDK catalog for exact names accepted by `build_model_spec_from_config(config={"preset": ...})`, including aliases and megakernel variants such as `mixllama`, `nanogpt_megakernel`, and `gpt2_megakernel`.
 
-`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense shipped selections dispatch to their strongest compiled native family loop or train-step slice, and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
+`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled GPT launchers also accept any shipped preset through `--base-model <preset>`; they normalize the runtime family to `gpt` and forward the selected preset as `--template-name`, while `gpt`, `gpt2`, `gpt3`, and `nanogpt` remain direct dense GPT family aliases. The compiled dense GPT loop currently runs `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, `gpt3`, `nanogpt`, `nanogpt_modern`, and `nanogpt_megakernel`; the selected template geometry controls context length, width, heads, layers, and dropout metadata. Non-dense shipped selections dispatch to their strongest compiled native family loop or train-step slice. Graph-authored training is a separate reviewed boundary: seven exact GPT-2 profiles plus canonical/compile LLaMA, exact standard-MoE, and trusted-planner proof-bound `gpt2_diff` make 13 execution-ready presets after Native IR planner validation. `gpt2_diff` migration and resident inference stay blocked because those consumers do not yet consume its learned-lambda sidecars or implement packed differential cache semantics; unreviewed custom graphs return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
+For NanoGPT, acceptance by that compiled selector catalog means command
+dispatch and selected geometry only. Its bias-free linears and authored
+dropout are not represented by the biased, dropout-free dense-v5 persistence,
+architecture-forward, or resident-inference contract.
+
 The native `gpt2_moa` selector uses a shared four-times-width MLP and probes
 GELU, ReLU, SiLU, and ReLU2 on the current batch at step 1 and every
 `moa_interval` steps before selecting the lowest-loss activation for backward.
+A graph-authored completed checkpoint writes source-bound
+`model_XXXXXXXX.moa.json` beside its dense-v5 model and empty DONE marker;
+migration validates the canonical candidates, selected activation, positive
+interval, graph/model hashes, and uses the recorded activation for CPU resident
+prefill/decode/cache/TurboQuant without probing again. Resume likewise requires
+that sidecar and restores the recorded activation without a candidate probe;
+missing or changed metadata fails closed. Direct selector-only `gpt2_moa`
+first-leg training still emits ordinary dense-v5, but its unbound output is
+rejected for resume rather than silently resetting to GELU.
 The native full-geometry LLaMA selectors `ternary_b158`, `fp8_llama`, and
 `mxfp4_llama` likewise preserve their compression semantics in compiled
 training: plan JSON reports `architecture.linear_quantization` as
@@ -120,11 +134,14 @@ stages around attention, and plan JSON reports `attention_variant="kv_pca"`.
 Compiled native template catalogs and per-template plan JSON include
 `native_training_coverage_class`, `native_training_missing_requirements`, and
 `native_training_completed_requirements`. Implemented dense GPT selectors report
-`implemented-dense-gpt-transformer-lm` with no missing requirements. Other
-shipped presets are classified by the strongest native trainer boundary
-currently available. Non-dense LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA,
-MoE+JEPA, semantic MoE/JEPA, seq2seq, diffusion, TTT, universal transformer,
-Jamba, and HNet byte-LM families currently report
+`implemented-dense-gpt-transformer-lm` with no missing requirements. Canonical
+LLaMA reports its covered production full-geometry loop and complete
+architecture persistence; its exact graph adapter additionally requires the
+Native IR topology/fingerprint plan. Other shipped presets are classified by
+the strongest native trainer boundary currently available. Incomplete
+non-canonical LLaMA/RoPE/SwiGLU, standard MoE, dense JEPA, MoE+JEPA, semantic
+MoE/JEPA, seq2seq, diffusion, TTT, universal transformer, Jamba, and HNet
+byte-LM families report
 `native-family-dataset-loop-diagnostic` when the available path is a sampled
 native dataset-loop slice rather than a full production trainer. Those entries
 report `production_training_loop: false`, keep
@@ -218,8 +235,8 @@ Specifies the architecture of a single transformer block.
 | `dropout_p` | `float` | `0.0` | Dropout probability |
 | `rope_theta` | `float` | `10000.0` | RoPE frequency base |
 | `rope_scaling` | `dict \| None` | `None` | Optional RoPE scaling config |
-| `mlp_multiplier` | `float` | `4.0` | MLP hidden dimension multiplier |
-| `multiple_of` | `int \| None` | `None` | Round MLP hidden dim to this multiple |
+| `mlp_multiplier` | `float` | `4.0` | MLP hidden-dimension multiplier; SwiGLU and MoE expert dispatch preserve fractional values and start from `max(1, int(model_dim * mlp_multiplier))` |
+| `multiple_of` | `int \| None` | `None` | If positive, round the computed SwiGLU or MoE expert hidden dimension up to this multiple. `None` leaves either unaligned; MoE expert dispatch also accepts `0` as the native-compatible unaligned sentinel. |
 | `experts` | `int \| None` | `None` | Number of MoE experts |
 | `top_k` | `int \| None` | `None` | Top-K expert routing |
 | `shared_experts` | `int` | `0` | Number of shared experts |
@@ -256,6 +273,27 @@ Specifies the architecture of a single transformer block.
 | `fp8_use_stochastic_rounding` | `bool` | `True` | Stochastic-rounding intent flag for FP8 weight updates |
 
 `norm_type` also accepts `"dyt"` and `"group_norm"`; `mlp_type` also accepts `"geglu"`, `"reglu"`, `"solu"`; `compression` also accepts `"fp8_e4m3"`, `"fp8_e5m2"`, `"mxfp4"`, `"mxfp8"`. See the frontier presets in `docs/framework-guide/templates-and-presets.md`.
+
+### Torch/Tile LLaMA parameter semantics
+
+For `mlp_type="swiglu"`, the serialized module key is `mlp_mult`. Torch and
+CUDA Tile preserve it as a float, calculate the base hidden width as
+`int(model_dim * mlp_mult)`, and then round up to `multiple_of` when that field
+is not `None`. The standard LLaMA `8/3` shape is unchanged; custom multipliers
+that previously compiled to the hard-coded `8/3` width now produce the width
+declared by the spec.
+
+Template builders attach `model_dim` to each `rms_norm` node. Such nodes now
+compile to affine RMSNorm with one learnable float32 scale per hidden channel,
+initialized to one, in both Torch and CUDA Tile. A legacy or hand-authored
+`rms_norm` config without `model_dim` still compiles to the parameter-free
+form.
+
+**Breaking change:** existing template state dictionaries do not contain the
+new RMSNorm `weight` keys. Initialize those tensors to ones or regenerate the
+checkpoint before strict loading. If a custom SwiGLU used a multiplier other
+than `8/3`, migrate its `w1`/`w3` rows and `w2` columns to the corrected hidden
+width as well.
 
 ---
 
@@ -628,6 +666,58 @@ each with `selected_graph_native_runnable: true` and
 The native trainer applies z-loss and softcap in fused cross-entropy
 forward/backward kernels, QK-norm in packed-QKV RMSNorm forward/backward
 kernels, and differential attention through two native half-QK causal-attention
-passes plus native combine/RMSNorm forward/backward. The compiled
-`gpt2_diff` benchmark holds lambda at `diff_lambda_init=0.8`; it does not update
-the graph runtime's learnable lambda parameter.
+passes plus native combine/RMSNorm forward/backward. The low-level compiled
+`gpt2_diff` path initializes one FP32 lambda per layer from
+`diff_lambda_init=0.8`, backpropagates and AdamW-updates it, and persists it plus
+its moments in graph-bound additive differential sidecars. Dense-v5 and its
+ordinary parameter/optimizer files remain unchanged. The path is exact only
+under the required packed-QKV contract. Its strict
+`neuralfn.native_gpt2_diff.training_checkpoint` metadata is version 2 even
+though the unchanged artifact kind remains
+`trained_dense_v5_plus_diff_v1`. Continuation preflight binds the DONE-gated
+five-binary bundle, source graph, ordered training-shard contents, counters and
+sampler position, seed contract, batch/accumulation shape, optimizer/LR horizon,
+LM-head chunk, effective BF16 routes, and a canonical numerics profile of
+supported effective routes before Tile/CUDA/H2D. Validation shards are deliberately
+excluded. The
+learned trainer requires the learned-lambda ABI; the legacy fixed-lambda ABI
+remains outside it with rounded-output/non-layer-local backward debt. The
+graph-authored Native IR adapter
+remains structurally lowerable but reports architecture persistence, execution
+readiness, and native forward false until migration and resident inference
+validate and consume those sidecars.
+
+`NativeGptRunConfig` / `NativeGpt2RunConfig` and both builder families expose
+`lr_schedule`, `lr_schedule_total_steps`, `train_seed`,
+`resume_from_checkpoint`, `graph_fingerprint`, and `graph_preflight_proof`; `graph_file` remains the
+existing source path. `train_seed` is the training sampler seed, not the
+generation sampler's `seed`. Both builder families also accept an optional
+`final_lr_fraction`; an explicit value takes precedence over the fraction
+derived from `min_lr`. Schedule, final-LR, and train-loss aliases are normalized
+before native quality defaults are added.
+`compiled_cli_argv()` forwards the complete contract; for an alias-only config,
+an explicitly selected compiled executable remains the command target. The
+legacy llm.kittens short argv cannot express
+a non-default schedule, horizon, train seed, resume, or graph binding, so
+`argv()` and `command()` raise instead of silently dropping those values.
+`to_dict()` exposes `legacy_command_error` and `prefer_compiled_cli` with empty
+legacy `argv`/`command` while retaining the compiled-CLI and Tile-launcher forms;
+dataset-alias and strict
+Tile binding configs prefer the compiled argv. A hand-built config with
+native-only fields, a legacy short executable, and no `dataset_alias` rejects
+instead of silently changing targets; use a compiled-CLI builder or supply the
+dataset alias and compiled trainer. Hand-built non-Tile configs also reject
+native-only fields. For explicit `gpt2_diff` configs, `graph_file`,
+`graph_fingerprint`, and `graph_preflight_proof` must be supplied together. The
+digest is an exact lowercase 64-character SHA-256 and neither it nor the proof
+path may have surrounding whitespace. All three may be absent only for
+selector/catalog command construction; executable low-level differential
+training rejects an unbound selector before Tile/CUDA. The proof comes from
+trusted planner materialization and is an unkeyed local integrity record, not
+caller authentication.
+
+**Breaking-change note:** the new optional continuation fields change the
+positional dataclass signature. Construct `NativeGptRunConfig` and
+`NativeGpt2RunConfig` with keyword arguments. Legacy short-command generation
+now raises when it would discard native-only state; migrate those callers to a
+compiled-CLI builder or an explicit dataset-alias plus compiled trainer.

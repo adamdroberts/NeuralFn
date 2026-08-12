@@ -12,6 +12,16 @@ struct TokenShardFile {
     std::uintmax_t bytes = 0;
     std::uintmax_t header_uint16 = 0;
     std::uintmax_t tokens = 0;
+    // Optional process-owned snapshot descriptor used by strict graph-bound
+    // trainers.  The owner retains the descriptor; samplers only pread it and
+    // verify the captured inode/timestamps around every batch read.
+    int stable_fd = -1;
+    std::uintmax_t stable_device = 0;
+    std::uintmax_t stable_inode = 0;
+    std::int64_t stable_mtime_seconds = 0;
+    std::int64_t stable_mtime_nanoseconds = 0;
+    std::int64_t stable_ctime_seconds = 0;
+    std::int64_t stable_ctime_nanoseconds = 0;
 };
 
 struct TokenShardDataset {

@@ -9,7 +9,13 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
+import type {
+  DatasetInfo,
+  NativeLoweringIssue,
+  TrainingPreflightResponse,
+  TrainingRequestData,
+} from "../api/client";
 import { graphContainsSubgraphs } from "../store/graphUtils";
 import { syncActiveSessionGraph } from "../routes/sessionSync";
 
@@ -75,6 +81,20 @@ function findTraceDatasetConfig(graph: any): { datasetNames: string[]; seqLen: n
   return search(graph, "dataset_source") ?? search(graph, "semantic_data_source");
 }
 
+function nativeIssuesFromError(error: unknown, fallbackCode: string): NativeLoweringIssue[] {
+  if (error instanceof ApiError && error.payload && typeof error.payload === "object") {
+    const payload = error.payload as { detail?: unknown };
+    const detail = payload.detail;
+    if (detail && typeof detail === "object") {
+      const issues = (detail as { issues?: unknown }).issues;
+      if (Array.isArray(issues)) {
+        return issues as NativeLoweringIssue[];
+      }
+    }
+  }
+  return [{ path: "root", code: fallbackCode, message: String(error) }];
+}
+
 export default function TrainingPanel() {
   const {
     projectId,
@@ -91,7 +111,9 @@ export default function TrainingPanel() {
   } = useGraphStore();
 
   const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
-  const usesTorch = rootGraph.training_method === "torch" || rootGraph.runtime === "torch";
+  const usesNative = rootGraph.runtime === "native-cuda";
+  const usesTorch =
+    !usesNative && (rootGraph.training_method === "torch" || rootGraph.runtime === "torch");
   const [outerRounds, setOuterRounds] = useState(3);
   const [epochs, setEpochs] = useState(200);
   const [lr, setLr] = useState(0.001);
@@ -102,6 +124,10 @@ export default function TrainingPanel() {
   const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
   const [isTorchTraceMinimized, setIsTorchTraceMinimized] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
+  const [nativePreflight, setNativePreflight] = useState<TrainingPreflightResponse | null>(null);
+  const [nativePreflightIssues, setNativePreflightIssues] = useState<NativeLoweringIssue[]>([]);
+  const [nativeDatasets, setNativeDatasets] = useState<DatasetInfo[]>([]);
+  const [nativeDatasetName, setNativeDatasetName] = useState("");
   // ── Fine-tuning controls ──────────────────────────────────────────
   const [trainingMode, setTrainingMode] = useState<"pretrain" | "sft" | "dpo" | "ppo" | "reward_model">("pretrain");
   const [adapterType, setAdapterType] = useState<"none" | "lora" | "qlora" | "randmap">("none");
@@ -130,6 +156,34 @@ export default function TrainingPanel() {
     [graphDatasetConfig],
   );
 
+  useEffect(() => {
+    if (!usesNative || !projectId) {
+      setNativeDatasets([]);
+      setNativeDatasetName("");
+      return;
+    }
+    let cancelled = false;
+    api.getDatasets(projectId).then((datasets) => {
+      if (cancelled) return;
+      setNativeDatasets(datasets);
+      setNativeDatasetName((current) =>
+        datasets.some((dataset) => dataset.name === current)
+          ? current
+          : (datasets[0]?.name ?? ""),
+      );
+    }).catch((error) => {
+      if (cancelled) return;
+      setNativeDatasets([]);
+      setNativeDatasetName("");
+      setNativePreflightIssues([
+        { path: "root", code: "native_dataset_catalog_failed", message: String(error) },
+      ]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, usesNative]);
+
   // ── Training ───────────────────────────────────────────────────────
 
   const start = useCallback(async () => {
@@ -138,9 +192,20 @@ export default function TrainingPanel() {
     }
     const usingGraphDatasets = Boolean(graphDatasetConfig?.datasetNames.length);
 
+    if (usesNative && !nativeDatasetName) {
+      setNativePreflightIssues([
+        {
+          path: "root",
+          code: "native_dataset_required",
+          message: "Select one project-accessible cached dataset alias.",
+        },
+      ]);
+      return;
+    }
+
     let inputs: number[][] = [];
     let targets: number[][] = [];
-    if (!usingGraphDatasets) {
+    if (!usingGraphDatasets && !usesNative) {
       try {
         inputs = JSON.parse(dataInput);
         targets = JSON.parse(dataTarget);
@@ -150,51 +215,76 @@ export default function TrainingPanel() {
       }
     }
 
-    clearLoss();
-    setTraining(true);
-
     try {
       await syncActiveSessionGraph({ skipIfClean: true });
     } catch (err) {
       console.error("Failed to sync graph", err);
+      setNativePreflightIssues([
+        { path: "root", code: "graph_sync_failed", message: String(err) },
+      ]);
+      return;
     }
 
+    const request: TrainingRequestData = {
+      method: hasNestedGraphs ? null : rootGraph.training_method,
+      runtime: rootGraph.runtime,
+      ...(usesNative
+        ? { dataset_names: [nativeDatasetName] }
+        : usingGraphDatasets
+          ? {}
+          : { train_inputs: inputs, train_targets: targets }),
+      outer_rounds: outerRounds,
+      loss_fn: usesTorch || usesNative ? "cross_entropy" : "mse",
+      epochs,
+      learning_rate: lr,
+      population_size: popSize,
+      generations: epochs,
+      batch_size: batchSize,
+      weight_decay: weightDecay,
+      training_mode: usesNative ? "pretrain" : trainingMode,
+      base_checkpoint_path: usesNative ? undefined : baseCheckpoint || undefined,
+      ref_checkpoint_path: usesNative ? undefined : refCheckpoint || undefined,
+      reward_checkpoint_path: usesNative ? undefined : rewardCheckpoint || undefined,
+      adapter_only_save: usesNative ? false : adapterOnlySave,
+      finetune_config:
+        usesNative || (trainingMode === "pretrain" && adapterType === "none")
+          ? undefined
+          : {
+              adapter_type: adapterType,
+              lora_rank: loraRank,
+              lora_alpha: loraAlpha,
+              lora_targets: loraTargets
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+              beta: dpoBeta,
+              ppo_clip: ppoClip,
+              rollout_length: rolloutLength,
+            },
+    };
+
+    setNativePreflightIssues([]);
+    setNativePreflight(null);
+    if (usesNative) {
+      try {
+        const preflight = await api.preflightTraining(projectId, sessionId, request);
+        setNativePreflight(preflight);
+        setNativePreflightIssues(preflight.issues ?? []);
+        if (!preflight.execution_ready) {
+          return;
+        }
+      } catch (error) {
+        setNativePreflightIssues(nativeIssuesFromError(error, "native_preflight_failed"));
+        return;
+      }
+    }
+
+    clearLoss();
+    setTraining(true);
     ctrlRef.current = api.startTraining(
       projectId,
       sessionId,
-      {
-        method: hasNestedGraphs ? null : rootGraph.training_method,
-        ...(usingGraphDatasets ? {} : { train_inputs: inputs, train_targets: targets }),
-        outer_rounds: outerRounds,
-        loss_fn: usesTorch ? "cross_entropy" : "mse",
-        epochs,
-        learning_rate: lr,
-        population_size: popSize,
-        generations: epochs,
-        batch_size: batchSize,
-        weight_decay: weightDecay,
-        // ── Fine-tuning ───────────────────────────────────────────────
-        training_mode: trainingMode,
-        base_checkpoint_path: baseCheckpoint || undefined,
-        ref_checkpoint_path: refCheckpoint || undefined,
-        reward_checkpoint_path: rewardCheckpoint || undefined,
-        adapter_only_save: adapterOnlySave,
-        finetune_config:
-          trainingMode === "pretrain" && adapterType === "none"
-            ? undefined
-            : {
-                adapter_type: adapterType,
-                lora_rank: loraRank,
-                lora_alpha: loraAlpha,
-                lora_targets: loraTargets
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean),
-                beta: dpoBeta,
-                ppo_clip: ppoClip,
-                rollout_length: rolloutLength,
-              },
-      },
+      request,
       (msg) => {
         if (msg.done) {
           setTraining(false);
@@ -206,7 +296,11 @@ export default function TrainingPanel() {
             method: msg.method,
           });
         }
-      }
+      },
+      (error) => {
+        setTraining(false);
+        setNativePreflightIssues(nativeIssuesFromError(error, "training_start_failed"));
+      },
     );
   }, [
     projectId,
@@ -214,6 +308,7 @@ export default function TrainingPanel() {
     rootGraph,
     hasNestedGraphs,
     usesTorch,
+    usesNative,
     outerRounds,
     epochs,
     lr,
@@ -223,10 +318,23 @@ export default function TrainingPanel() {
     dataInput,
     dataTarget,
     graphDatasetConfigKey,
+    nativeDatasetName,
     clearLoss,
     setTraining,
     addLossPoint,
     lossHistory.length,
+    trainingMode,
+    adapterType,
+    loraRank,
+    loraAlpha,
+    loraTargets,
+    baseCheckpoint,
+    refCheckpoint,
+    rewardCheckpoint,
+    dpoBeta,
+    ppoClip,
+    rolloutLength,
+    adapterOnlySave,
   ]);
 
   const stop = useCallback(async () => {
@@ -244,6 +352,11 @@ export default function TrainingPanel() {
   // Fetch graph telemetry continuously when inputs change
   useEffect(() => {
     if (!projectId || !sessionId) {
+      updateEdgeTelemetry({});
+      updateTorchTrace({}, null);
+      return;
+    }
+    if (usesNative) {
       updateEdgeTelemetry({});
       updateTorchTrace({}, null);
       return;
@@ -309,6 +422,7 @@ export default function TrainingPanel() {
     traceGraphSignature,
     updateEdgeTelemetry,
     updateTorchTrace,
+    usesNative,
     usesTorch,
   ]);
 
@@ -317,6 +431,9 @@ export default function TrainingPanel() {
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-xs text-gray-300">
           Root method: <span className="font-mono">{rootGraph.training_method}</span>
+        </span>
+        <span className="text-xs text-gray-300">
+          Runtime: <span className="font-mono">{rootGraph.runtime}</span>
         </span>
 
         {hasNestedGraphs && (
@@ -332,7 +449,7 @@ export default function TrainingPanel() {
         )}
 
         <label className="text-[10px] text-gray-400">
-          Epochs
+          {usesNative ? "Steps" : "Epochs"}
           <input
             type="number"
             value={epochs}
@@ -352,7 +469,7 @@ export default function TrainingPanel() {
           />
         </label>
 
-        {usesTorch && (
+        {(usesTorch || usesNative) && (
           <>
             <label className="text-[10px] text-gray-400">
               Batch
@@ -377,44 +494,50 @@ export default function TrainingPanel() {
           </>
         )}
 
-        <label className="text-[10px] text-gray-400">
-          Pop
-          <input
-            type="number"
-            value={popSize}
-            onChange={(e) => setPopSize(parseInt(e.target.value) || 50)}
-            className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-          />
-        </label>
+        {!usesNative && (
+          <label className="text-[10px] text-gray-400">
+            Pop
+            <input
+              type="number"
+              value={popSize}
+              onChange={(e) => setPopSize(parseInt(e.target.value) || 50)}
+              className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+            />
+          </label>
+        )}
 
-        <label className="text-[10px] text-gray-400">
-          Mode
-          <select
-            value={trainingMode}
-            onChange={(e) => setTrainingMode(e.target.value as any)}
-            className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-          >
-            <option value="pretrain">pretrain</option>
-            <option value="sft">sft</option>
-            <option value="dpo">dpo</option>
-            <option value="ppo">ppo</option>
-            <option value="reward_model">reward_model</option>
-          </select>
-        </label>
+        {!usesNative && (
+          <>
+            <label className="text-[10px] text-gray-400">
+              Mode
+              <select
+                value={trainingMode}
+                onChange={(e) => setTrainingMode(e.target.value as any)}
+                className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              >
+                <option value="pretrain">pretrain</option>
+                <option value="sft">sft</option>
+                <option value="dpo">dpo</option>
+                <option value="ppo">ppo</option>
+                <option value="reward_model">reward_model</option>
+              </select>
+            </label>
 
-        <label className="text-[10px] text-gray-400">
-          Adapter
-          <select
-            value={adapterType}
-            onChange={(e) => setAdapterType(e.target.value as any)}
-            className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-          >
-            <option value="none">none</option>
-            <option value="lora">lora</option>
-            <option value="qlora">qlora</option>
-            <option value="randmap">randmap</option>
-          </select>
-        </label>
+            <label className="text-[10px] text-gray-400">
+              Adapter
+              <select
+                value={adapterType}
+                onChange={(e) => setAdapterType(e.target.value as any)}
+                className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              >
+                <option value="none">none</option>
+                <option value="lora">lora</option>
+                <option value="qlora">qlora</option>
+                <option value="randmap">randmap</option>
+              </select>
+            </label>
+          </>
+        )}
 
         {!isTraining ? (
           <button
@@ -426,9 +549,11 @@ export default function TrainingPanel() {
         ) : (
           <button
             onClick={stop}
-            className="bg-red-600 hover:bg-red-500 text-white text-xs px-3 py-1 rounded font-medium"
+            disabled={usesNative}
+            title={usesNative ? "The compiled native trainer ABI does not expose cooperative cancellation." : undefined}
+            className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-400 text-white text-xs px-3 py-1 rounded font-medium"
           >
-            Stop
+            {usesNative ? "Native run active" : "Stop"}
           </button>
         )}
 
@@ -439,13 +564,33 @@ export default function TrainingPanel() {
         )}
       </div>
 
+      {usesNative && nativePreflight?.execution_ready && nativePreflightIssues.length === 0 && (
+        <div className="mt-2 rounded border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-100">
+          Native preflight passed for {nativePreflight.training_selector ?? nativePreflight.trainer_family ?? "the selected adapter"}.
+          The run will use the materialized Native IR fingerprint from this graph revision.
+        </div>
+      )}
+
+      {usesNative && nativePreflightIssues.length > 0 && (
+        <div className="mt-2 rounded border border-rose-800 bg-rose-950/50 px-3 py-2 text-[11px] text-rose-100">
+          <div className="font-semibold">Native training cannot start</div>
+          <ul className="mt-1 space-y-1 font-mono">
+            {nativePreflightIssues.map((issue, index) => (
+              <li key={`${issue.path}-${issue.code}-${index}`}>
+                {issue.path} [{issue.code}]: {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {hasNestedGraphs && (
         <div className="mt-2 text-[10px] text-gray-500">
           Nested networks use each graph&apos;s own training method. Set root and subgraph methods from the side panel.
         </div>
       )}
 
-      {trainingMode !== "pretrain" && (
+      {!usesNative && trainingMode !== "pretrain" && (
         <div className="mt-2 flex flex-wrap items-center gap-2 bg-gray-900/50 rounded p-2 border border-gray-800">
           <span className="text-[10px] font-bold text-amber-300">Fine-tune</span>
           <label className="text-[10px] text-gray-400">
@@ -566,7 +711,27 @@ export default function TrainingPanel() {
         </div>
       )}
 
-      {graphDatasetConfig ? (
+      {usesNative && (
+        <div className="mt-2 text-[10px] text-cyan-200">
+          Native CUDA runs pass one project dataset alias directly to the compiled trainer; the graph topology is left unchanged for exact Native IR preflight.
+        </div>
+      )}
+
+      {usesNative ? (
+        <label className="mt-3 block rounded border border-cyan-900/70 bg-cyan-950/20 px-3 py-3 text-[11px] text-cyan-100">
+          Native dataset alias
+          <select
+            value={nativeDatasetName}
+            onChange={(event) => setNativeDatasetName(event.target.value)}
+            className="mt-1 block w-full rounded border border-cyan-800 bg-gray-900 px-2 py-1 text-gray-100"
+          >
+            {nativeDatasets.length === 0 && <option value="">No project datasets available</option>}
+            {nativeDatasets.map((dataset) => (
+              <option key={dataset.name} value={dataset.name}>{dataset.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : graphDatasetConfig ? (
         <div className="mt-3 rounded border border-blue-900/70 bg-blue-950/20 px-3 py-3">
           <div className="text-[11px] font-medium text-blue-200">
             Dataset-backed training is configured from the graph&apos;s `dataset_source` node.
